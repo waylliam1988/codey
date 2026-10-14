@@ -166,7 +166,7 @@ def exercise(page, url, window):
         check("Sidebar: compact desktop preserves 400px main area; narrow overlay leaves saved width intact")
     finally:
         if original is not None and copied is not None and clipboard_text() == copied:
-            restored = page.evaluate("text => CodeyRender.copyText(text)", original)
+            restored = page.evaluate("text => Render.copyText(text)", original)
     assert not errors, errors
     return {"host": "pywebview / Edge WebView2", "isolated_state": True,
             "checks": checks, "javascript_errors": errors, "clipboard_text_restored": restored}

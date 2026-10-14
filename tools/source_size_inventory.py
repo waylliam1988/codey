@@ -6,8 +6,8 @@ import json
 import subprocess
 from pathlib import Path
 
-SOURCE_ROOTS = {"codey", "tools", "tests", ".github"}
-SOURCE_SUFFIXES = {".py", ".js", ".mjs", ".css", ".html", ".yml"}
+SOURCE_ROOTS = {"codey", "tools", "tests", ".github", "frontend"}
+SOURCE_SUFFIXES = {".py", ".js", ".mjs", ".ts", ".css", ".html", ".yml"}
 
 
 def inventory(root: Path, threshold: int = 1000) -> list[dict[str, object]]:

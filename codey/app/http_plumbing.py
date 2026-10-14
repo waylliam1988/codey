@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -10,10 +12,11 @@ from pathlib import Path
 from typing import Any
 
 from codey import __version__
-from codey.env_names import APP_VERSION_PLACEHOLDER
+from codey.env_names import APP_VERSION_PLACEHOLDER, FRONTEND_ROOT_ENV
 
-WEB_DIR = Path(__file__).resolve().parents[1] / "web"
-WEB_ASSET_DIR = WEB_DIR / "assets"
+_DEFAULT_WEB_DIR = Path(__file__).resolve().parents[1] / "web"
+_configured_web_dir = os.environ.get(FRONTEND_ROOT_ENV, "").strip()
+WEB_DIR = Path(_configured_web_dir).expanduser().resolve() if _configured_web_dir else _DEFAULT_WEB_DIR
 WEB_ASSET_TYPES = {
     ".js": "application/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -41,14 +44,30 @@ def resolve_web_asset(url_path: str) -> tuple[Path, str] | None:
     ctype = WEB_ASSET_TYPES.get(Path(name).suffix.lower())
     if not ctype:
         return None
-    path = (WEB_ASSET_DIR / name).resolve()
+    asset_dir = WEB_DIR / "assets"
+    path = (asset_dir / name).resolve()
     try:
-        path.relative_to(WEB_ASSET_DIR.resolve())
+        path.relative_to(asset_dir.resolve())
     except ValueError:
         return None
     if not path.is_file():
         return None
     return path, ctype
+
+
+def validate_web_root(root: Path | None = None) -> Path:
+    """Return a complete static root or raise a clear configuration error."""
+    candidate = (root or WEB_DIR).resolve()
+    required = (candidate / "index.html", candidate / "assets")
+    if not required[0].is_file() or not required[1].is_dir():
+        raise RuntimeError(
+            f"{FRONTEND_ROOT_ENV} must point to a built frontend root containing "
+            f"index.html and assets/: {candidate}"
+        )
+    html = required[0].read_text(encoding="utf-8")
+    if not re.search(r'<script[^>]+type=["\']module["\'][^>]+src=["\']/assets/[^"\']+\.js', html, re.I):
+        raise RuntimeError(f"{FRONTEND_ROOT_ENV} index.html must contain a module script for a published JavaScript bundle: {candidate}")
+    return candidate
 
 
 def loopback_allowed_hosts(handler: BaseHTTPRequestHandler) -> set[str]:
@@ -253,6 +272,7 @@ def write_sse_event(
 
 __all__ = [
     "WEB_DIR",
+    "validate_web_root",
     "request_origin_allowed",
     "resolve_web_asset",
     "send_file",

@@ -71,8 +71,8 @@ def _goto_restored_ui(page, url):
     # Observe the actual boot restore promise before index.html binds its alias.
     # DOM tests must not race a late renderChat() from server-state restoration.
     page.add_init_script("""
-        Object.defineProperty(window, 'CodeyUiState', {configurable:true, set(state) {
-            Object.defineProperty(window, 'CodeyUiState', {
+        Object.defineProperty(window, 'UiState', {configurable:true, set(state) {
+            Object.defineProperty(window, 'UiState', {
                 value:state, writable:true, configurable:true, enumerable:true});
             const restore = state.restoreFromServer;
             state.restoreFromServer = async function(...args) {
@@ -210,7 +210,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     const snapshot = rows => ({active_id:sid, projects:[], sessions:[{
                         id:sid, title:'History', provider:'local', messages:rows, terminalRuns:[]
                     }]});
-                    window.CodeyUiState.apply(snapshot(messages)); window.renderChat();
+                    window.UiState.apply(snapshot(messages)); window.renderChat();
                     const chat = document.getElementById('chat');
                     const first = chat.querySelector('.process-group');
                     const historical = !first.open && first.querySelector('summary').textContent.startsWith('Worked');
@@ -222,11 +222,11 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     getSelection().removeAllRanges(); getSelection().addRange(originalRange);
                     const originalSelected = getSelection().toString();
                     // Equal backend snapshots preserve message DOM and pointer selection.
-                    window.CodeyUiState.apply(snapshot(JSON.parse(JSON.stringify(messages)))); window.renderChat();
+                    window.UiState.apply(snapshot(JSON.parse(JSON.stringify(messages)))); window.renderChat();
                     const snapshotStable = originalAnswer === chat.querySelector('.msg.asst .body')
                         && getSelection().toString() === originalSelected;
                     // A genuinely changed snapshot rebuilds while keeping disclosure choices.
-                    window.CodeyUiState.apply(snapshot([...messages, {type:'info', text:'Reconciled'}])); window.renderChat();
+                    window.UiState.apply(snapshot([...messages, {type:'info', text:'Reconciled'}])); window.renderChat();
                     const rebuilt = chat.querySelector('.process-group');
                     const kept = rebuilt.open && rebuilt.querySelector('.thinking').open
                         && !rebuilt.querySelector('.tool-group').classList.contains('collapsed');
@@ -362,7 +362,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                         { type: 'tool_pending', kind: 'edit', toolKey: 'tool-k1', path: 'module.py', activity: 'Applying changes...' }
                     ];
 
-                    window.CodeyUiState.apply({
+                    window.UiState.apply({
                         active_id: sid,
                         sessions: [{
                             id: sid,
@@ -407,7 +407,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     // 2. Simulate user reading history away from the bottom (e.g. top)
                     chatArea.dispatchEvent(new WheelEvent('wheel', {deltaY:-80}));
                     chatArea.scrollTop = 0;
-                    window.CodeyConversationUI.captureView();
+                    window.ConversationUI.captureView();
                     const distanceToBottomBefore = maxScroll - chatArea.scrollTop;
 
                     // 3. Trigger final tool message via replaceSessionMessage
@@ -562,7 +562,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                         f"homepage/scripts failed :: diag={_format_diagnostics(diag)}"
                     ) from exc
                 result = page.evaluate("""async () => {
-                    await window.CodeyProviderUI.openLocalConfig();
+                    await window.ProviderUI.openLocalConfig();
                     document.getElementById('local-base-url').value = 'http://127.0.0.1:9/v1';
                     document.getElementById('local-model-name').value = 'm';
                     const realFetch = window.fetch.bind(window);

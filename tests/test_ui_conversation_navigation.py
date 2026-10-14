@@ -28,7 +28,7 @@ def read_turn(page, index):
         const anchor=document.querySelectorAll('#chat > .msg.user')[index];
         area.dispatchEvent(new WheelEvent('wheel',{deltaY:-80}));
         area.scrollTop+=anchor.getBoundingClientRect().top-area.getBoundingClientRect().top-24;
-        CodeyConversationUI.captureView();
+        ConversationUI.captureView();
     }""", index)
     expect(page.locator('.conversation-tick').nth(index)).to_have_attribute('aria-current', 'location')
 
@@ -204,12 +204,12 @@ def test_drawers_and_settings_hide_navigation_and_cancel_delayed_previews(page):
     read_turn(page, 13)
     nav = page.locator('#conversation-nav')
     page.locator('.conversation-tick').nth(8).hover()
-    page.evaluate("CodeyUiState.setDrawerOpen('changes-drawer',true)")
+    page.evaluate("UiState.setDrawerOpen('changes-drawer',true)")
     expect(nav).to_be_hidden()
     expect(page.get_by_role('tooltip')).to_be_hidden()
     page.wait_for_timeout(300)
     expect(page.get_by_role('tooltip')).to_be_hidden()
-    page.evaluate("CodeyUiState.setDrawerOpen('changes-drawer',false)")
+    page.evaluate("UiState.setDrawerOpen('changes-drawer',false)")
     expect(nav).to_be_visible()
     model_settings_route(page)
     page.locator('#btn-settings').click()

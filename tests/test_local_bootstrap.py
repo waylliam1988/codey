@@ -978,16 +978,24 @@ def test_save_rejects_invalid_env_budget_without_persisting(monkeypatch) -> None
 
 
 def test_provider_ui_applies_recommended_before_and_after_catalog() -> None:
-    from pathlib import Path as _Path
+    from tools.frontend_source import frontend_source_text
 
-    text = (_Path(__file__).resolve().parents[1] / "codey" / "web" / "assets" / "provider_ui.js").read_text(
-        encoding="utf-8"
-    )
+    text = frontend_source_text("provider_ui")
     assert "function applyRecommended(data)" in text
-    before = text.index("applyRecommended(data);")
-    assert text.index("if (!changed) return false;") > before
-    after_providers = text.index("setProviders(ids, labels, data.default);")
-    assert text.index("applyRecommended(data);", after_providers) > after_providers
+    before = text.index("applyRecommended(catalog.recommendedProvider")
+    after_providers = text.index(
+        "window.UiState.setProviders(catalog.providers.map((item) => item.id), catalog.labels, catalog.defaultProvider);"
+    )
+    assert text.count("applyRecommended(catalog.recommendedProvider") == 2
+    assert before < after_providers
+
+
+def test_frontend_source_text_preserves_template_markup_after_type_erasure() -> None:
+    from tools.frontend_source import frontend_source_text
+
+    text = frontend_source_text("changes_drawer")
+    assert "</span>" in text
+    assert "${escapeHtml(line.slice(1) || ' ')}</span>" in text
 
 
 def test_bootstrap_probes_once_and_prefers_remembered() -> None:

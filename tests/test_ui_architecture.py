@@ -1,146 +1,69 @@
-"""UI asset architecture ratchet.
+"""Architecture and publish contracts for the TypeScript frontend."""
+from __future__ import annotations
 
-Keeps the zero-build web UI honest: index.html stays a thin core
-(state/SSE/composer/boot) while reusable UI lives in versioned assets.
-Budgets may only go DOWN as more code moves into assets; never raise them.
-"""
-
+import json
 import re
-import unittest
 from pathlib import Path
 
-WEB_DIR = Path(__file__).resolve().parents[1] / "codey" / "web"
-ASSET_DIR = WEB_DIR / "assets"
-HTML = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+ROOT = Path(__file__).resolve().parents[1]
+FRONTEND = ROOT / "frontend"
+WEB = ROOT / "codey" / "web"
 
-# Ratchet budgets. Lower these as checkpoints land; never increase.
-INLINE_STYLE_LINE_BUDGET = 0
-INLINE_SCRIPT_LINE_BUDGET = 1435
+def _html() -> str:
+    return (FRONTEND / "index.html").read_text(encoding="utf-8")
 
-VERSION_SUFFIX = "?v=__APP_VERSION__"
+def _source() -> str:
+    return "\n".join(p.read_text(encoding="utf-8") for p in (FRONTEND / "src").rglob("*.ts"))
 
-ASSET_REFS = re.findall(r'(?:src|href)="(/assets/[^"]+)"', HTML)
-INLINE_SCRIPTS = re.findall(r"<script(?![^>]*src)[^>]*>(.*?)</script>", HTML, re.S)
-INLINE_STYLES = re.findall(r"<style[^>]*>(.*?)</style>", HTML, re.S)
+def test_required_runtime_modules_are_imported() -> None:
+    main = (FRONTEND / "src/main.ts").read_text(encoding="utf-8")
+    for name in ("app_runtime", "operator_auth", "provider_ui", "ui_state", "sse", "composer", "conversation_ui"):
+        assert f"./{name}" in main
 
+def test_every_html_resource_reference_exists_in_public_or_publish_output() -> None:
+    refs = re.findall(r'(?:src|href)="([^"]+)"', _html())
+    for ref in refs:
+        path = ref.split("?", 1)[0].lstrip("/")
+        assert path.startswith(("assets/", "icon.ico", "src/"))
+        if path.startswith("src/"):
+            assert (FRONTEND / path).is_file()
+        else:
+            assert (WEB / path).is_file() or (FRONTEND / "public" / path).is_file()
 
-class AssetReferenceTests(unittest.TestCase):
-    def test_index_references_at_least_the_core_assets(self) -> None:
-        names = [ref.split("?")[0] for ref in ASSET_REFS]
-        self.assertIn("/assets/tokens.css", names)
-        self.assertIn("/assets/app.css", names)
-        self.assertIn("/assets/render.js", names)
-        self.assertIn("/assets/research_graph.js", names)
-        self.assertIn("/assets/research_drawer.js", names)
-        self.assertIn("/assets/research_runs.js", names)
-        self.assertIn("/assets/changes_drawer.js", names)
-        self.assertIn("/assets/local_context_drawer.js", names)
-        self.assertIn("/assets/run_details.js", names)
-        self.assertIn("/assets/provider_ui.js", names)
-        self.assertIn("/assets/ui_state.js", names)
-        self.assertIn("/assets/sse.js", names)
-        self.assertIn("/assets/composer.js", names)
+def test_resource_extensions_are_served_types() -> None:
+    for path in (WEB / "assets").iterdir():
+        assert path.suffix in {".js", ".css"}, path
 
-    def test_every_referenced_asset_file_exists(self) -> None:
-        for ref in ASSET_REFS:
-            name = ref.split("?")[0].removeprefix("/assets/")
-            self.assertTrue(
-                (ASSET_DIR / name).is_file(),
-                f"index.html references missing asset: {ref}",
-            )
+def test_frontend_has_no_inline_css() -> None:
+    assert not re.search(r"<style\b", _html(), re.I)
 
-    def test_every_asset_reference_carries_version_placeholder(self) -> None:
-        for ref in ASSET_REFS:
-            self.assertTrue(
-                ref.endswith(VERSION_SUFFIX),
-                f"asset reference missing {VERSION_SUFFIX}: {ref}",
-            )
+def test_business_script_is_not_inline_in_html() -> None:
+    html = _html()
+    assert html.count('<script type="module" src="/src/main.ts"></script>') == 1
+    assert not re.search(r"<script(?![^>]*src)[^>]*>[^<]*function", html, re.I | re.S)
 
-    def test_no_stray_asset_files_outside_known_extensions(self) -> None:
-        for path in ASSET_DIR.iterdir():
-            self.assertIn(
-                path.suffix,
-                {".js", ".css"},
-                f"unexpected asset file (server only serves js/css): {path.name}",
-            )
+def test_publish_manifest_is_present_and_matches_build_schema() -> None:
+    data = json.loads((WEB / "frontend-build.json").read_text(encoding="utf-8"))
+    assert data["schema"] == 1
+    assert data["files"]
 
-    def test_asset_scripts_load_in_fixed_order_before_inline_core(self) -> None:
-        # Synchronous, dependency-ordered loading; no defer / modules.
-        scripts = [ref.split("?")[0] for ref in ASSET_REFS if ref.split("?")[0].endswith(".js")]
-        self.assertEqual(
-            scripts,
-            [
-                "/assets/operator_auth.js",
-                "/assets/render.js",
-                "/assets/process.js",
-                "/assets/messages.js",
-                "/assets/research_graph.js",
-                "/assets/research_drawer.js",
-                "/assets/research_runs.js",
-                "/assets/changes_drawer.js",
-                "/assets/local_context_drawer.js",
-                "/assets/run_details.js",
-                "/assets/models.js",
-                "/assets/model_settings.js",
-                "/assets/settings.js",
-                "/assets/provider_ui.js",
-                "/assets/ui_state.js",
-                "/assets/sse.js",
-                "/assets/requests.js",
-                "/assets/composer.js",
-                "/assets/conversation_nav.js",
-                "/assets/conversation_ui.js",
-            ],
-        )
+def test_publish_output_contains_compiled_javascript() -> None:
+    assert list((WEB / "assets").glob("*.js"))
 
+def test_publish_output_contains_css() -> None:
+    assert (WEB / "assets/app.css").is_file()
+    assert (WEB / "assets/tokens.css").is_file()
 
-class AssetNamespaceTests(unittest.TestCase):
-    def test_each_asset_js_declares_exactly_one_codey_namespace(self) -> None:
-        for path in sorted(ASSET_DIR.glob("*.js")):
-            source = path.read_text(encoding="utf-8")
-            assigned = re.findall(r"window\.(Codey\w+)\s*=", source)
-            self.assertEqual(
-                len(assigned),
-                1,
-                f"{path.name} must assign exactly one window.Codey* namespace, got {assigned}",
-            )
+def test_source_and_public_are_separate_from_node_artifacts() -> None:
+    assert not (WEB / "node_modules").exists()
+    assert not (WEB / "coverage").exists()
 
-    def test_asset_js_uses_iife_strict_module_pattern(self) -> None:
-        for path in sorted(ASSET_DIR.glob("*.js")):
-            source = path.read_text(encoding="utf-8")
-            self.assertIn("(function () {", source, f"{path.name} must be an IIFE module")
-            self.assertIn("'use strict';", source, f"{path.name} must use strict mode")
+def test_production_bundle_has_no_test_markers() -> None:
+    bundle = "\n".join(p.read_text(encoding="utf-8") for p in (WEB / "assets").glob("*.js"))
+    assert "vitest" not in bundle.lower()
+    assert "@testing-library" not in bundle.lower()
 
-
-class InlineBudgetTests(unittest.TestCase):
-    def test_inline_style_stays_at_zero_lines(self) -> None:
-        lines = sum(block.count("\n") for block in INLINE_STYLES)
-        self.assertLessEqual(
-            lines,
-            INLINE_STYLE_LINE_BUDGET,
-            "inline <style> crept back into index.html; put CSS in assets/*.css",
-        )
-
-    def test_inline_script_stays_within_ratchet_budget(self) -> None:
-        lines = sum(block.count("\n") for block in INLINE_SCRIPTS)
-        self.assertLessEqual(
-            lines,
-            INLINE_SCRIPT_LINE_BUDGET,
-            "inline <script> grew past the ratchet budget; move UI modules into "
-            "assets/*.js instead of growing index.html",
-        )
-
-    def test_index_keeps_a_single_inline_script_block(self) -> None:
-        self.assertEqual(
-            len(INLINE_SCRIPTS),
-            1,
-            "index.html should keep exactly one inline core script block",
-        )
-
-    def test_script_tags_stay_synchronous_classic_scripts(self) -> None:
-        self.assertNotIn("<script defer", HTML)
-        self.assertNotIn('type="module"', HTML)
-
-
-if __name__ == "__main__":
-    unittest.main()
+def test_public_assets_are_copied_into_publish_output() -> None:
+    for path in (FRONTEND / "public").rglob("*"):
+        if path.is_file():
+            assert (WEB / path.relative_to(FRONTEND / "public")).is_file()

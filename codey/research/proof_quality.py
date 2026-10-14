@@ -10,13 +10,32 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import TypedDict
 
-from codey.policies.redaction import looks_prompt_visible_secret
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.research.guards import status_token as _status_token
 from codey.research.guards import valid_digest_ref
 from codey.research.object_model import ResearchRecord
+from codey.research.proof_coverage import (
+    CoverageGap,
+    CoverageResult,
+)
+from codey.research.proof_coverage import (
+    answer_coverage as _answer_coverage_impl,
+)
+from codey.research.proof_helpers import (
+    _assumption_map,
+    _claim_map,
+    _evidence_map,
+    _question_text,
+    _record_payload,
+    _relation_list,
+    _sequence_values,
+    _source_map,
+)
+from codey.research.proof_relations import _review_relation_rows, _review_relations
+from codey.research.proof_terms import (
+    is_safe_signal_text as _is_safe_signal_text,
+)
 from codey.research.source_trust import source_trust_warnings
 from codey.utils.refs import (
     bounded_refs,
@@ -79,22 +98,6 @@ class ProofDiagnostic:
         )
 
 
-@dataclass(frozen=True)
-class CoverageGap:
-    reason_code: str
-    term_ref: str = ""
-    detail: str = ""
-
-    def to_payload(self) -> dict[str, object]:
-        payload: dict[str, object] = {
-            "reason_code": identifier(self.reason_code, 80) or "coverage_gap",
-        }
-        if self.term_ref:
-            payload["term_ref"] = identifier(self.term_ref, 80)
-        if self.detail:
-            payload["detail"] = clip(self.detail, 120)
-        return payload
-
 
 @dataclass(frozen=True)
 class PlannerSignal:
@@ -108,6 +111,15 @@ class PlannerSignal:
             "text": clip(self.text, 180),
             "reason_code": identifier(self.reason_code, 80),
         }
+
+
+def _answer_coverage(
+    question: str,
+    claims: Mapping[str, Mapping[str, object]],
+    evidence: Mapping[str, Mapping[str, object]],
+) -> CoverageResult:
+    """Compatibility wrapper for focused contract tests and local callers."""
+    return _answer_coverage_impl(question, claims, evidence, _bounded_score)
 
 
 @dataclass(frozen=True)
@@ -169,6 +181,58 @@ class ResearchProofReview:
 
     def diagnostics_payload(self) -> list[dict[str, object]]:
         return [item.to_payload() for item in self.diagnostics[:MAX_DIAGNOSTICS]]
+
+
+def _dedupe_diagnostics(diagnostics: object) -> tuple[ProofDiagnostic, ...]:
+    if not isinstance(diagnostics, (list, tuple)):
+        return ()
+    seen: set[tuple[str, str, str, str, str]] = set()
+    rows: list[ProofDiagnostic] = []
+    for item in diagnostics:
+        if not isinstance(item, ProofDiagnostic):
+            continue
+        key = item._key()
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(item)
+        if len(rows) >= MAX_DIAGNOSTICS:
+            break
+    return tuple(rows)
+
+
+def _review(
+    *, ok: bool, answers_question: bool, answer_status: str, answer_coverage_score: float,
+    citation_present: bool, citation_locator_verified: bool, support_relation_verified: bool,
+    counterevidence_checked: bool, ledger_record_verified: bool, question_digest: str = "",
+    coverage_gaps: tuple[CoverageGap, ...] = (), followup_questions: tuple[PlannerSignal, ...] = (),
+    query_rewrite_candidates: tuple[PlannerSignal, ...] = (), source_trust_warnings: tuple[str, ...] = (),
+    overclaim_warnings: tuple[str, ...] = (), stale_warnings: tuple[str, ...] = (),
+    missing_evidence: tuple[str, ...] = (), record_id: str = "", record_digest: str = "",
+    diagnostics: tuple[ProofDiagnostic, ...] = (),
+) -> ResearchProofReview:
+    base = ResearchProofReview(
+        ok=ok, answers_question=answers_question, answer_status=answer_status,
+        answer_coverage_score=answer_coverage_score, citation_present=citation_present,
+        citation_locator_verified=citation_locator_verified, support_relation_verified=support_relation_verified,
+        counterevidence_checked=counterevidence_checked, ledger_record_verified=ledger_record_verified,
+        question_digest=question_digest, coverage_gaps=coverage_gaps, followup_questions=followup_questions,
+        query_rewrite_candidates=query_rewrite_candidates, source_trust_warnings=source_trust_warnings,
+        overclaim_warnings=overclaim_warnings, stale_warnings=stale_warnings,
+        missing_evidence=missing_evidence, record_id=record_id, record_digest=record_digest,
+        diagnostics=diagnostics,
+    )
+    return replace(base, proof_ref=_proof_ref_from_payload(base.__dict__))
+
+
+def _proof_ref_from_payload(payload: Mapping[str, object]) -> str:
+    return stable_ref(
+        "research_proof", _record_id_or_empty(payload.get("record_id")),
+        valid_digest_ref(payload.get("record_digest")), valid_digest_ref(payload.get("question_digest")),
+        bool(payload.get("ok")), bool(payload.get("answers_question")),
+        _bounded_score(payload.get("answer_coverage_score")),
+        tuple(bounded_refs(payload.get("missing_evidence", ()), limit=MAX_WARNINGS)),
+    )
 
 
 def review_research_proof(
@@ -324,558 +388,6 @@ def proof_review_trace_payload(review: ResearchProofReview | Mapping[str, object
     }
 
 
-@dataclass(frozen=True)
-class _CoverageResult:
-    score: float
-    gaps: tuple[CoverageGap, ...]
-    unmatched_terms: tuple[str, ...]
-
-
-def _dedupe_diagnostics(diagnostics: object) -> tuple[ProofDiagnostic, ...]:
-    if not isinstance(diagnostics, (list, tuple)):
-        return ()
-    seen: set[tuple[str, str, str, str, str]] = set()
-    rows: list[ProofDiagnostic] = []
-    for item in diagnostics:
-        if not isinstance(item, ProofDiagnostic):
-            continue
-        key = item._key()
-        if key in seen:
-            continue
-        seen.add(key)
-        rows.append(item)
-        if len(rows) >= MAX_DIAGNOSTICS:
-            break
-    return tuple(rows)
-
-
-def _review(
-    *,
-    ok: bool,
-    answers_question: bool,
-    answer_status: str,
-    answer_coverage_score: float,
-    citation_present: bool,
-    citation_locator_verified: bool,
-    support_relation_verified: bool,
-    counterevidence_checked: bool,
-    ledger_record_verified: bool,
-    question_digest: str = "",
-    coverage_gaps: tuple[CoverageGap, ...] = (),
-    followup_questions: tuple[PlannerSignal, ...] = (),
-    query_rewrite_candidates: tuple[PlannerSignal, ...] = (),
-    source_trust_warnings: tuple[str, ...] = (),
-    overclaim_warnings: tuple[str, ...] = (),
-    stale_warnings: tuple[str, ...] = (),
-    missing_evidence: tuple[str, ...] = (),
-    record_id: str = "",
-    record_digest: str = "",
-    diagnostics: tuple[ProofDiagnostic, ...] = (),
-) -> ResearchProofReview:
-    base = ResearchProofReview(
-        ok=ok, answers_question=answers_question, answer_status=answer_status,
-        answer_coverage_score=answer_coverage_score, citation_present=citation_present,
-        citation_locator_verified=citation_locator_verified, support_relation_verified=support_relation_verified,
-        counterevidence_checked=counterevidence_checked, ledger_record_verified=ledger_record_verified,
-        question_digest=question_digest, coverage_gaps=coverage_gaps, followup_questions=followup_questions,
-        query_rewrite_candidates=query_rewrite_candidates, source_trust_warnings=source_trust_warnings,
-        overclaim_warnings=overclaim_warnings, stale_warnings=stale_warnings, missing_evidence=missing_evidence,
-        record_id=record_id, record_digest=record_digest, diagnostics=diagnostics,
-    )
-    proof_ref = _proof_ref_from_payload(base.__dict__)
-    return replace(base, proof_ref=proof_ref)
-
-
-def _proof_ref_from_payload(payload: Mapping[str, object]) -> str:
-    return stable_ref(
-        "research_proof",
-        _record_id_or_empty(payload.get("record_id")),
-        valid_digest_ref(payload.get("record_digest")),
-        valid_digest_ref(payload.get("question_digest")),
-        bool(payload.get("ok")),
-        bool(payload.get("answers_question")),
-        _bounded_score(payload.get("answer_coverage_score")),
-        tuple(bounded_refs(payload.get("missing_evidence", ()), limit=MAX_WARNINGS)),
-    )
-
-
-def _record_payload(record: object) -> dict[str, object]:
-    if record is None:
-        return {}
-    if isinstance(record, ResearchRecord):
-        try:
-            return dict(record.to_jsonable())
-        except Exception:
-            return {}
-    if isinstance(record, Mapping):
-        return dict(record)
-    return {}
-
-
-def _question_text(payload: Mapping[str, object]) -> str:
-    question = payload.get("question")
-    if not isinstance(question, Mapping):
-        return ""
-    # The object model intentionally stores only a digest/chars for the question.
-    return ""
-
-
-def _source_map(value: object) -> dict[str, Mapping[str, object]]:
-    rows: dict[str, Mapping[str, object]] = {}
-    for item in _list_of_mappings(value):
-        source_id = identifier(item.get("source_id"), 80)
-        if source_id:
-            rows[source_id] = item
-    return rows
-
-
-def _evidence_map(value: object) -> dict[str, Mapping[str, object]]:
-    rows: dict[str, Mapping[str, object]] = {}
-    for item in _list_of_mappings(value):
-        evidence_id = identifier(item.get("evidence_id"), 80)
-        if evidence_id:
-            rows[evidence_id] = item
-    return rows
-
-
-def _claim_map(value: object) -> dict[str, Mapping[str, object]]:
-    rows: dict[str, Mapping[str, object]] = {}
-    for item in _list_of_mappings(value):
-        claim_id = identifier(item.get("claim_id"), 80)
-        if claim_id:
-            rows[claim_id] = item
-    return rows
-
-
-def _assumption_map(value: object) -> dict[str, Mapping[str, object]]:
-    rows: dict[str, Mapping[str, object]] = {}
-    for item in _list_of_mappings(value):
-        assumption_id = identifier(item.get("assumption_id"), 80)
-        if assumption_id:
-            rows[assumption_id] = item
-    return rows
-
-
-def _relation_list(value: object) -> tuple[Mapping[str, object], ...]:
-    return tuple(_list_of_mappings(value))
-
-
-def _list_of_mappings(value: object) -> list[Mapping[str, object]]:
-    if not isinstance(value, (list, tuple)):
-        return []
-    return [item for item in value if isinstance(item, Mapping)]
-
-
-def _sequence_values(value: object) -> tuple[object, ...]:
-    if isinstance(value, (list, tuple)):
-        return tuple(value)
-    return ()
-
-
-def _append_relation_hard(
-    hard: list[str],
-    diagnostics: list[ProofDiagnostic],
-    claims: Mapping[str, Mapping[str, object]],
-    evidence: Mapping[str, Mapping[str, object]],
-    sources: Mapping[str, Mapping[str, object]],
-    reason_code: str,
-    *,
-    claim_ref: str = "",
-    evidence_ref: str = "",
-    source_ref: str = "",
-    relation_ref: str = "",
-) -> None:
-    hard.append(reason_code)
-    diagnostics.append(ProofDiagnostic(
-        reason_code=reason_code,
-        claim_ref=claim_ref if claim_ref in claims else "",
-        evidence_ref=evidence_ref if evidence_ref in evidence else "",
-        source_ref=source_ref if source_ref in sources else "",
-        relation_ref=_normalize_runtime_ref(relation_ref, kind="relation"),
-    ))
-
-
-def _check_support_relation(
-    from_ref: str,
-    to_ref: str,
-    relation_id: str,
-    evidence: Mapping[str, Mapping[str, object]],
-    source_ids: set[str],
-    support_by_claim: dict[str, set[str]],
-    hard: list[str],
-    diagnostics: list[ProofDiagnostic],
-    claims: Mapping[str, Mapping[str, object]],
-    sources: Mapping[str, Mapping[str, object]],
-) -> None:
-    ev = evidence.get(to_ref)
-    if ev is None:
-        _append_relation_hard(
-            hard,
-            diagnostics,
-            claims,
-            evidence,
-            sources,
-            "support_relation_missing_evidence",
-            claim_ref=from_ref,
-            relation_ref=relation_id,
-        )
-        return
-    if identifier(ev.get("stance"), 40) != "supports":
-        _append_relation_hard(
-            hard,
-            diagnostics,
-            claims,
-            evidence,
-            sources,
-            "support_relation_wrong_stance",
-            claim_ref=from_ref,
-            evidence_ref=to_ref,
-            relation_ref=relation_id,
-        )
-        return
-    if not _evidence_locator_ok(ev, source_ids):
-        _append_relation_hard(
-            hard,
-            diagnostics,
-            claims,
-            evidence,
-            sources,
-            "support_relation_bad_locator",
-            claim_ref=from_ref,
-            evidence_ref=to_ref,
-            source_ref=identifier(ev.get("source_id"), 80),
-            relation_ref=relation_id,
-        )
-        return
-    support_by_claim.setdefault(from_ref, set()).add(to_ref)
-
-
-def _check_counter_relation(
-    to_ref: str,
-    relation_id: str,
-    evidence: Mapping[str, Mapping[str, object]],
-    assumption_ids: set[str],
-    source_ids: set[str],
-    hard: list[str],
-    diagnostics: list[ProofDiagnostic],
-    claims: Mapping[str, Mapping[str, object]],
-    sources: Mapping[str, Mapping[str, object]],
-) -> bool:
-    if to_ref in evidence:
-        ev = evidence[to_ref]
-        if _evidence_locator_ok(ev, source_ids):
-            return True
-        _append_relation_hard(
-            hard,
-            diagnostics,
-            claims,
-            evidence,
-            sources,
-            "counter_relation_bad_locator",
-            evidence_ref=to_ref,
-            source_ref=identifier(ev.get("source_id"), 80),
-            relation_ref=relation_id,
-        )
-        return False
-    if to_ref in assumption_ids:
-        return True
-    _append_relation_hard(
-        hard,
-        diagnostics,
-        claims,
-        evidence,
-        sources,
-        "counter_relation_missing_target",
-        relation_ref=relation_id,
-    )
-    return False
-
-
-def _review_relation_rows(
-    relations: tuple[Mapping[str, object], ...],
-    claims: Mapping[str, Mapping[str, object]],
-    evidence: Mapping[str, Mapping[str, object]],
-    sources: Mapping[str, Mapping[str, object]],
-    source_ids: set[str],
-    assumption_ids: set[str],
-    support_by_claim: dict[str, set[str]],
-    hard: list[str],
-    diagnostics: list[ProofDiagnostic],
-) -> bool:
-    counter_checked = False
-    for relation in relations:
-        kind = identifier(relation.get("relation_kind"), 40)
-        from_ref = identifier(relation.get("from_ref"), 80)
-        to_ref = identifier(relation.get("to_ref"), 80)
-        relation_id = identifier(relation.get("relation_id"), 80)
-        if from_ref not in claims:
-            _append_relation_hard(
-                hard, diagnostics, claims, evidence, sources,
-                "relation_missing_claim", relation_ref=relation_id,
-            )
-            continue
-        if kind == "supports":
-            _check_support_relation(
-                from_ref, to_ref, relation_id, evidence, source_ids,
-                support_by_claim, hard, diagnostics, claims, sources,
-            )
-        elif kind in {"refutes", "limits"} and _check_counter_relation(
-            to_ref, relation_id, evidence, assumption_ids, source_ids,
-            hard, diagnostics, claims, sources,
-        ):
-            counter_checked = True
-    return counter_checked
-
-
-def _check_claim_refs(
-    claim_id: str,
-    evidence_refs: set[str],
-    assumption_refs: set[str],
-    evidence_ids: set[str],
-    assumption_ids: set[str],
-    hard: list[str],
-    diagnostics: list[ProofDiagnostic],
-    claims: Mapping[str, Mapping[str, object]],
-    evidence: Mapping[str, Mapping[str, object]],
-    sources: Mapping[str, Mapping[str, object]],
-) -> None:
-    missing_evidence_refs = evidence_refs - evidence_ids
-    missing_assumption_refs = assumption_refs - assumption_ids
-    if missing_evidence_refs:
-        _append_relation_hard(
-            hard, diagnostics, claims, evidence, sources,
-            "claim_missing_evidence_ref", claim_ref=claim_id,
-        )
-    if missing_assumption_refs:
-        _append_relation_hard(
-            hard, diagnostics, claims, evidence, sources,
-            "claim_missing_assumption_ref", claim_ref=claim_id,
-        )
-
-
-def _check_required_claim(
-    claim_id: str,
-    section: str,
-    citations: tuple[int, ...],
-    evidence_refs: set[str],
-    status: str,
-    support_by_claim: dict[str, set[str]],
-    supported_claim_ids: set[str],
-    hard: list[str],
-    diagnostics: list[ProofDiagnostic],
-    claims: Mapping[str, Mapping[str, object]],
-    evidence: Mapping[str, Mapping[str, object]],
-    sources: Mapping[str, Mapping[str, object]],
-) -> tuple[bool, bool]:
-    if section not in {"conclusion", "evidence"}:
-        return (False, False)
-    if not citations:
-        _append_relation_hard(
-            hard, diagnostics, claims, evidence, sources,
-            "claim_missing_citation", claim_ref=claim_id,
-        )
-    if status == "assumption":
-        _append_relation_hard(
-            hard, diagnostics, claims, evidence, sources,
-            "assumption_used_as_answer", claim_ref=claim_id,
-        )
-    if status != "evidence_backed":
-        _append_relation_hard(
-            hard, diagnostics, claims, evidence, sources,
-            "claim_not_evidence_backed", claim_ref=claim_id,
-        )
-    if not evidence_refs:
-        _append_relation_hard(
-            hard, diagnostics, claims, evidence, sources,
-            "claim_missing_evidence_ref", claim_ref=claim_id,
-        )
-    support_refs = support_by_claim.get(claim_id, set())
-    claim_support_refs = support_refs & evidence_refs
-    if support_refs and not claim_support_refs:
-        _append_relation_hard(
-            hard, diagnostics, claims, evidence, sources,
-            "support_relation_not_claim_evidence", claim_ref=claim_id,
-        )
-    if status == "evidence_backed" and claim_support_refs:
-        supported_claim_ids.add(claim_id)
-        return (True, True)
-    _append_relation_hard(
-        hard, diagnostics, claims, evidence, sources,
-        "claim_missing_support_relation", claim_ref=claim_id,
-    )
-    return (True, False)
-
-
-def _review_claim_rows(
-    claims: Mapping[str, Mapping[str, object]],
-    evidence: Mapping[str, Mapping[str, object]],
-    sources: Mapping[str, Mapping[str, object]],
-    evidence_ids: set[str],
-    assumption_ids: set[str],
-    support_by_claim: dict[str, set[str]],
-    supported_claim_ids: set[str],
-    hard: list[str],
-    diagnostics: list[ProofDiagnostic],
-) -> tuple[bool, int, int, bool]:
-    citation_present = False
-    required_claims = 0
-    supported_required = 0
-    counter_from_claims = False
-    for claim_id, claim in claims.items():
-        section = identifier(claim.get("claim_section"), 80)
-        citations = _positive_ints(claim.get("citation_numbers"))
-        evidence_refs = set(bounded_refs(claim.get("evidence_refs", ()), limit=48))
-        assumption_refs = set(bounded_refs(claim.get("assumption_refs", ()), limit=48))
-        status = identifier(claim.get("status"), 40) or "unsupported"
-        if citations:
-            citation_present = True
-        _check_claim_refs(
-            claim_id, evidence_refs, assumption_refs, evidence_ids, assumption_ids,
-            hard, diagnostics, claims, evidence, sources,
-        )
-        is_required, is_supported = _check_required_claim(
-            claim_id, section, citations, evidence_refs, status,
-            support_by_claim, supported_claim_ids,
-            hard, diagnostics, claims, evidence, sources,
-        )
-        if is_required:
-            required_claims += 1
-        if is_supported:
-            supported_required += 1
-        if section == "counter" and (status == "assumption" or assumption_refs):
-            counter_from_claims = True
-    return (citation_present, required_claims, supported_required, counter_from_claims)
-
-
-def _finalize_relation_verdict(
-    required_claims: int,
-    supported_required: int,
-    supported_claim_ids: set[str],
-    support_by_claim: dict[str, set[str]],
-    claims: Mapping[str, Mapping[str, object]],
-    evidence: Mapping[str, Mapping[str, object]],
-    source_ids: set[str],
-) -> tuple[bool, bool]:
-    support_relation_verified = bool(required_claims and supported_required == required_claims)
-    used_evidence = {
-        item
-        for claim_id in supported_claim_ids
-        for item in support_by_claim.get(claim_id, set())
-        if item in set(bounded_refs(claims[claim_id].get("evidence_refs", ()), limit=48))
-    }
-    locator_verified = bool(used_evidence) and all(
-        _evidence_locator_ok(evidence[item], source_ids) for item in used_evidence if item in evidence
-    )
-    return (support_relation_verified, locator_verified)
-
-
-class _RelationReview(TypedDict):
-    citation_present: bool
-    citation_locator_verified: bool
-    support_relation_verified: bool
-    counterevidence_checked: bool
-    supported_claim_ids: frozenset[str]
-    hard_failures: tuple[str, ...]
-    missing_evidence: tuple[str, ...]
-    diagnostics: tuple[ProofDiagnostic, ...]
-
-
-def _review_relations(
-    *,
-    claims: Mapping[str, Mapping[str, object]],
-    evidence: Mapping[str, Mapping[str, object]],
-    assumptions: Mapping[str, Mapping[str, object]],
-    relations: tuple[Mapping[str, object], ...],
-    sources: Mapping[str, Mapping[str, object]],
-) -> _RelationReview:
-    source_ids = set(sources)
-    evidence_ids = set(evidence)
-    assumption_ids = set(assumptions)
-    support_by_claim: dict[str, set[str]] = {}
-    supported_claim_ids: set[str] = set()
-    hard: list[str] = []
-    diagnostics: list[ProofDiagnostic] = []
-
-    counter_from_relations = _review_relation_rows(
-        relations, claims, evidence, sources,
-        source_ids, assumption_ids, support_by_claim, hard, diagnostics,
-    )
-
-    citation_present, required_claims, supported_required, counter_from_claims = _review_claim_rows(
-        claims, evidence, sources, evidence_ids, assumption_ids,
-        support_by_claim, supported_claim_ids, hard, diagnostics,
-    )
-    counter_checked = counter_from_relations or counter_from_claims
-
-    support_relation_verified, locator_verified = _finalize_relation_verdict(
-        required_claims, supported_required, supported_claim_ids,
-        support_by_claim, claims, evidence, source_ids,
-    )
-    return {
-        "citation_present": citation_present,
-        "citation_locator_verified": locator_verified,
-        "support_relation_verified": support_relation_verified,
-        "counterevidence_checked": counter_checked,
-        "supported_claim_ids": frozenset(supported_claim_ids),
-        "hard_failures": tuple(dict.fromkeys(hard)),
-        "missing_evidence": tuple(),
-        "diagnostics": tuple(diagnostics),
-    }
-
-
-def _evidence_locator_ok(evidence: Mapping[str, object], source_ids: set[str]) -> bool:
-    source_id = identifier(evidence.get("source_id"), 80)
-    locator = evidence.get("locator")
-    if not source_id or source_id not in source_ids or not isinstance(locator, Mapping):
-        return False
-    locator_source = identifier(locator.get("source_id"), 80)
-    if locator_source != source_id:
-        return False
-    kind = identifier(locator.get("kind"), 40)
-    if not kind or kind == "unknown":
-        return False
-    start = nonnegative_int(locator.get("char_start"))
-    end = nonnegative_int(locator.get("char_end"))
-    page = locator.get("page")
-    span_ok = end > start
-    page_ok = isinstance(page, int) and page > 0
-    locator_text_ok = bool(clip(locator.get("locator"), 80))
-    return span_ok or page_ok or locator_text_ok
-
-
-def _answer_coverage(
-    question: str,
-    claims: Mapping[str, Mapping[str, object]],
-    evidence: Mapping[str, Mapping[str, object]],
-) -> _CoverageResult:
-    terms = _question_terms(question)
-    if not terms:
-        supported = any(
-            identifier(item.get("claim_section"), 80) in {"conclusion", "evidence"}
-            and identifier(item.get("status"), 40) == "evidence_backed"
-            for item in claims.values()
-        )
-        return _CoverageResult(1.0 if supported else 0.0, (), ())
-    haystack = _normalized_search_text(
-        " ".join(
-            [
-                *(str(item.get("claim_text") or "") for item in claims.values()),
-                *(str(item.get("bounded_excerpt") or "") for item in evidence.values()),
-            ]
-        )
-    )
-    unmatched = tuple(term for term in terms if _normalized_search_text(term) not in haystack)
-    score = _bounded_score((len(terms) - len(unmatched)) / max(1, len(terms)))
-    gaps = tuple(
-        CoverageGap("missing_question_term", term_ref=_safe_term_ref(term))
-        for term in unmatched[:MAX_GAPS]
-        if _safe_term_ref(term)
-    )
-    if unmatched and not gaps:
-        gaps = (CoverageGap("missing_question_term"),)
-    return _CoverageResult(score, gaps, unmatched)
-
-
 def _planner_signals(
     *,
     terms: tuple[str, ...],
@@ -948,57 +460,6 @@ def _ledger_has_record(
     return False
 
 
-def _question_terms(question: str) -> tuple[str, ...]:
-    text = str(question or "")
-    tokens: list[str] = []
-    quoted = re.findall(r"['\"]([^'\"]{2,80})['\"]", text)
-    for item in quoted:
-        _append_term(tokens, item)
-    for item in re.findall(r"[A-Za-z][A-Za-z0-9_-]{2,}|20\d{2}|\d+(?:\.\d+)?|[\u4e00-\u9fff]{2,}", text):
-        _append_term(tokens, item)
-        if len(tokens) >= 12:
-            break
-    return tuple(tokens)
-
-
-def _append_term(tokens: list[str], value: str) -> None:
-    term = _clean_term(value)
-    if not term or term in tokens or term in _STOP_TERMS:
-        return
-    if not _is_safe_signal_text(term):
-        return
-    tokens.append(term)
-
-
-def _clean_term(value: str) -> str:
-    text = str(value or "").strip().strip(".,;:!?()[]{}<>，。；：！？（）【】")
-    if len(text) > 80:
-        return ""
-    return text.casefold()
-
-
-def _safe_term_ref(term: str) -> str:
-    if not _is_safe_signal_text(term):
-        return ""
-    return identifier(term, 80)
-
-
-def _is_safe_signal_text(value: str) -> bool:
-    text = str(value or "").strip()
-    lower = text.casefold()
-    if not text or len(text) > 100:
-        return False
-    if "://" in lower or "\\" in text or "/" in text:
-        return False
-    if looks_prompt_visible_secret(text):
-        return False
-    return not re.fullmatch(r"[A-Za-z0-9_./+=-]{24,}", text)
-
-
-def _normalized_search_text(value: str) -> str:
-    return " ".join(str(value or "").casefold().split())
-
-
 def _looks_like_strong_claim(value: str) -> bool:
     return bool(_STRONG_CLAIM_RE.search(str(value or "")))
 
@@ -1056,39 +517,6 @@ def _question_digest(value: object) -> str:
     return digest_json({"research_proof_question": text})
 
 
-_STOP_TERMS = frozenset({
-    "about",
-    "answer",
-    "are",
-    "can",
-    "does",
-    "find",
-    "for",
-    "how",
-    "investigate",
-    "need",
-    "please",
-    "question",
-    "research",
-    "should",
-    "study",
-    "the",
-    "this",
-    "what",
-    "whether",
-    "when",
-    "where",
-    "which",
-    "why",
-    "with",
-    "研究",
-    "调查",
-    "查找",
-    "问题",
-    "什么",
-    "如何",
-    "是否",
-})
 _STRONG_CLAIM_RE = re.compile(
     r"(?i)\b(?:always|never|must|guaranteed|certain|proven|will|cannot fail|"
     r"definitely|必然|一定|保证|证明|绝对)\b"

@@ -15,7 +15,7 @@ def changes(text='old value'):
 
 def open_diff(page):
     page.route('**/api/changes', lambda r: r.fulfill(json=changes()))
-    page.evaluate("CodeyChangesDrawer.open('E:/project')")
+    page.evaluate("ChangesDrawer.open('E:/project')")
     page.locator('.change-file > button').click()
 
 
@@ -51,7 +51,7 @@ def test_failed_refresh_labels_previous_results_and_blocks_restore(page, failure
     expect(page.locator('#changes-subtitle')).to_contain_text('Showing previous changes')
     expect(page.locator('.diff-pre')).to_contain_text('old value')
     expect(page.locator('#changes-restore')).to_be_disabled()
-    page.evaluate("window.copiedDiff='';CodeyRender.copyText=async text=>{window.copiedDiff=text;return true}")
+    page.evaluate("window.copiedDiff='';Render.copyText=async text=>{window.copiedDiff=text;return true}")
     page.locator('#changes-copy').click()
     assert page.evaluate('window.copiedDiff') == changes()['diff']
     expect(page.locator('#changes-refresh')).to_have_text('Retry')
@@ -59,7 +59,7 @@ def test_failed_refresh_labels_previous_results_and_blocks_restore(page, failure
 
 def test_switch_project_removes_previous_diff_and_disables_copy_while_loading(page):
     open_diff(page)
-    page.evaluate("""() => {const real=fetch;window.fetch=(url,options)=>url==='/api/changes'?new Promise(()=>{}):real(url,options);CodeyChangesDrawer.open('E:/other')}""")
+    page.evaluate("""() => {const real=fetch;window.fetch=(url,options)=>url==='/api/changes'?new Promise(()=>{}):real(url,options);ChangesDrawer.open('E:/other')}""")
     expect(page.locator('#changes-body')).not_to_contain_text('old value')
     expect(page.locator('#changes-copy')).to_be_disabled()
 
@@ -77,7 +77,7 @@ def test_restore_success_with_failed_refresh_reports_both_facts(page):
 def test_same_project_reopen_does_not_steal_diff_focus(page):
     open_diff(page)
     page.locator('.change-file > button').focus()
-    page.evaluate("CodeyChangesDrawer.open('E:/project')")
+    page.evaluate("ChangesDrawer.open('E:/project')")
     expect(page.locator('.change-file > button')).to_be_focused()
 
 
@@ -87,11 +87,11 @@ def test_growth_in_earlier_file_keeps_visible_diff_line_at_same_position(page):
     initial['files'].append({'path':'two.py','additions':81})
     initial['diff'] += second
     page.route('**/api/changes', lambda r:r.fulfill(json=initial))
-    page.evaluate("CodeyChangesDrawer.open('E:/project')")
+    page.evaluate("ChangesDrawer.open('E:/project')")
     for button in page.locator('.change-file > button').all():
         button.click()
     page.locator('[data-path="two.py"] .diff-line').first.evaluate("e=>{e.scrollIntoView({block:'start'});window.line=e;window.lineTop=e.getBoundingClientRect().top;}")
     grown = {**initial,'diff':initial['diff'].replace('+top\n', '+top\n'+'+inserted\n'*40)}
     page.route('**/api/changes', lambda r:r.fulfill(json=grown))
-    page.evaluate("CodeyChangesDrawer.open('E:/project')")
+    page.evaluate("ChangesDrawer.open('E:/project')")
     assert page.evaluate('Math.abs(window.line.getBoundingClientRect().top-window.lineTop)') < 2

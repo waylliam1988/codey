@@ -1001,21 +1001,29 @@ def _expand_numstat_rename(text: str) -> str:
     return after
 
 
-def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
-    """Untracked file without following symlinks (links yield no content)."""
+def _untracked_file_preview(root: Path, rel: str) -> dict[str, Any]:
+    """Return an explicit preview state for one untracked file."""
     try:
         link_path = root / rel
         if link_path.is_symlink():
-            return None
+            return {"status": "symlink", "size": 0}
         path = _safe_join(root, rel)
         if path.is_symlink():
-            return None
+            return {"status": "symlink", "size": 0}
     except (OSError, ValueError):
-        return None
+        return {"status": "read_error", "size": 0}
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return {"status": "read_error", "size": 0}
+    if size > MAX_UNTRACKED_DIFF_BYTES:
+        return {"status": "too_large", "size": size}
     try:
         text = _read_text_bounded(path, max_bytes=MAX_UNTRACKED_DIFF_BYTES)
-    except (OSError, UnicodeDecodeError, ValueError):
-        return None
+    except UnicodeDecodeError:
+        return {"status": "binary", "size": size}
+    except (OSError, ValueError):
+        return {"status": "read_error", "size": size}
     lines = text.splitlines()
     rel_posix = rel.replace("\\", "/")
     diff = difflib.unified_diff(
@@ -1027,7 +1035,19 @@ def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
     )
     body = "\n".join(diff)
     header = f"diff --git a/{rel_posix} b/{rel_posix}\nnew file mode 100644"
-    return f"{header}\n{body}" if body else header, len(lines)
+    return {
+        "status": "text",
+        "size": size,
+        "diff": f"{header}\n{body}" if body else header,
+        "additions": len(lines),
+    }
+
+
+def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
+    preview = _untracked_file_preview(root, rel)
+    if preview.get("status") != "text":
+        return None
+    return str(preview["diff"]), int(preview["additions"])
 
 
 def _git_failed_payload() -> dict[str, Any]:
@@ -1135,7 +1155,9 @@ def _resolve_git_root(root: Path) -> tuple[Path | None, dict[str, Any] | None]:
 
 
 def _load_git_status_files(git_root: Path) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None]:
-    status_proc, error = _run_one_git_command(git_root, ["status", "--porcelain=v1", "-z"])
+    status_proc, error = _run_one_git_command(
+        git_root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]
+    )
     if error is not None:
         return None, error
     assert status_proc is not None
@@ -1273,6 +1295,53 @@ def collect_git_changes(project: str | Path | None) -> dict[str, Any]:
         "root": str(git_root),
         "files": files,
         "changed_count": len(files),
+        "diff": diff,
+        "truncated": truncated,
+    }
+
+
+def collect_git_file_diff(project: str | Path | None, rel: str) -> dict[str, Any]:
+    """Collect one file's diff independently from the aggregate diff budget."""
+    if not project or not rel or not is_displayable_change_path(rel):
+        return {"ok": False, "error": "file path invalid", "path": rel, "status": "invalid"}
+    git_root, error = _resolve_git_root(Path(project).expanduser().resolve())
+    if error is not None:
+        return error
+    assert git_root is not None
+    normalized = _safe_join(git_root, rel)
+    try:
+        normalized.relative_to(git_root)
+    except ValueError:
+        return {"ok": False, "error": "file path invalid", "path": rel, "status": "invalid"}
+    status_files, error = _load_git_status_files(git_root)
+    if error is not None:
+        return error
+    status_row = next((item for item in status_files or () if item.get("path") == rel), None)
+    if status_row is None:
+        return {"ok": False, "error": "file is not changed", "path": rel, "status": "missing"}
+    if status_row.get("status") == "??":
+        preview = _untracked_file_preview(git_root, rel)
+        return {"ok": True, "path": rel, **preview}
+    parts: list[str] = []
+    captured = False
+    for args in (["diff", "--no-ext-diff", "--", rel], ["diff", "--cached", "--no-ext-diff", "--", rel]):
+        proc, command_error = _run_one_git_command(git_root, args)
+        if command_error is not None:
+            return command_error
+        assert proc is not None
+        captured = captured or bool(proc.stdout_truncated)
+        if proc.stdout:
+            parts.append(proc.stdout.rstrip())
+    diff = "\n\n".join(parts)
+    truncated = captured or len(diff) > MAX_GIT_DIFF_CHARS
+    if truncated:
+        diff = diff[:MAX_GIT_DIFF_CHARS].rstrip() + "\n\n... file diff truncated ..."
+    status = "binary" if "Binary files" in diff else "text"
+    return {
+        "ok": True,
+        "path": rel,
+        "status": status,
+        "size": normalized.stat().st_size if normalized.is_file() else 0,
         "diff": diff,
         "truncated": truncated,
     }

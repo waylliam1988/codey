@@ -101,7 +101,7 @@ def search_state(page):
              "provider": "mimo", "messages": []},
         ],
     }
-    page.evaluate("state => {CodeyUiState.apply(state); renderSidebar(); renderChat();}", state)
+    page.evaluate("state => {UiState.apply(state); renderSidebar(); renderChat();}", state)
     page.locator("#chat-search-toggle").click()
     return page.locator("#chat-search")
 
@@ -114,7 +114,7 @@ def test_search_finds_empty_project_and_keeps_saved_expansion(page):
     expect(page.locator(".project-toggle path")).to_have_attribute("d", "m6 9 6 6 6-6")
     expect(page.locator("#search-empty")).to_be_hidden()
     expect(page.locator(".group-label:visible")).to_have_text("PROJECTS")
-    assert page.evaluate("CodeyUiState.current().projects[0].expanded") is False
+    assert page.evaluate("UiState.current().projects[0].expanded") is False
     search.press("Escape")
     expect(search).to_be_hidden()
     expect(page.locator("#chat-search-toggle")).to_be_focused()
@@ -131,7 +131,7 @@ def test_search_no_matches_is_one_empty_state_and_updates_after_rename(page):
     expect(page.locator("#search-empty")).to_be_visible()
     expect(page.locator("#session-list")).to_be_hidden()
     assert abs(page.locator("#btn-settings").bounding_box()["y"] - settings_y) < 1
-    page.evaluate("CodeyUiState.current().projects[0].name='missing-name'; renderSidebar();")
+    page.evaluate("UiState.current().projects[0].name='missing-name'; renderSidebar();")
     expect(page.locator("#search-empty")).to_be_hidden()
     expect(page.locator("#session-list")).to_be_visible()
     expect(page.locator(".project-main")).to_have_text("missing-name")
@@ -263,7 +263,7 @@ def test_retry_uses_original_submission_without_leaking_unknown_errors(page, sta
     expect(error).not_to_contain_text("secret")
     page.locator("#task").fill("later draft")
     error.get_by_role("button", name="Retry", exact=True).click()
-    page.wait_for_function("!CodeyComposer.isSending()")
+    page.wait_for_function("!Composer.isSending()")
     expect(page.locator(".status-row.err")).to_have_count(1)
     expect(page.locator(".msg.user")).to_have_count(1)
     assert submissions[1]["task"] == "original task"
@@ -272,7 +272,7 @@ def test_retry_uses_original_submission_without_leaking_unknown_errors(page, sta
 
 def test_local_rejection_immediately_offers_enabled_model_action(page):
     local = model_settings_route(page)
-    page.evaluate("CodeyProviderUI.applyLocalMetadata", local)
+    page.evaluate("ProviderUI.applyLocalMetadata", local)
     page.locator("#provider-button").click()
     page.locator('.provider-item[data-provider="local"]').first.click()
     submissions = []
@@ -294,7 +294,7 @@ def test_local_rejection_immediately_offers_enabled_model_action(page):
 
 def test_local_rejection_choose_model_returns_to_original_chat_without_sending(page):
     local = model_settings_route(page)
-    page.evaluate("CodeyProviderUI.applyLocalMetadata", local)
+    page.evaluate("ProviderUI.applyLocalMetadata", local)
     page.locator("#provider-button").click()
     page.locator('.provider-item[data-provider="local"]').first.click()
     page.evaluate("""() => {
@@ -310,7 +310,7 @@ def test_local_rejection_choose_model_returns_to_original_chat_without_sending(p
     page.evaluate("switchSession('b')")
     page.locator("#task").fill("beta draft")
     page.evaluate("finishRejectedSend()")
-    page.wait_for_function("CodeyUiState.current().sessions.find(s=>s.id==='a').messages.some(m=>m.attempts?.at(-1).state==='failed')")
+    page.wait_for_function("UiState.current().sessions.find(s=>s.id==='a').messages.some(m=>m.attempts?.at(-1).state==='failed')")
     expect(page.locator("#task")).to_have_value("beta draft")
     page.evaluate("switchSession('a')")
     error = page.locator(".status-row.err")
@@ -319,7 +319,7 @@ def test_local_rejection_choose_model_returns_to_original_chat_without_sending(p
     page.evaluate("switchSession('b')")
     # The receipt action retains its own chat even if invoked after navigation.
     page.evaluate("""() => {
-        const m=CodeyUiState.current().sessions.find(s=>s.id==='a').messages.find(m=>m.type==='request_status');
+        const m=UiState.current().sessions.find(s=>s.id==='a').messages.find(m=>m.type==='request_status');
         const node=document.createElement('div'); appendMessageNode(node,m);
         Array.from(node.querySelectorAll('button')).find(b=>b.textContent==='Choose model').click();
     }""")

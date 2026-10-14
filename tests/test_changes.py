@@ -70,10 +70,34 @@ class ChangeTrackerTests(unittest.TestCase):
                 args=[], returncode=0, stdout="", stderr="",
                 stdout_truncated=False, stderr_truncated=False,
             )
-            changes._run_git(Path("C:/project"), ["status", "--porcelain=v1", "-z"])
+            changes._run_git(Path("C:/project"), ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
 
         argv = run.call_args.args[0]
         self.assertEqual(argv[:4], ["git", "-c", "core.quotePath=false", "-C"])
+
+    def test_git_status_requests_every_untracked_file_inside_directories(self) -> None:
+        from types import SimpleNamespace
+
+        with mock.patch("codey.runtime.core.cancellation.run_process") as run:
+            run.return_value = SimpleNamespace(
+                args=[], returncode=0, stdout="", stderr="",
+                stdout_truncated=False, stderr_truncated=False,
+            )
+            changes._run_git(Path("C:/project"), [
+                "status", "--porcelain=v1", "-z", "--untracked-files=all",
+            ])
+
+        self.assertIn("--untracked-files=all", run.call_args.args[0])
+
+    def test_large_untracked_file_reports_reason_in_file_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "large.js"
+            path.write_text("x" * (changes.MAX_UNTRACKED_DIFF_BYTES + 1), encoding="utf-8")
+            preview = changes._untracked_file_preview(root, "large.js")
+
+        self.assertEqual(preview["status"], "too_large")
+        self.assertGreater(preview["size"], changes.MAX_UNTRACKED_DIFF_BYTES)
 
     def test_collect_git_changes_skips_diff_commands_when_status_is_clean(self) -> None:
         from types import SimpleNamespace
@@ -90,7 +114,7 @@ class ChangeTrackerTests(unittest.TestCase):
             def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
                 if args == ["rev-parse", "--show-toplevel"]:
                     return _proc(args, str(root))
-                if args == ["status", "--porcelain=v1", "-z"]:
+                if args == ["status", "--porcelain=v1", "-z", "--untracked-files=all"]:
                     return _proc(args, "")
                 raise AssertionError(f"unexpected git command: {args}")
 
@@ -102,7 +126,7 @@ class ChangeTrackerTests(unittest.TestCase):
         self.assertEqual(data["diff"], "")
         self.assertEqual(
             [call.args[1] for call in run.call_args_list],
-            [["rev-parse", "--show-toplevel"], ["status", "--porcelain=v1", "-z"]],
+            [["rev-parse", "--show-toplevel"], ["status", "--porcelain=v1", "-z", "--untracked-files=all"]],
         )
 
     def test_truncated_status_is_explicit_error_not_partial(self) -> None:
@@ -120,7 +144,7 @@ class ChangeTrackerTests(unittest.TestCase):
             def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
                 if args == ["rev-parse", "--show-toplevel"]:
                     return _proc(args, str(root))
-                if args == ["status", "--porcelain=v1", "-z"]:
+                if args == ["status", "--porcelain=v1", "-z", "--untracked-files=all"]:
                     return _proc(args, " M a.py\n", truncated=True)
                 raise AssertionError(f"unexpected git command: {args}")
 
@@ -145,7 +169,7 @@ class ChangeTrackerTests(unittest.TestCase):
             def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
                 if args == ["rev-parse", "--show-toplevel"]:
                     return _proc(args, str(root))
-                if args == ["status", "--porcelain=v1", "-z"]:
+                if args == ["status", "--porcelain=v1", "-z", "--untracked-files=all"]:
                     return _proc(args, " M a.py\n")
                 if args == ["diff", "--numstat", "-z"]:
                     return _proc(args, "1\t0\ta.py\n")
@@ -731,7 +755,7 @@ class ChangeTrackerTests(unittest.TestCase):
                 calls.append(args)
                 if args == ["rev-parse", "--show-toplevel"]:
                     return _proc(args, str(root))
-                if args == ["status", "--porcelain=v1", "-z"]:
+                if args == ["status", "--porcelain=v1", "-z", "--untracked-files=all"]:
                     return _proc(args, "", returncode=128)
                 raise AssertionError(f"unexpected git command after failure: {args}")
 
@@ -743,7 +767,7 @@ class ChangeTrackerTests(unittest.TestCase):
         self.assertIn("status", data["error"])
         self.assertEqual(
             calls,
-            [["rev-parse", "--show-toplevel"], ["status", "--porcelain=v1", "-z"]],
+            [["rev-parse", "--show-toplevel"], ["status", "--porcelain=v1", "-z", "--untracked-files=all"]],
         )
 
     def test_numstat_nonzero_exit_stops_before_diff(self) -> None:
@@ -763,7 +787,7 @@ class ChangeTrackerTests(unittest.TestCase):
                 calls.append(args)
                 if args == ["rev-parse", "--show-toplevel"]:
                     return _proc(args, str(root))
-                if args == ["status", "--porcelain=v1", "-z"]:
+                if args == ["status", "--porcelain=v1", "-z", "--untracked-files=all"]:
                     return _proc(args, " M a.py\n")
                 if args == ["diff", "--numstat", "-z"]:
                     return _proc(args, "", returncode=1)
@@ -776,7 +800,7 @@ class ChangeTrackerTests(unittest.TestCase):
         self.assertIn("numstat", data["error"])
         self.assertEqual(
             calls,
-            [["rev-parse", "--show-toplevel"], ["status", "--porcelain=v1", "-z"], ["diff", "--numstat", "-z"]],
+            [["rev-parse", "--show-toplevel"], ["status", "--porcelain=v1", "-z", "--untracked-files=all"], ["diff", "--numstat", "-z"]],
         )
 
     def test_diff_nonzero_exit_is_explicit_error(self) -> None:
@@ -796,7 +820,7 @@ class ChangeTrackerTests(unittest.TestCase):
                 calls.append(args)
                 if args == ["rev-parse", "--show-toplevel"]:
                     return _proc(args, str(root))
-                if args == ["status", "--porcelain=v1", "-z"]:
+                if args == ["status", "--porcelain=v1", "-z", "--untracked-files=all"]:
                     return _proc(args, " M a.py\n")
                 if args == ["diff", "--numstat", "-z"]:
                     return _proc(args, "1\t0\ta.py\n")
@@ -815,7 +839,7 @@ class ChangeTrackerTests(unittest.TestCase):
             calls,
             [
                 ["rev-parse", "--show-toplevel"],
-                ["status", "--porcelain=v1", "-z"],
+                ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
                 ["diff", "--numstat", "-z"],
                 ["diff", "--cached", "--numstat", "-z"],
                 ["diff", "--no-ext-diff", "--"],

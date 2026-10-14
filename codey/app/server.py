@@ -53,6 +53,7 @@ from codey.app.http_plumbing import (
     send_index,
     send_json,
     sse_replay_cursor,
+    validate_web_root,
     write_sse_event,
 )
 from codey.app.operator_auth import OperatorAuth
@@ -71,6 +72,7 @@ class CodeyHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, server_address: tuple[str, int], request_handler_class: type[BaseHTTPRequestHandler]) -> None:
         super().__init__(server_address, request_handler_class)
+        validate_web_root()
         self.operator_auth = OperatorAuth(self.server_address[1])
 
     def launch_url(self, base_url: str) -> str:
@@ -271,6 +273,7 @@ _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[s
         ctx,
         str((body.get("project") if isinstance(body, dict) else "") or ""),
     ),
+    "/api/changes/file": app_api.changes_file_response,
     "/api/changes/restore": app_api.restore_changes_response,
     "/api/shell_approval": _shell_approval_route,
     "/api/teach/resume": app_api.teach_resume_response,

@@ -23,7 +23,7 @@ from codey.research.contract import (
     research_blocked_reason,
     research_completion_checks,
 )
-from codey.research.proof_quality import ProofDiagnostic, ResearchProofReview
+from codey.research.proof_quality import ProofDiagnostic, ResearchProofReview, _answer_coverage
 from codey.research.review_finding import (
     FINDING_UNSUPPORTED_CLAIM,
     SEVERITY_CRITICAL,
@@ -60,6 +60,26 @@ def test_missing_review_fails_closed_to_legacy_reason() -> None:
     checks = _check_map(research_completion_checks(None))
     assert checks[CHECK_RESEARCH_PROOF].status == CHECK_FAIL
     assert checks[CHECK_RESEARCH_PROOF].reason_code == "research_proof_missing_research_record"
+
+
+def test_answer_coverage_does_not_match_a_term_inside_another_word() -> None:
+    result = _answer_coverage(
+        "api",
+        {"claim": {"claim_text": "The rapid response was measured.", "claim_section": "evidence_backed"}},
+        {},
+    )
+    assert result.unmatched_terms == ("api",)
+    assert result.score < 1.0
+
+
+def test_answer_coverage_matches_a_standalone_term() -> None:
+    result = _answer_coverage(
+        "api",
+        {"claim": {"claim_text": "The API client retries requests.", "claim_section": "evidence_backed"}},
+        {},
+    )
+    assert result.unmatched_terms == ()
+    assert result.score == 1.0
 
 
 def test_blocked_reason_matches_queue_gate_reason_codes() -> None:

@@ -9,7 +9,7 @@ from tests.test_ui_workflow import (  # noqa: F401 -- shared real HTTP/browser f
 
 
 def test_dynamic_api_menu_selects_responses_model_without_local_headers_or_ui_branch(page):  # noqa: F811 -- imported pytest fixture
-    page.evaluate("""() => CodeyProviderUI.applyConfig({default:'deepseek',providers:[
+    page.evaluate("""() => ProviderUI.applyConfig({default:'deepseek',providers:[
       {id:'deepseek',label:'DeepSeek'},{id:'local',label:'Local'},{id:'zen',label:'OpenCode Zen'}]})""")
     payload = {"id": "zen", "label": "OpenCode Zen", "models": [
         {"id": "muse-fixture", "name": "Muse Fixture", "protocol": "openai-responses", "efforts": ["low", "high", "xhigh"]},
@@ -22,14 +22,14 @@ def test_dynamic_api_menu_selects_responses_model_without_local_headers_or_ui_br
     expect(page.locator("#provider-name")).to_have_text("Muse Fixture")
     page.locator("#effort-button").click()
     page.get_by_role("button", name="Thinking effort: XHigh", exact=True).click()
-    selection = page.evaluate("CodeyProviderUI.runSelection(CodeyUiState.current().sessions[0], 'zen')")
+    selection = page.evaluate("ProviderUI.runSelection(UiState.current().sessions[0], 'zen')")
     assert selection == {"model_selection": {"connection_id": "zen", "base_url": "", "model": "muse-fixture", "effort": "xhigh"}}
     page.evaluate("switchSession('b')")
     expect(page.locator("#effort-chooser")).to_be_hidden()
     page.evaluate("switchSession('a')")
     expect(page.locator("#effort-name")).to_have_text("XHigh")
     payload["models"] = [{"id": "new-free", "name": "New Free", "efforts": []}]
-    page.evaluate("CodeyProviderUI.applyApiModels", [payload])
+    page.evaluate("ProviderUI.applyApiModels", [payload])
     page.locator("#provider-button").click()
     expect(page.locator('[data-model="muse-fixture"]')).to_have_count(0)
     expect(page.locator('[data-model="new-free"]')).to_have_count(0)
@@ -37,11 +37,11 @@ def test_dynamic_api_menu_selects_responses_model_without_local_headers_or_ui_br
     select_connection_models(page, payload, ["new-free"])
     expect(page.locator('[data-model="new-free"]')).to_be_visible()
     # Removal cannot reinterpret this chat as a different model.
-    assert page.evaluate("CodeyUiState.current().sessions[0].modelSelection.model") == "muse-fixture"
+    assert page.evaluate("UiState.current().sessions[0].modelSelection.model") == "muse-fixture"
 
 
 def test_boolean_reasoning_model_exposes_on_off_control_and_sends_thinking_flag(page):  # noqa: F811 -- imported pytest fixture
-    page.evaluate("""() => CodeyProviderUI.applyConfig({default:'deepseek',providers:[
+    page.evaluate("""() => ProviderUI.applyConfig({default:'deepseek',providers:[
       {id:'deepseek',label:'DeepSeek'},{id:'zen',label:'OpenCode Zen'}]})""")
     payload = {"id": "zen", "label": "OpenCode Zen", "models": [
         {"id": "ling-fixture", "name": "Ling Fixture", "protocol": "openai-completions",
@@ -57,7 +57,7 @@ def test_boolean_reasoning_model_exposes_on_off_control_and_sends_thinking_flag(
     expect(page.get_by_role("button", name="Thinking: On", exact=True)).to_be_visible()
     page.get_by_role("button", name="Thinking: On", exact=True).click()
 
-    selection = page.evaluate("CodeyProviderUI.runSelection(CodeyUiState.current().sessions[0], 'zen')")
+    selection = page.evaluate("ProviderUI.runSelection(UiState.current().sessions[0], 'zen')")
     assert selection == {"model_selection": {"connection_id": "zen", "base_url": "", "model": "ling-fixture",
                                                "effort": None, "thinking": True}}
 
@@ -76,7 +76,7 @@ def test_removed_connection_stays_readable_and_cannot_silently_send_to_default(p
     page.locator("#task").press("Enter")
     assert requests == []
     expect(page.locator("#task")).to_have_value("continue")
-    assert page.evaluate("CodeyUiState.current().sessions.find(s=>s.id==='a').provider") == "retired-api"
+    assert page.evaluate("UiState.current().sessions.find(s=>s.id==='a').provider") == "retired-api"
 
 
 def test_original_chat_send_does_not_take_effort_from_currently_visible_chat(page):  # noqa: F811 -- imported pytest fixture
@@ -84,15 +84,15 @@ def test_original_chat_send_does_not_take_effort_from_currently_visible_chat(pag
         {"id": "model", "name": "Model", "efforts": ["low", "high"]},
     ]})
     page.evaluate("""() => {
-      CodeyProviderUI.applyConfig({default:'deepseek',providers:[{id:'deepseek',label:'DeepSeek'},{id:'zen',label:'OpenCode Zen'}]});
-      CodeyProviderUI.applyApiModels([{id:'zen',models:[{id:'model',name:'Model',efforts:['low','high']}]}]);
-      const sessions = CodeyUiState.current().sessions;
+      ProviderUI.applyConfig({default:'deepseek',providers:[{id:'deepseek',label:'DeepSeek'},{id:'zen',label:'OpenCode Zen'}]});
+      ProviderUI.applyApiModels([{id:'zen',models:[{id:'model',name:'Model',efforts:['low','high']}]}]);
+      const sessions = UiState.current().sessions;
       sessions[0].provider='zen'; sessions[0].modelSelection={connection_id:'zen',model:'model',effort:'low'};
       sessions[1].provider='zen'; sessions[1].modelSelection={connection_id:'zen',model:'model',effort:'high'};
       switchSession('b');
     }""")
     expect(page.locator('#effort-name')).to_have_text('High')
-    selected = page.evaluate("CodeyProviderUI.runSelection(CodeyUiState.current().sessions.find(s => s.id === 'a'), 'zen')")
+    selected = page.evaluate("ProviderUI.runSelection(UiState.current().sessions.find(s => s.id === 'a'), 'zen')")
     assert selected['model_selection']['effort'] == 'low'
 
 
@@ -102,7 +102,7 @@ def test_explicit_selection_fixture_keeps_availability_catalog_consistent(page):
     ]})
     status = page.evaluate("async () => (await fetch('/api/providers')).json()")
     assert "optional" in [item["id"] for item in status["providers"]]
-    page.evaluate("CodeyProviderUI.refreshStatus(true)")
+    page.evaluate("ProviderUI.refreshStatus(true)")
     page.wait_for_load_state("networkidle")
     page.locator("#provider-button").click()
     expect(page.locator('[data-model="selected"]')).to_be_visible()

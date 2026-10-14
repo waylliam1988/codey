@@ -29,7 +29,7 @@ def test_quote_appends_exact_selection_without_overwriting_or_sending(page, answ
     expect(page.locator('#task')).to_have_value(expected)
     expect(page.locator('#task')).to_be_focused()
     assert page.locator('#task').evaluate('e=>e.selectionStart===e.value.length && e.selectionEnd===e.value.length')
-    assert page.evaluate('CodeyUiState.current().sessions[0].draft.text') == expected
+    assert page.evaluate('UiState.current().sessions[0].draft.text') == expected
     assert runs == []
     page.locator('#task').press('Control+z')
     expect(page.locator('#task')).to_have_value('Existing draft')

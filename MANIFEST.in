@@ -1,0 +1,14 @@
+include codey/web/index.html
+include codey/web/icon.ico
+include codey/web/frontend-build.json
+recursive-include codey/web/assets *.js *.css
+include frontend/package.json frontend/package-lock.json frontend/.npmrc
+include frontend/tsconfig.json frontend/vite.config.ts
+include frontend/biome.json frontend/vitest.config.ts
+include frontend/index.html
+recursive-include frontend/src *.ts
+recursive-include frontend/public *.ico *.css
+include tools/frontend_source.py tools/frontend_source.mjs tools/publish_frontend.py
+recursive-include tests *.py
+prune frontend/node_modules
+prune frontend/dist

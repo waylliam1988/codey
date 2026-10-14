@@ -10,8 +10,8 @@ def test_new_chat_copies_api_choice_without_sharing_mutable_effort_map(page):  #
         {"id": "selected-model", "name": "Selected", "efforts": ["low", "high"]},
     ]})
     page.evaluate("""() => {
-      CodeyProviderUI.applyConfig({default:'deepseek', providers:[{id:'zen',label:'OpenCode Zen'}]});
-      CodeyProviderUI.applyApiModels([{id:'zen',models:[
+      ProviderUI.applyConfig({default:'deepseek', providers:[{id:'zen',label:'OpenCode Zen'}]});
+      ProviderUI.applyApiModels([{id:'zen',models:[
         {id:'first-model',name:'First',efforts:[]},
         {id:'selected-model',name:'Selected',efforts:['low','high']}]}]);
       const s=activeSession(); s.provider='zen';

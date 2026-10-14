@@ -110,6 +110,16 @@ def test_authenticated_cookie_does_not_bypass_origin_fence(httpd):
     state.assert_not_called()
 
 
-@pytest.mark.parametrize("path", ["/", "/icon.ico", "/assets/sse.js"])
+def _published_bundle_path() -> str:
+    bundles = sorted((server.WEB_DIR / "assets").glob("*.js"))
+    assert bundles
+    return "/assets/" + bundles[0].name
+
+
+@pytest.mark.parametrize("path", ["/", "/icon.ico"])
 def test_public_boot_assets_do_not_require_operator_session(httpd, path):
     assert request(httpd, "GET", path)[0] == 200
+
+
+def test_published_bundle_does_not_require_operator_session(httpd):
+    assert request(httpd, "GET", _published_bundle_path())[0] == 200

@@ -53,6 +53,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         return ""
     note_id = _stable_synthesis_id(run_id)
     if tools.store.exists(note_id):
+        tools.synthesis_id = note_id
         if note_id not in tools.created_ids:
             tools.created_ids.append(note_id)
         return note_id
@@ -80,6 +81,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         return ""
     if note_id not in tools.created_ids:
         tools.created_ids.append(note_id)
+    tools.synthesis_id = note_id
     can_link = True
     allows_link = getattr(policy, "allows", None)
     try:

@@ -106,7 +106,7 @@ def models(page):
     )
     page.reload()
     page.wait_for_load_state("networkidle")
-    page.wait_for_function("CodeyUiState.current().active_id === 'a'")
+    page.wait_for_function("UiState.current().active_id === 'a'")
     return state, posts
 
 
@@ -150,29 +150,29 @@ def test_actual_model_names_and_new_catalog_entries_do_not_change_allowlist(page
     page.locator("#provider-button").click()
     expect(page.locator('[data-model="actual-local-id"]')).to_have_text("Actual server title", timeout=1500)
     expect(page.locator('[data-model="new-model"]')).to_have_count(0)
-    page.evaluate("CodeyProviderUI.applyApiModels([{id:'partner',models:[{id:'new-model',name:'New arrival'}]}])")
+    page.evaluate("ProviderUI.applyApiModels([{id:'partner',models:[{id:'new-model',name:'New arrival'}]}])")
     expect(page.locator('[data-model="new-model"]')).to_have_count(0)
     assert models[0]["preferences"]["sources"]["partner"]["models"] == ["chosen-model"]
 
 
 def test_removing_optional_source_removes_ui_without_rewriting_old_chat(page, models):
     page.evaluate("""() => {
-      const s=CodeyUiState.current().sessions.find(s=>s.id==='a');
+      const s=UiState.current().sessions.find(s=>s.id==='a');
       s.provider='partner';s.modelSelection={connection_id:'partner',model:'chosen-model',name:'Chosen model',efforts:{}};
-      CodeyComposer.syncSession();CodeyProviderUI.sync('partner');
+      Composer.syncSession();ProviderUI.sync('partner');
     }""")
     page.locator("#task").fill("old draft")
     state, _ = models
     state["sources"] = [s for s in state["sources"] if s["id"] != "partner"]
     del state["preferences"]["sources"]["partner"]
     state["preferences"]["revision"] += 1
-    page.evaluate("CodeyModels.applySettings", state)
+    page.evaluate("Models.applySettings", state)
     expect(page.locator("#provider-name")).to_have_text("Chosen model · Unavailable", timeout=1500)
     expect(page.locator("#send")).to_be_disabled()
     expect(page.locator("#task")).to_have_value("old draft")
     page.locator("#btn-settings").click()
     expect(page.locator('.model-source[data-source-id="partner"]')).to_have_count(0)
-    assert page.evaluate("CodeyUiState.current().sessions.find(s=>s.id==='a').modelSelection.model") == "chosen-model"
+    assert page.evaluate("UiState.current().sessions.find(s=>s.id==='a').modelSelection.model") == "chosen-model"
 
 
 def test_shared_frontend_contains_no_optional_vendor_logic():
@@ -220,8 +220,8 @@ def test_stale_settings_reply_cannot_reenable_a_source(page, models):
     current = copy.deepcopy(stale)
     current["preferences"]["revision"] += 1
     current["preferences"]["sources"]["websites"]["enabled"] = False
-    page.evaluate("CodeyModels.applySettings", current)
-    page.evaluate("CodeyModels.applySettings", stale)
+    page.evaluate("Models.applySettings", current)
+    page.evaluate("Models.applySettings", stale)
     expect(page.locator("#provider-name")).to_have_text("DeepSeek · Disabled")
 
 

@@ -30,7 +30,7 @@ def assert_readable(locator):
 
 def choose_local(page):
     local = model_settings_route(page)
-    page.evaluate("CodeyProviderUI.applyLocalMetadata", local)
+    page.evaluate("ProviderUI.applyLocalMetadata", local)
     page.locator("#provider-button").click()
     page.locator('.provider-item[data-provider="local"]').first.click()
     page.mouse.move(1000, 100)
@@ -109,8 +109,8 @@ def test_settings_explanations_are_readable_and_load_errors_keep_error_tone(page
 def test_empty_projects_and_search_results_are_readable_without_brightening_group_labels(page):
     assert_readable(page.locator("#session-list .project-empty").first)
     page.evaluate("""() => {
-        const state = CodeyUiState.current();
-        CodeyUiState.apply({...state,
+        const state = UiState.current();
+        UiState.apply({...state,
             projects:[{id:'empty',name:'empty-project',path:'E:/empty',expanded:true}]});
         renderSidebar();
     }""")
@@ -126,7 +126,7 @@ def test_empty_projects_and_search_results_are_readable_without_brightening_grou
 
 def test_failed_provider_probe_explanation_is_readable_in_model_menu(page):
     page.route("**/api/providers", lambda route: route.fulfill(status=503, json={}))
-    page.evaluate("CodeyProviderUI.refreshStatus(true)")
+    page.evaluate("ProviderUI.refreshStatus(true)")
     page.locator("#provider-button").click()
     warning = page.locator("#provider-probe-warning")
     assert_readable(warning)

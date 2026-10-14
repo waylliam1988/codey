@@ -34,7 +34,7 @@ def backend(page):
 def send(page, calls, text="你好"):
     page.locator("#task").fill(text)
     page.locator("#send").click()
-    page.wait_for_function("CodeyComposer.isSending() === false")
+    page.wait_for_function("Composer.isSending() === false")
     return calls[-1].get("run_id") or f"old-run-{len(calls)}"
 
 
@@ -48,7 +48,7 @@ def finish(page, state, run_id, summary="ERROR: model HTTP 503: backend temporar
 
 def retry(page):
     page.get_by_role("button", name="Retry", exact=True).click()
-    page.wait_for_function("CodeyComposer.isSending() === false")
+    page.wait_for_function("Composer.isSending() === false")
 
 
 def test_retry_updates_one_message_and_error_then_recovers(page):
@@ -124,7 +124,7 @@ def test_attempt_identity_is_known_before_the_http_response(page):
     calls, state = backend(page)
     run_id = send(page, calls)
     assert re.fullmatch(r"run_[a-f0-9]{32}", run_id)
-    request = page.evaluate("CodeyUiState.current().sessions.find(s => s.id === 'a').messages.find(m => m.type === 'user')")
+    request = page.evaluate("UiState.current().sessions.find(s => s.id === 'a').messages.find(m => m.type === 'user')")
     assert request["id"]
     assert request["attempts"][0]["runId"] == run_id
 
@@ -184,7 +184,7 @@ def test_accepted_attempt_missing_from_authoritative_state_does_not_spin_forever
     page.route("**/api/state", lambda route: route.fulfill(json={"busy": False}))
     page.locator("#task").fill("hello")
     page.locator("#send").click()
-    page.wait_for_function("!CodeyComposer.isSending()")
+    page.wait_for_function("!Composer.isSending()")
     expect(page.locator(".request-status")).to_contain_text("Response was not confirmed")
     expect(page.get_by_role("button", name="Retry", exact=True)).to_be_enabled()
 
@@ -207,7 +207,7 @@ def test_terminal_event_before_ack_is_not_revived_and_double_retry_is_blocked(pa
     second = page.evaluate("pendingCalls[0].run_id")
     finish(page, state, second, "Immediate reply", "done")
     page.evaluate("acceptPending()")
-    page.wait_for_function("!CodeyComposer.isSending()")
+    page.wait_for_function("!Composer.isSending()")
     assert page.evaluate("runningRunId") is None
     expect(page.locator(".msg.asst")).to_have_count(1)
     expect(page.locator(".msg.user")).to_have_count(1)
@@ -226,8 +226,8 @@ def test_restored_request_recovers_in_place(page, tmp_path, restored):
     calls, state = backend(page)
     state.update(busy=restored == "running", run_id=run_id, session_id="a")
     page.reload()
-    page.wait_for_function("CodeyUiState.current().sessions[0].messages.length === 2")
-    page.evaluate("CodeySse.reconcileRunState()")
+    page.wait_for_function("UiState.current().sessions[0].messages.length === 2")
+    page.evaluate("Sse.reconcileRunState()")
     expect(page.locator(".msg.user")).to_have_count(1)
     if restored == "running":
         expect(page.locator(".request-status")).to_contain_text("Waiting for reply")

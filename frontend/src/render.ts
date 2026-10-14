@@ -1,0 +1,682 @@
+export interface ToolDisplay {
+  kind?: string;
+  path?: string;
+  command?: string;
+  result?: string;
+  activity?: string;
+  toolKey?: string;
+  error?: boolean;
+  pending?: boolean;
+  turn?: string | number;
+}
+export type AssistantBodyState =
+  | { collapsed: false; long: false }
+  | { collapsed: false; long: true; expand: () => void; collapse: () => void; isExpanded: () => boolean };
+/* Codey render helpers: HTML escaping, minimal markdown, copy buttons,
+   tool-line DOM builders. Zero-build asset module; pure helpers only --
+   no index.html state, so no init()/deps are needed. */
+const renderApi = (function () {
+  'use strict';
+
+  function escapeHtml(text: unknown): string {
+    return String(text || '').replace(
+      /[&<>"']/g,
+      (ch: string) =>
+        (
+          ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+          }) as Record<string, string>
+        )[ch],
+    );
+  }
+
+  async function copyText(text: unknown) {
+    const value = String(text || '');
+    if (!value) return false;
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {}
+    const area = document.createElement('textarea');
+    area.value = value;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.top = '-1000px';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    try {
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    } finally {
+      area.remove();
+    }
+  }
+  function addMessageCopyButton(div: HTMLElement, text: unknown): void {
+    const value = String(text || '');
+    if (!value) return;
+    const btn = document.createElement('button');
+    btn.className = 'msg-copy';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Copy message');
+    const icon =
+      '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V7a2 2 0 0 1 2-2h8"/></svg>';
+    btn.innerHTML = icon;
+    const feedback = document.createElement('span');
+    feedback.className = 'copy-feedback';
+    feedback.setAttribute('role', 'status');
+    let reset: ReturnType<typeof setTimeout> | null = null,
+      copying = false;
+    btn.onclick = async (e: MouseEvent) => {
+      e.stopPropagation();
+      if (copying) return;
+      const keyboardFocus = document.activeElement === btn && btn.matches(':focus-visible');
+      copying = true;
+      if (reset) clearTimeout(reset);
+      btn.classList.remove('copied', 'copy-failed');
+      btn.classList.add('copy-pending');
+      btn.setAttribute('aria-disabled', 'true');
+      btn.setAttribute('aria-busy', 'true');
+      feedback.textContent = '';
+      let ok = false;
+      try {
+        ok = await copyText(value);
+      } catch {}
+      if (keyboardFocus && btn.isConnected && document.activeElement === document.body)
+        btn.focus({ preventScroll: true });
+      copying = false;
+      btn.classList.remove('copy-pending');
+      btn.removeAttribute('aria-disabled');
+      btn.removeAttribute('aria-busy');
+      btn.classList.toggle('copied', ok);
+      btn.classList.toggle('copy-failed', !ok);
+      btn.setAttribute('aria-label', ok ? 'Copied' : 'Could not copy');
+      btn.innerHTML = ok ? '<svg class="copy-check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg>' : icon;
+      feedback.textContent = ok ? '' : 'Could not copy';
+      reset = setTimeout(
+        () => {
+          btn.classList.remove('copied', 'copy-failed');
+          btn.setAttribute('aria-label', 'Copy message');
+          btn.innerHTML = icon;
+          feedback.textContent = '';
+        },
+        ok ? 1200 : 4000,
+      );
+    };
+    div.append(btn, feedback);
+  }
+
+  function applyBold(segment: string): string {
+    return segment.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  }
+  function renderInlineMd(text: string): string {
+    const re = /`([^`\n]+)`|\[([^\]\n]+)\]\(([^\s)]+)\)/g;
+    let out = '';
+    let last = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      out += applyBold(escapeHtml(text.slice(last, m.index)));
+      if (m[1] !== undefined) out += `<code class="md-ic">${escapeHtml(m[1])}</code>`;
+      else {
+        let safe = false;
+        try {
+          safe = ['http:', 'https:'].includes(new URL(m[3]).protocol);
+        } catch {}
+        out += safe
+          ? `<a class="md-link" href="${escapeHtml(m[3])}" target="_blank" rel="noopener noreferrer">${applyBold(escapeHtml(m[2]))}</a>`
+          : escapeHtml(m[0]);
+      }
+      last = re.lastIndex;
+    }
+    out += applyBold(escapeHtml(text.slice(last)));
+    return out;
+  }
+  function addCodeCopyButton(pre: HTMLElement, text: unknown): void {
+    const value = String(text || '');
+    const btn = document.createElement('button');
+    btn.className = 'code-copy';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Copy code');
+    btn.textContent = 'Copy';
+    btn.onclick = async (e: MouseEvent) => {
+      e.stopPropagation();
+      const ok = await copyText(value);
+      btn.classList.toggle('copied', ok);
+      btn.textContent = ok ? 'Copied' : 'Could not copy';
+      btn.setAttribute('aria-label', ok ? 'Copied' : 'Could not copy');
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.textContent = 'Copy';
+        btn.setAttribute('aria-label', 'Copy code');
+      }, 1200);
+    };
+    pre.appendChild(btn);
+  }
+  function appendCodeBlock(container: HTMLElement, code: string, language = ''): void {
+    const pre = document.createElement('pre');
+    pre.className = 'md-code';
+    if (language) {
+      const label = document.createElement('div');
+      label.className = 'code-language';
+      label.textContent = language;
+      pre.append(label);
+    }
+    const el = document.createElement('code');
+    el.textContent = code;
+    pre.appendChild(el);
+    addCodeCopyButton(pre, code);
+    container.appendChild(pre);
+  }
+  const LONG_MESSAGE_CHARS = 400;
+  const LONG_MESSAGE_LINES = 6;
+  const CHUNKED_RENDER_CHARS = 2000;
+  const CHUNKED_RENDER_LINES = 80;
+
+  function isLongMessage(text: unknown) {
+    const value = String(text == null ? '' : text);
+    if (value.length > LONG_MESSAGE_CHARS) return true;
+    let breaks = 0;
+    for (let idx = value.indexOf('\n'); idx !== -1; idx = value.indexOf('\n', idx + 1)) {
+      breaks++;
+      if (breaks >= LONG_MESSAGE_LINES) return true;
+    }
+    return false;
+  }
+
+  function previewSlice(text: unknown) {
+    const value = String(text == null ? '' : text);
+    const lines = value.split('\n');
+    const head = lines.slice(0, LONG_MESSAGE_LINES).join('\n');
+    const sliced =
+      head.length >= LONG_MESSAGE_CHARS || lines.length > LONG_MESSAGE_LINES
+        ? head.slice(0, LONG_MESSAGE_CHARS)
+        : value.slice(0, LONG_MESSAGE_CHARS);
+    // Never leave a preview fence open: an unclosed ``` would swallow the
+    // rest of the preview into one code block.
+    const fences = (sliced.match(/```/g) || []).length;
+    return fences % 2 === 1 ? sliced + '\n```' : sliced;
+  }
+
+  function scheduleIdleChunk(fn: () => void) {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(fn, { timeout: 50 });
+      return;
+    }
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => setTimeout(fn, 0));
+      return;
+    }
+    setTimeout(fn, 0);
+  }
+
+  interface ListFrame {
+    el: HTMLOListElement | HTMLUListElement;
+    tag: 'ol' | 'ul';
+    indent: number;
+    lastLi: HTMLLIElement | null;
+  }
+  function renderMarkdown(container: HTMLElement, text: unknown): void {
+    const lines = String(text == null ? '' : text).split('\n');
+    let listStack: ListFrame[] = [];
+    const tableCells = (line: string): string[] => {
+      const value = line
+        .trim()
+        .replace(/^\|/, '')
+        .replace(/(?<!\\)\|$/, '');
+      return value.split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, '|'));
+    };
+    const isTable = (index: number): boolean =>
+      index + 1 < lines.length &&
+      lines[index].includes('|') &&
+      tableCells(lines[index + 1]).every((cell) => /^:?-{3,}:?$/.test(cell)) &&
+      tableCells(lines[index]).length === tableCells(lines[index + 1]).length;
+    const flushList = () => {
+      if (listStack.length) container.appendChild(listStack[0].el);
+      listStack = [];
+    };
+    const appendListItem = (line: string): boolean => {
+      const match = line.match(/^(\s*)([-*]|\d+[.)])\s+(.*)$/);
+      if (!match) return false;
+      const spaces = match[1].replace(/\t/g, '    ').length;
+      while (listStack.length && spaces < listStack[listStack.length - 1].indent) listStack.pop();
+      let depth =
+        listStack.length && spaces > listStack[listStack.length - 1].indent
+          ? listStack.length
+          : Math.max(0, listStack.length - 1);
+      const tag = /^\d/.test(match[2]) ? 'ol' : 'ul';
+      if (depth > listStack.length) depth = listStack.length;
+      if (depth === 0 && listStack[0] && listStack[0].tag !== tag) flushList();
+      while (listStack.length > depth + 1) listStack.pop();
+      if (!listStack[depth] || listStack[depth].tag !== tag) {
+        if (depth > 0 && (!listStack[depth - 1] || !listStack[depth - 1].lastLi)) depth = 0;
+        if (depth === 0 && listStack[0] && listStack[0].tag !== tag) flushList();
+        const next = document.createElement(tag);
+        next.className = 'md-list';
+        if (depth > 0) {
+          const parent = listStack[depth - 1];
+          parent.lastLi?.appendChild(next);
+        }
+        listStack = listStack.slice(0, depth);
+        listStack[depth] = { el: next, tag, indent: spaces, lastLi: null };
+      }
+      const li = document.createElement('li');
+      li.innerHTML = renderInlineMd(match[3]);
+      listStack[depth].el.appendChild(li);
+      listStack[depth].lastLi = li;
+      return true;
+    };
+    const isBreak = (line: string): boolean =>
+      /^\s*```/.test(line) ||
+      /^#{1,6}\s+/.test(line) ||
+      /^\s*>\s?/.test(line) ||
+      /^\s*[-*]\s+/.test(line) ||
+      /^\s*\d+[.)]\s+/.test(line);
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^\s*```/.test(line)) {
+        flushList();
+        const buf: string[] = [];
+        const language = line.replace(/^\s*```/, '').trim();
+        i++;
+        while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) {
+          buf.push(lines[i]);
+          i++;
+        }
+        i++;
+        appendCodeBlock(container, buf.join('\n'), language);
+        continue;
+      }
+      if (!line.trim()) {
+        flushList();
+        i++;
+        continue;
+      }
+      if (isTable(i)) {
+        flushList();
+        const wrapper = document.createElement('div');
+        wrapper.className = 'md-table-wrap';
+        const table = document.createElement('table');
+        table.className = 'md-table';
+        const head = document.createElement('thead'),
+          body = document.createElement('tbody');
+        const columns = tableCells(line);
+        const addRow = (target: HTMLElement, cells: string[], tag: 'th' | 'td'): void => {
+          const row = document.createElement('tr');
+          columns.forEach((_, col) => {
+            const cell = document.createElement(tag);
+            cell.innerHTML = renderInlineMd(cells[col] || '');
+            row.append(cell);
+          });
+          target.append(row);
+        };
+        addRow(head, columns, 'th');
+        i += 2;
+        while (i < lines.length && lines[i].trim() && lines[i].includes('|'))
+          addRow(body, tableCells(lines[i++]), 'td');
+        table.append(head, body);
+        wrapper.append(table);
+        container.append(wrapper);
+        continue;
+      }
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        flushList();
+        const el = document.createElement('div');
+        el.className = 'md-h md-h' + Math.min(6, heading[1].length);
+        el.innerHTML = renderInlineMd(heading[2]);
+        container.appendChild(el);
+        i++;
+        continue;
+      }
+      if (/^\s*>\s?/.test(line)) {
+        flushList();
+        const quote: string[] = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+          quote.push(lines[i].replace(/^\s*>\s?/, ''));
+          i++;
+        }
+        const el = document.createElement('blockquote');
+        el.className = 'md-quote';
+        el.innerHTML = renderInlineMd(quote.join('\n'));
+        container.appendChild(el);
+        continue;
+      }
+      if (appendListItem(line)) {
+        i++;
+        continue;
+      }
+      flushList();
+      const para: string[] = [];
+      while (i < lines.length && lines[i].trim() && !isBreak(lines[i]) && !isTable(i)) {
+        para.push(lines[i]);
+        i++;
+      }
+      const p = document.createElement('p');
+      p.className = 'md-p';
+      p.innerHTML = renderInlineMd(para.join('\n'));
+      container.appendChild(p);
+    }
+    flushList();
+  }
+
+  function needsChunkedRender(text: unknown) {
+    const value = String(text == null ? '' : text);
+    if (value.length > CHUNKED_RENDER_CHARS) return true;
+    let breaks = 0;
+    for (let idx = value.indexOf('\n'); idx !== -1; idx = value.indexOf('\n', idx + 1)) {
+      breaks++;
+      if (breaks > CHUNKED_RENDER_LINES) return true;
+    }
+    return false;
+  }
+
+  const STATEFUL_LIST_ITEM_LIMIT = 10;
+
+  function hasStatefulBlocks(text: unknown) {
+    // Fences, quotes, and long lists carry parser state (listStack, fence,
+    // quote runs) across lines: parsing them in fixed slices would fork or
+    // drop that state. Short lists are order-independent enough to stream.
+    const value = String(text == null ? '' : text);
+    if (/^\s*```/m.test(value)) return true;
+    if (/^\s*>\s?/m.test(value)) return true;
+    if (/\|.*\n\s*\|?\s*:?-{3,}/.test(value)) return true;
+    let items = 0;
+    const re = /^(\s*)([-*]|\d+[.)])\s+/gm;
+    let m;
+    while ((m = re.exec(value)) !== null) {
+      items++;
+      if (items > STATEFUL_LIST_ITEM_LIMIT) return true;
+    }
+    return false;
+  }
+
+  function renderMarkdownChunked(
+    container: HTMLElement,
+    text: unknown,
+    done?: () => void,
+    isCurrent?: () => boolean,
+  ): void {
+    const alive = typeof isCurrent === 'function' ? isCurrent : () => true;
+    const value = String(text == null ? '' : text);
+    const finish = () => {
+      if (alive() && typeof done === 'function') done();
+    };
+    if (!needsChunkedRender(value)) {
+      if (!alive()) return;
+      container.innerHTML = '';
+      renderMarkdown(container, value);
+      finish();
+      return;
+    }
+    if (hasStatefulBlocks(value)) {
+      // One idle render with intact parser state; the caller already shows a
+      // preview, so there is no sync-parse flash here.
+      scheduleIdleChunk(() => {
+        if (!alive()) return;
+        container.innerHTML = '';
+        renderMarkdown(container, value);
+        finish();
+      });
+      return;
+    }
+    const lines = value.split('\n');
+    const step = 120;
+    let idx = 0;
+    container.innerHTML = '';
+    const scratch = document.createElement('div');
+    const pump = () => {
+      if (!alive()) return;
+      const slice = lines.slice(idx, idx + step).join('\n');
+      const tmp = document.createElement('div');
+      renderMarkdown(tmp, idx === 0 ? slice : '\n' + slice);
+      while (tmp.firstChild) scratch.appendChild(tmp.firstChild);
+      idx += step;
+      if (idx < lines.length) {
+        scheduleIdleChunk(pump);
+        return;
+      }
+      if (!alive()) return;
+      while (scratch.firstChild) container.appendChild(scratch.firstChild);
+      finish();
+    };
+    scheduleIdleChunk(pump);
+  }
+
+  function renderAssistantBody(body: HTMLElement, text: unknown, toggle?: HTMLElement | null): AssistantBodyState {
+    const value = String(text == null ? '' : text);
+    const long = isLongMessage(value);
+    if (!long) {
+      renderMarkdown(body, value);
+      return { collapsed: false, long: false };
+    }
+    // Answers stay visible; only an explicit Collapse shows a bounded preview.
+    let expanded = false;
+    let renderToken = 0;
+    const expand = () => {
+      if (expanded) return;
+      expanded = true;
+      const my = ++renderToken;
+      const alive = () => my === renderToken;
+      body.classList.remove('collapsed');
+      if (needsChunkedRender(value)) renderMarkdownChunked(body, value, undefined, alive);
+      else {
+        body.innerHTML = '';
+        renderMarkdown(body, value);
+      }
+    };
+    const collapse = () => {
+      renderToken++;
+      expanded = false;
+      body.innerHTML = '';
+      renderMarkdown(body, previewSlice(value));
+      body.classList.add('collapsed');
+    };
+    expand();
+    if (toggle) {
+      toggle.textContent = 'Collapse';
+      toggle.setAttribute('aria-expanded', 'true');
+    }
+    return { collapsed: false, long: true, expand, collapse, isExpanded: () => expanded };
+  }
+
+  // ============================ tool line rendering ============================
+  const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);
+  function toolRowEl(m: ToolDisplay, compact: boolean) {
+    const row = document.createElement('div');
+    row.className = 'tool-line' + (compact ? ' compact' : '');
+    if (m.error) row.classList.add('error');
+    if (m.turn) row.title = 'Step ' + m.turn;
+    if (m.pending) row.classList.add('pending');
+    if (!compact) {
+      const dot = document.createElement('span');
+      dot.className = 'tl-dot';
+      dot.textContent = '·';
+      const kind = document.createElement('span');
+      kind.className = 'tl-kind';
+      kind.textContent = m.kind || '';
+      row.append(dot, kind);
+    }
+    const path = document.createElement('span');
+    path.className = 'tl-path';
+    path.textContent = m.path || m.command || '';
+    const arrow = document.createElement('span');
+    arrow.className = 'tl-arrow';
+    arrow.textContent = '→';
+    const result = document.createElement('span');
+    result.className = 'tl-result' + (m.error ? ' err' : '');
+    result.textContent = m.pending ? m.activity || m.result || 'Working' : m.result || '';
+    row.append(path, arrow, result);
+    return row;
+  }
+  function foldCountLabel(kind: string, n: number): string {
+    const nouns: Record<string, [string, string]> = {
+      read: ['file', 'files'],
+      ls: ['dir', 'dirs'],
+      search: ['search', 'searches'],
+      references: ['lookup', 'lookups'],
+    };
+    const pair = nouns[kind] || ['call', 'calls'];
+    return n + ' ' + (n === 1 ? pair[0] : pair[1]);
+  }
+  function createToolGroup(kind: string) {
+    const group = document.createElement('div');
+    group.className = 'tool-group collapsed';
+    group.dataset.foldkind = kind;
+    const summary = document.createElement('button');
+    summary.type = 'button';
+    summary.setAttribute('aria-expanded', 'false');
+    summary.className = 'tool-group-summary';
+    const dot = document.createElement('span');
+    dot.className = 'tl-dot';
+    dot.textContent = '·';
+    const kindEl = document.createElement('span');
+    kindEl.className = 'tg-kind';
+    kindEl.textContent = kind;
+    const count = document.createElement('span');
+    count.className = 'tg-count';
+    const chev = document.createElement('span');
+    chev.className = 'tg-chevron';
+    chev.textContent = '▸';
+    summary.append(dot, kindEl, count, chev);
+    const body = document.createElement('div');
+    body.className = 'tool-group-body';
+    summary.onclick = () => {
+      group.classList.toggle('collapsed');
+      summary.setAttribute('aria-expanded', String(!group.classList.contains('collapsed')));
+    };
+    group.append(summary, body);
+    return group;
+  }
+  function standaloneToolEl(m: ToolDisplay) {
+    const div = document.createElement('div');
+    div.className = 'msg tool';
+    if (m.toolKey) div.dataset.toolKey = m.toolKey;
+    if (FOLDABLE_TOOL_KINDS.has(m.kind || '') && !m.error && !m.pending) {
+      div.dataset.foldkind = m.kind || '';
+      div.dataset.toolPath = m.path || '';
+      div.dataset.toolResult = m.result || '';
+    }
+    div.appendChild(toolRowEl(m, false));
+    return div;
+  }
+  function appendToToolGroup(group: HTMLElement, m: ToolDisplay) {
+    const body = group.querySelector<HTMLElement>('.tool-group-body');
+    const count = group.querySelector<HTMLElement>('.tg-count');
+    if (!body || !count) throw new Error('Invalid tool group');
+    const row = toolRowEl(m, true);
+    if (m.toolKey) row.dataset.toolKey = m.toolKey;
+    body.appendChild(row);
+    count.textContent = foldCountLabel(m.kind || '', body.children.length);
+  }
+  function appendOrFoldTool(chat: HTMLElement, m: ToolDisplay) {
+    const last = chat.lastElementChild;
+    if (last instanceof HTMLElement && last.classList.contains('tool-group') && last.dataset.foldkind === m.kind) {
+      appendToToolGroup(last, m);
+      return;
+    }
+    if (
+      last instanceof HTMLElement &&
+      last.classList.contains('msg') &&
+      last.classList.contains('tool') &&
+      last.dataset.foldkind === m.kind
+    ) {
+      const group = createToolGroup(m.kind || '');
+      appendToToolGroup(group, {
+        kind: m.kind,
+        path: last.dataset.toolPath || '',
+        result: last.dataset.toolResult || '',
+        toolKey: last.dataset.toolKey || '',
+        error: false,
+      });
+      appendToToolGroup(group, m);
+      last.replaceWith(group);
+      return;
+    }
+    chat.appendChild(standaloneToolEl(m));
+  }
+
+  // Receipt helpers: Codey 0.5 receipts are structured
+  // (display / work / verification / integrity), never flat text.
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+  function receiptSummary(receipt: unknown): string {
+    const display = isRecord(receipt) && isRecord(receipt.display) ? receipt.display : null;
+    return display?.summary ? String(display.summary) : '';
+  }
+
+  function receiptChangedCount(receipt: unknown, changes?: unknown): number {
+    const work = isRecord(receipt) && isRecord(receipt.work) ? receipt.work : null;
+    const count = (value: unknown): number => {
+      const parsed = typeof value === 'number' || typeof value === 'string' ? Number(value) : 0;
+      return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+    };
+    const fromReceipt = count(work?.changed_count);
+    return fromReceipt > 0 ? fromReceipt : count(isRecord(changes) ? changes.changed_count : undefined);
+  }
+
+  function messageCopyText(m: unknown): string {
+    return isRecord(m) && typeof m.text === 'string' ? m.text : '';
+  }
+
+  // Shell result titles: explicit statuses win, then user denial, then exit.
+  // Older saved cards may have lost their status. Unknown is not proof of
+  // failure or execution; only an explicit approved exit reads as executed.
+  const SHELL_STATUS_VERBS = {
+    stopped: 'Stopped',
+    timeout: 'Timed out',
+    spawn_error: 'Failed to start',
+    wait_error: 'Failed while waiting',
+    output_read_error: 'Failed reading output',
+    drain_timeout: 'Output did not finish',
+  };
+
+  function shellStatusVerb(shellStatus: string, approved: boolean): string {
+    if (Object.prototype.hasOwnProperty.call(SHELL_STATUS_VERBS, shellStatus)) {
+      return SHELL_STATUS_VERBS[shellStatus as keyof typeof SHELL_STATUS_VERBS];
+    }
+    if (!approved) {
+      return 'Denied';
+    }
+    return shellStatus === 'exit' ? 'Executed' : 'Result status unknown';
+  }
+
+  return {
+    escapeHtml,
+    shellStatusVerb,
+    receiptSummary,
+    receiptChangedCount,
+    messageCopyText,
+    copyText,
+    addMessageCopyButton,
+    applyBold,
+    renderInlineMd,
+    addCodeCopyButton,
+    appendCodeBlock,
+    renderMarkdown,
+    renderMarkdownChunked,
+    renderAssistantBody,
+    hasStatefulBlocks,
+    isLongMessage,
+    needsChunkedRender,
+    previewSlice,
+    LONG_MESSAGE_CHARS,
+    LONG_MESSAGE_LINES,
+    FOLDABLE_TOOL_KINDS,
+    toolRowEl,
+    foldCountLabel,
+    createToolGroup,
+    standaloneToolEl,
+    appendToToolGroup,
+    appendOrFoldTool,
+  };
+})();
+
+export type RenderApi = typeof renderApi;
+window.Render = renderApi;

@@ -34,8 +34,8 @@ def test_workflow_boot_uses_shipped_page_when_document_and_asset_connections_are
     fixture = workflow_page.__wrapped__((browser, url))
     try:
         page = next(fixture)
-        assert page.evaluate("CodeyUiState.current().active_id") == "a"
-        assert page.evaluate("typeof CodeyConversationUI.init") == "function"
+        assert page.evaluate("UiState.current().active_id") == "a"
+        assert page.evaluate("typeof ConversationUI.init") == "function"
         assert transport_requests == []
     finally:
         fixture.close()

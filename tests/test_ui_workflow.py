@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import threading
 from io import BytesIO
+from pathlib import Path
 from unittest import mock
 from urllib.parse import urlsplit
 
@@ -12,6 +13,8 @@ from playwright.sync_api import expect, sync_playwright
 
 from codey.app import server
 from codey.app.http_plumbing import resolve_web_asset, send_index
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="module")
@@ -44,18 +47,26 @@ def page(ui_browser):
     page.on("requestfailed", lambda request: boot_errors.append(f"{urlsplit(request.url).path}: {request.failure}"))
     page.add_init_script("window.EventSource = class { static OPEN = 1; readyState = 1; close() {} };")
 
+    dist_root = ROOT / "frontend" / "dist"
+    index_body = (dist_root / "index.html").read_bytes() if (dist_root / "index.html").is_file() else None
     document = mock.Mock(headers={}, wfile=BytesIO())
-    send_index(document)
+    if index_body is None:
+        send_index(document)
+        index_body = document.wfile.getvalue()
     page.route(lambda url: urlsplit(url).path in {"/", "/index.html"},
-               lambda route: route.fulfill(body=document.wfile.getvalue(), content_type="text/html; charset=utf-8"))
+               lambda route: route.fulfill(body=index_body, content_type="text/html; charset=utf-8"))
 
     def asset(route):
         # Behavior tests use the exact shipped files. HTTP asset delivery has
         # separate integration coverage; a loopback failure must not randomly
         # remove one module and turn every subsequent UI assertion into a timeout.
-        resolved = resolve_web_asset(urlsplit(route.request.url).path)
-        assert resolved is not None, f"Missing shipped asset: {route.request.url}"
-        path, content_type = resolved
+        candidate = dist_root / urlsplit(route.request.url).path.removeprefix("/")
+        if candidate.is_file():
+            path, content_type = candidate, "application/javascript; charset=utf-8" if candidate.suffix == ".js" else "text/css; charset=utf-8"
+        else:
+            resolved = resolve_web_asset(urlsplit(route.request.url).path)
+            assert resolved is not None, f"Missing shipped asset: {route.request.url}"
+            path, content_type = resolved
         route.fulfill(body=path.read_bytes(), content_type=content_type)
 
     page.route("**/assets/**", asset)
@@ -85,11 +96,11 @@ def page(ui_browser):
         try:
             page.goto(url)
             expect(page.locator("#provider-button")).to_be_enabled(timeout=15000)
-            page.wait_for_function("window.CodeyUiState.current().active_id === 'a'", polling=100)
+            page.wait_for_function("window.UiState.current().active_id === 'a'", polling=100)
         except (AssertionError, PlaywrightTimeoutError) as exc:
             status = page.locator(".status-row").all_text_contents()
-            state = page.evaluate("() => ({active_id: window.CodeyUiState?.current().active_id, "
-                                  "session_ids: window.CodeyUiState?.current().sessions.map(s => s.id), "
+            state = page.evaluate("() => ({active_id: window.UiState?.current().active_id, "
+                                  "session_ids: window.UiState?.current().sessions.map(s => s.id), "
                                   "visibility: document.visibilityState})")
             raise AssertionError(f"UI boot failed: {boot_errors}; status: {status}; state: {state}") from exc
         page.wait_for_load_state("networkidle")
@@ -147,14 +158,14 @@ def open_connection_settings(page):
 
 def apply_model_metadata(page, local):
     payload = api_connection_payload(local)
-    page.evaluate("CodeyModels.applySettings", model_management_payload(payload))
-    page.evaluate("CodeyProviderUI.applyApiModels", [payload])
-    page.evaluate("CodeyProviderUI.applyLocalMetadata", local)
+    page.evaluate("Models.applySettings", model_management_payload(payload))
+    page.evaluate("ProviderUI.applyApiModels", [payload])
+    page.evaluate("ProviderUI.applyLocalMetadata", local)
 
 
 def select_connection_models(page, connection, selected=None):
     """Explicit Settings consent, separate from discovery in composer tests."""
-    settings = page.evaluate("CodeyModels.snapshot()")
+    settings = page.evaluate("Models.snapshot()")
     settings["sources"] = [source for source in settings["sources"] if source["id"] != connection["id"]]
     settings["sources"].append(connection)
     settings["preferences"]["revision"] += 1
@@ -170,9 +181,9 @@ def select_connection_models(page, connection, selected=None):
     catalog = {"providers": providers, "default": "deepseek"}
     for endpoint in ("provider_catalog", "providers"):
         page.route("**/api/" + endpoint, lambda route: route.fulfill(json=catalog))
-    page.evaluate("CodeyProviderUI.applyConfig", catalog)
-    page.evaluate("CodeyModels.applySettings", settings)
-    page.evaluate("CodeyProviderUI.applyApiModels", [connection])
+    page.evaluate("ProviderUI.applyConfig", catalog)
+    page.evaluate("Models.applySettings", settings)
+    page.evaluate("ProviderUI.applyApiModels", [connection])
 
 
 def model_settings_route(page, *, thinking=True):
@@ -184,7 +195,7 @@ def model_settings_route(page, *, thinking=True):
     page.route("**/api/api_models", lambda route: route.fulfill(json={"ok": True, "connections": [api_connection_payload(local)]}))
     settings = model_management_payload(api_connection_payload(local))
     page.route("**/api/model_settings", lambda route: route.fulfill(json=settings))
-    page.evaluate("CodeyModels.applySettings", settings)
+    page.evaluate("Models.applySettings", settings)
     return local
 
 
@@ -228,7 +239,7 @@ def test_local_model_title_and_connection_dot_survive_online_and_offline_reload(
             expect(page.locator('#provider-button')).to_be_enabled(timeout=15000)
             expect(page.locator('#provider-name')).to_have_text(expected)
             expect(page.locator('#provider-dot')).to_have_class('dot ok' if connected else 'dot ')
-            assert page.evaluate("CodeyUiState.current().sessions[0].modelSelection") == selection
+            assert page.evaluate("UiState.current().sessions[0].modelSelection") == selection
             expect(page.locator('#effort-chooser')).to_be_hidden()
 
 
@@ -287,7 +298,7 @@ def test_actual_model_and_supported_thinking_are_per_chat_and_sent_to_runtime(pa
     expect(page.locator("#effort-button")).to_be_hidden()
     page.evaluate("switchSession('a')")
     page.locator("#effort-button").click()
-    page.evaluate("CodeyProviderUI.applyStatus([{id:'local',available:true}])")
+    page.evaluate("ProviderUI.applyStatus([{id:'local',available:true}])")
     expect(page.locator('#effort-menu [data-effort="low"]')).to_be_focused()
     page.keyboard.press("ArrowDown")
     page.keyboard.press("Enter")
@@ -308,9 +319,9 @@ def test_saved_effort_selection_remains_per_chat(page, old, expected):
     local = model_settings_route(page)
     apply_model_metadata(page, local)
     page.evaluate("""([local, old]) => {
-        const s=CodeyUiState.current().sessions.find(s=>s.id==='a');
+        const s=UiState.current().sessions.find(s=>s.id==='a');
         s.provider='local'; s.modelSelection={connection_id:'local',base_url:local.base_url,model:local.model,effort:old};
-        CodeyProviderUI.sync('local');
+        ProviderUI.sync('local');
     }""", [local,old])
     expect(page.locator("#effort-name")).to_have_text(expected)
 
@@ -417,7 +428,7 @@ def test_accepted_snapshot_does_not_erase_later_input_or_other_chat(page):
     page.evaluate("switchSession('b')")
     page.locator("#task").fill("beta task")
     page.evaluate("finishSend()")
-    page.wait_for_function("window.CodeyUiState.current().sessions[0].messages.some(m => m.type === 'user')")
+    page.wait_for_function("window.UiState.current().sessions[0].messages.some(m => m.type === 'user')")
     expect(page.locator("#task")).to_have_value("beta task")
     page.evaluate("switchSession('a')")
     expect(page.locator("#task")).to_have_value("later edit")
@@ -472,13 +483,13 @@ def test_model_menu_has_no_search_and_small_catalog_keyboard(page):
     catalog = {"providers": [{"id": "deepseek", "label": "DeepSeek"}, {"id": "mimo", "label": "MiMo"}], "default": "mimo"}
     for endpoint in ('providers', 'provider_catalog'):
         page.route('**/api/' + endpoint, lambda route: route.fulfill(json=catalog))
-    page.evaluate("CodeyProviderUI.applyConfig", catalog)
+    page.evaluate("ProviderUI.applyConfig", catalog)
     page.locator("#provider-button").click()
     expect(page.locator("#provider-menu input")).to_have_count(0)
     page.keyboard.press("ArrowDown")
     page.keyboard.press("Enter")
     expect(page.locator("#provider-name")).to_have_text("MiMo")
-    assert page.evaluate("CodeyUiState.DEFAULT_PROVIDER") == "mimo"
+    assert page.evaluate("UiState.DEFAULT_PROVIDER") == "mimo"
 
 
 def test_late_changes_response_cannot_replace_new_project_or_reopen_drawer(page):
@@ -510,6 +521,65 @@ def test_change_file_link_expands_exact_file_and_escape_returns_focus(page):
     expect(page.locator('.change-file[data-path="one.py"] pre')).to_be_hidden()
     page.keyboard.press("Escape")
     expect(link).to_be_focused()
+
+
+def test_hybrid_task_done_research_payload_creates_graph_entry(page):
+    page.route("**/api/research/graph**", lambda route: route.fulfill(json={
+        "ok": True,
+        "graph": {"nodes": [{"id": "note-1", "label": "Research note", "kind": "note"}], "edges": []},
+    }))
+    page.evaluate("""() => handleServerEvent({
+        type: 'task_done', run_id: 'hybrid-run', session_id: 'a', summary: 'done',
+        stop_reason: 'done', turns: 1, mode: 'hybrid', receipt: {display: {summary: 'done'}},
+        research: {notes_created: ['note-1'], notes_updated: [], source_urls: [], sources_read: 0,
+          queries: ['graph'], search_results: [], opened_sources: [], coverage: {},
+          evidence_items: [], citation_map: [], counterpoints: [], quality_warnings: []}
+    })""")
+    page.evaluate("ResearchDrawer.open('a')")
+    expect(page.locator("#research-drawer")).to_be_visible()
+    expect(page.get_by_role("button", name="Graph", exact=True)).to_be_visible()
+    page.get_by_role("button", name="Graph", exact=True).click()
+    expect(page.locator("#research-drawer .research-graph-stage canvas")).to_be_visible()
+
+
+def test_truncated_changes_loads_large_file_preview_on_demand(page):
+    page.route("**/api/changes**", lambda route: route.fulfill(json={
+        "ok": True, "mode": "git", "truncated": True,
+        "files": [{"path": "bundle.js", "status": "??"}], "diff": "",
+    }))
+    page.route("**/api/changes/file", lambda route: route.fulfill(json={
+        "ok": True, "path": "bundle.js", "status": "too_large", "size": 184324,
+    }))
+    page.evaluate("openChangesDrawer('E:/project-alpha')")
+    expect(page.locator("#changes-subtitle")).to_contain_text("Diff list truncated")
+    expect(page.locator(".change-file[data-path='bundle.js']")).to_have_count(1)
+    page.locator(".change-file[data-path='bundle.js'] button").click()
+    expect(page.locator(".change-file[data-path='bundle.js'] pre")).to_contain_text("too large")
+
+
+def test_partial_git_diff_refreshes_file_preview_and_focus_keeps_it_open(page):
+    file_calls = []
+    page.route("**/api/changes**", lambda route: route.fulfill(json={
+        "ok": True, "mode": "git", "truncated": True,
+        "files": [{"path": "bundle.js", "status": "M"}],
+        "diff": "diff --git a/bundle.js b/bundle.js\n@@ -1 +1 @@\n-old\n+partial\n",
+    }))
+
+    def file_preview(route):
+        file_calls.append(route.request.url)
+        route.fulfill(json={
+            "ok": True, "path": "bundle.js", "status": "text",
+            "diff": "diff --git a/bundle.js b/bundle.js\n@@ -1 +1 @@\n-old\n+complete\n",
+        })
+
+    page.route("**/api/changes/file", file_preview)
+    page.evaluate("() => openChangesDrawer('E:/project-alpha')")
+    expect(page.locator(".change-file[data-path='bundle.js']")).to_have_count(1)
+    page.locator(".change-file[data-path='bundle.js'] button").click()
+    expect(page.locator(".change-file[data-path='bundle.js'] pre")).to_contain_text("complete")
+    assert len(file_calls) == 1
+    page.evaluate("() => openChangesDrawer('E:/project-alpha', 'bundle.js')")
+    expect(page.locator(".change-file[data-path='bundle.js'] pre")).to_be_visible()
 
 
 def test_late_restore_failure_stays_with_original_project(page):

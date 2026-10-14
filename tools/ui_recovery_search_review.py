@@ -82,7 +82,7 @@ def exercise(page, url, window):
     page.route("**/api/**", api)
     page.goto(url)
     expect(page.locator("#provider-button")).to_be_enabled(timeout=15000)
-    page.wait_for_function("CodeyUiState.current().active_id === 'a'")
+    page.wait_for_function("UiState.current().active_id === 'a'")
 
     # Failed load, repeated keyboard Retry, then edit and failed save.
     mode["load_failures"] = 2
@@ -179,7 +179,7 @@ def exercise(page, url, window):
     expect(page.locator("#task")).to_have_value("later alpha draft")
     check("Send: Open reaches the verified owner, both chats retain independent drafts")
     mode["owner"] = ""
-    page.evaluate("CodeySse.reconcileRunState()")
+    page.evaluate("Sse.reconcileRunState()")
 
     page.locator("#provider-button").click()
     page.locator('.provider-item[data-provider="local"]').first.click()

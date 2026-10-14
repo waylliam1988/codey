@@ -58,6 +58,7 @@ class ResearchTools:
     grounded_ids: set[str] = field(default_factory=set)
     created_ids: list[str] = field(default_factory=list)
     updated_ids: list[str] = field(default_factory=list)
+    synthesis_id: str = ""
     links_created: int = 0
     ledger: ResearchLedger = field(default_factory=ResearchLedger)
 
@@ -76,6 +77,7 @@ class ResearchTools:
             grounded_ids=set(self.grounded_ids),
             created_ids=list(self.created_ids),
             updated_ids=list(self.updated_ids),
+            synthesis_id=self.synthesis_id,
             links_created=self.links_created,
             ledger=self.ledger.clone(),
         )
@@ -90,6 +92,8 @@ class ResearchTools:
         self.grounded_ids.update(staged.grounded_ids)
         self.created_ids = list(dict.fromkeys(self.created_ids + staged.created_ids))
         self.updated_ids = list(dict.fromkeys(self.updated_ids + staged.updated_ids))
+        if staged.synthesis_id:
+            self.synthesis_id = staged.synthesis_id
         self.links_created = max(self.links_created, staged.links_created)
         self.ledger = staged.ledger
 

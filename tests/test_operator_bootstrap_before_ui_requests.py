@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
-SOURCE = Path(__file__).resolve().parents[1] / "codey/web/assets/operator_auth.js"
+from tools.frontend_source import frontend_source
+
+SOURCE = Path(__file__).resolve().parents[1] / "frontend/src/operator_auth.ts"
 
 
 @pytest.mark.parametrize("fragment,authorized", [("#codey_bootstrap=secret", True), ("", True), ("", False)])
@@ -16,6 +19,7 @@ def test_browser_removes_launch_fragment_and_checks_session(fragment, authorized
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js unavailable")
+    source = frontend_source("operator_auth")
     script = f"""
 const vm = require('node:vm');
 const fs = require('node:fs');
@@ -24,10 +28,10 @@ const window = {{location: {{hash: {fragment!r}, pathname: '/', search: ''}},
   history: {{replaceState: (...args) => events.push(['replace', args[2]])}}}};
 const context = vm.createContext({{window, URLSearchParams,
   fetch: async (path, options) => {{events.push(['fetch', path, options]); return {{ok: {str(authorized).lower()}}};}}}});
-vm.runInContext(fs.readFileSync({str(SOURCE).replace(chr(92), '/')!r}, 'utf8'), context);
+    vm.runInContext({json.dumps(source)}, context);
 (async () => {{
   let failed = false;
-  try {{await window.CodeyOperatorAuth.authorize();}} catch {{failed = true;}}
+  try {{await window.OperatorAuth.authorize();}} catch {{failed = true;}}
   if (failed === {str(authorized).lower()}) throw new Error('wrong auth result');
   if ({str(bool(fragment)).lower()}) {{
     if (events[0][0] !== 'replace' || events[0][1] !== '/') throw new Error('credential not cleared first');
@@ -40,10 +44,9 @@ vm.runInContext(fs.readFileSync({str(SOURCE).replace(chr(92), '/')!r}, 'utf8'), 
 
 
 def test_real_ui_boot_awaits_operator_auth_before_catalog_or_sse():
-    html = SOURCE.parents[1].joinpath("index.html").read_text(encoding="utf-8")
-    boot = html[html.index("async function boot()") :]
-    assert boot.index("await window.CodeyOperatorAuth.authorize()") < boot.index("adoptCatalog()")
-    assert boot.index("await window.CodeyOperatorAuth.authorize()") < boot.index("connectEvents()")
+    boot = frontend_source("legacy-runtime")
+    assert boot.index("await window.OperatorAuth.authorize()") < boot.index("adoptCatalog()")
+    assert boot.index("await window.OperatorAuth.authorize()") < boot.index("connectEvents();")
 
 
 def test_expired_bootstrap_and_concurrent_exchange_are_fail_closed():

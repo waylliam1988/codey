@@ -32,7 +32,12 @@ from codey.runtime.effects.shell_approval_records import ShellApprovalFact, json
 from codey.storage.local_store import StoreCorruption
 from codey.task.entry_auth import derive_entry_auth
 from codey.task.model import ResolveShellApproval
-from codey.workspace.changes import collect_changes, is_git_repository, restore_snapshot_changes
+from codey.workspace.changes import (
+    collect_changes,
+    collect_git_file_diff,
+    is_git_repository,
+    restore_snapshot_changes,
+)
 
 
 def query_list(query: Mapping[str, Sequence[object]], key: str) -> list[str]:
@@ -484,6 +489,20 @@ def changes_response(ctx: Any, project: object) -> tuple[int, dict[str, Any]]:
             "files": list[dict[str, object]](),
             "diff": "",
         }
+    return 200 if payload.get("ok") else 400, payload
+
+
+def changes_file_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    project = str((body.get("project") if isinstance(body, dict) else "") or "").strip()
+    path = str((body.get("path") if isinstance(body, dict) else "") or "").strip()
+    if not project or not path:
+        return 400, {"ok": False, "error": "project and path required", "path": path}
+    if "\0" in project or "\0" in path:
+        return 400, {"ok": False, "error": "project or path invalid", "path": path}
+    try:
+        payload = collect_git_file_diff(project, path)
+    except (OSError, ValueError):
+        return 400, {"ok": False, "error": "file path invalid", "path": path}
     return 200 if payload.get("ok") else 400, payload
 
 

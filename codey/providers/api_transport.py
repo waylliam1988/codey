@@ -127,13 +127,18 @@ class AttemptControl:
             target.shutdown(socket.SHUT_RDWR)
         if isinstance(target, (http.client.HTTPResponse, urllib.error.HTTPError)):
             return
+        if (isinstance(target, http.client.HTTPConnection)
+                and getattr(target, "sock", None) is None
+                and getattr(target, "_tracked_socket", None) is None):
+            return
         with contextlib.suppress(Exception):
             target.close()
 
 
 def _socket_for(target: Any) -> Any:
     """Find the live socket through HTTPError/HTTPResponse buffering layers."""
-    candidates = [target, getattr(target, "fp", None), getattr(getattr(target, "fp", None), "fp", None),
+    candidates = [target, getattr(target, "_tracked_socket", None), getattr(target, "fp", None),
+                  getattr(getattr(target, "fp", None), "fp", None),
                   getattr(target, "raw", None), getattr(getattr(target, "fp", None), "raw", None),
                   getattr(getattr(getattr(target, "fp", None), "fp", None), "raw", None)]
     for value in candidates:
@@ -585,6 +590,7 @@ class _SubmissionHTTPSHandler(urllib.request.HTTPSHandler):
 
         class Connection(http.client.HTTPSConnection):
             establishing = False
+            _tracked_socket: Any = None
 
             def send(self, data: Any) -> None:
                 if tracked_control is not None and tracked_control.cancelled:
@@ -614,8 +620,9 @@ class _SubmissionHTTPSHandler(urllib.request.HTTPSHandler):
                 if tracked_control is not None:
                     tracked_control.register_connection(self)
                 super().connect()
-                if tracked_control is not None and self.sock is not None:
-                    tracked_control.register_connection(self.sock)
+                self._tracked_socket = self.sock
+                if tracked_control is not None and self._tracked_socket is not None:
+                    tracked_control.register_connection(self._tracked_socket)
                 if tracked_control is not None and tracked_control.cancelled:
                     raise GenerationNotSentError("generation cancelled before submission")
 
@@ -637,6 +644,7 @@ class _SubmissionHTTPHandler(urllib.request.HTTPHandler):
 
         class Connection(http.client.HTTPConnection):
             establishing = False
+            _tracked_socket: Any = None
 
             def connect(self) -> None:
                 if tracked_control is not None and tracked_control.cancelled:
@@ -644,8 +652,9 @@ class _SubmissionHTTPHandler(urllib.request.HTTPHandler):
                 if tracked_control is not None:
                     tracked_control.register_connection(self)
                 super().connect()
-                if tracked_control is not None and self.sock is not None:
-                    tracked_control.register_connection(self.sock)
+                self._tracked_socket = self.sock
+                if tracked_control is not None and self._tracked_socket is not None:
+                    tracked_control.register_connection(self._tracked_socket)
                 if tracked_control is not None and tracked_control.cancelled:
                     raise GenerationNotSentError("generation cancelled before submission")
 
@@ -800,7 +809,19 @@ def abort_response(response: Any) -> None:
         sock = _socket_for(response)
         if sock is not None:
             sock.shutdown(socket.SHUT_RDWR)
-    if isinstance(response, (http.client.HTTPResponse, urllib.error.HTTPError)):
+    if isinstance(response, urllib.error.HTTPError):
+        # urllib keeps the live HTTPResponse in ``fp``.  Shutting down the
+        # socket is not sufficient when the error wrapper was registered after
+        # cancellation began; close that underlying response explicitly so a
+        # blocked diagnostic-body read wakes immediately.
+        body = getattr(response, "fp", None)
+        if body is not None:
+            with contextlib.suppress(Exception):
+                body.close()
+        return
+    if isinstance(response, http.client.HTTPResponse):
+        return
+    if isinstance(response, http.client.HTTPConnection) and getattr(response, "sock", None) is None:
         return
     with contextlib.suppress(Exception):
         response.close()

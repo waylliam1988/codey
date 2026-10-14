@@ -558,12 +558,15 @@ def run_task_mode(
     kind = _task_kind(task_kind or getattr(frame, "task_kind", ""))
     if kind == "hybrid":
         outcome = run_entry_kernel(frame, work, hooks, deps, task_kind="hybrid", config_result=config_result)
-        try:
-            session = getattr(frame, "entry_session", None)
-            tools = getattr(frame, "entry_research_tools", None)
-            return _enrich_hybrid_outcome(frame, work, outcome, session=session, research_tools=tools)
-        except Exception:
-            return outcome
+        session = getattr(frame, "entry_session", None)
+        tools = getattr(frame, "entry_research_tools", None)
+        enriched = _enrich_hybrid_outcome(frame, work, outcome, session=session, research_tools=tools)
+        changes = getattr(tools, "changes", None)
+        has_changes = getattr(changes, "has_changes", None)
+        recorder = getattr(getattr(deps, "state", None), "record_research_changes", None)
+        if callable(has_changes) and has_changes() and callable(recorder):
+            recorder(getattr(frame, "run_id", ""), changes, getattr(frame.request, "session_id", ""))
+        return enriched
     if kind == "project" and callable(run_project):
         return cast(ModeOutcome, run_project(frame, work, hooks, config_result=config_result))
     if kind == "research" and callable(run_research):
@@ -576,10 +579,19 @@ def run_task_mode(
 def _enrich_hybrid_outcome(
     frame: RunFrame, work: RunWork, outcome: ModeOutcome, *, session: Any = None, research_tools: Any = None,
 ) -> ModeOutcome:
-    try:
-        event = dict(outcome.event or {})
-    except Exception:
-        return outcome
+    event = dict(outcome.event or {})
+    if research_tools is not None:
+        from codey.operations.research_flow import research_payload_from_tools
+
+        request = getattr(frame, "request", None)
+        event["research"] = research_payload_from_tools(
+            research_tools,
+            question=str(getattr(request, "task", "") or ""),
+            summary=str(event.get("summary", "") or ""),
+            stop_reason=str(event.get("stop_reason", "") or ""),
+            turns=int(event.get("turns", 0) or 0),
+            synthesis_id=str(getattr(research_tools, "synthesis_id", "") or ""),
+        )
     try:
         evidence = getattr(work, "evidence", None)
         receipt = dict(event.get("receipt") or {})
@@ -614,10 +626,9 @@ def _enrich_hybrid_outcome(
             event["receipt"] = receipt
     except Exception:
         pass
-    try:
-        return ModeOutcome(event)
-    except Exception:
-        return outcome
+    from dataclasses import replace
+
+    return replace(outcome, event=event)
 
 
 def run_task_submission(deps: Any, request: TaskSubmission) -> None:

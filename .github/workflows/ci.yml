@@ -29,6 +29,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend checks and production build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run check
+          npm run build
+
+      - name: Verify published frontend
+        run: python -m tools.publish_frontend --check
 
       - name: Install Python dependencies
         run: |
@@ -110,6 +122,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend checks and production build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run check
+          npm run build
+
+      - name: Verify published frontend
+        run: python -m tools.publish_frontend --check
 
       - name: Install Python dependencies
         run: |

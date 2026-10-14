@@ -31,10 +31,10 @@ def test_large_output_follows_until_reader_leaves_and_requires_actual_bottom(pag
     expect(page.locator('.msg.asst').last).to_contain_text('FINAL_LARGE_OUTPUT')
     page.wait_for_function("()=>{const e=document.getElementById('chat-area');return e.scrollHeight-e.clientHeight-e.scrollTop<=2}")
     page.locator('#chat-area').evaluate("e=>{e.dispatchEvent(new WheelEvent('wheel',{deltaY:-40}));e.scrollTop=e.scrollHeight-e.clientHeight-30;}")
-    page.evaluate("CodeyConversationUI.captureView();addToSession('a',{type:'asst',text:'do not follow'})")
-    assert page.evaluate('CodeyConversationUI.isFollowing()') is False
+    page.evaluate("ConversationUI.captureView();addToSession('a',{type:'asst',text:'do not follow'})")
+    assert page.evaluate('ConversationUI.isFollowing()') is False
     page.locator('#back-to-latest').click()
-    assert page.evaluate('CodeyConversationUI.isFollowing()') is True
+    assert page.evaluate('ConversationUI.isFollowing()') is True
     assert page.locator('#chat-area').evaluate('e=>e.scrollHeight-e.clientHeight-e.scrollTop') <= 2
 
 
@@ -43,31 +43,31 @@ def test_reading_keys_stop_follow_but_composer_keys_do_not(page, key):
     long_chat(page)
     page.locator('#task').focus()
     page.keyboard.press(key)
-    assert page.evaluate('CodeyConversationUI.isFollowing()') is True
+    assert page.evaluate('ConversationUI.isFollowing()') is True
     page.locator('#chat-area').evaluate("(e,key)=>e.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true}))", key)
-    assert page.evaluate('CodeyConversationUI.isFollowing()') is False
+    assert page.evaluate('ConversationUI.isFollowing()') is False
 
 
 def test_horizontal_wheel_and_content_expansion_keep_follow_state(page):
     long_chat(page)
     page.locator('#chat-area').evaluate("e=>e.dispatchEvent(new WheelEvent('wheel',{deltaX:70,deltaY:0,bubbles:true}))")
     page.evaluate("addToSession('a',{type:'asst',text:'expanded '.repeat(600)})")
-    assert page.evaluate('CodeyConversationUI.isFollowing()') is True
+    assert page.evaluate('ConversationUI.isFollowing()') is True
 
 
 def test_reader_position_survives_chat_switch_and_rebuild(page):
     long_chat(page)
     page.locator('#chat-area').evaluate("e=>{e.dispatchEvent(new WheelEvent('wheel',{deltaY:-80}));e.scrollTop=180;}")
     before = page.locator('#chat-area').evaluate('e=>e.scrollTop')
-    page.evaluate("CodeyConversationUI.captureView();switchSession('b');switchSession('a');renderChat()")
+    page.evaluate("ConversationUI.captureView();switchSession('b');switchSession('a');renderChat()")
     assert abs(page.locator('#chat-area').evaluate('e=>e.scrollTop') - before) < 2
-    assert page.evaluate('CodeyConversationUI.isFollowing()') is False
+    assert page.evaluate('ConversationUI.isFollowing()') is False
 
 
 def test_position_change_without_reading_intent_does_not_disable_follow(page):
     long_chat(page)
     page.locator('#chat-area').evaluate("e=>{e.scrollTop-=10;e.dispatchEvent(new Event('scroll'));}")
-    assert page.evaluate('CodeyConversationUI.isFollowing()') is True
+    assert page.evaluate('ConversationUI.isFollowing()') is True
 
 
 def test_scrollbar_release_at_actual_bottom_restores_follow_before_queued_scroll_event(page):
@@ -79,4 +79,4 @@ def test_scrollbar_release_at_actual_bottom_restores_follow_before_queued_scroll
       e.scrollTop=e.scrollHeight-e.clientHeight;
       document.dispatchEvent(new PointerEvent('pointerup'));
     }""")
-    assert page.evaluate('CodeyConversationUI.isFollowing()') is True
+    assert page.evaluate('ConversationUI.isFollowing()') is True

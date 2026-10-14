@@ -1,11 +1,14 @@
 """Execute the actual browser SSE runtime with deterministic transport events."""
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
 
-SOURCE = Path(__file__).resolve().parents[1] / "codey/web/assets/sse.js"
+from tools.frontend_source import frontend_source
+
+SOURCE = Path(__file__).resolve().parents[1] / "frontend/src/sse.ts"
 
 
 @pytest.mark.parametrize("scenario", ["dedup_reset", "buffer_gap"])
@@ -21,12 +24,13 @@ const handled = [], applied = [], pending = [], sources = [];
 class EventSource { constructor(url) {this.url=url; sources.push(this);} }
 EventSource.OPEN=1;
 const window = {};
-const context = vm.createContext({window, EventSource, setTimeout, clearTimeout,
-  fetch: () => new Promise(resolve => pending.push(resolve))});
+    const context = vm.createContext({window, EventSource, setTimeout, clearTimeout,
+      fetch: () => new Promise(resolve => pending.push(resolve)),
+      decodeServerEvent: value => value, decodeRunState: value => value});
 vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
-window.CodeySse.init({handleServerEvent: e => handled.push(e), applyRunState: s => applied.push(s),
+window.Sse.init({handleServerEvent: e => handled.push(e), applyRunState: s => applied.push(s),
   setStatus:()=>{}, refreshProviderStatus:()=>{}});
-window.CodeySse.connect();
+window.Sse.connect();
 const emit=(id,data)=>sources[0].onmessage({lastEventId:String(id),data:JSON.stringify(data)});
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
@@ -37,7 +41,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
     emit(1,{type:'tool'}); emit(1,{type:'tool'});
     assert.deepEqual(handled.map(x=>x.type),['tool','resync_required','tool']);
   } else {
-    const first = window.CodeySse.reconcileRunState();
+    const first = window.Sse.reconcileRunState();
     for(let i=1;i<=101;i++) emit(i,{type:'tool'});
     pending.shift()({ok:true,json:async()=>({n:1})});
     await first; await tick();
@@ -48,5 +52,12 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   }
 })().catch(e=>{console.error(e);process.exitCode=1;});
 '''
-    result = subprocess.run([node, "-e", script, str(SOURCE), scenario], capture_output=True, text=True, timeout=10)
+    source = frontend_source("sse")
+    with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8", delete=False) as handle:
+        handle.write(source)
+        source_path = handle.name
+    try:
+        result = subprocess.run([node, "-e", script, source_path, scenario], capture_output=True, text=True, timeout=10)
+    finally:
+        Path(source_path).unlink(missing_ok=True)
     assert result.returncode == 0, result.stderr

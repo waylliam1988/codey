@@ -10,7 +10,13 @@ def main() -> None:
     paths = sorted(path for directory in (root / "codey/web/assets", root / "codey/providers")
                    for path in directory.rglob("*") if path.suffix in {".js", ".mjs"})
     for path in paths:
-        subprocess.run(["node", "--check", str(path)], check=True)
+        if path.parent == root / "codey/web/assets" and path.name.startswith("codey-"):
+            subprocess.run(
+                ["node", "--input-type=module", "--check"],
+                input=path.read_text(encoding="utf-8"), text=True, encoding="utf-8", check=True,
+            )
+        else:
+            subprocess.run(["node", "--check", str(path)], check=True)
     print(f"JavaScript syntax: {len(paths)} files checked")
 
 

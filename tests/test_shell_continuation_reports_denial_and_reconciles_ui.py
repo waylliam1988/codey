@@ -4,11 +4,11 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
 from codey.app.shell_service import build_shell_approval_continuation
+from tools.frontend_source import frontend_source
 from tools.ui_e2e import ScriptedWriter
 
 
@@ -30,7 +30,7 @@ def test_http_approval_reconciles_continuation_without_sse(approved):
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js unavailable")
-    html = (Path(__file__).parents[1] / "codey/web/index.html").read_text(encoding="utf-8")
+    html = frontend_source("legacy-runtime")
     start = html.index("async function approveCommand(")
     source = html[start:html.index("// ============================ composer", start)]
     script = """

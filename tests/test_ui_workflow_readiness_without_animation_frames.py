@@ -20,7 +20,7 @@ def test_workflow_fixture_restores_state_without_animation_frame_callbacks(ui_br
             # The first predicate is false, as when the response arrives after
             # waiting starts. Later predicates read the real restored state.
             return real_wait("() => { window.readyPollCount = (window.readyPollCount || 0) + 1; "
-                             "return window.readyPollCount > 1 && CodeyUiState.current().active_id === 'a'; }",
+                             "return window.readyPollCount > 1 && UiState.current().active_id === 'a'; }",
                              **options)
 
         monkeypatch.setattr(page, "wait_for_function", wait)
@@ -31,7 +31,7 @@ def test_workflow_fixture_restores_state_without_animation_frame_callbacks(ui_br
     fixture = workflow_page.__wrapped__((browser, url))
     try:
         page = next(fixture)
-        assert page.evaluate("CodeyUiState.current().active_id") == "a"
+        assert page.evaluate("UiState.current().active_id") == "a"
     finally:
         fixture.close()
         for page in created:

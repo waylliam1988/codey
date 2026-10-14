@@ -16,7 +16,7 @@ from tests.test_ui_workflow import ui_browser as ui_browser
 @pytest.fixture
 def durable_drafts(page, tmp_path):
     store = UiStateStore(tmp_path)
-    store.save(page.evaluate("CodeyUiState.current()"), base_revision=0)
+    store.save(page.evaluate("UiState.current()"), base_revision=0)
     requests = []
 
     def state_api(route):
@@ -29,7 +29,7 @@ def durable_drafts(page, tmp_path):
             route.fulfill(json={"state": UiStateStore(tmp_path).load()})
 
     page.route("**/api/ui_state", state_api)
-    page.evaluate("CodeyUiState.restoreFromServer()")
+    page.evaluate("UiState.restoreFromServer()")
     return store, requests
 
 
@@ -38,7 +38,7 @@ def test_draft_text_and_backward_utf16_selection_survive_backend_restore(page, d
     page.locator("#task").fill(text)
     page.locator("#task").evaluate("e => {e.setSelectionRange(2, 7, 'backward'); e.dispatchEvent(new Event('select'));}")
     with page.expect_response(lambda r: r.url.endswith('/api/ui_state') and r.request.method == 'POST'):
-        page.evaluate("CodeyUiState.flush()")
+        page.evaluate("UiState.flush()")
     page.evaluate("localStorage.clear()")
     page.reload()
     expect(page.locator("#task")).to_have_value(text)
@@ -54,7 +54,7 @@ def test_each_chat_restores_its_own_draft_and_clear_history_keeps_input(page, du
     expect(page.locator("#task")).to_have_value("Alpha draft")
     page.evaluate("clearMessages('a')")
     expect(page.locator("#task")).to_have_value("Alpha draft")
-    assert page.evaluate("CodeyUiState.current().sessions.find(s=>s.id==='b').draft.text") == "Beta draft"
+    assert page.evaluate("UiState.current().sessions.find(s=>s.id==='b').draft.text") == "Beta draft"
 
 
 @pytest.mark.parametrize('deleted', [False, True])
@@ -70,9 +70,9 @@ def test_late_acceptance_cannot_clear_edited_back_text_or_resurrect_deleted_chat
         page.locator("#task").fill("new input")
         page.locator("#task").fill("original")
     pending[0].fulfill(json={'ok':True,'run_id':pending[0].request.post_data_json['run_id'],'session_id':'a'})
-    page.wait_for_function('!CodeyComposer.isSending()')
+    page.wait_for_function('!Composer.isSending()')
     if deleted:
-        assert page.evaluate("CodeyUiState.current().sessions.some(s=>s.id==='a')") is False
+        assert page.evaluate("UiState.current().sessions.some(s=>s.id==='a')") is False
         expect(page.locator('#task')).to_have_value('')
     else:
         expect(page.locator("#task")).to_have_value("original")
@@ -80,12 +80,12 @@ def test_late_acceptance_cannot_clear_edited_back_text_or_resurrect_deleted_chat
 
 def test_accepted_draft_clear_is_durable_and_revision_never_rewinds(page, durable_drafts):
     page.locator("#task").fill("sent")
-    revision = page.evaluate("CodeyUiState.current().sessions[0].draft.revision")
+    revision = page.evaluate("UiState.current().sessions[0].draft.revision")
     page.route('**/api/run', lambda route:route.fulfill(json={'ok':True,'run_id':route.request.post_data_json['run_id'],'session_id':'a'}))
     page.locator('#send').click()
     expect(page.locator("#task")).to_have_value("")
-    assert page.evaluate("CodeyUiState.current().sessions[0].draft.revision") > revision
-    page.wait_for_function("CodeyUiState.current().revision > 0")
+    assert page.evaluate("UiState.current().sessions[0].draft.revision") > revision
+    page.wait_for_function("UiState.current().revision > 0")
     page.reload()
     expect(page.locator("#task")).to_have_value("")
 
@@ -98,7 +98,7 @@ def test_save_failure_and_retry_keep_current_input_without_reloading_or_running(
         route.fulfill(status=status, json={"revision": 9})
     page.route("**/api/ui_state", save)
     page.locator("#task").fill("must stay")
-    page.evaluate("CodeyUiState.flush()")
+    page.evaluate("UiState.flush()")
     expect(page.get_by_role("button", name="Retry", exact=True)).to_be_visible()
     page.route("**/api/ui_state", lambda route: route.fulfill(json={"ok": True, "revision": 10}))
     page.get_by_role("button", name="Retry", exact=True).click()
@@ -118,9 +118,9 @@ def test_store_preserves_exact_long_draft_and_clamps_utf16_selection(tmp_path):
 
 
 def test_restoring_an_empty_caret_does_not_create_a_user_edit(page):
-    before = page.evaluate('CodeyUiState.current().revision')
+    before = page.evaluate('UiState.current().revision')
     page.locator('#task').evaluate("e=>e.dispatchEvent(new Event('select'))")
-    assert page.evaluate('CodeyUiState.current().revision') == before
+    assert page.evaluate('UiState.current().revision') == before
 
 
 def test_new_browser_context_restores_draft_from_real_http_storage(page, ui_browser):
@@ -131,7 +131,7 @@ def test_new_browser_context_restores_draft_from_real_http_storage(page, ui_brow
     page.route('**/api/ui_state', lambda route: route.continue_())
     page.locator('#task').fill('Durable 中文😀\n    exact whitespace\n')
     with page.expect_response(lambda r: r.url.endswith('/api/ui_state') and r.request.method == 'POST') as saved:
-        page.evaluate('CodeyUiState.flush()')
+        page.evaluate('UiState.flush()')
     assert saved.value.ok
     # Only the authorization cookie crosses contexts; no localStorage cache.
     context = browser.new_context(storage_state={'cookies':page.context.cookies(),'origins':[]})
@@ -163,11 +163,11 @@ def test_conflict_blocks_automatic_overwrite_until_explicit_retry(page):
     calls = []
     page.route('**/api/ui_state', lambda r: (calls.append(r.request.method), r.fulfill(status=409,json={'revision':9})))
     page.locator('#task').fill('First edit')
-    page.evaluate('CodeyUiState.flush()')
+    page.evaluate('UiState.flush()')
     expect(page.locator('#ui-save-notice')).to_be_visible()
     first = len(calls)
     page.locator('#task').fill('New edit after conflict')
-    page.evaluate('CodeyUiState.flush()')
+    page.evaluate('UiState.flush()')
     page.evaluate('()=>new Promise(resolve=>setTimeout(resolve,0))')
     assert len(calls) == first
     expect(page.locator('#task')).to_have_value('New edit after conflict')
@@ -176,7 +176,7 @@ def test_conflict_blocks_automatic_overwrite_until_explicit_retry(page):
 def test_malformed_success_response_is_not_reported_as_saved(page):
     page.route('**/api/ui_state', lambda r:r.fulfill(body='{broken',content_type='application/json'))
     page.locator('#task').fill('Still unsaved')
-    page.evaluate('CodeyUiState.flush()')
+    page.evaluate('UiState.flush()')
     expect(page.locator('#ui-save-notice')).to_be_visible()
     expect(page.locator('#task')).to_have_value('Still unsaved')
 
@@ -184,7 +184,7 @@ def test_malformed_success_response_is_not_reported_as_saved(page):
 def test_pagehide_after_conflict_caches_draft_without_beacon_overwrite(page):
     page.route('**/api/ui_state', lambda r:r.fulfill(status=409,json={'revision':9}))
     page.locator('#task').fill('Keep this local draft')
-    page.evaluate('CodeyUiState.flush()')
+    page.evaluate('UiState.flush()')
     expect(page.locator('#ui-save-notice')).to_be_visible()
     sent = page.evaluate("""() => {
       const beacons=[];navigator.sendBeacon=(url,body)=>{beacons.push(url);return true;};
@@ -198,8 +198,8 @@ def test_pagehide_after_conflict_caches_draft_without_beacon_overwrite(page):
 
 def test_cached_draft_cannot_send_before_initial_server_restore_finishes(page):
     page.locator('#task').fill('Cached input')
-    page.evaluate('CodeyUiState.cache()')
-    state = page.evaluate('CodeyUiState.current()')
+    page.evaluate('UiState.cache()')
+    state = page.evaluate('UiState.current()')
     pending = []
     def api(route):
         if route.request.method == 'GET':

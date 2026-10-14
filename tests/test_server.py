@@ -1659,6 +1659,13 @@ class ResearchServerHelperTests(unittest.TestCase):
 
 
 class WebAssetTests(unittest.TestCase):
+    @staticmethod
+    def _bundle_path() -> str:
+        bundles = sorted((server.WEB_DIR / "assets").glob("*.js"))
+        if not bundles:
+            raise AssertionError("published frontend bundle is missing")
+        return "/assets/" + bundles[0].name
+
     def test_research_graph_asset_is_whitelisted(self) -> None:
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -1666,7 +1673,7 @@ class WebAssetTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             conn = OperatorHTTPConnection(httpd, timeout=5)
-            conn.request("GET", "/assets/research_graph.js?v=0.2.11")
+            conn.request("GET", self._bundle_path() + "?v=0.2.11")
             response = conn.getresponse()
             body = response.read().decode("utf-8")
             ctype = response.getheader("Content-Type") or ""
@@ -1678,7 +1685,7 @@ class WebAssetTests(unittest.TestCase):
 
         self.assertEqual(response.status, 200)
         self.assertIn("application/javascript", ctype)
-        self.assertIn("window.CodeyResearchGraph", body)
+        self.assertIn("window.ResearchGraph", body)
 
     def test_asset_cache_control_follows_version_pin(self) -> None:
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
@@ -1687,14 +1694,15 @@ class WebAssetTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             conn = OperatorHTTPConnection(httpd, timeout=5)
-            conn.request("GET", "/assets/render.js?v=9.9.9")
+            bundle = self._bundle_path()
+            conn.request("GET", bundle + "?v=9.9.9")
             pinned = conn.getresponse()
             pinned.read()
             pinned_cache = pinned.getheader("Cache-Control") or ""
             conn.close()
 
             conn = OperatorHTTPConnection(httpd, timeout=5)
-            conn.request("GET", "/assets/render.js")
+            conn.request("GET", bundle)
             unpinned = conn.getresponse()
             unpinned.read()
             unpinned_cache = unpinned.getheader("Cache-Control") or ""

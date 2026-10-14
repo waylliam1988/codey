@@ -7,13 +7,15 @@ import subprocess
 import unittest
 from pathlib import Path
 
-DRAWER = Path(__file__).resolve().parents[1] / "codey" / "web" / "assets" / "local_context_drawer.js"
+from tools.frontend_source import frontend_source
+
+DRAWER = Path(__file__).resolve().parents[1] / "frontend" / "src" / "local_context_drawer.ts"
 
 
 class LocalContextRenderTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for drawer behavior tests")
     def test_failed_accept_refreshes_to_show_retry_action(self) -> None:
-        source = DRAWER.read_text(encoding="utf-8")
+        source = frontend_source("local_context_drawer")
         script = r"""
 const vm = require('node:vm');
 class Element {
@@ -33,7 +35,7 @@ const ids = new Map();
 function element(id) { if (!ids.has(id)) ids.set(id, new Element()); return ids.get(id); }
 let summaryReads = 0;
 const context = {
-  window: { CodeyUiState: { setDrawerOpen: (id, open) => open ? element(id).classList.add('open') : element(id).classList.remove('open') } },
+  window: { UiState: { setDrawerOpen: (id, open) => open ? element(id).classList.add('open') : element(id).classList.remove('open') } },
   document: { createElement: () => new Element() },
   URLSearchParams, setTimeout,
   fetch: async (url) => {
@@ -49,10 +51,10 @@ const context = {
   },
 };
 vm.runInNewContext(process.argv[1], context);
-context.window.CodeyLocalContextDrawer.init({ $: element, getActiveId: () => 's1', currentProjectPath: () => '' });
+context.window.LocalContextDrawer.init({ $: element, getActiveId: () => 's1', currentProjectPath: () => '' });
 function allText(node) { return [node.textContent, ...node.children.flatMap(allText)].join(' '); }
 (async () => {
-  context.window.CodeyLocalContextDrawer.open();
+  context.window.LocalContextDrawer.open();
   await new Promise(setImmediate);
   const row = element('local-context-body').children[0].children[1];
   row.children[1].onclick({ stopPropagation() {} });
@@ -69,7 +71,7 @@ function allText(node) { return [node.textContent, ...node.children.flatMap(allT
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for drawer behavior tests")
     def test_observations_only_are_visible_instead_of_empty_state(self) -> None:
-        source = DRAWER.read_text(encoding="utf-8")
+        source = frontend_source("local_context_drawer")
         script = r"""
 const vm = require('node:vm');
 class Element {
@@ -105,10 +107,10 @@ const ids = new Map();
 function element(id) { if (!ids.has(id)) ids.set(id, new Element()); return ids.get(id); }
 const context = { window: {}, document: { createElement: () => new Element() } };
 vm.runInNewContext(process.argv[1], context);
-context.window.CodeyLocalContextDrawer.init({
+context.window.LocalContextDrawer.init({
   $: element, getActiveId: () => 's1', currentProjectPath: () => '',
 });
-context.window.CodeyLocalContextDrawer.render({
+context.window.LocalContextDrawer.render({
   ok: true, available: true, enabled: true,
   counts: { active: 0, review: 0, observations: 1 },
   observations: [{ id: 'r1', summary: 'Please keep answers concise.', kind: 'chat', scope_label: 'This chat' }],
@@ -121,7 +123,7 @@ row.children[1].onclick({ stopPropagation() {} });
 const menu = element('local-context-menu');
 menu.listeners.click({ target: menu.children[0] });
 process.stdout.write('\n' + allText(row));
-context.window.CodeyLocalContextDrawer.render({
+context.window.LocalContextDrawer.render({
   ok: true, available: true, enabled: true,
   counts: { active: 0, review: 0, repair: 1 },
   repair: [{ id: 'c1', summary: 'reply length = concise', kind: 'Preference', scope_label: 'This chat' }],

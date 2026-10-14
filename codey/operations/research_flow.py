@@ -147,7 +147,11 @@ def run_research_mode(
         "provider": frame.provider_id,
         "mode": "research",
         "receipt": receipt,
-        "research": research_payload(result, pipeline_result=pipeline_result),
+        "research": research_payload(
+            result,
+            pipeline_result=pipeline_result,
+            restoreable=frame.run_id in getattr(deps.state, "research_changes", {}),
+        ),
     }, research_result=result, research_pipeline_result=pipeline_result)
 
 
@@ -405,7 +409,12 @@ def record_evidence_ledger_write(
     )
 
 
-def research_payload(result: Any, *, pipeline_result: Any | None = None) -> dict[str, Any]:
+def research_payload(
+    result: Any,
+    *,
+    pipeline_result: Any | None = None,
+    restoreable: bool | None = None,
+) -> dict[str, Any]:
     payload = {
         "max_turns_used": int(getattr(result, "max_turns_used", 0) or 0),
         "synthesis_id": result.synthesis_id,
@@ -445,6 +454,53 @@ def research_payload(result: Any, *, pipeline_result: Any | None = None) -> dict
                 "attempted_fresh_source_count": max(0, int(metadata.get("attempted_fresh_source_count") or 0)),
                 "attempted_new_evidence_count": max(0, int(metadata.get("attempted_new_evidence_count") or 0)),
             })
+    if restoreable is not None:
+        payload["restoreable"] = bool(restoreable)
+    return payload
+
+
+def research_payload_from_tools(
+    tools: Any,
+    *,
+    question: str,
+    summary: str,
+    stop_reason: str,
+    turns: int,
+    synthesis_id: str = "",
+) -> dict[str, Any]:
+    """Project facts already collected by a hybrid run into the UI DTO.
+
+    Hybrid execution shares ``ResearchTools`` with the kernel, so constructing
+    this payload from its ledger avoids a second search or a second quality
+    decision.  Note references remain knowledge note IDs from the tool state.
+    """
+    from codey.research.run_result import ResearchRunResult
+
+    ledger = getattr(tools, "ledger", None)
+    if ledger is None:
+        raise ValueError("hybrid research tools have no ledger")
+    searches = list(getattr(ledger, "searches", ()) or ())
+    result = ResearchRunResult(
+        question=question,
+        summary=summary,
+        stop_reason=stop_reason,
+        turns=max(0, int(turns or 0)),
+        queries=[str(getattr(item, "query", "")) for item in searches if getattr(item, "query", "")],
+        search_results=list(ledger.search_results_payload()),
+        opened_sources=list(ledger.opened_sources_payload()),
+        coverage=dict(ledger.coverage_payload()),
+        evidence_items=list(ledger.evidence_payload()),
+        notes_created=[str(item) for item in getattr(tools, "created_ids", ()) or ()],
+        notes_updated=[str(item) for item in getattr(tools, "updated_ids", ()) or ()],
+        links_created=max(0, int(getattr(tools, "links_created", 0) or 0)),
+        sources_read=len(getattr(tools, "sources_read", ()) or ()),
+        source_urls=sorted(str(item) for item in getattr(tools, "sources_read", ()) or () if item),
+        synthesis_id=synthesis_id,
+    )
+    payload = research_payload(result)
+    changes = getattr(tools, "changes", None)
+    has_changes = getattr(changes, "has_changes", None)
+    payload["restoreable"] = bool(has_changes()) if callable(has_changes) else False
     return payload
 
 
@@ -458,6 +514,7 @@ __all__ = [
     "record_research_plan_trace",
     "record_research_proof_review_trace",
     "research_payload",
+    "research_payload_from_tools",
     "research_queue_item_title",
     "run_research_mode",
     "run_research_pipeline",

@@ -26,7 +26,7 @@ def start_rename(page):
 
 def record_state_saves(page):
     writes = []
-    restored = {"state": page.evaluate("JSON.parse(JSON.stringify(CodeyUiState.current()))")}
+    restored = {"state": page.evaluate("JSON.parse(JSON.stringify(UiState.current()))")}
 
     def api(route):
         if route.request.method == "POST":
@@ -50,7 +50,7 @@ def test_title_click_selects_original_and_enter_saves_both_names_and_reload(page
     expect(editor).to_have_attribute("maxlength", "80")
     editor.fill("  检查缓存问题  ")
     expect(page.locator(".session-item.active .session-title")).to_have_text("Alpha")
-    assert page.evaluate("CodeyUiState.current().sessions[0].title") == "Alpha"
+    assert page.evaluate("UiState.current().sessions[0].title") == "Alpha"
     assert writes == []
     editor.press("Enter")
     expect(title_button(page)).to_have_text("检查缓存问题")
@@ -151,7 +151,7 @@ def test_composition_finishing_during_pointer_down_does_not_swallow_chat_switch(
     expect(editor).to_be_visible()
     page.mouse.up()
     expect(title_button(page)).to_have_text("Beta")
-    assert page.evaluate("CodeyUiState.current().sessions.map(s=>s.title)") == ["中文旧聊天名称", "Beta"]
+    assert page.evaluate("UiState.current().sessions.map(s=>s.title)") == ["中文旧聊天名称", "Beta"]
 
 
 def test_refresh_and_running_reply_preserve_editor_identity_caret_and_task(page):
@@ -182,8 +182,8 @@ def test_chat_switch_saves_origin_without_losing_click_or_renaming_destination(p
     else:
         page.evaluate("switchSession('b')")
     expect(title_button(page)).to_have_text("Beta")
-    assert page.evaluate("CodeyUiState.current().active_id") == "b"
-    assert page.evaluate("CodeyUiState.current().sessions.map(s => s.title)") == ["Renamed Alpha", "Beta"]
+    assert page.evaluate("UiState.current().active_id") == "b"
+    assert page.evaluate("UiState.current().sessions.map(s => s.title)") == ["Renamed Alpha", "Beta"]
     # Late events from a removed input must not finish a new chat's edit.
     next_editor = start_rename(page)
     next_editor.fill("Beta draft")
@@ -195,7 +195,7 @@ def test_chat_switch_saves_origin_without_losing_click_or_renaming_destination(p
 
 def test_only_chat_breadcrumb_is_editable_and_title_fits_narrow_window(page):
     page.evaluate("""() => {
-        const state=CodeyUiState.current();
+        const state=UiState.current();
         state.projects.push({id:'project',name:'Project name',path:'E:/project',expanded:true});
         state.sessions[0].projectId='project'; renderSidebar(); renderChat();
     }""")
@@ -232,7 +232,7 @@ def test_late_composition_event_cannot_finish_new_editor_during_chat_click(page)
     finally:
         page.mouse.up()
     expect(title_button(page)).to_have_text("Original chat name")
-    assert page.evaluate("CodeyUiState.current().sessions.map(s=>s.title)") == ["Original chat name", "New Beta name"]
+    assert page.evaluate("UiState.current().sessions.map(s=>s.title)") == ["Original chat name", "New Beta name"]
 
 
 def test_top_menu_has_no_rename_but_sidebar_keeps_other_chat_rename(page):
@@ -250,7 +250,7 @@ def test_top_menu_has_no_rename_but_sidebar_keeps_other_chat_rename(page):
     sidebar_editor.press("Enter")
     expect(page.get_by_role("button", name="Other chat name", exact=True)).to_be_visible()
     expect(page.locator("#sess-title")).to_contain_text("Alpha")
-    assert page.evaluate("CodeyUiState.current().active_id") == "a"
+    assert page.evaluate("UiState.current().active_id") == "a"
 
 
 def test_saved_title_immediately_updates_search_filter(page):
@@ -267,7 +267,7 @@ def test_saved_title_immediately_updates_search_filter(page):
 
 def test_rename_preserves_message_dom_selection_and_reading_offset(page):
     page.evaluate("addToSession('a',{type:'asst',text:'Selectable text.\\n'.repeat(80)})")
-    page.locator("#chat-area").evaluate("e => {e.dispatchEvent(new WheelEvent('wheel',{deltaY:-120}));e.scrollTop=120;CodeyConversationUI.captureView();}")
+    page.locator("#chat-area").evaluate("e => {e.dispatchEvent(new WheelEvent('wheel',{deltaY:-120}));e.scrollTop=120;ConversationUI.captureView();}")
     page.locator(".msg.asst .body p").first.evaluate("""e => {
         window.keptMessageBody=e;
         const range=document.createRange(); range.setStart(e.firstChild,0); range.setEnd(e.firstChild,10);
@@ -289,7 +289,7 @@ def test_rename_preserves_message_dom_selection_and_reading_offset(page):
 
 
 def test_first_message_does_not_replace_active_or_confirmed_custom_title(page):
-    page.evaluate("CodeyUiState.current().sessions[0].title='New chat'; renderSidebar(); renderChat();")
+    page.evaluate("UiState.current().sessions[0].title='New chat'; renderSidebar(); renderChat();")
     editor = start_rename(page)
     editor.fill("My chosen name")
     page.evaluate("addToSession('a',{type:'user',text:'Automatic title source'})")
@@ -301,8 +301,8 @@ def test_first_message_does_not_replace_active_or_confirmed_custom_title(page):
     editor.press("Enter")
     # Exercise the same normalization used on reload before receiving another user message.
     page.evaluate("""() => {
-        const state=JSON.parse(JSON.stringify(CodeyUiState.current()));
-        CodeyUiState.apply(state); renderSidebar(); renderChat();
+        const state=JSON.parse(JSON.stringify(UiState.current()));
+        UiState.apply(state); renderSidebar(); renderChat();
         addToSession('a',{type:'user',text:'Must not override a manually chosen title'});
     }""")
     expect(title_button(page)).to_have_text("New chat")

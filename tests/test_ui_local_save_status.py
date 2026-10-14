@@ -15,7 +15,7 @@ def composer_geometry(page):
 def fail_save(page):
     page.route('**/api/ui_state', lambda route: route.fulfill(status=409, json={'revision': 9}))
     page.locator('#task').fill('Keep this draft')
-    page.evaluate('CodeyUiState.flush()')
+    page.evaluate('UiState.flush()')
     expect(page.locator('#ui-save-notice')).to_be_visible()
 
 
@@ -46,7 +46,7 @@ def test_failed_save_stays_on_context_baseline_without_moving_input(page, width)
 def test_long_folder_truncates_without_hiding_research_or_save_retry(page):
     page.set_viewport_size({'width': 320, 'height': 800})
     page.evaluate("""() => {
-      const state = CodeyUiState.current();
+      const state = UiState.current();
       state.projects.push({id:'long',name:'An extremely long project folder name '.repeat(8),path:'E:/project'});
       state.sessions.find(s=>s.id==='a').projectId='long';
       updateComposerContext();
@@ -79,7 +79,7 @@ def test_retry_shows_saving_in_place_until_latest_queued_edit_is_saved(page):
     expect(page.locator('#ui-save-retry')).to_be_disabled()
     assert composer_geometry(page) == before
     page.locator('#task').fill('New input while saving')
-    page.evaluate('CodeyUiState.flush()')
+    page.evaluate('UiState.flush()')
     with page.expect_request('**/api/ui_state'):
         pending.pop(0).fulfill(json={'ok': True, 'revision': 10})
     page.wait_for_function("document.getElementById('ui-save-message').textContent==='Saving…'")
@@ -120,7 +120,7 @@ def test_older_save_success_does_not_clear_status_of_queued_unsaved_input(page):
     page.route('**/api/ui_state', lambda route: pending.append(route))
     page.locator('#ui-save-retry').click()
     page.locator('#task').fill('Not yet saved')
-    page.evaluate('CodeyUiState.flush()')
+    page.evaluate('UiState.flush()')
     with page.expect_request('**/api/ui_state'):
         pending.pop(0).fulfill(json={'ok': True, 'revision': 10})
     expect(page.locator('#ui-save-notice')).to_be_visible()
@@ -161,7 +161,7 @@ def test_normal_background_save_is_quiet_and_keeps_focus(page):
     pending = []
     page.route('**/api/ui_state', lambda route: pending.append(route))
     page.locator('#task').fill('Ordinary input')
-    page.evaluate('CodeyUiState.flush()')
+    page.evaluate('UiState.flush()')
     expect(page.locator('#ui-save-notice')).to_be_hidden()
     pending.pop().fulfill(json={'ok': True, 'revision': 10})
     expect(page.locator('#ui-save-notice')).to_be_hidden()
