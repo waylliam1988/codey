@@ -8,8 +8,8 @@ from tests.test_ui_workflow import model_settings_route
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
-CURRENT = 'rgb(54, 81, 73)'
-HIGHLIGHT = 'rgb(111, 145, 131)'
+CURRENT = 'rgb(120, 165, 139)'
+HIGHLIGHT = 'rgb(172, 209, 185)'
 
 
 def append_turns(page, count=28, session='a'):
@@ -34,12 +34,12 @@ def read_turn(page, index):
 
 
 def expect_colors(page, *, dark, bright):
-    page.wait_for_function("""({dark,bright}) => {
+    page.wait_for_function("""({dark,bright,current,highlight}) => {
         const colors=Array.from(document.querySelectorAll('.conversation-tick:not([hidden]) span'),
             e=>getComputedStyle(e).backgroundColor);
-        return colors.filter(c=>c==='rgb(54, 81, 73)').length===dark
-            && colors.filter(c=>c==='rgb(111, 145, 131)').length===bright;
-    }""", arg={'dark': dark, 'bright': bright})
+        return colors.filter(c=>c===current).length===dark
+            && colors.filter(c=>c===highlight).length===bright;
+    }""", arg={'dark': dark, 'bright': bright, 'current': CURRENT, 'highlight': HIGHLIGHT})
 
 
 def test_navigation_uses_available_space_and_does_not_shift_content(page):

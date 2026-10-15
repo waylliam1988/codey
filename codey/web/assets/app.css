@@ -962,7 +962,7 @@
   .local-config-error { color: var(--err-text); font-size: 12px; margin-top: 12px; }
   .local-config-error:empty { display: none; }
 
-  /* the green dot (the only color in the UI) */
+  /* Provider availability uses the shared green palette. */
   .dot {
     width: 8px; height: 8px; border-radius: 50%;
     background: var(--muted);
@@ -970,7 +970,7 @@
   }
   .dot.ok {
     background: var(--ok-dot);
-    box-shadow: 0 0 0 3px rgba(78, 201, 176, .14);
+    box-shadow: 0 0 0 3px var(--ok-dot-ring);
   }
   .dot.checking {
     background: var(--muted);
@@ -1070,7 +1070,10 @@
     background: var(--bg); border: 1px solid var(--border-2); border-radius: 6px;
     overflow-x: auto; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55;
   }
-  .diff-line { display: block; padding: 1px 12px; white-space: pre; color: var(--text-dim); }
+  .diff-line {
+    display: block; padding: 1px 12px 1px 10px; border-left: 2px solid transparent;
+    white-space: pre; color: var(--text-dim);
+  }
   .diff-line .ln {
     display: inline-block;
     width: 4ch;
@@ -1084,8 +1087,10 @@
     width: 2ch;
     color: var(--text-dim);
   }
-  .diff-line.add { background: rgba(78, 201, 176, .07); color: var(--text); }
-  .diff-line.del { background: rgba(210, 138, 138, .07); color: var(--text); }
+  .diff-line.add { background: var(--diff-add-bg); border-left-color: var(--diff-add-edge); color: var(--text); }
+  .diff-line.del { background: var(--diff-del-bg); border-left-color: var(--diff-del-edge); color: var(--text); }
+  .diff-line.add .mark { color: var(--diff-add-mark); }
+  .diff-line.del .mark { color: var(--diff-del-mark); }
   .diff-line.hunk { color: var(--muted); }
   .diff-line.meta { color: var(--faint); }
 

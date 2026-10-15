@@ -12,7 +12,7 @@ Codey is a **local developer and research tool**, not a consumer chat app. The U
 - **Monochrome first** — black, gray, white. Hierarchy comes from typography and spacing, not color blocks.
 - **Quiet by default** — idle states show almost nothing. Activity is signaled with motion (spinner) or text, not banners.
 - **No decoration** — no emoji, no gradients for status, no “chat bubble” aesthetics, no brand-blue/purple accents.
-- **Restrained green exceptions** — the provider availability dot (`#4ec9b0`), transient Research graph hover, native text selection, and the conversation navigation's single reading/preview marker. Navigation uses subdued dark/gray green; other resting chrome stays monochrome.
+- **One restrained green family** — the provider availability dot, transient Research graph hover, native text selection, conversation navigation, and added diff lines share a muted green palette. Use role-specific brightness and opacity, not unrelated teal and gray-green accents. Other resting chrome stays monochrome.
 - **English in the UI** — labels, buttons, placeholders, and system messages use English (`New chat`, `You`, `Codey`, `Allow`, …).
   User messages, model answers, and returned thinking text retain their original language; the English rule applies to fixed application copy.
 
@@ -58,14 +58,25 @@ existing muted/faint roles. Do not globally brighten the palette.
 
 | Token       | Value     | Use |
 |------------|-----------|-----|
-| `--ok-dot` | `#4ec9b0` | **Provider online dot** (+ optional soft ring `rgba(78,201,176,.14)`), plus the Research graph hover accent below |
-| `--err-text`| `#d28a8a` | Error **text only** — never error backgrounds or borders |
+| `--green-rgb` | `120, 165, 139` | Shared green channels for translucent treatments |
+| `--green` | `rgb(var(--green-rgb))` (`#78a58b`) | Base green; use semantic aliases in components |
+| `--green-bright` | `#acd1b9` | Brighter green for a navigation preview tick and diff `+` marks |
+| `--green-selection` | `#3b5547` | Dark green for readable selected text |
+| `--ok-dot` | `var(--green)` | **Provider online dot**, plus the Research graph hover accent below |
+| `--ok-dot-ring` | `rgba(var(--green-rgb), .14)` | Optional soft ring around the online dot |
+| `--err-text`| `#d28a8a` | Error **text only**; diff deletion backgrounds and borders use separate tokens below |
+
+The approved palette keeps a common green hue while separating filled selection,
+small navigation markers, and diff scanning by brightness and opacity. Diff
+backgrounds were increased from 7% to 20% for additions and 17% for deletions
+because the former tints were difficult to distinguish on the dark canvas.
+Do not use the base palette as permission for new colored controls or surfaces.
 
 ### Native text selection
 
 | Token | Value | Use |
 |-------|-------|-----|
-| `--selection-bg` | `#365149` | Low-saturation dark green for native text selection only |
+| `--selection-bg` | `var(--green-selection)` (`#3b5547`) | Low-saturation dark green for native text selection only |
 
 Selected text uses `--text` on `--selection-bg`, with at least 4.5:1 contrast.
 Apply the same selection treatment to prose, nested code and links, drawer
@@ -77,20 +88,31 @@ selected rows, focus outlines, buttons, status, or permanent surfaces.
 
 | Token | Value | Use |
 |-------|-------|-----|
-| `--nav-current` | `#365149` | Current reading position in the conversation's tick rail |
-| `--nav-highlight` | `#6f9183` | The one tick selected by pointer hover or keyboard focus |
+| `--nav-current` | `var(--green)` (`#78a58b`) | Current reading position in the conversation's tick rail |
+| `--nav-highlight` | `var(--green-bright)` (`#acd1b9`) | The one tick selected by pointer hover or keyboard focus |
 
 These markers are mutually exclusive: while a tick is selected, the current
-reading marker becomes an ordinary gray tick. Moving away restores the dark
+reading marker becomes an ordinary gray tick. Moving away restores the base
 green reading marker. Animate width only, so color transitions cannot briefly
 show both greens. Neither token belongs on status, buttons, or other surfaces.
 
 ### Allowed tint exception
 
-Inside the **changes diff drawer**, added/removed lines may use very weak backgrounds:
+Inside the **changes diff drawer**, added/removed lines use these semantic tokens:
 
-- Add: `rgba(78, 201, 176, .07)` — derived from `--ok-dot`
-- Del: `rgba(210, 138, 138, .07)` — derived from `--err-text`
+| Token | Value | Use |
+|-------|-------|-----|
+| `--diff-add-bg` | `rgba(var(--green-rgb), .20)` | Added-line background |
+| `--diff-add-mark` | `var(--green-bright)` | Added-line `+` mark |
+| `--diff-add-edge` | `var(--green)` | Added-line left edge |
+| `--diff-del-bg` | `rgba(210, 138, 138, .17)` | Removed-line background |
+| `--diff-del-mark` | `#e4aaaa` | Removed-line `−` mark |
+| `--diff-del-edge` | `#bb8282` | Removed-line left edge |
+
+Keep added/removed code in `--text`, rather than tinting the entire line's text.
+Use a 2px left edge and the existing signed marks so a change is not identified
+by background color alone. Reserve the same transparent edge on context and
+metadata lines to keep code and line numbers aligned. File-list stats stay gray.
 
 Do not reuse these diff tints elsewhere. Background tint for scanning belongs
 only in diff; native text selection uses its separate interaction token above.
@@ -329,7 +351,7 @@ Changes   3 files                    View diff
   M  codey/web/index.html           +42 -18
 ```
 
-File stats stay gray in the stream; weak tint only inside diff drawer.
+File stats stay gray in the stream; addition/deletion tints stay inside the diff drawer.
 
 **Assistant long replies:** render expanded by default. If the reply is long, show a quiet `Collapse` text action below it; clicking it folds the body and changes the action to `Expand`. Do not default to collapsed answers.
 
@@ -352,7 +374,7 @@ and its following reply; tool calls and stream updates do not add ticks.
 
 At rest, only the current reading position uses `--nav-current`. Pointer
 hover or keyboard focus selects one tick with `--nav-highlight`, suppresses
-the dark green marker, and stretches nearby gray ticks into a gentle wave.
+the base green marker, and stretches nearby gray ticks into a gentle wave.
 After 220ms, show the question and a plain-text reply excerpt in a dark gray
 tooltip, kept inside the available reading area. Hover never scrolls; click,
 Enter, or Space jumps to the user question without sending or changing drafts,
@@ -437,7 +459,7 @@ Research is also **session-level**. It lives in the composer context row, never 
 - Identify the bound project and `Working tree` or `Snapshot` scope. Change-summary file links open and expand the exact file. Switching chats/projects closes old inspection surfaces; late loads/restore responses cannot overwrite a new scope.
 - The drawer alone owns its project, displayed data and operation state. First load shows Loading; same-project refresh keeps the old diff readable and shows Updating. Reuse file nodes by path and preserve disclosures, focus and the visible diff-line anchor. Reopening the same project does not take focus again; an explicit file target is consumed once and does not override focus moved during loading.
 - Failed refresh retains the displayed results with `Could not update · Showing previous changes · Retry`. Network, HTTP, business and JSON errors never become No changes. Previous results remain copyable, but Restore stays disabled until a successful refresh. Switching projects clears old content and copy data. Restore retains backend locking/hash checks; a successful restore followed by failed refresh reports both facts, while an unknown restore outcome says `Could not confirm restore`.
-- Diff lines: see §2 tint exception.
+- Diff lines: use the §2 diff background, signed-mark and edge tokens; keep code text light and context lines neutral.
 
 ### 5.8 Research drawer
 
@@ -527,7 +549,7 @@ README and docs for end users may stay in Chinese; **the web UI stays English** 
 
 Before shipping any UI change, verify:
 
-1. **Colors:** Only provider online dots and Research graph transient hover may use `--ok-dot`; `--err-text` for error strings; `--selection-bg` only for native selected text; navigation's mutually exclusive `--nav-current`/`--nav-highlight` only on its single position/preview tick; all other chrome neutral?
+1. **Colors:** Green roles share the §2 palette through semantic aliases: `--ok-dot` for provider dots and Research graph hover, `--selection-bg` for native selected text, mutually exclusive `--nav-current`/`--nav-highlight` for navigation, and `--diff-add-*` inside diff only. Deletions use `--diff-del-*`; error strings use `--err-text`. All other chrome stays neutral. Are selected text and diff code/marks readable, and do signed diff marks and navigation width still communicate state without color?
 2. **Hierarchy:** Can this be done with label size, weight, or spacing instead of a new color?
 3. **Chat area:** Still de-bubbled? No new bubble variants?
 4. **Actions:** Secondary/destructive actions behind `⋯` or text links, not permanent colored buttons?
@@ -559,8 +581,8 @@ These existed in earlier iterations and were intentionally removed:
 
 ## 10. Implementation notes
 
-- **Zero-build asset modules:** the UI ships as `codey/web/index.html` (HTML skeleton + core state/SSE/composer/boot script) plus `codey/web/assets/`: `tokens.css` (`:root` design tokens), `app.css` (all other styles), and plain-script IIFE modules (`render.js`, `research_graph.js`, `research_drawer.js`, `research_runs.js`, `changes_drawer.js`, `local_context_drawer.js`, `run_details.js`, `provider_ui.js`, `settings.js`, `ui_state.js`, `sse.js`, `composer.js`, `conversation_nav.js`, `conversation_ui.js`), each owning exactly one `window.Codey*` namespace. No npm, bundler, or ESM; scripts load synchronously in a fixed order and receive index state via `init(deps)`.
-- **Do not fork the palette:** all color/spacing tokens stay in `tokens.css`; never redefine them per module or per page. `tests/test_ui_architecture.py` ratchets inline `<style>` to zero and only lets the inline `<script>` budget go down.
+- **Frontend source and shipped assets:** edit TypeScript modules in `frontend/src`, the HTML skeleton in `frontend/index.html`, and CSS in `frontend/public/assets`. Vite builds the frontend; `python -m tools.publish_frontend` publishes the validated build to `codey/web`. Production modules share the internal runtime registry; browser tests explicitly opt into its test bridge. Do not edit generated bundles or add production globals.
+- **Do not fork the palette:** all color/spacing tokens stay in `frontend/public/assets/tokens.css`; components consume semantic aliases from that file. `app.css` owns component styles. Rebuild and publish after CSS changes so shipped assets and their freshness metadata match the source. `tests/test_ui_architecture.py` ratchets inline `<style>` to zero and only lets the inline `<script>` budget go down.
 - **Dark mode only:** there is no light theme. New surfaces should assume dark gray backgrounds and light text.
 - **Accessibility:** interactive rows and disclosures use native buttons and gray focus-visible outlines. Hidden sidebar/drawers are inert. Menus return focus on Escape; drawer keyboard focus stays within the open inspection surface and returns to its trigger on close. Respect reduced-motion preferences. When adding color is unavoidable, pair with text labels (never color alone).
 - **Desktop text selection:** create the pywebview window with `text_select=True`; its default suppresses native page selection. Do not counter the host setting with global CSS overrides.
@@ -573,7 +595,7 @@ These existed in earlier iterations and were intentionally removed:
 These are compatible extensions — implement using the rules above:
 
 - Toast notifications (gray panel, mono optional, no green/red toast backgrounds)
-- Provider health: offline = default solid gray `.dot`, online = `.dot.ok` — do not add a second green usage
+- Provider health: offline = default solid gray `.dot`, online = `.dot.ok` using the shared green token; other status chrome stays neutral
 - Top bar `Export markdown`, etc. — menu pattern same as `.ctx-menu`
 
 ---
