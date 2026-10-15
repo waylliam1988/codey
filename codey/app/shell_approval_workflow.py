@@ -13,7 +13,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 if TYPE_CHECKING:
     from codey.app.context import AppContext
@@ -25,6 +25,41 @@ from codey.task.model import ResolveShellApproval
 
 logger = logging.getLogger(__name__)
 Submit = Callable[..., str | None]
+
+ApprovalDecision = Literal['pending', 'allow', 'deny', 'cancelled']
+ApprovalExecution = Literal['not_started', 'not_required', 'queued', 'running', 'settled', 'uncertain']
+ApprovalContinuation = Literal[
+    'waiting_for_result',
+    'queued',
+    'not_required',
+    'resuming',
+    'started',
+    'failed',
+    'unavailable',
+    'cancelled',
+]
+
+
+class ApprovalStatus(TypedDict):
+    type: Literal['shell_approval_status']
+    id: str
+    approval_id: str
+    session_id: str
+    run_id: str
+    source_run_id: str
+    decision: ApprovalDecision
+    execution: ApprovalExecution
+    continuation: ApprovalContinuation
+    continuation_run_id: str
+    revision: int
+
+
+_CONTINUATION_STATES: dict[str, ApprovalContinuation] = {
+    'continuation_claimed': 'resuming',
+    'continuation_started': 'started',
+    'continuation_failed': 'failed',
+    'continuation_cancelled': 'cancelled',
+}
 
 
 class ShellApprovalWorkflow:
@@ -39,7 +74,7 @@ class ShellApprovalWorkflow:
     def _pending(self, fact: ShellApprovalFact) -> dict[str, Any] | None:
         return _rebuild_pending_from_fact(self.ctx, fact)
 
-    def status(self, approval_id: str) -> dict[str, Any] | None:
+    def status(self, approval_id: str) -> ApprovalStatus | None:
         facts = self.ctx.shell_approval_records.read(approval_id)
         return self._status(facts) if facts else None
 
@@ -59,10 +94,10 @@ class ShellApprovalWorkflow:
             raise ValueError("Invalid persisted shell result")
         return result
 
-    def _status(self, facts: tuple[ShellApprovalFact, ...]) -> dict[str, Any]:
+    def _status(self, facts: tuple[ShellApprovalFact, ...]) -> ApprovalStatus:
         first, last = facts[0], facts[-1]
         kinds = {fact.kind for fact in facts}
-        decision = "allow" if "approved" in kinds else "deny" if "denied" in kinds else "pending"
+        decision: ApprovalDecision = 'allow' if 'approved' in kinds else 'deny' if 'denied' in kinds else 'pending'
         pending = self._pending(first)
         settlement = next(
             (f for f in reversed(facts) if f.kind in {"execution_settled", "denied"} and f.result_ref), None
@@ -76,44 +111,44 @@ class ShellApprovalWorkflow:
                 pass
         with self._condition:
             working = first.approval_id in self._executing
-        execution = "not_required" if decision == "deny" else "queued" if decision == "allow" else "not_started"
-        if "execution_claimed" in kinds:
-            execution = "running" if working else "uncertain"
-        if "execution_settled" in kinds:
-            execution = "settled" if trusted_result else "uncertain"
-        continuation = "waiting_for_result"
+        execution: ApprovalExecution = (
+            'not_required' if decision == 'deny' else 'queued' if decision == 'allow' else 'not_started'
+        )
+        if 'execution_claimed' in kinds:
+            execution = 'running' if working else 'uncertain'
+        if 'execution_settled' in kinds:
+            execution = 'settled' if trusted_result else 'uncertain'
+        continuation: ApprovalContinuation = 'waiting_for_result'
         if settlement is not None:
             continuation = (
-                ("queued" if pending and pending.get("continue_after") else "not_required")
+                ('queued' if pending and pending.get('continue_after') else 'not_required')
                 if trusted_result
-                else "unavailable"
+                else 'unavailable'
             )
-        lifecycle = next((f for f in reversed(facts) if f.kind.startswith("continuation_")), None)
+        lifecycle = next((f for f in reversed(facts) if f.kind in _CONTINUATION_STATES), None)
         if lifecycle is not None:
-            continuation = lifecycle.kind.removeprefix("continuation_")
-            if continuation == "claimed":
-                continuation = "resuming"
+            continuation = _CONTINUATION_STATES[lifecycle.kind]
         if settlement is not None and not trusted_result:
-            continuation = "unavailable"
-        if "continuation_cancelled" in kinds:
-            continuation = "cancelled"
-        if last.kind == "abandoned":
-            decision, continuation = "cancelled", "cancelled"
+            continuation = 'unavailable'
+        if 'continuation_cancelled' in kinds:
+            continuation = 'cancelled'
+        if last.kind == 'abandoned':
+            decision, continuation = 'cancelled', 'cancelled'
         return {
-            "type": "shell_approval_status",
-            "id": first.approval_id,
-            "approval_id": first.approval_id,
-            "session_id": first.session_id,
-            "run_id": first.source_run_id,
-            "source_run_id": first.source_run_id,
-            "decision": decision,
-            "execution": execution,
-            "continuation": continuation,
-            "continuation_run_id": lifecycle.continuation_run_id if lifecycle else "",
-            "revision": len(facts),
+            'type': 'shell_approval_status',
+            'id': first.approval_id,
+            'approval_id': first.approval_id,
+            'session_id': first.session_id,
+            'run_id': first.source_run_id,
+            'source_run_id': first.source_run_id,
+            'decision': decision,
+            'execution': execution,
+            'continuation': continuation,
+            'continuation_run_id': lifecycle.continuation_run_id if lifecycle else '',
+            'revision': len(facts),
         }
 
-    def busy_status(self) -> dict[str, Any] | None:
+    def busy_status(self) -> ApprovalStatus | None:
         with self._condition:
             active_ids = tuple(self._workers)
         for approval_id in active_ids:
@@ -124,7 +159,7 @@ class ShellApprovalWorkflow:
                 return state
         return None
 
-    def for_source(self, session_id: str, source_run_id: str = "") -> dict[str, Any] | None:
+    def for_source(self, session_id: str, source_run_id: str = '') -> ApprovalStatus | None:
         rows = [
             facts
             for facts in self.ctx.shell_approval_records.histories().values()
@@ -132,7 +167,7 @@ class ShellApprovalWorkflow:
         ]
         return self._status(rows[-1]) if rows else None
 
-    def list_statuses(self, *, session_id: str = "") -> list[dict[str, Any]]:
+    def list_statuses(self, *, session_id: str = '') -> list[ApprovalStatus]:
         histories = self.ctx.shell_approval_records.histories()
         rows = [facts for facts in histories.values() if not session_id or facts[0].session_id == session_id]
         return [self._status(facts) for facts in rows[-100:]]
@@ -171,7 +206,7 @@ class ShellApprovalWorkflow:
             if state["decision"] != "pending":
                 if state["decision"] != decision:
                     return 409, {**state, "code": "decision_conflict", "error": "approval already decided"}
-                return 202, state
+                return 202, dict(state)
             else:
                 if self._closing or self.ctx.run_registry.stop_flag.is_set():
                     return 409, {**state, "code": "stopped", "error": "stopped"}
@@ -190,8 +225,8 @@ class ShellApprovalWorkflow:
         self._schedule(approval_id)
         accepted_state = self.status(approval_id)
         assert accepted_state is not None
-        self.ctx.emit(accepted_state)
-        return 202, accepted_state
+        self.ctx.emit(dict(accepted_state))
+        return 202, dict(accepted_state)
 
     def retry(self, approval_id: str, submit: Submit) -> tuple[int, dict[str, Any]]:
         self._submit = submit
@@ -207,7 +242,7 @@ class ShellApprovalWorkflow:
         if state["continuation"] == "started":
             return 409, {**state, "error": "continuation already started", "code": "continuation_started"}
         self._schedule(approval_id)
-        return 202, self.status(approval_id) or state
+        return 202, dict(self.status(approval_id) or state)
 
     def _schedule(self, approval_id: str) -> None:
         with self._condition:
@@ -278,7 +313,7 @@ class ShellApprovalWorkflow:
             try:
                 state = self.status(approval_id)
                 if state is not None:
-                    self.ctx.emit(state)
+                    self.ctx.emit(dict(state))
             finally:
                 with self._condition:
                     self._workers.pop(approval_id, None)
@@ -323,7 +358,7 @@ class ShellApprovalWorkflow:
                 return
             state = self.status(approval_id)
             if state:
-                self.ctx.emit(state)
+                self.ctx.emit(dict(state))
             result = shell_service.execute_shell_ticket(self.ctx, ticket)
             self._write_result(first, result, "execution_settled")
             if (result.get("stopped") or result.get("status") == "stopped") and not self.ctx.shutdown_requested():

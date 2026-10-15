@@ -6,14 +6,14 @@ This file records the current verification state, not an append-only experiment 
 
 | Check | Result |
 | --- | --- |
-| Final complete pytest | **8711 passed, 8 skipped, 1519 subtests; 1100.02s** |
-| Final required machine contracts | **1129 passed, 14 subtests; no skips; 302.57s** |
-| Production statement coverage | **88.51%** (56,091 / 63,374); CI minimum **85%** |
-| Production branch coverage | **78.17%** (17,614 / 22,534); CI minimum **75%** |
+| Final complete pytest | **8713 passed, 8 skipped, 1519 subtests; 1505.48s** |
+| Final required machine contracts | **1129 passed, 14 subtests; no skips; 283.30s** |
+| Production statement coverage | **88.88%**; CI minimum **85%** |
+| Production branch coverage | **78.40%**; CI minimum **75%** |
 | Coverage scope | All **419** production Python files; Python subprocesses included |
-| Full-tree mypy / Pyrefly / ty | **419 source files; all three checkers passed for Python 3.11, 3.12 and 3.13 targets** |
+| Full-tree mypy / Pyrefly / ty | **419 source files; all three checkers passed for Python 3.12 target** |
 | Ruff / diff check | passed |
-| TypeScript / Biome / Vitest | **66 tests passed; build passed** |
+| TypeScript / Biome / Vitest | **71 tests passed; build passed** |
 | Real HTTP protocol continuation | **22 passed**, using deterministic local peers for both native protocols |
 | Real HTTP Stop stress | **100 passed**: 50 before headers, 50 during silent error bodies |
 | Transport regression group | **64 passed**; final implementation also passed under coverage |
@@ -33,15 +33,13 @@ approval expiry removing pending state before durable persistence, failed expiry
 leaving claimed tickets reusable, missing result receipts being hidden by older
 continuation failure state, and Windows Stop blocking on buffered network I/O.
 Real HTTP/browser checks cover approval restart, Allow/Deny, continuation retry,
-workspace document preview and sidebar actions. The native socket fix retains
-the one-second Stop assertion and preserves unrelated I/O errors.
+workspace document preview and sidebar actions. This run specifically passed the
+packaged UI and actual subprocess approval recovery checks (**2 passed**) plus
+the HTTP restart checks (**2 passed**).
 
-Coverage comes from the complete-suite capture plus focused reruns after fixes.
-Measurements for the two subsequently changed production modules were purged
-before recapturing their final code (58 approval tests and 64 transport tests),
-then combined with unchanged-module data. The full-production coverage gate and
-JSON/XML/HTML generation passed. A separate final complete pytest run validates
-the final implementation together.
+Coverage reports were generated from the final complete-suite capture and its
+parallel subprocess data. The full-production coverage gate and JSON/XML/HTML
+generation passed. The new approval tests are included in the final suite.
 
 The eight skips are explicit environment gates: six require POSIX permission,
 process-group, absolute-path or `O_NOFOLLOW` behavior; two opt into an external
@@ -49,10 +47,9 @@ workspace smoke or the separate real desktop-browser workflow. The required
 machine-contract gate has no skips. The actual HTTP/Chromium approval and
 document regressions run normally in the complete suite.
 
-Logs and installed-package UI evidence are under ignored
-`.e2e-artifacts/review-20261015/`; final full-suite and machine-contract logs are
-`full-pytest-release.log` and `machine-contracts-release.log`. Coverage reports are
-under its `complete/` directory.
+Installed-package UI evidence is under ignored
+`.e2e-artifacts/review-20261015/`. Coverage reports are under
+`.e2e-artifacts/coverage/`.
 
 Live Zen matrix: **36/42** initial cases passed; four of six failed cases passed on retest. Two Ling thinking-enabled cases remain unresolved. The free-model matrix is not all green. This review used local deterministic peers rather than new live-provider calls; its results do not establish live-provider health or release status.
 

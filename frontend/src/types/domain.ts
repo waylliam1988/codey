@@ -1,3 +1,29 @@
+export const APPROVAL_DECISIONS = ['pending', 'allow', 'deny', 'cancelled'] as const;
+
+export const APPROVAL_EXECUTIONS = [
+  'not_started',
+  'not_required',
+  'queued',
+  'running',
+  'settled',
+  'uncertain',
+] as const;
+
+export const APPROVAL_CONTINUATIONS = [
+  'waiting_for_result',
+  'queued',
+  'not_required',
+  'resuming',
+  'started',
+  'failed',
+  'unavailable',
+  'cancelled',
+] as const;
+
+export type ApprovalDecision = (typeof APPROVAL_DECISIONS)[number];
+export type ApprovalExecution = (typeof APPROVAL_EXECUTIONS)[number];
+export type ApprovalContinuation = (typeof APPROVAL_CONTINUATIONS)[number];
+
 export interface ApprovalState {
   type: 'shell_approval_status';
   id: string;
@@ -5,9 +31,9 @@ export interface ApprovalState {
   run_id?: string;
   source_run_id?: string;
   continuation_run_id?: string;
-  decision: 'pending' | 'allow' | 'deny' | 'cancelled';
-  execution: string;
-  continuation: string;
+  decision: ApprovalDecision;
+  execution: ApprovalExecution;
+  continuation: ApprovalContinuation;
   revision: number;
 }
 import type { ToolDisplay as importToolDisplay } from '../render';

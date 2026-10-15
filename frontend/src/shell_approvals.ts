@@ -1,4 +1,10 @@
-import type { ApprovalState, Session } from './types/domain';
+import {
+  APPROVAL_CONTINUATIONS,
+  APPROVAL_DECISIONS,
+  APPROVAL_EXECUTIONS,
+  type ApprovalState,
+  type Session,
+} from './types/domain';
 
 interface ApprovalDeps {
   sessions(): Session[];
@@ -7,21 +13,34 @@ interface ApprovalDeps {
   fetch: typeof fetch;
 }
 
+function isOneOf<T extends string>(value: unknown, choices: readonly T[]): value is T {
+  return typeof value === 'string' && choices.some((choice) => choice === value);
+}
+
+function isApprovalState(value: unknown): value is ApprovalState {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+
+  const row = value as Record<string, unknown>;
+  return (
+    row.type === 'shell_approval_status' &&
+    typeof row.id === 'string' &&
+    typeof row.session_id === 'string' &&
+    typeof row.revision === 'number' &&
+    Number.isInteger(row.revision) &&
+    isOneOf(row.decision, APPROVAL_DECISIONS) &&
+    isOneOf(row.execution, APPROVAL_EXECUTIONS) &&
+    isOneOf(row.continuation, APPROVAL_CONTINUATIONS) &&
+    ['run_id', 'source_run_id', 'continuation_run_id'].every(
+      (key) => row[key] === undefined || typeof row[key] === 'string',
+    )
+  );
+}
+
 export function decodeApprovalState(value: unknown): ApprovalState {
-  const row = value as ApprovalState;
-  if (
-    !row ||
-    row.type !== 'shell_approval_status' ||
-    typeof row.id !== 'string' ||
-    typeof row.session_id !== 'string' ||
-    !Number.isInteger(row.revision) ||
-    !['pending', 'allow', 'deny', 'cancelled'].includes(row.decision) ||
-    typeof row.execution !== 'string' ||
-    typeof row.continuation !== 'string'
-  ) {
+  if (!isApprovalState(value)) {
     throw new Error('Invalid approval status');
   }
-  return row;
+  return value;
 }
 
 export function approvalText(state: ApprovalState): string {

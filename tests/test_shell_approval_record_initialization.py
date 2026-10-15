@@ -6,6 +6,7 @@ from dataclasses import replace
 import pytest
 
 from codey.app.context import AppContext
+from codey.app.shell_approval_workflow import _CONTINUATION_STATES
 from codey.runtime.effects import shell_approval_records as records
 
 
@@ -23,6 +24,11 @@ def write_history(root, payloads):
     original = ("\n".join(json.dumps(v) for v in payloads) + "\n").encode()
     path.write_bytes(original)
     return path, original
+
+
+def test_each_continuation_fact_has_an_explicit_status_projection():
+    continuation_facts = {kind for kind in records.FACT_KINDS if kind.startswith("continuation_")}
+    assert continuation_facts == set(_CONTINUATION_STATES)
 
 
 @pytest.mark.parametrize("has_continuation", [False, True])

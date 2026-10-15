@@ -1,5 +1,49 @@
 import { expect, it, vi } from 'vitest';
+import { decodeApprovalState } from './shell_approvals';
+import type { ApprovalState } from './types/domain';
 import type { Session } from './types/domain';
+
+const validStatus = {
+  type: 'shell_approval_status',
+  id: 'approval',
+  session_id: 'session',
+  decision: 'allow',
+  execution: 'running',
+  continuation: 'waiting_for_result',
+  revision: 3,
+} satisfies ApprovalState;
+
+it('rejects an unknown execution state', () => {
+  expect(() =>
+    decodeApprovalState({
+      ...validStatus,
+      execution: 'unexpected_execution',
+    }),
+  ).toThrow('Invalid approval status');
+});
+
+it('rejects an unknown continuation state', () => {
+  expect(() =>
+    decodeApprovalState({
+      ...validStatus,
+      continuation: 'unexpected_continuation',
+    }),
+  ).toThrow('Invalid approval status');
+});
+
+it('accepts a valid status without optional run identifiers', () => {
+  expect(decodeApprovalState(validStatus)).toEqual(validStatus);
+});
+
+it('preserves additional response metadata', () => {
+  const response = {
+    ...validStatus,
+    approval_id: 'approval',
+    code: 'example_metadata',
+  };
+
+  expect(decodeApprovalState(response)).toBe(response);
+});
 
 it('confirms a lost response before reopening approval and rejects stale state', async () => {
   const { createApprovalController } = await import('./shell_approvals');
@@ -84,4 +128,51 @@ it('does not let a buffered live event overwrite an uncertain restart snapshot a
   controller.apply(state);
   controller.apply({ ...state, execution: 'running' });
   expect(session.messages[0].approval?.execution).toBe('uncertain');
+});
+
+it('keeps late approval events isolated by approval id', async () => {
+  const { createApprovalController } = await import('./shell_approvals');
+  const session: Session = {
+    id: 'session',
+    title: 'Session',
+    draft: { text: '', start: 0, end: 0, direction: 'none', revision: 0 },
+    messages: [
+      { type: 'shell_request', id: 'old-approval', command: 'echo same' },
+      { type: 'shell_request', id: 'new-approval', command: 'echo same' },
+    ],
+  };
+  const fetcher = vi.fn();
+  const controller = createApprovalController({ sessions: () => [session], changed: vi.fn(), fetch: fetcher });
+
+  const newState = {
+    ...validStatus,
+    id: 'new-approval',
+    session_id: 'session',
+    execution: 'running',
+    revision: 3,
+  } satisfies ApprovalState;
+  const oldState = {
+    ...validStatus,
+    id: 'old-approval',
+    session_id: 'session',
+    decision: 'cancelled',
+    execution: 'not_started',
+    continuation: 'cancelled',
+    revision: 4,
+  } satisfies ApprovalState;
+
+  controller.apply(newState);
+  controller.apply(oldState);
+  controller.apply(newState);
+
+  const newMessages = session.messages.filter(
+    (message) => message.type === 'shell_approval_status' && message.id === 'new-approval',
+  );
+  const oldMessage = session.messages.find(
+    (message) => message.type === 'shell_approval_status' && message.id === 'old-approval',
+  );
+  expect(newMessages[0]?.approval?.execution).toBe('running');
+  expect(oldMessage?.approval?.continuation).toBe('cancelled');
+  expect(newMessages).toHaveLength(1);
+  expect(fetcher).not.toHaveBeenCalled();
 });

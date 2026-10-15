@@ -267,7 +267,7 @@ def _shell_approval_status_route(ctx: AppContext, query: dict[str, list[str]]) -
     approval_id = str((query.get("id") or [""])[0])
     if approval_id:
         state = ctx.shell_approval_workflow.status(approval_id)
-        return (200, state) if state is not None else (404, {"error": "approval not found"})
+        return (200, dict(state)) if state is not None else (404, {"error": "approval not found"})
     return 200, {"approvals": ctx.shell_approval_workflow.list_statuses(
         session_id=str((query.get("session_id") or [""])[0]),
     )}

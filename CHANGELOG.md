@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- Tighten the shell approval protocol with shared frontend literal-state definitions, runtime decoding of only valid decision/execution/continuation values, typed backend status projections, explicit continuation-fact mappings, and regression coverage for failed result writes, late approval events, and real HTTP/browser recovery.
 - Fix API Stop races on Windows by interrupting owned native sockets before buffered response closure, including sockets retained after connection handoff; classify cancellation-induced I/O errors without hiding unrelated failures.
 - Acknowledge durable shell approval decisions independently of command execution; recover lost responses, show execution/continuation status, and retry continuation without executing the command again. Preserve pending cards when expiry persistence fails and reject retries with unverifiable result receipts.
 - Add a shared workspace/research document pane, compact command disclosures and project chat actions. Preserve document reading position on reload and include all published SVG icons in wheel and source archives.

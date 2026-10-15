@@ -25,7 +25,13 @@ def frontend_source(name: str) -> str:
     source = _sources()[key + ".ts"]
     # Standalone Node regressions execute one transpiled module without the
     # application entry. The fixture supplies the legacy object namespace.
-    shim = "var runtime = (typeof window !== 'undefined' ? window : globalThis);\nvar decodeServerEvent = globalThis.decodeServerEvent || function(value) { return value; };\n"
+    shim = (
+        "var runtime = (typeof window !== 'undefined' ? window : globalThis);\n"
+        "var decodeServerEvent = globalThis.decodeServerEvent || function(value) { return value; };\n"
+        "var APPROVAL_DECISIONS = ['pending', 'allow', 'deny', 'cancelled'];\n"
+        "var APPROVAL_EXECUTIONS = ['not_started', 'not_required', 'queued', 'running', 'settled', 'uncertain'];\n"
+        "var APPROVAL_CONTINUATIONS = ['waiting_for_result', 'queued', 'not_required', 'resuming', 'started', 'failed', 'unavailable', 'cancelled'];\n"
+    )
     return shim + source
 
 

@@ -233,6 +233,66 @@ def test_unpersisted_result_is_uncertain_and_not_published(tmp_path, monkeypatch
         ctx.close()
 
 
+def test_failed_result_write_does_not_block_next_approval(tmp_path, monkeypatch):
+    ctx = AppContext(tmp_path)
+    execute = Mock(
+        return_value={
+            "ok": True,
+            "status": "exit",
+            "output": "done",
+            "exit_code": 0,
+        }
+    )
+    monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
+    submit = Mock()
+
+    try:
+        seed(ctx, "first", continue_after=False, command="echo same")
+
+        with monkeypatch.context() as failing_disk:
+            failing_disk.setattr(
+                ctx.managed_outputs,
+                "write_json_artifact",
+                Mock(side_effect=OSError("disk full")),
+            )
+
+            status, _ = api.shell_approval_response(
+                ctx,
+                {"id": "first", "approved": True},
+                submit_task_after_slot_release=submit,
+            )
+
+            assert status == 202
+            assert ctx.shell_approval_workflow.wait(5)
+
+        first = ctx.shell_approval_workflow.status("first")
+        assert first is not None
+        assert first["execution"] == "uncertain"
+        assert ctx.shell_approval_workflow.busy_status() is None
+
+        seed(ctx, "second", continue_after=False, command="echo same")
+        status, _ = api.shell_approval_response(
+            ctx,
+            {"id": "second", "approved": True},
+            submit_task_after_slot_release=submit,
+        )
+
+        assert status == 202
+        assert ctx.shell_approval_workflow.wait(5)
+
+        second = ctx.shell_approval_workflow.status("second")
+        assert second is not None
+        assert second["execution"] == "settled"
+        assert execute.call_count == 2
+
+        status, _ = ctx.shell_approval_workflow.retry("first", submit)
+        assert status == 409
+        assert execute.call_count == 2
+        submit.assert_not_called()
+    finally:
+        ctx.close()
+
+
 def test_stop_during_execution_stays_cancelled_after_result_settlement(tmp_path, monkeypatch):
     ctx = AppContext(tmp_path)
     seed(ctx)
