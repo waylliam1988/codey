@@ -78,10 +78,10 @@ class GhostObservationStore:
         stop_reason: str,
         provider_id: str = "",
     ) -> bool:
-        cleaned_mode = str(mode or "").strip().lower() or "chat"
+        cleaned_mode = (mode or "").strip().lower() or "chat"
         if cleaned_mode not in OBSERVABLE_MODES:
             cleaned_mode = "chat"
-        cleaned_stop = str(stop_reason or "").strip().lower()
+        cleaned_stop = (stop_reason or "").strip().lower()
         row: dict[str, object] = {
             "schema_version": OBSERVATIONS_SCHEMA_VERSION,
             "ts": _common.now_iso_z(),
@@ -136,7 +136,7 @@ class GhostObservationStore:
           required so one project's rounds never leak into another's.
         - ``user``: every committed round in this local store.
         """
-        normalized_scope = str(scope or "session").strip().lower()
+        normalized_scope = (scope or "session").strip().lower()
         if normalized_scope not in {"session", "project", "user"}:
             raise ValueError("scope must be session, project, or user")
         rows = list(self.read_all())
@@ -169,7 +169,7 @@ class GhostObservationStore:
         project: str = "",
         session_id: str = "",
     ) -> int:
-        normalized_scope = str(scope or "").strip().lower()
+        normalized_scope = (scope or "").strip().lower()
         if normalized_scope not in {"user", "project", "session"}:
             raise ValueError("scope must be user, project, or session")
         normalized_project = _common.normalize_project(project)

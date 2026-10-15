@@ -130,7 +130,7 @@ def _section_lines(
     strip_bullets: bool = True,
 ) -> tuple[str, ...]:
     out: list[str] = []
-    for line in str(text or "").splitlines():
+    for line in (text or "").splitlines():
         stripped = line.strip()
         if not stripped:
             continue
@@ -149,7 +149,7 @@ def _section_lines(
 
 def _citation_ids(text: str) -> frozenset[int]:
     ids: set[int] = set()
-    for line in str(text or "").splitlines():
+    for line in (text or "").splitlines():
         stripped = line.strip()
         if stripped.startswith(("- ", "* ")):
             stripped = stripped[2:].strip()

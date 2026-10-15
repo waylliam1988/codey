@@ -120,14 +120,12 @@ def _score_send_button_candidate(
     role = fingerprint["role"]
     score = 0
     class_hints = {
-        str(item).lower()
+        item.lower()
         for item in fingerprint["classes"]
         if isinstance(item, str)
     }
-    class_clickable = bool(
-        "enter" in class_hints
-        or any("send" in item or "submit" in item for item in class_hints)
-    )
+    class_clickable = ("enter" in class_hints
+        or any("send" in item or "submit" in item for item in class_hints))
     if action != SEND_BUTTON or (
         tag != "button" and role != "button" and not class_clickable
     ):

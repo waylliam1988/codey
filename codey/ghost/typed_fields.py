@@ -259,7 +259,7 @@ def safe_slug(value: object) -> str:
 
 
 def safe_rendered_body(value: str) -> bool:
-    text = " ".join(str(value or "").split())
+    text = " ".join((value or "").split())
     normalized = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff]+", " ", text)
     normalized = " ".join(normalized.split())
     return (

@@ -153,15 +153,15 @@ class ResearchProofReview:
 
     def to_payload(self) -> dict[str, object]:
         return {
-            "ok": bool(self.ok),
-            "answers_question": bool(self.answers_question),
+            "ok": self.ok,
+            "answers_question": self.answers_question,
             "answer_status": identifier(self.answer_status, 40) or "not_answered",
             "answer_coverage_score": _bounded_score(self.answer_coverage_score),
-            "citation_present": bool(self.citation_present),
-            "citation_locator_verified": bool(self.citation_locator_verified),
-            "support_relation_verified": bool(self.support_relation_verified),
-            "counterevidence_checked": bool(self.counterevidence_checked),
-            "ledger_record_verified": bool(self.ledger_record_verified),
+            "citation_present": self.citation_present,
+            "citation_locator_verified": self.citation_locator_verified,
+            "support_relation_verified": self.support_relation_verified,
+            "counterevidence_checked": self.counterevidence_checked,
+            "ledger_record_verified": self.ledger_record_verified,
             "question_digest": valid_digest_ref(self.question_digest),
             "coverage_gaps": [item.to_payload() for item in self.coverage_gaps[:MAX_GAPS]],
             "followup_questions": [
@@ -245,7 +245,7 @@ def review_research_proof(
     evidence_ledger: Mapping[str, object] | None = None,
     require_ledger_record: bool = False,
 ) -> ResearchProofReview:
-    requested_question = str(question or "").strip()
+    requested_question = (question or "").strip()
     question_digest = _question_digest(requested_question)
     payload = _record_payload(record)
     if not payload:
@@ -464,7 +464,7 @@ def _ledger_has_record(
 
 
 def _looks_like_strong_claim(value: str) -> bool:
-    return bool(_STRONG_CLAIM_RE.search(str(value or "")))
+    return bool(_STRONG_CLAIM_RE.search(value or ""))
 
 
 def _positive_ints(value: object) -> tuple[int, ...]:

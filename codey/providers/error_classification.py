@@ -64,7 +64,7 @@ _QUOTA_MARKERS = (
 )
 
 def is_context_overflow_message(text: str) -> bool:
-    folded = str(text or "").lower()
+    folded = (text or "").lower()
     if not folded:
         return False
     return any(marker in folded for marker in _OVERFLOW_MARKERS)
@@ -85,7 +85,7 @@ def classify_http_error(status: int, body: str) -> str:
 
 
 def is_quota_message(text: str) -> bool:
-    folded = str(text or "").lower()
+    folded = (text or "").lower()
     return any(marker in folded for marker in _QUOTA_MARKERS)
 
 

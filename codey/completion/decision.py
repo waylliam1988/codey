@@ -171,9 +171,9 @@ def completion_blocked_reason(
     admitted.
     """
 
-    if str(failure_class or "") in _ENVIRONMENT_FAILURE_CLASSES:
+    if (failure_class or "") in _ENVIRONMENT_FAILURE_CLASSES:
         return BLOCKED_ENVIRONMENT_FAILURE
-    if str(proof_status or "") == "blocked":
+    if (proof_status or "") == "blocked":
         return BLOCKED_UNOBSERVED
     if _safe_int(remaining_turns) <= 0:
         return BLOCKED_TURN_BUDGET_EXHAUSTED

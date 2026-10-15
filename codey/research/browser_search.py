@@ -72,10 +72,10 @@ class SearchUnavailableError(RuntimeError):
         detail: str = "",
         observed_host: str = "",
     ) -> None:
-        self.failure_kind = str(failure_kind or "search_unavailable")
-        self.engine = str(engine or "")
-        self.detail = str(detail or "")
-        self.observed_host = str(observed_host or "")
+        self.failure_kind = (failure_kind or "search_unavailable")
+        self.engine = (engine or "")
+        self.detail = (detail or "")
+        self.observed_host = (observed_host or "")
         message = self.failure_kind
         if self.engine:
             message = f"{message} ({self.engine})"
@@ -144,8 +144,8 @@ class BrowserSearchProvider:
         self.cdp_port = int(cdp_port)
         self.browser_path = browser_path
         self.launch = launch
-        self.isolated = bool(isolated)
-        self.bring_to_front = bool(bring_to_front)
+        self.isolated = isolated
+        self.bring_to_front = bring_to_front
         self._session: Any | None = None
         self._search_page: Any | None = None
         self._fetch_page: Any | None = None
@@ -633,17 +633,17 @@ def _search_engine_host(profile: dict[str, Any]) -> str:
 
 def _url_host(url: str) -> str:
     try:
-        return (urlparse(str(url or "")).hostname or "").lower().removeprefix("www.")
+        return (urlparse(url or "").hostname or "").lower().removeprefix("www.")
     except ValueError:
         return ""
 
 
 def _same_host(url: str, expected_host: str) -> bool:
     try:
-        actual = (urlparse(str(url or "")).hostname or "").lower().removeprefix("www.")
+        actual = (urlparse(url or "").hostname or "").lower().removeprefix("www.")
     except ValueError:
         return False
-    expected = str(expected_host or "").lower().removeprefix("www.")
+    expected = (expected_host or "").lower().removeprefix("www.")
     return bool(actual and expected and (actual == expected or actual.endswith("." + expected)))
 
 
@@ -837,14 +837,14 @@ def _host_is_search_engine(host: str) -> bool:
 
 
 def _is_pdf_response(content_type: str, url: str) -> bool:
-    ctype = str(content_type or "").lower()
+    ctype = (content_type or "").lower()
     if "application/pdf" in ctype or "application/x-pdf" in ctype:
         return True
     return _is_pdf_url(url)
 
 
 def _is_pdf_url(url: str) -> bool:
-    path = urlparse(str(url or "")).path.lower()
+    path = urlparse(url or "").path.lower()
     return path.endswith(".pdf")
 
 
@@ -852,7 +852,7 @@ def _is_pdf_url(url: str) -> bool:
 
 
 def _download_text_fallback(url: str) -> dict[str, Any]:
-    current_url = str(url or "").strip()
+    current_url = (url or "").strip()
     redirects = 0
     while True:
         cancellation.check()
@@ -935,7 +935,7 @@ def _content_length(headers: dict[str, Any]) -> int | None:
 
 
 def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict[str, Any]:
-    current_url = str(url or "").strip()
+    current_url = (url or "").strip()
     redirects = 0
     while True:
         cancellation.check()
@@ -1086,13 +1086,13 @@ def _pdf_skipped(url: str, mime_type: str, message: str) -> dict[str, Any]:
 
 
 def _redirect_error(url: str, content_kind: str, message: str) -> dict[str, Any]:
-    if str(content_kind or "").casefold() == "pdf":
+    if (content_kind or "").casefold() == "pdf":
         return _pdf_skipped(url, "application/pdf", "PDF " + message)
     return _fetch_failure(url, f'page {message}', title=_title_from_url(url))
 
 
 def _normalize_result_url(href: str) -> str:
-    raw = str(href or "").strip()
+    raw = (href or "").strip()
     if not raw:
         return ""
     parsed = urlparse(raw)
@@ -1133,7 +1133,7 @@ def _search_redirect_target(parsed: Any) -> str:
 
 
 def _decode_redirect_value(value: str) -> str:
-    raw = unquote(str(value or "").strip())
+    raw = unquote((value or "").strip())
     if raw.startswith(("http://", "https://")):
         return raw
     candidates = [raw]
@@ -1157,7 +1157,7 @@ def _title_from_url(href: str) -> str:
 
 
 def _clean_space(text: str) -> str:
-    return " ".join(str(text or "").split())
+    return " ".join((text or "").split())
 
 
 def _is_search_navigation_title(title: str) -> bool:

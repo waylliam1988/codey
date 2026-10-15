@@ -42,7 +42,7 @@ def result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) ->
     if explicit_code is not None and audit_code is not None and explicit_code != audit_code:
         return False
     code = explicit_code if explicit_code is not None else audit_code
-    return code == 0 if str(name or "").strip().lower() == "run" else True
+    return code == 0 if (name or "").strip().lower() == "run" else True
 
 
 def _strip_executor_workspace_audit(audit: object) -> dict[str, Any]:
@@ -185,7 +185,7 @@ def _call_args_digest(call: ToolCall) -> str:
         return ""
     try:
         args = call.args if isinstance(call.args, dict) else dict[str, object]()
-        return str(compute_args_digest(args) or "")
+        return (compute_args_digest(args) or "")
     except Exception:
         return ""
 
@@ -243,7 +243,7 @@ def _consistent_tool_result(
         return ToolResult(
             ok=produced.ok, call=requested,
             model_text=produced.model_text,
-            truncated=bool(produced.truncated),
+            truncated=produced.truncated,
             presentation=dict(produced.presentation) if isinstance(produced.presentation, dict) else {},
             audit=cleaned_audit,
             canonical=dict(produced.canonical) if isinstance(produced.canonical, dict) else {},

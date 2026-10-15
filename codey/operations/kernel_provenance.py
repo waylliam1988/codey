@@ -215,7 +215,7 @@ def attach_trusted_workspace(result: ToolResult, proof: TrustedWorkspaceProof) -
         trusted = ToolResult(
             ok=result.ok, call=result.call,
             model_text=result.model_text,
-            truncated=bool(result.truncated),
+            truncated=result.truncated,
             presentation=dict(result.presentation) if isinstance(result.presentation, dict) else {},
             audit=audit,
             canonical=dict(result.canonical) if isinstance(result.canonical, dict) else {},
@@ -308,7 +308,7 @@ def sync_workspace_state_after_edit(
         )
         if not identity.trusted:
             return 0, ""
-        rev, fp = int(identity.revision), str(identity.fingerprint)
+        rev, fp = int(identity.revision), identity.fingerprint
         try:
             session.set_workspace_state(rev, fp)
         except Exception as exc:

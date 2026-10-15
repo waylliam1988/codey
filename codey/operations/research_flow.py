@@ -455,7 +455,7 @@ def research_payload(
                 "attempted_new_evidence_count": max(0, int(metadata.get("attempted_new_evidence_count") or 0)),
             })
     if restoreable is not None:
-        payload["restoreable"] = bool(restoreable)
+        payload["restoreable"] = restoreable
     return payload
 
 

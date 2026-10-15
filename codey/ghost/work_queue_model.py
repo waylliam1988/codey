@@ -289,7 +289,7 @@ def _stable_item_id(
             scope_ref,
             source,
             source_ref,
-            " ".join(str(title or "").split()).casefold(),
+            " ".join((title or "").split()).casefold(),
         )
     )
     return "gwi_" + hashlib.sha256(key.encode("utf-8", errors="replace")).hexdigest()[:24]

@@ -588,11 +588,11 @@ class RuntimeOperationStore:
 
 
 def operation_id_for_run(run_id: str) -> str:
-    return "task:" + hashlib.sha256(str(run_id or "").encode("utf-8")).hexdigest()[:24]
+    return "task:" + hashlib.sha256((run_id or "").encode("utf-8")).hexdigest()[:24]
 
 
 def lane_for_run(run_id: str) -> str:
-    return "run:" + session_key(str(run_id or ""))[:24]
+    return "run:" + session_key(run_id or "")[:24]
 
 
 def new_operation_state(
@@ -634,8 +634,8 @@ def operation_state_from_entries(
     session_id: str,
     run_id: str,
 ) -> RuntimeOperationState | None:
-    operation_id = operation_id_for_run(str(run_id or ""))
-    lane = lane_for_run(str(run_id or ""))
+    operation_id = operation_id_for_run(run_id or "")
+    lane = lane_for_run(run_id or "")
     latest: RuntimeOperationState | None = None
     for entry in entries:
         if entry.kind != "operation_state" or entry.operation_id != operation_id:

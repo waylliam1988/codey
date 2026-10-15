@@ -75,7 +75,7 @@ class NetworkPolicy:
         self.allowed_cache_ttl_seconds = max(0.0, float(allowed_cache_ttl_seconds))
         self.blocked_cache_ttl_seconds = max(0.0, float(blocked_cache_ttl_seconds))
         self.max_cache_entries = max(1, int(max_cache_entries))
-        self.allow_dns_fake_ip = bool(allow_dns_fake_ip)
+        self.allow_dns_fake_ip = allow_dns_fake_ip
         self._cache: dict[tuple[str, str, int], tuple[float, str | None]] = {}
         self._lock = threading.Lock()
 

@@ -43,7 +43,7 @@ def _source_meta(item: dict[str, Any], quality_text: str = "") -> str:
         except Exception:
             compact_pages = None  # type: ignore[assignment]
         try:
-            pages = str(compact_pages(item.get("pages_read") or ()) or "") if callable(compact_pages) else ""
+            pages = (compact_pages(item.get("pages_read") or ()) or "") if callable(compact_pages) else ""
         except Exception:
             pages = ""
         try:
@@ -162,7 +162,7 @@ def _ledger_appendix(ledger: Any) -> str:
 def synthesis_body(summary: str, ledger: Any) -> str:
     body = (summary or "").strip()
     try:
-        appendix = str(_ledger_appendix(ledger) or "")
+        appendix = (_ledger_appendix(ledger) or "")
     except Exception:
         appendix = ""
     if not appendix:

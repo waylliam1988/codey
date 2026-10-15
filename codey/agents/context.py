@@ -145,7 +145,7 @@ def build_agent_context(
             "bounded local continuity projection",
             capability_id="local_context",
         ))
-        if str(ghost_experiences or "").strip():
+        if (ghost_experiences or "").strip():
             sources.append(intro_source(
                 "ghost_experiences",
                 lambda: ghost_experiences,

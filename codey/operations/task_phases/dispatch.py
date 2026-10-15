@@ -250,7 +250,7 @@ def dispatch_run_mode(
     # run_task_mode (same TaskSession/tool loop); ResearchPipeline and project
     # review stay as workflow strategies. Auto's first answer is gated;
     # tool continuations enter the same kernel with the original policy.
-    _early = str(task_kind or "").strip().lower()
+    _early = (task_kind or "").strip().lower()
     if _early != "project" and (frame.recovered_tool_outcomes or frame.settled_tool_outcomes):
         return run_entry_kernel(frame, work, hooks, deps, task_kind=task_kind, config_result=config_result)
     if _early == "hybrid":
@@ -314,7 +314,7 @@ def record_route_trace(
     claimed_work_item: GhostWorkItem | None,
     recovered_resume: bool = False,
 ) -> None:
-    route_source = "explicit_user_choice" if str(request.intent or "").strip().lower() != "auto" else "baseline"
+    route_source = "explicit_user_choice" if (request.intent or "").strip().lower() != "auto" else "baseline"
     route_reason = "intent_selected" if route_source == "explicit_user_choice" else "baseline_kept"
     route_selected_mode = task_kind
     if recovered_resume:

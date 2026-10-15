@@ -113,14 +113,14 @@ def _same_effect_call(stored_name: str, stored_digest: str, call: ToolCall) -> b
     from codey.operations.kernel_result import _call_args_digest
 
     name = str(getattr(call, "name", "") or "").strip().lower()
-    if str(stored_name or "").strip().lower() != name:
+    if (stored_name or "").strip().lower() != name:
         return False
     if not stored_digest:
         # Legacy records without a digest cannot prove sameness; treat as
         # mismatch for unsafe tools to avoid mis-delivery. Safe reads fall
         # back to re-execution via the caller.
         return False
-    return str(stored_digest or "") == _call_args_digest(call)
+    return (stored_digest or "") == _call_args_digest(call)
 
 
 def _recovery_mismatch_result(call: ToolCall, expected: str, actual: str) -> ToolResult:
@@ -148,7 +148,7 @@ def _replay_memory_slot(
     try:
         from codey.runtime.effects.effect_records import compute_args_digest as _digest
 
-        stored_digest = str(_digest(full.call.args if isinstance(full.call.args, dict) else {}) or "")
+        stored_digest = (_digest(full.call.args if isinstance(full.call.args, dict) else {}) or "")
     except Exception:
         stored_digest = ""
     if not _same_effect_call(stored_name, stored_digest, call):
@@ -366,7 +366,7 @@ def delivered_slot_typed(
             from codey.runtime.effects.effect_records import compute_args_digest as _d
 
             stored_args = getattr(stored_call, "args", {}) if stored_call is not None else dict[str, object]()
-            stored_digest = str(_d(stored_args if isinstance(stored_args, dict) else {}) or "")
+            stored_digest = (_d(stored_args if isinstance(stored_args, dict) else {}) or "")
         except Exception:
             stored_digest = ""
     except Exception:

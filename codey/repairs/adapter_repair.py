@@ -173,8 +173,8 @@ def _render_failure_context(
     failure_stage: str,
     failure_facts: dict[str, object] | None,
 ) -> str:
-    kind = str(failure_kind or "").strip()[:80]
-    stage = str(failure_stage or "").strip()[:80]
+    kind = (failure_kind or "").strip()[:80]
+    stage = (failure_stage or "").strip()[:80]
     facts = sanitize_failure_facts(failure_facts)
     if not kind and not stage and not facts:
         return ""
@@ -301,7 +301,7 @@ def run_worker_canary(
                 f"Return exactly this marker and nothing else: {marker}",
                 timeout=timeout,
             )
-            if str(reply or "").strip() != marker:
+            if (reply or "").strip() != marker:
                 return False
         return True
     finally:

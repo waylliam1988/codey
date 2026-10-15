@@ -55,11 +55,11 @@ def _emit_turn_event(on_event: Callable[[Any], None] | None, turn: int, reply: A
 
     display = reply if isinstance(reply, str) else str(getattr(reply, "text", "") or "")
     reasoning = getattr(reply, "reasoning", "")
-    on_event(RunEvent.turn_started(turn, str(display), reasoning=reasoning if isinstance(reasoning, str) else ""))
+    on_event(RunEvent.turn_started(turn, display, reasoning=reasoning if isinstance(reasoning, str) else ""))
 
 
 def _event_call(session: TaskSession, call: ToolCall) -> ToolCall:
-    name = str(call.name or "")
+    name = (call.name or "")
     project_name = {"list_dir": "ls", "read_file": "read", "grep": "search", "find_references": "references"}.get(name)
     if project_name is not None:
         return ToolCall(name=project_name, args=dict(call.args), call_id=call.call_id)
@@ -126,7 +126,7 @@ def _emit_tool_results(
             audit.pop("exit_code", None)
         else:
             audit["exit_code"] = exit_code
-        display = str(result.model_text or "")
+        display = (result.model_text or "")
         if result.call.name in {"open_url", "open_result", "open_hit", "reopen_source"}:
             display = next(
                 (line.removeprefix("Title: ") for line in display.splitlines() if line.startswith("Title: ")),
@@ -180,7 +180,7 @@ def _emit_tool_results(
                 if kernel_identity is not None:
                     try:
                         event.metadata["workspace_revision"] = int(kernel_identity.revision)
-                        event.metadata["workspace_fingerprint"] = str(kernel_identity.fingerprint)
+                        event.metadata["workspace_fingerprint"] = kernel_identity.fingerprint
                         attach_proof_to_event(
                             event,
                             _trusted_workspace_proof(kernel_identity, "event_side_channel"),

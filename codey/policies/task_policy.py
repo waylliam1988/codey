@@ -170,7 +170,7 @@ def build_task_policy(
     """Build the immutable policy for one task from user intent only."""
     kind = _normalize_kind(task_kind)
     # The Research button is user intent; model output is never consulted here.
-    strict = bool(strict_research is True) or bool(getattr(submission, "strict_research", False) is True)
+    strict = (strict_research is True) or bool(getattr(submission, "strict_research", False) is True)
     sources_open_required = bool(getattr(submission, "sources_open_required", False) is True)
     has_project = _has_project(submission)
     requested = _requested_grants(submission)

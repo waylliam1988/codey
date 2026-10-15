@@ -420,7 +420,7 @@ def _record_ghost_warning(
     try:
         emit({
             "type": "ghost_post_turn_warning",
-            "stage": str(stage or "unknown"),
+            "stage": (stage or "unknown"),
             "run_id": resolved_run_id,
             "session_id": session_id,
             "error_type": type(exc).__name__,

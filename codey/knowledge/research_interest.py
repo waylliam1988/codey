@@ -198,7 +198,7 @@ def _candidate_from_missing_link(
         for ref in link.support_refs
         if _clip(ref.note_id, 120)
     )[:MAX_RESEARCH_INTEREST_REFS]
-    strong = len(set(support_refs)) >= 2 or len(neighbors) >= 2 or bool(link.session_focus)
+    strong = len(set(support_refs)) >= 2 or len(neighbors) >= 2 or link.session_focus
     question = f"Research whether {left} and {right} are connected."
     why = "Shared declared neighbor"
     if len(neighbors) != 1:
@@ -273,7 +273,7 @@ def _candidate(
         why_now=clean_why,
         source=clean_source,
         source_ref=clean_source_ref,
-        strong_support=bool(strong_support),
+        strong_support=strong_support,
     )
 
 

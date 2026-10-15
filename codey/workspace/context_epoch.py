@@ -87,7 +87,7 @@ class ContextAdmission:
             "digest": self.digest,
             "chars": max(0, min(int(self.chars or 0), MAX_ADMISSION_CHARS)),
             "budget": max(0, int(self.budget or 0)),
-            "truncated": bool(self.truncated),
+            "truncated": self.truncated,
         }
         if capability:
             payload["capability_id"] = capability

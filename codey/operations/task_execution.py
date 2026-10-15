@@ -109,8 +109,8 @@ class ExecutionDelegate:
             self.project_path = None
         self.tool_fns: AgentToolFns | None = tool_fns
         self.research_tools = research_tools
-        self.permission_profile = str(permission_profile or "coding_writer")
-        self.approval_available = bool(approval_available)
+        self.permission_profile = (permission_profile or "coding_writer")
+        self.approval_available = approval_available
         self.change_tracker = change_tracker
         self.managed_outputs = managed_outputs
         self.session_id = session_id
@@ -126,7 +126,7 @@ class ExecutionDelegate:
                 pass
 
     def _resolve_spec(self, name: str) -> Any:
-        lowered = str(name or "").strip().lower()
+        lowered = (name or "").strip().lower()
         if self._frozen_specs is not None:
             return self._frozen_specs.get(lowered)
         try:
@@ -139,7 +139,7 @@ class ExecutionDelegate:
             return None
 
     def _resolve_custom_executor(self, name: str) -> Any:
-        lowered = str(name or "").strip().lower()
+        lowered = (name or "").strip().lower()
         if self._custom_executors is not None:
             return self._custom_executors.get(lowered)
         try:
@@ -162,7 +162,7 @@ class ExecutionDelegate:
         if spec.executor in {"source", "knowledge"}:
             return bool(self.research_tools is not None)
         try:
-            if self._resolve_custom_executor(str(name or "")) is not None:
+            if self._resolve_custom_executor(name or "") is not None:
                 return True
         except Exception:
             pass
@@ -170,7 +170,7 @@ class ExecutionDelegate:
 
     def execute(self, call: ToolCall, *, turn: int = 0,
                 tool_index: int = 0) -> tuple[ToolResult, bool, int | None]:
-        name = str(call.name or "").strip().lower()
+        name = (call.name or "").strip().lower()
         try:
             spec = self._resolve_spec(name)
             executor = spec.executor if spec is not None else ""
@@ -242,7 +242,7 @@ class ExecutionDelegate:
             reason = str(getattr(decision, "reason", "") or getattr(decision, "reason_code", "") or "denied")
             return True, f"project guard denied {call.name}: {reason}", False
         try:
-            if str(call.name or "") == "shell" and bool(policy_asks_user(decision)):
+            if (call.name or "") == "shell" and policy_asks_user(decision):
                 return True, "shell requires user approval", True
         except Exception:
             pass
@@ -263,7 +263,7 @@ class ExecutionDelegate:
 
             result = policy_denial_result(call, message)
             return result, False, None
-        name = str(call.name or "").strip().lower()
+        name = (call.name or "").strip().lower()
         runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
                         "find_references": "references"}.get(name, name)
         try:
@@ -380,12 +380,12 @@ class ExecutionDelegate:
         base = _tool_result(call, outcome)
         merged = dict(base.canonical)
         merged["opened_url"] = final_url
-        merged["request_url"] = str(url or "")
+        merged["request_url"] = (url or "")
         ledger = getattr(self.research_tools, "ledger", None)
         if isinstance(ledger, ResearchLedger):
             merged["research_observation"] = ledger_observation(ledger, "open", url=url)
         result = ToolResult(
-            ok=base.ok, call=base.call, model_text=base.model_text, truncated=bool(base.truncated),
+            ok=base.ok, call=base.call, model_text=base.model_text, truncated=base.truncated,
             presentation=dict(base.presentation) if isinstance(base.presentation, dict) else {},
             audit=dict(base.audit) if isinstance(base.audit, dict) else {},
             canonical=merged,
@@ -395,7 +395,7 @@ class ExecutionDelegate:
     def _execute_research(self, call: ToolCall, *, turn: int = 0,
                           tool_index: int = 0) -> tuple[ToolResult, bool, int | None]:
         tools = self.research_tools
-        name = str(call.name or "").strip().lower()
+        name = (call.name or "").strip().lower()
         args = dict(call.args or {})
         try:
             if name == "web_search":
@@ -542,10 +542,10 @@ class ExecutionDelegate:
                 by_target[(str(value.get("url", "")), int(value.get("offset", 0) or 0), str(value.get("pages", "")))] = key
         lines: list[str] = []
         counter = len(existing) + 1
-        for line in str(text or "").splitlines():
+        for line in (text or "").splitlines():
             match = re.match(r"^\s*\d+\.\s+(?:offset\s+(\d+)|p\.(\d+)):", line)
             if match:
-                target = (str(url or ""), int(match.group(1) or 0), str(match.group(2) or ""))
+                target = ((url or ""), int(match.group(1) or 0), str(match.group(2) or ""))
                 hit_id = by_target.get(target, "")
                 if not hit_id:
                     while f"h{counter}" in existing or f"h{counter}" in batch:

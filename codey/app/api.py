@@ -381,8 +381,8 @@ def _research_note_payload(note: Any, row: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_details_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
-    session_id = str((query.get("session_id") or [""])[0] or "").strip()
-    run_id = str((query.get("run_id") or [""])[0] or "").strip()
+    session_id = ((query.get("session_id") or [""])[0] or "").strip()
+    run_id = ((query.get("run_id") or [""])[0] or "").strip()
     if not session_id or not run_id:
         return 400, {"ok": False, "error": "session_id and run_id required"}
     summary = load_run_details(

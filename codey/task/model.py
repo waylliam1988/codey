@@ -179,11 +179,11 @@ def derive_project_changes_required(
     except Exception:
         pass
     try:
-        kind = str(intent or "").strip().lower()
+        kind = (intent or "").strip().lower()
     except Exception:
         kind = ""
     try:
-        has_project = bool(str(project or "").strip())
+        has_project = bool((project or "").strip())
     except Exception:
         has_project = False
     if not has_project:

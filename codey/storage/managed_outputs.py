@@ -88,7 +88,7 @@ class ManagedOutputStore:
             run_dir = self._run_dir(session_id, run_id)
             with with_file_lock(run_dir):
                 existing = tuple(run_dir.glob(f"{HANDLE_PREFIX}*.json")) if run_dir.exists() else ()
-                original_text = str(text or "")
+                original_text = (text or "")
                 original_bytes = len(original_text.encode("utf-8"))
                 policy = evaluate_action(ActionSubject(
                     kind="managed_output",
@@ -252,7 +252,7 @@ class ManagedOutputStore:
             expected_schema = ref.get("schema_version")
         else:
             ref_session, ref_run, handle, expected_digest, expected_schema = (
-                str(session_id or ""), str(run_id or ""), str(ref), "", None,
+                (session_id or ""), (run_id or ""), ref, "", None,
             )
         if not ref_session or not ref_run or not handle:
             raise ValueError("json artifact reference is incomplete")
@@ -286,7 +286,7 @@ class ManagedOutputStore:
         handle: str,
         suffix: str,
     ) -> Path:
-        safe_handle = _safe_artifact_handle(handle) if str(handle).startswith("artifact_") else _safe_handle(handle)
+        safe_handle = _safe_artifact_handle(handle) if handle.startswith("artifact_") else _safe_handle(handle)
         path = self._run_dir(session_id, run_id) / f"{safe_handle}{suffix}"
         resolved = path.resolve()
         resolved.relative_to(self.root.resolve())

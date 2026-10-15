@@ -177,7 +177,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     executors = _frozen_custom_executors(names)
     return TurnSnapshot(
         allowed=allowed,
-        contract_text=str(contract_now or ""),
+        contract_text=(contract_now or ""),
         tool_names=names,
         policy=session.policy,
         frozen_specs=frozen,
@@ -207,11 +207,11 @@ def _canonical_name(tool: str) -> str:
     try:
         from codey.toolchain.tool_spec import canonical_tool_name
     except Exception:
-        return str(tool or "").strip().lower()
+        return (tool or "").strip().lower()
     try:
         return canonical_tool_name(tool)
     except Exception:
-        return str(tool or "").strip().lower()
+        return (tool or "").strip().lower()
 
 
 def _is_coding_only_tool(tool: str) -> bool:
@@ -232,7 +232,7 @@ def _is_coding_only_tool(tool: str) -> bool:
 def _controller_allows(tool: str, allowed: set[str] | None) -> bool:
     if allowed is None:
         return True
-    name = str(tool or "").strip().lower()
+    name = (tool or "").strip().lower()
     if _is_coding_only_tool(name):
         return True
     if name == "open_url":
@@ -260,12 +260,12 @@ def _disallowed_plan(tool: str, *, controller: bool = False) -> ToolPlan:
         message = f"disallowed tool for this task policy: {tool}"
         kind = "disallowed_tool"
     return ToolPlan(calls=[], control=None, protocol_error=message, protocol_error_kind=kind,
-                    protocol_tool_name=str(tool or ""))
+                    protocol_tool_name=(tool or ""))
 
 
 def _invalid_plan(message: str, *, tool: str = "", kind: str = "invalid_args") -> ToolPlan:
     return ToolPlan(calls=[], control=None, protocol_error=message, protocol_error_kind=kind,
-                    protocol_tool_name=str(tool or ""))
+                    protocol_tool_name=(tool or ""))
 
 
 def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -281,7 +281,7 @@ def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
 
 
 def _validate_coding_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    if str(tool or "").strip().lower() == "edit" and isinstance(args, dict):
+    if (tool or "").strip().lower() == "edit" and isinstance(args, dict):
         # Top-level old/new fields are not part of the canonical edit shape.
         if "old_string" in args or "new_string" in args:
             return {}, "edit requires replacements for existing files"
@@ -382,7 +382,7 @@ def _spec_error_for(name: str, args: dict[str, Any], spec: Any, frozen_specs: di
 def _validate_tool_args(
     tool: str, args: dict[str, Any], *, frozen_specs: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str]:
-    name = _canonical_name(tool) or str(tool or "").strip().lower()
+    name = _canonical_name(tool) or (tool or "").strip().lower()
     # ToolSpec is the single authoritative definition: required-arg presence
     # is decided here so JSON/native schemas and validation cannot drift.
     # Project/research legacy validators are additional type-repair constraints
@@ -488,7 +488,7 @@ def _plan_from_tool_objects(
     for raw_tool, args, call_id in items:
         tool = _canonical_name(raw_tool)
         if not tool:
-            return _invalid_plan(f"unknown tool: {raw_tool or '?'}", kind="unknown_tool", tool=str(raw_tool or ""))
+            return _invalid_plan(f"unknown tool: {raw_tool or '?'}", kind="unknown_tool", tool=(raw_tool or ""))
         if snapshot_names is not None and tool not in snapshot_names:
             return _invalid_plan(
                 f"{tool} is not allowed by the current controller state (not in the turn snapshot: {tool})",
@@ -519,7 +519,7 @@ def _plan_from_tool_objects(
             if key in text_keys:
                 continue
             text_keys.add(key)
-        calls.append(ToolCall(name=tool, args=validated, call_id=str(call_id or "")))
+        calls.append(ToolCall(name=tool, args=validated, call_id=(call_id or "")))
     if not calls:
         return _invalid_plan("no JSON tool call found", kind="no_json")
     body = "Need tool result" if len(calls) == 1 else "Need tool results"
@@ -612,7 +612,7 @@ def normalize_turn(
         except Exception as exc:
             return _invalid_plan(f"invalid tool snapshot: {exc}")
     else:
-        allowed = None if controller_allowed is None else {str(n or "").strip().lower() for n in controller_allowed}
+        allowed = None if controller_allowed is None else {(n or "").strip().lower() for n in controller_allowed}
     items = _response_objects(reply)
     if isinstance(items, ToolPlan):
         return items

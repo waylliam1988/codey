@@ -127,7 +127,7 @@ def _contains_prompt_control_text(text: str) -> bool:
 def _text_variants(text: str) -> tuple[str, ...]:
     normalized = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff-]+", " ", text)
     normalized = " ".join(normalized.split())
-    raw = str(text or "")
+    raw = (text or "")
     if not normalized or normalized == raw:
         return (raw,)
     return (raw, normalized)

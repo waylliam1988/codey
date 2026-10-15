@@ -390,7 +390,7 @@ def _open_pooled_request(request: urllib.request.Request, timeout: float, *, con
         proxies = urllib.request.getproxies()
         candidate = proxies.get(parts.scheme) or proxies.get("all") or ""
         if candidate and not urllib.request.proxy_bypass(parts.hostname):
-            proxy = str(candidate)
+            proxy = candidate
     if proxy:
         proxy_scheme = urlsplit(proxy).scheme.lower()
         if proxy_scheme != "http":
@@ -728,7 +728,7 @@ def _selected_proxy(url: str, options: Mapping[str, object] | None) -> str:
     proxies = urllib.request.getproxies()
     candidate = proxies.get(parts.scheme) or proxies.get("all") or ""
     if candidate and parts.hostname and not urllib.request.proxy_bypass(parts.hostname):
-        return str(candidate)
+        return candidate
     return ""
 
 

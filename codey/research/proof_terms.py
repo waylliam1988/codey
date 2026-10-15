@@ -45,7 +45,7 @@ _STOP_TERMS = frozenset(
 
 
 def question_terms(question: str) -> tuple[str, ...]:
-    text = str(question or "")
+    text = (question or "")
     tokens: list[str] = []
     quoted = re.findall(r"['\"]([^'\"]{2,80})['\"]", text)
     for item in quoted:
@@ -65,7 +65,7 @@ def safe_term_ref(term: str) -> str:
 
 
 def is_safe_signal_text(value: str) -> bool:
-    text = str(value or "").strip()
+    text = (value or "").strip()
     lower = text.casefold()
     if not text or len(text) > 100:
         return False
@@ -77,7 +77,7 @@ def is_safe_signal_text(value: str) -> bool:
 
 
 def normalized_search_text(value: str) -> str:
-    return " ".join(str(value or "").casefold().split())
+    return " ".join((value or "").casefold().split())
 
 
 def search_term_present(term: str, haystack: str) -> bool:
@@ -100,7 +100,7 @@ def _append_term(tokens: list[str], value: str) -> None:
 
 
 def _clean_term(value: str) -> str:
-    text = str(value or "").strip().strip(".,;:!?()[]{}<>，。；：！？（）【】")
+    text = (value or "").strip().strip(".,;:!?()[]{}<>，。；：！？（）【】")
     if len(text) > 80:
         return ""
     return text.casefold()

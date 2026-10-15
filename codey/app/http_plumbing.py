@@ -114,10 +114,10 @@ def request_allowed_origins(handler: BaseHTTPRequestHandler) -> set[str]:
 
 
 def request_origin_allowed(handler: BaseHTTPRequestHandler) -> bool:
-    host_header = str(handler.headers.get("Host") or "").strip().lower()
+    host_header = (handler.headers.get("Host") or "").strip().lower()
     if host_header not in loopback_allowed_hosts(handler):
         return False
-    origin = str(handler.headers.get("Origin") or "").strip()
+    origin = (handler.headers.get("Origin") or "").strip()
     if not origin:
         return True
     return origin.rstrip("/").lower() in request_allowed_origins(handler)
@@ -225,7 +225,7 @@ def _static_etag(path: Path, *, transform_name: str, signature: tuple[int, int])
 
 
 def _request_etag_matches(handler: BaseHTTPRequestHandler, etag: str) -> bool:
-    header = str(handler.headers.get("If-None-Match") or "")
+    header = (handler.headers.get("If-None-Match") or "")
     return any(item.strip() in {"*", etag} for item in header.split(","))
 
 

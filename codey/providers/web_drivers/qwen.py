@@ -111,17 +111,17 @@ def _fill_message(page: Page, textarea: Locator, text: str) -> str:
 
 def _composer_value(textarea: Locator) -> str:
     try:
-        return str(textarea.input_value() or "")
+        return (textarea.input_value() or "")
     except Exception:
         try:
-            return str(textarea.inner_text() or "")
+            return (textarea.inner_text() or "")
         except Exception:
             return ""
 
 
 def _composer_is_interactive(textarea: Locator) -> bool:
     try:
-        return bool(textarea.is_visible() and textarea.is_enabled())
+        return (textarea.is_visible() and textarea.is_enabled())
     except Exception:
         return False
 
@@ -172,7 +172,7 @@ def _composer_accepts_submission(
 
 def _composer_has_submitted_text(textarea: Locator, submitted_text: str) -> bool:
     actual = _composer_value(textarea)
-    expected = str(submitted_text or "")
+    expected = (submitted_text or "")
     if not expected:
         return False
     if actual == expected:
@@ -304,7 +304,7 @@ def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
 
 def _is_qwen_home(page: Page) -> bool:
     try:
-        return str(page.url or "").split("?", 1)[0].rstrip("/") == QWEN_URL.rstrip("/")
+        return (page.url or "").split("?", 1)[0].rstrip("/") == QWEN_URL.rstrip("/")
     except Exception:
         return False
 

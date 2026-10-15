@@ -144,7 +144,7 @@ def _reject_forbidden_tool(tool_name: str) -> str | None:
 
 
 def _reject_extra_write_args(args: dict[str, Any]) -> str | None:
-    extra_keys = sorted(str(key) for key in args if str(key) not in _ALLOWED_KNOWLEDGE_WRITE_ARGS)
+    extra_keys = sorted(key for key in args if key not in _ALLOWED_KNOWLEDGE_WRITE_ARGS)
     if extra_keys:
         return "ERROR: Evidence-only follow-up accepts only type/title/body/sources/evidence args; forbidden key(s): " + ", ".join(extra_keys)
     return None
@@ -233,10 +233,10 @@ class EvidenceFollowupController:
         allowed_urls: Sequence[str],
     ) -> None:
         self.tools = tools
-        self.allowed_urls = set(str(u).strip() for u in allowed_urls if str(u).strip())
+        self.allowed_urls = set(u.strip() for u in allowed_urls if u.strip())
 
     def execute_tool_call(self, name: str, args: dict[str, Any]) -> ResearchToolOutput:
-        tool_name = str(name or "").strip().lower()
+        tool_name = (name or "").strip().lower()
         if error := _reject_forbidden_tool(tool_name):
             return ResearchToolOutput(error, ok=False)
         if error := _reject_extra_write_args(args):

@@ -92,7 +92,7 @@ class GhostSleepStepResult:
             "name": self.name,
             "ok": self.ok,
             "skipped_reason": self.skipped_reason,
-            "counts": {str(key): int(value) for key, value in self.counts.items()},
+            "counts": {key: int(value) for key, value in self.counts.items()},
             "warnings": list(self.warnings),
             "duration_ms": max(0, int(self.duration_ms or 0)),
         }
@@ -335,7 +335,7 @@ class GhostSleepStore:
         project: str = "",
         session_id: str = "",
     ) -> dict[str, int]:
-        normalized_scope = str(scope or "").strip().lower()
+        normalized_scope = (scope or "").strip().lower()
         if normalized_scope not in {"user", "project", "session"}:
             raise ValueError("scope must be user, project, or session")
         project_ref = _common.normalize_project(project)

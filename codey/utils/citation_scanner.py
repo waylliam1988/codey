@@ -66,7 +66,7 @@ def citation_refs(text: str) -> set[int]:
 
 def citation_ref_items(text: str) -> list[CitationRef]:
     refs: list[CitationRef] = []
-    for value, pages in _CITATION_RE.findall(str(text or "")):
+    for value, pages in _CITATION_RE.findall(text or ""):
         try:
             number = int(value)
         except ValueError:
@@ -80,7 +80,7 @@ def source_id_refs(text: str) -> set[str]:
 
 
 def source_id_ref_items(text: str) -> list[SourceIdRef]:
-    value = str(text or "")
+    value = (text or "")
     refs: list[SourceIdRef] = []
     for match in _SOURCE_ID_BRACKET_RE.finditer(value):
         refs.append(SourceIdRef(
@@ -199,7 +199,7 @@ def _dedupe_source_id_refs(refs: list[SourceIdRef]) -> list[SourceIdRef]:
 
 
 def _parse_page_ref(value: str) -> tuple[int, ...]:
-    text = str(value or "").strip()
+    text = (value or "").strip()
     if not text:
         return ()
     match = re.fullmatch(r"(\d+)(?:\s*-\s*(\d+))?", text)

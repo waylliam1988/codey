@@ -200,8 +200,8 @@ class ResearchContext:
     @property
     def effective_proof_question(self) -> str:
         return (
-            str(self.proof_question or "").strip()
-            or str(self.question or "").strip()
+            (self.proof_question or "").strip()
+            or (self.question or "").strip()
         )
 
 

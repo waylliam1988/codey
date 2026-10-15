@@ -397,7 +397,7 @@ def _pytest_override_args_allowed(token: str, *, addopts_depth: int) -> bool:
 
 
 def _pytest_code_loading_option(arg: str) -> bool:
-    option, _sep, _value = str(arg or "").partition("=")
+    option, _sep, _value = (arg or "").partition("=")
     if option in _PYTEST_CODE_LOADING_OPTIONS:
         return True
     return option == "-p" or (option.startswith("-p") and not option.startswith("--") and len(option) > 2)
@@ -775,7 +775,7 @@ def _package_script_args(argv: Sequence[str]) -> tuple[str, ...]:
 
 
 def _path_arg(raw: str) -> str:
-    text = str(raw or "").strip()
+    text = (raw or "").strip()
     if text.startswith("@") and len(text) > 1:
         text = text[1:]
     while text.startswith("-") and "=" in text:
@@ -817,7 +817,7 @@ def _is_windows_absolute(text: str) -> bool:
 
 
 def _executable_name(value: str) -> str:
-    return str(value or "").replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return (value or "").replace("\\", "/").rsplit("/", 1)[-1].lower()
 
 
 __all__ = [

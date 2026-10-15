@@ -353,7 +353,7 @@ def _verification_checks(
     # block without consulting older success for the same check.
     effective_evidence, projection_gaps = _evidence_with_session_facts(evidence, session)
     if projection_gaps:
-        reason = str(projection_gaps[0] or "verification_identity_missing")
+        reason = (projection_gaps[0] or "verification_identity_missing")
         row = completion_check("relevant_verification", CHECK_NOT_RUN, reason)
         return [row] if row is not None else []
     engine = CompletionEngine()

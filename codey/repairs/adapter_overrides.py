@@ -95,11 +95,11 @@ def install_candidate(
     if not adapter_repair_surface(provider_id):
         raise ValueError("provider has no adapter repair surface")
     source_root = Path(source_root).resolve()
-    base_version = str(base_version or __version__)
+    base_version = (base_version or __version__)
     base_package = running_package_root()
     if base_package is None:
         raise ValueError("running codey package root could not be determined")
-    base_hash = str(base_hash or adapter_base_hash(provider_id, source_root))
+    base_hash = (base_hash or adapter_base_hash(provider_id, source_root))
     source_codey = source_root / "codey"
     if not source_codey.is_dir():
         raise ValueError("candidate source does not contain codey package")
@@ -122,8 +122,8 @@ def install_candidate(
         "path": str(generation_dir),
         "success_count": 0,
         "failure_count": 0,
-        "base_version": str(base_version or ""),
-        "base_hash": str(base_hash or ""),
+        "base_version": (base_version or ""),
+        "base_hash": (base_hash or ""),
         "base_package": str(base_package),
         "tests": list(tests[:20]),
         "created_at": _now(),
@@ -374,7 +374,7 @@ def _next_generation(index: dict[str, Any]) -> int:
     generations = _generations(index)
     numbers: list[int] = []
     for key in generations:
-        text = str(key)
+        text = key
         if not text.isascii() or not text.isdigit():
             continue
         try:
@@ -446,7 +446,7 @@ def _trim_generations(
     )
     ordered: list[tuple[int, str]] = []
     for key in generations:
-        text = str(key)
+        text = key
         if not text.isascii() or not text.isdigit():
             continue
         try:

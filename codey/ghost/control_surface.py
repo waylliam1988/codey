@@ -138,7 +138,7 @@ class GhostControlSurface:
             project=project_ref,
         )
         updates_enabled = _safe_bool(
-            lambda: bool(self.inbox.learning_enabled()) if self.inbox is not None else False,
+            lambda: self.inbox.learning_enabled() if self.inbox is not None else False,
             warnings,
             "settings_read_failed",
             default=False,
@@ -397,8 +397,8 @@ class GhostControlSurface:
         ok = self.inbox.set_learning_enabled(enabled)
         return 200 if ok else 500, {
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
-            "ok": bool(ok),
-            "enabled": bool(self.inbox.learning_enabled()),
+            "ok": ok,
+            "enabled": self.inbox.learning_enabled(),
         }
 
     def _delete_scope(self, body: Mapping[str, object]) -> tuple[int, dict[str, object]]:
@@ -676,7 +676,7 @@ def _safe_bool(
     default: bool,
 ) -> bool:
     try:
-        return bool(load())
+        return load()
     except Exception:
         warnings.append(warning)
         return default

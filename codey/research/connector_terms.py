@@ -74,7 +74,7 @@ def preferred_connector_ids(
     *,
     available_ids: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
-    term_set = {str(item or "").casefold() for item in _iter_terms(terms)}
+    term_set = {(item or "").casefold() for item in _iter_terms(terms)}
     available = set(available_ids)
     preferred: list[str] = []
     if "pubmed" in available and term_set & MEDICAL_CONNECTOR_TERMS:

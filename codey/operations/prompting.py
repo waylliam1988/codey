@@ -8,22 +8,22 @@ from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, PromptEnv
 
 
 def prepend_ghost_directive(prompt: str, directive: str) -> str:
-    text = str(directive or "").strip()
+    text = (directive or "").strip()
     if not text:
         return prompt
     return f"{text}\n\n{prompt}"
 
 
 def owner_prompt_with_ghost_directive(owner_prompt: str, directive: str) -> str:
-    text = str(directive or "").strip()
-    existing = str(owner_prompt or "").strip()
+    text = (directive or "").strip()
+    existing = (owner_prompt or "").strip()
     if text and existing:
         return f"{text}\n\n{existing}"
     return text or existing
 
 
 def join_local_contexts(*values: str) -> str:
-    return "\n\n".join(str(value or "").strip() for value in values if str(value or "").strip())
+    return "\n\n".join((value or "").strip() for value in values if (value or "").strip())
 
 
 def record_local_context_trace(trace: Any | None, *contexts: Any) -> None:
@@ -58,7 +58,7 @@ def record_secondary_input_prepared_trace(
     if trace is None:
         return
     sink = FailOpenPromptTrace(trace)
-    phase_text = str(phase or "secondary").strip() or "secondary"
+    phase_text = (phase or "secondary").strip() or "secondary"
     for name, text in sections.items():
         if not str(text or ""):
             continue

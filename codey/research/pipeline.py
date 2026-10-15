@@ -77,10 +77,10 @@ class ResearchPipelineResult:
 
     def to_payload(self) -> dict[str, object]:
         return {
-            "followup_applied": bool(self.followup_applied),
+            "followup_applied": self.followup_applied,
             "followup_rounds": max(0, min(3, int(self.followup_rounds or 0))),
-            "stop_reason": str(self.stop_reason or ""),
-            "planner_stop_reason": str(self.planner_stop_reason or ""),
+            "stop_reason": (self.stop_reason or ""),
+            "planner_stop_reason": (self.planner_stop_reason or ""),
             "fresh_source_count": max(0, int(self.fresh_source_count or 0)),
             "new_evidence_count": max(0, int(self.new_evidence_count or 0)),
             "final_evidence_count": max(0, int(self.final_evidence_count or 0)),
@@ -396,7 +396,7 @@ class ResearchPipeline:
         if not plan.query_candidates:
             return followup_selection.pipeline_stop_reason(plan, review)
         if not followup_selection.is_followup_eligible_stop(result.stop_reason):
-            reason = str(result.stop_reason or "unknown").strip() or "unknown"
+            reason = (result.stop_reason or "unknown").strip() or "unknown"
             return "initial_stop_reason_" + _reason_code(reason)
         if self.context.should_stop():
             return "stopped"

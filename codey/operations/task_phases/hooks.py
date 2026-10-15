@@ -114,7 +114,7 @@ class _RunHookCallbacks:
 
     def append_ledger_provider_failure(self, pid: str, failure: ProviderFailure) -> None:
         key = (
-            str(pid),
+            pid,
             str(getattr(failure, "action", "")),
             str(getattr(failure, "kind", "")),
             str(getattr(failure, "message", "")),

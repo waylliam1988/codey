@@ -28,9 +28,9 @@ def encode_with_original_eol(target: Path, text: str, *, encoding: str = "utf-8"
 
     raw = _read_existing_bytes_no_follow(target)
     if b"\r\n" in raw:
-        normalized = str(text or "").replace("\r\n", "\n")
+        normalized = (text or "").replace("\r\n", "\n")
         return normalized.replace("\n", "\r\n").encode(encoding)
-    return str(text or "").replace("\r\n", "\n").encode(encoding)
+    return (text or "").replace("\r\n", "\n").encode(encoding)
 
 
 def write_bytes_atomic(

@@ -718,7 +718,7 @@ def _dedupe(items: Iterable[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for item in items:
-        clean = str(item or "").strip()
+        clean = (item or "").strip()
         if not clean or clean in seen:
             continue
         seen.add(clean)

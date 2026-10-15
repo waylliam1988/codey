@@ -73,7 +73,7 @@ def render_coding_context(context: CodingContext, *, native: bool = False) -> st
 def _clean_paths(paths: tuple[str, ...]) -> tuple[str, ...]:
     cleaned: list[str] = []
     for path in paths:
-        text = str(path or "").replace("\\", "/").replace("\r", " ").replace("\n", " ")
+        text = (path or "").replace("\\", "/").replace("\r", " ").replace("\n", " ")
         text = " ".join(text.split()).strip().strip("/")
         if text and text not in cleaned:
             cleaned.append(text)
@@ -104,9 +104,9 @@ def _verification_text(candidate: VerificationCandidate) -> str:
 
 
 def _candidate_command_cwd(candidate: VerificationCandidate) -> tuple[str, str]:
-    command = str(candidate.command or "").replace("\r", " ").replace("\n", " ").strip()
+    command = (candidate.command or "").replace("\r", " ").replace("\n", " ").strip()
     cwd = (
-        str(candidate.cwd or ".")
+        (candidate.cwd or ".")
         .replace("\\", "/")
         .replace("\r", " ")
         .replace("\n", " ")

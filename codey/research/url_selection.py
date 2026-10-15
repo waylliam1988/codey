@@ -14,7 +14,7 @@ def source_candidate_skip_reason(url: str) -> str:
 
 def is_root_landing_page_url(url: str) -> bool:
     try:
-        parsed = urlparse(str(url or "").strip())
+        parsed = urlparse((url or "").strip())
     except ValueError:
         return False
     if parsed.scheme.lower() not in {"http", "https"}:

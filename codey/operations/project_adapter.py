@@ -66,7 +66,7 @@ def _project_context(request: AgentRequest) -> str:
 
         if not task_forbids_verification(request.task):
             lines = [
-                f"- {str(item.command)[:240]} (cwd: {str(item.cwd)[:120]})"
+                f"- {item.command[:240]} (cwd: {item.cwd[:120]})"
                 for item in request.verification_candidates[:5]
             ]
             candidate_text = "Trusted verification candidates after edits:\n" + "\n".join(lines)
@@ -139,7 +139,7 @@ def _wrap_provider_with_sink(request: AgentRequest, provider: Any) -> tuple[Any,
         # Durable path requires an explicit provider_id; the empty string
         # fails instead of silently falling back to provider.name. The
         # provider.name fallback above is conversation-display only.
-        if not str(request.provider_id or "").strip():
+        if not (request.provider_id or "").strip():
             raise ValueError("provider_id must not be empty when runtime_mutations are supplied")
         from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
 

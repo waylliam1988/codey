@@ -51,7 +51,7 @@ def provenance_problem(
     search_result_urls: set[str],
     allow_search_result_mentions: bool = False,
 ) -> str | None:
-    text = str(summary or "")
+    text = (summary or "")
     search_hosts = {_source_host(url) for url in search_result_urls}
     search_hosts.discard("")
     unread_urls = [
@@ -110,7 +110,7 @@ def _urls_in_text(text: str) -> list[str]:
 
 
 def _trim_url_boundary(url: str) -> str:
-    text = str(url or "").strip().rstrip(".,;:，。；、】`\"'")
+    text = (url or "").strip().rstrip(".,;:，。；、】`\"'")
     while text.endswith(")") and text.count(")") > text.count("("):
         text = text[:-1].rstrip(".,;:，。；、】`\"'")
     return text
@@ -192,6 +192,6 @@ def _overlaps(span: tuple[int, int], spans: list[tuple[int, int]]) -> bool:
 
 def _source_host(url: str) -> str:
     try:
-        return (urlparse(str(url or "")).hostname or "").lower().removeprefix("www.")
+        return (urlparse(url or "").hostname or "").lower().removeprefix("www.")
     except Exception:
         return ""

@@ -61,7 +61,7 @@ def mapping_keys_within(value: Mapping[str, object], allowed: Iterable[str]) -> 
 
 
 def filter_values(value: object, allowed: frozenset[str]) -> set[str]:
-    values = {str(item).strip().lower() for item in str(value or "").split(",") if str(item).strip()}
+    values = {item.strip().lower() for item in str(value or "").split(",") if item.strip()}
     return {item for item in values if item in allowed}
 
 

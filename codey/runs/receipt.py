@@ -223,7 +223,7 @@ def build_task_receipt(
                 )
                 if code
             )[:8],
-            authorized_test_edit=bool(integrity.user_authorized_test_edit),
+            authorized_test_edit=integrity.user_authorized_test_edit,
             affected_paths=tuple(
                 path
                 for path in (

@@ -426,7 +426,7 @@ class GhostContinuityStore:
         project: str = "",
         session_id: str = "",
     ) -> int:
-        normalized_scope = str(scope or "").strip().lower()
+        normalized_scope = (scope or "").strip().lower()
         if normalized_scope not in {"user", "project", "session"}:
             raise ValueError("scope must be user, project, or session")
         project_ref = _common.normalize_project(project)
@@ -786,7 +786,7 @@ def _items_from_task(
     focus = _clean_context_text(text)
     if not focus or not _safe_prompt_text(focus, warnings=warnings, kind="recent_focus"):
         return []
-    normalized_mode = str(mode or "").strip().lower()
+    normalized_mode = (mode or "").strip().lower()
     if normalized_mode not in {"chat", "planning"}:
         return []
     session_ref = clip_signal_text(session_id, 120)
@@ -974,7 +974,7 @@ def _item(
     updated_at: str = "",
     metadata: Mapping[str, object] | None = None,
 ) -> GhostContinuityItem:
-    scope = str(scope or "user").strip().lower()
+    scope = (scope or "user").strip().lower()
     if scope not in {"user", "project", "session"}:
         scope = "user"
     cleaned = _clean_context_text(text)
@@ -1147,7 +1147,7 @@ def _scope_filter_matches(
     project_ref: str,
     session_ref: str,
 ) -> bool:
-    normalized_scope = str(scope or "").strip().lower()
+    normalized_scope = (scope or "").strip().lower()
     if not normalized_scope:
         return (
             _scope_matches(item, project_ref=project_ref, session_ref=session_ref)

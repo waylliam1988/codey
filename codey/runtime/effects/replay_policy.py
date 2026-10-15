@@ -22,7 +22,7 @@ REPLAYABLE_SAFE_TOOL_NAMES = SAFE_RUNTIME_TOOL_NAMES
 
 def is_replayable_safe_tool(tool_name: str) -> bool:
     """Return True if tool_name is in the replayable safe tools whitelist."""
-    return str(tool_name or "").strip() in REPLAYABLE_SAFE_TOOL_NAMES
+    return (tool_name or "").strip() in REPLAYABLE_SAFE_TOOL_NAMES
 
 
 class ReplayClass:
@@ -50,7 +50,7 @@ def tool_replay_policy(
     'run' is unconditionally unsafe regardless of command string.
     Unknown tools default to unsafe fail-closed.
     """
-    canonical_name = str(tool_name or "").strip()
+    canonical_name = (tool_name or "").strip()
     if policy_denied:
         return ReplayDecision(
             replay_class=ReplayClass.UNSAFE,

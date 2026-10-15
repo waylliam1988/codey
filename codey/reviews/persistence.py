@@ -379,7 +379,7 @@ def _artifact_payload(
         "reviewer_id": reviewer_id,
         "policy": policy,
         "model_id": model_id,
-        "self_review": bool(self_review),
+        "self_review": self_review,
         "scope_digest": scope_digest,
         "prompt_digest": prompt_digest,
         "snapshot_digest": snapshot_digest,

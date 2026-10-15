@@ -74,7 +74,7 @@ class ProviderRegistry:
         *,
         ordered: tuple[str, ...],
     ) -> tuple[str, ...]:
-        broken = str(broken_provider_id or "").strip().lower()
+        broken = (broken_provider_id or "").strip().lower()
         return tuple(
             provider_id
             for provider_id in ordered

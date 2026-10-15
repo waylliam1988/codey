@@ -44,7 +44,7 @@ def validate_replay_args(
     Requires zero alias rewrites and zero arg repairs. Fails closed if args are
     malformed or non-canonical.
     """
-    canonical_name = str(tool_name or "").strip()
+    canonical_name = (tool_name or "").strip()
     if not is_replayable_safe_tool(canonical_name):
         raise RuntimeEffectError(f"tool is not a replayable safe tool: {canonical_name}")
     if not isinstance(args, Mapping):

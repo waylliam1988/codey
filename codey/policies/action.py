@@ -81,13 +81,13 @@ class ActionSubject:
         object.__setattr__(self, "tool_name", _identifier(self.tool_name, 80))
         object.__setattr__(self, "from_provider", _identifier(self.from_provider, 80))
         object.__setattr__(self, "to_provider", _identifier(self.to_provider, 80))
-        object.__setattr__(self, "path", str(self.path or "").strip())
-        object.__setattr__(self, "project", str(self.project or "").strip())
-        object.__setattr__(self, "command", str(self.command or "").strip())
-        object.__setattr__(self, "url", str(self.url or "").strip())
+        object.__setattr__(self, "path", (self.path or "").strip())
+        object.__setattr__(self, "project", (self.project or "").strip())
+        object.__setattr__(self, "command", (self.command or "").strip())
+        object.__setattr__(self, "url", (self.url or "").strip())
         object.__setattr__(self, "byte_count", strict_nonnegative_int(self.byte_count))
         object.__setattr__(self, "item_count", strict_nonnegative_int(self.item_count))
-        object.__setattr__(self, "approval_available", bool(self.approval_available))
+        object.__setattr__(self, "approval_available", self.approval_available)
 
     @property
     def subject_ref(self) -> str:

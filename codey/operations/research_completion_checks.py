@@ -128,7 +128,7 @@ def _ledger_checks(session: Any, done_text: str, context: Any) -> list[Completio
         return rows
     try:
         finalized = finalize_done_answer(
-            str(done_text or ""), ledger,
+            (done_text or ""), ledger,
             source_ids=dict(get("source_ids") or {}),
             question=str(get("question") or ""),
         )
@@ -141,7 +141,7 @@ def _ledger_checks(session: Any, done_text: str, context: Any) -> list[Completio
                                             "unmapped_numeric_refs", "unmapped_source_id_refs",
                                             "no_referenced_citable_sources"}:
         row = completion_check("research_report_sections", CHECK_FAIL, f"report_{finalized.reason}")
-    elif "结论" in str(done_text or "") and "来源" in str(done_text or ""):
+    elif "结论" in (done_text or "") and "来源" in (done_text or ""):
         row = completion_check("research_report_sections", CHECK_PASS)
     else:
         row = completion_check("research_report_sections", CHECK_FAIL, "research_report_incomplete")
@@ -156,7 +156,7 @@ def _ledger_checks(session: Any, done_text: str, context: Any) -> list[Completio
         record = get("research_record")
         if record is None:
             report_review = review_report_quality(
-                str(done_text or ""),
+                (done_text or ""),
                 ledger=ledger,
                 opened_sources=finals,
                 search_result_urls=set(getattr(session, "search_results", {}).values()),
@@ -169,7 +169,7 @@ def _ledger_checks(session: Any, done_text: str, context: Any) -> list[Completio
             if quality_row is not None:
                 rows.append(quality_row)
             record = build_research_record(
-                question=str(get("question") or ""), summary=str(done_text or ""),
+                question=str(get("question") or ""), summary=(done_text or ""),
                 ledger=ledger, review=report_review,
                 run_id=str(get("run_id") or ""), project=get("project"),
                 stop_reason="done",

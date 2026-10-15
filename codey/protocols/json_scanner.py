@@ -46,7 +46,7 @@ def balanced_json_spans(text: str) -> list[tuple[int, int]]:
 def extract_json_objects(text: str) -> list[dict[str, Any]]:
     """Decode balanced top-level JSON objects from a model reply."""
     objects: list[dict[str, Any]] = []
-    for start, end in balanced_json_spans(str(text or "")):
+    for start, end in balanced_json_spans(text or ""):
         try:
             value = json.loads(text[start:end], strict=False)
         except json.JSONDecodeError:
@@ -63,7 +63,7 @@ def extract_candidate_json_objects(text: str) -> list[dict[str, Any]]:
     beside ``JsonToolCodec``.  It is not an execution decoder and does not
     authorize or execute any returned object.
     """
-    source = str(text or "")
+    source = (text or "")
     lowered = source.lower()
     cleaned: list[str] = []
     index = 0

@@ -92,7 +92,7 @@ class ConnectorAwareSearchProvider:
         )
         self.timeout = _bounded_timeout(timeout)
         self.connector_budget_seconds = max(0.0, float(connector_budget_seconds or 0.0))
-        self.rate_limit = bool(rate_limit)
+        self.rate_limit = rate_limit
         self.name = "connector_aware/" + str(getattr(base_provider, "name", "browser"))
         self._hits_by_url: dict[str, SourceHit] = {}
         self._last_request_at: dict[str, float] = {}
@@ -102,7 +102,7 @@ class ConnectorAwareSearchProvider:
         self.last_search_failure: dict[str, str] = {}
 
     def search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
-        query = " ".join(str(query or "").split())
+        query = " ".join((query or "").split())
         if not query:
             return []
         result_limit = _bounded_limit(limit, default=8, upper=MAX_CONNECTOR_HITS)
@@ -127,7 +127,7 @@ class ConnectorAwareSearchProvider:
         return _merge_results(connector_results, base_results, limit=result_limit)
 
     def fetch(self, url: str) -> dict[str, Any]:
-        target = str(url or "").strip()
+        target = (url or "").strip()
         hit = self._hits_by_url.get(canonical_key(target))
         if hit is None:
             try:
@@ -365,7 +365,7 @@ class ConnectorAwareSearchProvider:
             return False
         return (
             spec.status in CONNECTOR_AVAILABLE_STATUSES
-            and bool(spec.shipped)
+            and spec.shipped
             and bool(getattr(spec, capability, False))
         )
 

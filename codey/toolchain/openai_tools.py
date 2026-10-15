@@ -26,8 +26,8 @@ def _native_function_name(definition: tool_defs.ToolDefinition) -> str:
     name. Every other native tool uses its runtime name.
     """
     if definition.runtime_name is not None:
-        return str(definition.runtime_name)
-    return str(definition.name)
+        return definition.runtime_name
+    return definition.name
 
 
 def _native_definitions(

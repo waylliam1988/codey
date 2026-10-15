@@ -148,8 +148,8 @@ class ToolOutcome:
     truncated: bool = False
 
     def __post_init__(self) -> None:
-        model_text = str(self.model_text or "")
-        error_code = str(self.error_code or ("error" if not self.ok else ""))
+        model_text = (self.model_text or "")
+        error_code = (self.error_code or ("error" if not self.ok else ""))
         presentation = json_safe_projection(self.presentation, label="presentation")
         presentation.setdefault("status", "ok" if self.ok else "error")
         presentation.setdefault("result", _first_model_line(model_text, 200))
@@ -654,7 +654,7 @@ def _python_syntax_regression_hint(rel: str, before: str, after: str) -> str:
     try:
         ast.parse(after, filename=rel)
     except SyntaxError as exc:
-        message = " ".join(str(exc.msg or "invalid syntax").split())
+        message = " ".join((exc.msg or "invalid syntax").split())
         message = message[:PYTHON_SYNTAX_HINT_MAX_MESSAGE_CHARS]
         location = f"line {max(1, int(exc.lineno or 1))}"
         if exc.offset:
@@ -1185,7 +1185,7 @@ def search_files(
 
 
 def find_references(root: Path, rel: str, symbol: str) -> ToolOutcome:
-    symbol = str(symbol or "").strip()
+    symbol = (symbol or "").strip()
     if not symbol:
         return ToolOutcome.error("symbol required")
     start, error = _checked_tool_path(root, rel or ".", tool="find_references")
@@ -1205,7 +1205,7 @@ def find_references(root: Path, rel: str, symbol: str) -> ToolOutcome:
 
 
 def _raw_path_symlink_reason(root: Path, rel: str, *, tool: str) -> str:
-    raw = Path(str(rel or "."))
+    raw = Path(rel or ".")
     try:
         parts = raw.relative_to(root).parts if raw.is_absolute() else raw.parts
     except ValueError:
@@ -1339,15 +1339,15 @@ def run_command_raw(
         duration_ms=duration_ms,
         stdout_bytes=int(proc.stdout_bytes),
         stderr_bytes=int(proc.stderr_bytes),
-        capture_truncated=bool(proc.stdout_truncated or proc.stderr_truncated),
+        capture_truncated=(proc.stdout_truncated or proc.stderr_truncated),
     )
 
 
 def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutcome:
     output = prune_dependency_stack_frames(raw.output, root)
     output, display_truncated = clip_middle(output, RUN_OUTPUT_LIMIT)
-    capture_truncated = bool(raw.capture_truncated)
-    truncated = bool(capture_truncated or display_truncated)
+    capture_truncated = raw.capture_truncated
+    truncated = (capture_truncated or display_truncated)
     if capture_truncated:
         output += (
             "\nOnly head and tail of the process output were retained; "

@@ -110,7 +110,7 @@ class RepairContextProjection:
                 "analysis_run_ref_count": _nonnegative_int(self.analysis_run_ref_count),
                 "finding_ref_count": _nonnegative_int(self.finding_ref_count),
                 "summary_chars": _nonnegative_int(self.summary_chars),
-                "truncated": bool(self.truncated),
+                "truncated": self.truncated,
                 "reason_codes": list(self.reason_codes),
                 "warnings": list(self.warnings),
                 "refused_reason": self.refused_reason,
@@ -131,7 +131,7 @@ class RepairContextProjection:
             "analysis_run_ref_count": _nonnegative_int(self.analysis_run_ref_count),
             "finding_ref_count": _nonnegative_int(self.finding_ref_count),
             "summary_chars": _nonnegative_int(self.summary_chars),
-            "truncated": bool(self.truncated),
+            "truncated": self.truncated,
             "reason_codes": list(self.reason_codes),
             "warnings": list(self.warnings),
             "digest": "sha256:" + hashlib.sha256(
@@ -181,19 +181,19 @@ def project_repair_context(
     fields = _proof_fields(proof)
     base = RepairContextProjection(
         prompt_text="",
-        failure_class=str(failure_class or ""),
+        failure_class=(failure_class or ""),
         proof_id=_token(fields.get("proof_id"), 120),
         contract_id=_token(fields.get("contract_id"), 120),
     )
     if str(fields.get("status") or "") != PROOF_STATUS_FAILED:
         return _refused(base, REFUSED_NOT_FAILED, warnings)
-    if str(failure_class or "") != FAILURE_PRODUCT:
+    if (failure_class or "") != FAILURE_PRODUCT:
         return _refused(base, REFUSED_NOT_PRODUCT, warnings)
 
     failed_rows = [
         row
         for row in _rows(fields.get("checks"))
-        if str(row.get("status") or "") == "fail"
+        if (row.get("status") or "") == "fail"
     ]
     if not failed_rows:
         return _refused(base, REFUSED_NO_FAILED_CHECK, warnings)
@@ -478,7 +478,7 @@ def _token(value: object, limit: int) -> str:
 def _bounded_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
     out: list[str] = []
     for warning in warnings or ():
-        text = str(warning or "").strip()
+        text = (warning or "").strip()
         if text and text not in out:
             out.append(text)
         if len(out) >= MAX_REPAIR_WARNINGS:

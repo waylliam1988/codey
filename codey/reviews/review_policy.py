@@ -41,7 +41,7 @@ def allow_self_review(policy: str) -> bool:
     Raises:
         ValueError: when the policy is non-empty and not a known policy.
     """
-    normalized = str(policy or "").strip().lower()
+    normalized = (policy or "").strip().lower()
     if not normalized:
         return True
     if normalized == REQUIRE_WEB:

@@ -296,7 +296,7 @@ def definitions_for_permissions(permissions: tuple[str, ...] | list[str] | set[s
 
 
 def definitions_for_tool_names(names: tuple[str, ...] | list[str] | set[str]) -> tuple[ToolDefinition, ...]:
-    requested = {str(name).lower().strip() for name in names}
+    requested = {name.lower().strip() for name in names}
     definitions: list[ToolDefinition] = []
     seen: set[str] = set()
     for definition in TOOL_DEFINITIONS:
@@ -380,7 +380,7 @@ def _clip_activity(value: object, limit: int = 80) -> str:
 def openai_parameters_schema(definition: ToolDefinition) -> dict[str, object]:
     properties: dict[str, object] = {}
     for name, schema in definition.parameters:
-        properties[str(name)] = dict(schema) if isinstance(schema, dict) else {"type": "string"}
+        properties[name] = dict(schema) if isinstance(schema, dict) else {"type": "string"}
     return {
         "type": "object",
         "properties": properties,

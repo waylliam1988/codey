@@ -82,7 +82,7 @@ def run_self_repair_worker(
         return AdapterRepairResult(False, job.provider_id, error="self-repair worker cancelled")
     except OSError as exc:
         return AdapterRepairResult(False, job.provider_id, error=str(exc))
-    if bool(proc.stdout_truncated or proc.stderr_truncated):
+    if (proc.stdout_truncated or proc.stderr_truncated):
         return AdapterRepairResult(False, job.provider_id, error="worker 输出超限")
     return _parse_worker_result(job.provider_id, proc.stdout, proc.stderr, proc.returncode)
 
@@ -171,7 +171,7 @@ def connect_repair_helper(provider_id: str, *, state_home: str | Path) -> Any:
     a second CDP port (profile lock / session corruption); it gets a
     dedicated profile directory per provider, like override workers do.
     """
-    normalized = str(provider_id or "").strip().lower()
+    normalized = (provider_id or "").strip().lower()
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported repair helper provider: {provider_id}")

@@ -115,12 +115,12 @@ def build_prompt_surface_record(
         phase=norm_phase,
         prompt_digest=norm_prompt_digest,
         prompt_chars=chars,
-        epoch_id=str(epoch_id or "").strip()[:80],
+        epoch_id=(epoch_id or "").strip()[:80],
         send_ref=norm_send_ref,
-        source_refs=tuple(str(r).strip()[:120] for r in source_refs or () if str(r).strip())[:16],
-        provider_effect_id=str(provider_effect_id or "").strip()[:80],
-        model_tool_contract_hash=str(model_tool_contract_hash or "").strip()[:80],
-        runtime_tool_contract_hash=str(runtime_tool_contract_hash or "").strip()[:80],
+        source_refs=tuple(r.strip()[:120] for r in source_refs or () if r.strip())[:16],
+        provider_effect_id=(provider_effect_id or "").strip()[:80],
+        model_tool_contract_hash=(model_tool_contract_hash or "").strip()[:80],
+        runtime_tool_contract_hash=(runtime_tool_contract_hash or "").strip()[:80],
         sections=tuple(sections or ()),
         schema_version=PROMPT_SURFACE_SCHEMA_VERSION,
     )
@@ -158,7 +158,7 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
 def _validate_surface_identity(payload: Mapping[str, object]) -> bool:
     # exact forbidden keys are rejected
     for key in payload:
-        if str(key) in _FORBIDDEN_PAYLOAD_KEYS:
+        if key in _FORBIDDEN_PAYLOAD_KEYS:
             return False
     schema_version = payload.get("schema_version")
     if type(schema_version) is not int or schema_version != PROMPT_SURFACE_SCHEMA_VERSION:

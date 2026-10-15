@@ -26,7 +26,7 @@ def render_shell_followup(data: ShellFollowupInput) -> str:
 
     hints = [_exit_hint(data.exit_code)]
     risk_label = (data.risk_label or "generic").strip()
-    output = str(data.output or "")[:MAX_OUTPUT_SCAN_CHARS]
+    output = (data.output or "")[:MAX_OUTPUT_SCAN_CHARS]
 
     hints.extend(_risk_hints(data, risk_label))
     hints.extend(_output_hints(output, truncated=data.truncated))
@@ -145,7 +145,7 @@ def _dev_server_hints(data: ShellFollowupInput) -> list[str]:
             0,
             "A returned dev-server command does not prove a server is still running.",
         )
-    elif data.exit_code is None or "timeout" in str(data.output or "").lower():
+    elif data.exit_code is None or "timeout" in (data.output or "").lower():
         hints.insert(
             0,
             "This may be a long-running server, not necessarily a build failure.",
@@ -185,7 +185,7 @@ def _dedupe(items: Sequence[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for item in items:
-        clean = " ".join(str(item or "").split())
+        clean = " ".join((item or "").split())
         if not clean or clean in seen:
             continue
         seen.add(clean)

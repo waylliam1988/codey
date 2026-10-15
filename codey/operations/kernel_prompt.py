@@ -124,7 +124,7 @@ def _repair_prompt(error: str, *, contract_text: str, native: bool) -> str:
 
 
 def _result_context(result: ToolResult, session: TaskSession) -> str:
-    text = str(result.model_text or "")
+    text = (result.model_text or "")
     result_ref = next((key for key, value in session._memory_results.items() if value is result), "")
     if result_ref:
         instruction = (

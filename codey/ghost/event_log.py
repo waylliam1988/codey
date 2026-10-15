@@ -48,9 +48,9 @@ class GhostEventLog:
         self.max_warnings = _safe_count(max_warnings)
         self.source_name = source_name or self.path.name
         self.allowed_event_kinds = frozenset(
-            str(item or "").strip()
+            (item or "").strip()
             for item in (allowed_event_kinds or ())
-            if str(item or "").strip()
+            if (item or "").strip()
         )
         if bad_row_policy not in {"warn", "block", "quarantine_tail"}:
             raise ValueError("bad_row_policy must be warn, block, or quarantine_tail")
@@ -325,8 +325,8 @@ def compact_result_payload(
     before_map = before if isinstance(before, dict) else {}
     after_map = after if isinstance(after, dict) else {}
     return {
-        "ok": bool(ok),
-        "compacted": bool(compacted),
+        "ok": ok,
+        "compacted": compacted,
         "events_before": _safe_count(before_map.get("events")),
         "events_after": _safe_count(after_map.get("events")),
         "bytes_before": _safe_count(before_map.get("bytes")),

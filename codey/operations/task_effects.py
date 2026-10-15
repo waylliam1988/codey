@@ -64,8 +64,8 @@ class KernelEffectSink:
         for identity, call, index in items:
             if identity in self._old_pending:
                 continue
-            name = _runtime_name(str(call.name or ""))
-            spec = specs.get(call.name) if specs is not None else spec_for_tool(str(call.name or ""))
+            name = _runtime_name(call.name or "")
+            spec = specs.get(call.name) if specs is not None else spec_for_tool(call.name or "")
             replay_class = (spec.replay_class if spec is not None
                             else tool_replay_policy(name).replay_class)
             replay_args = replay_args_for_tool_call(ToolCall(name, dict(call.args or {})))

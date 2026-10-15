@@ -427,7 +427,7 @@ class KnowledgeIndex:
         session_id: str,
         unique_keys: tuple[str, ...],
     ) -> list[dict[str, Any]]:
-        session_id = str(session_id or "").strip()
+        session_id = (session_id or "").strip()
         conn = self._read_conn()
         rows = []
         if session_id:
@@ -485,7 +485,7 @@ def _unique(values: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for value in values:
-        item = str(value or "").strip()
+        item = (value or "").strip()
         if item and item not in seen:
             seen.add(item)
             out.append(item)

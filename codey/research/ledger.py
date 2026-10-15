@@ -145,7 +145,7 @@ class ResearchLedger:
         self._source_pages = staged._source_pages
 
     def record_search(self, query: str, results: list[dict[str, Any]]) -> None:
-        query = " ".join(str(query or "").split())
+        query = " ".join((query or "").split())
         if not query:
             return
         items: list[SearchResultRecord] = []
@@ -170,16 +170,16 @@ class ResearchLedger:
         ))
 
     def record_open_document(self, document: SourceDocument) -> None:
-        requested_url = str(document.requested_url or "").strip()
-        final_url = str(document.final_url or requested_url).strip()
+        requested_url = (document.requested_url or "").strip()
+        final_url = (document.final_url or requested_url).strip()
         if not final_url:
             return
-        text = str(document.text or "")
+        text = (document.text or "")
         pages_read = tuple(
             page for page in (_safe_page_number(raw) for raw in document.pages_read)
             if page is not None and page > 0
         )
-        requested_url = str(requested_url or "").strip()
+        requested_url = (requested_url or "").strip()
         page_map = {page.number: page.text for page in document.page_texts if page.number > 0}
         existing = next(
             (
@@ -205,18 +205,18 @@ class ResearchLedger:
         opened = OpenedSource(
             requested_url=(existing.requested_url if existing is not None else "") or requested_url or final_url,
             final_url=final_url,
-            title=_clip(str(document.title or (existing.title if existing is not None else "")), 180),
+            title=_clip((document.title or (existing.title if existing is not None else "")), 180),
             retrieved_at=now_iso(),
             text_hash=hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16],
             quality=classify_source_quality(final_url, text),
-            content_kind=str(document.content_kind or "html"),
-            mime_type=str(document.mime_type or (existing.mime_type if existing is not None else "")),
+            content_kind=(document.content_kind or "html"),
+            mime_type=(document.mime_type or (existing.mime_type if existing is not None else "")),
             page_count=max(
                 _safe_count(document.page_count),
                 _safe_count(existing.page_count) if existing is not None else 0,
             ),
             pages_read=pages_read,
-            truncated=bool(document.truncated or (existing.truncated if existing is not None else False)),
+            truncated=(document.truncated or (existing.truncated if existing is not None else False)),
         )
         self.opened_sources = [
             item for item in self.opened_sources
@@ -322,7 +322,7 @@ class ResearchLedger:
 
     def record_source_search(self, source_url: str, query: str, hits: list[object]) -> None:
         final_url = opened_url(self, source_url)
-        query = " ".join(str(query or "").split())
+        query = " ".join((query or "").split())
         if not final_url or not query:
             return
         bounded_hits = []
@@ -351,11 +351,11 @@ class ResearchLedger:
 
     def source_text_for_url(self, source_url: str) -> str:
         final_url = opened_url(self, source_url)
-        return self._source_texts.get(final_url) or self._source_texts.get(str(source_url or "").strip()) or ""
+        return self._source_texts.get(final_url) or self._source_texts.get((source_url or "").strip()) or ""
 
     def source_pages_for_url(self, source_url: str) -> dict[int, str]:
         final_url = opened_url(self, source_url)
-        return dict(self._source_pages.get(final_url) or self._source_pages.get(str(source_url or "").strip()) or {})
+        return dict(self._source_pages.get(final_url) or self._source_pages.get((source_url or "").strip()) or {})
 
     def best_excerpt_with_page(self, source_url: str, hint: str = "", *, page: int | None = None) -> tuple[str, int | None]:
         if page is not None:
@@ -409,7 +409,7 @@ class ResearchLedger:
         }
 
     def canonical_opened_url(self, url: str) -> str:
-        url = str(url or "").strip()
+        url = (url or "").strip()
         if not url:
             return ""
         for item in self.opened_sources:
@@ -527,7 +527,7 @@ def classify_source_quality(url: str, text: str = "") -> SourceQuality:
 
 def _freshness(text: str) -> str:
     years = []
-    for match in _YEAR_RE.findall(str(text or "")):
+    for match in _YEAR_RE.findall(text or ""):
         with contextlib.suppress(ValueError):
             years.append(int(match))
     if not years:
@@ -540,7 +540,7 @@ def _freshness(text: str) -> str:
 
 
 def _independent_group(host: str) -> str:
-    parts = [part for part in str(host or "").split(".") if part]
+    parts = [part for part in (host or "").split(".") if part]
     if len(parts) >= 2:
         return ".".join(parts[-2:])
     return host
@@ -645,8 +645,8 @@ def _best_excerpt(text: str, hint: str = "") -> str:
 
 
 def _merge_text(existing: str, current: str) -> str:
-    left = str(existing or "").strip()
-    right = str(current or "").strip()
+    left = (existing or "").strip()
+    right = (current or "").strip()
     if not left:
         return right
     if not right or right in left:
@@ -658,7 +658,7 @@ def _merge_text(existing: str, current: str) -> str:
 
 def _hint_tokens(hint: str) -> list[str]:
     tokens = []
-    for raw in re.findall(r"[A-Za-z0-9\u4e00-\u9fff]{3,}", str(hint or "").lower()):
+    for raw in re.findall(r"[A-Za-z0-9\u4e00-\u9fff]{3,}", (hint or "").lower()):
         if len(raw) >= 24:
             raw = raw[:24]
         if raw not in tokens:
@@ -667,11 +667,11 @@ def _hint_tokens(hint: str) -> list[str]:
 
 
 def _normalize_for_match(value: str) -> str:
-    return _SPACE_RE.sub(" ", str(value or "")).strip().lower()
+    return _SPACE_RE.sub(" ", (value or "")).strip().lower()
 
 
 def _clean(value: str) -> str:
-    return _SPACE_RE.sub(" ", str(value or "")).strip()
+    return _SPACE_RE.sub(" ", (value or "")).strip()
 
 
 def _clip(value: str, limit: int) -> str:

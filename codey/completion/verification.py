@@ -464,7 +464,7 @@ def matching_analysis_run_refs(
 
     wanted: dict[tuple[str, str], None] = {}
     for command, cwd in dict.fromkeys(pairs or ()):
-        text = str(command or "").strip()
+        text = (command or "").strip()
         if not text:
             continue
         wanted[(text, _analysis_run_cwd_digest(cwd, project))] = None
@@ -513,7 +513,7 @@ def coding_completion_checks(
     this round's clean verification.
     """
 
-    if files and all(is_document_path(str(item)) for item in files):
+    if files and all(is_document_path(item) for item in files):
         row = completion_check(
             CODING_CHECK_RELEVANT_VERIFICATION,
             CHECK_NOT_APPLICABLE,
@@ -565,7 +565,7 @@ def coding_completion_limitations(
 ) -> tuple[str, ...]:
     """Limitation refs a satisfied-but-not-clean proof must carry."""
 
-    if files and all(is_document_path(str(item)) for item in files):
+    if files and all(is_document_path(item) for item in files):
         return (LIMITATION_DOCS_ONLY_CHANGE,)
     if verification_forbidden:
         return (LIMITATION_VERIFICATION_FORBIDDEN_BY_USER,)
@@ -593,7 +593,7 @@ def build_coding_completion_proof(
 
     if stop_reason != "done" or not task_changed or not files:
         return None
-    docs_only = all(is_document_path(str(item)) for item in files)
+    docs_only = all(is_document_path(item) for item in files)
     if docs_only:
         limitations: tuple[str, ...] = (LIMITATION_DOCS_ONLY_CHANGE,)
     else:
@@ -654,7 +654,7 @@ def classify_verification_failure(
     if proof_status == "failed":
         if not selected_check_present:
             return FAILURE_VERIFICATION_UNAVAILABLE
-        error_code = str(decisive_error_code or "").strip()
+        error_code = (decisive_error_code or "").strip()
         if error_code and decisive_exit_code is None:
             # The command never produced a process exit: approval denied,
             # timeout, spawn failure. That is not evidence the code broke.

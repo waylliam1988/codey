@@ -90,19 +90,19 @@ def _persist_observation_row(
             store.append_completed(
                 run_id=run_id,
                 session_id=session_id,
-                project=str(project or ""),
-                mode=str(mode or "chat"),
-                user_text=str(user_text or ""),
-                assistant_text=str(assistant_text or ""),
-                stop_reason=str(stop_reason or ""),
-                provider_id=str(provider_id or ""),
+                project=(project or ""),
+                mode=(mode or "chat"),
+                user_text=(user_text or ""),
+                assistant_text=(assistant_text or ""),
+                stop_reason=(stop_reason or ""),
+                provider_id=(provider_id or ""),
             )
         )
         if not ok:
             return False, "failed"
         return True, (
             "committed"
-            if str(stop_reason or "") == "done"
+            if (stop_reason or "") == "done"
             else "uncommitted"
         )
     except Exception:
@@ -222,7 +222,7 @@ def settle_cancelled_run(
         state,
         run_id=run_id,
         session_id=session_id,
-        project=str(project or ""),
+        project=(project or ""),
         mode=str(stopped_event.get("mode") or task_kind or "chat"),
         user_text=request_task,
         assistant_text="",
@@ -316,7 +316,7 @@ def settle_error_run(
         state,
         run_id=run_id,
         session_id=session_id,
-        project=str(project or ""),
+        project=(project or ""),
         mode=str(error_event.get("mode") or task_kind or "chat"),
         user_text=request_task,
         assistant_text=str(error_event.get("summary") or ""),
@@ -332,7 +332,7 @@ def settle_error_run(
         maybe_sync_work_queue(ghost_deps, frame, error_event)
     else:
         run_ghost_post_turn(
-            ghost_deps, None, error_event, current_work_item, project_text=str(project or "")
+            ghost_deps, None, error_event, current_work_item, project_text=(project or "")
         )
     return operation_outcome_from_task_done_event(error_event)
 

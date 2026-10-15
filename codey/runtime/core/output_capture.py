@@ -121,7 +121,7 @@ class BoundedByteCapture:
             view = view[need:]
             if not view:
                 return
-        self._tail.append(bytes(view))
+        self._tail.append(view)
         self._tail_len += len(view)
         while self._tail_len > self._tail_limit:
             excess = self._tail_len - self._tail_limit

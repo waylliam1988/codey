@@ -159,8 +159,8 @@ class PromptSectionTrace:
             "name": _identifier(self.name, 80),
             "digest": self.digest,
             "chars": _nonnegative_int(self.chars),
-            "model_visible": bool(self.model_visible),
-            "truncated": bool(self.truncated),
+            "model_visible": self.model_visible,
+            "truncated": self.truncated,
         }
         if self.purpose:
             payload["purpose"] = _clip(self.purpose, 160)
@@ -238,7 +238,7 @@ class ModeSelectionTrace:
             "final_mode": _identifier(self.final_mode, 40),
             "source": _identifier(self.source, 80),
             "reason_code": _identifier(self.reason_code, 120),
-            "overridden_by_user": bool(self.overridden_by_user),
+            "overridden_by_user": self.overridden_by_user,
         }
 
 
@@ -584,10 +584,10 @@ class RunTraceRecorder:
             name=name,
             digest=digest_text(rendered),
             chars=len(rendered),
-            purpose=str(purpose or ""),
-            model_visible=bool(model_visible),
+            purpose=(purpose or ""),
+            model_visible=model_visible,
             budget=_nonnegative_int(budget),
-            truncated=bool(truncated),
+            truncated=truncated,
             freshness=freshness,
             source_refs=refs,
             epoch_id=_identifier(epoch_id, 80),
@@ -1482,7 +1482,7 @@ class RunTraceRecorder:
 
 def _host(url: str) -> str:
     try:
-        return (urlparse(str(url or "")).hostname or "").lower()
+        return (urlparse(url or "").hostname or "").lower()
     except ValueError:
         return ""
 

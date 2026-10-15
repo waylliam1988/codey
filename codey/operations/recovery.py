@@ -341,7 +341,7 @@ def _try_replay_safe_tool(
             return None
         outcome = execute_information_tool_call(project_path, tool_fns, candidate.call)
         status = SETTLEMENT_STATUS_OK if outcome.ok else SETTLEMENT_STATUS_ERROR
-        error_code = str(outcome.error_code or ("" if outcome.ok else "error"))[:80]
+        error_code = (outcome.error_code or ("" if outcome.ok else "error"))[:80]
         if settle:
             # 新读取作为新的观察结算（含完整有界结果与退出码），不冒充旧结果
             from codey.operations.kernel_receipts import result_receipt_fields
@@ -579,7 +579,7 @@ def _replay_safe_tools_for_action(
         if projection is None:
             return ResumeRecoveryResult(ok=False)
         candidate = candidate_from_intent(projection.intent)
-        was_settled = bool(projection.is_settled)
+        was_settled = projection.is_settled
         if was_settled:
             # 已结算原结果优先：直接交付，不重新执行（新读取不得冒充旧结果）。
             # 不再用安全重放候选重建；不可重建则整体失败，不回退重读。

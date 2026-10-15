@@ -89,21 +89,21 @@ class TaskSession:
     restored_effect_ids: set[str] = field(default_factory=set, repr=False, compare=False)
 
     def record_search(self, query: str) -> None:
-        text = str(query or "").strip()
+        text = (query or "").strip()
         if text:
             self.searches.append(text[:240])
 
     def record_search_result(self, result_id: str, url: str) -> None:
-        rid = str(result_id or "").strip().lower()
-        target = str(url or "").strip()
+        rid = (result_id or "").strip().lower()
+        target = (url or "").strip()
         if rid and target:
             self.search_results[rid] = target
 
     def record_open(self, url: str, *, source_id: str = "") -> None:
-        text = str(url or "").strip()
+        text = (url or "").strip()
         if text:
             self.opened_sources.add(text)
-            sid = str(source_id or "").strip().lower()
+            sid = (source_id or "").strip().lower()
             if not sid:
                 sid = next((key for key, value in self.source_ids.items() if value == text), "")
             if not sid:
@@ -111,13 +111,13 @@ class TaskSession:
             self.source_ids[sid] = text
 
     def record_evidence(self, source_url: str, excerpt: str) -> None:
-        url = str(source_url or "").strip()
-        clip = str(excerpt or "").strip()
+        url = (source_url or "").strip()
+        clip = (excerpt or "").strip()
         if url and clip:
             self.evidence.append({"source_url": url, "excerpt": clip[:600]})
 
     def record_edit(self, path: str, revision: int | None = None) -> int:
-        key = str(path or "").strip() or "file"
+        key = (path or "").strip() or "file"
         rev = revision if type(revision) is int else -1
         if rev < 0:
             current = max([0, *list(self.edited_files.values())])
@@ -141,7 +141,7 @@ class TaskSession:
         if type(revision) is not int:
             return
         rev = revision
-        row: dict[str, Any] = {"command": str(command or ""), "cwd": str(cwd or "."),
+        row: dict[str, Any] = {"command": (command or ""), "cwd": (cwd or "."),
                                "revision": rev, "passed": passed}
         if exit_code is not None:
             try:
@@ -155,7 +155,7 @@ class TaskSession:
         if type(workspace_revision) is int:
             row["workspace_revision"] = workspace_revision
         if workspace_fingerprint is not None:
-            row["workspace_fingerprint"] = str(workspace_fingerprint or "")[:120]
+            row["workspace_fingerprint"] = (workspace_fingerprint or "")[:120]
         self.verifications.append(row)
 
     def set_workspace_state(self, revision: object, fingerprint: object) -> None:

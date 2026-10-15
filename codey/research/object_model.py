@@ -257,7 +257,7 @@ class ResearchSource:
                 page for page in (_safe_positive_page(page) for page in self.pages_read)
                 if page is not None
             ][:MAX_REF_VALUES],
-            "truncated": bool(self.truncated),
+            "truncated": self.truncated,
             "quality": dict(self.quality),
         }
 
@@ -455,7 +455,7 @@ def build_research_record(
     question_obj = ResearchQuestion(
         question_id=_stable_ref("question", _normalize_text(question)),
         question_text_digest=_digest_text(question),
-        chars=len(str(question or "")),
+        chars=len(question or ""),
     )
     base = {
         "schema_version": RESEARCH_RECORD_SCHEMA_VERSION,
@@ -635,7 +635,7 @@ def source_from_opened(opened: OpenedSource) -> ResearchSource:
         content_kind=_identifier(opened.content_kind, 40) or "html",
         page_count=max(0, int(opened.page_count or 0)),
         pages_read=tuple(int(page) for page in opened.pages_read if int(page) > 0),
-        truncated=bool(opened.truncated),
+        truncated=opened.truncated,
         quality=opened.quality.to_dict(),
     )
 
@@ -744,7 +744,7 @@ def _evidence_refs_for_citations(
     clean = _normalize_text(claim_text)
     claim_digest = _digest_text(clean)
     for number in citation_numbers:
-        url = str(citation_urls.get(int(number)) or "")
+        url = (citation_urls.get(int(number)) or "")
         source_id = source_ids_by_url.get(url)
         if not source_id:
             continue
@@ -836,7 +836,7 @@ def _numeric_match_terms(text: str) -> set[str]:
 
 
 def _add_content_match_term(terms: set[str], term: str) -> None:
-    clean = str(term or "").casefold().strip("-+/")
+    clean = (term or "").casefold().strip("-+/")
     if not clean or clean in _MATCH_STOP_TERMS:
         return
     if clean.isdigit():
@@ -854,7 +854,7 @@ def _derive_answer_status(
     unsupported_claim_count: int,
     stop_reason: str,
 ) -> str:
-    if not str(summary or "").strip():
+    if not (summary or "").strip():
         return "not_answered"
     if not evidence:
         if getattr(review, "ok", False) or stop_reason == "done":
@@ -867,7 +867,7 @@ def _derive_answer_status(
 
 def _claim_lines(text: str) -> tuple[str, ...]:
     lines: list[str] = []
-    for raw in str(text or "").splitlines():
+    for raw in (text or "").splitlines():
         line = raw.strip()
         line = re.sub(r"^[-*]\s+", "", line)
         line = re.sub(r"^\d+[\.)、]\s+", "", line)
@@ -881,11 +881,11 @@ def _claim_lines(text: str) -> tuple[str, ...]:
 
 
 def _strip_citations(text: str) -> str:
-    return _clip(re.sub(r"\[\d+(?:[^\]]*)?\]", "", str(text or "")).strip(), MAX_CLAIM_TEXT_CHARS)
+    return _clip(re.sub(r"\[\d+(?:[^\]]*)?\]", "", (text or "")).strip(), MAX_CLAIM_TEXT_CHARS)
 
 
 def _looks_like_assumption(text: str, section: str) -> bool:
-    lower = str(text or "").casefold()
+    lower = (text or "").casefold()
     return section == "counter" or any(marker in lower for marker in _ASSUMPTION_MARKERS)
 
 
@@ -968,8 +968,8 @@ def _close_claim_graph(
 
 
 def _excerpt_offsets(text: str, excerpt: str) -> tuple[int, int]:
-    source = str(text or "")
-    needle = str(excerpt or "").strip()
+    source = (text or "")
+    needle = (excerpt or "").strip()
     if not source or not needle:
         return 0, 0
     index = source.find(needle)

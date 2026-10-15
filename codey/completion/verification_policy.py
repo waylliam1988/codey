@@ -750,9 +750,9 @@ def select_verification_candidate(
 ) -> VerificationCandidate | None:
     code_paths = tuple(
         dict.fromkeys(
-            str(path).replace("\\", "/")
+            path.replace("\\", "/")
             for path in changed_paths
-            if path and not is_document_path(str(path))
+            if path and not is_document_path(path)
         )
     )
     if not code_paths:
@@ -821,7 +821,7 @@ def check_matches_candidate(
     command: str,
     cwd: str,
 ) -> bool:
-    normalized_cwd = PurePosixPath(str(cwd or ".").replace("\\", "/")).as_posix()
+    normalized_cwd = PurePosixPath((cwd or ".").replace("\\", "/")).as_posix()
     return command.strip() == candidate.command and normalized_cwd == candidate.cwd
 
 
@@ -855,9 +855,9 @@ def selected_verification_candidate_lines(
 
 
 def _verification_candidate_line(item: VerificationCandidate) -> str:
-    command = str(item.command or "").replace("\r", " ").replace("\n", " ").strip()
+    command = (item.command or "").replace("\r", " ").replace("\n", " ").strip()
     if not command:
         return ""
-    cwd_text = str(item.cwd or ".").replace("\r", " ").replace("\n", " ").strip() or "."
+    cwd_text = (item.cwd or ".").replace("\r", " ").replace("\n", " ").strip() or "."
     cwd = PurePosixPath(cwd_text.replace("\\", "/")).as_posix()
     return command if cwd == "." else f"{cwd.rstrip('/')}/: {command}"

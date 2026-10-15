@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 def model_visible_contract_hash(kind: str, text: object) -> str:
     payload = {
-        "kind": str(kind or "").strip() or "tool_contract",
+        "kind": (kind or "").strip() or "tool_contract",
         "contract": str(text or ""),
     }
     data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
@@ -182,7 +182,7 @@ def _render_preface(tool_contract: str) -> str:
 
 
 def _normalize_tool_names(names: set[str] | frozenset[str]) -> set[str]:
-    return {str(name or "").strip().lower() for name in names if str(name or "").strip()}
+    return {(name or "").strip().lower() for name in names if (name or "").strip()}
 
 
 def _defined_tool_names(definitions: tuple[object, ...]) -> set[str]:

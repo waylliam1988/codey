@@ -58,7 +58,7 @@ def render_context_source(source: ContextSource) -> RenderedContextSource | None
             raise
         return None
 
-    text = str(body or "").strip()
+    text = (body or "").strip()
     if not text:
         return None
 
@@ -99,7 +99,7 @@ def render_context_sources_with_metadata(
 
 
 def _render_block(heading: str, text: str) -> str:
-    heading = str(heading or "").strip()
+    heading = (heading or "").strip()
     if not heading:
         return text
     return f"{heading}\n{text}"

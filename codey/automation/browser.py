@@ -443,7 +443,7 @@ def _page_urls(browser: Browser) -> tuple[str, ...]:
     for ctx in browser.contexts:
         for page in ctx.pages:
             with contextlib.suppress(Exception):
-                urls.append(str(page.url or ""))
+                urls.append(page.url or "")
     return tuple(urls)
 
 
@@ -457,7 +457,7 @@ def _close_failed_warmup_page(page: Page | None, provider_id: str) -> None:
         return
     marker = PROVIDER_URL_CONTAINS.get(provider_id)
     try:
-        url = str(page.url or "")
+        url = (page.url or "")
     except Exception:
         url = ""
     if marker and _url_host_matches(url, marker):
@@ -507,7 +507,7 @@ def warm_provider_tabs(
                     wait_until="domcontentloaded",
                     timeout=WARMUP_NAVIGATION_TIMEOUT_MS,
                 )
-                urls = (*urls, str(page.url or url))
+                urls = (*urls, (page.url or url))
             except cancellation.TaskCancelled:
                 _close_failed_warmup_page(page, provider_id)
                 raise
@@ -619,7 +619,7 @@ def open_chat_page(
             for ctx in browser.contexts:
                 for p in ctx.pages:
                     try:
-                        page_url = str(p.url or "")
+                        page_url = (p.url or "")
                     except Exception:
                         continue
                     if _url_host_matches(page_url, url_contains):

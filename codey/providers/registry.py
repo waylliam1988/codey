@@ -98,7 +98,7 @@ def connect_provider(
 ) -> ChatProvider:
     normalized = normalize_provider_id(provider_id)
     if not normalized:
-        if provider_id is None or str(provider_id).strip() == "":
+        if provider_id is None or provider_id.strip() == "":
             normalized = DEFAULT_PROVIDER_ID
         else:
             raise ValueError(f"unsupported provider: {provider_id}")
@@ -181,7 +181,7 @@ def connect_fresh_provider_tab(
 
     normalized = normalize_provider_id(provider_id)
     if not normalized:
-        if provider_id is None or str(provider_id).strip() == "":
+        if provider_id is None or provider_id.strip() == "":
             normalized = DEFAULT_PROVIDER_ID
         else:
             raise ValueError(f"unsupported provider: {provider_id}")

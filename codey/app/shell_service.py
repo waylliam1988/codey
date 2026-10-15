@@ -294,7 +294,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[s
             if not _approval_generation_current(ctx, ticket.generation):
                 return _stopped_shell_result()
             stop_flag = ctx.run_registry.stop_flag
-            if bool(stop_flag.is_set()):
+            if stop_flag.is_set():
                 return _stopped_shell_result()
             # Commit point: Popen while still holding the gate so a Stop that
             # needs the same gate to bump the generation cannot interleave.
@@ -312,9 +312,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[s
                 proc, job, command, ticket.timeout,
                 capture_limit_bytes=CAPTURE_LIMIT_BYTES,
             )
-            capture_truncated = bool(
-                completed.stdout_truncated or completed.stderr_truncated
-            )
+            capture_truncated = (completed.stdout_truncated or completed.stderr_truncated)
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         return _stopped_shell_result()
     except cancellation.ProcessOutputReadError as exc:
@@ -364,7 +362,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[s
         output_parts.append("[stderr]\n" + completed.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
     output, display_truncated = clip_middle(output, ticket.output_limit)
-    truncated = bool(display_truncated or capture_truncated)
+    truncated = (display_truncated or capture_truncated)
     result: dict[str, Any] = {
         "ok": True,
         "status": "exit",

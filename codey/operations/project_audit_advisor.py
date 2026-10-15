@@ -234,7 +234,7 @@ def run_project_audit_advisor(
         timer.cancel()
     if not outcome.completed:
         return ""
-    report = _clip(str(outcome.summary or ""), PROJECT_AUDIT_MAX_REPORT_CHARS)
+    report = _clip((outcome.summary or ""), PROJECT_AUDIT_MAX_REPORT_CHARS)
     _trace_model_prompt(
         trace_recorder,
         "project_audit_result",

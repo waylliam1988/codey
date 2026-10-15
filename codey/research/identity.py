@@ -96,13 +96,13 @@ def path_ref(path: str | Path, *, project: str | Path | None = None) -> dict[str
 
 
 def _redacted_query(query: str) -> str:
-    if str(query or ""):
+    if query:
         return "query=redacted"
     return ""
 
 
 def _redacted_unparseable_url_for_digest(text: str) -> tuple[str, bool]:
-    raw = str(text or "").strip()
+    raw = (text or "").strip()
     prefix = "<redacted-url>"
     match = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*):", raw)
     if match:

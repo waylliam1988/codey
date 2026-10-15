@@ -335,7 +335,7 @@ def _observed_checks(values: Sequence[object]) -> tuple[ObservedCheck, ...]:
 def _recommended_commands(values: Sequence[str]) -> tuple[str, ...]:
     result: list[str] = []
     for value in values:
-        command = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+        command = (value or "").replace("\r", " ").replace("\n", " ").strip()
         if command and command not in result:
             result.append(command[:500])
         if len(result) >= MAX_BROADER_COMMANDS:

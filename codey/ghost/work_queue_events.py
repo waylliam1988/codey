@@ -890,7 +890,7 @@ def _scope_filter_matches(
 ) -> bool:
     from codey.ghost.work_queue_model import _project_ref as _model_project_ref
 
-    normalized_scope = str(scope or "").strip().lower()
+    normalized_scope = (scope or "").strip().lower()
     if not normalized_scope:
         return (
             _scope_matches(item, project_ref=project_ref, session_ref=session_ref)
@@ -912,7 +912,7 @@ def _receipt_proves_project_work(receipt: Mapping[str, object]) -> bool:
 
 
 def _primary_proof_matches_item_kind(item: GhostWorkItem, refs: Iterable[str]) -> bool:
-    prefixes = {str(ref).split(":", 1)[0] for ref in refs}
+    prefixes = {ref.split(":", 1)[0] for ref in refs}
     if item.kind in {"research", "open_question"}:
         return any(_research_proof_ref(ref) for ref in refs)
     if item.kind == "review":

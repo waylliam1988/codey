@@ -89,7 +89,7 @@ class ProjectFacts:
 
 
 def _safe_cwd(value: str) -> str | None:
-    text = str(value or ".").strip().replace("\\", "/") or "."
+    text = (value or ".").strip().replace("\\", "/") or "."
     path = PurePosixPath(text)
     if path.is_absolute() or ".." in path.parts:
         return None
@@ -97,7 +97,7 @@ def _safe_cwd(value: str) -> str | None:
 
 
 def _verified_command(command: str, cwd: str) -> VerifiedCommand | None:
-    text = str(command or "").strip()
+    text = (command or "").strip()
     safe_cwd = _safe_cwd(cwd)
     if (
         not text

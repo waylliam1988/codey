@@ -100,7 +100,7 @@ SOCIAL_HOSTS = (
 
 
 def strip_www(host: str) -> str:
-    return str(host or "").strip().lower().removeprefix("www.")
+    return (host or "").strip().lower().removeprefix("www.")
 
 
 def host_matches(host: str, domain: str) -> bool:

@@ -265,7 +265,7 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
             raise TypeError("local config base_url/model/api_key must be strings")
     base_url_text = str(base_url_raw or "").strip()
     model_text = str(model_raw or "").strip()
-    api_key_text = str(api_key_raw or "") if isinstance(api_key_raw, str) else ""
+    api_key_text = (api_key_raw or "") if isinstance(api_key_raw, str) else ""
     if isinstance(context_raw, dict):
         window = _parse_positive_int(context_raw.get("context_window_tokens"))
         reserve = _parse_positive_int(context_raw.get("context_reserve_tokens"))
@@ -435,7 +435,7 @@ def resolve_local_native_tools(config: LocalProviderConfig) -> bool:
         return False
     from codey.providers.capabilities import capability_for
 
-    return bool(capability_for("local").native_tools_default)
+    return capability_for("local").native_tools_default
 
 
 def resolve_local_context_budget(config: LocalProviderConfig) -> LocalContextBudget:
@@ -449,12 +449,12 @@ def resolve_local_context_budget(config: LocalProviderConfig) -> LocalContextBud
     raw_window = os.environ.get(LOCAL_OPENAI_CONTEXT_WINDOW_ENV, "")
     raw_reserve = os.environ.get(LOCAL_OPENAI_CONTEXT_RESERVE_ENV, "")
     raw_keep = os.environ.get(LOCAL_OPENAI_CONTEXT_KEEP_ENV, "")
-    window_set = bool(str(raw_window).strip())
-    reserve_set = bool(str(raw_reserve).strip())
-    keep_set = bool(str(raw_keep).strip())
-    window = _parse_positive_int(str(raw_window).strip()) if window_set else None
-    reserve = _parse_positive_int(str(raw_reserve).strip()) if reserve_set else None
-    keep = _parse_positive_int(str(raw_keep).strip()) if keep_set else None
+    window_set = bool(raw_window.strip())
+    reserve_set = bool(raw_reserve.strip())
+    keep_set = bool(raw_keep.strip())
+    window = _parse_positive_int(raw_window.strip()) if window_set else None
+    reserve = _parse_positive_int(raw_reserve.strip()) if reserve_set else None
+    keep = _parse_positive_int(raw_keep.strip()) if keep_set else None
     if window_set and window is None:
         raise ValueError(f"{LOCAL_OPENAI_CONTEXT_WINDOW_ENV} must be a positive integer")
     if reserve_set and reserve is None:

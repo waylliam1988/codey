@@ -86,7 +86,7 @@ def merge_evidence_patch(
     except Exception:
         quality_review = None
 
-    project_val = str(tools.project or "").strip()
+    project_val = (tools.project or "").strip()
     merge_synthesis_id = f"synthesis:merge:{hashlib.sha256(final_text.encode('utf-8')).hexdigest()[:12]}"
 
     new_record = build_research_record(
@@ -151,9 +151,9 @@ def merge_evidence_patch(
         )
     )
     staged_counterpoints = [
-        str(item.claim or item.excerpt or "").strip()
+        (item.claim or item.excerpt or "").strip()
         for item in ledger.evidence_items
-        if item.stance in {"contradicts", "context"} and str(item.claim or item.excerpt or "").strip()
+        if item.stance in {"contradicts", "context"} and (item.claim or item.excerpt or "").strip()
     ]
     merged_counterpoints = list(
         dict.fromkeys(
@@ -207,10 +207,10 @@ def _needs_minimal_evidence_rebuild(
 ) -> bool:
     if not sections:
         return True
-    summary = str(initial.summary or "").strip()
+    summary = (initial.summary or "").strip()
     if not summary or summary.startswith("ERROR:"):
         return True
-    stop_reason = str(initial.stop_reason or "").strip().lower()
+    stop_reason = (initial.stop_reason or "").strip().lower()
     if stop_reason.startswith("protocol"):
         return True
     return getattr(initial_record, "answer_status", "") == "not_answered"
@@ -227,7 +227,7 @@ def _report_evidence_items(
     remaining: list[EvidenceItem] = []
     for item in ledger.evidence_items:
         url = opened_url(ledger, item.source_url)
-        excerpt = str(item.excerpt or "").strip()
+        excerpt = (item.excerpt or "").strip()
         if not url or not excerpt or url not in final_urls:
             continue
         key = (url, _digest_text(excerpt))
@@ -291,7 +291,7 @@ def _find_new_evidence_items(
     final_urls = ledger.final_url_set()
     for item in ledger.evidence_items:
         url = opened_url(ledger, item.source_url)
-        excerpt = str(item.excerpt or "").strip()
+        excerpt = (item.excerpt or "").strip()
         if not url or not excerpt:
             continue
         if url not in final_urls:
@@ -401,8 +401,8 @@ def _append_new_evidence_lines(
 ) -> None:
     for item in new_evidence:
         url = opened_url(ledger, item.source_url)
-        claim = str(item.claim or "").strip()
-        excerpt = str(item.excerpt or "").strip()
+        claim = (item.claim or "").strip()
+        excerpt = (item.excerpt or "").strip()
         text = claim or excerpt
         if not text or not url or url not in url_to_num:
             continue

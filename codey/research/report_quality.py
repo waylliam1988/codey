@@ -339,7 +339,7 @@ def _source_quality_warnings(
 
 def parse_citation_rows(sources_section: str, ledger: ResearchLedger | None = None) -> list[Citation]:
     citations: list[Citation] = []
-    for line in str(sources_section or "").splitlines():
+    for line in (sources_section or "").splitlines():
         stripped = line.strip()
         match = (
             _SOURCE_MARKDOWN_LINK_RE.match(stripped)
@@ -366,7 +366,7 @@ def parse_citation_rows(sources_section: str, ledger: ResearchLedger | None = No
 
 
 def _trim_source_url(url: str) -> str:
-    text = str(url or "").strip().rstrip(".,;:，。；、]】`\"'")
+    text = (url or "").strip().rstrip(".,;:，。；、]】`\"'")
     while text.endswith(")") and text.count(")") > text.count("("):
         text = text[:-1].rstrip(".,;:，。；、]】`\"'")
     return text
@@ -425,7 +425,7 @@ def _without_sources(sections: Mapping[str, str]) -> str:
 def _text_without_sources(summary: str) -> str:
     lines: list[str] = []
     in_sources = False
-    for line in str(summary or "").splitlines():
+    for line in (summary or "").splitlines():
         key = _heading_key(line)
         if key == "sources":
             in_sources = True
@@ -439,7 +439,7 @@ def _text_without_sources(summary: str) -> str:
 
 def _source_section_source_id_refs(source_text: str, ledger: ResearchLedger) -> set[str]:
     refs: set[str] = set()
-    for line in str(source_text or "").splitlines():
+    for line in (source_text or "").splitlines():
         stripped = line.strip()
         if not stripped:
             continue
@@ -466,7 +466,7 @@ def _conflicting_source_numbers(
 
 
 def _citation_title(raw: str, url: str, ledger: ResearchLedger | None) -> str:
-    title = re.sub(r"\bAvailable at:?\s*$", "", str(raw or ""), flags=re.IGNORECASE)
+    title = re.sub(r"\bAvailable at:?\s*$", "", (raw or ""), flags=re.IGNORECASE)
     title = title.strip().strip("-–—:：.。")
     if title:
         return title
@@ -491,7 +491,7 @@ def _strict_provenance_text(sections: Mapping[str, str], fallback: str) -> str:
 
 def _preamble_text(summary: str) -> str:
     lines: list[str] = []
-    for line in str(summary or "").splitlines():
+    for line in (summary or "").splitlines():
         if _heading_key(line):
             break
         lines.append(line)
@@ -567,17 +567,17 @@ _INSUFFICIENT_EVIDENCE_MARKERS = (
 
 
 def _normalized_body(value: str) -> str:
-    return re.sub(r"\s+", " ", str(value or "").lower())
+    return re.sub(r"\s+", " ", (value or "").lower())
 
 
 def _says_no_strong_counter(text: str) -> bool:
-    lower = str(text or "").lower()
+    lower = (text or "").lower()
     return "未找到强反证" in lower or "no strong counter" in lower or "no strong contrary" in lower
 
 
 def _section_lines(text: str, limit: int = 6) -> list[str]:
     out: list[str] = []
-    for line in str(text or "").splitlines():
+    for line in (text or "").splitlines():
         stripped = line.strip()
         if not stripped:
             continue

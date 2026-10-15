@@ -29,7 +29,7 @@ def split_run_command(
 ) -> list[str]:
     """Split a run/shell command into argv with one shared rule set."""
 
-    text = str(command or "")
+    text = (command or "")
     posix = not _is_windows(sys.platform if platform is None else platform)
     argv = shlex.split(text, posix=posix)
     if posix:

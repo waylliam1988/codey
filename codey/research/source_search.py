@@ -37,7 +37,7 @@ def search_text(text: str, query: str, limit: int = SOURCE_SEARCH_DEFAULT_LIMIT)
     tokens = query_tokens(query)
     if not tokens:
         return []
-    text = str(text or "")
+    text = (text or "")
     if not text:
         return []
     hits: list[SourceSearchHit] = []
@@ -57,7 +57,7 @@ def search_pages(
         return []
     hits: list[SourceSearchHit] = []
     for page in sorted(pages):
-        text = str(pages.get(page) or "")
+        text = (pages.get(page) or "")
         offsets = _candidate_offsets(text, tokens)
         if not offsets:
             continue
@@ -97,7 +97,7 @@ def render_results(hits: list[SourceSearchHit]) -> str:
 
 def query_tokens(query: str) -> tuple[str, ...]:
     tokens: list[str] = []
-    for item in _TOKEN_RE.findall(str(query or "").lower()):
+    for item in _TOKEN_RE.findall((query or "").lower()):
         cleaned = item.strip("._/-")
         if cleaned and cleaned not in tokens:
             tokens.append(cleaned)
@@ -107,7 +107,7 @@ def query_tokens(query: str) -> tuple[str, ...]:
 
 
 def snippet_at(text: str, offset: int) -> str:
-    text = str(text or "")
+    text = (text or "")
     if isinstance(offset, bool):
         offset_int = 0
     else:
@@ -147,7 +147,7 @@ def _rank_hits(hits: list[SourceSearchHit], limit: int) -> list[SourceSearchHit]
 
 
 def _clip(value: str, limit: int) -> str:
-    text = str(value or "")
+    text = (value or "")
     if len(text) <= limit:
         return text
     if limit <= 1:

@@ -80,8 +80,8 @@ def maybe_externalize_output(
     ``model_text_override`` is given the model sees only that window while
     the store keeps the full text.
     """
-    text = str(output or "")
-    model_text = str(model_text_override or text)
+    text = (output or "")
+    model_text = (model_text_override or text)
     if len(text.encode("utf-8")) <= RESEARCH_OUTPUT_BUDGET_BYTES:
         return _Outcome(model_text, ok=ok, presentation_result=presentation_result)
     audit: dict[str, object] = {}

@@ -82,27 +82,27 @@ class PromptEnvelope:
         *,
         separator: str = DEFAULT_PROMPT_SEPARATOR,
     ) -> None:
-        self.separator = str(separator)
+        self.separator = separator
         self._sections = list(sections)
 
     def render(self) -> RenderedPromptEnvelope:
         rendered: list[RenderedPromptSection] = []
         for section in self._sections:
-            text = str(section.text or "")
+            text = (section.text or "")
             if not text or not section.model_visible:
                 continue
             rendered.append(RenderedPromptSection(
-                name=str(section.name or "prompt_section"),
+                name=(section.name or "prompt_section"),
                 text=text,
-                purpose=str(section.purpose or ""),
+                purpose=(section.purpose or ""),
                 model_visible=bool(section.model_visible),
                 source_refs=_source_refs(section.source_refs, section.name),
                 budget=_safe_budget(section.budget),
-                freshness=str(section.freshness or ""),
-                truncated=bool(section.truncated),
-                epoch_id=str(section.epoch_id or ""),
-                admission_reason=str(section.admission_reason or ""),
-                capability_id=str(section.capability_id or ""),
+                freshness=(section.freshness or ""),
+                truncated=section.truncated,
+                epoch_id=(section.epoch_id or ""),
+                admission_reason=(section.admission_reason or ""),
+                capability_id=(section.capability_id or ""),
             ))
         return RenderedPromptEnvelope(
             text=self.separator.join(section.text for section in rendered),
@@ -216,8 +216,8 @@ def _build_validated_surface_payload(
     model_tool_contract_hash: str = "",
     runtime_tool_contract_hash: str = "",
 ) -> dict[str, object] | None:
-    effective_phase = str(phase or "").strip()
-    effective_send_ref = str(send_ref or "").strip()
+    effective_phase = (phase or "").strip()
+    effective_send_ref = (send_ref or "").strip()
     if not effective_phase or not effective_send_ref:
         return None
     try:
@@ -229,17 +229,17 @@ def _build_validated_surface_payload(
             validate_prompt_surface_payload,
         )
 
-        prompt_digest = "sha256:" + hashlib.sha256(str(text or "").encode("utf-8")).hexdigest()
-        prompt_chars = len(str(text or ""))
+        prompt_digest = "sha256:" + hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+        prompt_chars = len(text or "")
         section = PromptSurfaceSection(
-            name=str(name or "prompt_section"),
+            name=(name or "prompt_section"),
             digest=prompt_digest,
             chars=prompt_chars,
-            source_refs=(str(source_ref or "").strip()[:120],) if str(source_ref or "").strip() else (),
+            source_refs=((source_ref or "").strip()[:120],) if (source_ref or "").strip() else (),
             model_visible=True,
             freshness=PROVIDER_TURN_BOUNDARY,
             epoch_id=resolved_epoch,
-            capability_id=str(capability_id or ""),
+            capability_id=(capability_id or ""),
         )
         record = build_prompt_surface_record(
             phase=effective_phase,
@@ -247,10 +247,10 @@ def _build_validated_surface_payload(
             prompt_digest=prompt_digest,
             prompt_chars=prompt_chars,
             epoch_id=resolved_epoch,
-            source_refs=(str(source_ref or "").strip()[:120],) if str(source_ref or "").strip() else (),
-            provider_effect_id=str(provider_effect_id or "").strip(),
-            model_tool_contract_hash=str(model_tool_contract_hash or "").strip(),
-            runtime_tool_contract_hash=str(runtime_tool_contract_hash or "").strip(),
+            source_refs=((source_ref or "").strip()[:120],) if (source_ref or "").strip() else (),
+            provider_effect_id=(provider_effect_id or "").strip(),
+            model_tool_contract_hash=(model_tool_contract_hash or "").strip(),
+            runtime_tool_contract_hash=(runtime_tool_contract_hash or "").strip(),
             sections=(section,),
         )
         payload: dict[str, object] = {
@@ -271,7 +271,7 @@ def _build_validated_surface_payload(
                     "digest": sec.digest,
                     "chars": sec.chars,
                     "source_refs": list(sec.source_refs),
-                    "model_visible": bool(sec.model_visible),
+                    "model_visible": sec.model_visible,
                     "freshness": sec.freshness,
                     "epoch_id": sec.epoch_id,
                     "capability_id": sec.capability_id,
@@ -317,7 +317,7 @@ def record_provider_send_prompt(
     """
     if trace is None:
         return
-    resolved_epoch = str(epoch_id or "").strip() or context_epoch_id(text)
+    resolved_epoch = (epoch_id or "").strip() or context_epoch_id(text)
     surface_payload = _build_validated_surface_payload(
         text=text,
         name=name,

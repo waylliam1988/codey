@@ -57,7 +57,7 @@ def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
 
 
 def _json_objects(text: str) -> list[dict[str, Any]] | TextError | None:
-    source = str(text or "").strip()
+    source = (text or "").strip()
     if source.startswith("```"):
         return None
     spans = balanced_json_spans(source)
@@ -90,7 +90,7 @@ def _json_objects(text: str) -> list[dict[str, Any]] | TextError | None:
 
 def decode_text_turn(text: str) -> DecodedTextTurn:
     """Decode one complete text reply without consulting task state."""
-    source = str(text or "").strip()
+    source = (text or "").strip()
     objects = _json_objects(source)
     if isinstance(objects, TextError):
         return objects

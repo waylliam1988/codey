@@ -555,7 +555,7 @@ def _looks_like_url(source: str) -> bool:
 
 
 def _clip_tail(value: str, limit: int) -> str:
-    text = str(value or "")
+    text = (value or "")
     if len(text) <= limit:
         return text
     if limit <= 3:
@@ -589,7 +589,7 @@ class StagedKnowledgeStore:
         return note_id in self._staged_notes or self._parent.exists(note_id)
 
     def resolve(self, target: str) -> str | None:
-        target = str(target or "").strip()
+        target = (target or "").strip()
         if not target:
             return None
         if target in self._staged_notes:

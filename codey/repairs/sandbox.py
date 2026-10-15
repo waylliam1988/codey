@@ -85,7 +85,7 @@ def _reject_symlinks(package_root: Path) -> None:
 
 
 def _validated_reference(source: Path, rel: str) -> Path:
-    text = str(rel or "").strip()
+    text = (rel or "").strip()
     if not text:
         raise ValueError("repair reference file path is empty")
     rel_path = Path(text.replace("\\", "/"))

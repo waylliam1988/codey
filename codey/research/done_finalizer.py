@@ -70,7 +70,7 @@ def finalize_done_answer(
     never adds a new citation marker to an uncited claim.
     """
 
-    text = str(answer or "")
+    text = (answer or "")
     sections = parse_sections(text)
     if not sections:
         return FinalizedAnswer(text, reason="no_report_sections")
@@ -130,7 +130,7 @@ def finalize_done_answer(
     compiled_bodies = {
         key: body
         for key, body in filter_result.sections.items()
-        if key != "sources" and str(body or "").strip()
+        if key != "sources" and (body or "").strip()
     }
 
     referenced_urls = _referenced_urls(compiled_bodies, full_url_by_number)
@@ -166,8 +166,8 @@ def _citable_urls(ledger: ResearchLedger) -> list[str]:
     final_urls = ledger.final_url_set()
     urls: list[str] = []
     for item in ledger.evidence_items:
-        url = str(item.source_url or "").strip()
-        if not str(item.excerpt or "").strip():
+        url = (item.source_url or "").strip()
+        if not (item.excerpt or "").strip():
             continue
         canonical = opened_url(ledger, url)
         if canonical in final_urls and canonical not in urls:
@@ -182,10 +182,10 @@ def _source_id_numbers(
 ) -> dict[str, int]:
     numbers: dict[str, int] = {}
     for raw_id, raw_url in source_ids.items():
-        source_id = str(raw_id or "").strip().lower()
+        source_id = (raw_id or "").strip().lower()
         if not source_id:
             continue
-        url = str(raw_url or "").strip()
+        url = (raw_url or "").strip()
         canonical = opened_url(ledger, url)
         number = number_for_url.get(canonical)
         if number is not None:
@@ -320,7 +320,7 @@ def _source_title(ledger: ResearchLedger, url: str) -> str:
 def _render_report(sections: dict[str, str]) -> str:
     parts: list[str] = []
     for key in REQUIRED_SECTIONS:
-        body = str(sections.get(key) or "").strip()
+        body = (sections.get(key) or "").strip()
         if not body and key != "sources":
             continue
         parts.append(f"## {section_title(key)}\n{body}".rstrip())
@@ -369,7 +369,7 @@ def _filter_unsupported_required_claims(
 
     for section in ("conclusion", "evidence"):
         kept: list[str] = []
-        for raw_line in str(sections.get(section, "") or "").splitlines():
+        for raw_line in (sections.get(section, "") or "").splitlines():
             if not raw_line.strip():
                 continue
             claim = _next_claim(claims_by_section, claim_index, section)
@@ -380,7 +380,7 @@ def _filter_unsupported_required_claims(
                 kept.append(raw_line.rstrip())
                 continue
             changed = True
-            clean = str(claim.claim_text or "").strip()
+            clean = (claim.claim_text or "").strip()
             if _should_delete_unsupported_claim(clean):
                 continue
             downgraded.append(_downgraded_claim_line(clean))
@@ -433,7 +433,7 @@ def _next_claim(
 
 
 def _should_delete_unsupported_claim(text: str) -> bool:
-    clean = re.sub(r"\s+", " ", str(text or "")).strip()
+    clean = re.sub(r"\s+", " ", (text or "")).strip()
     if not clean:
         return True
     lower = clean.casefold()
@@ -443,11 +443,11 @@ def _should_delete_unsupported_claim(text: str) -> bool:
         return True
     if any(marker in lower for marker in _OPERATIONAL_MARKERS):
         return True
-    return bool(any(marker in lower for marker in _DELETE_UNSUPPORTED_MARKERS))
+    return any(marker in lower for marker in _DELETE_UNSUPPORTED_MARKERS)
 
 
 def _downgraded_claim_line(text: str) -> str:
-    clean = re.sub(r"\s+", " ", str(text or "")).strip(" -•*")
+    clean = re.sub(r"\s+", " ", (text or "")).strip(" -•*")
     clean = re.sub(r"\[\d+(?:[^\]]*)?\]", "", clean).strip()
     return f"- 未能用已保存证据确认：{clip(clean, 260)}"
 
@@ -455,7 +455,7 @@ def _downgraded_claim_line(text: str) -> str:
 def _counter_lines(text: str) -> list[str]:
     return [
         line.rstrip()
-        for line in str(text or "").splitlines()
+        for line in (text or "").splitlines()
         if line.strip()
     ]
 
@@ -467,7 +467,7 @@ def _says_no_strong_counter(lines: list[str]) -> bool:
 
 def _derive_conclusion_lines(evidence_text: str) -> list[str]:
     lines: list[str] = []
-    for raw in str(evidence_text or "").splitlines():
+    for raw in (evidence_text or "").splitlines():
         text = raw.strip()
         if not text:
             continue
@@ -484,7 +484,7 @@ def _derive_conclusion_lines(evidence_text: str) -> list[str]:
 
 def _derive_evidence_lines(conclusion_text: str) -> list[str]:
     lines: list[str] = []
-    for raw in str(conclusion_text or "").splitlines():
+    for raw in (conclusion_text or "").splitlines():
         text = raw.strip()
         if not text or not citation_ref_items(text):
             continue
@@ -512,7 +512,7 @@ def _derive_required_lines_from_saved_evidence(
     for item in ledger.evidence_items:
         if normalize_evidence_stance(item.stance) != "supports":
             continue
-        source_url = str(item.source_url or "").strip()
+        source_url = (item.source_url or "").strip()
         canonical = opened_url(ledger, source_url)
         number = number_for_url.get(canonical) or number_for_url.get(source_url)
         if number is None:
@@ -536,7 +536,7 @@ def _derive_required_lines_from_saved_evidence(
 def _source_numbers_by_url(sources_text: str, ledger: ResearchLedger) -> dict[str, int]:
     numbers: dict[str, int] = {}
     for row in report_quality.parse_citation_rows(sources_text, ledger):
-        raw_url = str(row.url or "").strip()
+        raw_url = (row.url or "").strip()
         if not raw_url:
             continue
         canonical = opened_url(ledger, raw_url)
@@ -558,7 +558,7 @@ def _saved_evidence_excerpt_text(excerpt: str, claim: str) -> str:
 
 
 def _saved_evidence_text(text: str) -> str:
-    clean = re.sub(r"\[\d+(?:[^\]]*)?\]", "", str(text or ""))
+    clean = re.sub(r"\[\d+(?:[^\]]*)?\]", "", (text or ""))
     clean = re.sub(r"^[-*]\s+", "", clean)
     clean = re.sub(r"\s+", " ", clean).strip(" -*")
     if not clean:
@@ -567,7 +567,7 @@ def _saved_evidence_text(text: str) -> str:
 
 
 def _first_sentence(text: str) -> str:
-    clean = str(text or "").strip()
+    clean = (text or "").strip()
     if not clean:
         return ""
     match = re.search(r"(.+?[.!?。！？])(?:\s+|$)", clean)
@@ -575,7 +575,7 @@ def _first_sentence(text: str) -> str:
 
 
 def _is_informative_saved_claim(text: str) -> bool:
-    clean = str(text or "").strip()
+    clean = (text or "").strip()
     if len(clean) < 18:
         return False
     lower = clean.casefold()
@@ -613,7 +613,7 @@ def render_research_report_sections(sections: Mapping[str, str]) -> str:
 
 
 def _normalized_report(value: str) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip()
+    return re.sub(r"\s+", " ", (value or "")).strip()
 
 
 __all__ = [

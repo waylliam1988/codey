@@ -595,10 +595,10 @@ def _settle_slot(
     """
     try:
         record: dict[str, Any] = {
-            "name": str(result.call.name or ""),
+            "name": (result.call.name or ""),
             "ok": ok if type(ok) is bool else False,
             "call_id": str(result.call.call_id or getattr(call, "call_id", "") or ""),
-            "excerpt": str(result.model_text or "")[:500],
+            "excerpt": (result.model_text or "")[:500],
             "args_digest": _call_args_digest(call),
         }
         strict_exit = strict_exit_code_or_none(exit_code)
@@ -617,7 +617,7 @@ def _settle_slot(
         identity_obj = _kernel_workspace_identity_of(result)
         if identity_obj is not None and type(ok) is bool and ok is True:
             record["workspace_revision"] = int(identity_obj.revision)
-            record["workspace_fingerprint"] = str(identity_obj.fingerprint)
+            record["workspace_fingerprint"] = identity_obj.fingerprint
     except Exception as exc:
         raise EffectSettlementFailed(f"effect settlement provenance failed for {identity}: {exc}") from exc
     try:

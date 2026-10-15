@@ -662,7 +662,7 @@ class AppContext:
     ) -> None:
         with self.lock:
             self.research_changes[run_id] = changes
-            owner = str(session_id or "").strip()
+            owner = (session_id or "").strip()
             if not owner:
                 try:
                     active = self.run_registry.current()

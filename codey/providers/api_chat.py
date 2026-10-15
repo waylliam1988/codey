@@ -240,7 +240,7 @@ def _extract_reply(body: dict[str, Any]) -> str:
     if isinstance(message, dict):
         return str(message.get("content") or "")
     if isinstance(choice.get("text"), str):
-        return str(choice.get("text") or "")
+        return (choice.get("text") or "")
     raise RuntimeError("local model returned a choice without message content")
 
 

@@ -21,7 +21,7 @@ from codey.runtime.core.models import ToolCall
 
 
 def _normalize_rel(path: str) -> str:
-    text = str(path or ".").replace("\\", "/").strip()
+    text = (path or ".").replace("\\", "/").strip()
     if not text:
         return "."
     normalized = posixpath.normpath(text)
@@ -48,7 +48,7 @@ def scope_for_call(call: ToolCall, project: str = "") -> tuple[str, str]:
     today). Serial today; grouping only proves the invariant for a future
     conservative parallel reader.
     """
-    name = str(call.name or "") or "unknown"
+    name = (call.name or "") or "unknown"
     if name in ("run", "shell"):
         return ("serial", name)
     if name == "edit":

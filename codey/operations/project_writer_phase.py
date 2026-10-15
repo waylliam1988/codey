@@ -119,7 +119,7 @@ def _run_one_writer_attempt(
         verification_successful_checks=spec.checkpoint.successful_checks,
         ghost_directive="",
         ghost_continuity="",
-        ghost_experiences=str(writer_experiences or ""),
+        ghost_experiences=(writer_experiences or ""),
         completion_repair_context=(
             ctx.repair_projection.prompt_text
             if ctx.repair_projection is not None

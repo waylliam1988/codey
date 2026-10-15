@@ -25,7 +25,7 @@ def render_opened_source(
         UNTRUSTED_SOURCE_PREAMBLE,
         UNTRUSTED_SOURCE_START,
         *_metadata_lines(document),
-        str(text_window or ""),
+        (text_window or ""),
         UNTRUSTED_SOURCE_END,
     ]
     if more_offset is not None:

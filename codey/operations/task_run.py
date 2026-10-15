@@ -182,8 +182,8 @@ def requires_project_writer_lease(request: TaskSubmission, task_kind: str) -> bo
 
     if not request.project:
         return False
-    kind = str(task_kind or "").strip().lower()
-    intent = str(request.intent or "auto").strip().lower()
+    kind = (task_kind or "").strip().lower()
+    intent = (request.intent or "auto").strip().lower()
     requested_write = "project.write" in request.requested_capabilities
     if kind in {"project", "hybrid"} and intent != "auto":
         return True
@@ -275,7 +275,7 @@ def _fail_early_run(
         None,
         error_event,
         current_work.claimed_work_item if current_work is not None else setup.claimed_work_item,
-        project_text=str(setup.project or ""),
+        project_text=(setup.project or ""),
     )
     return operation_outcome_from_task_done_event(error_event)
 

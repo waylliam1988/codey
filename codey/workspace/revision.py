@@ -110,7 +110,7 @@ class WorkspaceIdentity:
         out = dict(audit)
         if self.trusted:
             out["workspace_revision"] = int(self.revision)
-            out["workspace_fingerprint"] = str(self.fingerprint)
+            out["workspace_fingerprint"] = self.fingerprint
         return out
 
 

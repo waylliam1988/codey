@@ -28,7 +28,7 @@ def parse_pages(
     default: str = PDF_DEFAULT_PAGES,
     max_pages: int = PDF_MAX_PAGES_PER_OPEN,
 ) -> tuple[int, ...]:
-    text = str(value or default or "").strip().lower()
+    text = (value or default or "").strip().lower()
     text = text.replace("pages", "").replace("page", "")
     text = text.replace("pp.", "").replace("pp", "")
     text = text.replace("p.", "").replace("p", "")
@@ -74,7 +74,7 @@ def extract_pdf_document(
     mime_type: str = "application/pdf",
     pages: str = "",
 ) -> SourceDocument | PdfSkipped:
-    data = bytes(pdf_bytes or b"")
+    data = (pdf_bytes or b"")
     if not data:
         return PdfSkipped("PDF response was empty")
     if len(data) > PDF_MAX_BYTES:
@@ -173,7 +173,7 @@ def _page_stream_too_large(page: Any) -> bool:
 
 def _clean_pdf_text(value: str) -> str:
     lines = []
-    for line in str(value or "").splitlines():
+    for line in (value or "").splitlines():
         cleaned = _SPACE_RE.sub(" ", line).strip()
         if cleaned:
             lines.append(cleaned)
@@ -181,5 +181,5 @@ def _clean_pdf_text(value: str) -> str:
 
 
 def _title_from_url(url: str) -> str:
-    tail = str(url or "").rstrip("/").rsplit("/", 1)[-1]
+    tail = (url or "").rstrip("/").rsplit("/", 1)[-1]
     return tail or "PDF source"

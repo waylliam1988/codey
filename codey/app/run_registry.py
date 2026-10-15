@@ -54,7 +54,7 @@ class RunRegistry:
 
     def set_busy(self, value: bool) -> None:
         with self._lock:
-            self._busy = bool(value)
+            self._busy = value
             self._sync_slot_event()
 
     def current(self) -> RunSnapshot | None:

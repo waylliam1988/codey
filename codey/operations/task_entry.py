@@ -491,7 +491,7 @@ def _run_entry_kernel(  # noqa: PLR0915
     with _contextlib.suppress(Exception):
         from dataclasses import replace as _replace2
 
-        summary_text = str(result.summary or "")
+        summary_text = (result.summary or "")
         snapshot = _replace2(
             frame.conversation.snapshot,
             mode=kind,
@@ -504,7 +504,7 @@ def _run_entry_kernel(  # noqa: PLR0915
             summary=summary_text,
         )
         frame.conversation.update_snapshot(snapshot)
-    summary = str(result.summary or "")
+    summary = (result.summary or "")
     deps.state.set_provider_session(
         frame.provider_id,
         None if result.stop_reason in {"stopped", "provider_failure", "error"} else request.session_id,

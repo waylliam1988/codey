@@ -275,11 +275,11 @@ class SourceConnectorSpec:
             "id": _safe_connector_code(self.id),
             "kind": _safe_connector_code(self.kind),
             "status": _connector_status(self.status),
-            "search_supported": bool(self.search_supported),
-            "fetch_supported": bool(self.fetch_supported),
-            "fixture_supported": bool(self.fixture_supported),
-            "shipped": bool(self.shipped),
-            "local": bool(self.local),
+            "search_supported": self.search_supported,
+            "fetch_supported": self.fetch_supported,
+            "fixture_supported": self.fixture_supported,
+            "shipped": self.shipped,
+            "local": self.local,
             "rate_limit_seconds": max(0.0, round(float(self.rate_limit_seconds or 0.0), 3)),
             "source_quality_hint": _bounded_mapping(self.source_quality_hint),
             "failure_modes": list(_safe_payload_refs(self.failure_modes, limit=8)),
@@ -320,8 +320,8 @@ class SourceHit:
             "score": _score(self.score),
             "title_digest": digest_text(clip(self.title, 180)),
             "snippet_digest": digest_text(clip(self.snippet, 360)),
-            "title_chars": len(str(self.title or "")),
-            "snippet_chars": len(str(self.snippet or "")),
+            "title_chars": len(self.title or ""),
+            "snippet_chars": len(self.snippet or ""),
             "evidence_ready": False,
         }
         if self.canonical_url:
@@ -378,9 +378,9 @@ class FetchedSource:
             "content_digest": valid_digest_ref(self.content_digest),
             "content_kind": _safe_fetched_content_kind(self.document.content_kind),
             "mime_type": _safe_mime_type(self.document.mime_type),
-            "text_chars": len(str(self.document.text or "")),
+            "text_chars": len(self.document.text or ""),
             "title_digest": digest_text(clip(self.document.title, 180)),
-            "truncated": bool(self.document.truncated),
+            "truncated": self.document.truncated,
             "url_ref": sanitize_research_url_ref(self.document.final_url),
             "fetched": True,
             "evidence_ready": False,
@@ -749,7 +749,7 @@ def _is_secret_value_boundary(token: str) -> bool:
     if not token:
         return True
     folded = token.casefold()
-    return bool(folded in _SAFE_QUERY_STOP_TERMS or folded in _SECRET_VALUE_BOUNDARY_TERMS)
+    return (folded in _SAFE_QUERY_STOP_TERMS or folded in _SECRET_VALUE_BOUNDARY_TERMS)
 
 
 def _query_token_after(text: str, index: int) -> tuple[str, int, int, bool]:
@@ -815,7 +815,7 @@ def _unsafe_query_span(token: str) -> bool:
         return True
     if text.startswith(("/", "./", "../", "~/")):
         return True
-    return bool("/" in text and not _safe_scientific_slash_term(text))
+    return ("/" in text and not _safe_scientific_slash_term(text))
 
 
 def _safe_scientific_slash_term(text: str) -> bool:
@@ -831,7 +831,7 @@ def parse_arxiv_atom_fixture(xml_text: str, *, query: str = "", limit: int = MAX
     hits: list[SourceHit] = []
     hit_limit = _bounded_limit(limit, default=MAX_CONNECTOR_HITS, upper=MAX_CONNECTOR_HITS)
     try:
-        root = ET.fromstring(str(xml_text or ""))
+        root = ET.fromstring(xml_text or "")
     except ET.ParseError:
         return source_result_from_hits("arxiv", query=query, errors=("fixture_parse_failed",))
     for entry in root.findall("atom:entry", _ATOM_NS):
@@ -874,7 +874,7 @@ def parse_pubmed_fixture(xml_text: str, *, query: str = "", limit: int = MAX_CON
     hits: list[SourceHit] = []
     hit_limit = _bounded_limit(limit, default=MAX_CONNECTOR_HITS, upper=MAX_CONNECTOR_HITS)
     try:
-        root = ET.fromstring(str(xml_text or ""))
+        root = ET.fromstring(xml_text or "")
     except ET.ParseError:
         return source_result_from_hits("pubmed", query=query, errors=("fixture_parse_failed",))
     for article in root.findall(".//PubmedArticle"):
@@ -964,7 +964,7 @@ def _connector_url_denial_reason(connector_id: str, url: str) -> str:
 
 
 def _connector_canonical_url(connector_id: str, url: str) -> str:
-    text = str(url or "").strip()
+    text = (url or "").strip()
     if _connector_id(connector_id) == "arxiv" and _url_host(text) == "arxiv.org":
         parsed = parsed_url(text)
         if not parsed.scheme and not parsed.netloc and not parsed.path:
@@ -986,7 +986,7 @@ def _first_text(element: ET.Element, path: str) -> str:
 def _abstract_text(article: ET.Element) -> str:
     parts = []
     for item in article.findall(".//AbstractText"):
-        label = str(item.attrib.get("Label") or "").strip()
+        label = (item.attrib.get("Label") or "").strip()
         text = _clean_text("".join(item.itertext()))
         if not text:
             continue
@@ -996,15 +996,15 @@ def _abstract_text(article: ET.Element) -> str:
 
 def _entry_link(entry: ET.Element, *, rel: str) -> str:
     for link in entry.findall("atom:link", _ATOM_NS):
-        if str(link.attrib.get("rel") or "alternate") == rel:
-            return str(link.attrib.get("href") or "").strip()
+        if (link.attrib.get("rel") or "alternate") == rel:
+            return (link.attrib.get("href") or "").strip()
     return ""
 
 
 def _article_id(article: ET.Element, id_type: str) -> str:
-    expected = str(id_type or "").casefold()
+    expected = (id_type or "").casefold()
     for item in article.findall(".//ArticleId"):
-        if str(item.attrib.get("IdType") or "").casefold() == expected:
+        if (item.attrib.get("IdType") or "").casefold() == expected:
             return _clean_text(item.text)
     return ""
 
@@ -1023,7 +1023,7 @@ def _pubmed_id(url: str) -> str:
 
 
 def _arxiv_id(url: str) -> str:
-    text = str(url or "").rstrip("/")
+    text = (url or "").rstrip("/")
     if "/abs/" in text:
         return text.rsplit("/abs/", 1)[1]
     return text.rsplit("/", 1)[-1]

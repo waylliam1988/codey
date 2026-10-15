@@ -414,7 +414,7 @@ class GhostInboxStore:
         reviewed_by: str = "cli",
     ) -> GhostMemoryCandidate | None:
         normalized_id = clip_signal_text(candidate_id, 120)
-        normalized_action = str(action or "").strip().lower()
+        normalized_action = (action or "").strip().lower()
         if normalized_action not in {"accept", "reject"}:
             raise ValueError("action must be accept or reject")
         if not normalized_id:
@@ -514,7 +514,7 @@ class GhostInboxStore:
         project: str = "",
         session_id: str = "",
     ) -> int:
-        normalized_scope = str(scope or "").strip().lower()
+        normalized_scope = (scope or "").strip().lower()
         if normalized_scope not in SIGNAL_SCOPES:
             raise ValueError("scope must be user, project, or session")
         normalized_project = _common.normalize_project(project)
@@ -560,7 +560,7 @@ class GhostInboxStore:
     def set_learning_enabled(self, enabled: bool) -> bool:
         payload = {
             "schema_version": INBOX_SCHEMA_VERSION,
-            "learning_enabled": bool(enabled),
+            "learning_enabled": enabled,
             "updated_at": _common.now_iso_z(),
         }
         try:
@@ -571,7 +571,7 @@ class GhostInboxStore:
                         _ghost_control_event(
                             schema_version=INBOX_SCHEMA_VERSION,
                             event_name="ghost_learning_settings_updated",
-                            payload={"learning_enabled": bool(enabled)},
+                            payload={"learning_enabled": enabled},
                             now=_common.now_iso_z(),
                         )
                     ]
@@ -685,14 +685,14 @@ class GhostInboxStore:
         project: str,
     ) -> GhostMemoryCandidate:
         now = _common.now_iso_z()
-        signal_kind = str(signal.kind or "").strip().lower()
+        signal_kind = (signal.kind or "").strip().lower()
         candidate_id = "gmc_" + uuid.uuid4().hex[:24]
         return GhostMemoryCandidate(
             id=candidate_id,
             candidate_type=decision.candidate_type or candidate_type_for_signal_kind(signal_kind),
             signal_kind=signal_kind,
             status=decision.status,
-            scope=str(signal.scope or "").strip().lower(),
+            scope=(signal.scope or "").strip().lower(),
             summary=clip_signal_text(signal.summary),
             evidence_quote=clip_signal_text(signal.evidence_quote, 240),
             confidence=_coerce_confidence(signal.confidence) or 0.0,
@@ -769,7 +769,7 @@ class GhostInboxStore:
         applicable: bool,
     ) -> list[GhostMemoryCandidate]:
         statuses = _status_filter(status)
-        normalized_scope = str(scope or "").strip().lower()
+        normalized_scope = (scope or "").strip().lower()
         normalized_project = _common.normalize_project(project)
         normalized_session = clip_signal_text(session_id, 120)
         rows: list[GhostMemoryCandidate] = []
@@ -993,7 +993,7 @@ class GhostInboxStore:
 
 
 def conflict_key_for_signal(signal: GhostSignal) -> str:
-    kind = str(signal.kind or "").strip().lower()
+    kind = (signal.kind or "").strip().lower()
     metadata_key = _metadata_conflict_key(getattr(signal, "metadata", {}) or {})
     if metadata_key:
         return f"{kind}:{metadata_key}"
@@ -1078,7 +1078,7 @@ def _status_filter(value: str | Iterable[str] | None) -> set[str]:
     if value is None:
         return set()
     raw_values = value.split(",") if isinstance(value, str) else list(value)
-    return {str(item).strip().lower() for item in raw_values if str(item).strip().lower() in CANDIDATE_STATUSES}
+    return {item.strip().lower() for item in raw_values if item.strip().lower() in CANDIDATE_STATUSES}
 
 
 def _should_store_decision(decision: GhostGateDecision) -> bool:

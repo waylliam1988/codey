@@ -234,7 +234,7 @@ def findings_from_proof_review(
                 reasons,
             ),
             kind=kind,
-            severity=str(group["severity"]),
+            severity=group["severity"],
             target_ref=target,
             claim_ref=claim_ref,
             evidence_ref=evidence_ref,

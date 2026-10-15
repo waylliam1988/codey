@@ -149,7 +149,7 @@ PERMISSION_PROFILES = {
 
 
 def profile_for_name(name: str) -> PermissionProfile:
-    key = str(name or "coding_writer").strip().lower()
+    key = (name or "coding_writer").strip().lower()
     try:
         return PERMISSION_PROFILES[key]
     except KeyError as exc:
@@ -157,8 +157,8 @@ def profile_for_name(name: str) -> PermissionProfile:
 
 
 def profile_for_task_kind(task_kind: str, *, phase: str = "") -> PermissionProfile:
-    kind = str(task_kind or "").strip().lower()
-    current_phase = str(phase or "").strip().lower()
+    kind = (task_kind or "").strip().lower()
+    current_phase = (phase or "").strip().lower()
     if current_phase in {"research", "hybrid_research"}:
         return profile_for_name("research")
     if current_phase in {"review", "reviewer"}:
@@ -189,4 +189,4 @@ def allowed_coding_tool_names(profile: PermissionProfile | str) -> tuple[str, ..
 
 def allows_context_source(profile: PermissionProfile | str, key: str) -> bool:
     current = profile_for_name(profile) if isinstance(profile, str) else profile
-    return str(key or "") in set(current.context_sources)
+    return (key or "") in set(current.context_sources)

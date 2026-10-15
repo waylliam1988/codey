@@ -68,9 +68,9 @@ class ShellApprovalRequest:
         # 绝不截断成另一个 id。
         if valid_shell_call_id(self.call_id):
             payload["call_id"] = self.call_id
-        elif str(self.call_id or "").strip():
+        elif (self.call_id or "").strip():
             payload["call_id_invalid"] = True
-        if str(self.provider_id or "").strip():
+        if (self.provider_id or "").strip():
             payload["provider_id"] = _bounded_text(self.provider_id, MAX_DEFERRED_TEXT_CHARS)
         if type(self.turn) is int and self.turn >= 0:
             payload["turn"] = self.turn
@@ -86,7 +86,7 @@ def deferred_tool_call_from_call(call: ToolCall, *, tool_index: int) -> Deferred
     command = str(call.args.get("command") or "") if call.name in {"run", "shell"} else ""
     return DeferredToolCall(
         tool_index=tool_index,
-        tool_name=str(call.name or ""),
+        tool_name=(call.name or ""),
         path=path,
         command=command,
     )
@@ -145,10 +145,10 @@ def build_shell_approval_pending(
     }
     if valid_shell_call_id(approval.call_id):
         pending["call_id"] = approval.call_id
-    elif str(approval.call_id or "").strip():
+    elif (approval.call_id or "").strip():
         pending["call_id_invalid"] = True
-    if str(approval.provider_id or "").strip():
-        pending["provider_id"] = str(approval.provider_id).strip()
+    if (approval.provider_id or "").strip():
+        pending["provider_id"] = approval.provider_id.strip()
     if type(approval.turn) is int and approval.turn >= 0:
         pending["turn"] = approval.turn
     if type(approval.tool_index) is int and approval.tool_index >= 0:

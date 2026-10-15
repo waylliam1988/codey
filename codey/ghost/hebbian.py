@@ -466,7 +466,7 @@ class GhostHebbianStore:
         except Exception:
             return ()
         statuses = _status_filter(status, allowed=NODE_STATUSES)
-        normalized_scope = str(scope or "").strip().lower()
+        normalized_scope = (scope or "").strip().lower()
         scope_ref = _scope_ref_for_filter(normalized_scope, project=project, session_id=session_id)
         rows: list[GhostNode] = []
         for node in nodes:
@@ -490,7 +490,7 @@ class GhostHebbianStore:
             raise
         except Exception:
             return ()
-        normalized_relation = str(relation or "").strip().lower()
+        normalized_relation = (relation or "").strip().lower()
         rows = [edge for edge in edges if not normalized_relation or edge.relation == normalized_relation]
         return tuple(sorted(rows, key=lambda item: (item.weight, item.updated_at), reverse=True))
 
@@ -520,7 +520,7 @@ class GhostHebbianStore:
         project: str = "",
         session_id: str = "",
     ) -> dict[str, int]:
-        normalized_scope = str(scope or "").strip().lower()
+        normalized_scope = (scope or "").strip().lower()
         if normalized_scope not in SIGNAL_SCOPES:
             raise ValueError("scope must be user, project, or session")
         scope_ref = _scope_ref_for_filter(normalized_scope, project=project, session_id=session_id)
@@ -1150,8 +1150,8 @@ def _edge_key(edge: GhostEdge) -> tuple[str, str, str]:
 
 
 def _canonical_edge_key(source: str, target: str, relation: str) -> tuple[str, str, str]:
-    a, b = sorted((str(source), str(target)))
-    return a, b, str(relation or "coactivated_with")
+    a, b = sorted((source, target))
+    return a, b, (relation or "coactivated_with")
 
 
 def _merge_refs(
@@ -1178,7 +1178,7 @@ def _status_filter(value: str | Iterable[str] | None, *, allowed: tuple[str, ...
     if value is None:
         return set()
     raw_values = value.split(",") if isinstance(value, str) else list(value)
-    return {str(item).strip().lower() for item in raw_values if str(item).strip().lower() in allowed}
+    return {item.strip().lower() for item in raw_values if item.strip().lower() in allowed}
 
 
 def _coerce_weight(value: object) -> float | None:

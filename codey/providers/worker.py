@@ -274,7 +274,8 @@ class WorkerChatProvider:
         while True:
             session.write_event.wait()
             with session.lock:
-                if bool(session.closed):
+                closed = session.closed
+                if closed:
                     return
                 wire = session.write_wire
                 if wire is None:
@@ -290,7 +291,8 @@ class WorkerChatProvider:
             except Exception as exc:
                 error = f"provider worker stdin is unavailable: {exc}"
             with session.lock:
-                if session.closed:
+                closed = session.closed
+                if closed:
                     return
                 session.write_wire = None
                 session.write_error = error

@@ -59,7 +59,7 @@ _SECTION_KEY_ORDER = (
 
 
 def normalize_heading(value: str) -> str:
-    text = str(value or "").strip().strip("#").strip()
+    text = (value or "").strip().strip("#").strip()
     text = text.strip("*_`[]() ")
     while True:
         next_text = _HEADING_NUMBER_RE.sub("", text).strip()
@@ -83,7 +83,7 @@ _NORMALIZED_ALIASES = _build_normalized_aliases()
 def heading_key(line: str) -> str:
     """Map one markdown line to its canonical section key (or "")."""
 
-    stripped = str(line or "").strip()
+    stripped = (line or "").strip()
     bold = _BOLD_LABEL_RE.match(stripped)
     if bold:
         stripped = bold.group(1).strip()
@@ -113,7 +113,7 @@ def is_boundary_line(line: str) -> bool:
     lead-in like ``具体如下：`` does not cut the section it introduces.
     """
 
-    stripped = str(line or "").strip()
+    stripped = (line or "").strip()
     if not stripped:
         return False
     if _HEADING_RE.match(stripped):
@@ -132,7 +132,7 @@ def parse_sections(text: str) -> dict[str, str]:
 
     sections: dict[str, list[str]] = {}
     current: str = ""
-    for line in str(text or "").splitlines():
+    for line in (text or "").splitlines():
         stripped = line.strip()
         bold = _BOLD_LABEL_RE.match(stripped)
         if bold and heading_key(line):

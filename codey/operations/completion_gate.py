@@ -206,7 +206,7 @@ def _required_checks_verdict(session: Any, deduped: list[CompletionCheck]) -> Ga
     by_id: dict[str, list[CompletionCheck]] = {}
     for row in deduped:
         try:
-            by_id.setdefault(str(row.check_id or ""), []).append(row)
+            by_id.setdefault((row.check_id or ""), []).append(row)
         except Exception:
             continue
     for req in required:
@@ -221,7 +221,7 @@ def _required_checks_verdict(session: Any, deduped: list[CompletionCheck]) -> Ga
                 ),
                 proof=None,
             )
-        statuses = {str(r.status or "") for r in rows}
+        statuses = {(r.status or "") for r in rows}
         if len(statuses) > 1:
             return GateVerdict(
                 complete=False,
@@ -235,7 +235,7 @@ def _required_checks_verdict(session: Any, deduped: list[CompletionCheck]) -> Ga
         if status != CHECK_PASS:
             reason = ""
             try:
-                reason = str(rows[0].reason_code or "")
+                reason = (rows[0].reason_code or "")
             except Exception:
                 reason = ""
             return GateVerdict(

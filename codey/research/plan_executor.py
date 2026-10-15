@@ -102,7 +102,7 @@ class PlanExecutor:
             if len(state.opened) >= total_limit or total_limit <= 0 or per_query_limit <= 0:
                 state.stop_reason = "max_sources"
                 break
-            query = " ".join(str(candidate.query_preview or "").split())
+            query = " ".join((candidate.query_preview or "").split())
             if not query:
                 state.skipped += 1
                 continue
@@ -278,19 +278,19 @@ class PlanExecutor:
 def _collect_baseline_urls(tools: ResearchTools) -> set[str]:
     baseline: set[str] = set()
     for url in tools.sources_read:
-        if str(url or "").strip():
-            baseline.add(str(url).strip())
+        if (url or "").strip():
+            baseline.add(url.strip())
     for url in tools.ledger.final_url_set():
-        if str(url or "").strip():
-            baseline.add(str(url).strip())
+        if (url or "").strip():
+            baseline.add(url.strip())
     for opened in tools.ledger.opened_sources:
-        if str(opened.final_url or "").strip():
-            baseline.add(str(opened.final_url).strip())
-        if str(opened.requested_url or "").strip():
-            baseline.add(str(opened.requested_url).strip())
+        if (opened.final_url or "").strip():
+            baseline.add(opened.final_url.strip())
+        if (opened.requested_url or "").strip():
+            baseline.add(opened.requested_url.strip())
     for ev in tools.ledger.evidence_items:
-        if str(ev.source_url or "").strip():
-            baseline.add(str(ev.source_url).strip())
+        if (ev.source_url or "").strip():
+            baseline.add(ev.source_url.strip())
     return baseline
 
 
@@ -306,7 +306,7 @@ def _source_preview(query: str, source: dict[str, Any], body: str, limit: int) -
     title = str(source.get("title") or "").strip()
     final_url = str(source.get("final_url") or source.get("url") or "").strip()
     header = " | ".join(part for part in (title, final_url) if part)
-    text = clip(str(body or ""), max(500, min(4000, int(limit or 0))))
+    text = clip((body or ""), max(500, min(4000, int(limit or 0))))
     return "\n".join(part for part in (f"query: {query}", header, text) if part)
 
 

@@ -166,26 +166,26 @@ def run_headless(
             session_id=session_id,
             project=project,
         )
-        if str(request.run_id or "").strip() and not pre_reserved_run_id:
+        if (request.run_id or "").strip() and not pre_reserved_run_id:
             reason = (
                 "duplicate"
                 if _headless_run_id_exists(
                     state,
                     session_id=session_id,
-                    run_id=str(request.run_id or "").strip(),
+                    run_id=(request.run_id or "").strip(),
                 )
                 else "busy"
             )
             emit_jsonl({
                 "schema_version": SCHEMA_VERSION,
                 "type": "task_done",
-                "run_id": str(request.run_id or "").strip(),
+                "run_id": (request.run_id or "").strip(),
                 "session_id": session_id,
                 "stop_reason": reason,
             })
             task_result = HeadlessResult(
                 exit_code=1,
-                run_id=str(request.run_id or "").strip(),
+                run_id=(request.run_id or "").strip(),
                 session_id=session_id,
                 stop_reason=reason,
                 ledger_path="",
@@ -207,9 +207,9 @@ def run_headless(
     except BaseException as exc:
         task_result = None
         task_error = exc
-    run_id_for_event = str(request.run_id or "").strip()
-    if task_result is not None and str(task_result.run_id or "").strip():
-        run_id_for_event = str(task_result.run_id)
+    run_id_for_event = (request.run_id or "").strip()
+    if task_result is not None and (task_result.run_id or "").strip():
+        run_id_for_event = task_result.run_id
     # Ghost owns its stores while alive: a False close or a close raising
     # retains resources instead of releasing files under the daemon. One
     # bounded second chance; a still-incomplete close fails the result
@@ -415,7 +415,7 @@ def _pre_reserve_run_id(
     session_id: str,
     project: Path | None,
 ) -> str:
-    requested = str(request.run_id or "").strip()
+    requested = (request.run_id or "").strip()
     if not requested:
         return ""
     # Never recycle a durable run_id into a fresh operation: same run_id maps
@@ -434,7 +434,7 @@ def _pre_reserve_run_id(
 
 
 def _request_intent(value: str) -> str:
-    text = str(value or "project").strip().lower()
+    text = (value or "project").strip().lower()
     if text in {"readonly", "planning", "planning_readonly"}:
         return "planning_readonly"
     if text in {"auto", "chat", "research", "project", "hybrid", "review"}:

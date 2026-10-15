@@ -494,7 +494,7 @@ def _kernel_startup(
         pending_initial,
         prompt,
         pending_native_messages,
-        provider_session_changed=bool(provider_session_changed),
+        provider_session_changed=provider_session_changed,
         format_results=_prompt._format_results,
         native_tool_messages=_transport._native_tool_results,
     )
@@ -566,14 +566,14 @@ def run_task_kernel(
             provider,
             executors=executors,
             run_id=run_id,
-            effect_scope=str(effect_scope or ""),
+            effect_scope=(effect_scope or ""),
             provider_id=provider_id,
             user_task=user_task,
             context_text=context_text,
             task_guidance=request.task_guidance,
             completion_context=completion_context,
             initial_results=initial_results,
-            provider_session_changed=bool(provider_session_changed),
+            provider_session_changed=provider_session_changed,
             delivered=delivered,
             initial_turn=request.transport.initial_turn,
         )
@@ -920,7 +920,7 @@ def _handle_done_reply(
 ) -> tuple[str, Any] | KernelResult | None:
     """Evaluate one done proposal; fail closed with the call id answered."""
 
-    session.last_done_text = str(plan.control.body or "") if plan.control is not None else ""
+    session.last_done_text = (plan.control.body or "") if plan.control is not None else ""
     session.last_done_args = dict(plan.control_args)
     try:
         from codey.operations.completion_gate import evaluate as gate_evaluate

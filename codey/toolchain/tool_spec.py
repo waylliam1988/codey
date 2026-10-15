@@ -303,16 +303,16 @@ def register_custom_tool(
     def valid_schema(schema: object) -> bool:
         return _valid_custom_schema(schema)
     for parameter_name, schema in parameters:
-        if not str(parameter_name or "").strip() or not valid_schema(schema):
+        if not (parameter_name or "").strip() or not valid_schema(schema):
             return False
-    if any(not str(item or "").strip() for item in required):
+    if any(not (item or "").strip() for item in required):
         return False
     example_args: dict[str, object] = {
-        str(key): ([] if isinstance(schema, Mapping) and schema.get("type") == "array" else
+        key: ([] if isinstance(schema, Mapping) and schema.get("type") == "array" else
                    {} if isinstance(schema, Mapping) and schema.get("type") == "object" else
                    0 if isinstance(schema, Mapping) and schema.get("type") in {"integer", "number"} else
                    False if isinstance(schema, Mapping) and schema.get("type") == "boolean" else "")
-        for key, schema in parameters if str(key) in set(required)
+        for key, schema in parameters if key in set(required)
     }
     example = json.dumps({"tool": canonical, "args": example_args}, ensure_ascii=False)
     tool_specs()[canonical] = ToolSpec(
@@ -383,7 +383,7 @@ def visible_tool_names(policy: Any) -> tuple[str, ...]:
 
 def _is_research_tool(name: str) -> bool:
     try:
-        spec = tool_specs().get(str(name or "").strip().lower())
+        spec = tool_specs().get((name or "").strip().lower())
     except Exception:
         return False
     return spec is not None and spec.executor in {"source", "knowledge"}
@@ -443,7 +443,7 @@ def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None)
 def _schema_for_spec(spec: ToolSpec) -> dict[str, object]:
     properties: dict[str, object] = {}
     for param_name, schema in spec.parameters:
-        properties[str(param_name)] = dict(schema) if isinstance(schema, Mapping) else {"type": "string"}
+        properties[param_name] = dict(schema) if isinstance(schema, Mapping) else {"type": "string"}
     return {
         "type": "object",
         "properties": properties,
@@ -670,7 +670,7 @@ def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, v
 
 def _builtin_alias_allowed_keys(tool: str) -> set[str] | None:
     """Legacy alias sets for project tools; None means strict spec only."""
-    name = str(tool or "").strip().lower()
+    name = (tool or "").strip().lower()
     if name in {"list_dir", "ls"}:
         return {"path", "cwd"}
     if name in {"read_file", "read"}:
@@ -694,7 +694,7 @@ def _builtin_alias_allowed_keys(tool: str) -> set[str] | None:
 
 def _builtin_required_satisfied(tool: str, required: tuple[str, ...], args: dict[str, Any]) -> str:
     """Alias-aware required check for built-ins; "" when satisfied else missing key."""
-    name = str(tool or "").strip().lower()
+    name = (tool or "").strip().lower()
     # Groups where any member satisfies the canonical requirement.
     groups: dict[str, tuple[str, ...]] = {
         "path": ("path", "cwd"),
@@ -708,7 +708,7 @@ def _builtin_required_satisfied(tool: str, required: tuple[str, ...], args: dict
             return "query"
         return ""
     for key in required:
-        candidates = groups.get(str(key), (str(key),))
+        candidates = groups.get(key, (key,))
         found = False
         for cand in candidates:
             if cand in args:
@@ -721,7 +721,7 @@ def _builtin_required_satisfied(tool: str, required: tuple[str, ...], args: dict
                 found = True
                 break
         if not found:
-            return str(key)
+            return key
     return ""
 
 
@@ -788,11 +788,11 @@ def _validate_no_extra(spec: Any, declared: dict[str, object], is_builtin: bool,
         if allowed is None:
             allowed = set(declared.keys())
         for key in args:
-            if str(key) not in allowed:
+            if key not in allowed:
                 return f"{spec.name} unexpected arg '{key}'"
         return ""
     for key in args:
-        if str(key) not in declared:
+        if key not in declared:
             return f"{spec.name} unexpected arg '{key}'"
     return ""
 
@@ -800,7 +800,7 @@ def _validate_no_extra(spec: Any, declared: dict[str, object], is_builtin: bool,
 def _validate_types(spec: Any, declared: dict[str, object], is_builtin: bool, args: dict[str, Any]) -> str:
     if not is_builtin:
         for key, value in args.items():
-            skey = str(key)
+            skey = key
             schema = declared.get(skey)
             if schema is None:
                 continue
@@ -813,7 +813,7 @@ def _validate_types(spec: Any, declared: dict[str, object], is_builtin: bool, ar
         "source_id": "url",
     }
     for key, value in args.items():
-        skey = str(key)
+        skey = key
         schema = declared.get(skey)
         if schema is None and is_builtin:
             canonical = _alias_to_canonical.get(skey)

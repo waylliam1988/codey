@@ -222,7 +222,7 @@ class KnowledgeGraphBuilder:
         )
 
     def _default_focus(self, session_id: str) -> tuple[str, ...]:
-        session_id = str(session_id or "").strip()
+        session_id = (session_id or "").strip()
         if not session_id:
             return ()
         try:
@@ -455,7 +455,7 @@ def _clean_ids(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
     out: list[str] = []
     seen: set[str] = set()
     for value in values:
-        item = str(value or "").strip()
+        item = (value or "").strip()
         if item and item not in seen:
             seen.add(item)
             out.append(item)
@@ -497,7 +497,7 @@ def _source_titles_from_rows(rows: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def _clean_url(value: str) -> str:
-    return str(value or "").strip().rstrip(").,;")
+    return (value or "").strip().rstrip(").,;")
 
 
 def _stable_hash(value: str) -> str:
@@ -506,7 +506,7 @@ def _stable_hash(value: str) -> str:
 
 def _excerpt(body: str, limit: int = 420) -> str:
     lines: list[str] = []
-    for line in str(body or "").splitlines():
+    for line in (body or "").splitlines():
         stripped = line.strip()
         if not stripped:
             if lines and lines[-1] != "":
@@ -525,7 +525,7 @@ def _clean_counterpoint(value: object) -> str:
 
 
 def _clip(value: str, limit: int) -> str:
-    text = str(value or "").strip()
+    text = (value or "").strip()
     if len(text) <= limit:
         return text
     return text[: max(1, limit - 3)].rstrip() + "..."

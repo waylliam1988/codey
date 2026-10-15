@@ -47,7 +47,7 @@ class ReproducibilityCapsule:
 
 
 def _aggregate_status(statuses: Iterable[str]) -> str:
-    values = [str(item or "") for item in statuses]
+    values = [(item or "") for item in statuses]
     if not values:
         return CAPSULE_STATUS_NO_RUNS
     if REPRODUCTION_FAILED in values:
@@ -71,7 +71,7 @@ def build_reproducibility_capsule(
     Returns None when there is no run identity to bind the capsule to.
     """
 
-    run_ref = str(run_id or "").strip()
+    run_ref = (run_id or "").strip()
     if not run_ref:
         return None
 

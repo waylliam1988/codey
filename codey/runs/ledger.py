@@ -48,7 +48,7 @@ def _json_line(payload: dict[str, object]) -> str:
 
 
 def _safe_file_stem(value: str) -> str:
-    text = str(value or "").strip()
+    text = (value or "").strip()
     text = re.sub(r"[^A-Za-z0-9_.-]+", "_", text)[:120].strip("._")
     return text or "run"
 
@@ -185,7 +185,7 @@ class RunLedgerStore:
         writer.append(
             "run_started",
             project=_clip(project or "", MAX_PATH_CHARS),
-            task_chars=len(str(task or "")),
+            task_chars=len(task or ""),
             task_excerpt=_clip(task, MAX_TEXT_CHARS),
             provider=_clip(provider, 80),
             mode=_clip(mode, 40),

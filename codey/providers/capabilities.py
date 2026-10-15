@@ -134,7 +134,7 @@ def _rank_without_preferred(provider_ids: list[str], mode: str) -> tuple[str, ..
 
 
 def _fit_for_mode(capability: ProviderCapability, mode: str) -> ProviderFit:
-    normalized = str(mode or "").strip().lower()
+    normalized = (mode or "").strip().lower()
     if normalized == "research":
         return capability.research_fit
     if normalized in {"project", "coding"}:

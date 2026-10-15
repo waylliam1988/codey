@@ -472,10 +472,10 @@ class UiStateStore:
         current_request: str = "",
         limit: int = MAX_VISIBLE_EXCERPT_CHARS,
     ) -> str:
-        target = str(session_id or "")
+        target = (session_id or "")
         if not target:
             return ""
-        current = str(current_request or "").strip()
+        current = (current_request or "").strip()
         for session in self._current().get("sessions", []):
             if not isinstance(session, dict) or str(session.get("id") or "") != target:
                 continue

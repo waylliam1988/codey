@@ -534,7 +534,7 @@ def run_half_open_canary(
         except HealthStoreError:
             logger.exception("canary health record failed for provider %s", provider_id)
         return False
-    if str(reply or "").strip() != marker:
+    if (reply or "").strip() != marker:
         try:
             supervisor.record_canary_failure(
                 provider_id,

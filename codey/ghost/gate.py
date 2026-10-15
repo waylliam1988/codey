@@ -54,7 +54,7 @@ class GhostGateDecision:
 
 
 def candidate_type_for_signal_kind(kind: str) -> str:
-    return SIGNAL_CANDIDATE_TYPES.get(str(kind or "").strip().lower(), "")
+    return SIGNAL_CANDIDATE_TYPES.get((kind or "").strip().lower(), "")
 
 
 class GhostMemoryGate:
@@ -81,11 +81,11 @@ class GhostMemoryGate:
         scope = str(getattr(signal, "scope", "") or "").strip().lower()
         if scope not in SIGNAL_SCOPES:
             return GhostGateDecision(candidate_type, "rejected", "invalid_scope")
-        if scope == "project" and not str(project or "").strip():
+        if scope == "project" and not (project or "").strip():
             return GhostGateDecision(candidate_type, "rejected", "missing_project_ref")
-        if scope == "session" and not str(session_id or "").strip():
+        if scope == "session" and not (session_id or "").strip():
             return GhostGateDecision(candidate_type, "rejected", "missing_session_ref")
-        if not str(session_id or run_id or "").strip():
+        if not (session_id or run_id or "").strip():
             return GhostGateDecision(candidate_type, "rejected", "missing_provenance")
 
         summary = str(getattr(signal, "summary", "") or "").strip()

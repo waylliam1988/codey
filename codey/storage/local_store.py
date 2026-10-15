@@ -28,7 +28,7 @@ def project_key(project: str | Path) -> str:
 
 
 def session_key(session_id: str) -> str:
-    return hashlib.sha256(str(session_id).encode("utf-8")).hexdigest()[:24]
+    return hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:24]
 
 
 def read_json(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict[str, Any] | None:

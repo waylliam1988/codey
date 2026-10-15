@@ -85,7 +85,7 @@ def provider_uses_native(provider: Any, *, provider_id: object = "") -> bool:
             raise ValueError("cyclic provider adapter chain")
         seen.add(id(probe))
         probe = probe.provider
-    return bool(supports_native_tools(probe, str(provider_id or "")))
+    return supports_native_tools(probe, str(provider_id or ""))
 
 
 def _native_tool_results(results: Any, session: Any) -> list[ProviderToolResult]:
@@ -138,7 +138,7 @@ def _take_answered_reply(
     ids = list(dict.fromkeys(i for i in ids if i))
     if not ids:
         return None
-    content = str(followup or "")
+    content = (followup or "")
     if not content.startswith("OK:"):
         content = f"ERROR: {content}"
     return call_provider_send_results(

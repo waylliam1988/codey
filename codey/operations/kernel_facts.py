@@ -138,7 +138,7 @@ def _record_read_fact(session: TaskSession, args: dict[str, Any]) -> None:
 
 def _record_run_fact(session: TaskSession, args: dict[str, Any], result: ToolResult, *,
                      ok: bool, exit_code: int | None) -> None:
-    text = str(result.model_text or "")
+    text = (result.model_text or "")
     if denied_before_execution(result):
         if text:
             session.transcript_notes.append(f"run refused before execution: {text[:500]}")
@@ -172,7 +172,7 @@ def record_facts_for_result(
     # model contract. Both observations must project through the same name.
     name = canonical_tool_name(call.name)
     args = call.args if isinstance(call.args, dict) else {}
-    text = str(result.model_text or "")
+    text = (result.model_text or "")
     if name == "edit" and _canonical_mapping(result).get("workspace_unconfirmed") is True:
         # A failed identity bump does not undo the file effect. This fact is
         # persisted in the ordinary receipt and replayed even when ok=False.
@@ -212,7 +212,7 @@ def _search_result_rows(text: str) -> list[tuple[str, str]]:
     import re as _re
 
     rows: list[tuple[str, str]] = []
-    for match in _re.finditer(r"https?://[^\s)>\]]+", str(text or "")):
+    for match in _re.finditer(r"https?://[^\s)>\]]+", (text or "")):
         rows.append((f"r{len(rows) + 1}", match.group(0).rstrip(".,;)]")))
         if len(rows) >= 8:
             break

@@ -49,7 +49,7 @@ def map_event_warnings(warnings: Iterable[str], *, stream: str) -> list[str]:
         elif warning == unreadable:
             mapped.append(f"{stream}_unreadable")
         else:
-            mapped.append(str(warning))
+            mapped.append(warning)
     return mapped
 
 

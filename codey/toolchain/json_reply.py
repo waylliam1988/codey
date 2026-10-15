@@ -7,14 +7,14 @@ import json
 
 def is_json_tool_reply(text: str) -> bool:
     try:
-        value = json.loads(str(text or "").strip())
+        value = json.loads((text or "").strip())
     except (TypeError, ValueError):
         return False
     return isinstance(value, dict) and bool(value.get("tool") or value.get("name"))
 
 
 def looks_like_json_tool_reply(text: str) -> bool:
-    clean = str(text or "").lstrip()
+    clean = (text or "").lstrip()
     return clean.startswith("{") and ('"tool"' in clean or '"name"' in clean)
 
 
@@ -24,7 +24,7 @@ def normalize_final_json_tool_reply(text: str) -> str:
 
 
 def repair_missing_trailing_braces_json_tool_reply(text: str) -> str:
-    clean = str(text or "").strip()
+    clean = (text or "").strip()
     if not clean or not looks_like_json_tool_reply(clean):
         return ""
     if is_json_tool_reply(clean):

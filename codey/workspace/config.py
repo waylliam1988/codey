@@ -150,7 +150,7 @@ def preferred_provider_for(config: ProjectConfig, mode: str) -> str:
     disconnected provider.
     """
 
-    normalized = str(mode or "").strip().lower()
+    normalized = (mode or "").strip().lower()
     if normalized == "planning_readonly":
         normalized = "planning"
     for item in config.preferred_providers:
@@ -160,7 +160,7 @@ def preferred_provider_for(config: ProjectConfig, mode: str) -> str:
 
 
 def render_project_config_warnings(result: ProjectConfigLoadResult) -> str:
-    warnings = tuple(_warning(item) for item in result.warnings if str(item).strip())
+    warnings = tuple(_warning(item) for item in result.warnings if item.strip())
     if not warnings:
         return ""
     lines = [f"- {item}" for item in warnings[:MAX_WARNINGS]]

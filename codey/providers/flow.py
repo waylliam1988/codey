@@ -148,7 +148,7 @@ def set_recovery_handler(
 
 def begin_task_context(session_id: str) -> None:
     reset_assistance()
-    _context.session_id = str(session_id or "")
+    _context.session_id = (session_id or "")
     _context.attempts = set()
 
 
@@ -224,12 +224,10 @@ def evaluate(
         return False
     if stage != STAGE_COMPLETION:
         return True
-    return bool(
-        observation.response_nonempty
+    return (observation.response_nonempty
         and trace is not None
         and trace.repeated(PREDICATE_RESPONSE_STABLE)
-        and _completion_transition_observed(trace, predicates)
-    )
+        and _completion_transition_observed(trace, predicates))
 
 
 def _completion_transition_observed(
@@ -338,7 +336,7 @@ def choose_candidate(
     send: Callable[[str], str],
 ) -> str | None:
     cancellation.check()
-    reply = str(send(render_prompt(request)) or "").strip()
+    reply = (send(render_prompt(request)) or "").strip()
     cancellation.check()
     try:
         payload = json.loads(reply)

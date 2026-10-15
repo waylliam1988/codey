@@ -1071,7 +1071,7 @@ def is_strict_work_continuation(value: object) -> bool:
     normalized = _normalize_continuation_text(value)
     if not normalized:
         return False
-    return bool(normalized in _STRICT_CONTINUATION_CN or normalized in _STRICT_CONTINUATION_EN)
+    return (normalized in _STRICT_CONTINUATION_CN or normalized in _STRICT_CONTINUATION_EN)
 
 
 def mode_for_work_item(item: GhostWorkItem | None, *, project: str = "") -> str:
@@ -1080,9 +1080,9 @@ def mode_for_work_item(item: GhostWorkItem | None, *, project: str = "") -> str:
     if item.kind in {"research", "open_question"}:
         return "research"
     if item.kind in {"coding", "project_followup"}:
-        return "project" if str(project or "").strip() else ""
+        return "project" if (project or "").strip() else ""
     if item.kind == "review":
-        return "review" if str(project or "").strip() else ""
+        return "review" if (project or "").strip() else ""
     return ""
 
 

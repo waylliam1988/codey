@@ -114,8 +114,8 @@ def ghost_experiences(
     try:
         picked = retrieve_relevant_observations(
             rows,
-            str(query or ""),
-            exclude_run_id=str(exclude_run_id or ""),
+            (query or ""),
+            exclude_run_id=(exclude_run_id or ""),
             max_items=max_items,
             budget_chars=budget_chars,
         )
@@ -136,7 +136,7 @@ def _emit_settings_warning(state: Any, *, session_id: str = "") -> None:
             "type": "ghost_post_turn_warning",
             "stage": "learning_settings",
             "run_id": "",
-            "session_id": str(session_id or ""),
+            "session_id": (session_id or ""),
             "error_type": "GhostSettingsCorrupt",
             "error_ref": "ghost_settings_corrupt",
         })

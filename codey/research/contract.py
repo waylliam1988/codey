@@ -82,12 +82,12 @@ def research_completion_checks(
 ) -> tuple[CompletionCheck, ...]:
     """Project review booleans and derived findings into contract checks."""
 
-    ok = bool(review is not None and review.ok)
-    answers = bool(review is not None and review.answers_question)
+    ok = (review is not None and review.ok)
+    answers = (review is not None and review.answers_question)
     blocking = blocking_finding_refs(findings)
-    support_verified = bool(review is not None and review.support_relation_verified)
-    counter_checked = bool(review is not None and review.counterevidence_checked)
-    ledger_verified = bool(review is not None and review.ledger_record_verified)
+    support_verified = (review is not None and review.support_relation_verified)
+    counter_checked = (review is not None and review.counterevidence_checked)
+    ledger_verified = (review is not None and review.ledger_record_verified)
     rows = [
         completion_check(
             CHECK_RESEARCH_PROOF,

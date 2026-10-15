@@ -80,7 +80,7 @@ def validate_replay_args_shape(
     args: object,
 ) -> dict[str, object]:
     """Validate persisted replay args without aliases, repairs, or defaults."""
-    canonical_name = str(tool_name or "").strip()
+    canonical_name = (tool_name or "").strip()
     if not is_replayable_safe_tool(canonical_name):
         raise ValueError(f"tool is not replayable: {canonical_name}")
     if not isinstance(args, Mapping):

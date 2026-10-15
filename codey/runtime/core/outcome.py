@@ -60,8 +60,8 @@ def operation_outcome_from_stop_reason(
     blocked_reason: str = "",
     summary: str = "",
 ) -> OperationOutcome:
-    reason = str(stop_reason or "")
-    blocked = str(blocked_reason or "")
+    reason = (stop_reason or "")
+    blocked = (blocked_reason or "")
     if reason == "done":
         return OperationOutcome.completed(summary=summary or "done")
     if reason == "stopped":

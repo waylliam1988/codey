@@ -45,8 +45,8 @@ class SeenInfoLRU:
 def seen_info_key(tool_name: str, path: str, model_text: str) -> tuple[str, str, str]:
     import hashlib
 
-    digest = hashlib.sha256(str(model_text or "").encode("utf-8", errors="surrogatepass")).hexdigest()[:24]
-    return (str(tool_name or ""), str(path or ""), digest)
+    digest = hashlib.sha256((model_text or "").encode("utf-8", errors="surrogatepass")).hexdigest()[:24]
+    return ((tool_name or ""), (path or ""), digest)
 
 
 @dataclass(frozen=True)

@@ -211,7 +211,7 @@ def _persist_verified_project_facts(ctx: ProjectRun) -> bool:
             receipt=ctx.receipt.display.summary,
             checks=ctx.work.evidence.successful_checks,
         )
-    return bool(succeeded)
+    return succeeded
 
 
 def _settle_work_checkpoint(ctx: ProjectRun, facts_write_succeeded: bool) -> None:

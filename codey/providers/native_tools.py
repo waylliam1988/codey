@@ -43,7 +43,7 @@ def supports_native_tools(provider: Any, provider_id: str = "") -> bool:
         try:
             from codey.providers.local_config import load_local_config, resolve_local_native_tools
 
-            return bool(resolve_local_native_tools(load_local_config()))
+            return resolve_local_native_tools(load_local_config())
         except Exception:
             return False
     try:

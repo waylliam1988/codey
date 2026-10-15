@@ -306,7 +306,7 @@ def compute_batch_digest(items: tuple[DeliveryBatchItem, ...]) -> str:
 
 
 def new_batch_id(run_id: str, turn: int) -> str:
-    clean_run = "".join(c for c in str(run_id) if c.isalnum() or c in "-_")[:40]
+    clean_run = "".join(c for c in run_id if c.isalnum() or c in "-_")[:40]
     token = uuid.uuid4().hex[:12]
     return f"deliv-{clean_run}-t{turn}-{token}"
 
@@ -477,7 +477,7 @@ class DeliveryBatchProjection:
     @property
     def is_terminal(self) -> bool:
         """Reconstruction does not acknowledge a provider delivery."""
-        return bool(self.is_delivered or self.is_abandoned)
+        return (self.is_delivered or self.is_abandoned)
 
     @property
     def active_attempts(self) -> tuple[str, ...]:

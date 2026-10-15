@@ -24,7 +24,7 @@ def _reject_windows_reserved_names(rel: str, *, label: str) -> None:
     """Reject Windows device names (cold start: no compat fallback, fail closed)."""
     if os.name != "nt":
         return
-    text = str(rel or "").replace("\\", "/")
+    text = (rel or "").replace("\\", "/")
     for part in PurePosixPath(text).parts:
         name = part.strip()
         if not name or name in {".", ".."}:
@@ -42,9 +42,9 @@ def safe_join(root: str | Path, rel: str, *, label: str = "project root") -> Pat
     (``../../etc/passwd``); not an OS-level capability sandbox (symlink
     races / TOCTOU across directory swaps need the no-follow helpers).
     """
-    _reject_windows_reserved_names(str(rel), label=label)
+    _reject_windows_reserved_names(rel, label=label)
     resolved_root = Path(root).expanduser().resolve()
-    path = (resolved_root / str(rel)).resolve()
+    path = (resolved_root / rel).resolve()
     if path != resolved_root and resolved_root not in path.parents:
         raise ValueError(f"path escapes {label}: {rel}")
     return path
@@ -224,7 +224,7 @@ def bounded_directory_entries(
 
 
 def is_test_path(rel: str) -> bool:
-    path = PurePosixPath(str(rel or "").replace("\\", "/"))
+    path = PurePosixPath((rel or "").replace("\\", "/"))
     lower_parts = [part.lower() for part in path.parts]
     name = path.name.lower()
     return (

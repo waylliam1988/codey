@@ -127,7 +127,7 @@ class KnowledgeStore:
         """Batch read notes plus their index rows in one index round-trip."""
         seen: list[str] = []
         for raw in note_ids:
-            text = str(raw or "").strip()
+            text = (raw or "").strip()
             if text and text not in seen:
                 seen.append(text)
         if not seen:

@@ -35,7 +35,7 @@ def compact_text(value: str, limit: int = MAX_HANDOFF_TEXT_CHARS) -> str:
 def estimate_tokens(text: str) -> int:
     """Estimate tokens without provider-specific tokenizers."""
 
-    value = str(text or "")
+    value = (text or "")
     ascii_chars = sum(1 for char in value if ord(char) < 128)
     non_ascii_chars = len(value) - ascii_chars
     return (ascii_chars + 3) // 4 + non_ascii_chars

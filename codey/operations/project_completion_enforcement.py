@@ -135,12 +135,12 @@ def _record_completion_evidence(ctx: ProjectRun) -> None:
         # evidence (e.g. resumed checkpoints); no model claims enter here.
         ctx.task_session = TaskSession(
             policy=build_task_policy(ctx.request, task_kind="project"),
-            task_kind="project", task_text=ctx.request.task, project=str(ctx.project),
+            task_kind="project", task_text=ctx.request.task, project=ctx.project,
         )
     import contextlib
 
     with contextlib.suppress(Exception):
-        ctx.task_session.verification_forbidden = bool(ctx.verification_forbidden is True)
+        ctx.task_session.verification_forbidden = (ctx.verification_forbidden is True)
     ctx.proof = ctx.result.proof if ctx.result.stop_reason == "delivery_pending" else None
     if ctx.proof is not None:
         ctx.decision = replace(ctx.decision, proof=ctx.proof)
@@ -151,15 +151,15 @@ def _record_completion_evidence(ctx: ProjectRun) -> None:
             "run_id": ctx.frame.run_id,
             "task": ctx.request.task,
             "question": ctx.request.task,
-            "project": str(ctx.project),
+            "project": ctx.project,
             "project_evaluation": evaluation,
             "scope_files": tuple(ctx.files or ()),
-            "task_changed": bool(ctx.task_changed),
+            "task_changed": ctx.task_changed,
             "changes": ctx.task_changes,
             "selected_check": ctx.selected_check,
             "execution_evidence": ctx.work.evidence,
             "analysis_run_payloads": ctx.work.analysis_run_payloads,
-            "checkpoint_green": bool(ctx.checkpoint_green),
+            "checkpoint_green": ctx.checkpoint_green,
         })
         ctx.proof = verdict.proof
         if verdict.proof is None:
@@ -415,7 +415,7 @@ def _apply_completion_verdict(ctx: ProjectRun) -> None:
                 STANCE_INHERITED_PASS,
             )
         else:
-            verified = bool(ctx.result.checks_passed)
+            verified = ctx.result.checks_passed
     ctx.result = replace(ctx.result, checks_passed=verified)
 
 

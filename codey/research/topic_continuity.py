@@ -86,7 +86,7 @@ class TopicContinuityItem:
         return {
             "refs": list(self.refs),
             "kind": self.kind,
-            "stale": bool(self.stale),
+            "stale": self.stale,
             "reason_codes": list(self.reason_codes),
         }
 
@@ -137,7 +137,7 @@ class TopicContinuityProjection:
                 "items": item_rows,
                 "candidates": candidate_rows,
                 "claim_ref_count": max(0, int(self.claim_ref_count)),
-                "truncated": bool(self.truncated),
+                "truncated": self.truncated,
             },
             ensure_ascii=True,
             sort_keys=True,
@@ -151,7 +151,7 @@ class TopicContinuityProjection:
             "item_count": len(self.items),
             "candidate_count": len(self.candidates),
             "claim_ref_count": max(0, int(self.claim_ref_count)),
-            "truncated": bool(self.truncated),
+            "truncated": self.truncated,
             "reason_codes": reason_codes,
             "warnings": list(self.warnings),
             "items": item_rows,
@@ -372,7 +372,7 @@ def topic_item(
     reason_codes: Iterable[str] = (),
 ) -> TopicContinuityItem | None:
     """Construct one cleaned, safety-screened continuity item (or None)."""
-    clean_kind = str(kind or "").strip().lower()
+    clean_kind = (kind or "").strip().lower()
     clean_text = _clean_text(text, MAX_TOPIC_TEXT_CHARS)
     clean_ref = _clean_token(ref, MAX_TOPIC_REF_CHARS)
     if not clean_kind or not clean_ref or not clean_text:
@@ -386,7 +386,7 @@ def topic_item(
         kind=clean_kind,
         text=clean_text,
         refs=(clean_ref,),
-        stale=bool(stale),
+        stale=stale,
         reason_codes=codes,
     )
 
@@ -490,7 +490,7 @@ def _dedupe_items(items: Iterable[TopicContinuityItem]) -> tuple[TopicContinuity
 def _bounded_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
     out: list[str] = []
     for warning in warnings or ():
-        text = str(warning or "").strip()
+        text = (warning or "").strip()
         if text and text not in out:
             out.append(text)
         if len(out) >= MAX_TOPIC_WARNINGS:

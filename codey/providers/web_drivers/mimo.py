@@ -144,7 +144,7 @@ def _response_text(response: Locator) -> str:
     except Exception:
         pass
     try:
-        text = str(response.inner_text() or "").strip()
+        text = (response.inner_text() or "").strip()
     except Exception:
         return ""
     if _starts_with_thinking_summary(text):
@@ -153,7 +153,7 @@ def _response_text(response: Locator) -> str:
 
 
 def _starts_with_thinking_summary(text: str) -> bool:
-    stripped = str(text or "").lstrip()
+    stripped = (text or "").lstrip()
     return stripped.startswith(("正在思考", "已深度思考", "深度思考", "思考中"))
 
 
@@ -301,8 +301,8 @@ def _copy_last_text(page: Page) -> str:
 
 
 def _clean_copied_text(raw: str, visible_text: str) -> str:
-    text = str(raw or "").strip()
-    visible = str(visible_text or "").strip()
+    text = (raw or "").strip()
+    visible = (visible_text or "").strip()
     if not text:
         return ""
     if not visible:
@@ -315,7 +315,7 @@ def _clean_copied_text(raw: str, visible_text: str) -> str:
 
 
 def _normalize_mimo_json_tool_reply(text: str) -> str:
-    clean = str(text or "").strip()
+    clean = (text or "").strip()
     if not clean:
         return ""
     repaired = _normalize_final_json_tool_reply(clean)
@@ -336,7 +336,7 @@ def _normalize_mimo_json_tool_reply(text: str) -> str:
 
 
 def _markdown_json_payload(text: str) -> str:
-    lines = str(text or "").strip().splitlines()
+    lines = (text or "").strip().splitlines()
     if len(lines) < 3:
         return ""
     opener = lines[0].strip().casefold()
@@ -360,7 +360,7 @@ def _dedupe_identical_json_tool_objects(text: str) -> str:
 
 
 def _without_mimo_json_markers(text: str) -> str:
-    lines = str(text or "").strip().splitlines()
+    lines = (text or "").strip().splitlines()
     kept: list[str] = []
     removed = False
     for line in lines:
@@ -368,11 +368,11 @@ def _without_mimo_json_markers(text: str) -> str:
             removed = True
             continue
         kept.append(line)
-    return "\n".join(kept).strip() if removed else str(text or "").strip()
+    return "\n".join(kept).strip() if removed else (text or "").strip()
 
 
 def _parse_only_json_objects(text: str) -> list[object]:
-    clean = str(text or "")
+    clean = (text or "")
     decoder = json.JSONDecoder()
     values: list[object] = []
     index = 0
@@ -521,7 +521,7 @@ def _mimo_button_state(candidate: Locator) -> dict[str, object] | None:
     try:
         if not candidate.is_visible():
             return None
-        enabled = bool(candidate.is_enabled())
+        enabled = candidate.is_enabled()
         state = candidate.evaluate(
             """el => ({
                 disabled: !!el.disabled,

@@ -73,7 +73,7 @@ def verification_match_is_negated(task: str, start: int) -> bool:
 
 
 def task_requests_verification(task: str) -> bool:
-    text = str(task or "")
+    text = (task or "")
     return any(
         not verification_match_is_negated(text, match.start())
         for match in VERIFICATION_REQUEST_RE.finditer(text)
@@ -81,7 +81,7 @@ def task_requests_verification(task: str) -> bool:
 
 
 def task_forbids_verification(task: str) -> bool:
-    text = str(task or "")
+    text = (task or "")
     return bool(VERIFICATION_FORBID_RE.search(text)) and not task_requests_verification(text)
 
 
@@ -91,8 +91,8 @@ def protocol_repair_prompt(
     *,
     previous_reply: str = "",
 ) -> str:
-    error = str(plan.protocol_error or "invalid JSON tool call")
-    kind = str(plan.protocol_error_kind or "").strip()
+    error = (plan.protocol_error or "invalid JSON tool call")
+    kind = (plan.protocol_error_kind or "").strip()
     native = str(getattr(codec, "name", "") or "") == "native_openai"
     previous = previous_tool_object(previous_reply, codec, kind, error)
     lines = [
@@ -297,7 +297,7 @@ def invalid_args_repair_lines(
 
 def _native_invalid_args_lines(error: str) -> list[str]:
     """Generic arg repair hints for native function calls (no JSON examples)."""
-    folded = str(error or "").lower()
+    folded = (error or "").lower()
     if "positive integer" in folded and "offset" in folded:
         return [
             "read offset is 1-based and must be a positive integer.",
@@ -381,7 +381,7 @@ def previous_args(previous: dict[str, object] | None) -> dict[str, object]:
     if isinstance(args, dict):
         return dict(args)
     return {
-        str(key): value
+        key: value
         for key, value in previous.items()
         if key not in {"tool", "name"}
     }

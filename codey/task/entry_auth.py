@@ -57,7 +57,7 @@ def _clause_for_position(text: str, position: int) -> str:
 
 
 def _explicit_readonly_task(task: str) -> bool:
-    lowered = str(task or "").lower()
+    lowered = (task or "").lower()
     for marker in _READONLY_MUST_NOT_CHANGE_MARKERS:
         for match in re.finditer(re.escape(marker.lower()), lowered):
             suffix = lowered[match.end():].lstrip()
@@ -129,7 +129,7 @@ def derive_entry_auth(body: dict[str, Any] | None, *, project: str | None = None
         sources_required = False
     else:
         # “可以”不等于“必须”：仅任务文本明确需要来源时才必须打开
-        sources_required = bool(web_via_task_text and intent in {"auto", "project", "hybrid", "chat"})
+        sources_required = (web_via_task_text and intent in {"auto", "project", "hybrid", "chat"})
     denied: set[str] = set()
     if intent in {"project", "hybrid", "auto", "chat"} and _explicit_readonly_task(task):
         # 明确只读：取消“必须修改”，同时落实“禁止修改”。project_changes_required

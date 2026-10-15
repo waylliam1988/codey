@@ -429,7 +429,7 @@ def _missing_link_rows(
                         if ref.note_id and ref.note_id not in {existing.note_id for existing in refs}:
                             refs.append(ref)
             shared_neighbors = tuple(sorted(shared)[:6])
-            session_focus = bool(a in session_concepts or b in session_concepts)
+            session_focus = (a in session_concepts or b in session_concepts)
             priority = min(
                 1.0,
                 0.35

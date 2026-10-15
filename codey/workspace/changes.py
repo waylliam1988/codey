@@ -1084,7 +1084,7 @@ def _git_exit_payload(args: list[str], returncode: int, stderr: str = "") -> dic
 
 def _bounded_stderr_excerpt(stderr: str) -> str:
     """Last bounded slice of git stderr for diagnosis (never unbounded)."""
-    text = str(stderr or "").strip()
+    text = (stderr or "").strip()
     if len(text) > _GIT_STDERR_EXCERPT_CHARS:
         text = text[-_GIT_STDERR_EXCERPT_CHARS:].strip()
     return " ".join(text.split())
@@ -1113,7 +1113,7 @@ def _run_one_git_command(
     ):
         return None, _git_failed_payload()
     if proc.returncode != 0:
-        return None, _git_exit_payload(args, proc.returncode, str(proc.stderr or ""))
+        return None, _git_exit_payload(args, proc.returncode, (proc.stderr or ""))
     return proc, None
 
 
@@ -1134,7 +1134,7 @@ def _resolve_git_root(root: Path) -> tuple[Path | None, dict[str, Any] | None]:
     if top.returncode != 0:
         # Only "not a git repository" on stderr confirms a non-repo; any
         # other non-zero exit is a real git failure with bounded stderr.
-        if "not a git repository" in str(top.stderr or "").lower():
+        if "not a git repository" in (top.stderr or "").lower():
             return None, {
                 "ok": False,
                 "error": "not a git repository",
@@ -1142,7 +1142,7 @@ def _resolve_git_root(root: Path) -> tuple[Path | None, dict[str, Any] | None]:
                 "diff": "",
                 "reason": GIT_REASON_NOT_REPO,
             }
-        return None, _git_exit_payload(["rev-parse", "--show-toplevel"], top.returncode, str(top.stderr or ""))
+        return None, _git_exit_payload(["rev-parse", "--show-toplevel"], top.returncode, (top.stderr or ""))
     if top.stdout_truncated:
         return None, {
             "ok": False,
@@ -1209,7 +1209,7 @@ def _load_git_diff_parts(git_root: Path) -> tuple[list[str] | None, bool, dict[s
     if error is not None:
         return None, False, error
     assert unstaged_diff is not None and staged_diff is not None
-    capture_truncated = bool(unstaged_diff.stdout_truncated or staged_diff.stdout_truncated)
+    capture_truncated = (unstaged_diff.stdout_truncated or staged_diff.stdout_truncated)
     diff_parts: list[str] = []
     if staged_diff.stdout:
         diff_parts.append(staged_diff.stdout.rstrip())
@@ -1329,7 +1329,7 @@ def collect_git_file_diff(project: str | Path | None, rel: str) -> dict[str, Any
         if command_error is not None:
             return command_error
         assert proc is not None
-        captured = captured or bool(proc.stdout_truncated)
+        captured = captured or proc.stdout_truncated
         if proc.stdout:
             parts.append(proc.stdout.rstrip())
     diff = "\n\n".join(parts)

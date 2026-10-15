@@ -464,7 +464,7 @@ def _content_query_terms(terms: tuple[str, ...], *, limit: int) -> tuple[str, ..
     content: list[str] = []
     seen: set[str] = set()
     for raw in terms:
-        term = str(raw or "").strip()
+        term = (raw or "").strip()
         folded = term.casefold()
         if not folded or folded in _QUERY_CONTENT_STOP_TERMS or len(folded) <= 1:
             continue

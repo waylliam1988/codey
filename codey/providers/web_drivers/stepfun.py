@@ -273,7 +273,7 @@ def _response_texts_fallback(page: Page) -> tuple[str, ...]:
 
 def _node_text(node: Locator) -> str:
     try:
-        return str(node.inner_text() or "").strip()
+        return (node.inner_text() or "").strip()
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
@@ -422,10 +422,10 @@ def _fill_message_until_stable(textarea: Locator, text: str) -> str:
 
 def _control_text(control: Locator) -> str:
     try:
-        return str(control.input_value() or "")
+        return (control.input_value() or "")
     except Exception:
         try:
-            return str(control.inner_text() or "")
+            return (control.inner_text() or "")
         except Exception:
             return ""
 

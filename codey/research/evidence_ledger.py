@@ -191,8 +191,8 @@ class EvidenceLedgerWriteResult:
 
     def to_trace_payload(self) -> dict[str, object]:
         return {
-            "ok": bool(self.ok),
-            "skipped": bool(self.skipped),
+            "ok": self.ok,
+            "skipped": self.skipped,
             "reason_code": identifier(self.reason_code, 80),
             "ledger_ref": identifier(self.ledger_ref, 80),
             "record_id": _record_id(self.record_id),

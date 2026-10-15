@@ -168,7 +168,7 @@ def _split(command: str) -> list[str]:
     try:
         return split_run_command(command or "")
     except ValueError:
-        return str(command or "").split()
+        return command.split() if command else []
 
 
 def _unwrap_shell(argv: list[str]) -> list[str]:
@@ -202,7 +202,7 @@ def _normalize_token(token: str) -> str:
 
 
 def _strip_quotes(value: str) -> str:
-    return str(value or "").strip().strip("\"'")
+    return (value or "").strip().strip("\"'")
 
 
 def _starts_with(argv: list[str], *prefix: str) -> bool:
