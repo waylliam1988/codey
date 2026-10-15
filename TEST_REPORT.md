@@ -2,18 +2,18 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
-## Current working tree (2026-10-15)
+## Current working tree (2026-10-16)
 
 | Check | Result |
 | --- | --- |
-| Final complete pytest | **8713 passed, 8 skipped, 1519 subtests; 1505.48s** |
-| Final required machine contracts | **1129 passed, 14 subtests; no skips; 283.30s** |
-| Production statement coverage | **88.88%**; CI minimum **85%** |
-| Production branch coverage | **78.40%**; CI minimum **75%** |
+| Final complete pytest | **8715 passed, 8 skipped, 1519 subtests; 1518.47s** |
+| Final required machine contracts | **1129 passed, 14 subtests; no skips; 322.82s** |
+| Production statement coverage | **88.53%**; CI minimum **85%** |
+| Production branch coverage | **78.24%**; CI minimum **75%** |
 | Coverage scope | All **419** production Python files; Python subprocesses included |
 | Full-tree mypy / Pyrefly / ty | **419 source files; all three checkers passed for Python 3.12 target** |
 | Ruff / diff check | passed |
-| TypeScript / Biome / Vitest | **71 tests passed; build passed** |
+| TypeScript / Biome / Vitest | **73 tests passed; build passed** |
 | Real HTTP protocol continuation | **22 passed**, using deterministic local peers for both native protocols |
 | Real HTTP Stop stress | **100 passed**: 50 before headers, 50 during silent error bodies |
 | Transport regression group | **64 passed**; final implementation also passed under coverage |
@@ -40,6 +40,15 @@ the HTTP restart checks (**2 passed**).
 Coverage reports were generated from the final complete-suite capture and its
 parallel subprocess data. The full-production coverage gate and JSON/XML/HTML
 generation passed. The new approval tests are included in the final suite.
+
+This change also verified a clean Python 3.12 environment from the generated
+`requirements-ci.txt`: hash-checked installation, editable project installation
+with `--no-deps --no-build-isolation`, and `pip check` all passed. CI contract
+tests confirm both Windows and Linux jobs consume that lock without
+reresolving. The EOF stability cases (including slow startup), watchdog timeout,
+approval HTTP restart, browser approval, and continuation lifecycle regressions
+all passed. The migrated Allow/Deny response reconciliation now runs in Vitest
+against the real controller; the Python bridge tests and enum shims were removed.
 
 The eight skips are explicit environment gates: six require POSIX permission,
 process-group, absolute-path or `O_NOFOLLOW` behavior; two opt into an external

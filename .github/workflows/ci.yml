@@ -52,9 +52,11 @@ jobs:
         run: |
           python -m pip install "pip==26.1.2"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pip install -r requirements-ci.txt
+          python -m pip install --require-hashes -r requirements-ci.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pip install -e . --no-deps
+          python -m pip install -e . --no-deps --no-build-isolation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m playwright install chromium
 
@@ -158,8 +160,9 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install "pip==26.1.2"
-          python -m pip install -r requirements-ci.txt
-          python -m pip install -e . --no-deps
+          python -m pip install --require-hashes -r requirements-ci.txt
+          python -m pip install -e . --no-deps --no-build-isolation
+          python -m pip check
           python -m playwright install chromium --with-deps
 
       - name: Ruff

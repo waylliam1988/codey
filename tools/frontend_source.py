@@ -28,9 +28,6 @@ def frontend_source(name: str) -> str:
     shim = (
         "var runtime = (typeof window !== 'undefined' ? window : globalThis);\n"
         "var decodeServerEvent = globalThis.decodeServerEvent || function(value) { return value; };\n"
-        "var APPROVAL_DECISIONS = ['pending', 'allow', 'deny', 'cancelled'];\n"
-        "var APPROVAL_EXECUTIONS = ['not_started', 'not_required', 'queued', 'running', 'settled', 'uncertain'];\n"
-        "var APPROVAL_CONTINUATIONS = ['waiting_for_result', 'queued', 'not_required', 'resuming', 'started', 'failed', 'unavailable', 'cancelled'];\n"
     )
     return shim + source
 

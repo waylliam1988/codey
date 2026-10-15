@@ -42,16 +42,47 @@ def test_watchdog_cleanup_cannot_be_reported_as_agent_child_cleanup(tmp_path):
     assert result["forced_cleanup"] is True
 
 
-def test_single_shot_agent_receives_eof_instead_of_waiting_for_stdin(tmp_path):
+@pytest.mark.parametrize("startup_delay", [0.0, 0.8])
+def test_single_shot_agent_receives_eof_instead_of_waiting_for_stdin(tmp_path, startup_delay):
     from tests.manual.codey_vs_pi_agent_stability_ab import _run_process
     trace, artifacts = tmp_path / "trace", tmp_path / "artifacts"
     trace.mkdir()
     artifacts.mkdir()
-    result = _run_process([sys.executable, "-c", "import sys; sys.stdin.read(); print('finished')"], tmp_path,
+    script = (
+        "import sys,time; "
+        f"time.sleep({startup_delay!r}); "
+        "data = sys.stdin.buffer.read(); "
+        "assert data == b'', repr(data); "
+        "print('finished', flush=True)"
+    )
+    result = _run_process([sys.executable, "-c", script], tmp_path,
                           dict(os.environ, AGENT_AB_TRACE=str(trace)), artifacts,
-                          deadline=time.monotonic() + .5)
+                          deadline=time.monotonic() + 5)
     assert result["status"] == "completed"
-    assert "finished" in (artifacts / "stdout.log").read_text()
+    assert result["returncode"] == 0
+    assert result["forced_cleanup"] is False
+    assert result["readers_finished"] is True
+    assert result["live_fixture_processes"] == []
+    assert (artifacts / "stdout.log").read_text(encoding="utf-8").strip() == "finished"
+
+
+def test_watchdog_timeout_is_not_reported_as_completed(tmp_path):
+    from tests.manual.codey_vs_pi_agent_stability_ab import _run_process
+    trace, artifacts = tmp_path / "trace", tmp_path / "artifacts"
+    trace.mkdir()
+    artifacts.mkdir()
+    result = _run_process(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        tmp_path,
+        dict(os.environ, AGENT_AB_TRACE=str(trace)),
+        artifacts,
+        deadline=time.monotonic() + .5,
+    )
+    assert result["status"] == "timeout"
+    assert result["forced_cleanup"] is True
+    assert result["returncode"] is not None
+    assert result["returncode"] != 0
+    assert result["readers_finished"] is True
 
 
 def test_user_correction_is_a_new_submission_not_a_retry_of_the_old_task(tmp_path, monkeypatch):

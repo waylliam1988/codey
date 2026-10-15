@@ -1,0 +1,20 @@
+# Human-maintained CI dependency policy.
+# Generate requirements-ci.txt; do not edit its resolved versions manually.
+# Lock generator: uv==0.13.1
+
+playwright==1.58.0
+pywebview==6.2.1
+PyYAML==6.0.2
+types-PyYAML==6.0.12.20260906
+pypdf==6.14.2
+
+setuptools==70.2.0
+wheel==0.45.1
+build==1.3.0
+
+pytest==9.0.3
+coverage==7.14.2
+ruff==0.15.14
+mypy==1.18.2
+pyrefly==1.3.2
+ty==0.0.87

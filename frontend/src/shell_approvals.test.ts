@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { decodeApprovalState } from './shell_approvals';
+import { createApprovalController, decodeApprovalState } from './shell_approvals';
 import type { ApprovalState } from './types/domain';
 import type { Session } from './types/domain';
 
@@ -43,6 +43,45 @@ it('preserves additional response metadata', () => {
   };
 
   expect(decodeApprovalState(response)).toBe(response);
+});
+
+it.each([false, true])('reconciles the approval response without SSE: approved=%s', async (approved) => {
+  const session: Session = {
+    id: 'session',
+    title: 'Session',
+    draft: { text: '', start: 0, end: 0, direction: 'none', revision: 0 },
+    messages: [{ type: 'shell_request', id: 'approval-1', command: 'echo approved' }],
+  };
+  const state: ApprovalState = {
+    type: 'shell_approval_status',
+    id: 'approval-1',
+    session_id: 'session',
+    decision: approved ? 'allow' : 'deny',
+    execution: approved ? 'settled' : 'not_required',
+    continuation: 'started',
+    revision: 5,
+  };
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    new Response(JSON.stringify(state), {
+      status: 202,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
+  const changed = vi.fn();
+  const controller = createApprovalController({ sessions: () => [session], changed, fetch: fetcher });
+
+  await controller.submit('approval-1', approved);
+
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  const [url, options] = fetcher.mock.calls[0]!;
+  expect(url).toBe('/api/shell_approval');
+  expect(options?.method).toBe('POST');
+  expect(JSON.parse(String(options?.body))).toEqual({ id: 'approval-1', approved });
+  expect(session.messages).toHaveLength(1);
+  expect(session.messages[0]?.type).toBe('shell_approval_status');
+  expect(session.messages[0]?.approval).toEqual(state);
+  expect(controller.decided('approval-1')).toBe(true);
+  expect(changed).toHaveBeenCalledWith('session');
 });
 
 it('confirms a lost response before reopening approval and rejects stale state', async () => {

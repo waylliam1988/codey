@@ -17,4 +17,4 @@ def test_ci_declares_full_tree_mypy_gate() -> None:
 
 def test_ci_declares_yaml_type_stubs_for_clean_mypy_install() -> None:
     requirements = (ROOT / "requirements-ci.txt").read_text(encoding="utf-8")
-    assert "types-PyYAML==" in requirements
+    assert "types-pyyaml==" in requirements.lower()

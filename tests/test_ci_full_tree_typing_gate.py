@@ -47,3 +47,18 @@ def test_windows_dependency_install_stops_at_the_first_failed_command(jobs):
     for index, line in enumerate(lines[:-1]):
         if line.startswith("python "):
             assert lines[index + 1] == "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+
+
+@pytest.mark.parametrize("job_id", ["test", "test-linux"])
+def test_ci_installs_the_generated_lock_without_reresolving(jobs, job_id):
+    step = next(
+        step for step in jobs[job_id]["steps"]
+        if step.get("name") == "Install Python dependencies"
+    )
+    commands = [line.strip() for line in step["run"].splitlines() if line.strip()]
+    locked_install = "python -m pip install --require-hashes -r requirements-ci.txt"
+    project_install = "python -m pip install -e . --no-deps --no-build-isolation"
+    assert locked_install in commands
+    assert project_install in commands
+    assert "python -m pip check" in commands
+    assert commands.index(locked_install) < commands.index(project_install)
