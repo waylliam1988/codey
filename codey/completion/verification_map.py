@@ -345,7 +345,7 @@ def _recommended_commands(values: Sequence[str]) -> tuple[str, ...]:
 
 def _broader_commands(project_map: str) -> tuple[str, ...]:
     result: list[str] = []
-    section = ""
+    section: str = ""
     for line in (project_map or "").splitlines():
         stripped = line.strip()
         if stripped == "Observed successful checks:":

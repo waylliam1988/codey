@@ -243,6 +243,8 @@ class GenerationNotSentError(RuntimeError):
 class GenerationRejectedError(RuntimeError):
     """A complete HTTP failure response, distinct from an unknown generation."""
 
+    error_type: str
+
     def __init__(self, status: int, detail: str, retry_after: str | None = None,
                  *, error_code: str | None = None, upstream_request_id: str | None = None) -> None:
         self.status = status
@@ -256,7 +258,7 @@ class GenerationRejectedError(RuntimeError):
                     if date.tzinfo is None:
                         date = date.replace(tzinfo=datetime.UTC)
                     self.retry_after = max(0.0, date.timestamp() - time.time())
-        self.error_type = ""
+        self.error_type: str = ""
         self.error_code = (error_code or "")[:80]
         self.upstream_request_id = (upstream_request_id or "")[:160]
         reason = detail
@@ -272,7 +274,7 @@ class GenerationRejectedError(RuntimeError):
                     self.upstream_request_id = error["request_id"][:160]
                 if isinstance(error.get("message"), str) and error["message"].strip():
                     reason = error["message"]
-        label = f" [{self.error_type}]" if self.error_type else ""
+        label = f" [{self.error_type}]" if self.error_type != "" else ""
         self.service_message = reason[:400]
         self.provider_failure_kind = (
             FAILURE_AUTHENTICATION_REQUIRED if status == 401 else
@@ -281,7 +283,7 @@ class GenerationRejectedError(RuntimeError):
             FAILURE_REQUEST_REJECTED
         )
         self.provider_failure_facts: dict[str, object] = {"http_status": status}
-        if self.error_type:
+        if self.error_type != "":
             self.provider_failure_facts["service_error_type"] = self.error_type
         if self.error_code:
             self.provider_failure_facts["service_error_code"] = self.error_code

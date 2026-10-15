@@ -131,7 +131,7 @@ def parse_sections(text: str) -> dict[str, str]:
     """
 
     sections: dict[str, list[str]] = {}
-    current = ""
+    current: str = ""
     for line in str(text or "").splitlines():
         stripped = line.strip()
         bold = _BOLD_LABEL_RE.match(stripped)

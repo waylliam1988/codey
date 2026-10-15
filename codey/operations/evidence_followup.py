@@ -68,7 +68,7 @@ def run_evidence_followup(
     for attempt in (1, 2):
         if should_stop is not None and should_stop():
             return EvidenceFollowupResult(stop_reason="stopped")
-        last_error = ""
+        last_error: str = ""
 
         def write(call: ToolCall) -> ToolResult:
             nonlocal last_error
