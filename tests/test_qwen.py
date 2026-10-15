@@ -722,6 +722,7 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_uncertain_submission_continues_until_delayed_answer(self) -> None:
         page = mock.Mock()
+        page.locator.return_value.count.return_value = 0
         textarea = mock.Mock()
         attempt = SendAttempt()
         attempt.submit("click", lambda: None)
@@ -783,6 +784,7 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_chat_returns_stable_json_tool_reply_without_waiting_for_page_completion(self) -> None:
         page = mock.Mock()
+        page.locator.return_value.count.return_value = 0
         textarea = mock.Mock()
         attempt = SendAttempt()
         attempt.submit("click", lambda: None)
@@ -936,6 +938,7 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_chat_regenerates_one_empty_response(self) -> None:
         page = mock.Mock()
+        page.locator.return_value.count.return_value = 0
         textarea = mock.Mock()
         with (
             mock.patch.object(qwen, "wait_ready"),

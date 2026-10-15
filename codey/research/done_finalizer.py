@@ -203,7 +203,7 @@ def _old_source_numbers(
     for citation in report_quality.parse_citation_rows(source_text, ledger):
         url = opened_url(ledger, citation.url)
         if url in number_for_url:
-            number = int(citation.number)
+            number = citation.number
             urls = urls_by_number.setdefault(number, set())
             urls.add(url)
             if len(urls) > 1:
@@ -521,11 +521,11 @@ def _derive_required_lines_from_saved_evidence(
         evidence_text = _saved_evidence_excerpt_text(item.excerpt, item.claim)
         if not claim_text or not evidence_text:
             continue
-        key = (claim_text.casefold(), int(number), item.page)
+        key = (claim_text.casefold(), number, item.page)
         if key in seen:
             continue
         seen.add(key)
-        ref = _citation_label(int(number), item.page)
+        ref = _citation_label(number, item.page)
         conclusion_lines.append(f"- {claim_text} {ref}")
         evidence_lines.append(f"- {ref} {evidence_text}")
         if len(conclusion_lines) >= 3:
@@ -540,8 +540,8 @@ def _source_numbers_by_url(sources_text: str, ledger: ResearchLedger) -> dict[st
         if not raw_url:
             continue
         canonical = opened_url(ledger, raw_url)
-        numbers[raw_url] = int(row.number)
-        numbers[canonical] = int(row.number)
+        numbers[raw_url] = row.number
+        numbers[canonical] = row.number
     return numbers
 
 
@@ -594,9 +594,9 @@ def _is_informative_saved_claim(text: str) -> bool:
 
 
 def _citation_label(number: int, page: int | None) -> str:
-    if page is not None and int(page) > 0:
-        return f"[{int(number)} p.{int(page)}]"
-    return f"[{int(number)}]"
+    if page is not None and page > 0:
+        return f"[{number} p.{page}]"
+    return f"[{number}]"
 
 
 def _finalized_reason(changed: bool, claim_filter_changed: bool) -> str:

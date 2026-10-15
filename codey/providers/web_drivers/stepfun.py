@@ -288,7 +288,7 @@ def _fresh_response_text_fallback(page: Page, baseline: int) -> str:
     text sequence.
     """
     texts = _response_texts_fallback(page)
-    fresh = texts[: max(0, len(texts) - max(0, int(baseline)))]
+    fresh = texts[: max(0, len(texts) - max(0, baseline))]
     return "\n".join(text for text in fresh if text).strip()
 
 
@@ -302,7 +302,7 @@ def _response_action_count(page: Page) -> int:
     for selector in PROFILE.selectors("response_action"):
         try:
             locator = page.locator(selector)
-            for index in range(int(locator.count())):
+            for index in range(locator.count()):
                 try:
                     if locator.nth(index).is_visible():
                         count += 1

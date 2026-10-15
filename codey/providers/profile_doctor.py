@@ -190,7 +190,7 @@ def _summarize(index: int, action: str, item: Discovery) -> CandidateSummary:
         proximity=_proximity(metadata.get("anchor_distance")),
         page_region=_page_region(metadata.get("bottom_ratio")),
         size=_size(metadata.get("area")),
-        heuristic_score=int(item.score),
+        heuristic_score=item.score,
     )
 
 

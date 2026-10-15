@@ -141,7 +141,7 @@ class BrowserSearchProvider:
             self._engine_order = (self.engine,)
         self._reuse_url_contains = _search_host(self._profile)
         self.profile_dir = Path(profile_dir) if profile_dir else RESEARCH_PROFILE
-        self.cdp_port = int(cdp_port)
+        self.cdp_port = cdp_port
         self.browser_path = browser_path
         self.launch = launch
         self.isolated = isolated

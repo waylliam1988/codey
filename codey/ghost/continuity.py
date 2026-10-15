@@ -678,7 +678,7 @@ def render_ghost_continuity(
     parts = [header]
     included: list[GhostContinuityItem] = []
     truncated = False
-    max_budget = max(0, int(budget or 0))
+    max_budget = max(0, (budget or 0))
     if max_budget <= 0:
         return GhostContinuity("", warnings=_bounded_warnings(warnings), truncated=True)
     for item in selected:
@@ -1247,10 +1247,7 @@ def _clean_metadata(value: object) -> dict[str, object]:
 
 def _expires_at(now: str, days: int) -> str:
     parsed = parse_ts(now)
-    try:
-        parsed_days = int(days or 1)
-    except (TypeError, ValueError, OverflowError):
-        parsed_days = 1
+    parsed_days = coerce_int(days or 1, default=1)
     return (parsed + timedelta(days=max(1, parsed_days))).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 

@@ -10,7 +10,7 @@ from codey.agents.state import SeenInfoLRU, ToolAttemptRecord, seen_info_key
 
 class KernelProgress:
     def __init__(self, stagnant_turns: int | None = None) -> None:
-        self.limit = max(1, int(stagnant_turns)) if stagnant_turns is not None else 4
+        self.limit = max(1, stagnant_turns) if stagnant_turns is not None else 4
         self.seen = SeenInfoLRU()
         self.attempts: deque[ToolAttemptRecord] = deque(maxlen=16)
         self.idle = 0

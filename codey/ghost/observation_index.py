@@ -16,6 +16,8 @@ import time
 from collections.abc import Sequence
 from datetime import datetime
 
+from codey.utils.refs import coerce_int
+
 MAX_RETRIEVED_ITEMS = 3
 RETRIEVAL_BUDGET_CHARS = 1800
 RECENT_SCAN_LIMIT = 200
@@ -115,10 +117,7 @@ def _content_budget(budget_chars: int) -> int:
     """
     if isinstance(budget_chars, bool):
         return 0
-    try:
-        parsed = int(budget_chars or 0)
-    except (TypeError, ValueError, OverflowError):
-        return 0
+    parsed = coerce_int(budget_chars or 0)
     return max(0, parsed - len(RETRIEVED_BLOCK_HEADER))
 
 
@@ -214,7 +213,7 @@ def _fit_blocks(
     if content <= 0:
         return []
     try:
-        limit = max(1, int(max_items or 1))
+        limit = max(1, (max_items or 1))
     except (TypeError, ValueError, OverflowError):
         limit = 1
     fitted: list[tuple[dict[str, object], str]] = []
@@ -240,7 +239,7 @@ def render_retrieved_block(
     rows: tuple[dict[str, object], ...] | list[dict[str, object]],
     budget_chars: int = RETRIEVAL_BUDGET_CHARS,
 ) -> str:
-    budget = max(0, int(budget_chars or 0))
+    budget = max(0, (budget_chars or 0))
     if budget < len(RETRIEVED_BLOCK_HEADER):
         return ""
     if not rows:

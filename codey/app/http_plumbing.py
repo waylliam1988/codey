@@ -180,7 +180,7 @@ def send_index(handler: BaseHTTPRequestHandler) -> None:
 
 def _cached_file(path: Path, *, transform_name: str) -> _StaticCacheEntry:
     stat = path.stat()
-    signature = (int(stat.st_mtime_ns), int(stat.st_size))
+    signature = (stat.st_mtime_ns, stat.st_size)
     key = (str(path), transform_name)
     with _STATIC_CACHE_LOCK:
         cached = _STATIC_CACHE.get(key)

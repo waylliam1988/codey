@@ -113,7 +113,7 @@ def _open_regular_no_follow(target: Path) -> int:
 def read_text_bounded_no_follow(path: str | Path, *, max_bytes: int) -> str:
     """Read a bounded UTF-8 file without following a trailing symlink."""
     target = ensure_not_symlink(path)
-    limit = max(0, int(max_bytes))
+    limit = max(0, max_bytes)
     try:
         fd = _open_regular_no_follow(target)
     except FileNotFoundError as exc:

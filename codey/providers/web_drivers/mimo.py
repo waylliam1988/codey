@@ -243,7 +243,7 @@ def _response_action_count(page: Page) -> int:
     count = 0
     try:
         buttons = page.locator(COPY_BUTTON)
-        total = int(buttons.count())
+        total = buttons.count()
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
@@ -500,7 +500,7 @@ def _profiled_send_button(page: Page) -> Locator | None:
     for selector in PROFILE.selectors("send_button"):
         try:
             candidates = page.locator(selector)
-            count = int(candidates.count())
+            count = candidates.count()
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception:
@@ -590,7 +590,7 @@ def _generation_active(page: Page) -> bool:
     for selector in PROFILE.selectors("send_button"):
         try:
             candidates = page.locator(selector)
-            count = int(candidates.count())
+            count = candidates.count()
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception:

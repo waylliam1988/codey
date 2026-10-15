@@ -106,7 +106,7 @@ class SourceTrustProjection:
             "classes": [
                 token for token in (_class_token(item) for item in self.classes[:MAX_SOURCE_CLASSES]) if token
             ],
-            "tier": int(self.tier),
+            "tier": self.tier,
             "freshness": _identifier(self.freshness, 20) or "undated",
         }
         if self.level:
@@ -236,7 +236,7 @@ def evaluate_against_profile(
         warnings.append("sources_stale_or_undated")
     if rows and not any(item.tier >= TIER_STRONG for item in rows):
         warnings.append("no_strong_source")
-    below_floor = sum(1 for item in rows if item.tier < max(TIER_WEAK, int(floor_tier)))
+    below_floor = sum(1 for item in rows if item.tier < max(TIER_WEAK, floor_tier))
     if below_floor:
         warnings.append("sources_below_quality_threshold")
     weak = sum(1 for item in rows if item.tier == TIER_WEAK)
@@ -308,7 +308,7 @@ def _bounded_tokens(values: Iterable[object], limit: int) -> tuple[str, ...]:
         text = str(value or "").strip()
         if text and text not in out:
             out.append(text)
-        if len(out) >= max(0, int(limit)):
+        if len(out) >= max(0, limit):
             break
     return tuple(out)
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
 
+from codey.utils.refs import parse_int
 from codey.workspace.map import EXCLUDED_DIRS as _MAP_EXCLUDED_DIRS
 
 TRUSTED_EXCLUDED_DIRS = _MAP_EXCLUDED_DIRS
@@ -50,9 +51,8 @@ def read_manifest_text(path: Path, *, max_bytes: int) -> str:
             return ""
         if isinstance(max_bytes, bool):
             return ""
-        try:
-            limit = int(max_bytes)
-        except (TypeError, ValueError, OverflowError):
+        limit = parse_int(max_bytes)
+        if limit is None:
             return ""
         if path.stat().st_size > max(0, limit):
             return ""

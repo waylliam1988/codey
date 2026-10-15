@@ -212,14 +212,14 @@ def _save_cdp_port(port: int) -> None:
 
 
 def _cdp_port_family(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
-    preferred = int(preferred)
+    preferred = preferred
     if preferred == DEFAULT_PORT:
         return CDP_PORT_CANDIDATES
     return tuple(range(preferred, min(preferred + 9, 65536)))
 
 
 def _candidate_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
-    preferred = int(preferred)
+    preferred = preferred
     ports: list[int] = []
     port_family = _cdp_port_family(preferred)
     with _CDP_PORT_LOCK:
@@ -231,7 +231,7 @@ def _candidate_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
     for item in (preferred, *remembered, *port_family):
         if item is None or item in ports:
             continue
-        ports.append(int(item))
+        ports.append(item)
     return tuple(ports)
 
 
@@ -311,7 +311,7 @@ def _remembered_cdp_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
     for item in (active, _load_saved_cdp_port()):
         if item is None or item in ports:
             continue
-        port = int(item)
+        port = item
         if port in allowed_ports:
             ports.append(port)
     return tuple(ports)
@@ -333,7 +333,7 @@ def _find_free_cdp_port(preferred: int = DEFAULT_PORT) -> int:
 
 def _find_free_isolated_cdp_port(preferred: int = DEFAULT_PORT, *, exclude: set[int] | None = None) -> int:
     excluded = set(exclude or ())
-    ports = tuple(dict.fromkeys((int(preferred), *_cdp_port_family(preferred))))
+    ports = tuple(dict.fromkeys((preferred, *_cdp_port_family(preferred))))
     for cdp_port in ports:
         if cdp_port not in excluded and not _port_open(cdp_port):
             return cdp_port
@@ -341,7 +341,7 @@ def _find_free_isolated_cdp_port(preferred: int = DEFAULT_PORT, *, exclude: set[
 
 
 def _isolated_profile_dir(profile: Path, port: int) -> Path:
-    return Path(profile) / f"isolated-{int(port)}"
+    return Path(profile) / f"isolated-{port}"
 
 
 def _ensure_cdp_endpoint(

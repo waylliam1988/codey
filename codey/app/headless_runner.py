@@ -80,7 +80,7 @@ class HeadlessAppContext(AppContext):  # type: ignore[misc,unused-ignore]
             state_home,
             replay_limit=0,
         )
-        self.port = int(port)
+        self.port = port
         self._emit_jsonl = emit_jsonl
         self._connect_provider = connect_provider
         self.shell_rejected = False

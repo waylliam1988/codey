@@ -242,7 +242,7 @@ def _qwen_enabled_send_button(page: Page) -> Locator | None:
     """Return Qwen's visible enabled send button without broad discovery."""
     try:
         buttons = page.locator("button.send-button")
-        count = int(buttons.count())
+        count = buttons.count()
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:

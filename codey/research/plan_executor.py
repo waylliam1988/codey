@@ -306,7 +306,7 @@ def _source_preview(query: str, source: dict[str, Any], body: str, limit: int) -
     title = str(source.get("title") or "").strip()
     final_url = str(source.get("final_url") or source.get("url") or "").strip()
     header = " | ".join(part for part in (title, final_url) if part)
-    text = clip((body or ""), max(500, min(4000, int(limit or 0))))
+    text = clip((body or ""), max(500, min(4000, (limit or 0))))
     return "\n".join(part for part in (f"query: {query}", header, text) if part)
 
 

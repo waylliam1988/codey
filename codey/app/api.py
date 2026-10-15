@@ -91,7 +91,7 @@ def save_ui_state_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[st
     if type(base_revision) is not int:
         return 400, {"ok": False, "error": "base_revision required"}
     try:
-        saved = ctx.save_ui_state(state, base_revision=int(base_revision))
+        saved = ctx.save_ui_state(state, base_revision=base_revision)
     except Exception as exc:
         from codey.storage.ui_state_store import UiStateConflict
 

@@ -92,9 +92,9 @@ class GhostSleepStepResult:
             "name": self.name,
             "ok": self.ok,
             "skipped_reason": self.skipped_reason,
-            "counts": {key: int(value) for key, value in self.counts.items()},
+            "counts": {key: value for key, value in self.counts.items()},
             "warnings": list(self.warnings),
-            "duration_ms": max(0, int(self.duration_ms or 0)),
+            "duration_ms": max(0, (self.duration_ms or 0)),
         }
 
 
@@ -455,10 +455,10 @@ class GhostSleepStore:
             result.ok,
             skipped_reason=clip_signal_text(result.skipped_reason, 80),
             counts={
-                "nodes_changed": int(result.nodes_changed),
-                "edges_changed": int(result.edges_changed),
-                "total_nodes": int(result.total_nodes),
-                "total_edges": int(result.total_edges),
+                "nodes_changed": result.nodes_changed,
+                "edges_changed": result.edges_changed,
+                "total_nodes": result.total_nodes,
+                "total_edges": result.total_edges,
             },
             warnings=_bounded_warnings(result.warnings),
         )
@@ -536,8 +536,8 @@ class GhostSleepStore:
             result.ok,
             skipped_reason=clip_signal_text(result.skipped_reason, 80),
             counts={
-                "items_changed": int(result.items_changed),
-                "total_items": int(result.total_items),
+                "items_changed": result.items_changed,
+                "total_items": result.total_items,
             },
             warnings=_bounded_warnings(result.warnings),
         )

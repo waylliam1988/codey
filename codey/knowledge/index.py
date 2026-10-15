@@ -384,7 +384,7 @@ class KnowledgeIndex:
         global backfill so older target-session relations cannot be truncated by
         newer unrelated vault activity.
         """
-        limit = max(0, int(limit or 0))
+        limit = max(0, (limit or 0))
         if limit <= 0:
             return []
         select_sql = (
@@ -404,7 +404,7 @@ class KnowledgeIndex:
         Session rows are read first for the same reason as `concept_edge_rows`:
         an old Research run should still be diagnosable after the vault grows.
         """
-        limit = max(0, int(limit or 0))
+        limit = max(0, (limit or 0))
         if limit <= 0:
             return []
         select_sql = (

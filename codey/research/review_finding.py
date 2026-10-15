@@ -260,7 +260,7 @@ def planner_gaps_from_findings(
     gaps: list[PlannerGap] = []
     seen: set[tuple[str, str]] = set()
     for finding in findings or ():
-        if len(gaps) >= max(0, int(limit)):
+        if len(gaps) >= max(0, limit):
             break
         kind = identifier(_field(finding, "kind"), 40)
         mapped = _GAP_KIND_BY_FINDING.get(kind)

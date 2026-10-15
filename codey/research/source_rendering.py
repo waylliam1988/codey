@@ -29,7 +29,7 @@ def render_opened_source(
         UNTRUSTED_SOURCE_END,
     ]
     if more_offset is not None:
-        lines.extend(("", f"[more text available: open with offset={max(0, int(more_offset))}]"))
+        lines.extend(("", f"[more text available: open with offset={max(0, more_offset)}]"))
     return "\n".join(lines)
 
 

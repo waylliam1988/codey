@@ -619,7 +619,7 @@ class GhostAffinityStore:
             return False
 
     def decay(self, *, min_interval_seconds: int = 0) -> dict[str, object]:
-        interval = max(0, int(min_interval_seconds or 0))
+        interval = max(0, (min_interval_seconds or 0))
         try:
 
             def decide(events: list[dict[str, object]]) -> _AffinityMutation:

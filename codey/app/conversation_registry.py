@@ -17,7 +17,7 @@ class ConversationRegistry:
         *,
         max_states: int,
     ) -> None:
-        self.max_states = max(1, int(max_states))
+        self.max_states = max(1, max_states)
         self.contexts: dict[str, ConversationContext] = {}
         self.tokens: dict[str, object] = {}
         self.lock = threading.Lock()

@@ -616,7 +616,7 @@ def _settle_slot(
     try:
         identity_obj = _kernel_workspace_identity_of(result)
         if identity_obj is not None and type(ok) is bool and ok is True:
-            record["workspace_revision"] = int(identity_obj.revision)
+            record["workspace_revision"] = identity_obj.revision
             record["workspace_fingerprint"] = identity_obj.fingerprint
     except Exception as exc:
         raise EffectSettlementFailed(f"effect settlement provenance failed for {identity}: {exc}") from exc

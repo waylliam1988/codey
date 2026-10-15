@@ -8,6 +8,8 @@ import threading
 from collections import deque
 from typing import Any
 
+from codey.utils.refs import parse_int
+
 logger = logging.getLogger(__name__)
 
 
@@ -110,18 +112,17 @@ class EventBus:
         if isinstance(last_event_id, bool):
             start = 0
         else:
-            try:
-                start = max(0, int(last_event_id or 0))
-            except (TypeError, ValueError, OverflowError):
-                start = 0
+            parsed_start = parse_int(last_event_id or 0)
+            start = max(0, parsed_start if parsed_start is not None else 0)
         with self._lock:
             if max_event_id is None:
                 cutoff = self._sequence
             else:
-                try:
-                    cutoff = min(self._sequence, max(0, int(max_event_id)))
-                except (TypeError, ValueError, OverflowError):
-                    cutoff = self._sequence
+                parsed_cutoff = parse_int(max_event_id)
+                cutoff = min(
+                    self._sequence,
+                    max(0, parsed_cutoff) if parsed_cutoff is not None else self._sequence,
+                )
             rows = [
                 (event_id, dict(payload))
                 for event_id, payload in self._replay
@@ -163,7 +164,7 @@ class EventBus:
             return
 
         try:
-            limit = max(0, int(sub.maxsize or 0))
+            limit = max(0, (sub.maxsize or 0))
         except (TypeError, ValueError, OverflowError):
             limit = 0
         while limit >= 2 and sub.qsize() > limit - 2:

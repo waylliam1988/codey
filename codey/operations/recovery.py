@@ -509,8 +509,8 @@ def _redeliver_settled_batch_for_action(
             return ResumeRecoveryResult(ok=False)
         row = _redelivered_outcome(
             projection, rebuilt,
-            turn=int(projection.intent.turn),
-            tool_index=int(projection.intent.tool_index),
+            turn=projection.intent.turn,
+            tool_index=projection.intent.tool_index,
             effect_id=effect_id,
         )
         if row is None:
@@ -593,8 +593,8 @@ def _replay_safe_tools_for_action(
             # 已结算不再重复 settle（幂等），仅记录交付恢复
             recovered = _redelivered_outcome(
                 projection, rebuilt,
-                turn=int(projection.intent.turn),
-                tool_index=int(projection.intent.tool_index),
+                turn=projection.intent.turn,
+                tool_index=projection.intent.tool_index,
                 effect_id=effect_id,
             )
             if recovered is None:

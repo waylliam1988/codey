@@ -63,7 +63,7 @@ def render_context_source(source: ContextSource) -> RenderedContextSource | None
         return None
 
     rendered = _render_block(source.heading, text)
-    budget = max(0, int(source.budget or 0))
+    budget = max(0, (source.budget or 0))
     if budget <= 0:
         return None
     rendered, truncated = clip_middle(rendered, budget)

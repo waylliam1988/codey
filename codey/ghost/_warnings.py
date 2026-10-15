@@ -33,7 +33,7 @@ def bounded_warnings(
             text = "redacted_warning"
         if text and text not in out:
             out.append(text)
-        if len(out) >= max(1, int(limit)):
+        if len(out) >= max(1, limit):
             break
     return tuple(out)
 

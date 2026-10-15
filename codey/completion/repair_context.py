@@ -395,7 +395,7 @@ def _check_facts(
         facts.append(DecisiveCheckFact(
             command=command,
             cwd=_text(_field(value, "cwd"), 160) or ".",
-            exit_code=int(exit_code) if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None,
+            exit_code=exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None,
             error_code=_token(_field(value, "error_code"), 80),
             result_summary=summary,
             managed_output_handle=_token(_field(value, "managed_output_handle"), 80),

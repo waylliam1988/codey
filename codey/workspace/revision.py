@@ -109,7 +109,7 @@ class WorkspaceIdentity:
     def attach_to_audit(self, audit: dict[str, Any]) -> dict[str, Any]:
         out = dict(audit)
         if self.trusted:
-            out["workspace_revision"] = int(self.revision)
+            out["workspace_revision"] = self.revision
             out["workspace_fingerprint"] = self.fingerprint
         return out
 

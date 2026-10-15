@@ -308,7 +308,7 @@ def sync_workspace_state_after_edit(
         )
         if not identity.trusted:
             return 0, ""
-        rev, fp = int(identity.revision), identity.fingerprint
+        rev, fp = identity.revision, identity.fingerprint
         try:
             session.set_workspace_state(rev, fp)
         except Exception as exc:

@@ -78,14 +78,14 @@ class ResearchPipelineResult:
     def to_payload(self) -> dict[str, object]:
         return {
             "followup_applied": self.followup_applied,
-            "followup_rounds": max(0, min(3, int(self.followup_rounds or 0))),
+            "followup_rounds": max(0, min(3, (self.followup_rounds or 0))),
             "stop_reason": (self.stop_reason or ""),
             "planner_stop_reason": (self.planner_stop_reason or ""),
-            "fresh_source_count": max(0, int(self.fresh_source_count or 0)),
-            "new_evidence_count": max(0, int(self.new_evidence_count or 0)),
-            "final_evidence_count": max(0, int(self.final_evidence_count or 0)),
-            "attempted_fresh_source_count": max(0, int(self.attempted_fresh_source_count or 0)),
-            "attempted_new_evidence_count": max(0, int(self.attempted_new_evidence_count or 0)),
+            "fresh_source_count": max(0, (self.fresh_source_count or 0)),
+            "new_evidence_count": max(0, (self.new_evidence_count or 0)),
+            "final_evidence_count": max(0, (self.final_evidence_count or 0)),
+            "attempted_fresh_source_count": max(0, (self.attempted_fresh_source_count or 0)),
+            "attempted_new_evidence_count": max(0, (self.attempted_new_evidence_count or 0)),
         }
 
 
@@ -271,7 +271,7 @@ class ResearchPipeline:
                 planner_stop_reason = "followup_execution_error"
                 break
             planner_stop_reason = material.stop_reason
-            attempted_sources = len(material.fresh_source_urls) if material.fresh_source_urls else max(0, int(material.fresh_source_count or 0))
+            attempted_sources = len(material.fresh_source_urls) if material.fresh_source_urls else max(0, (material.fresh_source_count or 0))
             total_attempted_fresh_sources += attempted_sources
             if not material.has_new_material:
                 break
@@ -282,7 +282,7 @@ class ResearchPipeline:
             except Exception:
                 planner_stop_reason = "followup_iteration_error"
                 break
-            attempted_ev = max(0, int(followup_result.new_evidence_count or 0))
+            attempted_ev = max(0, (followup_result.new_evidence_count or 0))
             total_attempted_new_evidence += attempted_ev
             if not followup_result.has_new_evidence:
                 planner_stop_reason = followup_result.stop_reason or "no_evidence_extracted"
@@ -514,7 +514,7 @@ class ResearchPipeline:
 
     def _max_rounds(self) -> int:
         try:
-            return max(0, min(3, int(self.config.max_followup_rounds or 0)))
+            return max(0, min(3, (self.config.max_followup_rounds or 0)))
         except (TypeError, ValueError):
             return 0
 

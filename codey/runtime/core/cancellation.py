@@ -480,7 +480,7 @@ def wait_process(
         stderr_done = stderr_state.capture.finish()
         result = CapturedProcess(
             args=args,
-            returncode=int(returncode),
+            returncode=returncode,
             stdout=stdout_done.text,
             stderr=stderr_done.text,
             stdout_bytes=stdout_done.total_bytes,

@@ -386,7 +386,7 @@ class FetchedSource:
             "evidence_ready": False,
         }
         if self.document.page_count:
-            payload["page_count"] = max(0, int(self.document.page_count))
+            payload["page_count"] = max(0, self.document.page_count)
         if self.warnings:
             payload["warnings"] = list(_safe_payload_refs(self.warnings, limit=8))
         return payload

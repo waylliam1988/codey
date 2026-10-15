@@ -484,7 +484,7 @@ def research_payload_from_tools(
         question=question,
         summary=summary,
         stop_reason=stop_reason,
-        turns=max(0, int(turns or 0)),
+        turns=max(0, (turns or 0)),
         queries=[str(getattr(item, "query", "")) for item in searches if getattr(item, "query", "")],
         search_results=list(ledger.search_results_payload()),
         opened_sources=list(ledger.opened_sources_payload()),

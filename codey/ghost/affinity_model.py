@@ -464,7 +464,7 @@ def _clean_metadata(value: object) -> dict[str, object]:
         if isinstance(item, bool) or item is None:
             clean_item: object = item
         elif isinstance(item, int):
-            clean_item = int(item)
+            clean_item = item
         elif isinstance(item, float):
             clean_item = _unit_float(item)
         else:
@@ -504,7 +504,7 @@ def _merge_ref_hashes(
         digest = text if len(text) == 24 and all(char in "0123456789abcdef" for char in text) else _ref_hash(text)
         if digest and digest not in out:
             out.append(digest)
-    return tuple(out[-max(1, int(limit or 1)) :])
+    return tuple(out[-max(1, (limit or 1)) :])
 
 
 def _merge_refs(current: object, incoming: object, *, limit: int) -> tuple[str, ...]:
@@ -517,7 +517,7 @@ def _merge_refs(current: object, incoming: object, *, limit: int) -> tuple[str, 
             continue
         if text not in out:
             out.append(text)
-    return tuple(out[-max(1, int(limit or 1)) :])
+    return tuple(out[-max(1, (limit or 1)) :])
 
 
 def _bounded_warnings(values: object) -> tuple[str, ...]:

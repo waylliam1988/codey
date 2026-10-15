@@ -1193,11 +1193,11 @@ def _locator_schema_ok(value: object) -> bool:
         and _stable_ref_schema_ok("locator_span", value.get("locator_hash"))
         and _identifier_schema_ok(value.get("kind"), 40, allow_empty=False)
         and _identifier_schema_ok(value.get("source_id"), 80, allow_empty=False)
-        and (value.get("page") is None or (isinstance(value.get("page"), int) and int(value["page"]) > 0))
+        and (value.get("page") is None or (isinstance(value.get("page"), int) and value["page"] > 0))
         and isinstance(value.get("char_start"), int)
-        and int(value.get("char_start") or 0) >= 0
+        and (value.get("char_start") or 0) >= 0
         and isinstance(value.get("char_end"), int)
-        and int(value.get("char_end") or 0) >= 0
+        and (value.get("char_end") or 0) >= 0
         and _clip_schema_ok(value.get("locator"), 80)
     )
 

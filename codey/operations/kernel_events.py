@@ -179,7 +179,7 @@ def _emit_tool_results(
                     raise failure from exc
                 if kernel_identity is not None:
                     try:
-                        event.metadata["workspace_revision"] = int(kernel_identity.revision)
+                        event.metadata["workspace_revision"] = kernel_identity.revision
                         event.metadata["workspace_fingerprint"] = kernel_identity.fingerprint
                         attach_proof_to_event(
                             event,

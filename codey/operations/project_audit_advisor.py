@@ -193,7 +193,7 @@ def run_project_audit_advisor(
         policy=policy,
         task_kind="readonly",
         project=str(project_path),
-        max_turns=max(1, int(max_turns or PROJECT_AUDIT_MAX_TURNS)),
+        max_turns=max(1, (max_turns or PROJECT_AUDIT_MAX_TURNS)),
         task_text=prompt,
     )
     bounded_provider = DeadlineProvider(provider, timeout=PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT)

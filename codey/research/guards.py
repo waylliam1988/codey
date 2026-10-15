@@ -38,7 +38,7 @@ def valid_digest_ref(value: object) -> str:
 
 
 def bounded_limit(value: object, *, default: int, upper: int) -> int:
-    return bounded_int(default if isinstance(value, bool) else value, 1, upper, default=int(default or 1))
+    return bounded_int(default if isinstance(value, bool) else value, 1, upper, default=(default or 1))
 
 
 def bounded_int(
@@ -50,9 +50,9 @@ def bounded_int(
 ) -> int:
     fallback = lower if default is None else default
     try:
-        parsed = coerce_int(value, default=int(fallback))
+        parsed = coerce_int(value, default=fallback)
     except (TypeError, ValueError, OverflowError):
-        parsed = int(fallback)
+        parsed = fallback
     return max(lower, min(upper, parsed))
 
 

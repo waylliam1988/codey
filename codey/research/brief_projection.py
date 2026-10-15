@@ -68,7 +68,7 @@ class ClaimSummary:
             "claim_ref": self.claim_ref,
             "text": _clip(self.text, MAX_CLAIM_TEXT_CHARS),
             "status": _status_token(self.status, CLAIM_STATUSES, default="unsupported"),
-            "evidence_count": max(0, int(self.evidence_count or 0)),
+            "evidence_count": max(0, (self.evidence_count or 0)),
         }
 
 
@@ -113,7 +113,7 @@ class ResearchBriefProjection:
             "claims": len(self.claim_refs),
             "evidence": len(self.evidence_refs),
             "assumptions": len(self.assumption_refs),
-            "sources": int(self.source_count),
+            "sources": self.source_count,
             "analysis_runs": len(self.analysis_run_refs),
             "artifact_versions": len(self.artifact_version_refs),
             "proof_reviews": len(self.proof_review_refs),
@@ -475,7 +475,7 @@ def _text_items(values: Iterable[object], limit: int, width: int) -> tuple[str, 
         text = _clip(str(value or "").replace("\n", " "), width)
         if text and text.casefold() not in {row.casefold() for row in out}:
             out.append(text)
-        if len(out) >= max(0, int(limit)):
+        if len(out) >= max(0, limit):
             break
     return tuple(out)
 
@@ -486,7 +486,7 @@ def _bounded_ids(values: Iterable[object], limit: int) -> tuple[str, ...]:
         token = _identifier(value, 120)
         if token and token not in out:
             out.append(token)
-        if len(out) >= max(0, int(limit)):
+        if len(out) >= max(0, limit):
             break
     return tuple(out)
 

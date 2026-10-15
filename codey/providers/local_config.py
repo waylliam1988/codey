@@ -30,6 +30,7 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
+from codey.utils.refs import parse_int
 
 if TYPE_CHECKING:
     from codey.providers.local_discovery import LocalEndpoint
@@ -145,10 +146,10 @@ def context_budget_for_window(window_tokens: int) -> LocalContextBudget:
     """Derive reserve/keep from one window size (UI passes a single number)."""
     if isinstance(window_tokens, bool):
         raise ValueError("context_window_tokens must be a positive integer")
-    try:
-        window = int(window_tokens)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError("context_window_tokens must be a positive integer") from exc
+    parsed_window = parse_int(window_tokens)
+    if parsed_window is None:
+        raise ValueError("context_window_tokens must be a positive integer")
+    window = parsed_window
     if window <= 0:
         raise ValueError("context_window_tokens must be a positive integer")
     reserve = min(max(window // 8, 8_192), 32_768)
@@ -323,9 +324,9 @@ def config_to_payload(config: LocalProviderConfig) -> dict[str, object]:
     }
     if config.context is not None:
         payload["context"] = {
-            "context_window_tokens": int(config.context.context_window_tokens),
-            "context_reserve_tokens": int(config.context.context_reserve_tokens),
-            "context_keep_recent_tokens": int(config.context.context_keep_recent_tokens),
+            "context_window_tokens": config.context.context_window_tokens,
+            "context_reserve_tokens": config.context.context_reserve_tokens,
+            "context_keep_recent_tokens": config.context.context_keep_recent_tokens,
         }
     if config.thinking_enabled is not None:
         payload["thinking_enabled"] = config.thinking_enabled

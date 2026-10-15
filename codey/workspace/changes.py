@@ -424,7 +424,7 @@ class SnapshotStore:
                 ) from exc
             if not _stat.S_ISREG(file_stat.st_mode):
                 raise StoreCorruption(self.path_for(resolved_root), f"baseline body type: {rel!r}")
-            total += int(file_stat.st_size)
+            total += file_stat.st_size
             if total > MAX_SNAPSHOT_TOTAL_BYTES:
                 break
         return total

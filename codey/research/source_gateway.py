@@ -250,7 +250,7 @@ class ResearchSourceGateway:
         source = self.ledger.source_record_for_url(final_url)
         if source is None or source.content_kind != "pdf":
             return False
-        page_count = max(0, int(source.page_count or 0))
+        page_count = max(0, (source.page_count or 0))
         if page_count <= 0:
             return False
         scan_end = min(page_count, PDF_SOURCE_SEARCH_MAX_PAGES)
@@ -261,7 +261,7 @@ class ResearchSourceGateway:
         source = self.ledger.source_record_for_url(final_url)
         if source is None or source.content_kind != "pdf":
             return []
-        page_count = max(0, int(source.page_count or 0))
+        page_count = max(0, (source.page_count or 0))
         if page_count <= 0:
             return []
         scan_end = min(page_count, PDF_SOURCE_SEARCH_MAX_PAGES)

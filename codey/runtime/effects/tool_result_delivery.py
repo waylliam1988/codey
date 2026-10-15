@@ -440,7 +440,7 @@ class DeliveryBatchIntent:
             "run_id": self.run_id,
             "lane": lane,
             "operation_id": operation_id,
-            "turn": int(self.turn),
+            "turn": self.turn,
             "items": [it.to_dict() for it in self.items],
             "batch_digest": self.batch_digest,
             "created_at": self.created_at or datetime.now(UTC).isoformat(),

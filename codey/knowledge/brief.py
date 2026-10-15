@@ -142,7 +142,7 @@ def _section_lines(
         stripped = _clip(stripped, MAX_ITEM_CHARS)
         if stripped.casefold() not in {row.casefold() for row in out}:
             out.append(stripped)
-        if len(out) >= max(0, int(limit)):
+        if len(out) >= max(0, limit):
             break
     return tuple(out)
 
@@ -195,7 +195,7 @@ def _merge_lines(
             continue
         seen.add(key)
         out.append(item)
-        if len(out) >= max(0, int(limit)):
+        if len(out) >= max(0, limit):
             break
     return tuple(out)
 

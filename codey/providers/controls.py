@@ -184,7 +184,7 @@ def visible_locator(page: Any, selector: str) -> Locator | None:
     except Exception:
         return None
     try:
-        count = int(count)
+        count = count
     except (TypeError, ValueError, OverflowError):
         return None
     for index in range(count - 1, -1, -1):
@@ -316,7 +316,7 @@ def unique_visible_locator(page: Any, selector: str) -> Locator | None:
     locator: Locator = page.locator(selector)
     matches: list[Locator] = []
     try:
-        count = int(locator.count())
+        count = locator.count()
     except Exception:
         return None
     for index in range(count):

@@ -124,7 +124,7 @@ def bounded_runtime_refs(
         if not ref or ref in refs:
             continue
         refs.append(ref)
-        if len(refs) >= max(0, int(limit)):
+        if len(refs) >= max(0, limit):
             break
     return tuple(refs)
 

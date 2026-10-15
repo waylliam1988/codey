@@ -223,7 +223,7 @@ class ResearchQuestion:
         return {
             "question_id": self.question_id,
             "question_text_digest": self.question_text_digest,
-            "chars": max(0, int(self.chars or 0)),
+            "chars": max(0, (self.chars or 0)),
         }
 
 
@@ -406,7 +406,7 @@ class ResearchRecord:
                 item.to_jsonable() for item in self.assumptions[:MAX_RECORD_ASSUMPTIONS]
             ],
             "relations": [item.to_jsonable() for item in self.relations[:MAX_RECORD_RELATIONS]],
-            "unsupported_claim_count": max(0, int(self.unsupported_claim_count or 0)),
+            "unsupported_claim_count": max(0, (self.unsupported_claim_count or 0)),
             "run_id": _clip(self.run_id, 120),
             "session_id": _clip(self.session_id, 120),
             "project_ref": dict(self.project_ref),
@@ -591,7 +591,7 @@ def research_record_summary(record: ResearchRecord | Mapping[str, object]) -> di
             "evidence_count": len(record.evidence),
             "claim_count": len(record.claims),
             "assumption_count": len(record.assumptions),
-            "unsupported_claim_count": max(0, int(record.unsupported_claim_count or 0)),
+            "unsupported_claim_count": max(0, (record.unsupported_claim_count or 0)),
             "record_digest": content_digest(record.record_digest),
         }
     return {
@@ -633,8 +633,8 @@ def source_from_opened(opened: OpenedSource) -> ResearchSource:
         content_hash=_clip(opened.text_hash, 80),
         retrieved_at=_clip(opened.retrieved_at, 80),
         content_kind=_identifier(opened.content_kind, 40) or "html",
-        page_count=max(0, int(opened.page_count or 0)),
-        pages_read=tuple(int(page) for page in opened.pages_read if int(page) > 0),
+        page_count=max(0, (opened.page_count or 0)),
+        pages_read=tuple(page for page in opened.pages_read if page > 0),
         truncated=opened.truncated,
         quality=opened.quality.to_dict(),
     )
@@ -696,7 +696,7 @@ def _locator_for_evidence(
     source_id: str,
     final_url: str,
 ) -> EvidenceLocator:
-    page = int(item.page) if item.page is not None and int(item.page) > 0 else None
+    page = item.page if item.page is not None and item.page > 0 else None
     source = ledger.source_record_for_url(final_url)
     kind = _identifier(getattr(source, "content_kind", ""), 40) or "html"
     if page is not None and kind == "pdf":
@@ -744,7 +744,7 @@ def _evidence_refs_for_citations(
     clean = _normalize_text(claim_text)
     claim_digest = _digest_text(clean)
     for number in citation_numbers:
-        url = (citation_urls.get(int(number)) or "")
+        url = (citation_urls.get(number) or "")
         source_id = source_ids_by_url.get(url)
         if not source_id:
             continue
@@ -961,7 +961,7 @@ def _close_claim_graph(
         and (relation.to_ref in assumption_ids or relation.to_ref in evidence_ids)
     )[:MAX_RECORD_RELATIONS]
     unsupported = max(
-        int(fallback_unsupported_count or 0),
+        (fallback_unsupported_count or 0),
         sum(1 for claim in closed_claims if claim.status == "unsupported"),
     )
     return tuple(closed_claims), kept_assumptions, closed_relations, unsupported

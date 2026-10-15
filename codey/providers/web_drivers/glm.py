@@ -260,7 +260,7 @@ def _response_count(page: Page) -> int:
 
 def _question_count(page: Page) -> int:
     try:
-        return int(page.locator(PROFILE.selector("question")).count())
+        return page.locator(PROFILE.selector("question")).count()
     except Exception:
         return 0
 

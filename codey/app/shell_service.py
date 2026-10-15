@@ -145,13 +145,13 @@ class ShellExecutionTicket:
 
 def _approval_generation_current(ctx: TaskState, expected: int) -> bool:
     try:
-        current = int(ctx.approval_generation())
+        current = ctx.approval_generation()
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
         # Fail closed: an unreadable epoch must stop execution, never approve.
         return False
-    return int(expected or 0) == int(current or 0)
+    return (expected or 0) == (current or 0)
 
 
 def _stopped_shell_result() -> dict[str, Any]:
@@ -420,7 +420,7 @@ def execute_approved_shell(
     generation: int | None = expected_approval_generation
     if generation is None:
         try:
-            generation = int(ctx.approval_generation())
+            generation = ctx.approval_generation()
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             return _stopped_shell_result()
         except Exception:
@@ -428,7 +428,7 @@ def execute_approved_shell(
     ticket = ShellExecutionTicket(
         command=command,
         cwd=cwd,
-        generation=int(generation or 0),
+        generation=(generation or 0),
         timeout=resolved_timeout,
         output_limit=resolved_limit,
     )

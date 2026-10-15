@@ -403,7 +403,7 @@ class ResearchLedger:
     def evidence_pages_for_url(self, source_url: str) -> set[int]:
         final_url = opened_url(self, source_url)
         return {
-            int(item.page)
+            item.page
             for item in self.evidence_items
             if item.source_url == final_url and item.page is not None and item.excerpt.strip()
         }

@@ -230,6 +230,7 @@ class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_submit_presses_enter_and_waits_for_new_response(self) -> None:
         page = mock.Mock()
+        page.locator.return_value.count.return_value = 0
         textarea = mock.Mock()
 
         with (
@@ -534,6 +535,7 @@ class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_uncertain_enter_submission_never_requests_a_second_action(self) -> None:
         page = mock.Mock()
+        page.locator.return_value.count.return_value = 0
         textarea = mock.Mock()
         with (
             mock.patch.object(mimo, "_message_box", return_value=textarea),
@@ -585,6 +587,7 @@ class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_uncertain_submission_continues_until_delayed_answer(self) -> None:
         page = mock.Mock()
+        page.locator.return_value.count.return_value = 0
         textarea = mock.Mock()
         response = mock.Mock()
         response.evaluate.return_value = "false"
@@ -614,6 +617,7 @@ class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_chat_stops_response_watch_once_after_driver_error(self) -> None:
         page = mock.Mock()
+        page.locator.return_value.count.return_value = 0
         textarea = mock.Mock()
         textarea.click.side_effect = RuntimeError("click failed")
         with (
@@ -683,6 +687,7 @@ class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_chat_wires_typing_transition_into_revival_transaction(self) -> None:
         page = mock.Mock(url="https://aistudio.xiaomimimo.com/#/c")
+        page.locator.return_value.count.return_value = 0
         textarea = mock.Mock()
         typing = mock.Mock()
         typing.evaluate.return_value = "true"

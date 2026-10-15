@@ -94,7 +94,7 @@ class FlowTrace:
     """Keep a small in-memory sequence of boolean observations only."""
 
     def __init__(self, limit: int = MAX_TRACE_EVENTS) -> None:
-        self.limit = max(1, min(int(limit), MAX_TRACE_EVENTS))
+        self.limit = max(1, min(limit, MAX_TRACE_EVENTS))
         self._events: list[dict[str, bool]] = []
 
     def add(self, observation: FlowObservation) -> None:

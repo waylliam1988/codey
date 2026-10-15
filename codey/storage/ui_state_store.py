@@ -395,7 +395,7 @@ class UiStateConflict(ValueError):
 
     def __init__(self, current_revision: int, message: str = "ui_state_conflict") -> None:
         super().__init__(message)
-        self.current_revision = int(current_revision or 0)
+        self.current_revision = (current_revision or 0)
 
 
 def _content_equal(first: dict[str, Any], second: dict[str, Any]) -> bool:

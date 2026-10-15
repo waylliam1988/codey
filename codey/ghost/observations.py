@@ -158,7 +158,7 @@ class GhostObservationStore:
                 if wanted_project and _common.normalize_project(row.get("project")) != wanted_project:
                     continue
             out.append(row)
-            if len(out) >= max(1, int(limit or 1)):
+            if len(out) >= max(1, (limit or 1)):
                 break
         return tuple(out)
 

@@ -110,7 +110,7 @@ class BrowserWorker:
         stuck_after_seconds: float = DEFAULT_STUCK_AFTER_SECONDS,
         max_queue_size: int = DEFAULT_MAX_QUEUE_SIZE,
     ) -> None:
-        self._queue: queue.Queue[_Job] = queue.Queue(maxsize=max(1, int(max_queue_size)))
+        self._queue: queue.Queue[_Job] = queue.Queue(maxsize=max(1, max_queue_size))
         self._thread_id: int | None = None
         self._stuck_after_seconds = max(_POLL_INTERVAL, float(stuck_after_seconds))
         self._state_lock = threading.Lock()
@@ -261,7 +261,7 @@ class BrowserWorker:
             state = "stuck" if stuck else job_state.value
         return BrowserWorkerHealth(
             state=state,
-            queue_size=max(0, int(self._queue.qsize())),
+            queue_size=max(0, self._queue.qsize()),
             current_job_state=current_state,
             running_for_seconds=running_for,
             stuck_after_seconds=self._stuck_after_seconds,

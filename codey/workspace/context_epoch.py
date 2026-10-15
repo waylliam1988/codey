@@ -85,8 +85,8 @@ class ContextAdmission:
             "source_key": _identifier(self.source_key, 80),
             "source_ref": _clip(self.source_ref, 120),
             "digest": self.digest,
-            "chars": max(0, min(int(self.chars or 0), MAX_ADMISSION_CHARS)),
-            "budget": max(0, int(self.budget or 0)),
+            "chars": max(0, min((self.chars or 0), MAX_ADMISSION_CHARS)),
+            "budget": max(0, (self.budget or 0)),
             "truncated": self.truncated,
         }
         if capability:

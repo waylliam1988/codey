@@ -450,8 +450,8 @@ def _scope_deleted_event(
         "payload": {
             "scope": _clean_scope_value(scope),
             "scope_ref": clip_signal_text(scope_ref, 120),
-            "removed_nodes": max(0, int(removed_nodes or 0)),
-            "removed_edges": max(0, int(removed_edges or 0)),
+            "removed_nodes": max(0, (removed_nodes or 0)),
+            "removed_edges": max(0, (removed_edges or 0)),
         },
     }
 
@@ -473,11 +473,11 @@ def _decay_applied_event(
         "event_id": "gac_" + uuid.uuid4().hex[:24],
         "ts": clip_signal_text(ts, 80),
         "payload": {
-            "removed_nodes": max(0, int(removed_nodes or 0)),
-            "removed_edges": max(0, int(removed_edges or 0)),
-            "decayed_nodes": max(0, int(decayed_nodes or 0)),
-            "decayed_edges": max(0, int(decayed_edges or 0)),
-            "min_interval_seconds": max(0, int(min_interval_seconds or 0)),
+            "removed_nodes": max(0, (removed_nodes or 0)),
+            "removed_edges": max(0, (removed_edges or 0)),
+            "decayed_nodes": max(0, (decayed_nodes or 0)),
+            "decayed_edges": max(0, (decayed_edges or 0)),
+            "min_interval_seconds": max(0, (min_interval_seconds or 0)),
         },
     }
 

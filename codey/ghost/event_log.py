@@ -361,7 +361,7 @@ def control_event(
 
 def _tail_lines(path: Path, max_rows: int, size: int) -> list[str]:
     chunks: list[bytes] = []
-    remaining = max(0, int(size))
+    remaining = max(0, size)
     newlines = 0
     with path.open("rb") as handle:
         while remaining > 0 and newlines <= max_rows:

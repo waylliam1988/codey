@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from codey.utils.refs import parse_int
+
 
 class SeenInfoLRU:
     """Bounded dedupe for information-tool outputs.
@@ -17,10 +19,8 @@ class SeenInfoLRU:
         if isinstance(max_items, bool):
             max_items = 256
         else:
-            try:
-                max_items = int(max_items)
-            except (TypeError, ValueError, OverflowError):
-                max_items = 256
+            parsed_items = parse_int(max_items)
+            max_items = parsed_items if parsed_items is not None else 256
         self.max_items = max(1, max_items)
         self._order: dict[tuple[str, str, str], None] = {}
 

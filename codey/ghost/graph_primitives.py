@@ -79,7 +79,7 @@ def any_decay_due(
     min_interval_seconds: int,
 ) -> bool:
     """True when any decay basis is older than the minimum interval."""
-    threshold = max(0, int(min_interval_seconds or 0))
+    threshold = max(0, (min_interval_seconds or 0))
     if threshold <= 0:
         return True
     now_ts = parse_ts(now)
@@ -122,7 +122,7 @@ def bound_graph_nodes(
         or float(getattr(row, "weight", 0.0) or 0.0) >= threshold
     ]
     kept.sort(key=_node_rank, reverse=True)
-    return kept[: max(0, int(limit or 0))]
+    return kept[: max(0, (limit or 0))]
 
 
 def bound_graph_edges(
@@ -137,8 +137,8 @@ def bound_graph_edges(
     """Keep edges between surviving nodes above ``min_weight`` (active-only
     when ``require_active``), by weight, with per-endpoint degree caps."""
     threshold = float(min_weight)
-    cap = max(0, int(limit or 0))
-    degree_cap = max(0, int(max_out_degree or 0))
+    cap = max(0, (limit or 0))
+    degree_cap = max(0, (max_out_degree or 0))
     kept = [
         row
         for row in rows

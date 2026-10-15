@@ -147,7 +147,7 @@ class TaskRuntime:
 def _turn_budget(request: TaskSubmission) -> int:
     """Clamp the durable turn budget to the API contract (min 1)."""
     try:
-        return max(1, int(request.max_turns or 0))
+        return max(1, (request.max_turns or 0))
     except (TypeError, ValueError):
         return 1
 

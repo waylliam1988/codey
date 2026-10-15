@@ -136,7 +136,7 @@ class TopicContinuityProjection:
                 "kind": _PROJECTION_KIND,
                 "items": item_rows,
                 "candidates": candidate_rows,
-                "claim_ref_count": max(0, int(self.claim_ref_count)),
+                "claim_ref_count": max(0, self.claim_ref_count),
                 "truncated": self.truncated,
             },
             ensure_ascii=True,
@@ -150,7 +150,7 @@ class TopicContinuityProjection:
             "admitted": self.admitted,
             "item_count": len(self.items),
             "candidate_count": len(self.candidates),
-            "claim_ref_count": max(0, int(self.claim_ref_count)),
+            "claim_ref_count": max(0, self.claim_ref_count),
             "truncated": self.truncated,
             "reason_codes": reason_codes,
             "warnings": list(self.warnings),
@@ -265,7 +265,7 @@ def build_topic_candidates(
             row.candidate_id,
         ),
     )
-    return tuple(ranked[:max(0, int(limit))])
+    return tuple(ranked[:max(0, limit)])
 
 
 @dataclass(frozen=True)
@@ -290,7 +290,7 @@ def render_topic_continuity(
     budget_chars: int = DEFAULT_TOPIC_BUDGET_CHARS,
 ) -> TopicContinuityRendering:
     """Render the bounded model-visible hint block within the char budget."""
-    budget = max(0, int(budget_chars or 0))
+    budget = max(0, (budget_chars or 0))
     if budget <= 0:
         return TopicContinuityRendering("", 0, 0)
     sections: list[tuple[str, list[str]]] = []
@@ -316,7 +316,7 @@ def render_topic_continuity(
             [f"- {item.text}" for item in preference_rows],
         ))
 
-    claims = max(0, int(claim_ref_count or 0))
+    claims = max(0, (claim_ref_count or 0))
     if claims:
         sections.append((
             "",

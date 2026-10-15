@@ -656,9 +656,9 @@ def _python_syntax_regression_hint(rel: str, before: str, after: str) -> str:
     except SyntaxError as exc:
         message = " ".join((exc.msg or "invalid syntax").split())
         message = message[:PYTHON_SYNTAX_HINT_MAX_MESSAGE_CHARS]
-        location = f"line {max(1, int(exc.lineno or 1))}"
+        location = f"line {max(1, (exc.lineno or 1))}"
         if exc.offset:
-            location += f", column {max(1, int(exc.offset))}"
+            location += f", column {max(1, exc.offset)}"
         return (
             f"\nSyntax regression detected in {rel} at {location}: {message}.\n"
             "The edit was applied. Inspect and repair the current file "
@@ -1337,8 +1337,8 @@ def run_command_raw(
         started_at=started_at,
         finished_at=_utc_now_iso(),
         duration_ms=duration_ms,
-        stdout_bytes=int(proc.stdout_bytes),
-        stderr_bytes=int(proc.stderr_bytes),
+        stdout_bytes=proc.stdout_bytes,
+        stderr_bytes=proc.stderr_bytes,
         capture_truncated=(proc.stdout_truncated or proc.stderr_truncated),
     )
 
@@ -1360,9 +1360,9 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
     if raw.finished_at:
         audit["command_finished_at"] = raw.finished_at
     if raw.duration_ms is not None:
-        audit["command_duration_ms"] = max(0, min(int(raw.duration_ms), 10**9))
-    stdout_bytes = max(0, int(raw.stdout_bytes))
-    stderr_bytes = max(0, int(raw.stderr_bytes))
+        audit["command_duration_ms"] = max(0, min(raw.duration_ms, 10**9))
+    stdout_bytes = max(0, raw.stdout_bytes)
+    stderr_bytes = max(0, raw.stderr_bytes)
     audit["process_stdout_bytes"] = stdout_bytes
     audit["process_stderr_bytes"] = stderr_bytes
     audit["process_bytes"] = stdout_bytes + stderr_bytes

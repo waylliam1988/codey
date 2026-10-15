@@ -315,8 +315,8 @@ def _approval_stop(
                 deferred_calls=deferred,
                 call_id=str(getattr(call, "call_id", "") or ""),
                 provider_id=str(provider_id or ""),
-                turn=int(turn),
-                tool_index=int(index),
+                turn=turn,
+                tool_index=index,
                 window_ref=window_ref,
             )
         )
@@ -349,7 +349,7 @@ def _kernel_handle_protocol(
     if not getattr(plan, "protocol_error", ""):
         return None
     invalid_turns += 1
-    if stagnant_turns is not None and invalid_turns >= max(1, int(stagnant_turns)):
+    if stagnant_turns is not None and invalid_turns >= max(1, stagnant_turns):
         # 阈值终止走同一有界关闭：回答当前 id 及后续新调用，不执行工具。
         # 关闭失败必须反馈 provider failure。
         if native and not isinstance(reply, str):
@@ -937,7 +937,7 @@ def _handle_done_reply(
         except Exception as receipt_exc:
             return KernelResult(
                 completed=False, summary=f"provider failed: {receipt_exc}",
-                turns=int(session.turn or 0), stop_reason="provider_failure",
+                turns=(session.turn or 0), stop_reason="provider_failure",
             )
         return prompt, pending
     if verdict.complete is True:
@@ -965,13 +965,13 @@ def _handle_done_reply(
                 return KernelResult(
                     completed=False,
                     summary=f"provider failed delivering done receipt: {exc}",
-                    turns=int(session.turn or 0),
+                    turns=(session.turn or 0),
                     stop_reason="delivery_pending",
                     proof=getattr(verdict, "proof", None),
                     delivery="unknown" if getattr(exc, "provider_failure_kind", "") == "submission_uncertain" else "failed",
                 )
         return KernelResult(
-            completed=True, summary=session.last_done_text, turns=int(session.turn or 0), stop_reason="done",
+            completed=True, summary=session.last_done_text, turns=(session.turn or 0), stop_reason="done",
             proof=getattr(verdict, "proof", None),
             delivery="success" if has_calls else "not_required",
         )
@@ -980,6 +980,6 @@ def _handle_done_reply(
     except Exception as exc:
         return KernelResult(
             completed=False, summary=f"provider failed: {exc}",
-            turns=int(session.turn or 0), stop_reason="provider_failure",
+            turns=(session.turn or 0), stop_reason="provider_failure",
         )
     return verdict.followup, pending
