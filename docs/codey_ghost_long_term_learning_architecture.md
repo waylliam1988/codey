@@ -1,5 +1,9 @@
 # Codey / Ghost 长期学习架构：从经验到可塑性认知网络
 
+> 文档类型：长期研究愿景，不是当前已实现的功能清单或发布验收标准。
+> 与[Ghost 方向](ghost_future_direction.zh-CN.md)一起阅读；当前能力见
+> [能力说明](codey_capabilities.zh-CN.md)。
+
 > 目标：设计一个可以用多年时间持续研究、逐步增强的 Ghost。
 >
 > 核心思想不是“现在就做一个 Hebbian LLM”，而是先让 Codey 给 Ghost 留下稳定、干净、可演化的学习接口，使未来可以逐步实验高维神经元、recurrent connections、temporal Hebbian learning、inhibition、normalization、synaptic decay、eligibility traces、neuromodulation、hierarchical representations、sparse distributed representations、winner-take-all 和 context-dependent connections。

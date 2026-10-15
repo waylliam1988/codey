@@ -6,9 +6,8 @@ registered-check, permission, budget and current-review boundaries are tested by
 `tests/project_candidate_recovery_fixture.py`.
 
 The old offline candidate proposal and punctuation-specific behavioral worker
-were retired on 2026-10-11. Earlier [experiment results](../../docs/candidate-validation-and-behavioral-repair-experiment-2026-10-10.zh-CN.md)
-remain historical evidence. They are not evidence for the current removal or
-for generalized review quality. `candidate_recovery_koboldcpp_ab.py` now accepts
+were retired on 2026-10-11. Their experiment records remain in Git history and
+do not establish generalized review quality. `candidate_recovery_koboldcpp_ab.py` now accepts
 only frozen-source `production-ab`; no proposal is injected.
 Additional external semantic cases live in `semantic_holdout_local_ab.py`.
 

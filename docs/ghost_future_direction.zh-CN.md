@@ -1,5 +1,9 @@
 # Codey Ghost 未来发展方向
 
+> 文档类型：未来方向；未落地的建议不代表当前能力或发布承诺。
+> 当前行为以[能力说明](codey_capabilities.zh-CN.md)和
+> [Runtime 架构](runtime_architecture.zh-CN.md)为准。
+
 ## 定位
 
 Ghost 的长期价值不是把 Codey 变成另一个大模型，也不是让 runtime 自己替模型思考。Ghost 更适合成为 Codey 的本地自适应层：

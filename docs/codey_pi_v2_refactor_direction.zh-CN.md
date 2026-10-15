@@ -1,6 +1,8 @@
 # Codey Pi v2-inspired 重构方向
 
-> 面向 Codey 0.5.8 的架构设计备忘录；当前实现候选已落地，待 review / release。
+> 文档类型：源于 Codey 0.5.8 的历史重构备忘录，混合当时实现记录与后续建议。
+> 当前实现与发布状态以[Runtime 架构](runtime_architecture.zh-CN.md)、
+> [职责地图](project_structure.zh-CN.md)和根目录 TEST_REPORT 为准，本文不再作为待发布状态说明。
 > 结论：Codey 应该学习 Pi v2 的内核纪律，但不应该照着 Pi 重写。
 
 ## 参考来源

@@ -17,7 +17,7 @@ coverage==7.14.2
 build==1.3.0
 ruff==0.15.14
 mypy==1.18.2
-# Pinned for the full-tree Pyrefly CI gate; see docs/pyrefly-baseline-2026-10-09.md.
+# Pinned for the full-tree Pyrefly CI gate; see docs/typechecking.md.
 pyrefly==1.3.2
 # Pinned for the full-tree ty CI gate.
 ty==0.0.87

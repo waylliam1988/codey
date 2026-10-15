@@ -153,6 +153,9 @@ unsettled dangerous writes are not blindly retried.
 
 ## Documentation
 
+See the [documentation index](docs/README.md) for current guides, future
+directions and historical evidence.
+
 Read-only review uses the selected Reviewer, validates findings against the
 actual input scope and checks whether the workspace changed. Partial or
 unavailable results are explicit; review approval does not replace tests.

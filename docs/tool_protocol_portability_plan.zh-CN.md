@@ -1,5 +1,9 @@
 # Codey Tool Protocol Portability Plan
 
+> 文档类型：跨版本协议策略与演进记录。0.4 阶段路径、工具名和实验计划保留为历史，
+> 不作为当前 API 索引；现行边界见[Runtime 架构](runtime_architecture.zh-CN.md)。
+> 尚未落地的策略应单独验证，不能从本文推断已完成或应恢复旧代码路径。
+
 ## 定位
 
 这份文档记录 Codey 面对一个长期风险时的工具协议策略：

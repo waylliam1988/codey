@@ -99,8 +99,8 @@ in `manual/semantic_holdout_local_ab.py`. This change does not run live comparis
 
 ## Full-tree typing and execution boundaries
 
-- `test_ci_full_tree_typing_gate.py`: full-tree mypy and direct Pyrefly commands,
-  without baseline exemptions, using the pinned CI version.
+- `test_ci_full_tree_typing_gate.py`: full-tree mypy, Pyrefly and ty commands on
+  every CI Python target, without baseline exemptions, using pinned tool versions.
 - `test_pyrefly_type_boundary_regressions.py`: mixed event payloads and structured
   failures for missing project tools, missing sessions and direct edit boundaries.
   Runtime payload assertions are paired with the full-tree type-checking gate.
@@ -108,10 +108,9 @@ in `manual/semantic_holdout_local_ab.py`. This change does not run live comparis
 - `test_cancellation.py` and `test_windows_spawn_assigns_job_before_resuming_process.py`:
   process ownership, cleanup and suspension with normal and substituted `Popen`.
 
-The final full suite after the typing fixes passed **8098 tests, 7 skipped,
-1503 subtests**. Required machine contracts passed **798 tests** with no skips.
-See [the test record](../TEST_REPORT.md) and
-[the Pyrefly gate](../docs/pyrefly-baseline-2026-10-09.md).
+Current verification results belong in [the test record](../TEST_REPORT.md).
+The [type-checking guide](../docs/typechecking.md) describes Python and frontend
+boundaries; historical migration counts and rollout baselines remain in Git.
 
 ## Traceable context views and local comparisons
 

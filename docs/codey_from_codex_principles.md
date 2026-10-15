@@ -1,5 +1,9 @@
 # Codey 从 Codex 借鉴什么、避免什么
 
+> 文档类型：设计原则与演进讨论，包含已落地内容和后续建议。当前实现入口以
+> [Runtime 架构](runtime_architecture.zh-CN.md)和[职责地图](project_structure.zh-CN.md)为准；
+> 本文的建议不自动成为当前能力或验收结论。
+
 > 核心判断：**Codey 不应该复制 Codex，而应该吸收 Codex 已经验证有效的工程思想，同时避免在快速功能扩张中形成过重的 runtime、provider 特化和状态复杂度。**
 
 ## 1. 总原则

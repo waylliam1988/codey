@@ -87,8 +87,8 @@ max-statements = 80
 "tools/**" = ["PLR0912", "PLR0915", "C901"]
 
 [tool.mypy]
-# The full tree is gated in CI. The frozen starting baseline remains in
-# tools/mypy-baseline-2026-10-03.txt and docs/mypy-baseline-2026-10-03.md.
+# The full tree is gated in CI; current checks are documented in docs/typechecking.md.
+# Historical raw baseline: tools/mypy-baseline-2026-10-03.txt (not a gate exemption).
 # New boundaries should use precise annotations and Protocols over Any.
 strict = true
 python_version = "3.11"
