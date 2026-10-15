@@ -18,6 +18,12 @@ Codey is a **local developer and research tool**, not a consumer chat app. The U
 
 When in doubt: remove color, remove chrome, remove copy.
 
+Icon-only actions (project/chat more menus, new chat, topbar/sidebar controls,
+message Copy, send/stop, document reload/copy/close and Shell Copy) brighten on
+pointer hover without adding an individual button background. Keep full-row
+hover and selected surfaces. Preserve an explicit keyboard-visible focus cue;
+mouse focus alone must not introduce a focus frame.
+
 ---
 
 ## 2. Color tokens
@@ -221,8 +227,19 @@ Uppercase, muted, no background. Never use colored section headers.
 - Project names match independently of their chats: a matching empty project remains visible with `No chats`. Search shows only groups with matches, or a single `No matches` state when nothing matches. Temporary expansion uses an expanded chevron and returns to the saved state when search closes.
 - Sidebar empty states (`No projects`, `No chats`, `No matches`) use 12px `--text-dim`; group labels retain `--muted`.
 - A nonempty search shows a small SVG clear icon at the input's right edge, using `--text-dim` and `--text` on hover, with no fill, border, or background. Replace the browser's native colored clear control. Its accessible name is `Clear search`; pointer click or keyboard activation clears the query and returns focus to the open input. Empty or closed search hides the icon.
-- A monochrome gear + `Settings` row sits at the sidebar bottom, sharing the sidebar action alignment and 34px height. The topbar more menu and `Ctrl+,` open the same settings dialog when the sidebar is collapsed.
+- A monochrome gear + `Settings` row sits at the sidebar bottom, sharing the sidebar action alignment and 34px height. `Ctrl+,` opens the same settings dialog even when the sidebar is collapsed. Do not duplicate Settings in the topbar menu.
 - The sidebar's existing right divider has a 6px transparent drag target, with a `col-resize` cursor and a single gray line on hover/focus. It is a keyboard-focusable vertical separator named `Resize sidebar`; Left/Right adjust by 10px, Home/End reach the available bounds, and double-click restores 260px. Pointer capture keeps dragging stable outside the divider. Escape, pointer cancellation, or window blur cancels an active drag. Disable width animation and text selection only during the drag; release immediately restores ordinary selection. Hiding the sidebar hides the separator.
+
+Project rows reserve space for a more menu and a small SVG new-chat action. On
+hover-capable devices these actions are hidden at rest, appearing on row hover
+or keyboard-visible focus without shifting the project title. The new-chat
+action opens a chat in that project and expands the project. Touch devices keep
+both actions visible. Hover brightens the icon only, without an individual button background; retain the keyboard-visible focus outline. Use the existing monochrome row styling and the shared 16px square-and-pencil SVG for new-chat actions.
+
+Expanded projects initially show at most five chats, retaining the active chat
+in that preview. `Show more` reveals the remaining chats; `Show less` restores
+the preview. This is local presentation state and never deletes chats. Search
+shows all matching chats regardless of this preview limit.
 
 Context menus (`.ctx-menu`):
 
@@ -353,7 +370,7 @@ Changes   3 files                    View diff
 
 File stats stay gray in the stream; addition/deletion tints stay inside the diff drawer.
 
-**Assistant long replies:** render expanded by default. If the reply is long, show a quiet `Collapse` text action below it; clicking it folds the body and changes the action to `Expand`. Do not default to collapsed answers.
+**Assistant long replies:** keep the full answer expanded without Collapse/Expand actions. Preserve text selection and whole-message copying; process history uses its own disclosure and does not fold the answer.
 
 **Reading and copying:** prose, code, paths, commands, diff, and error details support native pointer selection and copying. Message/code Copy actions complement selection. Following is explicit reading state: upward wheel/touch movement, reading keys, scrollbar dragging, text selection and question navigation stop following, even 40px from the bottom. Composer keys, horizontal code scrolling and content geometry changes do not imply reading intent. Resume only when the reader actually reaches the bottom (2px rounding tolerance), releases the scrollbar there, or activates `Back to latest`. Streaming and chunked rendering respect this state. Preserve the visible reading anchor during updates, process disclosure changes and chat switching.
 
@@ -391,7 +408,7 @@ drawer/Settings opening, or window blur. Respect reduced motion by disabling
 the width transition. Fixed UI labels stay English; question/reply excerpts
 retain their original language and are inserted as text, never HTML.
 
-Whole-message Copy icons under user messages and model answers are hidden at rest on devices with hover. Reveal only the relevant message's icon when its continuous region (body, intervening space, and button) is hovered or contains keyboard-visible focus. Preserve the button's layout space, but disable pointer interaction while hidden. Mouse focus alone must not keep an icon visible after leaving; Tab reveals the button with the existing gray focus background. Keep icons visible on devices without hover. During copying, keep the icon visible and prevent duplicate activation without removing keyboard focus. After completion, retain gray success feedback for 1.2 seconds, or retryable failure feedback for 4 seconds, even after pointer exit. Code-block and thinking Copy controls retain their existing visibility rules. Respect reduced-motion preferences.
+Whole-message Copy icons under user messages, model answers and status messages are hidden at rest on devices with hover. Reveal only the relevant message's icon when its continuous region (body, intervening space, and button) is hovered or contains keyboard-visible focus. Preserve the button's layout space, but disable pointer interaction while hidden. Mouse focus alone must not keep an icon visible after leaving; Tab reveals the button with a gray keyboard focus background; pointer hover brightens only the icon. Keep icons visible on devices without hover. During copying, keep the icon visible and prevent duplicate activation without removing keyboard focus. After completion, retain gray success feedback for 1.2 seconds, or retryable failure feedback for 4 seconds, even after pointer exit. Code-block Copy reveals on its code region; Thinking Copy reveals on its reasoning section or keyboard-visible focus, and remains visible on devices without hover. Respect reduced-motion preferences.
 
 Right-clicking selected chat/drawer text or an editable text selection opens a small `Copy` menu in the existing `.ctx-menu` language: dark `--panel`, gray text, 8px radius, one subtle border, and no accent. The menu item has no individual border or focus outline. Pointer opening shows plain text; hover or keyboard navigation uses the existing gray row background for focus. Copy uses the exact selected text, preserving the draft and selection; whole-message and code Copy buttons keep their existing behavior. Shift+F10 / the context-menu key opens the same selection menu. Escape returns focus and selection to the source; outside click, scrolling, window resizing, and chat switching dismiss it. Keep the menu within the viewport. A successful copy briefly shows gray `Copied`; failure shows gray `Could not copy` and leaves Copy available to retry. Do not offer a stale text selection for an unselected input or expose password selections. Desktop copying uses this menu without enabling developer/debug menus in the host.
 
@@ -409,6 +426,18 @@ $ pytest -q
 ```
 
 Plain `--panel` card. `Allow` is `text-btn primary` (weight 500), not colored. Safety through copy and layout (`Deny` left, `Allow` right).
+
+**Command results:**
+
+At rest, show one borderless 26px disclosure row: a small terminal SVG, neutral
+`Ran` text with an ellipsized command, and a chevron. Successful and failed
+commands share the same quiet row treatment. Only an expanded result has a
+rounded `--panel-2` Shell panel with a subtle border. Wrap the command, bound
+scrollable output, and place the actual execution status at the lower right;
+only failure text uses `--err-text`. Command and output have independent Copy
+icons, revealed on panel hover or keyboard-visible focus (always available on
+touch). Preserve exact retained text when copying and disclose runner
+truncation explicitly. Do not conflate UI folding with discarded output.
 
 **Welcome (empty chat):**
 
@@ -608,3 +637,51 @@ Product context: root `README.md`
 When this document and the code disagree, **update the code to match this document**, or amend this document in the same PR with a short rationale.
 
 Shell results preserve explicit process status and signed integer exits across restart. Missing historical status displays `Result status unknown`; a zero exit alone does not invent a missing status. Command preview truncation and its complete-command digest remain visible after restore.
+
+
+### Process disclosure and local maintenance diagnostics
+
+Keep interface SVGs in Codey's own assets and ship them with the frontend;
+never reference another application's installation directory. Command, Worked
+and Thinking disclosures share quiet typography and the same trailing chevron.
+Progress spinners remain animated at a slower rate with reduced motion enabled
+so a pending request remains distinguishable from an idle or stalled interface.
+
+Each user request has one dynamic progress location: the process summary.
+Show `Sending…`, `Working · Waiting for reply`, or the active tool operation
+there, with one spinner while work is active. Create this summary before the
+first tool or reasoning event. Never append a second Working row beneath the
+process. On approval, replace the disclosure with static `Waiting for approval`
+text: no chevron, click target, or spinner. Keep the approval card visible outside
+the hidden process history. Restore the process disclosure when work resumes. On task
+completion, stop the spinner and use `Worked`. Keep failed-request Details and
+Retry controls available in their existing recovery row. A tool failure alone
+does not terminate the request's progress.
+
+Shell approvals use one rounded neutral card outside the process disclosure.
+Approval cards, expanded command panels and the composer share the single
+`--panel-radius: 10px` token. Keep the approval title at 13px, weight 500, so it
+fits the surrounding interface rather than reading as a large heading.
+Its header is `Run this command?`; its body shows `Shell`, the command, and the
+working directory. Omit the Reason section and generic risk-description copy.
+Keep truncated-command notices and the full-command digest when applicable.
+Place `Deny` and the contrasting primary `Allow once` button at the bottom
+right. Do not offer broader approval scopes without matching backend semantics.
+While submitting, lock both choices and show the spinner and `Submitting…`
+inside the primary button. An unconfirmed decision keeps both choices locked
+and offers `Check status`; never treat a lost response as permission to submit
+another decision or execute the command again.
+
+Process history defaults to one collapsed summary per user request, including
+while tools are running. Show live activity in the summary; preserve a user's
+explicit expansion across updates and chat changes. Keep one Thinking entry
+with ordered reasoning sections rather than a repeated row per turn. Omit the
+step-number footer. Tool failures and approval controls stay outside the folded
+history so required actions remain available.
+
+Local memory/maintenance warnings do not mean the command or task is paused.
+Keep them in request Details or the process diagnostic body, deduplicated and
+collapsed by default. Preserve diagnostic references; do not append a repeated
+`Local update paused` line after each command. Previously saved instances of
+that informational message use the same diagnostic presentation. Actual task
+pause, denial, failure and Stop states retain their normal controls.

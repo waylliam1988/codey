@@ -14,9 +14,10 @@ def test_process_group_open_and_close_has_no_javascript_errors(page):  # noqa: F
     }""")
     group = page.locator(".process-group")
     expect(group).to_be_visible()
-    group.locator(".process-summary").click()
     expect(group).not_to_have_attribute("open", "")
     group.locator(".process-summary").click()
     expect(group).to_have_attribute("open", "")
+    group.locator(".process-summary").click()
+    expect(group).not_to_have_attribute("open", "")
     page.wait_for_timeout(100)
     assert errors == []

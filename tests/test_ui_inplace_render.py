@@ -4,9 +4,11 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
+from urllib.parse import urlsplit
 
 from codey.app import server as codey_server
 
@@ -18,6 +20,8 @@ def _attach_page_diagnostics(page) -> dict[str, object]:
         "request_failed": [],
         "bad_responses": [],
         "goto_status": None,
+        "requests": [],
+        "pending_requests": [],
     }
 
     def _on_pageerror(exc: object) -> None:
@@ -36,20 +40,42 @@ def _attach_page_diagnostics(page) -> dict[str, object]:
         failed = diag["request_failed"]
         assert isinstance(failed, list)
         failed.append(
-            f"{getattr(request, 'method', '?')} {getattr(request, 'url', '?')} :: "
+            f"{_request_label(request)} :: "
             f"{getattr(request, 'failure', '?')}"[:300]
         )
+        _on_request_finished(request)
+
+    def _request_label(request: object) -> str:
+        # Do not include bootstrap fragments, query credentials, or bodies.
+        path = urlsplit(str(getattr(request, 'url', ''))).path
+        return f"{getattr(request, 'method', '?')} {path}"
+
+    def _on_request(request: object) -> None:
+        pending = diag["pending_requests"]
+        assert isinstance(pending, list)
+        pending.append(_request_label(request))
+
+    def _on_request_finished(request: object) -> None:
+        pending = diag["pending_requests"]
+        assert isinstance(pending, list)
+        label = _request_label(request)
+        if label in pending:
+            pending.remove(label)
 
     def _on_response(response: object) -> None:
         try:
             status = int(getattr(response, "status", 0))
         except (TypeError, ValueError):
             return
-        url = str(getattr(response, "url", ""))
-        if status >= 400 and ("127.0.0.1" in url or "localhost" in url):
+        url = urlsplit(str(getattr(response, "url", "")))
+        responses = diag["requests"]
+        assert isinstance(responses, list)
+        responses.append(f"{status} {_request_label(response.request)}")
+        del responses[:-30]
+        if status >= 400 and url.hostname in {"127.0.0.1", "localhost"}:
             bad = diag["bad_responses"]
             assert isinstance(bad, list)
-            bad.append(f"{status} {url}"[:300])
+            bad.append(f"{status} {url.path}"[:300])
 
     with_ = getattr(page, "on", None)
     if callable(with_):
@@ -57,35 +83,64 @@ def _attach_page_diagnostics(page) -> dict[str, object]:
         with_("console", _on_console)
         with_("requestfailed", _on_request_failed)
         with_("response", _on_response)
+        with_("request", _on_request)
+        with_("requestfinished", _on_request_finished)
     return diag
 
 
 def _format_diagnostics(diag: dict[str, object]) -> str:
     try:
-        return json.dumps(diag, ensure_ascii=False)[:2000]
+        return json.dumps(diag, ensure_ascii=False)[:12000]
     except Exception:
         return str(diag)[:2000]
 
 
-def _goto_restored_ui(page, url):
+def _goto_restored_ui(page, url, diag=None):
+    if diag is None:
+        diag = _attach_page_diagnostics(page)
+    started = time.monotonic()
     # Observe the actual boot restore promise before index.html binds its alias.
     # DOM tests must not race a late renderChat() from server-state restoration.
     page.add_init_script("""
         window.__TEST_BRIDGE__ = true;
+        window.__inPlaceRestoreStarted = false;
+        window.__inPlaceRestoreDone = false;
         Object.defineProperty(window, 'UiState', {configurable:true, set(state) {
             Object.defineProperty(window, 'UiState', {
                 value:state, writable:true, configurable:true, enumerable:true});
             const restore = state.restoreFromServer;
             state.restoreFromServer = async function(...args) {
+                window.__inPlaceRestoreStarted = true;
                 const result = await restore.apply(this, args);
                 window.__inPlaceRestoreDone = true;
                 return result;
             };
         }});
     """)
-    response = page.goto(url)
-    page.wait_for_function("window.__inPlaceRestoreDone === true", polling=100)
-    return response
+    try:
+        diag["phase"] = "navigation"
+        response = page.goto(url)
+        diag["goto_status"] = response.status if response else None
+        diag["phase"] = "boot_restore"
+        page.wait_for_function("window.__inPlaceRestoreDone === true", polling=100)
+        return response
+    except Exception as exc:
+        diag["elapsed_seconds"] = round(time.monotonic() - started, 3)
+        try:
+            diag["page"] = page.evaluate("""() => ({
+                path: location.pathname,
+                readyState: document.readyState,
+                visibility: document.visibilityState,
+                testBridge: window.__TEST_BRIDGE__ === true,
+                uiStateAvailable: typeof window.UiState !== 'undefined',
+                restoreStarted: window.__inPlaceRestoreStarted === true,
+                restoreDone: window.__inPlaceRestoreDone === true,
+                status: document.getElementById('status')?.textContent?.slice(0, 1000),
+                taskDisabled: document.getElementById('task')?.disabled
+            })""")
+        except Exception as diagnostic_error:
+            diag["snapshot_error"] = str(diagnostic_error)[:500]
+        raise AssertionError(f"UI boot failed :: diag={_format_diagnostics(diag)}") from exc
 
 
 try:
@@ -348,7 +403,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 page = browser.new_page(viewport={"width": 1024, "height": 768})
                 diag = _attach_page_diagnostics(page)
                 try:
-                    response = _goto_restored_ui(page, self.httpd.launch_url(self.base_url))
+                    response = _goto_restored_ui(page, self.httpd.launch_url(self.base_url), diag=diag)
                     diag["goto_status"] = response.status if response else None
                 except Exception as exc:
                     raise AssertionError(
@@ -486,7 +541,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 page = browser.new_page(viewport={"width": 1024, "height": 768})
                 diag = _attach_page_diagnostics(page)
                 try:
-                    response = _goto_restored_ui(page, self.httpd.launch_url(self.base_url))
+                    response = _goto_restored_ui(page, self.httpd.launch_url(self.base_url), diag=diag)
                     diag["goto_status"] = response.status if response else None
                 except Exception as exc:
                     raise AssertionError(
@@ -522,9 +577,9 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                         };
                         if ('shellStatus' in c) event.shellStatus = c.shellStatus;
                         appendMessageNode(chat, event);
-                        const out = chat.querySelector('.shell-output');
-                        if (!out) throw new Error('Expected .shell-output node');
-                        titles[c.key] = out.textContent.split('\\n')[0];
+                        const out = chat.querySelector('.command-card .command-status');
+                        if (!out) throw new Error('Expected command summary');
+                        titles[c.key] = out.textContent;
                     }
                     return titles;
                 }""")
@@ -532,7 +587,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 browser.close()
 
         try:
-            self.assertEqual(result["exit|true"], "Executed")
+            self.assertEqual(result["exit|true"], "✓ Succeeded")
             self.assertEqual(result["empty|denied"], "Denied")
             self.assertEqual(result["missing|denied"], "Denied")
             self.assertEqual(result["exit|denied"], "Denied")
@@ -556,7 +611,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 page = browser.new_page(viewport={"width": 1024, "height": 768})
                 diag = _attach_page_diagnostics(page)
                 try:
-                    response = _goto_restored_ui(page, self.httpd.launch_url(self.base_url))
+                    response = _goto_restored_ui(page, self.httpd.launch_url(self.base_url), diag=diag)
                     diag["goto_status"] = response.status if response else None
                 except Exception as exc:
                     raise AssertionError(

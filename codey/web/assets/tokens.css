@@ -1,4 +1,5 @@
   :root {
+    --panel-radius: 10px;
     --sidebar-width: 260px;
     --sidebar-min-width: 220px;
     --sidebar-max-width: 420px;

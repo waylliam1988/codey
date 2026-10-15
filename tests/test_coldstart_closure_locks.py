@@ -90,6 +90,7 @@ class WorkspaceFingerprintStaleTests(unittest.TestCase):
                             tool_fns=DEFAULT_TOOL_FNS,
                             session_id="s-ws",
                             permission_profile="coding_writer",
+                            workspace_revision_store=store,
                         ),
                         observation=KernelObservationDeps(
                             completion_context={

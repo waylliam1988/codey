@@ -20,6 +20,7 @@ WEB_DIR = Path(_configured_web_dir).expanduser().resolve() if _configured_web_di
 WEB_ASSET_TYPES = {
     ".js": "application/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
+    ".svg": "image/svg+xml",
 }
 MAX_STATIC_CACHE_ENTRIES = 64
 MAX_STATIC_CACHE_BYTES = 8 * 1024 * 1024

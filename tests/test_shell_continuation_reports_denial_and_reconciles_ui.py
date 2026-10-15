@@ -30,22 +30,26 @@ def test_http_approval_reconciles_continuation_without_sse(approved):
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js unavailable")
-    html = frontend_source("legacy-runtime")
-    start = html.index("async function approveCommand(")
-    source = html[start:html.index("// ============================ composer", start)]
-    script = """
-const assert = require('node:assert/strict');
-const calls = [];
-const fetch = async () => ({ok: true, json: async () => ({event: {type: 'shell_result'}, continued: true})});
-const handleServerEvent = event => calls.push(event.type);
-const reconcileRunState = async () => calls.push('state');
-const showCommandApprovalError = () => {throw new Error('unexpected error');};
-const showCommandContinuationError = () => {throw new Error('unexpected busy error');};
-""" + source + f"""
+    source = frontend_source("shell_approvals").replace("export function ", "function ")
+    script = "const assert = require('node:assert/strict');\n" + source + f"""
 (async () => {{
-  await approveCommand('approval-1', {json.dumps(approved)}, {{}}, {{}}, null);
-  assert.deepEqual(calls, ['shell_result', 'state']);
+  const session = {{id:'session',messages:[{{type:'shell_request',id:'approval-1'}}]}};
+  const controller = createApprovalController({{
+    sessions:()=>[session], changed:()=>{{}},
+    fetch:async()=>({{ok:true,json:async()=>({{type:'shell_approval_status',id:'approval-1',session_id:'session',
+      decision:{json.dumps('allow' if approved else 'deny')},execution:'settled',continuation:'started',revision:5}})}}),
+  }});
+  await controller.submit('approval-1', {json.dumps(approved)});
+  assert.equal(session.messages.length, 1);
+  assert.equal(session.messages[0].approval.continuation, 'started');
+  assert.equal(controller.decided('approval-1'), true);
 }})().catch(error => {{console.error(error); process.exitCode = 1;}});
 """
     result = subprocess.run([node, "-e", script], capture_output=True, text=True, encoding="utf-8", timeout=10)
     assert result.returncode == 0, result.stderr
+
+def test_interrupted_continuation_does_not_claim_command_completed():
+    prompt = build_shell_approval_continuation(command='echo pending', result={
+        'status': 'stopped', 'ok': False, 'exit_code': None, 'output': 'Application closed before command execution.'})
+    assert 'interrupted' in prompt
+    assert 'approved and ran' not in prompt

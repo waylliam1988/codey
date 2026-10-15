@@ -165,10 +165,12 @@ def _error_result(call: ToolCall, message: str) -> ToolResult:
     return ToolResult(ok=False, call=call, model_text=f"ERROR: {message}")
 
 
-def policy_denial_result(call: ToolCall, message: str) -> ToolResult:
+def policy_denial_result(call: ToolCall, message: str, *, reason_code: str = "") -> ToolResult:
     """Runtime guard receipt: the executor has not been invoked."""
     return ToolResult(ok=False, call=call, model_text=f"ERROR: {message}",
-                      audit={"execution_disposition": "denied_before_execution"})
+                      audit={"execution_disposition": "denied_before_execution"},
+                      canonical={"reason_code": reason_code, **({"next_action": "request_shell_approval"}
+                                 if reason_code == "command_not_allowed" else {})})
 
 
 def denied_before_execution(result: ToolResult) -> bool:

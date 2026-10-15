@@ -159,19 +159,10 @@ class TaskSession:
         self.verifications.append(row)
 
     def set_workspace_state(self, revision: object, fingerprint: object) -> None:
-        try:
-            from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
-        except Exception:
-            return
-        try:
-            rev = valid_workspace_revision(revision)
-            if rev:
-                self.workspace_revision = rev
-            fp = valid_workspace_fingerprint(fingerprint)
-            # Empty fingerprint clears to missing (not_run), never faked.
-            self.workspace_fingerprint = fp
-        except Exception:
-            pass
+        from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
+
+        self.workspace_revision = valid_workspace_revision(revision)
+        self.workspace_fingerprint = valid_workspace_fingerprint(fingerprint)
 
     def notes_text(self) -> str:
         parts = [*self.transcript_notes]

@@ -192,14 +192,18 @@ CI 还检查 Ruff、全树 mypy、JavaScript 语法和支持平台的回归。�
 发布检查及实机覆盖范围见[发布门槛](docs/release_gate.zh-CN.md)。
 
 模型菜单默认 240px 并受窗口边界约束；命令只在审批卡片中同意或拒绝，不再重复显示输入框通知。
+审批决定持久化后即返回，命令执行和任务继续由后台处理；响应丢失时查询已保存的状态，
+重试继续不会重新执行命令。详见[审批生命周期](docs/shell_approval_lifecycle.md)。
+工作区文件和研究笔记使用统一文档面板，支持源码、复制、刷新和按会话保存的标签页，
+刷新保留阅读位置。详见[工作区、终端和文档行为](docs/workspace_documents_and_terminal.md)。
 只有 Zen 使用可移除的 Node fetch 适配，Local 保持 Python HTTP；免费模型实机矩阵仍有两项
 Ling 开启思考的案例未解决。
 
 当前验证和覆盖率集中在 [TEST_REPORT](TEST_REPORT.md)。CI 覆盖 Windows Python 3.11/3.12/3.13、
 Windows/Linux 必跑机器契约和实际 JS/MJS 语法检查。全树 mypy/Pyrefly/ty 在每个 Windows
 版本及 Linux 3.12 执行，并显式指定目标 Python 版本。Linux 跑 POSIX 定向回归和机器契约，
-三个 Windows 版本跑完整 pytest；Windows 3.12
-另测完整生产 Python 语句/分支及子进程，门槛为 85% / 75%。详见[测试命令](tests/README.md)
+三个 Windows 版本均在单次 `Pytest` 步骤中运行完整测试并采集生产 Python 语句、分支及子进程覆盖率；
+后续覆盖率步骤合并数据、检查 85% / 75% 门槛，并按 Python 版本独立上传证据。详见[测试命令](tests/README.md)
 和[维护审计](docs/ui_maintenance_audit_2026-10-13.zh-CN.md)。
 
 ## 许可证

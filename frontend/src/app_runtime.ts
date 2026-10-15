@@ -1,3 +1,5 @@
+import { DocumentPane, type DocumentRef } from './document_pane';
+import { createApprovalController } from './shell_approvals';
 import { runtime } from './runtime';
 import './operator_auth.ts';
 import './render.ts';
@@ -78,7 +80,10 @@ interface ServerEventData {
   command: string;
   result: string;
   output: string;
+  truncated: boolean;
   error_ref: string;
+  error_type: string;
+  stage: string;
   id: string;
   summary: string;
   stop_reason: string;
@@ -119,6 +124,40 @@ type Loose = ServerEventData;
 type AppElement = HTMLElement & { disabled: boolean };
 const $ = <T extends HTMLElement = AppElement>(id: string): T => document.getElementById(id) as T;
 const eventElement = (event: Event): Element | null => (event.target instanceof Element ? event.target : null);
+const documentPane = new DocumentPane({
+  read: async (sessionId, ref, workspace) => {
+    const response = await fetch('/api/documents/read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, expected_workspace: workspace, ...ref }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.ok !== true) throw new Error(data.message || data.error || 'Could not load document');
+    if (typeof data.content !== 'string' || typeof data.path !== 'string' || typeof data.version !== 'string')
+      throw new Error('Invalid document response');
+    return data;
+  },
+  markdown: (container, text) => runtime.Render.renderMarkdown(container, text),
+  copy: (text) => runtime.Render.copyText(text),
+});
+document.body.append(documentPane.element);
+function openDocument(sessionId: string, ref: DocumentRef): void {
+  closeOtherDrawers('document');
+  void documentPane.open(sessionId, ref);
+}
+document.addEventListener('click', (event) => {
+  const link = eventElement(event)?.closest<HTMLElement>('[data-document-path]');
+  if (!link) return;
+  event.preventDefault();
+  const path = link.dataset.documentPath;
+  if (path) {
+    const line = Number(link.dataset.documentLine) || undefined;
+    openDocument(
+      activeId,
+      link.closest('.document-pane') ? documentPane.fileLink(path, line) : { kind: 'workspace', path, line },
+    );
+  }
+});
 // escapeHtml and the receipt schema helpers live in /assets/render.js.
 const escapeHtml = runtime.Render.escapeHtml;
 const receiptSummary = runtime.Render.receiptSummary;
@@ -259,6 +298,8 @@ function currentIntentForSession(sessionId: string): string {
 }
 
 // ============================ sidebar rendering ============================
+const expandedProjectChats = new Set<string>();
+const PROJECT_CHAT_PREVIEW = 5;
 function renderSidebar() {
   const list = $('session-list');
   list.innerHTML = '';
@@ -321,6 +362,17 @@ function renderSidebar() {
       openProjectMenu(e.currentTarget as HTMLElement, p.id);
     };
     row.appendChild(more);
+    const create = document.createElement('button');
+    create.className = 'project-new';
+    create.type = 'button';
+    create.setAttribute('aria-label', `New chat in ${p.name}`);
+    create.innerHTML = '<span class="new-chat-icon" aria-hidden="true"></span>';
+    create.onclick = (event) => {
+      event.stopPropagation();
+      p.expanded = true;
+      newSession(p.id);
+    };
+    row.appendChild(create);
 
     node.appendChild(row);
 
@@ -334,7 +386,28 @@ function renderSidebar() {
         empty.textContent = 'No chats';
         children.appendChild(empty);
       } else {
-        for (const s of projectSessions) children.appendChild(sessionNode(s));
+        const searching = runtime.ConversationUI.isSearching();
+        const expanded = expandedProjectChats.has(p.id);
+        const preview = projectSessions.slice(0, PROJECT_CHAT_PREVIEW);
+        const active = projectSessions.find((session) => session.id === activeId);
+        if (active && !preview.includes(active)) preview[preview.length - 1] = active;
+        for (const session of searching || expanded ? projectSessions : preview)
+          children.appendChild(sessionNode(session));
+        if (!searching && projectSessions.length > PROJECT_CHAT_PREVIEW) {
+          const reveal = document.createElement('button');
+          reveal.type = 'button';
+          reveal.className = 'project-reveal';
+          reveal.textContent = expanded ? 'Show less' : 'Show more';
+          reveal.setAttribute('aria-expanded', String(expanded));
+          reveal.onclick = () => {
+            if (expanded) expandedProjectChats.delete(p.id);
+            else expandedProjectChats.add(p.id);
+            renderSidebar();
+            list.querySelector<HTMLButtonElement>(`[data-project-reveal="${CSS.escape(p.id)}"]`)?.focus();
+          };
+          reveal.dataset.projectReveal = p.id;
+          children.appendChild(reveal);
+        }
       }
       node.appendChild(children);
     }
@@ -487,6 +560,7 @@ function armDanger(btn: HTMLButtonElement, run: () => void) {
 
 // ============================ chat rendering ============================
 function renderChat() {
+  documentPane.setSession(activeId);
   runtime.ConversationUI.renderChat();
 }
 
@@ -869,6 +943,11 @@ const sseEventKey = (data: ServerEvent, fallback = '') => runtime.Sse.eventKey(d
 
 function handleServerEvent(raw: unknown) {
   const data = decodeServerEvent(raw) as ServerEventData;
+  if (data.type === 'shell_approval_status') {
+    approvalController.apply(raw);
+    void reconcileRunState();
+    return;
+  }
   if (data.type === 'task_done' && (!data.run_id || data.run_id === runningRunId)) {
     runningRunId = null;
     runningSessionId = null;
@@ -980,9 +1059,10 @@ function handleServerEvent(raw: unknown) {
   }
   if (data.type === 'ghost_post_turn_warning') {
     if (runtime.Requests.warning(sid, runId)) return;
+    const detail = [data.stage, data.error_type, data.error_ref].filter(Boolean).join(' · ');
     addToSession(sid, {
-      type: 'info',
-      text: 'Local update paused',
+      type: 'local_update_warning',
+      text: 'Local memory update unavailable' + (detail ? ` · ${detail}` : ''),
       sessionId: sid,
       runId,
       eventKey: sseEventKey(data, runId ? `local-health:${runId}:${data.error_ref || ''}` : ''),
@@ -1111,6 +1191,7 @@ function handleServerEvent(raw: unknown) {
     return;
   }
   if (data.type === 'shell_request') {
+    if (approvalController.decided(data.id || '')) return;
     addToSession(sid, {
       type: 'shell_request',
       id: data.id,
@@ -1141,6 +1222,7 @@ function handleServerEvent(raw: unknown) {
       commandTruncated: !!data.command_truncated,
       cwd: data.cwd,
       output: data.output,
+      outputTruncated: !!data.truncated,
       exitCode: data.exit_code,
       runId,
       eventKey: `shell-result:${data.id}`,
@@ -1211,6 +1293,7 @@ function markResearchRestoreAvailability(runIds: unknown) {
 }
 
 function applyRunState(data: RunState) {
+  (data.shell_approvals || []).forEach(approvalController.apply);
   if (data.last_shell_result) handleServerEvent(data.last_shell_result);
   if (data.last_terminal_event) handleServerEvent(data.last_terminal_event);
   if (data.pending_event) handleServerEvent(data.pending_event);
@@ -1410,66 +1493,28 @@ function handleLocalContextScopeChanged() {
 }
 
 function closeOtherDrawers(active: string | undefined) {
+  if (active !== 'document') documentPane.close();
   if (active !== 'changes') closeChangesDrawer();
   if (active !== 'research') runtime.ResearchDrawer.close();
   if (active !== 'local_context') closeLocalContextDrawer();
 }
 
-function showCommandApprovalError(errorEl: HTMLElement | null) {
-  if (errorEl) {
-    errorEl.textContent = 'Could not send approval';
-    errorEl.hidden = false;
-  }
-  setStatus('Could not send approval', 'err');
-}
+const approvalController = createApprovalController({
+  sessions: () => sessions,
+  changed: (sid) => {
+    const session = sessions.find((s) => s.id === sid);
+    if (session) hydrateSessionIndexes(session);
+    persistActive();
+    if (sid === activeId) renderChat();
+  },
+  fetch: (...args) => fetch(...args),
+  focus: (id) => document.querySelector<HTMLElement>(`[data-approval-id="${CSS.escape(id)}"]`)?.focus(),
+});
+runtime.ShellApprovals = approvalController;
 
-function showCommandContinuationError(errorEl: HTMLElement | null, retryAfterSeconds = 15) {
-  const retryAfter = Number(retryAfterSeconds) || 15;
-  const message = `Run slot busy; retry after ${retryAfter}s`;
-  if (errorEl) {
-    errorEl.textContent = message;
-    errorEl.hidden = false;
-  }
-  setStatus(message, 'warn');
-}
-
-async function approveCommand(
-  id: string,
-  approved: boolean,
-  approveBtn: HTMLButtonElement,
-  denyBtn: HTMLButtonElement,
-  errorEl: HTMLElement,
-) {
-  if (!id) return;
-  approveBtn.disabled = true;
-  denyBtn.disabled = true;
-  if (errorEl) {
-    errorEl.textContent = '';
-    errorEl.hidden = true;
-  }
-  try {
-    const r = await fetch('/api/shell_approval', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, approved }),
-    });
-    if (!r.ok) {
-      showCommandApprovalError(errorEl);
-      approveBtn.disabled = false;
-      denyBtn.disabled = false;
-      return;
-    }
-    const data = await r.json();
-    if (data.event) handleServerEvent(data.event);
-    if (approved && data.continuation_requested && !data.continued && !data.stopped) {
-      showCommandContinuationError(errorEl, data.retry_after);
-    }
-    await reconcileRunState();
-  } catch (err) {
-    showCommandApprovalError(errorEl);
-    approveBtn.disabled = false;
-    denyBtn.disabled = false;
-  }
+async function approveCommand(id: string, approved: boolean) {
+  await approvalController.submit(id, approved);
+  await reconcileRunState();
 }
 
 // ============================ composer ============================
@@ -1569,6 +1614,7 @@ async function boot() {
     persistActiveNow,
   });
   runtime.ResearchDrawer.init({
+    openDocument,
     $,
     getActiveId: () => activeId,
     getSessionTitle: (id: string) => (sessions.find((s) => s.id === id) || {}).title || 'Chat',
@@ -1673,6 +1719,7 @@ async function boot() {
     attachCurrentChatToPickedProject,
   });
   runtime.Messages.init({
+    openDocument,
     statusRow,
     currentProjectPath,
     openChangesDrawer,

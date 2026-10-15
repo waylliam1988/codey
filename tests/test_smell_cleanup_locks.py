@@ -6,7 +6,6 @@ byte-parity guard for writer/planning_readonly.
 """
 from __future__ import annotations
 
-import inspect
 import unittest
 
 
@@ -200,12 +199,38 @@ class GhostWarningsUnificationLocks(unittest.TestCase):
 
 
 class ShellApprovalFallbackLocks(unittest.TestCase):
-    def test_stopped_denial_has_no_command_param(self) -> None:
-        """RED before fix: _stopped_shell_denial takes a dead command arg."""
-        from codey.app import api as app_api
+    def test_stopped_approval_cannot_execute_or_continue(self) -> None:
+        """A stopped decision stays terminal without the retired denial helper."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import Mock, patch
 
-        params = set(inspect.signature(app_api._stopped_shell_denial).parameters)
-        self.assertNotIn("command", params)
+        from codey.app import api as app_api
+        from codey.app import shell_service
+        from codey.app.context import AppContext
+        from codey.app.shell_approval_state import restore_pending_shell_approvals
+        from tests.support.shell_approval import seed_requested_approval
+
+        with tempfile.TemporaryDirectory() as directory:
+            ctx = AppContext(Path(directory))
+            submit = Mock()
+            try:
+                seed_requested_approval(ctx)
+                restore_pending_shell_approvals(ctx)
+                ctx.request_stop()
+                with patch.object(shell_service, "execute_shell_ticket") as execute:
+                    for approved in (True, False):
+                        with self.subTest(approved=approved):
+                            status, state = app_api.shell_approval_response(
+                                ctx, {"id": "approval", "approved": approved},
+                                submit_task_after_slot_release=submit,
+                            )
+                            self.assertEqual(status, 409)
+                            self.assertEqual(state["decision"], "cancelled")
+                    execute.assert_not_called()
+                    submit.assert_not_called()
+            finally:
+                ctx.close()
 
     def test_no_dead_pending_or_command_fallback(self) -> None:
         """RED before fix: 'pending or {\"command\": command}' is unreachable."""

@@ -9,8 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from codey.agents.request import DEFAULT_MAX_TURNS
-from codey.agents.shell_approval import shell_command_event_fields
-from codey.app import provider_services, shell_service
+from codey.app import provider_services
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV
 from codey.ghost.control_surface import GhostControlSurface
@@ -28,10 +27,8 @@ from codey.providers.local_config import (
 from codey.providers.local_discovery import LocalEndpoint, probe_local_endpoint_detail
 from codey.providers.model_preferences import ModelDisabledError
 from codey.runs.details import load_run_details
-from codey.runtime.effects.shell_approval_records import ShellApprovalFact, json_digest
 from codey.storage.local_store import StoreCorruption
 from codey.task.entry_auth import derive_entry_auth
-from codey.task.model import ResolveShellApproval
 from codey.workspace.changes import (
     collect_changes,
     collect_git_file_diff,
@@ -567,6 +564,29 @@ def _api_selection_for_submit(ctx: Any, provider_id: str, selection: object) -> 
         return {}, (400, {"error": str(exc), "reason": "model_selection_invalid"})
 
 
+def _approval_entry(ctx: Any, session_id: str, source_run_id: str) -> tuple[str, tuple[int, dict[str, Any]] | None]:
+    if ctx is None:
+        return source_run_id, None
+    state = ctx.shell_approval_workflow.for_source(session_id, source_run_id)
+    if state is None or state['decision'] == 'cancelled':
+        return source_run_id, None
+    if state['continuation'] == 'started':
+        return (str(state['continuation_run_id']) if source_run_id else ''), None
+    code = 'approval_required' if state['decision'] == 'pending' else 'approval_in_progress'
+    if state['execution'] == 'uncertain':
+        code = 'execution_uncertain'
+    elif state['continuation'] in {'queued', 'failed', 'resuming'}:
+        code = 'approval_resume_required'
+    elif state['continuation'] in {'not_required', 'cancelled'}:
+        return source_run_id, None
+    return source_run_id, (409, {'error': {
+        'approval_required': 'Decide the pending command approval first.',
+        'execution_uncertain': 'Command outcome is uncertain; automatic execution is blocked.',
+        'approval_resume_required': 'Continue from the saved command result.',
+        'approval_in_progress': 'Command approval is being processed.',
+    }[code], 'code': code, 'approval': state})
+
+
 def run_submit_response(  # noqa: C901, PLR0912
     body: object,
     submit_task: Callable[..., str | None],
@@ -594,6 +614,11 @@ def run_submit_response(  # noqa: C901, PLR0912
         else:
             return 400, {"error": "unsupported input.kind"}
     session_id = str(body.get("session_id") or "").strip() or "default"
+    input_source_run, approval_error = _approval_entry(ctx, session_id, input_source_run)
+    if approval_error is not None:
+        return approval_error
+    if ctx is not None and ctx.shell_approval_workflow.busy_status() is not None:
+        return 409, {"error": "busy", "hint": "approval_in_progress"}
     client_run_id = body.get("run_id", "")
     if not isinstance(client_run_id, str) or (client_run_id and not re.fullmatch(r"run_[a-f0-9]{32}", client_run_id)):
         return 400, {"error": "invalid run_id"}
@@ -685,222 +710,18 @@ def _submit_task_response(submit_task: Callable[..., str | None], args: tuple[An
     return 200, {"ok": True, "run_id": run_id}
 
 
-def _stopped_shell_denial(
-    ctx: Any, pending: dict[str, Any], approval_id: str, session_id: str
-) -> tuple[int, dict[str, Any]]:
-    event = {
-        "type": "shell_result",
-        "run_id": pending.get("run_id") or "",
-        "session_id": session_id,
-        "id": approval_id,
-        "approved": False,
-        "status": "stopped",
-        **shell_command_event_fields(pending),
-        "cwd": pending["cwd"],
-        "output": "Task stopped; command approval expired.",
-        "exit_code": None,
-    }
-    ctx.record_shell_result(event)
-    _record_shell_fact(
-        ctx,
-        pending,
-        approval_id,
-        "abandoned",
-        result={
-            "ok": False,
-            "status": "stopped",
-            "output": "Task stopped; command approval expired.",
-            "exit_code": None,
-        },
-    )
-    return 409, {"error": "stopped", "stopped": True, "status": "stopped", "event": event}
-
-
-def _record_shell_fact(ctx: Any, pending: dict[str, Any], approval_id: str, kind: str,
-                       *, result: dict[str, Any] | None = None) -> None:
-    record = getattr(ctx, "record_shell_approval_fact", None)
-    if not callable(record):
-        return
-    result_ref = ""
-    result_digest = ""
-    if result is not None:
-        result_digest = json_digest(result)
-        managed_outputs = getattr(ctx, "managed_outputs", None)
-        if managed_outputs is not None:
-            try:
-                artifact = managed_outputs.write_json_artifact(
-                    session_id=str(pending.get("session_id") or ""),
-                    run_id=str(pending.get("run_id") or ""),
-                    payload=result,
-                )
-            except Exception:
-                # Execution already happened.  Preserve the settlement fact
-                # even if the optional structured artifact cannot be written;
-                # recovery must surface the missing result instead of rerunning
-                # the command.
-                artifact = None
-            if artifact is not None:
-                result_ref = artifact.handle
-                result_digest = artifact.sha256
-    record(ShellApprovalFact(
-        approval_id=approval_id,
-        session_id=str(pending.get("session_id") or ""),
-        source_run_id=str(pending.get("run_id") or ""),
-        kind=kind,
-        invocation_origin="native" if pending.get("call_id") else "text",
-        command_ref=str(pending.get("command_ref") or ""),
-        command_digest=str(pending.get("command_digest") or ""),
-        cwd=str(pending.get("cwd") or "."),
-        result_ref=result_ref,
-        result_digest=result_digest,
-        delivery_batch_id=str(pending.get("delivery_batch_id") or ""),
-    ))
-
-
 def shell_approval_response(
     ctx: Any,
     body: dict[str, Any],
     *,
     submit_task_after_slot_release: Callable[..., str | None],
-    continuation_retry_after: int = 15,
 ) -> tuple[int, dict[str, Any]]:
     approval_id = str(body.get("id") or "").strip()
-    approved_raw = body.get("approved")
-    if approved_raw is not True and approved_raw is not False:
+    approved = body.get("approved")
+    if type(approved) is not bool:
         return 400, {"error": "approved must be a boolean"}
-    if approved_raw is False:
-        pending = ctx.claim_pending_shell_approval(approval_id, claim_execution=False)
-        if not pending:
-            return 404, {"error": "approval not found"}
-        pending.pop("_approval_generation", None)
-        session_id = pending["session_id"]
-        denied_result = {
-            "ok": False,
-            "status": "denied",
-            "output": "Denied by user.",
-            "exit_code": None,
-        }
-        _record_shell_fact(ctx, pending, approval_id, "denied", result=denied_result)
-        event = {
-            "type": "shell_result",
-            "run_id": pending.get("run_id") or "",
-            "session_id": session_id,
-            "id": approval_id,
-            "approved": False,
-            **shell_command_event_fields(pending),
-            "cwd": pending["cwd"],
-            "output": "Denied by user.",
-            "exit_code": None,
-        }
-        ctx.record_shell_result(event)
-        # 拒绝同样回答原调用并继续任务（模型据此改道，不再悬挂 native 链）。
-        continued = False
-        max_turns = int(pending.get("max_turns") or DEFAULT_MAX_TURNS)
-        if bool(pending.get("continue_after")) and not ctx.run_registry.stop_flag.is_set():
-            shell_row = shell_service.shell_result_row(pending, denied_result, approved=False)
-            shell_payload = shell_service.shell_result_payload(shell_row)
-            continuation_plan = shell_service.build_shell_approval_continuation_plan(
-                pending=pending,
-                result=denied_result,
-                active_run=ctx.current_run(),
-                shell_results=(shell_payload,) if shell_payload else (),
-            )
-            continuation_run = submit_task_after_slot_release(
-                session_id,
-                pending["attached_project"],
-                continuation_plan.continuation,
-                max_turns,
-                True,
-                continuation_plan.provider_id,
-                pending["intent"],
-                input=ResolveShellApproval(approval_id),
-                previous_run_id=str(pending.get("run_id") or ""),
-                **({"model_selection": pending["_api_selection"]} if pending.get("_api_selection") is not None else {}),
-            )
-            continued = continuation_run is not None
-        return 200, {"ok": True, "approved": False, "continued": continued, "event": event}
-
-    # Approved path: atomic claim (pop + generation + stop + cwd) under one
-    # lock hold, then ticket-only execution with a spawn gate before Popen.
-    # Internal epoch, never leaked to events/UI.
-    from codey.policies.limits import SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
-
-    pending, ticket = shell_service.claim_shell_ticket(
-        ctx,
-        approval_id,
-        timeout=SHELL_TIMEOUT,
-        output_limit=SHELL_OUTPUT_LIMIT,
-    )
-    if pending is None:
-        return 404, {"error": "approval not found"}
-    max_turns = int(pending.get("max_turns") or DEFAULT_MAX_TURNS)
-    session_id = pending["session_id"]
-    if ticket is None:
-        return _stopped_shell_denial(ctx, pending, approval_id, session_id)
-
-    _record_shell_fact(ctx, pending, approval_id, "approved")
-    result = shell_service.execute_shell_ticket(ctx, ticket)
-    if result.get("status") == "stopped" or result.get("stopped"):
-        return _stopped_shell_denial(ctx, pending, approval_id, session_id)
-    event = {
-        "type": "shell_result",
-        "run_id": pending.get("run_id") or "",
-        "session_id": session_id,
-        "id": approval_id,
-        "approved": True,
-        "status": str(result.get("status") or "exit"),
-        **shell_command_event_fields(pending),
-        "cwd": pending["cwd"],
-        "output": result.get("output") or result.get("error") or "",
-        "exit_code": result.get("exit_code"),
-        "ok": result.get("ok"),
-        "truncated": bool(result.get("truncated")),
-    }
-    ctx.record_shell_result(event)
-    _record_shell_fact(ctx, pending, approval_id, "execution_settled", result=result)
-    continued = False
-    continuation_stopped = False
-    continuation_requested = bool(pending.get("continue_after"))
-    if continuation_requested:
-        if ctx.run_registry.stop_flag.is_set():
-            continuation_stopped = True
-        else:
-            # 结构化回答原 native 调用：continuation 运行以 turn-0 初始行
-            # 首发该结果（同会话 native 优先，异会话文本兜底）。
-            shell_row = shell_service.shell_result_row(pending, result, approved=True)
-            shell_payload = shell_service.shell_result_payload(shell_row)
-            continuation_plan = shell_service.build_shell_approval_continuation_plan(
-                pending=pending,
-                result=result,
-                active_run=ctx.current_run(),
-                shell_results=(shell_payload,) if shell_payload else (),
-            )
-            continuation_run = submit_task_after_slot_release(
-                session_id,
-                pending["attached_project"],
-                continuation_plan.continuation,
-                max_turns,
-                True,
-                continuation_plan.provider_id,
-                pending["intent"],
-                input=ResolveShellApproval(approval_id),
-                previous_run_id=str(pending.get("run_id") or ""),
-                **({"model_selection": pending["_api_selection"]} if pending.get("_api_selection") is not None else {}),
-            )
-            continued = continuation_run is not None
-            continuation_stopped = not continued and ctx.run_registry.stop_flag.is_set()
-    payload = {
-        "ok": True,
-        "approved": True,
-        "continued": continued,
-        "continuation_requested": continuation_requested,
-        "stopped": continuation_stopped,
-        "result": result,
-        "event": event,
-    }
-    if continuation_requested and not continued and not continuation_stopped:
-        payload["retry_after"] = continuation_retry_after
-    return 200, payload
+    response: tuple[int, dict[str, Any]] = ctx.shell_approval_workflow.accept(approval_id, approved, submit_task_after_slot_release)
+    return response
 
 
 def teach_resume_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:

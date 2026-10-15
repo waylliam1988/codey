@@ -19,6 +19,9 @@ class ApprovalRegistry:
         # positives across sessions are acceptable; false negatives are not).
         self._generation = 0
 
+    def invalidate_generation(self) -> None:
+        self._generation += 1
+
     def current_generation(self) -> int:
         return self._generation
 

@@ -120,10 +120,22 @@ def _reconcile_delivery_witnesses(deps: Any, *, session_id: str, run_id: str) ->
             return
         from codey.runtime.effects.tool_result_delivery import DeliveryCommit
 
+        batches_by_id = {item.intent.batch_id: item for item in batches}
         for payload in witnesses:
             witness = DeliveryCommit.from_payload(payload)
-            batch = next((item for item in batches if item.intent.batch_id == witness.batch_id), None)
-            if batch is None or witness.provider_effect_id not in batch.send_attempts:
+            batch = batches_by_id.get(witness.batch_id)
+            if batch is None:
+                # The context ledger is session-scoped, while delivery
+                # batches are run-scoped.  A witness from another run must
+                # remain available for that run's recovery and must not make
+                # this run fail closed merely because its batch is absent.
+                logger.debug(
+                    "skipping delivery witness for another run: batch_id=%s run_id=%s",
+                    witness.batch_id,
+                    run_id,
+                )
+                continue
+            if witness.provider_effect_id not in batch.send_attempts:
                 raise ValueError("delivery witness does not match a source batch")
             expected_window = getattr(ledger, "window_ref", None)
             if expected_window is not None and witness.window_ref != expected_window.to_payload():

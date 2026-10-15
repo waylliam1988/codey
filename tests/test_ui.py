@@ -39,17 +39,18 @@ CONVERSATION_UI_JS = _source("conversation_ui")
 TOKENS_CSS = (ROOT / "frontend/public/assets/tokens.css").read_text(encoding="utf-8")
 APP_CSS = (ROOT / "frontend/public/assets/app.css").read_text(encoding="utf-8")
 STYLE_SOURCE = TOKENS_CSS + "\n" + APP_CSS
+RUNTIME_SOURCES = tuple(path for path in sorted(ASSET_DIR.glob("*.ts")) if not path.name.endswith(".test.ts"))
 JS_ASSETS = re.sub(
     r"\bimport type .*?;\s*|:\s*(?:any|string|number|boolean|unknown|Message|ResearchPayload|HTMLElement|ModuleDeps|Response|Element|RunData|Record<string,\s*RunData>)(?=\s*[,)=;])",
     "",
-    "\n".join(frontend_source_text(path.stem) for path in sorted(ASSET_DIR.glob("*.ts"))),
+    "\n".join(frontend_source_text(path.stem) for path in RUNTIME_SOURCES),
 )
 JS_ASSETS += "\n" + _source("legacy-runtime")
 # Keep the source graph available for stable structural checks. Runtime
 # behavior is exercised through the compiled bundle and browser/Vitest tests.
 JS_ASSETS += "\n" + "\n".join(
     (ASSET_DIR / path.name).read_text(encoding="utf-8")
-    for path in sorted(ASSET_DIR.glob("*.ts"))
+    for path in RUNTIME_SOURCES
     if path.name != "legacy-runtime.ts"
 )
 # Behavioral assertions historically inspected the assembled page.  Keep that
@@ -272,21 +273,20 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("local.context_error", SETTINGS_JS)
 
 
-    def test_ghost_post_turn_warning_is_rendered_as_quiet_info(self) -> None:
+    def test_ghost_post_turn_warning_is_preserved_in_diagnostics(self) -> None:
         start = HTML.index("if (data.type === 'ghost_post_turn_warning')")
         end = HTML.index("if (data.type === 'teach_request')", start)
         block = HTML[start:end]
-        self.assertIn("type: 'info'", block)
-        self.assertIn("Local update paused", block)
+        self.assertIn("type: 'local_update_warning'", block)
+        self.assertIn("Local memory update unavailable", block)
         self.assertNotIn("Local context", block)
         self.assertNotIn("Post-turn warning (", block)
         self.assertIn("local-health:", block)
         self.assertIn("eventKey: sseEventKey(data", block)
 
-    def test_shell_approval_renders_risk_explanation(self) -> None:
-        self.assertIn("title.textContent = 'Approval required'", UI_SOURCE)
-        self.assertIn("className = 'sc-note'", UI_SOURCE)
-        self.assertIn("${riskTitle || 'Shell command'}", UI_SOURCE)
+    def test_shell_approval_preserves_command_identity_without_reason_section(self) -> None:
+        self.assertIn("title.textContent = 'Run this command?'", UI_SOURCE)
+        self.assertNotIn("${riskTitle || 'Shell command'}", UI_SOURCE)
         self.assertIn("full sha256", UI_SOURCE)
         self.assertIn("riskLabel: data.risk_label", HTML)
         self.assertIn("riskTitle: data.risk_title", HTML)
@@ -389,9 +389,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_routine_failures_do_not_use_native_alerts(self) -> None:
         self.assertNotIn("alert(", HTML)
         self.assertIn("setStatus('Could not add project', 'err')", HTML)
-        self.assertIn("Approval required", UI_SOURCE)
-        self.assertIn("Could not send approval", HTML)
-        self.assertIn("function showCommandApprovalError", HTML)
+        self.assertIn("Run this command?", UI_SOURCE)
+        self.assertIn("Decision could not be confirmed", UI_SOURCE)
+        self.assertIn("approvalController.submit(id, approved)", HTML)
         self.assertNotIn("Failed to pick folder", HTML)
         self.assertNotIn("Shell approval failed", HTML)
         self.assertNotIn("approveShell", HTML)
@@ -492,28 +492,15 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_chunked_render_keeps_stateful_blocks_and_cancel(self) -> None:
         # A >120-line fenced block must render in one idle pass, never as
         # independently parsed 120-line slices (fence/list/quote state would
-        # fork). A collapse must cancel queued pumps via a render token.
+        # fork). Queued work still supports cancellation by its caller.
         self.assertIn("function hasStatefulBlocks(text)", RENDER_JS)
         self.assertIn("/^\\s*```/m.test(value)", RENDER_JS)
         self.assertIn("/^\\s*>\\s?/m.test(value)", RENDER_JS)
         self.assertIn("function renderMarkdownChunked(container, text, done, isCurrent)", RENDER_JS)
         self.assertIn("if (!alive()) return;", RENDER_JS)
         self.assertIn("scheduleIdleChunk(() => {", RENDER_JS)
-        self.assertIn("let renderToken = 0;", RENDER_JS)
-        self.assertIn("const my = ++renderToken;", RENDER_JS)
-        self.assertIn("() => my === renderToken", RENDER_JS)
-        self.assertIn("renderToken++;", RENDER_JS)
-        self.assertIn("renderMarkdownChunked(body, value, undefined, alive)", RENDER_JS)
         self.assertIn("if (hasStatefulBlocks(value)) {", RENDER_JS)
         self.assertIn("while (scratch.firstChild) container.appendChild(scratch.firstChild);", RENDER_JS)
-        # Preview must never leave a fence open.
-        self.assertIn("fences % 2 === 1", RENDER_JS)
-
-    def test_inline_code_spans_are_not_bolded(self) -> None:
-        self.assertIn("function applyBold(segment)", RENDER_JS)
-        self.assertIn("out += applyBold(escapeHtml(text.slice(last, m.index)));", RENDER_JS)
-        self.assertIn("${escapeHtml(m[1])}</code>", RENDER_JS)
-        self.assertIn("out += applyBold(escapeHtml(text.slice(last)));", RENDER_JS)
 
     def test_markdown_stays_monochrome_without_syntax_highlighting(self) -> None:
         md_css_start = APP_CSS.index("assistant markdown")
@@ -793,6 +780,7 @@ async function main() {
   // Composer live fallback: no snapshot dep; stale removed-id must resolve to live mimo.
   const composerProviders = runtime.UiState.PROVIDERS;
   const liveSession = { id: 's1', provider: 'removed-id', messages: [
+    { type: 'shell_approval_status', approval: {continuation:'started', continuation_run_id:'older-approval-run'} },
     { type: 'user', attempts: [{ runId: 'source-run-1' }] },
   ], draft: {text:'',start:0,end:0,direction:'none',revision:0} };
   let syncedTo = null;
@@ -801,6 +789,7 @@ async function main() {
     runBodies.push({ url, body: JSON.parse(opts.body) });
     return { status: 200, ok: true, json: async () => ({}) };
   };
+  runtime.ShellApprovals = {continueSession: async () => false};
   runtime.Composer.init({
     $: (id) => global.document.getElementById(id),
     PROVIDERS: composerProviders,
@@ -836,6 +825,12 @@ async function main() {
   if (!continued) throw new Error('continueTask did not POST /api/run with input.kind=resume_run');
   if (continued.body.input.source_run_id !== 'source-run-1') throw new Error('continueTask lost source run id');
   if (continued.body.provider !== 'mimo') throw new Error('continueTask must preserve the stored provider, got ' + continued.body.provider);
+  // A newer approval continuation owns the subsequent Continue action.
+  liveSession.messages.push({type:'shell_approval_status', approval:{
+    continuation:'started', continuation_run_id:'newer-approval-run'}});
+  runBodies.length = 0;
+  await runtime.Composer.continueTask('s1');
+  if (runBodies[0].body.input.source_run_id !== 'newer-approval-run') throw new Error('newer approval run was lost');
   // Removed connections keep their identity and cannot submit or substitute.
   liveSession.provider = 'removed-id';
   runBodies.length = 0;

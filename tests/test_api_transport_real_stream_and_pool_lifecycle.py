@@ -1,6 +1,7 @@
 """Real sockets verify early cancellation, byte activity and HTTP reuse."""
 import contextlib
 import json
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -11,6 +12,82 @@ import pytest
 from codey.providers.api_http import ApiHttpSession, ConnectionKey
 from codey.providers.api_provider import ApiProvider
 from codey.providers.api_transport import GenerationNotSentError, GenerationRejectedError, GenerationUnknownError
+
+
+def test_stop_shuts_down_detached_tracked_socket_before_closing_response():
+    from http.client import HTTPConnection
+
+    from codey.providers.api_transport import AttemptControl
+
+    client, peer = socket.socketpair()
+    connection = HTTPConnection("127.0.0.1")
+    connection._tracked_socket = client
+    observed = []
+
+    def close():
+        peer.settimeout(0.1)
+        try:
+            observed.append(peer.recv(1) == b"")
+        except TimeoutError:
+            observed.append(False)
+
+    connection.close = close
+    try:
+        control = AttemptControl()
+        control.register_connection(connection)
+        control.cancel()
+        assert observed == [True], "closing the response can block before its detached socket is shut down"
+    finally:
+        client.close()
+        peer.close()
+
+
+def test_stop_shuts_down_all_sockets_before_any_buffered_close():
+    from http.client import HTTPConnection, HTTPResponse
+
+    from codey.providers.api_transport import AttemptControl
+
+    client, peer = socket.socketpair()
+    tracked, tracked_peer = socket.socketpair()
+    response = HTTPResponse(client)
+    connection = HTTPConnection("127.0.0.1")
+    connection._tracked_socket = tracked
+    observed = []
+
+    def close():
+        peer.settimeout(0.1)
+        try:
+            observed.append(peer.recv(1) == b"")
+        except TimeoutError:
+            observed.append(False)
+
+    connection.close = close
+    try:
+        control = AttemptControl()
+        control.register_connection(connection)
+        control.register_response(response)
+        control.cancel()
+        assert observed == [True], "one wrapper closed before the other response's reader was interrupted"
+    finally:
+        response.close()
+        for sock in (client, peer, tracked, tracked_peer):
+            sock.close()
+
+
+def test_stop_closes_native_socket_even_while_a_buffered_reader_holds_it():
+    from codey.providers.api_transport import AttemptControl
+
+    client, peer = socket.socketpair()
+    buffered = client.makefile("rb")
+    try:
+        control = AttemptControl()
+        control.register_connection(client)
+        control.cancel()
+        assert client.fileno() == -1, "socket.close deferred native closure until the buffered reader released it"
+    finally:
+        buffered.close()
+        client.close()
+        peer.close()
 
 CHAT = {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
 

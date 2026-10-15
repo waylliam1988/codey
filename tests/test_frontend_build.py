@@ -81,3 +81,13 @@ def test_publish_validation_rejects_empty_manifest(tmp_path: Path, monkeypatch: 
     with pytest.raises(SystemExit, match="non-empty object"):
         publish_frontend._validate_dist()
 
+
+
+def test_packaged_svg_icon_is_served_with_svg_mime(tmp_path, monkeypatch):
+    root = tmp_path / "web"
+    (root / "assets").mkdir(parents=True)
+    icon = root / "assets" / "new-chat.svg"
+    icon.write_text('<svg xmlns="http://www.w3.org/2000/svg"/>', encoding="utf-8")
+    monkeypatch.setattr(http_plumbing, "WEB_DIR", root)
+    assert http_plumbing.resolve_web_asset("/assets/new-chat.svg") == (icon.resolve(), "image/svg+xml")
+    assert http_plumbing.resolve_web_asset("/assets/../new-chat.svg") is None

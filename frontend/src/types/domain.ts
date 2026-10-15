@@ -1,3 +1,15 @@
+export interface ApprovalState {
+  type: 'shell_approval_status';
+  id: string;
+  session_id: string;
+  run_id?: string;
+  source_run_id?: string;
+  continuation_run_id?: string;
+  decision: 'pending' | 'allow' | 'deny' | 'cancelled';
+  execution: string;
+  continuation: string;
+  revision: number;
+}
 import type { ToolDisplay as importToolDisplay } from '../render';
 export interface ModelChoice {
   enabled: boolean;
@@ -33,6 +45,8 @@ export interface RequestAttempt {
 }
 export interface Message extends importToolDisplay {
   type: string;
+  approval?: ApprovalState;
+  approvalSubmission?: 'sending' | 'checking' | 'unconfirmed';
   id?: string;
   text?: string;
   sessionId?: string;
@@ -55,6 +69,7 @@ export interface Message extends importToolDisplay {
   shellStatus?: string;
   approved?: boolean;
   output?: string;
+  outputTruncated?: boolean;
   requestId?: string;
   sendFailure?: string;
   runOwner?: string;
@@ -238,6 +253,7 @@ export interface SseDeps {
   refreshProviderStatus(immediate: boolean): void;
 }
 export interface RunState {
+  shell_approvals?: ApprovalState[];
   busy?: boolean;
   run_id?: string;
   session_id?: string;

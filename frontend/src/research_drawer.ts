@@ -1,3 +1,4 @@
+import type { DocumentRef } from './document_pane';
 import { runtime } from './runtime';
 export interface ResearchSource {
   url?: string;
@@ -48,6 +49,7 @@ export interface ResearchRunView {
   createdAt?: number;
 }
 export interface ResearchDrawerDeps {
+  openDocument(sessionId: string, ref: DocumentRef): void;
   $(id: string): HTMLElement;
   getCurrentRun(sessionId: string): ResearchRunView | null;
   copyText(text: string): Promise<boolean>;
@@ -465,6 +467,12 @@ export interface ResearchDrawerDeps {
     title.className = 'research-card-title';
     title.textContent = note.title || id || 'Note';
     head.appendChild(title);
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'drawer-btn';
+    open.textContent = 'Open document';
+    open.onclick = () => deps.openDocument(sessionId, { kind: 'research', note_id: id });
+    head.appendChild(open);
     card.appendChild(head);
     const meta = [note.type || 'note', note.updated || '', note.path || ''].filter(Boolean).join(' · ');
     if (meta) {

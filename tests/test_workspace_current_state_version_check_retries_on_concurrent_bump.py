@@ -46,7 +46,7 @@ class CurrentStateVersionCheckRetriesTests(unittest.TestCase):
                     side_effect=fake_read,
                 ),
                 mock.patch(
-                    "codey.workspace.revision.workspace_fingerprint", side_effect=fake_fp
+                    "codey.workspace.revision.scan_workspace_fingerprint", side_effect=fake_fp
                 ),
             ):
                 state = store.current_state(project)
@@ -67,7 +67,7 @@ class CurrentStateVersionCheckRetriesTests(unittest.TestCase):
 
             fp = "sha256:" + "c" * 64
             with mock.patch(
-                "codey.workspace.revision.workspace_fingerprint",
+                "codey.workspace.revision.scan_workspace_fingerprint",
                 return_value=fp,
             ):
                 state = store.current_state(project)

@@ -18,6 +18,8 @@ def windows_process_fixture(monkeypatch, *, resume_status=0):
     job = Mock()
 
     def popen(*args, **kwargs):
+        assert kwargs["env"]["PYTHONUTF8"] == "1"
+        assert kwargs["env"]["PYTHONIOENCODING"] == "utf-8"
         events.append("spawn")
         if not kwargs["creationflags"] & 0x4:
             proc.completed = True
@@ -41,7 +43,7 @@ def windows_process_fixture(monkeypatch, *, resume_status=0):
     api = SimpleNamespace(WinDLL=Mock(return_value=dll), c_void_p=ctypes.c_void_p,
         c_long=ctypes.c_long, c_ulong=ctypes.c_ulong,
         WinError=lambda code: OSError(code, "resume rejected"))
-    monkeypatch.setattr(cancellation, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(cancellation, "os", SimpleNamespace(name="nt", environ={}))
     monkeypatch.setattr(cancellation, "subprocess", SimpleNamespace(Popen=popen, PIPE=subprocess.PIPE))
     monkeypatch.setattr(cancellation, "_windows_subprocess", SimpleNamespace(CREATE_NEW_PROCESS_GROUP=512), raising=False)
     monkeypatch.setattr(cancellation, "_windows_ctypes", api, raising=False)

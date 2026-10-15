@@ -326,6 +326,8 @@ def replay_slot_typed(
             persisted_payload["exit_code"] = exit_code
         if "execution_disposition" in record:
             persisted_payload["execution_disposition"] = record["execution_disposition"]
+        if "applied_edit" in record:
+            persisted_payload["applied_edit"] = record["applied_edit"]
         spec = _spec_persisted(
             persisted_payload,
             want,

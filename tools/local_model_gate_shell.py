@@ -62,13 +62,13 @@ class GateHTTPClient:
 
     def post(self, path: str, body: dict) -> dict:
         status, payload = self.request(path, body)
-        if status != 200:
+        if status not in {200, 202}:
             raise AssertionError(f"{path}: HTTP {status}: {payload}")
         return payload
 
     def state(self) -> dict:
         status, payload = self.request("/api/state")
-        if status != 200:
+        if status not in {200, 202}:
             raise AssertionError(f"state: HTTP {status}: {payload}")
         return payload
 
@@ -192,14 +192,19 @@ def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict:
         if not isinstance(original_window, dict) or not record.get("call_id"):
             raise AssertionError("approval lacks native window/call identity")
         approved = client.post("/api/shell_approval", {"id": approval_id, "approved": case != "shell_deny"})
-        if approved.get("continued") is not True:
-            raise AssertionError(f"approval did not submit continuation: {approved}")
+        expected_decision = "deny" if case == "shell_deny" else "allow"
+        if approved.get("decision") != expected_decision:
+            raise AssertionError(f"approval decision was not accepted: {approved}")
         deadline = time.monotonic() + target.request_timeout
         while time.monotonic() < deadline:
             snapshot = client.state()
             final = snapshot.get("last_terminal_event") or {}
-            if not snapshot.get("busy") and final.get("run_id") != source_run:
+            approval = next((row for row in snapshot.get("shell_approvals", []) if row["id"] == approval_id), {})
+            continuation_run = approval.get("continuation_run_id")
+            if (not snapshot.get("busy") and continuation_run and final.get("run_id") == continuation_run):
                 break
+            if approval.get("continuation") in {"failed", "cancelled"} or approval.get("execution") == "uncertain":
+                raise AssertionError(f"approval continuation failed: {approval}")
             time.sleep(0.02)
         else:
             raise AssertionError("approval continuation did not finish")
@@ -220,8 +225,11 @@ def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict:
                         and (item.get("type") == "function_call_output" or item.get("role") == "tool")]
         if len(result_items) != 1:
             raise AssertionError("original shell result was not committed exactly once")
-        status, _ = client.request("/api/shell_approval", {"id": approval_id, "approved": case != "shell_deny"})
-        if status != 404:
-            raise AssertionError("approval could be consumed a second time")
+        status, repeated = client.request("/api/shell_approval", {"id": approval_id, "approved": case != "shell_deny"})
+        if status != 202 or repeated.get("decision") != expected_decision:
+            raise AssertionError("approval reply is not idempotent")
+        if not state.shell_approval_workflow.wait(5):
+            raise AssertionError("repeated approval did not settle")
+        verify_shell_events(events, source_run, case, original_window)
         return {"case": case, "ok": True, "seconds": round(time.monotonic() - started, 2),
                 "scope": "approval_continuation", "failure_stage": "", **proof}

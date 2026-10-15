@@ -54,7 +54,7 @@ Chat、编程、Research、规划与获授权的混合任务共用模型工具�
 
 | 所有者 | 职责 |
 | --- | --- |
-| `codey/app/operator_auth.py`、`web/assets/operator_auth.js` | 进程内 HTTP/SSE 操作者凭据及 UI 启动认证；独立于模型/任务授权 |
+| `codey/app/operator_auth.py`、`frontend/src/operator_auth.ts` | 进程内 HTTP/SSE 操作者凭据及 UI 启动认证；独立于模型/任务授权 |
 | `codey/runtime/core/models.py` | 不可变 `ToolResult`，必须携带精确布尔状态；展示文字不决定状态 |
 | `codey/app/task_services.py`、`task/entry_auth.py` | 桌面/headless 的审查与顾问服务只有一个组合入口；HTTP/CLI 授权只有一套推导规则 |
 | `codey/operations/task_state.py` | `TaskState` 与类型化提交资源包 |
@@ -103,7 +103,10 @@ Chat、编程、Research、规划与获授权的混合任务共用模型工具�
 | `codey/runtime/core/api_selection.py`、`operation_payload.py` | 无秘密的冻结 API 选择，以及严格接纳/交付 payload 校验 |
 | `codey/research/source_gateway.py`、`tools.py` | 显式来源/工具结果；取消及截止异常直接传播，不继续 fallback 获取 |
 | `codey/app/context.py`、`event_bus.py`、`event_payloads.py` | 公共出口补全运行身份和模式、严格状态；总线负责重放，纯投影模块生成有界机器事件与收据 |
-| `codey/app/headless_runner.py`、`cli.py`、`web/assets/sse.js` | 消费公共事件，负责 JSONL、CLI 文字与网页协调，不另行推断成功 |
+| `codey/app/headless_runner.py`、`cli.py`、`frontend/src/sse.ts` | 消费公共事件，负责 JSONL、CLI 文字与网页协调，不另行推断成功 |
+| `codey/app/shell_approval_workflow.py`、`shell_approval_state.py`、`runtime/effects/shell_approval_records.py` | 持久审批决定、执行领取、结果结算及独立 continuation；恢复失败只重试交付，不重复执行命令 |
+| `frontend/src/shell_approvals.ts`、`messages.ts` | 按审批 ID 和 revision 更新界面，查询响应丢失后的状态，提供独立恢复入口 |
+| `codey/app/documents.py`、`frontend/src/document_pane.ts`、`document_links.ts` | 从服务端会话绑定推导文档范围，统一工作区文件/研究笔记读取与按会话隔离的预览标签 |
 | `tools/machine_contract_gate.py` | CI/本地必跑契约，缺失、失败或 skip 都不通过 |
 | `tests/manual/semantic_holdout_local_ab.py` | 不同函数/文件及正确实现对照；复用原生 Codey/Pi 比较循环与独立评分 |
 | `tests/manual/codey_vs_opencode_agent_stability_ab.py`、`opencode_installed_agent_worker.py` | 显式安装构建的原生 agent 比较及本地 sidecar 观察；复用任务与评分、独立状态，不替换生产 agent |

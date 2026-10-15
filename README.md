@@ -228,6 +228,13 @@ are defined in the [release gate](docs/release_gate.zh-CN.md).
 
 The model menu has a stable 240px width bounded by the viewport. Approve or deny
 commands in the command card; there is no duplicate composer approval notice.
+Approval decisions return after durable acceptance; command execution and task
+continuation run in the background. Response-loss recovery queries the saved
+decision, and continuation retry never reruns the command. See the
+[approval lifecycle](docs/shell_approval_lifecycle.md).
+Workspace files and research notes open in a shared document pane with source
+view, copy, reload and session-owned tabs. Reading position survives reload.
+See [workspace, terminal and document behavior](docs/workspace_documents_and_terminal.md).
 Zen alone uses its removable Node fetch adapter; Local keeps Python HTTP. The live
 free-model matrix still has two unresolved Ling thinking-enabled cases.
 
@@ -236,9 +243,10 @@ Windows Python 3.11/3.12/3.13, the required machine contracts on Windows/Linux,
 and syntax checks for actual JS/MJS assets. Full-tree mypy/Pyrefly/ty run on each
 Windows version and Linux 3.12 with an explicit target Python version. Linux runs
 focused POSIX regressions and machine contracts; the full pytest suite runs on
-all three Windows versions. Windows 3.12
-also measures all production Python statements/branches, including subprocesses,
-and enforces 85% / 75% minima. See [test commands](tests/README.md) and the
+all three Windows versions. Each version collects production Python statement
+and branch coverage, including subprocesses, during its single `Pytest` step.
+The following coverage steps combine data, enforce 85% / 75% minima, and upload
+separate artifacts for each version. See [test commands](tests/README.md) and the
 [maintenance audit](docs/ui_maintenance_audit_2026-10-13.zh-CN.md).
 
 ## License

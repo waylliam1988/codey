@@ -1,17 +1,15 @@
+import type { DocumentRef } from './document_pane';
+import { commandCard } from './command_card';
+import { approvalText } from './shell_approvals';
 import { runtime } from './runtime';
 import type { Message, UiDeps } from './types/domain';
 interface MessagesDeps extends UiDeps {
+  openDocument(sessionId: string, ref: DocumentRef): void;
   statusRow(prefix: string, text: string, options?: Record<string, unknown>): HTMLElement;
   currentProjectPath(): string;
   openChangesDrawer(project: string, path?: string): unknown;
   attachCurrentChatToPickedProject(): unknown;
-  approveCommand(
-    id: string,
-    approved: boolean,
-    approve: HTMLButtonElement,
-    deny: HTMLButtonElement,
-    error: HTMLElement,
-  ): unknown;
+  approveCommand(id: string, approved: boolean): unknown;
   continueTask(sessionId: string): unknown;
   resumeTeaching(id: string, sessionId: string): unknown;
   getActiveId(): string;
@@ -84,20 +82,7 @@ export interface MessagesApi {
       const body = document.createElement('div');
       body.className = 'body md';
       div.appendChild(body);
-      const toggle = document.createElement('button');
-      toggle.className = 'toggle';
-      const ctl = runtime.Render.renderAssistantBody(body, m.text || '', toggle);
-      if (ctl.long) {
-        toggle.textContent = 'Collapse';
-        toggle.onclick = () => {
-          const on = ctl.isExpanded();
-          if (on) ctl.collapse();
-          else ctl.expand();
-          toggle.textContent = on ? 'Expand' : 'Collapse';
-          toggle.setAttribute('aria-expanded', String(!on));
-        };
-        div.appendChild(toggle);
-      }
+      runtime.Render.renderMarkdownChunked(body, m.text || '');
       addMessageCopyButton(div, messageCopyText(m));
       chat.appendChild(div);
     } else if (m.type === 'tool') {
@@ -109,7 +94,16 @@ export interface MessagesApi {
     } else if (m.type === 'tool_pending') {
       chat.appendChild(standaloneToolEl(m));
     } else if (m.type === 'research_done') {
+      const report = runtime.ResearchRuns.current(m.sessionId || activeId)?.synthesisId;
       const actions = runtime.RunDetails.actionsForMessage(m, [
+        ...(report
+          ? [
+              {
+                label: 'Open report',
+                onclick: () => deps.openDocument(m.sessionId || activeId, { kind: 'research', note_id: report }),
+              },
+            ]
+          : []),
         { label: 'Open', onclick: () => runtime.ResearchDrawer.open(m.sessionId || activeId) },
         { label: 'Use in Project', onclick: () => attachCurrentChatToPickedProject() },
       ]);
@@ -185,19 +179,18 @@ export interface MessagesApi {
       card.tabIndex = -1;
       const title = document.createElement('div');
       title.className = 'sc-title';
-      title.textContent = 'Approval required';
+      title.textContent = 'Run this command?';
       const meta = document.createElement('div');
       meta.className = 'sc-meta';
-      meta.textContent = m.cwd ? `Runs in ${m.cwd}` : 'Runs in .';
-      const riskTitle = m.riskTitle || m.riskLabel || '';
-      const riskDetail = m.riskDetail || '';
-      const note = document.createElement('div');
-      note.className = 'sc-note';
-      note.textContent =
-        riskTitle || riskDetail ? `${riskTitle || 'Shell command'}${riskDetail ? ` · ${riskDetail}` : ''}` : '';
-      const cmd = document.createElement('div');
+      meta.textContent = m.cwd || '.';
+      const commandBody = document.createElement('div');
+      commandBody.className = 'sc-command-body';
+      const commandLabel = document.createElement('div');
+      commandLabel.className = 'sc-command-label';
+      commandLabel.textContent = 'Shell';
+      const cmd = document.createElement('pre');
       cmd.className = 'shell-command';
-      cmd.textContent = '$ ' + (m.command || '');
+      cmd.textContent = m.command || '';
       const commandHash = m.commandSha256 || '';
       const commandIntegrity = document.createElement('div');
       commandIntegrity.className = 'sc-note';
@@ -212,27 +205,54 @@ export interface MessagesApi {
       deny.className = 'text-btn';
       deny.textContent = 'Deny';
       const approve = document.createElement('button');
-      approve.className = 'text-btn primary';
-      approve.textContent = 'Allow';
-      approve.onclick = () => approveCommand(m.id || '', true, approve, deny, error);
-      deny.onclick = () => approveCommand(m.id || '', false, approve, deny, error);
+      approve.className = 'text-btn approval-allow';
+      const submitting = m.approvalSubmission === 'sending';
+      approve.textContent = submitting ? 'Submitting…' : 'Allow once';
+      if (submitting) {
+        const spinner = document.createElement('span');
+        spinner.className = 'spinner';
+        spinner.setAttribute('aria-hidden', 'true');
+        approve.prepend(spinner);
+        approve.setAttribute('aria-busy', 'true');
+      }
+      approve.disabled = deny.disabled = !!m.approvalSubmission;
+      if (m.approvalSubmission && !submitting) {
+        error.hidden = false;
+        error.textContent =
+          m.approvalSubmission === 'checking' ? 'Confirming approval status…' : 'Decision could not be confirmed';
+        if (m.approvalSubmission === 'unconfirmed') {
+          const check = document.createElement('button');
+          check.className = 'text-btn';
+          check.textContent = 'Check status';
+          check.onclick = () => runtime.ShellApprovals.refresh(m.id || '');
+          actions.append(check);
+        }
+      }
+      approve.onclick = () => approveCommand(m.id || '', true);
+      deny.onclick = () => approveCommand(m.id || '', false);
       actions.append(deny, approve);
-      card.append(title, meta);
-      if (note.textContent) card.appendChild(note);
-      if (commandIntegrity.textContent) card.appendChild(commandIntegrity);
-      card.append(cmd, error, actions);
+      commandBody.append(commandLabel, cmd, meta);
+      if (commandIntegrity.textContent) commandBody.append(commandIntegrity);
+      card.append(title, commandBody, error, actions);
       div.appendChild(card);
       chat.appendChild(div);
+    } else if (m.type === 'shell_approval_status' && m.approval) {
+      const state = m.approval;
+      const actions =
+        state.continuation === 'failed' && state.execution !== 'uncertain'
+          ? [
+              {
+                label: 'Retry continuation',
+                onclick: () => runtime.ShellApprovals.retry(state.id),
+              },
+            ]
+          : [];
+      const row = statusRow('Command', approvalText(state), { actions });
+      row.dataset.approvalId = state.id;
+      row.tabIndex = -1;
+      chat.appendChild(row);
     } else if (m.type === 'shell_result') {
-      const div = document.createElement('div');
-      div.className = 'msg shell';
-      const out = document.createElement('div');
-      out.className = 'shell-output';
-      const exit = m.exitCode === null || m.exitCode === undefined ? '' : `exit ${m.exitCode}\n`;
-      const verb = runtime.Render.shellStatusVerb(m.shellStatus || '', !!m.approved);
-      out.textContent = `${verb}\n$ ${m.command || ''}\n${exit}${m.output || ''}`;
-      div.appendChild(out);
-      chat.appendChild(div);
+      chat.appendChild(commandCard(m, runtime.Render.copyText));
     } else if (m.type === 'limit') {
       chat.appendChild(
         statusRow('Limit', m.text || 'Turn limit reached', {

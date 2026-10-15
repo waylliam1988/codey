@@ -296,10 +296,12 @@ def start_process(
         group_args = {"creationflags": _windows_subprocess.CREATE_NEW_PROCESS_GROUP | 0x4}
     else:
         group_args = {"start_new_session": True}
+    process_env = os.environ.copy() if env is None else dict(env)
+    process_env.update(PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     proc = subprocess.Popen(
         args,
         cwd=cwd,
-        env=env,
+        env=process_env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=False,

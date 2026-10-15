@@ -428,6 +428,7 @@ def spec_from_persisted_record(
     except Exception as exc:
         raise RecoveryFailed(f"persisted replay unreadable: {exc}") from exc
     audit: dict[str, Any] = {}
+    canonical: dict[str, Any] = {}
     try:
         name = record.get("name", "") if isinstance(record, Mapping) else ""
         if type(name) is not str:
@@ -446,12 +447,20 @@ def spec_from_persisted_record(
             audit["execution_disposition"] = disposition
     except Exception as exc:
         raise RecoveryFailed(f"persisted replay unreadable: {exc}") from exc
+    applied = record.get("applied_edit")
+    if applied is not None:
+        if (not isinstance(applied, Mapping) or name != "edit" or ok
+                or applied.get("mutation_applied") is not True or applied.get("identity_status") != "unconfirmed"
+                or not isinstance(applied.get("identity_reason"), str)):
+            raise RecoveryFailed("persisted applied edit receipt is inconsistent")
+        canonical = {"workspace_unconfirmed": True, **dict(applied)}
+        audit.update(changed=True, mutation_applied=True)
     return RecoveredResultSpec(
         ok=ok, call=call,
         model_text=excerpt,
         audit=audit,
         presentation={},
-        canonical={},
+        canonical=canonical,
         truncated=False,
         trusted_workspace=proof,
         require_workspace_provenance=require_provenance,

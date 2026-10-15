@@ -38,6 +38,32 @@ def send(page, calls, text="你好"):
     return calls[-1].get("run_id") or f"old-run-{len(calls)}"
 
 
+def test_one_progress_summary_survives_tool_failure_and_waits_without_spinning_for_approval(page):
+    calls, state = backend(page)
+    run_id = send(page, calls)
+    expect(page.locator(".process-summary")).to_contain_text("Waiting for reply")
+    expect(page.locator(".process-summary .spinner")).to_have_count(1)
+    expect(page.locator(".request-status")).to_be_hidden()
+    page.evaluate("""runId => {
+        addToSession('a', {type:'tool',runId,toolKey:'denied',kind:'run',path:'python probe.py',error:true,result:'command_not_allowed'});
+    }""", run_id)
+    expect(page.locator(".process-summary")).to_contain_text("Working")
+    expect(page.locator(".process-alerts")).to_contain_text("command_not_allowed")
+    page.evaluate("""runId => {
+        addToSession('a', {type:'shell_request',runId,id:'pending-card',command:'python probe.py',cwd:'E:/project-alpha',riskDetail:'Must not render reason'});
+    }""", run_id)
+    expect(page.locator(".process-approval-status")).to_have_text("Waiting for approval")
+    expect(page.locator(".process-approval-status")).to_be_visible()
+    expect(page.locator(".process-group")).to_be_hidden()
+    expect(page.locator(".process-summary .spinner")).to_have_count(0)
+    expect(page.locator(".shell-card")).not_to_contain_text("Must not render reason")
+    expect(page.locator(".shell-card .sc-title")).to_have_text("Run this command?")
+    expect(page.get_by_role("button", name="Allow once", exact=True)).to_be_visible()
+    finish(page, state, run_id, "Waiting for approval", "approval")
+    expect(page.locator(".process-approval-status")).to_be_visible()
+    expect(page.locator(".request-status")).to_be_hidden()
+
+
 def finish(page, state, run_id, summary="ERROR: model HTTP 503: backend temporarily overloaded", reason="error"):
     event = {"type": "task_done", "session_id": "a", "run_id": run_id,
              "summary": summary, "stop_reason": reason, "mode": "chat"}
@@ -60,7 +86,8 @@ def test_retry_updates_one_message_and_error_then_recovers(page):
     retry(page)
     expect(page.locator(".msg.user")).to_have_count(1)
     expect(page.locator(".request-status .status-row.err")).to_have_count(0)
-    expect(page.locator(".request-status")).to_contain_text("Retrying")
+    expect(page.locator(".request-status")).to_be_hidden()
+    expect(page.locator(".process-summary")).to_contain_text("Working")
     assert calls[1]["task"] == "你好"
     assert calls[1]["run_id"] != first
     finish(page, state, calls[1]["run_id"], "ERROR: model HTTP 403: Free tier only available in OpenCode")
@@ -112,7 +139,7 @@ def test_warning_is_attempt_detail_and_tools_survive_retry(page):
     finish(page, state, first)
     assert "Local update paused" not in page.locator("#chat").inner_text()
     page.get_by_role("button", name="Details", exact=True).click()
-    expect(page.locator(".retry-details")).to_contain_text("Local update paused")
+    expect(page.locator(".retry-details")).to_contain_text("Local memory update unavailable")
     page.evaluate("window.originalProcess = document.querySelector('.process-block')")
     retry(page)
     expect(page.locator(".process-block")).to_have_count(1)
@@ -230,7 +257,8 @@ def test_restored_request_recovers_in_place(page, tmp_path, restored):
     page.evaluate("Sse.reconcileRunState()")
     expect(page.locator(".msg.user")).to_have_count(1)
     if restored == "running":
-        expect(page.locator(".request-status")).to_contain_text("Waiting for reply")
+        expect(page.locator(".request-status")).to_be_hidden()
+        expect(page.locator(".process-summary")).to_contain_text("Waiting for reply")
         finish(page, state, run_id)
     else:
         expect(page.locator(".request-status")).to_contain_text("Original failure" if restored == "failed" else "Response was not confirmed")
@@ -305,3 +333,15 @@ def test_continuation_model_recovery_also_survives_storage(tmp_path):
     message = {"type": "err", "text": "Select the model again", "sessionId": "a", "sendFailure": "model_selection", "runOwner": ""}
     store.save({"active_id": "a", "sessions": [{"id": "a", "messages": [message]}], "projects": []}, base_revision=0)
     assert store.load()["sessions"][0]["messages"] == [message]
+
+
+def test_orphan_local_update_warnings_are_folded_without_pause_spam(page):
+    backend(page)
+    page.evaluate("handleServerEvent", {"type": "ghost_post_turn_warning", "session_id": "a", "run_id": "continuation", "stage": "observation_commit", "error_type": "GhostObservationFailed"})
+    expect(page.locator(".info-line")).to_have_count(0)
+    expect(page.locator(".process-title")).to_have_text("Activity")
+    assert "Local update paused" not in page.locator("#chat").inner_text()
+    assert "Local memory update unavailable" not in page.locator("#chat").inner_text()
+    page.locator(".process-summary").click()
+    expect(page.locator(".process-diagnostic")).to_contain_text("Local memory update unavailable")
+    expect(page.locator(".process-diagnostic")).to_contain_text("observation_commit")

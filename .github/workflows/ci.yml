@@ -77,24 +77,28 @@ jobs:
         run: python -m tools.machine_contract_gate
 
       - name: Pytest
-        if: matrix.python-version != '3.12'
-        run: python -m pytest -q -o faulthandler_timeout=120
-
-      - name: Full-suite statement and branch coverage
-        if: matrix.python-version == '3.12'
+        # Run the full suite once on every Python, collecting branch coverage.
         shell: pwsh
         run: |
           $env:COVERAGE_FILE = "$env:GITHUB_WORKSPACE/.e2e-artifacts/coverage/.coverage"
           python -m coverage run -m pytest -q -o faulthandler_timeout=120
           exit $LASTEXITCODE
 
-      - name: Coverage report and gate
-        if: always() && matrix.python-version == '3.12'
+      - name: Full-suite statement and branch coverage
+        if: always()
         shell: pwsh
         run: |
           $env:COVERAGE_FILE = "$env:GITHUB_WORKSPACE/.e2e-artifacts/coverage/.coverage"
           python -m coverage combine
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m coverage report
+          exit $LASTEXITCODE
+
+      - name: Coverage report and gate
+        if: always()
+        shell: pwsh
+        run: |
+          $env:COVERAGE_FILE = "$env:GITHUB_WORKSPACE/.e2e-artifacts/coverage/.coverage"
           python -m coverage json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m coverage xml
@@ -105,10 +109,10 @@ jobs:
           exit $LASTEXITCODE
 
       - name: Upload coverage evidence
-        if: always() && matrix.python-version == '3.12'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-windows-py312
+          name: coverage-windows-py${{ matrix.python-version }}
           path: .e2e-artifacts/coverage/
           include-hidden-files: true
           if-no-files-found: warn

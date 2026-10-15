@@ -22,7 +22,7 @@ class WorkspaceCurrentStateMissingFileConcurrentInitTests(unittest.TestCase):
             project = Path(td)
             (project / "a.py").write_text("x=1\n", encoding="utf-8")
             store = WorkspaceRevisionStore(Path(home))
-            real_fingerprint = rev_mod.workspace_fingerprint
+            real_fingerprint = rev_mod.scan_workspace_fingerprint
             calls = {"n": 0}
 
             def racing_fingerprint(proj, *, ignored_paths=()):
@@ -34,7 +34,7 @@ class WorkspaceCurrentStateMissingFileConcurrentInitTests(unittest.TestCase):
                 # first caller is still scanning. Use the real fingerprint
                 # for the bump's internal scan to avoid recursing into this
                 # patched wrapper.
-                with mock.patch.object(rev_mod, "workspace_fingerprint", real_fingerprint):
+                with mock.patch.object(rev_mod, "scan_workspace_fingerprint", real_fingerprint):
                     other = WorkspaceRevisionStore(Path(home))
                     bumped = other.bump_state(proj, ignored_paths=ignored_paths)
                 fp_after = real_fingerprint(proj, ignored_paths=ignored_paths)
@@ -43,7 +43,7 @@ class WorkspaceCurrentStateMissingFileConcurrentInitTests(unittest.TestCase):
                 self.assertTrue(bumped.revision >= 2)
                 return fp_after or fp_before
 
-            with mock.patch.object(rev_mod, "workspace_fingerprint", side_effect=racing_fingerprint):
+            with mock.patch.object(rev_mod, "scan_workspace_fingerprint", side_effect=racing_fingerprint):
                 state = store.current_state(str(project), ignored_paths=())
             # Must not return stale revision 1 alongside the post-bump
             # fingerprint: either the pre-bump pair or the bumped pair, but

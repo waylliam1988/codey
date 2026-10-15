@@ -115,7 +115,7 @@ def test_long_answer_is_visible_and_pointer_selection_survives_tool_update(page)
     assert selected
     page.evaluate("addToSession('a', {type:'tool',kind:'read',path:'a.py',result:'2 lines'})")
     assert page.evaluate("getSelection().toString()") == selected
-    expect(page.get_by_role("button", name="Collapse", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Collapse", exact=True)).to_have_count(0)
 
 
 def api_connection_payload(local):
@@ -633,7 +633,7 @@ def test_narrow_window_controls_can_be_clicked_and_keyboard_sidebar_menu_closes(
     expect(page.locator(".session-more").first).to_be_focused()
 
 
-def test_full_refresh_preserves_selection_and_collapsed_answer(page):
+def test_full_refresh_preserves_selection_and_full_answer(page):
     page.evaluate("""() => {
         addToSession('a', {type:'asst',text:'Full answer\\n'.repeat(30)});
         const range = document.createRange(); range.selectNodeContents(document.querySelector('.msg.asst .body'));
@@ -642,9 +642,9 @@ def test_full_refresh_preserves_selection_and_collapsed_answer(page):
         renderChat();
     }""")
     assert page.evaluate("getSelection().toString() === selectedAnswer")
-    page.get_by_role("button", name="Collapse", exact=True).click()
     page.evaluate("switchSession('b'); switchSession('a')")
-    expect(page.get_by_role("button", name="Expand", exact=True)).to_be_visible()
+    expect(page.locator(".msg.asst .body")).to_contain_text("Full answer")
+    expect(page.get_by_role("button", name="Expand", exact=True)).to_have_count(0)
 
 
 def test_model_menu_keyboard_and_focus_return(page):
@@ -705,7 +705,7 @@ def test_running_owner_and_approval_are_discoverable_without_enter_approving(pag
     page.locator('#status').get_by_role("button", name="Open", exact=True).click()
     expect(page.locator("#sess-title")).to_contain_text("Alpha")
     expect(page.locator(".shell-command")).to_contain_text("pytest -q")
-    expect(page.get_by_text("Approval required", exact=True)).to_have_count(1)
+    expect(page.get_by_text("Run this command?", exact=True)).to_have_count(1)
 
 
 def test_reading_position_and_back_to_latest(page):

@@ -35,7 +35,9 @@ def test_shell_decision_resumes_chat_without_project_workflow(tmp_path, monkeypa
         submitted = Mock(return_value="continued-run")
         status, payload = shell_approval_response(state, {"id": approval_id, "approved": approved},
                                                  submit_task_after_slot_release=submitted)
-        assert status == 200 and payload["continued"]
+        assert status == 202
+        assert state.shell_approval_workflow.wait(5)
+        assert state.shell_approval_workflow.status(approval_id)["continuation"] == "started"
         args = submitted.call_args.args
         assert args[1] == (str(root) if attached else None)
         assert args[6] == "chat"

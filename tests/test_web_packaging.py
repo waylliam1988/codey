@@ -7,11 +7,30 @@ listed only HTML/CSS/JS, so installed wheels 404'd on /icon.ico.
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import tomllib
 import unittest
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_wheel_ships_every_published_frontend_asset(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "build", "--wheel", "--no-isolation", "--outdir", str(tmp_path)],
+        cwd=ROOT, capture_output=True, text=True, timeout=180,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    wheel, = tmp_path.glob("*.whl")
+    expected = {
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "codey" / "web" / "assets").iterdir() if path.is_file()
+    }
+    with zipfile.ZipFile(wheel) as archive:
+        missing = expected - set(archive.namelist())
+    assert not missing, f"Installed frontend is missing assets: {sorted(missing)}"
 
 
 class WebIconPackagingTests(unittest.TestCase):

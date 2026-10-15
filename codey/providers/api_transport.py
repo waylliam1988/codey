@@ -101,7 +101,10 @@ class AttemptControl:
         for lease in leases:
             connection = lease.cancel()
             if connection is not None:
-                self._shutdown(connection)
+                targets.append(connection)
+        # Interrupt every reader before close can wait on a buffered I/O lock.
+        for target in targets:
+            self._shutdown_socket(target)
         for target in targets:
             if not isinstance(target, _PooledResponse):
                 self._shutdown(target)
@@ -113,18 +116,29 @@ class AttemptControl:
             self._responses.clear()
 
     @staticmethod
+    def _shutdown_socket(target: Any) -> None:
+        sock = _socket_for(target)
+        with contextlib.suppress(Exception):
+            if sock is not None:
+                sock.shutdown(socket.SHUT_RDWR)
+        if isinstance(sock, socket.socket):
+            # makefile() keeps socket.close() from closing the native handle.
+            # Detach it first so a blocked buffered reader is interrupted too.
+            with contextlib.suppress(OSError):
+                descriptor = sock.detach()
+                if descriptor >= 0:
+                    socket.close(descriptor)
+        with contextlib.suppress(Exception):
+            target.shutdown(socket.SHUT_RDWR)
+
+    @staticmethod
     def _shutdown(target: Any) -> None:
         abort = getattr(target, "abort", None)
         if callable(abort):
             with contextlib.suppress(Exception):
                 abort()
             return
-        sock = _socket_for(target)
-        with contextlib.suppress(Exception):
-            if sock is not None:
-                sock.shutdown(socket.SHUT_RDWR)
-        with contextlib.suppress(Exception):
-            target.shutdown(socket.SHUT_RDWR)
+        AttemptControl._shutdown_socket(target)
         if isinstance(target, (http.client.HTTPResponse, urllib.error.HTTPError)):
             return
         if (isinstance(target, http.client.HTTPConnection)
@@ -142,6 +156,8 @@ def _socket_for(target: Any) -> Any:
                   getattr(target, "raw", None), getattr(getattr(target, "fp", None), "raw", None),
                   getattr(getattr(getattr(target, "fp", None), "fp", None), "raw", None)]
     for value in candidates:
+        if isinstance(value, socket.socket):
+            return value
         sock = getattr(value, "sock", None) or getattr(value, "_sock", None)
         if sock is not None:
             return sock
@@ -178,6 +194,10 @@ class BoundedBodyReader:
             if self.idle_timeout is not None and time.monotonic() - self.control.last_byte_at >= self.idle_timeout:
                 raise GenerationUnknownError("generation body was silent; not resent") from exc
             raise GenerationUnknownError("generation deadline exceeded; not resent") from exc
+        except (OSError, ValueError) as exc:
+            if self.control.cancelled:
+                raise GenerationUnknownError("generation cancelled while reading response") from exc
+            raise
         if self.idle_timeout is not None and time.monotonic() - started >= self.idle_timeout:
             raise GenerationUnknownError("generation body was silent; not resent")
         if not isinstance(data, bytes):

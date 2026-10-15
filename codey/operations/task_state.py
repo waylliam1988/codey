@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from codey.runs.trace import RunTraceStore
     from codey.runs.work_checkpoint import WorkCheckpointStore
     from codey.runtime.effects.effect_records import RuntimeEffectStore
+    from codey.runtime.effects.shell_approval_records import ShellApprovalRecordStore
     from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
@@ -109,6 +110,8 @@ class TaskState(Protocol):
 
 class TaskSubmissionState(TaskState, Protocol):
     """State plus resources needed to assemble a task run."""
+
+    shell_approval_records: ShellApprovalRecordStore
 
     @property
     def task_submission_stores(self) -> TaskSubmissionStores: ...

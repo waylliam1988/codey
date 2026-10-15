@@ -133,6 +133,15 @@ class AppContext:
         self.shell_approval_records = ShellApprovalRecordStore(runtime_state_home)
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
+        # Rebuild the UI projection for untouched approvals before the first
+        # /api/state request after a process restart.  Execution still requires
+        # the durable atomic claim, so this only restores display state.
+        from codey.app.shell_approval_state import restore_pending_shell_approvals
+
+        restore_pending_shell_approvals(self)
+        from codey.app.shell_approval_workflow import ShellApprovalWorkflow
+
+        self.shell_approval_workflow = ShellApprovalWorkflow(self)
         self._ghost_inbox: GhostInboxStore | None = None
         self._ghost_hebbian: GhostHebbianStore | None = None
         self._ghost_continuity: GhostContinuityStore | None = None
@@ -522,7 +531,14 @@ class AppContext:
             self.run_registry.stop_flag.set()
             with self.lock:
                 self.approvals.cancel_teach()
-                events = self._expire_shell_results_locked()
+                if self._close_requested:
+                    # Shutdown interrupts live execution but preserves durable
+                    # decisions and unanswered requests for the next process.
+                    self.approvals.invalidate_generation()
+                    events: tuple[dict[str, Any], ...] = ()
+                else:
+                    events = self._expire_shell_results_locked()
+                    self.shell_approval_workflow.cancel_queued()
         for event in events:
             self.record_shell_result(event)
 
@@ -551,33 +567,9 @@ class AppContext:
             self.record_shell_result(event)
 
     def _expire_shell_results_locked(self, **kwargs: Any) -> tuple[dict[str, Any], ...]:
-        """Persist an abandoned verdict before removing in-memory approvals."""
-        candidates = []
-        for approval_id, pending in self.approvals.shell_snapshot().items():
-            run_id = str(pending.get("run_id") or "")
-            session_id = str(pending.get("session_id") or "")
-            if kwargs.get("run_id") and run_id != kwargs["run_id"]:
-                continue
-            if kwargs.get("exclude_run_id") and run_id == kwargs["exclude_run_id"]:
-                continue
-            if kwargs.get("session_id") and session_id != kwargs["session_id"]:
-                continue
-            candidates.append((approval_id, pending))
-        events = self.approvals.expire_shell_results(**kwargs)
-        for approval_id, pending in candidates:
-            latest = self.shell_approval_records.latest(approval_id)
-            if latest is not None and latest.kind == "requested":
-                self.shell_approval_records.append(ShellApprovalFact(
-                    approval_id=approval_id,
-                    session_id=str(pending.get("session_id") or ""),
-                    source_run_id=str(pending.get("run_id") or ""),
-                    kind="abandoned",
-                    invocation_origin="native" if pending.get("call_id") else "text",
-                    command_ref=str(pending.get("command_ref") or ""),
-                    command_digest=str(pending.get("command_digest") or ""),
-                    cwd=str(pending.get("cwd") or "."),
-                ))
-        return events
+        from codey.app.shell_approval_state import expire_shell_results_locked
+
+        return expire_shell_results_locked(self, **kwargs)
 
     def add_pending_shell_approval(self, approval_id: str, pending: dict[str, Any]) -> None:
         with self.lock:
@@ -752,10 +744,16 @@ class AppContext:
     def run_state_payload(self) -> dict[str, Any]:
         with self.lock:
             research_restore_runs = tuple(sorted(self.research_changes))
-        return self.run_registry.payload(
+        payload = self.run_registry.payload(
             pending_event=self._pending_ui_event,
             research_restore_runs=research_restore_runs,
         )
+        payload["shell_approvals"] = self.shell_approval_workflow.list_statuses()
+        approval_work = self.shell_approval_workflow.busy_status()
+        if not payload["busy"] and approval_work is not None:
+            payload.update(busy=True, run_id=approval_work["source_run_id"],
+                           session_id=approval_work["session_id"], run_status="running")
+        return payload
 
     def _pending_ui_event(self, active: RunSnapshot | None) -> dict[str, Any] | None:
         with self.lock:
@@ -901,8 +899,11 @@ class AppContext:
         with self.lock:
             self.providers.set_session(provider_id, session_id)
 
-    @property
+    def shutdown_requested(self) -> bool:
+        """Read the shutdown signal afresh across worker boundaries."""
+        return self._close_requested
 
+    @property
     def closed(self) -> bool:
         """Return True when resources have been completely released."""
         return self._resources_closed
@@ -930,7 +931,7 @@ class AppContext:
         self.connection_status.close()
 
         try:
-            ghost_done = self.ghost_sleep_daemon.wait(timeout=2.0)
+            ghost_done = self.shell_approval_workflow.close() and self.ghost_sleep_daemon.wait(timeout=2.0)
         except Exception:
             ghost_done = False
         if not ghost_done:

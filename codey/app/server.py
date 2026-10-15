@@ -45,6 +45,7 @@ from codey.app import model_settings
 from codey.app import provider_services as provider_services
 from codey.app import task_submit as task_submit
 from codey.app.context import AppContext
+from codey.app.documents import document_response
 from codey.app.http_plumbing import (
     WEB_DIR,
     request_origin_allowed,
@@ -113,6 +114,7 @@ def get_state() -> AppContext:
             return current
         built = _build_state()
         globals()["STATE"] = built
+        built.shell_approval_workflow.start(_submit_task_after_slot_release)
         return built
 
 
@@ -222,6 +224,7 @@ def _submit_task_after_slot_release(
     initial_shell_results: tuple[dict[str, object], ...] = (),
     model_selection: ApiRunSelection | None = None,
     input: TaskInput | None = None,
+    run_id: str = "",
 ) -> str | None:
     return task_submit.submit_task_after_slot_release(
         session_id,
@@ -237,6 +240,7 @@ def _submit_task_after_slot_release(
         initial_shell_results=initial_shell_results,
         model_selection=model_selection,
         input=input,
+        run_id=run_id,
     )
 
 
@@ -259,12 +263,21 @@ def _run_submit_route(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict
     return response
 
 
+def _shell_approval_status_route(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+    approval_id = str((query.get("id") or [""])[0])
+    if approval_id:
+        state = ctx.shell_approval_workflow.status(approval_id)
+        return (200, state) if state is not None else (404, {"error": "approval not found"})
+    return 200, {"approvals": ctx.shell_approval_workflow.list_statuses(
+        session_id=str((query.get("session_id") or [""])[0]),
+    )}
+
+
 def _shell_approval_route(ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     response: tuple[int, dict[str, Any]] = app_api.shell_approval_response(
         ctx,
         body,
         submit_task_after_slot_release=_submit_task_after_slot_release,
-        continuation_retry_after=int(SHELL_CONTINUATION_IDLE_TIMEOUT),
     )
     return response
 
@@ -272,6 +285,7 @@ def _shell_approval_route(ctx: AppContext, body: dict[str, Any]) -> tuple[int, d
 _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, dict[str, Any]]]] = {
     "/api/model_settings": lambda ctx, _query: model_settings.settings_response(ctx),
     "/api/state": lambda ctx, _query: (200, ctx.run_state_payload()),
+    "/api/shell_approval": lambda ctx, query: _shell_approval_status_route(ctx, query),
     "/api/ui_state": lambda ctx, _query: app_api.ui_state_response(ctx),
     "/api/providers": lambda ctx, _query: app_api.providers_response(ctx),
     "/api/provider_catalog": lambda _ctx, _query: app_api.provider_catalog_response(),
@@ -300,8 +314,12 @@ _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[s
         str((body.get("project") if isinstance(body, dict) else "") or ""),
     ),
     "/api/changes/file": app_api.changes_file_response,
+    "/api/documents/read": document_response,
     "/api/changes/restore": app_api.restore_changes_response,
     "/api/shell_approval": _shell_approval_route,
+    "/api/shell_approval/retry": lambda ctx, body: ctx.shell_approval_workflow.retry(
+        str(body.get("id") or ""), _submit_task_after_slot_release,
+    ),
     "/api/teach/resume": app_api.teach_resume_response,
     "/api/new_chat": app_api.new_chat_response,
     "/api/stop": lambda ctx, _body: app_api.stop_response(ctx),

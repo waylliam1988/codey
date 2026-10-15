@@ -1,6 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from './types/domain';
 
+it('renders pending request progress only in the process summary, keeping failure recovery separate', async () => {
+  await import('./process');
+  await import('./requests');
+  const chat = document.createElement('div');
+  const session = {
+    id: 'single',
+    messages: [{ type: 'user', id: 'question', text: 'test', attempts: [{ runId: 'run', state: 'running' }] }],
+  } as Session;
+  window.Requests.init({
+    $: () => chat,
+    getSessions: () => [session],
+    getActiveId: () => session.id,
+    statusRow: () => {
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = '<div><span></span></div>';
+      return wrapper;
+    },
+  } as unknown as Parameters<typeof window.Requests.init>[0]);
+  window.Requests.appendStatus(chat, { type: 'request_status', sessionId: 'single', requestId: 'question' });
+  expect(chat.querySelector<HTMLElement>('.request-status')?.hidden).toBe(true);
+  expect(chat.querySelector('.process-title')?.textContent).toBe('Working · Waiting for reply');
+  expect(chat.querySelectorAll('.spinner')).toHaveLength(1);
+});
+
 describe('request recovery actions', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -52,6 +76,7 @@ describe('request recovery actions', () => {
         return row;
       }),
     };
+    await import('./process');
     await import('./requests');
     window.Requests.init(deps);
     window.Requests.appendStatus(document.querySelector('#chat')!, {

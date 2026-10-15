@@ -217,6 +217,14 @@ class _RunHookCallbacks:
                 "continue_after": bool(pending.get("continue_after")),
                 "call_id": str(pending.get("call_id") or ""),
                 "window_ref": pending.get("window_ref"),
+                "provider_id": str(pending.get("provider_id") or ""),
+                "turn": pending.get("turn"),
+                "tool_index": pending.get("tool_index"),
+                "risk_label": str(pending.get("risk_label") or "generic"),
+                "risk_title": str(pending.get("risk_title") or ""),
+                "risk_detail": str(pending.get("risk_detail") or ""),
+                "post_approval_instructions": str(pending.get("post_approval_instructions") or ""),
+                "deferred_tool_calls": pending.get("deferred_tool_calls") or list[dict[str, Any]](),
             }
             artifact = managed_outputs.write_json_artifact(
                 session_id=self.session_id,

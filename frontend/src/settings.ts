@@ -191,10 +191,6 @@ export interface SettingsModuleDeps {
       },
       true,
     );
-    document.querySelector<HTMLElement>('#top-menu [data-act="settings"]')?.addEventListener('click', () => {
-      $('top-menu').classList.remove('open');
-      open($('topbar-more'));
-    });
   }
 
   async function open(trigger: HTMLElement | null = document.activeElement as HTMLElement | null): Promise<void> {

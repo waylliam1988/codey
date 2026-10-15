@@ -177,7 +177,7 @@ export interface RequestsDeps {
     return failed;
   }
   function warning(sessionId: string, runId: string): boolean {
-    return update(sessionId, runId, { warning: 'Local update paused' });
+    return update(sessionId, runId, { warning: 'Local memory update unavailable' });
   }
   function acceptsEvent(data: EventData): boolean {
     const match = forRun(data.session_id, data.run_id);
@@ -240,9 +240,14 @@ export interface RequestsDeps {
   }
   function paint(node: StatusNode, sessionId: string, request: RequestMessage): void {
     const attempt = latest(request);
+    runtime.Process.append(
+      deps.$('chat'),
+      { type: 'request_activity', runId: attempt.runId, state: attempt.state },
+      () => {},
+    );
     const focused = node.contains(document.activeElement);
     const focusWasStatus = document.activeElement === node;
-    node.hidden = !pending(attempt) && attempt.state !== 'failed';
+    node.hidden = attempt.state !== 'failed';
     node.replaceChildren();
     if (node.hidden) {
       if (focused && sessionId === deps.getActiveId()) deps.$('task').focus();
@@ -282,22 +287,10 @@ export interface RequestsDeps {
         onclick: () => runtime.Composer.retryTask(sessionId, request.id),
       });
     }
-    const text = failed
-      ? readable(attempt.error)
-      : request.attempts.length > 1
-        ? 'Retrying · Waiting for reply'
-        : attempt.state === 'sending'
-          ? 'Sending…'
-          : 'Working · Waiting for reply';
+    const text = readable(attempt.error);
     const row = deps.statusRow(failed ? 'ERROR' : '', text, { err: failed, actions })
       .firstElementChild as HTMLElement | null;
     if (!row) return;
-    if (!failed) {
-      const spinner = document.createElement('span');
-      spinner.className = 'spinner';
-      spinner.setAttribute('aria-hidden', 'true');
-      row.firstElementChild?.replaceWith(spinner);
-    }
     node.append(row);
     if (failed) {
       const panel = document.createElement('div');

@@ -32,8 +32,10 @@ def test_every_html_resource_reference_exists_in_public_or_publish_output() -> N
             assert (WEB / path).is_file() or (FRONTEND / "public" / path).is_file()
 
 def test_resource_extensions_are_served_types() -> None:
+    from codey.app.http_plumbing import WEB_ASSET_TYPES
+
     for path in (WEB / "assets").iterdir():
-        assert path.suffix in {".js", ".css"}, path
+        assert path.suffix in WEB_ASSET_TYPES, path
 
 def test_frontend_has_no_inline_css() -> None:
     assert not re.search(r"<style\b", _html(), re.I)

@@ -40,6 +40,7 @@ class BoundedScanBudget:
             or self.dir_limited
             or self.entry_limited
             or self.byte_limited
+            or self.read_failed
         )
 
     def stop_message(self, label: str) -> str:
@@ -52,6 +53,8 @@ class BoundedScanBudget:
             reasons.append(f"per-directory entry budget {self.max_dir_entries}")
         if self.byte_limited and self.max_bytes is not None:
             reasons.append(f"byte budget {self.max_bytes}")
+        if self.read_failed:
+            reasons.append("directory or file read failed")
         reason = ", ".join(reasons) if reasons else "scan budget"
         scanned = f"{self.files_seen} files and {self.dirs_seen} directories"
         if self.max_bytes is not None:
@@ -188,7 +191,10 @@ def iter_bounded_files(
     cancellation.check()
     excluded_lower = {name.lower() for name in excluded_dirs}
     start_kind = _start_entry_kind(start)
-    if start_kind in ("missing", "symlink", "other"):
+    if start_kind == "missing":
+        budget.read_failed = True
+        return
+    if start_kind in ("symlink", "other"):
         return
     if start_kind == "file":
         if allow_file is not None and not allow_file(start):

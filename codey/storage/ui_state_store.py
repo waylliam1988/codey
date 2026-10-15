@@ -28,6 +28,8 @@ MAX_EXCERPT_TEXT_CHARS = 1_500
 MAX_SHORT_STRING = 1_000
 MAX_TITLE = 160
 MESSAGE_KEYS = {
+    "approval",
+    "approvalSubmission",
     "type",
     "text",
     "note",
@@ -42,6 +44,7 @@ MESSAGE_KEYS = {
     "commandSha256",
     "commandChars",
     "commandTruncated",
+    "outputTruncated",
     "cwd",
     "output",
     "exitCode",
@@ -120,6 +123,16 @@ def _clean_files(value: object) -> list[dict[str, Any]]:
     return files
 
 
+def _clean_approval(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or value.get("type") != "shell_approval_status":
+        return None
+    keys = {"type", "id", "session_id", "run_id", "source_run_id", "continuation_run_id",
+            "decision", "execution", "continuation"}
+    clean: dict[str, Any] = {key: _str(value[key]) for key in keys if key in value}
+    clean["revision"] = _int(value.get("revision"))
+    return clean
+
+
 def _clean_message(message: object) -> dict[str, Any] | None:
     if not isinstance(message, dict):
         return None
@@ -128,7 +141,9 @@ def _clean_message(message: object) -> dict[str, Any] | None:
         if key not in message:
             continue
         value = message[key]
-        if key == "attempts":
+        if key == "approval":
+            clean[key] = _clean_approval(value)
+        elif key == "attempts":
             if isinstance(value, list):
                 clean[key] = [
                     {name: _str(item[name], 12_000 if name == "error" else MAX_SHORT_STRING)

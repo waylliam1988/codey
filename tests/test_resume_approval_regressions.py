@@ -127,6 +127,65 @@ def test_cold_start_rebuild_restores_source_run_api_selection(tmp_path) -> None:
         restarted.close()
 
 
+def test_restart_rehydrates_pending_approval_into_ui_state(tmp_path) -> None:
+    """A restart must restore the approval card, not only accept its old id."""
+    state = AppContext(tmp_path)
+    try:
+        _durable_requested_approval(
+            state,
+            approval_id="approval-ui-restart",
+            source_run_id="source-run",
+            command="python --version",
+        )
+    finally:
+        state.close()
+
+    restarted = AppContext(tmp_path)
+    try:
+        payload = restarted.run_state_payload()
+        pending = payload["pending_event"]
+        assert pending is not None
+        assert pending["type"] == "shell_request"
+        assert pending["id"] == "approval-ui-restart"
+        assert pending["command"] == "python --version"
+        assert restarted.pending_shell_approvals()["approval-ui-restart"]["ui_event"]["id"] == (
+            "approval-ui-restart"
+        )
+    finally:
+        restarted.close()
+
+
+def test_rehydrated_approval_can_be_denied_and_resume_source_run(tmp_path) -> None:
+    from codey.app import api as app_api
+
+    state = AppContext(tmp_path)
+    try:
+        _durable_requested_approval(
+            state,
+            approval_id="approval-deny-restart",
+            source_run_id="source-run",
+            command="python --version",
+        )
+    finally:
+        state.close()
+
+    restarted = AppContext(tmp_path)
+    calls: list[dict[str, object]] = []
+    try:
+        status, payload = app_api.shell_approval_response(
+            restarted,
+            {"id": "approval-deny-restart", "approved": False},
+            submit_task_after_slot_release=lambda *args, **kwargs: calls.append(kwargs) or "resume-run",
+        )
+        assert status == 202
+        assert restarted.shell_approval_workflow.wait(5)
+        assert restarted.shell_approval_workflow.status("approval-deny-restart")["decision"] == "deny"
+        assert calls[0]["previous_run_id"] == "source-run"
+        assert restarted.shell_approval_records.latest("approval-deny-restart").kind == "continuation_started"
+    finally:
+        restarted.close()
+
+
 def test_structured_resume_recovery_reads_the_declared_source_run(monkeypatch) -> None:
     request = TaskSubmission.from_input(
         session_id="session",

@@ -68,6 +68,17 @@ def _complete_shell_pending(base: dict) -> dict:
     return pending
 
 
+def _persist_approval(state, pending):
+    pending = dict(pending)
+    pending.setdefault("provider", DEFAULT_PROVIDER_ID)
+    pending.setdefault("max_turns", app_api.DEFAULT_MAX_TURNS)
+    artifact = state.managed_outputs.write_json_artifact(
+        session_id=pending["session_id"], run_id=pending["run_id"], payload=pending,
+    )
+    pending.update(command_ref=artifact.handle, command_digest=artifact.sha256)
+    state.add_pending_shell_approval(pending["id"], pending)
+
+
 # Product no longer auto-waits for ghost maintenance (cold start: no
 # test-only wiring in AppContext). Tests wait explicitly here so no daemon
 # holds state files while TemporaryDirectory cleans up on Windows.
@@ -3397,7 +3408,8 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["error"], "request body too large")
 
     def test_shell_approval_continuation_uses_current_active_provider(self) -> None:
-        state = server.AppContext()
+        state = make_app_state(self)
+        self.addCleanup(state.close)
         with tempfile.TemporaryDirectory() as project_dir:
             run = state.reserve_run(
                 session_id="session-1",
@@ -3408,7 +3420,7 @@ class RunSnapshotTests(unittest.TestCase):
             assert run is not None
             self.assertTrue(state.start_run(run.run_id))
             self.assertTrue(state.switch_run_provider(run.run_id, "qwen"))
-            state.add_pending_shell_approval("shell-1", _complete_shell_pending({
+            _persist_approval(state, _complete_shell_pending({
                 "id": "shell-1",
                 "session_id": run.session_id,
                 "run_id": run.run_id,
@@ -3446,22 +3458,23 @@ class RunSnapshotTests(unittest.TestCase):
                         headers={"Content-Type": "application/json"},
                     )
                     response = conn.getresponse()
-                    payload = json.loads(response.read().decode("utf-8"))
+                    response.read()
                     conn.close()
+                    self.assertTrue(state.shell_approval_workflow.wait(5))
             finally:
                 httpd.shutdown()
                 httpd.server_close()
                 thread.join(timeout=5)
 
-            self.assertEqual(response.status, 200)
-            self.assertTrue(payload["continued"])
-            self.assertTrue(payload["continuation_requested"])
+            self.assertEqual(response.status, 202)
+            self.assertEqual(state.shell_approval_workflow.status("shell-1")["continuation"], "started")
             self.assertEqual(submit.call_args.args[5], "qwen")
 
     def test_shell_approval_response_uses_safe_defaults_when_pending_fields_are_missing(self) -> None:
-        state = server.AppContext()
+        state = make_app_state(self)
+        self.addCleanup(state.close)
         with tempfile.TemporaryDirectory() as td:
-            state.add_pending_shell_approval("shell-1", _complete_shell_pending({
+            _persist_approval(state, _complete_shell_pending({
                 "id": "shell-1",
                 "session_id": "session-1",
                 "run_id": "run-1",
@@ -3489,11 +3502,9 @@ class RunSnapshotTests(unittest.TestCase):
                     submit_task_after_slot_release=submit,
                 )
 
-            self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
-        self.assertTrue(payload["continuation_requested"])
-        self.assertFalse(payload["continued"])
-        self.assertEqual(payload["retry_after"], 15)
+                self.assertTrue(state.shell_approval_workflow.wait(5))
+            self.assertEqual(status, 202)
+        self.assertEqual(state.shell_approval_workflow.status("shell-1")["continuation"], "failed")
         execute.assert_called_once()
         ticket = execute.call_args.args[1]
         self.assertIs(execute.call_args.args[0], state)
@@ -3509,10 +3520,11 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(submit.call_args.args[5], DEFAULT_PROVIDER_ID)
 
     def test_shell_approval_response_bounds_current_pending_command_event(self) -> None:
-        state = server.AppContext()
+        state = make_app_state(self)
+        self.addCleanup(state.close)
         command = "python -c \"print('" + ("x" * 1600) + "')\""
         with tempfile.TemporaryDirectory() as td:
-            state.add_pending_shell_approval("shell-1", _complete_shell_pending({
+            _persist_approval(state, _complete_shell_pending({
                 "id": "shell-1",
                 "session_id": "session-1",
                 "run_id": "run-1",
@@ -3532,10 +3544,10 @@ class RunSnapshotTests(unittest.TestCase):
                     {"id": "shell-1", "approved": True},
                     submit_task_after_slot_release=mock.Mock(),
                 )
-
-        event = payload["event"]
+                self.assertTrue(state.shell_approval_workflow.wait(5))
+        event = state.run_state_payload()["last_shell_result"]
         ticket = execute.call_args.args[1]
-        self.assertEqual(status, 200)
+        self.assertEqual(status, 202)
         self.assertEqual(ticket.command, command)
         self.assertLessEqual(len(event["command"]), MAX_APPROVAL_COMMAND_CHARS)
         self.assertTrue(event["command_truncated"])

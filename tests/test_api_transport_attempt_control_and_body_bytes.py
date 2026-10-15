@@ -2,7 +2,32 @@
 
 import time
 
+import pytest
+
 from codey.providers.api_transport import AttemptControl, BoundedBodyReader
+
+
+@pytest.mark.parametrize("failure", [OSError("socket interrupted"), ValueError("closed response")])
+@pytest.mark.parametrize("cancelled", [True, False])
+def test_body_read_failure_is_classified_as_cancelled_only_after_stop(failure, cancelled):
+    from codey.providers.api_transport import GenerationUnknownError
+
+    control = AttemptControl()
+
+    class Source:
+        def read(self, _size):
+            control.cancelled = cancelled
+            raise failure
+
+    reader = BoundedBodyReader(Source(), control=control)
+    if cancelled:
+        with pytest.raises(GenerationUnknownError, match="cancelled") as caught:
+            reader.read_chunk()
+        assert caught.value.__cause__ is failure
+    else:
+        with pytest.raises(type(failure)) as caught:
+            reader.read_chunk()
+        assert caught.value is failure
 
 
 def test_attempt_control_cancels_registered_connection():

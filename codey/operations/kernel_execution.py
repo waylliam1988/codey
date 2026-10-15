@@ -126,10 +126,10 @@ def _explicit_policy_denial(
     try:
         check = getattr(delegate, "_policy_check", None)
         if callable(check):
-            denied, message, _approval = check(call)
-            if denied:
+            decision = check(call)
+            if decision.denied:
                 return (
-                    policy_denial_result(call, message),
+                    policy_denial_result(call, decision.message, reason_code=decision.reason_code),
                     False,
                     None,
                 )
@@ -441,10 +441,10 @@ def _execute_slots(
     for offset, call in enumerate(calls or []):
         name = str(getattr(call, "name", "") or "").strip().lower()
         identity = turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset)
-        if workspace_unconfirmed:
+        if workspace_unconfirmed and name in {"edit", "run", "shell"}:
             blocked = _error_result(
                 call,
-                "prior edit workspace identity unconfirmed (edit happened, revision not bumped); "
+                "prior edit workspace identity unconfirmed (edit was applied); "
                 "verification skipped, re-check workspace before continuing",
             )
             settle(identity, call, blocked, ok=False)
@@ -472,6 +472,11 @@ def _execute_slots(
             blocked = _error_result(call, "task stopped; tool call was not executed")
             settle(identity, call, blocked, ok=False)
             results.append(blocked)
+            continue
+        verification_blocked = _recheck_unconfirmed_workspace(session, call, recovery_ctx, execution_evidence)
+        if verification_blocked is not None:
+            settle(identity, call, verification_blocked, ok=False)
+            results.append(verification_blocked)
             continue
         result, ok, exit_code = _run_via_delegate_or_fn(
             delegate, runnable, session, call, name, active_turn=active_turn,
@@ -503,6 +508,27 @@ def _execute_slots(
         record_facts_for_result(session, call, result, ok=ok, exit_code=exit_code)
         results.append(result)
     return results
+
+
+def _recheck_unconfirmed_workspace(
+    session: TaskSession, call: ToolCall, context: RecoveryContext, execution_evidence: Any,
+) -> ToolResult | None:
+    """A fresh complete observation can restore verification, never redo a mutation."""
+    from codey.workspace.revision import WorkspaceIdentity
+
+    if call.name != "run" or context.revision_store is None:
+        return None
+    if WorkspaceIdentity.trusted_pair(session.workspace_revision, session.workspace_fingerprint).trusted:
+        return None
+    state = context.current_state(refresh=True)
+    identity = WorkspaceIdentity.trusted_pair(getattr(state, "revision", 0), getattr(state, "fingerprint", ""))
+    if not identity.trusted:
+        reason = getattr(state, "identity_reason", "") or "scan_unavailable"
+        return _error_result(call, f"workspace identity unconfirmed ({reason}); verification was not executed")
+    session.set_workspace_state(identity.revision, identity.fingerprint)
+    if execution_evidence is not None:
+        execution_evidence.set_workspace_state(identity.revision, identity.fingerprint)
+    return None
 
 
 def _settle_edit_with_workspace_bump(
@@ -542,8 +568,12 @@ def _settle_edit_with_workspace_bump(
             ignored_paths=workspace_ignored_paths,
             revision_store=workspace_revision_store,
         )
-    except Exception:
-        rev, fp = 0, ""
+    except Exception as exc:
+        from codey.workspace.revision import WorkspaceScanError
+
+        reason = exc.reason if isinstance(exc, WorkspaceScanError) else "identity_settlement_failed"
+        return _settle_unconfirmed_edit(session, identity, call, reason,
+                                         execution_evidence=execution_evidence, settle=settle, results=results)
     if rev and fp:
         try:
             trusted = _with_trusted_workspace_state(result, revision=rev, fingerprint=fp)
@@ -554,7 +584,7 @@ def _settle_edit_with_workspace_bump(
         record_facts_for_result(session, call, trusted, ok=True, exit_code=exit_code)
         results.append(trusted)
         return "trusted"
-    return _settle_unconfirmed_edit(session, identity, call, "revision store missing or bump failed",
+    return _settle_unconfirmed_edit(session, identity, call, "revision_store_missing" if workspace_revision_store is None else "identity_invalid",
                                      execution_evidence=execution_evidence, settle=settle, results=results)
 
 
@@ -566,8 +596,10 @@ def _settle_unconfirmed_edit(session: TaskSession, identity: str, call: ToolCall
         f"edit happened but workspace identity unconfirmed ({reason}); "
         "re-check workspace before verifying, do not re-apply the edit",
     )
-    failed = ToolResult(ok=failed.ok, call=call, model_text=failed.model_text, audit=failed.audit,
-                        canonical={"workspace_unconfirmed": True})
+    failed = ToolResult(ok=failed.ok, call=call, model_text=failed.model_text,
+                        audit={**failed.audit, "changed": True, "mutation_applied": True},
+                        canonical={"workspace_unconfirmed": True, "mutation_applied": True,
+                                   "identity_status": "unconfirmed", "identity_reason": reason})
     settle(identity, call, failed, ok=False)
     record_facts_for_result(session, call, failed, ok=False)
     session.set_workspace_state(0, "")
@@ -601,6 +633,9 @@ def _settle_slot(
             "excerpt": (result.model_text or "")[:500],
             "args_digest": _call_args_digest(call),
         }
+        if result.canonical.get("workspace_unconfirmed") is True:
+            record["applied_edit"] = {"mutation_applied": True, "identity_status": "unconfirmed",
+                                      "identity_reason": result.canonical["identity_reason"]}
         strict_exit = strict_exit_code_or_none(exit_code)
         if strict_exit is None and isinstance(result.audit, dict):
             strict_exit = strict_exit_code_or_none(result.audit.get("exit_code"))

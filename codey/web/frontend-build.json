@@ -1,11 +1,15 @@
 {
   "files": {
-    "assets/app.css": "cc6e4196e1a03ddf3bf55d92e3dcf07f4dd90429b4e685bb8e6232c3a01a8a0b",
-    "assets/codey-DjnVC5Rx.js": "292d25b24e6a0443a24cbb688dd77c0cba342cf37421a60abe7f7ecc03c625a5",
-    "assets/tokens.css": "76852852cdcc45bebfcc659ee79df37c0de0354f1efdc347f7459fd0b4523c8d",
+    "assets/app.css": "169590027745ee687e9a4ea9220df311defda811a777afe6b1748939e90fb0d0",
+    "assets/arrow-down.svg": "e481d38a1e5da8ce9fd671572d8548d6db0d12055ed79cc530980c04cb947367",
+    "assets/chevron-down.svg": "709001d9dea74131c781b43fb16b943fa8c45ddb103e126fc2707468f849fc92",
+    "assets/codey-BuTIERug.js": "448f3c27a0274f40e20b16d2310bc01f2daded95fb3a7920f70a5cf43517b4a3",
+    "assets/new-chat.svg": "3d2a02cf5320962f8cbebbdedfbf4b9001e8d220d700ff474847ffe9973abd28",
+    "assets/spinner.svg": "fdb77fdc24c03a92c02ced6cd75d310a4168bcd1eb78c2aabcd859422022e972",
+    "assets/tokens.css": "3cc83029a2a7121212647856280401602a44176a8c2d71f2e590ce4749bb416f",
     "icon.ico": "3760f945274958a729eb5e39252ea810f3817c9b66addd0ceeb027408c47109f",
-    "index.html": "62628e8c9696a33c6dc4f7430795f2af1b9f07e502677ebf24b570201d78455b"
+    "index.html": "65a185bd0b37c7b680862d6e91fcd013ffd932840985a3b76e8c9d30e1736d01"
   },
   "schema": 1,
-  "source_sha256": "6f27950d58e6d310cfd4808e29fbfa5ebaf8c6ec33ce6732ed595458a7a5448c"
+  "source_sha256": "5c1528d310028cddf802ff7241a910175b46d68344eda9798be83a829e90a2bd"
 }

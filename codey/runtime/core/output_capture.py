@@ -6,6 +6,7 @@ pipe so children never block, but only head + tail bytes are retained.
 
 from __future__ import annotations
 
+import codecs
 from collections import deque
 from dataclasses import dataclass
 from typing import SupportsIndex, SupportsInt, TypeAlias, cast
@@ -36,6 +37,7 @@ class CapturedText:
     total_bytes: int
     truncated: bool
     omitted_bytes: int
+    decoding_errors: bool = False
 
 
 def _trim_trailing_incomplete(data: bytes) -> bytes:
@@ -109,11 +111,18 @@ class BoundedByteCapture:
         self._tail: deque[bytes] = deque()
         self._tail_len = 0
         self._total = 0
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="strict")
+        self._decoding_errors = False
 
     def feed(self, chunk: bytes) -> None:
         if not chunk:
             return
         self._total += len(chunk)
+        if not self._decoding_errors:
+            try:
+                self._decoder.decode(chunk)
+            except UnicodeDecodeError:
+                self._decoding_errors = True
         view = chunk
         if len(self._head) < self._head_limit:
             need = self._head_limit - len(self._head)
@@ -138,15 +147,23 @@ class BoundedByteCapture:
         return self._total
 
     def finish(self) -> CapturedText:
+        if not self._decoding_errors:
+            try:
+                self._decoder.decode(b"", final=True)
+            except UnicodeDecodeError:
+                self._decoding_errors = True
+        warning = ("[encoding warning: invalid UTF-8; displayed text is lossy. Configure the program to emit UTF-8.]\n"
+                   if self._decoding_errors else "")
         head = bytes(self._head)
         tail = b"".join(self._tail)
         if self._total <= len(head) + len(tail):
             text = (head + tail).decode("utf-8", errors="replace")
             return CapturedText(
-                text=text,
+                text=warning + text,
                 total_bytes=self._total,
                 truncated=False,
                 omitted_bytes=0,
+                decoding_errors=self._decoding_errors,
             )
         head = _trim_trailing_incomplete(head)
         tail = _trim_leading_incomplete(tail)
@@ -160,10 +177,11 @@ class BoundedByteCapture:
             "showing head and tail only ...]\n"
         )
         return CapturedText(
-            text=f"{head_text}{marker}{tail_text}",
+            text=f"{warning}{head_text}{marker}{tail_text}",
             total_bytes=self._total,
             truncated=True,
             omitted_bytes=omitted,
+            decoding_errors=self._decoding_errors,
         )
 
 

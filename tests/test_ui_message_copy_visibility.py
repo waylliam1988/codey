@@ -187,19 +187,21 @@ def test_whole_message_visibility_does_not_hide_code_or_thinking_copy(page):
     page.locator(".md-code").hover()
     expect_opacity(code_copy, 1)
     page.evaluate("addToSession('a',{type:'thinking',runId:'copy-review',text:'Reasoning text.'})")
+    page.locator(".process-summary").click()
     page.locator(".thinking > summary").click()
-    thinking_copy = page.locator(".thinking-body > .msg-copy")
+    thinking_copy = page.locator(".thinking-section > .msg-copy")
     page.locator("#task").click()
     page.mouse.move(20, 20)
-    expect_opacity(thinking_copy, 0.45)
+    expect_opacity(thinking_copy, 0)
     page.locator(".thinking-body").hover()
     expect_opacity(thinking_copy, 1)
 
 
-def test_long_answer_copy_path_preserves_collapse_and_pointer_selection(page):
+def test_long_answer_copy_path_preserves_full_text_and_pointer_selection(page):
     text = "A long selectable reply.\n" * 25
     message = append_message(page, text=text)
-    message.get_by_role("button", name="Collapse", exact=True).click()
+    expect(message.get_by_role("button", name="Collapse", exact=True)).to_have_count(0)
+    assert message.locator(".body").inner_text().count("A long selectable reply.") == 25
     message.locator(".body").evaluate("""element => {
         const range = document.createRange(); range.selectNodeContents(element.querySelector('p'));
         const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
@@ -212,4 +214,5 @@ def test_long_answer_copy_path_preserves_collapse_and_pointer_selection(page):
     page.mouse.move(box["x"] + 13, box["y"] - 4)
     expect_opacity(copy, 1)
     assert page.evaluate("getSelection().toString()") == selected
-    expect(message.get_by_role("button", name="Expand", exact=True)).to_be_visible()
+    expect(message.get_by_role("button", name="Expand", exact=True)).to_have_count(0)
+    assert message.locator(".body").inner_text().count("A long selectable reply.") == 25

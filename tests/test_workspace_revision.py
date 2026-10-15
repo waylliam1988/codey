@@ -99,7 +99,7 @@ class WorkspaceRevisionStoreTests(unittest.TestCase):
                 self.assertTrue(_lock_can_be_acquired_from_another_thread(path))
                 return "sha256:" + ("a" * 64)
 
-            with mock.patch("codey.workspace.revision.workspace_fingerprint", fingerprint):
+            with mock.patch("codey.workspace.revision.scan_workspace_fingerprint", fingerprint):
                 state = store.current_state(project)
 
         self.assertEqual(state.revision, INITIAL_WORKSPACE_REVISION + 1)
@@ -119,7 +119,7 @@ class WorkspaceRevisionStoreTests(unittest.TestCase):
                 self.assertFalse(_lock_can_be_acquired_from_another_thread(path))
                 return "sha256:" + ("b" * 64)
 
-            with mock.patch("codey.workspace.revision.workspace_fingerprint", fingerprint):
+            with mock.patch("codey.workspace.revision.scan_workspace_fingerprint", fingerprint):
                 state = store.bump_state(project)
 
         self.assertEqual(state.revision, INITIAL_WORKSPACE_REVISION + 1)

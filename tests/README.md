@@ -8,10 +8,9 @@ pytest -q
 
 ## Current verification and coverage
 
-The latest complete suite is **8574 passed, 7 skipped, 1510 subtests**; required
-machine contracts are **1125 passed, 14 subtests, no skips**. Keep the canonical
-results and platform limits in [TEST_REPORT](../TEST_REPORT.md); older counts
-below describe their historical runs.
+Current complete-suite counts, machine-contract results, coverage measurements,
+and platform limits are maintained in [TEST_REPORT](../TEST_REPORT.md). Older
+counts below describe their historical runs.
 
 ```powershell
 python -m tools.machine_contract_gate
@@ -34,15 +33,28 @@ python -m tools.coverage_gate
 
 Install `requirements-ci.txt` for matching direct tool versions. Coverage includes
 all production Python files and subprocesses; unimported modules stay in the
-denominator. Statement/branch minima are **85% / 75%**, measured at **88.54% /
-78.23%**. Full reports belong under ignored `.e2e-artifacts/` and CI artifacts.
+denominator. Statement/branch minima are **85% / 75%**. Current measurements live
+in TEST_REPORT. Full reports belong under ignored `.e2e-artifacts/` and CI artifacts.
 The coverage gate also rejects test-only or incomplete production scopes.
+
+Windows CI uses the same steps on Python 3.11, 3.12, and 3.13: `Pytest` runs
+the full suite once with coverage collection; the following coverage steps
+combine and summarize data, generate reports, enforce the gate, and upload
+evidence under a distinct artifact name for each Python version. Coverage
+steps do not rerun pytest and still run after test failures to retain evidence.
 
 CI runs mypy, Pyrefly, and ty on Windows Python 3.11/3.12/3.13 and Linux 3.12,
 passing `--python-version` explicitly to each checker. Locally the commands above
 use the project's minimum supported Python version; append `--python-version
 3.12` or `--python-version 3.13` to check those targets. CI configuration tests
 reject conditional or nonblocking type gates and missing target-version flags.
+
+Approval lifecycle and real HTTP/subprocess/browser checks are described in
+[shell approval lifecycle](../docs/shell_approval_lifecycle.md). Workspace scan
+integrity, terminal encoding and shared document-preview checks are described in
+[workspace and document behavior](../docs/workspace_documents_and_terminal.md).
+`test_web_packaging.py` and `test_sdist_protocol_fixtures.py` inspect actual
+archives, including the SVG icons used by the published UI.
 
 Focused regressions cover SSE identity (`test_api_stream_tool_call_identity.py`),
 partial-frame deadlines, Node submission/cancellation (`test_zen_node_transport.py`),

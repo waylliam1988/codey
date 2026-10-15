@@ -26,7 +26,7 @@ from codey.operations.task_state import TaskSubmissionState
 from codey.providers.diagnostics import capture_provider_failure
 from codey.providers.model_preferences import ModelDisabledError
 from codey.reviews.review_policy import load_review_policy
-from codey.task.model import TaskInput, TaskSubmission
+from codey.task.model import ResolveShellApproval, TaskInput, TaskSubmission
 from codey.workspace.changes import collect_changes
 
 SHELL_CONTINUATION_IDLE_TIMEOUT = 15.0
@@ -167,6 +167,10 @@ def submit_task(
     with state.lock:
         if not state.providers.model_preferences.allows(provider_id, model_selection.model_id if model_selection else ""):
             raise ModelDisabledError("Selected model is disabled. Choose an enabled model in Settings.")
+        if isinstance(input, ResolveShellApproval):
+            facts = state.shell_approval_records.read(input.approval_id)
+            if not facts or any(fact.kind in {"abandoned", "continuation_cancelled"} for fact in facts):
+                return None
         reserved = state.reserve_run(
             session_id=session_id,
             project=project,
@@ -229,6 +233,7 @@ def submit_task_after_slot_release(
     initial_shell_results: tuple[dict[str, object], ...] = (),
     model_selection: ApiRunSelection | None = None,
     input: TaskInput | None = None,
+    run_id: str = "",
 ) -> str | None:
     deadline = time.monotonic() + max(0.0, timeout)
     while True:
@@ -241,7 +246,7 @@ def submit_task_after_slot_release(
         active = state.current_run()
         if active is not None and previous_run_id and active.run_id != previous_run_id:
             return None
-        run_id = submit_task(
+        submitted_run_id = submit_task(
             session_id,
             project,
             task,
@@ -254,10 +259,11 @@ def submit_task_after_slot_release(
             previous_run_id=previous_run_id,
             initial_shell_results=tuple(initial_shell_results or ()),
             input=input,
+            run_id=run_id,
             model_selection=model_selection,
         )
-        if run_id is not None:
-            return run_id
+        if submitted_run_id is not None:
+            return submitted_run_id
         active = state.current_run()
         if active is not None and previous_run_id and active.run_id != previous_run_id:
             return None

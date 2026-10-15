@@ -456,11 +456,12 @@ def build_shell_approval_continuation(
     followup_block = f"{followup_hints.strip()}\n\n" if followup_hints.strip() else ""
     deferred = render_deferred_tool_calls(deferred_tool_calls)
     deferred_block = f"{deferred}\n\n" if deferred else ""
-    decision = (
-        "The user denied this shell command; it was not executed:\n"
-        if result.get("status") == "denied"
-        else "The user approved and ran this shell command:\n"
-    )
+    if result.get("status") == "denied":
+        decision = "The user denied this shell command; it was not executed:\n"
+    elif result.get("status") == "stopped":
+        decision = "Approved shell execution was interrupted; completion is unconfirmed:\n"
+    else:
+        decision = "The user approved and ran this shell command:\n"
     denial_note = (
         "Do not retry the denied command without new user authorization.\n\n"
         if result.get("status") == "denied"

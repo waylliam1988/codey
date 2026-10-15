@@ -25,7 +25,7 @@ class WorkspaceRevisionStoreAtomicBumpTests(unittest.TestCase):
 
             events: list[str] = []
             real_lock = rev_mod.with_file_lock
-            real_fp = rev_mod.workspace_fingerprint
+            real_fp = rev_mod.scan_workspace_fingerprint
 
             def tracking_fp(proj, *, ignored_paths=()):
                 events.append("fingerprint")
@@ -51,7 +51,7 @@ class WorkspaceRevisionStoreAtomicBumpTests(unittest.TestCase):
             import unittest.mock as mock
 
             with mock.patch.object(rev_mod, "with_file_lock", side_effect=tracking_lock), mock.patch.object(
-                rev_mod, "workspace_fingerprint", side_effect=tracking_fp
+                rev_mod, "scan_workspace_fingerprint", side_effect=tracking_fp
             ):
                 # Rebind: bump_state looks up with_file_lock/workspace_fingerprint
                 # from module globals at call time.

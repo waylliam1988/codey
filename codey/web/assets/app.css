@@ -42,7 +42,7 @@
   ::-webkit-scrollbar-track { background: transparent; }
 
   /* ============================== sidebar ============================== */
-  aside {
+  #aside {
     position: relative; width: var(--sidebar-width);
     background: var(--bg-2);
     border-right: 1px solid var(--border);
@@ -50,7 +50,7 @@
     transition: width .18s ease, min-width .18s ease;
     min-width: var(--sidebar-width);
   }
-  body.sidebar-collapsed aside { width: 0; min-width: 0; border-right-width: 0; overflow: hidden; }
+  body.sidebar-collapsed #aside { width: 0; min-width: 0; border-right-width: 0; overflow: hidden; }
   .sidebar-resize {
     position: absolute; top: 0; bottom: 0; right: -3px; width: 6px;
     background: transparent; cursor: col-resize; touch-action: none; z-index: 20;
@@ -58,7 +58,7 @@
   .sidebar-resize::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; }
   .sidebar-resize:hover::after, .sidebar-resize:focus-visible::after { background: var(--muted); }
   body.sidebar-collapsed .sidebar-resize { display: none; }
-  body.sidebar-resizing aside { transition: none; }
+  body.sidebar-resizing #aside { transition: none; }
   body.sidebar-resizing, body.sidebar-resizing * { cursor: col-resize !important; user-select: none !important; }
   .sidebar-head {
     display: flex; align-items: center; gap: 8px;
@@ -70,7 +70,7 @@
     width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center;
     transition: background .12s, color .12s;
   }
-  .btn-icon:hover { background: var(--hover); color: var(--text); }
+  .btn-icon:hover { color: var(--text); }
   .btn-icon svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8; }
 
   .sidebar-actions {
@@ -132,15 +132,18 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     font-size: 13px;
   }
-  .project-more {
+  .project-more, .project-new {
     width: 22px; height: 22px; border: 0; background: transparent;
-    color: var(--muted); display: none; place-items: center;
-    border-radius: 4px; cursor: pointer; flex-shrink: 0;
-    font-size: 14px; line-height: 1;
+    color: var(--muted); display: grid; place-items: center;
+    border-radius: 4px; cursor: pointer; flex-shrink: 0; padding: 3px;
+    font-size: 14px; line-height: 1; opacity: 0; pointer-events: none;
   }
-  .project-row:hover .project-more { display: grid; }
-  .project-row:focus-within .project-more { display: grid; }
-  .project-more:hover { background: var(--panel-2); color: var(--text); }
+  .project-row:hover :is(.project-more, .project-new),
+  .project-row:has(:focus-visible) :is(.project-more, .project-new) { opacity: 1; pointer-events: auto; }
+  .project-more:hover, .project-new:hover { color: var(--text); }
+  .new-chat-icon { display: block; width: 16px; height: 16px; flex-shrink: 0; background: currentColor; mask: url("/assets/new-chat.svg") center / contain no-repeat; }
+  .project-reveal { border: 0; background: transparent; color: var(--text-dim); font: inherit; font-size: 12px; padding: 6px 8px; margin-left: 8px; cursor: pointer; border-radius: 6px; }
+  .project-reveal:hover { color: var(--text); background: var(--hover); }
   .project-children { padding-left: 14px; }
   .project-empty {
     margin: 1px 0 4px 22px;
@@ -169,7 +172,7 @@
   }
   .session-item:hover .session-more { visibility: visible; }
   .session-item:focus-within .session-more { visibility: visible; }
-  .session-item .session-more:hover { color: var(--text); background: var(--panel-2); }
+  .session-item .session-more:hover { color: var(--text); }
 
   /* ============================== generic context menu ============================== */
   .ctx-menu {
@@ -266,12 +269,10 @@
   }
   .status-dot.err { background: var(--err-text); }
   .spinner {
-    width: 11px; height: 11px;
-    border: 1.4px solid var(--border);
-    border-top-color: var(--text-dim);
-    border-radius: 50%;
-    animation: spin .8s linear infinite;
-    flex-shrink: 0;
+    display: inline-block; width: 12px; height: 12px;
+    background: currentColor; color: var(--text-dim);
+    mask: url("/assets/spinner.svg") center / contain no-repeat;
+    animation: spin .8s linear infinite; flex-shrink: 0;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -351,41 +352,24 @@
     font-size: 14px;
     line-height: 1.7;
   }
-  .msg.asst .body.collapsed {
-    max-height: 168px; overflow: hidden; position: relative;
-  }
-  .msg.asst .body.collapsed::after {
-    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 56px;
-    background: linear-gradient(180deg, transparent, var(--bg));
-    pointer-events: none;
-  }
-  .msg.asst .toggle {
-    background: transparent; border: 0; padding: 0; font-family: inherit;
-    margin-top: 4px; font-size: 11px; color: var(--text-dim); cursor: pointer;
-    align-self: flex-start;
-    user-select: none;
-  }
-  .msg.asst .toggle:hover { color: var(--text); }
   .msg-copy {
     width: 26px; height: 26px; margin-top: 8px; padding: 0;
     border: 0; border-radius: 4px; background: transparent;
     color: var(--muted); cursor: pointer;
     display: grid; place-items: center;
-    opacity: .45;
+    opacity: 0; pointer-events: none;
     transition: background .12s, color .12s, opacity .12s;
   }
-  .msg:hover .msg-copy,
-  .msg:focus-within .msg-copy { opacity: 1; }
-  .msg-copy:hover,
+  .msg-copy:hover { color: var(--text); opacity: 1; }
   .msg-copy:focus-visible { background: var(--hover); color: var(--text-dim); opacity: 1; }
   .msg-copy.copied { color: var(--text); }
-  .msg:is(.user, .asst) > .msg-copy { opacity: 0; pointer-events: none; }
-  .msg:is(.user, .asst):hover > .msg-copy,
-  .msg:is(.user, .asst):has(:focus-visible) > .msg-copy,
-  .msg:is(.user, .asst) > .msg-copy:is(.copy-pending, .copied, .copy-failed) {
+  .msg > .msg-copy { opacity: 0; pointer-events: none; }
+  .msg:hover > .msg-copy,
+  .msg:has(:focus-visible) > .msg-copy,
+  .msg > .msg-copy:is(.copy-pending, .copied, .copy-failed) {
     opacity: 1; pointer-events: auto;
   }
-  .msg:is(.user, .asst) > .msg-copy:focus-visible { outline: none; }
+  .msg > .msg-copy:focus-visible { outline: none; }
   .copy-feedback { font-size: 11px; color: var(--text-dim); margin-left: 6px; }
   .copy-feedback:empty { display: none; }
   .msg-copy svg {
@@ -412,17 +396,21 @@
   /* Quiet process disclosure; answers and approval cards remain outside. */
   .process-block[hidden] { display: none; }
   .process-block { margin-bottom: 14px; }
-  .process-summary { font-size: 12px; line-height: 1.6; color: var(--text-dim); cursor: pointer; user-select: none; }
+  .process-summary, .thinking > summary { display: flex; align-items: center; gap: 7px; min-height: 26px; width: fit-content; max-width: 100%; list-style: none; color: var(--text-dim); cursor: pointer; user-select: none; font: 12px/1.5 var(--font-sans); }
+  .process-summary::-webkit-details-marker, .thinking > summary::-webkit-details-marker { display: none; }
+  .process-summary::after, .thinking > summary::after { content: ''; width: 12px; height: 12px; flex-shrink: 0; background: currentColor; mask: url("/assets/chevron-down.svg") center / contain no-repeat; }
+  .process-group[open] > .process-summary::after, .thinking[open] > summary::after { transform: rotate(180deg); }
   .process-summary:hover { color: var(--text); }
+  .process-approval-status { display: flex; align-items: center; min-height: 26px; color: var(--text-dim); font: 12px/1.5 var(--font-sans); }
   .process-body { padding-top: 10px; }
+  .process-diagnostic { margin-top: 8px; color: var(--text-dim); font-size: 12px; }
+  .thinking-section + .thinking-section { margin-top: 12px; }
+  .thinking-section:hover > .msg-copy, .thinking-section:has(:focus-visible) > .msg-copy { opacity: 1; pointer-events: auto; }
   .process-body .msg.tool { margin-bottom: 6px; }
   .process-alerts { margin-top: 8px; }
   .process-alerts:empty { display: none; }
-  .process-steps { margin-top: 8px; font-size: 11px; color: var(--muted); }
-  .process-steps:empty { display: none; }
   .thinking { margin: 0 0 8px; }
-  .thinking > summary { font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
-  .thinking > summary:hover { color: var(--text-dim); }
+  .thinking > summary:hover { color: var(--text); }
   .thinking-body { padding: 8px 0 6px 14px; font-size: 13px; line-height: 1.7; color: var(--text-dim); overflow-wrap: anywhere; }
   .thinking-body .md-h { color: inherit; font-size: 13px; }
   .msg.continued-answer > .msg-label { display: none; }
@@ -635,13 +623,14 @@
   .shell-card {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 14px;
-    display: grid; gap: 8px;
+    border-radius: var(--panel-radius);
+    overflow: hidden;
   }
   .shell-card .sc-title {
-    font-size: 13px; font-weight: 600; color: var(--text);
+    font-size: 13px; font-weight: 500; color: var(--text); padding: 14px 16px 12px;
   }
+  .sc-command-body { background: var(--bg); padding: 14px 20px; }
+  .sc-command-label { color: var(--muted); font-size: 12px; }
   .shell-card .sc-meta {
     color: var(--muted); font-family: var(--font-mono); font-size: 11.5px;
   }
@@ -655,13 +644,16 @@
     color: var(--err-text);
     font-size: 12px;
     overflow-wrap: anywhere;
+    padding: 12px 20px 0;
   }
   .shell-command {
     font-family: var(--font-mono); font-size: 12px; line-height: 1.55;
-    color: var(--text); background: var(--bg); border: 1px solid var(--border);
-    border-radius: 6px; padding: 8px 10px; overflow-x: auto; white-space: pre;
+    color: var(--text); margin: 8px 0 10px; white-space: pre-wrap; overflow-wrap: anywhere;
   }
-  .shell-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+  .shell-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; padding: 14px 20px 18px; }
+  .shell-actions .approval-allow { background: var(--text); color: var(--bg); border-color: var(--text); display: inline-flex; align-items: center; gap: 8px; }
+  .shell-actions .approval-allow:hover:not(:disabled) { background: var(--text); color: var(--bg); }
+  .shell-actions .approval-allow .spinner { color: inherit; }
   .text-btn {
     background: transparent;
     border: 1px solid var(--border);
@@ -747,7 +739,7 @@
   .composer-box {
     background: var(--bg-2);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--panel-radius);
     padding: 8px 10px 8px;
     transition: border-color .12s;
   }
@@ -771,10 +763,7 @@
     border: 1px solid var(--border); border-radius: 50%;
     background: var(--bg); color: var(--text-dim); cursor: pointer;
   }
-  .latest-button svg {
-    width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6;
-    stroke-linecap: round; stroke-linejoin: round;
-  }
+  .latest-arrow { width: 16px; height: 16px; background: currentColor; mask: url("/assets/arrow-down.svg") center / contain no-repeat; }
   .latest-button:hover { background: var(--hover); color: var(--text); }
 
   /* provider picker — keeps the green dot */
@@ -991,7 +980,7 @@
     cursor: pointer; display: inline-grid; place-items: center;
     transition: background .12s, color .12s;
   }
-  .icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+  .icon-btn:hover:not(:disabled) { color: var(--text); }
   .icon-btn:disabled { color: var(--faint); cursor: not-allowed; }
   .icon-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
   .icon-btn.send:not(:disabled) { color: var(--text); }
@@ -1291,10 +1280,7 @@
     font-size: 12px;
   }
   .local-context-preference-form input { flex-basis: 100%; }
-  .local-context-more:hover {
-    background: var(--hover);
-    color: var(--text);
-  }
+  .local-context-more:hover { color: var(--text); }
   .local-context-settings {
     display: flex;
     flex-wrap: wrap;
@@ -1385,20 +1371,67 @@
 
   @media (max-width: 720px) {
     body { grid-template-columns: minmax(0, 1fr); }
-    aside { position: absolute; z-index: 10; height: 100%; }
+    #aside { position: absolute; z-index: 10; height: 100%; }
     .sidebar-resize { display: none; }
-    body.sidebar-collapsed aside { display: none; }
+    body.sidebar-collapsed #aside { display: none; }
     .research-graph-stage { min-height: 280px; }
     .composer-wrap { padding: 8px 16px 12px; }
     .chat-inner { padding: 0 16px; }
     .status { max-width: 160px; }
   }
   @media (hover: none) {
-    .project-more { display: grid; }
+    .thinking-section > .msg-copy { opacity: 1; pointer-events: auto; }
+    .project-more, .project-new { opacity: 1; pointer-events: auto; }
     .session-more { visibility: visible !important; }
-    .msg:is(.user, .asst) > .msg-copy { opacity: 1; pointer-events: auto; }
+    .msg > .msg-copy { opacity: 1; pointer-events: auto; }
   }
   @media (prefers-reduced-motion: reduce) {
     aside, .changes-drawer, .tg-chevron, .msg-copy, .conversation-tick span { transition: none; }
-    .spinner { animation: none; }
+    .spinner { animation-duration: 1.6s; }
   }
+
+  .command-card { border: 0; margin-top: 4px; margin-bottom: 4px; }
+  .command-card summary { display: flex; align-items: center; gap: 7px; min-width: 0; height: 26px; cursor: pointer; color: var(--text-dim); list-style: none; font: 12px/1.5 var(--font-sans); }
+  .command-card summary::-webkit-details-marker { display: none; }
+  .command-label { flex-shrink: 0; }
+  .command-excerpt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .command-chevron { width: 12px; height: 12px; flex-shrink: 0; background: currentColor; mask: url("/assets/chevron-down.svg") center / contain no-repeat; }
+  .command-card details[open] .command-chevron { transform: rotate(180deg); }
+  .command-panel { margin-top: 4px; border: 1px solid var(--border); border-radius: var(--panel-radius); background: var(--panel-2); overflow: hidden; }
+  .command-panel-label { padding: 6px 10px 2px; color: var(--text-dim); font-size: 12px; }
+  .command-status { padding: 4px 10px 7px; text-align: right; font: 12px/1.5 var(--font-sans); color: var(--text-dim); }
+  .command-card[data-status="failed"] .command-status { color: var(--err-text); }
+  .command-source, .command-result { position: relative; padding: 10px 42px 10px 12px; }
+  .command-card section > button { position: absolute; right: 8px; top: 8px; }
+  .icon-action { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0; }
+  .command-card button, .document-pane button { border: 0; border-radius: 4px; padding: 4px 8px; background: transparent; color: var(--text-dim); cursor: pointer; font: inherit; }
+  .command-card button:hover, .document-pane button:hover { color: var(--text); }
+  .document-pane button:not(.icon-action):hover { background: var(--hover); }
+  .command-card pre, .command-card .shell-output { margin: 0; padding: 0; border: 0; background: transparent; max-height: 10rem; overflow: auto; white-space: pre; overflow-wrap: normal; font: 12px/1.6 var(--font-mono); }
+  .command-source pre { max-height: 5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .command-source pre::before { content: '$ '; color: var(--muted); }
+  .command-panel .icon-action { opacity: 0; pointer-events: none; }
+  .command-panel:hover .icon-action, .command-panel:has(:focus-visible) .icon-action { opacity: 1; pointer-events: auto; }
+  @media (hover: none) { .command-panel .icon-action { opacity: 1; pointer-events: auto; } }
+  .command-notice { margin-top: 8px; color: var(--text-dim); font-size: 12px; }
+  .md-file-link { border: 0; padding: 0; background: transparent; color: var(--nav-highlight); font: inherit; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+  .md-file-link:hover { text-decoration: underline; }
+  body:has(.document-pane:not([hidden])) { grid-template-columns: auto minmax(320px, 1fr) var(--document-width, min(48vw, 800px)); }
+  .document-pane { width: 100%; height: 100vh; min-width: 0; border-left: 1px solid var(--border); display: flex; flex-direction: column; background: var(--bg); position: relative; }
+  .document-tabs { display: flex; align-items: center; gap: 2px; overflow-x: auto; flex-shrink: 0; padding: 8px; border-bottom: 1px solid var(--border); }
+  .document-tabs [role="tab"] { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .document-tab:has([aria-selected="true"]) { background: var(--panel); border-radius: 7px; }
+  .document-tabs [aria-selected="true"] { color: var(--text); }
+  .document-tabs > button:last-child { margin-left: auto; }
+  .document-toolbar { display: flex; align-items: center; gap: 6px; padding: 10px 12px 0; min-height: 38px; }
+  .document-toolbar > span { flex: 1; border-radius: 16px; background: var(--panel); padding: 6px 10px; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+  .document-status { padding: 12px; color: var(--text-dim); }
+  .document-body { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px; }
+  .document-body > pre { white-space: pre; margin: 0; font: 12px/1.7 var(--font-mono); }
+  .document-body [data-line] { display: block; min-height: 1.7em; }
+  .document-body .selected-line { background: var(--selection-bg); }
+  .document-resize { position: absolute; z-index: 1; left: -3px; top: 0; width: 6px; height: 100%; cursor: col-resize; }
+  @media (max-width: 1100px) { .document-pane { position: fixed; inset: 0 0 0 48px; width: auto; z-index: 80; } body:has(.document-pane:not([hidden])) { grid-template-columns: auto 1fr; } }
+
+  .document-tab { display: flex; align-items: center; flex: none; min-width: 0; }
+  .document-tabs button { flex-shrink: 0; white-space: nowrap; }

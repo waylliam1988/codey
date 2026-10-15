@@ -10,6 +10,7 @@ state, never from substring matching or model-supplied parameters.
 from __future__ import annotations
 
 import contextlib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -82,6 +83,14 @@ def _tool_result(call: ToolCall, outcome: Any) -> ToolResult:
         audit=audit,
         canonical=dict(getattr(outcome, "canonical", {}) or {}),
     )
+
+
+@dataclass(frozen=True)
+class ProjectPolicyCheck:
+    denied: bool
+    message: str = ""
+    approval_required: bool = False
+    reason_code: str = ""
 
 
 class ExecutionDelegate:
@@ -204,20 +213,20 @@ class ExecutionDelegate:
         result = ToolResult(ok=False, call=call, model_text=f"ERROR: no production executor for {name or '?'}")
         return result, False, None
 
-    def _policy_check(self, call: ToolCall) -> tuple[bool, str, bool]:
-        """Returns (denied, message, approval_required) via the coding guards."""
+    def _policy_check(self, call: ToolCall) -> ProjectPolicyCheck:
+        """Keep machine-readable denial separate from its explanation."""
 
         spec = self._resolve_spec(call.name)
         if spec is None:
-            return True, "tool definition unavailable", False
+            return ProjectPolicyCheck(True, "tool definition unavailable", False)
         if self.session is None:
-            return True, "task session unavailable", False
+            return ProjectPolicyCheck(True, "task session unavailable", False)
         if not self.session.policy.allows(spec.grant):
-            return True, f"task policy denied {call.name}", False
+            return ProjectPolicyCheck(True, f"task policy denied {call.name}", False)
         if spec.executor != "project":
-            return False, "", False
+            return ProjectPolicyCheck(False, "", False)
         if self.project_path is None:
-            return True, "no associated project", False
+            return ProjectPolicyCheck(True, "no associated project", False)
         try:
             from codey.agents.tool_execution import (
                 evaluate_tool_call_policy_for,
@@ -225,7 +234,7 @@ class ExecutionDelegate:
                 policy_denied,
             )
         except Exception as exc:
-            return True, f"policy unavailable: {exc}", False
+            return ProjectPolicyCheck(True, f"policy unavailable: {exc}", False)
         try:
             runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
                             "find_references": "references"}.get(call.name, call.name)
@@ -237,16 +246,17 @@ class ExecutionDelegate:
                 phase="writer",
             )
         except Exception as exc:
-            return True, f"policy error: {exc}", False
-        if policy_denied(decision):
+            return ProjectPolicyCheck(True, f"policy error: {exc}", False)
+        if decision is not None and policy_denied(decision):
             reason = str(getattr(decision, "reason", "") or getattr(decision, "reason_code", "") or "denied")
-            return True, f"project guard denied {call.name}: {reason}", False
+            return ProjectPolicyCheck(True, f"project guard denied {call.name}: {reason}; {decision.display}", False, reason)
         try:
             if (call.name or "") == "shell" and policy_asks_user(decision):
-                return True, "shell requires user approval", True
+                return ProjectPolicyCheck(True, "shell requires user approval", True)
         except Exception:
             pass
-        return False, "", False
+        return ProjectPolicyCheck(False, "", False)
+
 
     def _project_permission_profile(self) -> str:
         return effective_project_profile(self.permission_profile)
@@ -257,11 +267,11 @@ class ExecutionDelegate:
         if self.tool_fns is None:
             return ToolResult(ok=False, call=call, model_text="ERROR: project tools unavailable"), False, None
         project_path = self.project_path
-        denied, message, _approval = self._policy_check(call)
-        if denied:
+        check = self._policy_check(call)
+        if check.denied:
             from codey.operations.kernel_result import policy_denial_result
 
-            result = policy_denial_result(call, message)
+            result = policy_denial_result(call, check.message, reason_code=check.reason_code)
             return result, False, None
         name = (call.name or "").strip().lower()
         runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",

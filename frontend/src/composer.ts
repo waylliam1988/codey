@@ -199,7 +199,11 @@ export interface ComposerApi {
     let message = '',
       sendFailure = '',
       runOwner = '';
-    if (response.status === 400 && data?.reason === 'model_selection_invalid') {
+    if (data?.approval) {
+      runtime.ShellApprovals.apply(data.approval);
+      message = String(data.error || 'Check the command approval status');
+      sendFailure = 'approval';
+    } else if (response.status === 400 && data?.reason === 'model_selection_invalid') {
       message = 'Select the model again';
       sendFailure = 'model_selection';
     } else if (response.status === 503 && data?.error === 'browser worker busy') {
@@ -370,20 +374,18 @@ export interface ComposerApi {
       )
     )
       return;
+    if (await runtime.ShellApprovals.continueSession(sessionId)) return;
     const p = deps.sessionProject(s);
-    if (!p) {
-      deps.addToSession(sessionId, {
-        type: 'err',
-        text: 'Only project tasks can be continued; plain chats have no tool loop.',
-        sessionId,
-      });
-      return;
-    }
     deps.addToSession(sessionId, { type: 'info', text: 'continue task' });
     const sourceMessage = [...(Array.isArray(s.messages) ? s.messages : [])]
       .reverse()
-      .find((m) => m && m.type === 'user' && Array.isArray(m.attempts) && m.attempts.length);
-    const sourceRunId = sourceMessage?.attempts?.at(-1)?.runId || '';
+      .find(
+        (m) =>
+          m &&
+          ((m.type === 'user' && Array.isArray(m.attempts) && m.attempts.length) ||
+            (m.approval?.continuation === 'started' && m.approval.continuation_run_id)),
+      );
+    const sourceRunId = sourceMessage?.approval?.continuation_run_id || sourceMessage?.attempts?.at(-1)?.runId || '';
     if (!sourceRunId) {
       deps.addToSession(sessionId, { type: 'err', text: 'No source run is available to resume.', sessionId });
       return;
@@ -401,11 +403,11 @@ export interface ComposerApi {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: sessionId,
-          project: p.path,
+          project: p?.path || null,
           task,
           input: { kind: 'resume_run', source_run_id: sourceRunId },
           provider: s.provider || liveDefaultProvider(),
-          intent: 'project',
+          intent: deps.currentIntentForSession(sessionId),
           ...runtime.ProviderUI.runSelection(s, s.provider || liveDefaultProvider()),
         }),
       });

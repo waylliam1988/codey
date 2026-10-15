@@ -297,8 +297,10 @@ def sync_workspace_state_after_edit(
     if revision_store is not None and project_path is not None:
         try:
             state = revision_store.bump_state(project_path, ignored_paths=ignores)
-        except Exception:
-            return 0, ""
+        except Exception as exc:
+            from codey.workspace.revision import WorkspaceScanError
+
+            raise WorkspaceScanError("revision_write_failed") from exc
         try:
             from codey.workspace.revision import WorkspaceIdentity
         except Exception:
@@ -307,7 +309,9 @@ def sync_workspace_state_after_edit(
             getattr(state, "revision", 0), getattr(state, "fingerprint", "")
         )
         if not identity.trusted:
-            return 0, ""
+            from codey.workspace.revision import WorkspaceScanError
+
+            raise WorkspaceScanError(getattr(state, "identity_reason", "") or "identity_invalid")
         rev, fp = identity.revision, identity.fingerprint
         try:
             session.set_workspace_state(rev, fp)

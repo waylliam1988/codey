@@ -116,15 +116,13 @@ def _emit_observation_warning(
     session_id: str,
     status: str,
 ) -> None:
-    """Warn about a non-committed observation; always before task_done."""
+    """Report actual observation failures before task_done, not normal pauses."""
     if status == "failed":
         error_type, error_ref = "GhostObservationFailed", "ghost_observation_failed"
     elif status == "settings_error":
         error_type, error_ref = "GhostSettingsCorrupt", "ghost_settings_corrupt"
     else:
-        error_type, error_ref = (
-            "GhostObservationUncommitted", "ghost_observation_uncommitted",
-        )
+        return
     with suppress(Exception):
         state.emit({
             "type": "ghost_post_turn_warning",

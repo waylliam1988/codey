@@ -64,35 +64,18 @@ def _pending() -> dict:
 
 
 class ShellApprovalEpochTests(unittest.TestCase):
-    def test_stale_claim_returns_stopped_without_executing(self) -> None:
+    def test_stale_claim_does_not_mint_execution_ticket(self) -> None:
         ctx = _FakeCtx(_pending(), generation_at_pop=3, generation_now=4)
-        with mock.patch.object(
-            shell_service, "execute_shell_ticket", side_effect=AssertionError("must not execute")
-        ):
-            status, payload = app_api.shell_approval_response(
-                ctx,
-                {"id": "shell-1", "approved": True},
-                submit_task_after_slot_release=lambda *args, **kwargs: None,
-            )
+        pending, ticket = shell_service.claim_shell_ticket(ctx, "shell-1", timeout=30, output_limit=4000)
+        self.assertIsNotNone(pending)
+        self.assertIsNone(ticket)
 
-        self.assertEqual(status, 409)
-        self.assertEqual(payload.get("error"), "stopped")
-        self.assertEqual(len(ctx.recorded), 1)
-        self.assertFalse(ctx.recorded[0]["approved"])
-
-    def test_stop_flag_set_returns_stopped_without_executing(self) -> None:
+    def test_stop_flag_prevents_execution_ticket(self) -> None:
         ctx = _FakeCtx(_pending(), generation_at_pop=7, generation_now=7)
         ctx.run_registry.stop_flag.set()
-        with mock.patch.object(
-            shell_service, "execute_shell_ticket", side_effect=AssertionError("must not execute")
-        ):
-            status, _ = app_api.shell_approval_response(
-                ctx,
-                {"id": "shell-1", "approved": True},
-                submit_task_after_slot_release=lambda *args, **kwargs: None,
-            )
-
-        self.assertEqual(status, 409)
+        pending, ticket = shell_service.claim_shell_ticket(ctx, "shell-1", timeout=30, output_limit=4000)
+        self.assertIsNotNone(pending)
+        self.assertIsNone(ticket)
 
     def test_execute_refuses_stale_generation_before_popen(self) -> None:
         ctx = _FakeCtx(_pending(), generation_at_pop=1, generation_now=2)
@@ -151,32 +134,25 @@ class ShellApprovalEpochTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"], "command stopped")
 
-    def test_stopped_execute_result_is_denied_without_continuation(self) -> None:
-        pending = _pending()
-        pending["continue_after"] = True
-        ctx = _FakeCtx(pending, generation_at_pop=9, generation_now=9)
-        submit = mock.Mock()
-        with mock.patch.object(
-            shell_service,
-            "execute_shell_ticket",
-            return_value={
-                "ok": False,
-                "error": "command stopped",
-                "exit_code": None,
-                "output": "",
-                "stopped": True,
-            },
-        ):
-            status, payload = app_api.shell_approval_response(
-                ctx,
-                {"id": "shell-1", "approved": True},
-                submit_task_after_slot_release=submit,
-            )
+    def test_stopped_execute_result_is_settled_without_continuation(self) -> None:
+        from tests.app_state import make_app_state
+        from tests.support.shell_approval import seed_requested_approval
 
-        self.assertEqual(status, 409)
-        self.assertEqual(payload.get("error"), "stopped")
-        self.assertEqual(len(ctx.recorded), 1)
-        self.assertFalse(ctx.recorded[0]["approved"])
+        ctx = make_app_state(self)
+        self.addCleanup(ctx.close)
+        seed_requested_approval(ctx)
+        submit = mock.Mock()
+        with mock.patch.object(shell_service, "execute_shell_ticket", return_value={
+            "ok": False, "status": "stopped", "error": "command stopped",
+            "exit_code": None, "output": "", "stopped": True,
+        }):
+            status, _ = app_api.shell_approval_response(
+                ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=submit,
+            )
+            self.assertEqual(status, 202)
+            self.assertTrue(ctx.shell_approval_workflow.wait(5))
+        self.assertEqual(ctx.shell_approval_workflow.status("approval")["continuation"], "cancelled")
+        self.assertIsNotNone(ctx.resolve_shell_approval("approval"))
         submit.assert_not_called()
 
 

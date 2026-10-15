@@ -44,7 +44,7 @@ def test_workspace_edit_event_rejects_string_false_ok() -> None:
 
 
 def test_project_delegate_rejects_string_false_outcome_ok() -> None:
-    from codey.operations.task_execution import ExecutionDelegate
+    from codey.operations.task_execution import ExecutionDelegate, ProjectPolicyCheck
     from codey.runtime.core.models import ToolCall
 
     class ToolFns:
@@ -60,7 +60,7 @@ def test_project_delegate_rejects_string_false_outcome_ok() -> None:
             )
 
     delegate = ExecutionDelegate(project_path=Path("."), tool_fns=ToolFns())
-    delegate._policy_check = lambda _call: (False, "", False)
+    delegate._policy_check = lambda _call: ProjectPolicyCheck(denied=False)
     result, ok, exit_code = delegate._execute_project(
         ToolCall(name="run", args={"command": "false", "path": "."})
     )

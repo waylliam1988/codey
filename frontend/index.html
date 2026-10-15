@@ -19,7 +19,7 @@
   </div>
   <div class="sidebar-actions">
     <button class="sidebar-row" id="btn-new-chat">
-      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      <span class="new-chat-icon" aria-hidden="true"></span>
       <span class="label">New chat</span>
       <span class="kbd">Ctrl+N</span>
     </button>
@@ -67,7 +67,7 @@
   </div>
   <div class="latest-row">
     <button class="latest-button" id="back-to-latest" type="button" aria-label="Back to latest" hidden>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m-6-6 6 6 6-6"/></svg>
+      <span class="latest-arrow" aria-hidden="true"></span>
     </button>
   </div>
 
@@ -189,7 +189,6 @@
 </div>
 <div class="ctx-menu" id="top-menu">
   <button data-act="local-context">Local context</button>
-  <button data-act="settings">Settings</button>
   <button data-act="clear" class="danger" data-confirm="Confirm clear">Clear messages</button>
 </div>
 <div class="ctx-menu" id="local-context-menu"></div>

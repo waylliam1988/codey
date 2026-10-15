@@ -1,3 +1,4 @@
+import { decodeApprovalState } from '../shell_approvals';
 export type ProviderCatalog = {
   providers: Array<{ id: string; label: string }>;
   labels: Record<string, string>;
@@ -28,6 +29,7 @@ export type ServerEvent = {
   command?: string;
   result?: string;
   output?: string;
+  truncated?: boolean;
   id?: string;
   summary?: string;
   stop_reason?: string;
@@ -55,6 +57,8 @@ export type ServerEvent = {
   last_shell_result?: ServerEvent;
   last_terminal_event?: ServerEvent;
   error_ref?: string;
+  error_type?: string;
+  stage?: string;
   command_sha256?: string;
   cwd?: string;
   project?: string;
@@ -240,6 +244,10 @@ export function decodeRunState(value: unknown): RunState {
     const item = value[key];
     if (item !== undefined && item !== null) state[key] = decodeServerEvent(item);
   }
+  if (value.shell_approvals !== undefined) {
+    if (!Array.isArray(value.shell_approvals)) throw new Error('Invalid approval list');
+    state.shell_approvals = value.shell_approvals.map(decodeApprovalState);
+  }
   return state;
 }
 
@@ -259,6 +267,9 @@ export function decodeServerEvent(value: unknown): ServerEvent {
     'id',
     'summary',
     'stop_reason',
+    'stage',
+    'error_type',
+    'error_ref',
     'provider',
     'mode',
   ];
@@ -271,6 +282,7 @@ export function decodeServerEvent(value: unknown): ServerEvent {
     'changed',
     'approved',
     'command_truncated',
+    'truncated',
     'busy',
     'continuation_requested',
     'continued',

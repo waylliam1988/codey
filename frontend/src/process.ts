@@ -1,4 +1,5 @@
 import { runtime } from './runtime';
+import type { ApprovalState } from './types/domain';
 /* Optional reasoning and trusted tool records, grouped by one user request. */
 export interface ProcessSnapshot {
   runId?: string;
@@ -18,6 +19,7 @@ export interface ProcessApi {
   restore(chat: HTMLElement, saved?: ProcessSnapshot[]): void;
 }
 export interface ProcessToolRecord {
+  approval?: Pick<ApprovalState, 'decision' | 'execution' | 'continuation'>;
   toolKey?: string;
   toolName?: string;
   kind?: string;
@@ -39,6 +41,7 @@ export interface ProcessToolRecord {
   'use strict';
 
   type ProcessStatus =
+    | 'sending'
     | 'running'
     | 'done'
     | 'failed'
@@ -49,6 +52,7 @@ export interface ProcessToolRecord {
     | 'approval'
     | 'blocked';
   interface ToolRecord {
+    approval?: Pick<ApprovalState, 'decision' | 'execution' | 'continuation'>;
     toolKey?: string;
     toolName?: string;
     kind?: string;
@@ -70,9 +74,11 @@ export interface ProcessToolRecord {
     state: ProcessStatus;
     explicitState: boolean;
     tools: Map<string, ToolRecord>;
-    steps: Set<string | number>;
     reasoning: Set<string>;
+    warnings: Set<string>;
     touched: boolean;
+    requestObserved?: boolean;
+    activity?: string;
   }
   type ProcessBlock = HTMLDivElement & { _runIds: Set<string>; _process: ProcessState };
 
@@ -105,27 +111,33 @@ export interface ProcessToolRecord {
     label.textContent = 'Codey';
     const group = document.createElement('details');
     group.className = 'process-group';
-    group.open = true;
+    group.open = false;
     const head = document.createElement('summary');
     head.className = 'process-summary';
     const title = document.createElement('span');
     title.className = 'process-title';
+    title.setAttribute('role', 'status');
+    title.setAttribute('aria-live', 'polite');
     head.append(title);
     const body = document.createElement('div');
     body.className = 'process-body';
-    const steps = document.createElement('div');
-    steps.className = 'process-steps';
     const alerts = document.createElement('div');
     alerts.className = 'process-alerts';
-    group.append(head, body, steps);
-    block.append(label, group, alerts);
+    const approvalStatus = document.createElement('div');
+    approvalStatus.className = 'process-approval-status';
+    approvalStatus.textContent = 'Waiting for approval';
+    approvalStatus.setAttribute('role', 'status');
+    approvalStatus.setAttribute('aria-live', 'polite');
+    approvalStatus.hidden = true;
+    group.append(head, body);
+    block.append(label, approvalStatus, group, alerts);
     chat.append(block);
     block._process = {
       state: 'running',
       explicitState: false,
       tools: new Map(),
-      steps: new Set(),
       reasoning: new Set(),
+      warnings: new Set(),
       touched: false,
     };
     head.addEventListener('click', () => {
@@ -171,6 +183,7 @@ export interface ProcessToolRecord {
       .reverse()
       .find((m) => m.pending);
     const titles = {
+      sending: 'Sending…',
       running: 'Working',
       done: 'Worked',
       failed: 'Failed',
@@ -183,32 +196,59 @@ export interface ProcessToolRecord {
     };
     let text = titles[state.state] || 'Paused';
     if (state.state === 'running')
-      text += pending ? ' · ' + (pending.activity || pending.kind + ' ' + pending.path) : ' · Waiting for reply';
+      text += state.activity
+        ? ' · ' + state.activity
+        : pending
+          ? ' · ' +
+            (['run', 'shell', 'run_command'].includes(pending.kind || '')
+              ? 'Running command'
+              : pending.activity || pending.kind + ' ' + pending.path)
+          : ' · Waiting for reply';
     else if (counts.length) text += ' · ' + counts.join(' · ');
     const title = block.querySelector<HTMLElement>('.process-title');
-    const steps = block.querySelector<HTMLElement>('.process-steps');
-    if (title) title.textContent = text;
-    if (steps) steps.textContent = state.steps.size ? 'Steps ' + Array.from(state.steps).join(' · ') : '';
-    block.hidden = !tools.length && !state.reasoning.size;
+    if (title)
+      title.textContent =
+        !state.requestObserved && !state.explicitState && !tools.length && !state.reasoning.size && state.warnings.size
+          ? 'Activity'
+          : text;
+    const head = block.querySelector<HTMLElement>('.process-summary')!;
+    const awaitingApproval = state.state === 'approval';
+    block.querySelector<HTMLElement>('.process-approval-status')!.hidden = !awaitingApproval;
+    block.querySelector<HTMLElement>('.process-group')!.hidden = awaitingApproval;
+    const spinning = state.state === 'running' || state.state === 'sending';
+    let spinner = head.querySelector<HTMLElement>('.spinner');
+    if (spinning && !spinner) {
+      spinner = document.createElement('span');
+      spinner.className = 'spinner';
+      spinner.setAttribute('aria-hidden', 'true');
+      head.prepend(spinner);
+    } else if (!spinning) spinner?.remove();
+    block.hidden =
+      !state.requestObserved && !state.explicitState && !tools.length && !state.reasoning.size && !state.warnings.size;
   }
   function thinking(block: ProcessBlock, text: unknown, step: string | number | undefined): void {
     if (typeof text !== 'string' || !text.trim()) return;
     const key = String(step || 0) + ':' + text;
     if (block._process.reasoning.has(key)) return;
     block._process.reasoning.add(key);
-    const details = document.createElement('details');
-    details.className = 'thinking';
-    const head = document.createElement('summary');
-    head.textContent = 'Thinking';
-    if (step) head.title = 'Step ' + step;
-    const body = document.createElement('div');
-    body.className = 'thinking-body';
-    runtime.Render.renderMarkdown(body, text.trim());
-    runtime.Render.addMessageCopyButton(body, text.trim());
-    details.append(head, body);
-    const processBody = block.querySelector<HTMLElement>('.process-body');
-    if (processBody) processBody.append(details);
+    let details = block.querySelector<HTMLDetailsElement>('.thinking');
+    if (!details) {
+      details = document.createElement('details');
+      details.className = 'thinking';
+      const head = document.createElement('summary');
+      head.textContent = 'Thinking';
+      const body = document.createElement('div');
+      body.className = 'thinking-body';
+      details.append(head, body);
+      block.querySelector('.process-body')?.append(details);
+    }
+    const section = document.createElement('div');
+    section.className = 'thinking-section';
+    runtime.Render.renderMarkdown(section, text.trim());
+    runtime.Render.addMessageCopyButton(section, text.trim());
+    details.querySelector('.thinking-body')?.append(section);
   }
+
   function tool(block: ProcessBlock, m: ToolRecord): void {
     const key = m.toolKey || JSON.stringify(m);
     block._process.tools.set(key, m);
@@ -229,26 +269,71 @@ export interface ProcessToolRecord {
   }
   function state(block: ProcessBlock, value: ProcessStatus, explicit = true): void {
     block._process.state = value;
+    block._process.activity = undefined;
     if (explicit) block._process.explicitState = true;
     const group = block.querySelector<HTMLDetailsElement>('.process-group');
     if (group && value !== 'running' && !block._process.touched) group.open = false;
-    if (group && value === 'running' && !block._process.touched) group.open = true;
     summary(block);
   }
   function append(chat: HTMLElement, m: ToolRecord, render: (chat: HTMLElement, message: ToolRecord) => void): boolean {
+    if (m.type === 'request_activity' && m.runId) {
+      const pending = m.state === 'sending' || m.state === 'running';
+      const existing = find(chat, m.runId);
+      const block = pending ? ensure(chat, m.runId) : existing;
+      if (block) {
+        block._process.requestObserved = true;
+        if (pending && !existing) block._process.explicitState = false;
+        if (pending && (!existing || !block._process.explicitState)) state(block, m.state as ProcessStatus, false);
+        else if (!pending && ['sending', 'running'].includes(block._process.state))
+          state(block, m.state === 'paused' ? 'blocked' : (m.state as ProcessStatus), false);
+        summary(block);
+      }
+      return true;
+    }
+    if (m.type === 'local_update_warning' || (m.type === 'info' && m.text === 'Local update paused')) {
+      const block = ensure(chat, m.runId || 'local-updates');
+      const text = m.type === 'info' ? 'Local memory update unavailable' : m.text || 'Local memory update unavailable';
+      if (!block._process.warnings.has(text)) {
+        block._process.warnings.add(text);
+        const diagnostic = document.createElement('div');
+        diagnostic.className = 'process-diagnostic';
+        diagnostic.textContent = text;
+        block.querySelector('.process-body')?.append(diagnostic);
+      }
+      summary(block);
+      return true;
+    }
     if (!m.runId) return false;
     if (['turn', 'thinking', 'tool', 'tool_pending', 'run_state'].includes(m.type ?? '')) {
       const block = ensure(chat, m.runId);
       const step = m.n ?? m.turn;
-      if (step !== undefined) block._process.steps.add(step);
       if (m.type === 'turn' || m.type === 'thinking') thinking(block, m.reasoning || m.text, step);
       if (m.type === 'tool' || m.type === 'tool_pending') tool(block, m);
       else if (m.type === 'run_state' && m.state) state(block, m.state as ProcessStatus);
       summary(block);
       return true;
     }
-    const block = find(chat, m.runId);
+    const block = ['shell_request', 'teach'].includes(m.type ?? '') ? ensure(chat, m.runId) : find(chat, m.runId);
     if (block && ['shell_request', 'teach'].includes(m.type ?? '')) state(block, 'approval');
+    if (block && m.type === 'shell_approval_status' && m.approval) {
+      const approval = m.approval;
+      if (approval.decision === 'cancelled' || approval.continuation === 'cancelled') state(block, 'stopped');
+      else if (['failed', 'unavailable'].includes(approval.continuation) || approval.execution === 'uncertain')
+        state(block, 'blocked');
+      else if (
+        ['running', 'queued'].includes(approval.execution) ||
+        ['queued', 'resuming'].includes(approval.continuation)
+      ) {
+        state(block, 'running');
+        block._process.activity =
+          approval.execution === 'running'
+            ? 'Running command'
+            : approval.execution === 'queued'
+              ? 'Command queued'
+              : 'Resuming task';
+        summary(block);
+      } else if (approval.continuation === 'not_required') state(block, 'done');
+    }
     if (block && !block._process.explicitState && ['asst', 'err', 'done', 'research_done'].includes(m.type ?? '')) {
       state(block, m.type === 'err' ? 'failed' : 'done', false);
     }

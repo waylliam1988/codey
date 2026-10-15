@@ -20,43 +20,45 @@ from typing import Any
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import project_key, write_json_atomic
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
-from codey.workspace.config import path_matches_ignored_prefix
+from codey.workspace.config import load_project_config, path_matches_ignored_prefix
 
 SCHEMA_VERSION = 1
 INITIAL_WORKSPACE_REVISION = 1
 MAX_REVISION_BYTES = 8 * 1024
 MAX_FINGERPRINT_FILES = 5_000
-MAX_FINGERPRINT_FILE_BYTES = 2 * 1024 * 1024
-MAX_FINGERPRINT_CONTENT_BYTES = 64 * 1024 * 1024
+MAX_FINGERPRINT_CONTENT_BYTES = 512 * 1024 * 1024
+COVERAGE_RULE_VERSION = 2
 WORKSPACE_FINGERPRINT_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
-FINGERPRINT_EXCLUDED_DIRS = frozenset({
-    ".git",
-    ".hg",
-    ".svn",
-    ".codey",
-    ".idea",
-    ".vscode",
-    ".venv",
-    "venv",
-    "node_modules",
-    "__pycache__",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".ruff_cache",
-    ".next",
-    ".turbo",
-    ".e2e-artifacts",
-    ".agents",
-    ".codex",
-    ".github",
-    "dist",
-    "build",
-    "target",
-    "coverage",
-    "codey.egg-info",
-    "reference-projects",
-})
+FINGERPRINT_EXCLUDED_DIRS = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        ".codey",
+        ".idea",
+        ".vscode",
+        ".venv",
+        "venv",
+        "node_modules",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".next",
+        ".turbo",
+        ".e2e-artifacts",
+        ".agents",
+        ".codex",
+        ".github",
+        "dist",
+        "build",
+        "target",
+        "coverage",
+        "codey.egg-info",
+        "reference-projects",
+    }
+)
 
 
 class WorkspaceRevisionError(Exception):
@@ -71,6 +73,7 @@ class WorkspaceRevisionCorruption(WorkspaceRevisionError):
 class WorkspaceState:
     revision: int = INITIAL_WORKSPACE_REVISION
     fingerprint: str = ""
+    identity_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -88,9 +91,7 @@ class WorkspaceIdentity:
 
     @property
     def trusted(self) -> bool:
-        return bool(
-            valid_workspace_revision(self.revision) and valid_workspace_fingerprint(self.fingerprint)
-        )
+        return bool(valid_workspace_revision(self.revision) and valid_workspace_fingerprint(self.fingerprint))
 
     @classmethod
     def trusted_pair(cls, revision: object, fingerprint: object) -> WorkspaceIdentity:
@@ -141,68 +142,88 @@ def workspace_fingerprint_ref(project: str | Path, fingerprint: object) -> str:
     return f"workspace_fingerprint:{project_key(project)}:{text.removeprefix('sha256:')}"
 
 
-def workspace_fingerprint(
-    project: str | Path,
-    *,
-    ignored_paths: Iterable[str] = (),
-) -> str:
-    """Return a bounded fingerprint for the current project file state."""
+class WorkspaceScanError(WorkspaceRevisionError):
+    """An incomplete scan cannot certify any workspace content."""
 
-    try:
-        root = Path(project).expanduser().resolve()
-    except (OSError, RuntimeError):
-        return ""
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
+def scan_workspace_fingerprint(project: str | Path, *, ignored_paths: Iterable[str] = ()) -> str:
+    """Hash complete contents within an explicit, versioned coverage policy."""
+    root = Path(project).expanduser().resolve()
     if not root.is_dir():
-        return ""
+        raise WorkspaceScanError("project_unavailable")
+    configured = load_project_config(root)
+    if configured.warnings:
+        raise WorkspaceScanError("invalid_scan_configuration")
+    ignores = tuple(sorted(set(ignored_paths) | set(configured.config.ignored_paths)))
     digest = hashlib.sha256()
-    content_bytes = 0
+    digest.update(
+        json.dumps(
+            {
+                "version": COVERAGE_RULE_VERSION,
+                "excluded_dirs": sorted(FINGERPRINT_EXCLUDED_DIRS),
+                "ignored_paths": ignores,
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+    )
     budget = BoundedScanBudget(
-        max_files=MAX_FINGERPRINT_FILES,
-        max_dirs=500,
-        max_dir_entries=1_000,
+        max_files=MAX_FINGERPRINT_FILES, max_dirs=500, max_dir_entries=1_000, max_bytes=MAX_FINGERPRINT_CONTENT_BYTES
     )
 
     def allowed(path: Path) -> bool:
         try:
             rel = path.resolve().relative_to(root).as_posix()
-        except (OSError, RuntimeError, ValueError):
-            return False
-        return bool(rel and not path_matches_ignored_prefix(rel, ignored_paths))
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise WorkspaceScanError("path_unavailable") from exc
+        return bool(rel and not path_matches_ignored_prefix(rel, ignores))
 
     for child in iter_bounded_files(
-        root,
-        excluded_dirs=set(FINGERPRINT_EXCLUDED_DIRS),
-        budget=budget,
-        allow_dir=allowed,
-        allow_file=allowed,
+        root, excluded_dirs=set(FINGERPRINT_EXCLUDED_DIRS), budget=budget, allow_dir=allowed, allow_file=allowed
     ):
         try:
-            rel = child.resolve().relative_to(root).as_posix()
-            stat = child.stat()
-        except (OSError, RuntimeError, ValueError):
-            return ""
-        digest.update(b"file\0")
-        digest.update(rel.encode("utf-8", errors="surrogateescape"))
-        digest.update(b"\0")
-        digest.update(str(stat.st_size).encode("ascii"))
-        digest.update(b"\0")
-        if (
-            stat.st_size <= MAX_FINGERPRINT_FILE_BYTES
-            and content_bytes + stat.st_size <= MAX_FINGERPRINT_CONTENT_BYTES
-        ):
-            content_digest = _file_content_digest(child)
-            if not content_digest:
-                return ""
-            content_bytes += stat.st_size
-            digest.update(b"content\0")
-            digest.update(content_digest.encode("ascii"))
-        else:
-            digest.update(b"metadata\0")
-            digest.update(str(stat.st_mtime_ns).encode("ascii"))
-        digest.update(b"\0")
-    if budget.limited:
-        return ""
+            before = child.stat()
+            content = _file_content_digest(child)
+            after = child.stat()
+            rel = child.relative_to(root).as_posix()
+        except OSError as exc:
+            raise WorkspaceScanError("file_read_failed") from exc
+        if not content:
+            raise WorkspaceScanError("file_read_failed")
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            raise WorkspaceScanError("file_changed_during_scan")
+        digest.update(b"file\0" + rel.encode("utf-8", errors="surrogateescape") + b"\0")
+        digest.update(content.encode("ascii") + b"\0")
+    for flag, reason in (
+        (budget.read_failed, "directory_read_failed"),
+        (budget.dir_limited, "directory_limit"),
+        (budget.file_limited, "file_limit"),
+        (budget.entry_limited, "directory_entry_limit"),
+        (budget.byte_limited, "content_limit"),
+    ):
+        if flag:
+            raise WorkspaceScanError(reason)
     return "sha256:" + digest.hexdigest()
+
+
+def workspace_fingerprint(project: str | Path, *, ignored_paths: Iterable[str] = ()) -> str:
+    """A missing fingerprint is explicitly untrusted; diagnostic callers use the checked scan."""
+    try:
+        return scan_workspace_fingerprint(project, ignored_paths=ignored_paths)
+    except (WorkspaceScanError, OSError, RuntimeError):
+        return ""
+
+
+def _observe(project: str | Path, ignored_paths: Iterable[str]) -> tuple[str, str]:
+    try:
+        return scan_workspace_fingerprint(project, ignored_paths=ignored_paths), ""
+    except WorkspaceScanError as exc:
+        return "", exc.reason
+    except (OSError, RuntimeError):
+        return "", "scan_unavailable"
 
 
 class WorkspaceRevisionStore:
@@ -237,7 +258,7 @@ class WorkspaceRevisionStore:
             except OSError:
                 parent_exists = True
             if not parent_exists:
-                fingerprint = workspace_fingerprint(project, ignored_paths=ignored_paths)
+                fingerprint, reason = _observe(project, ignored_paths)
                 try:
                     appeared = path.exists()
                 except OSError:
@@ -246,6 +267,7 @@ class WorkspaceRevisionStore:
                     return WorkspaceState(
                         revision=INITIAL_WORKSPACE_REVISION,
                         fingerprint=fingerprint,
+                        identity_reason=reason,
                     )
                 # A first bump completed during the scan: fall through to
                 # the version-check path below for the authoritative pair.
@@ -256,21 +278,23 @@ class WorkspaceRevisionStore:
                     except OSError:
                         still_missing = True
                     if still_missing:
-                        fingerprint = workspace_fingerprint(project, ignored_paths=ignored_paths)
+                        fingerprint, reason = _observe(project, ignored_paths)
                         try:
                             appeared = path.exists()
                         except OSError:
                             appeared = False
                         if appeared:
                             revision = self._read_revision_unlocked(path)
-                            fingerprint = workspace_fingerprint(project, ignored_paths=ignored_paths)
+                            fingerprint, reason = _observe(project, ignored_paths)
                             return WorkspaceState(
                                 revision=revision,
                                 fingerprint=fingerprint,
+                                identity_reason=reason,
                             )
                         return WorkspaceState(
                             revision=INITIAL_WORKSPACE_REVISION,
                             fingerprint=fingerprint,
+                            identity_reason=reason,
                         )
         # Consistent read without holding the scan under lock: the revision
         # is read before and after the fingerprint scan (version check). A
@@ -279,15 +303,15 @@ class WorkspaceRevisionStore:
         # revision N with another moment's fingerprint.
         with with_file_lock(path):
             first = self._read_revision_unlocked(path)
-        fingerprint = workspace_fingerprint(project, ignored_paths=ignored_paths)
+        fingerprint, reason = _observe(project, ignored_paths)
         with with_file_lock(path):
             second = self._read_revision_unlocked(path)
         if first == second:
-            return WorkspaceState(revision=first, fingerprint=fingerprint)
+            return WorkspaceState(revision=first, fingerprint=fingerprint, identity_reason=reason)
         with with_file_lock(path):
             revision = self._read_revision_unlocked(path)
-            fingerprint = workspace_fingerprint(project, ignored_paths=ignored_paths)
-        return WorkspaceState(revision=revision, fingerprint=fingerprint)
+            fingerprint, reason = _observe(project, ignored_paths)
+        return WorkspaceState(revision=revision, fingerprint=fingerprint, identity_reason=reason)
 
     def bump(self, project: str | Path) -> int:
         return self.bump_state(project).revision
@@ -310,8 +334,8 @@ class WorkspaceRevisionStore:
                 {"schema_version": SCHEMA_VERSION, "revision": revision},
                 max_bytes=MAX_REVISION_BYTES,
             )
-            fingerprint = workspace_fingerprint(project, ignored_paths=ignored_paths)
-        return WorkspaceState(revision=revision, fingerprint=fingerprint)
+            fingerprint, reason = _observe(project, ignored_paths)
+        return WorkspaceState(revision=revision, fingerprint=fingerprint, identity_reason=reason)
 
     @staticmethod
     def _read_revision_unlocked(path: Path) -> int:

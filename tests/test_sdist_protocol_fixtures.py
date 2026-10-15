@@ -28,9 +28,16 @@ def test_sdist_contains_shared_protocol_fixtures(tmp_path: Path) -> None:
     archives = list(tmp_path.glob("*.tar.gz"))
     assert len(archives) == 1
     with tarfile.open(archives[0]) as archive:
+        files = {member.name.split("/", 1)[1] for member in archive.getmembers() if member.isfile()}
         included = {
             Path(member.name).name
             for member in archive.getmembers()
             if member.isfile() and "/tests/fixtures/protocol/" in member.name
         }
     assert included >= REQUIRED
+    icons = {
+        path.relative_to(ROOT).as_posix()
+        for folder in (ROOT / "codey/web/assets", ROOT / "frontend/public/assets")
+        for path in folder.glob("*.svg")
+    }
+    assert files >= icons, f"Source distribution is missing frontend icons: {sorted(icons - files)}"

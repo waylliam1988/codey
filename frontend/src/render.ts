@@ -1,3 +1,4 @@
+import { parseDocumentLink } from './document_links';
 import { runtime } from './runtime';
 export interface ToolDisplay {
   kind?: string;
@@ -10,9 +11,6 @@ export interface ToolDisplay {
   pending?: boolean;
   turn?: string | number;
 }
-export type AssistantBodyState =
-  | { collapsed: false; long: false }
-  | { collapsed: false; long: true; expand: () => void; collapse: () => void; isExpanded: () => boolean };
 /* Codey render helpers: HTML escaping, minimal markdown, copy buttons,
    tool-line DOM builders. Zero-build asset module; pure helpers only --
    no index.html state, so no init()/deps are needed. */
@@ -116,26 +114,38 @@ const renderApi = (function () {
     return segment.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
   }
   function renderInlineMd(text: string): string {
-    const re = /`([^`\n]+)`|\[([^\]\n]+)\]\(([^\s)]+)\)/g;
+    const re = /`([^`\n]+)`|\[([^\]\n]+)\]\((<[^>\n]+>|[^\s)]+)\)/g;
     let out = '';
+    const tokens: string[] = [];
+    const protect = (html: string): string => `\0${tokens.push(html) - 1}\0`;
+    const plain = (value: string): string => escapeHtml(value).replace(/\0/g, '&#0;');
     let last = 0;
     let m;
     while ((m = re.exec(text)) !== null) {
-      out += applyBold(escapeHtml(text.slice(last, m.index)));
-      if (m[1] !== undefined) out += `<code class="md-ic">${escapeHtml(m[1])}</code>`;
+      out += plain(text.slice(last, m.index));
+      const href = m[1] ?? m[3].replace(/^<|>$/g, '');
+      const file = parseDocumentLink(href);
+      if (file) {
+        const label = m[1] !== undefined ? `<code class="md-ic">${escapeHtml(m[1])}</code>` : escapeHtml(m[2]);
+        out += protect(
+          `<button type="button" class="md-file-link" data-document-path="${escapeHtml(file.path)}"${file.line ? ` data-document-line="${file.line}"` : ''}>${label}</button>`,
+        );
+      } else if (m[1] !== undefined) out += protect(`<code class="md-ic">${escapeHtml(m[1])}</code>`);
       else {
         let safe = false;
         try {
-          safe = ['http:', 'https:'].includes(new URL(m[3]).protocol);
+          safe = ['http:', 'https:'].includes(new URL(href).protocol);
         } catch {}
         out += safe
-          ? `<a class="md-link" href="${escapeHtml(m[3])}" target="_blank" rel="noopener noreferrer">${applyBold(escapeHtml(m[2]))}</a>`
-          : escapeHtml(m[0]);
+          ? protect(
+              `<a class="md-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${applyBold(escapeHtml(m[2]))}</a>`,
+            )
+          : plain(m[0]);
       }
       last = re.lastIndex;
     }
-    out += applyBold(escapeHtml(text.slice(last)));
-    return out;
+    out += plain(text.slice(last));
+    return applyBold(out).replace(/\0(\d+)\0/g, (_match, index) => tokens[Number(index)]);
   }
   function addCodeCopyButton(pre: HTMLElement, text: unknown): void {
     const value = String(text || '');
@@ -173,35 +183,8 @@ const renderApi = (function () {
     addCodeCopyButton(pre, code);
     container.appendChild(pre);
   }
-  const LONG_MESSAGE_CHARS = 400;
-  const LONG_MESSAGE_LINES = 6;
   const CHUNKED_RENDER_CHARS = 2000;
   const CHUNKED_RENDER_LINES = 80;
-
-  function isLongMessage(text: unknown) {
-    const value = String(text == null ? '' : text);
-    if (value.length > LONG_MESSAGE_CHARS) return true;
-    let breaks = 0;
-    for (let idx = value.indexOf('\n'); idx !== -1; idx = value.indexOf('\n', idx + 1)) {
-      breaks++;
-      if (breaks >= LONG_MESSAGE_LINES) return true;
-    }
-    return false;
-  }
-
-  function previewSlice(text: unknown) {
-    const value = String(text == null ? '' : text);
-    const lines = value.split('\n');
-    const head = lines.slice(0, LONG_MESSAGE_LINES).join('\n');
-    const sliced =
-      head.length >= LONG_MESSAGE_CHARS || lines.length > LONG_MESSAGE_LINES
-        ? head.slice(0, LONG_MESSAGE_CHARS)
-        : value.slice(0, LONG_MESSAGE_CHARS);
-    // Never leave a preview fence open: an unclosed ``` would swallow the
-    // rest of the preview into one code block.
-    const fences = (sliced.match(/```/g) || []).length;
-    return fences % 2 === 1 ? sliced + '\n```' : sliced;
-  }
 
   function scheduleIdleChunk(fn: () => void) {
     if (typeof requestIdleCallback === 'function') {
@@ -222,7 +205,9 @@ const renderApi = (function () {
     lastLi: HTMLLIElement | null;
   }
   function renderMarkdown(container: HTMLElement, text: unknown): void {
-    const lines = String(text == null ? '' : text).split('\n');
+    const lines = String(text == null ? '' : text)
+      .replace(/\r\n?/g, '\n')
+      .split('\n');
     let listStack: ListFrame[] = [];
     const tableCells = (line: string): string[] => {
       const value = line
@@ -449,43 +434,6 @@ const renderApi = (function () {
     scheduleIdleChunk(pump);
   }
 
-  function renderAssistantBody(body: HTMLElement, text: unknown, toggle?: HTMLElement | null): AssistantBodyState {
-    const value = String(text == null ? '' : text);
-    const long = isLongMessage(value);
-    if (!long) {
-      renderMarkdown(body, value);
-      return { collapsed: false, long: false };
-    }
-    // Answers stay visible; only an explicit Collapse shows a bounded preview.
-    let expanded = false;
-    let renderToken = 0;
-    const expand = () => {
-      if (expanded) return;
-      expanded = true;
-      const my = ++renderToken;
-      const alive = () => my === renderToken;
-      body.classList.remove('collapsed');
-      if (needsChunkedRender(value)) renderMarkdownChunked(body, value, undefined, alive);
-      else {
-        body.innerHTML = '';
-        renderMarkdown(body, value);
-      }
-    };
-    const collapse = () => {
-      renderToken++;
-      expanded = false;
-      body.innerHTML = '';
-      renderMarkdown(body, previewSlice(value));
-      body.classList.add('collapsed');
-    };
-    expand();
-    if (toggle) {
-      toggle.textContent = 'Collapse';
-      toggle.setAttribute('aria-expanded', 'true');
-    }
-    return { collapsed: false, long: true, expand, collapse, isExpanded: () => expanded };
-  }
-
   // ============================ tool line rendering ============================
   const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);
   function toolRowEl(m: ToolDisplay, compact: boolean) {
@@ -627,31 +575,8 @@ const renderApi = (function () {
     return isRecord(m) && typeof m.text === 'string' ? m.text : '';
   }
 
-  // Shell result titles: explicit statuses win, then user denial, then exit.
-  // Older saved cards may have lost their status. Unknown is not proof of
-  // failure or execution; only an explicit approved exit reads as executed.
-  const SHELL_STATUS_VERBS = {
-    stopped: 'Stopped',
-    timeout: 'Timed out',
-    spawn_error: 'Failed to start',
-    wait_error: 'Failed while waiting',
-    output_read_error: 'Failed reading output',
-    drain_timeout: 'Output did not finish',
-  };
-
-  function shellStatusVerb(shellStatus: string, approved: boolean): string {
-    if (Object.prototype.hasOwnProperty.call(SHELL_STATUS_VERBS, shellStatus)) {
-      return SHELL_STATUS_VERBS[shellStatus as keyof typeof SHELL_STATUS_VERBS];
-    }
-    if (!approved) {
-      return 'Denied';
-    }
-    return shellStatus === 'exit' ? 'Executed' : 'Result status unknown';
-  }
-
   return {
     escapeHtml,
-    shellStatusVerb,
     receiptSummary,
     receiptChangedCount,
     messageCopyText,
@@ -663,13 +588,8 @@ const renderApi = (function () {
     appendCodeBlock,
     renderMarkdown,
     renderMarkdownChunked,
-    renderAssistantBody,
     hasStatefulBlocks,
-    isLongMessage,
     needsChunkedRender,
-    previewSlice,
-    LONG_MESSAGE_CHARS,
-    LONG_MESSAGE_LINES,
     FOLDABLE_TOOL_KINDS,
     toolRowEl,
     foldCountLabel,

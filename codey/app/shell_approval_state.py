@@ -59,22 +59,9 @@ def _source_api_selection(ctx: Any, session_id: str, source_run_id: str) -> Any:
         return None
 
 
-def claim_pending_shell_approval_locked(
-    ctx: Any, approval_id: str, *, claim_execution: bool = True,
-) -> dict[str, Any] | None:
-    pending = ctx.approvals.pop_shell(approval_id)
-    if pending is not None:
-        if isinstance(pending, dict):
-            claimed = {str(key): value for key, value in pending.items()}
-            if not claim_execution:
-                return claimed if _claim_decision_fact(ctx, claimed, approval_id, "denied") else None
-            return claimed if _claim_execution_fact(ctx, claimed, approval_id) else None
-        return None
-    # Rebuild only an untouched request from durable facts after an
-    # application restart. Any later fact is terminal or execution
-    # uncertain and must fail closed rather than spawning again.
-    fact = ctx.shell_approval_records.latest(approval_id)
-    if fact is None or fact.kind != "requested" or ctx.managed_outputs is None:
+def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
+    """Reconstruct a pending approval projection from its verified artifact."""
+    if getattr(ctx, "managed_outputs", None) is None:
         return None
     try:
         payload = ctx.managed_outputs.read_json_artifact({
@@ -88,37 +75,100 @@ def claim_pending_shell_approval_locked(
         return None
     if not isinstance(payload, dict) or not isinstance(payload.get("command"), str):
         return None
-    from codey.agents.shell_approval import shell_command_payload
+    from codey.agents.shell_approval import shell_command_event_fields, shell_command_payload
 
     command_fields = shell_command_payload(payload["command"])
-    pending = {
-            "approval_id": approval_id,
-            "session_id": fact.session_id,
-            "run_id": fact.source_run_id,
-            "command": payload["command"],
-            "command_preview": command_fields["command"],
-            "command_sha256": command_fields["command_sha256"],
-            "command_chars": command_fields["command_chars"],
-            "command_truncated": command_fields["command_truncated"],
-            "cwd": str(payload.get("cwd") or "."),
-            "project": str(payload.get("project") or ""),
-            "attached_project": str(payload.get("attached_project") or payload.get("project") or ""),
-            "intent": str(payload.get("intent") or "chat"),
-            "provider": str(payload.get("provider") or ""),
-            "continue_after": bool(payload.get("continue_after")),
-            "max_turns": int(payload.get("max_turns") or 1),
-            "call_id": str(payload.get("call_id") or ""),
-            "window_ref": payload.get("window_ref"),
-            "command_ref": fact.command_ref,
-            "command_digest": fact.command_digest,
-            "_approval_generation": ctx.approvals.current_generation(),
-        }
+    pending: dict[str, Any] = {
+        "approval_id": fact.approval_id,
+        "id": fact.approval_id,
+        "session_id": fact.session_id,
+        "run_id": fact.source_run_id,
+        "command": payload["command"],
+        "command_preview": command_fields["command"],
+        "command_sha256": command_fields["command_sha256"],
+        "command_chars": command_fields["command_chars"],
+        "command_truncated": command_fields["command_truncated"],
+        "cwd": str(payload.get("cwd") or "."),
+        "project": str(payload.get("project") or ""),
+        "attached_project": payload.get("attached_project") or None,
+        "intent": str(payload.get("intent") or "chat"),
+        "provider": str(payload.get("provider") or ""),
+        "continue_after": bool(payload.get("continue_after")),
+        "max_turns": int(payload.get("max_turns") or 1),
+        "call_id": str(payload.get("call_id") or ""),
+        "window_ref": payload.get("window_ref"),
+        "provider_id": str(payload.get("provider_id") or ""),
+        "turn": payload.get("turn"),
+        "tool_index": payload.get("tool_index"),
+        "command_ref": fact.command_ref,
+        "command_digest": fact.command_digest,
+        "_approval_generation": ctx.approvals.current_generation(),
+        "risk_label": str(payload.get("risk_label") or "generic"),
+        "risk_title": str(payload.get("risk_title") or ""),
+        "risk_detail": str(payload.get("risk_detail") or ""),
+        "post_approval_instructions": str(payload.get("post_approval_instructions") or ""),
+        "deferred_tool_calls": [
+            item for item in (payload.get("deferred_tool_calls") or [])
+            if isinstance(item, dict)
+        ][:8],
+    }
+    pending["ui_event"] = {
+        "type": "shell_request",
+        "run_id": fact.source_run_id,
+        "session_id": fact.session_id,
+        "id": fact.approval_id,
+        "project": pending["project"],
+        "cwd": pending["cwd"],
+        **shell_command_event_fields(pending),
+        "risk_label": pending["risk_label"],
+        "risk_title": pending["risk_title"],
+        "risk_detail": pending["risk_detail"],
+        "deferred_tool_count": len(pending["deferred_tool_calls"]),
+        "deferred_tool_calls": pending["deferred_tool_calls"],
+    }
+    if pending["call_id"]:
+        pending["ui_event"]["call_id"] = pending["call_id"]
     source_selection = _source_api_selection(ctx, fact.session_id, fact.source_run_id)
     if source_selection is not None:
         pending["_api_selection"] = source_selection
-    if not claim_execution:
-        return pending if _claim_decision_fact(ctx, pending, approval_id, "denied") else None
-    return pending if _claim_execution_fact(ctx, pending, approval_id) else None
+    return pending
+
+
+def restore_pending_shell_approvals(ctx: Any) -> int:
+    """Restore untouched durable approvals into the in-memory projection."""
+    restored = 0
+    records = getattr(ctx, "shell_approval_records", None)
+    if records is None:
+        return restored
+    for fact in records.pending_requested():
+        pending = _rebuild_pending_from_fact(ctx, fact)
+        if pending is None:
+            continue
+        ctx.approvals.add_shell(fact.approval_id, pending)
+        restored += 1
+    return restored
+
+
+def claim_pending_shell_approval_locked(
+    ctx: Any, approval_id: str, *, claim_execution: bool = True,
+) -> dict[str, Any] | None:
+    pending: dict[str, Any] | None = ctx.approvals.shell_snapshot().get(approval_id)
+    if pending is None:
+        # Only requests and accepted-but-unclaimed decisions can execute.
+        # A claimed command without a receipt remains uncertain after restart.
+        fact = ctx.shell_approval_records.latest(approval_id)
+        if fact is None or fact.kind not in {"requested", "approved"}:
+            return None
+        pending = _rebuild_pending_from_fact(ctx, fact)
+    if pending is None:
+        return None
+    claimed = (_claim_execution_fact(ctx, pending, approval_id) if claim_execution
+               else _claim_decision_fact(ctx, pending, approval_id, "denied"))
+    if not claimed:
+        return None
+    # Never consume the UI projection before durable admission succeeds.
+    ctx.approvals.pop_shell(approval_id)
+    return pending
 
 
 
@@ -171,3 +221,39 @@ def resolve_shell_approval(ctx: Any, approval_id: str) -> dict[str, Any] | None:
         "source_run_id": requested.source_run_id,
     }
 
+def expire_shell_results_locked(ctx: Any, **kwargs: Any) -> tuple[dict[str, Any], ...]:
+    """Persist an abandoned verdict before removing in-memory approvals."""
+    from codey.runtime.effects.shell_approval_records import ShellApprovalFact
+
+    candidates = []
+    for approval_id, pending in ctx.approvals.shell_snapshot().items():
+        run_id = str(pending.get("run_id") or "")
+        session_id = str(pending.get("session_id") or "")
+        if kwargs.get("run_id") and run_id != kwargs["run_id"]:
+            continue
+        if kwargs.get("exclude_run_id") and run_id == kwargs["exclude_run_id"]:
+            continue
+        if kwargs.get("session_id") and session_id != kwargs["session_id"]:
+            continue
+        candidates.append((approval_id, pending))
+    try:
+        for approval_id, pending in candidates:
+            latest = ctx.shell_approval_records.latest(approval_id)
+            if latest is not None and latest.kind == "requested":
+                ctx.shell_approval_records.append(ShellApprovalFact(
+                    approval_id=approval_id,
+                    session_id=str(pending.get("session_id") or ""),
+                    source_run_id=str(pending.get("run_id") or ""),
+                    kind="abandoned",
+                    invocation_origin="native" if pending.get("call_id") else "text",
+                    command_ref=str(pending.get("command_ref") or ""),
+                    command_digest=str(pending.get("command_digest") or ""),
+                    cwd=str(pending.get("cwd") or "."),
+                ))
+    except Exception:
+        # A failed journal write preserves cards, but Stop must still revoke
+        # already-claimed tickets even if later work clears its transient flag.
+        ctx.approvals.invalidate_generation()
+        raise
+    events: tuple[dict[str, Any], ...] = ctx.approvals.expire_shell_results(**kwargs)
+    return events

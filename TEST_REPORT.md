@@ -6,23 +6,55 @@ This file records the current verification state, not an append-only experiment 
 
 | Check | Result |
 | --- | --- |
-| Final complete pytest | **8590 passed, 7 skipped, 1520 subtests; 1068.65s** |
-| Final required machine contracts | Not rerun in this change (prior baseline: **1125 passed, 14 subtests; no skips**) |
-| Production statement coverage | **88.54%** (55,370 / 62,536); CI minimum **85%** |
-| Production branch coverage | **78.23%** (17,332 / 22,154); CI minimum **75%** |
-| Coverage scope | All **413** production Python files; Python subprocesses included |
-| Full-tree mypy / Pyrefly | **417 source files, 0 errors / 0 errors** |
+| Final complete pytest | **8711 passed, 8 skipped, 1519 subtests; 1100.02s** |
+| Final required machine contracts | **1129 passed, 14 subtests; no skips; 302.57s** |
+| Production statement coverage | **88.51%** (56,091 / 63,374); CI minimum **85%** |
+| Production branch coverage | **78.17%** (17,614 / 22,534); CI minimum **75%** |
+| Coverage scope | All **419** production Python files; Python subprocesses included |
+| Full-tree mypy / Pyrefly / ty | **419 source files; all three checkers passed for Python 3.11, 3.12 and 3.13 targets** |
 | Ruff / diff check | passed |
-| TypeScript / Biome / Vitest | **35 tests passed; build passed** |
-| Real Edge workflow regressions | **3 passed** (hybrid graph, truncated file preview, focus/reopen) |
-| JavaScript syntax / wheel assets | publish check passed |
-| Documentation pre-commit architecture/CI/coverage checks | passed |
+| TypeScript / Biome / Vitest | **66 tests passed; build passed** |
+| Real HTTP protocol continuation | **22 passed**, using deterministic local peers for both native protocols |
+| Real HTTP Stop stress | **100 passed**: 50 before headers, 50 during silent error bodies |
+| Transport regression group | **64 passed**; final implementation also passed under coverage |
+| Installed wheel UI | Actual HTTP and Chromium; all 4 SVG icons loaded, Reload retained scroll position, no page errors |
+| JavaScript syntax / published assets | passed; actual wheel and source archive contents verified |
 
-This change adds regression coverage for terminal-event validation and replay, expanded preview refreshes, Windows CI failure propagation, source archive protocol fixtures, and executable inline-script rejection. It replaces the obsolete migration skips with behavior-focused checks and keeps the module registry internal to production code; the explicit test bridge remains opt-in for browser fixtures and is absent from the normal page boot. The final complete run is green.
+Local runtime validation uses Windows and Python 3.12.8. The other Python versions
+were checked as static-analysis targets; their runtime suites run independently in
+GitHub CI. Each Windows matrix entry now runs the full suite once in the Pytest
+step with coverage collection, followed by combination, reporting, gating and
+version-specific artifact upload. Browser boot failures include page, console,
+request and restoration diagnostics.
 
-CI follow-up: `python -m tools.publish_frontend --check`, frontend build checks, six frontend publication tests, Ruff, mypy, Pyrefly, and `git diff --check` pass after refreshing the committed build metadata. Coverage artifact upload now warns when no coverage files exist, while the coverage gate remains responsible for failing an incomplete coverage run.
+Confirmed defects were reproduced with failing regressions before fixing them:
+missing SVGs in distribution archives, document Reload losing its reading position,
+approval expiry removing pending state before durable persistence, failed expiry
+leaving claimed tickets reusable, missing result receipts being hidden by older
+continuation failure state, and Windows Stop blocking on buffered network I/O.
+Real HTTP/browser checks cover approval restart, Allow/Deny, continuation retry,
+workspace document preview and sidebar actions. The native socket fix retains
+the one-second Stop assertion and preserves unrelated I/O errors.
 
-Live Zen matrix: **36/42** initial cases passed; four of six failed cases passed on retest. Two Ling thinking-enabled cases remain unresolved. The free-model matrix is not all green. Local validation does not claim a new GitHub CI run or a release.
+Coverage comes from the complete-suite capture plus focused reruns after fixes.
+Measurements for the two subsequently changed production modules were purged
+before recapturing their final code (58 approval tests and 64 transport tests),
+then combined with unchanged-module data. The full-production coverage gate and
+JSON/XML/HTML generation passed. A separate final complete pytest run validates
+the final implementation together.
+
+The eight skips are explicit environment gates: six require POSIX permission,
+process-group, absolute-path or `O_NOFOLLOW` behavior; two opt into an external
+workspace smoke or the separate real desktop-browser workflow. The required
+machine-contract gate has no skips. The actual HTTP/Chromium approval and
+document regressions run normally in the complete suite.
+
+Logs and installed-package UI evidence are under ignored
+`.e2e-artifacts/review-20261015/`; final full-suite and machine-contract logs are
+`full-pytest-release.log` and `machine-contracts-release.log`. Coverage reports are
+under its `complete/` directory.
+
+Live Zen matrix: **36/42** initial cases passed; four of six failed cases passed on retest. Two Ling thinking-enabled cases remain unresolved. The free-model matrix is not all green. This review used local deterministic peers rather than new live-provider calls; its results do not establish live-provider health or release status.
 
 ## Reports and reproduction
 

@@ -82,7 +82,14 @@ def test_unconfirmed_edit_invalidates_identity_across_following_turns(tmp_path, 
                           executors={"run": lambda call: ToolResult(call, "passed", ok=True, audit={"exit_code": 0})},
                           project_path=tmp_path, workspace_revision_store=store, run_id="unconfirmed", turn=2)[0]
     assert kernel_provenance._kernel_workspace_identity_of(result) is None
-    assert session.verifications[-1].get("workspace_fingerprint") != workspace_fingerprint(tmp_path)
+    if missing:
+        assert session.verifications[-1].get("workspace_fingerprint") != workspace_fingerprint(tmp_path)
+    else:
+        # A present authority that cannot recheck identity now blocks execution,
+        # rather than running a verification with no trustworthy observation.
+        assert not result.ok
+        assert "verification was not executed" in result.model_text
+        assert session.verifications == []
 
 
 def test_unconfirmed_edit_fact_survives_real_receipt_recovery(tmp_path):

@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+- Fix API Stop races on Windows by interrupting owned native sockets before buffered response closure, including sockets retained after connection handoff; classify cancellation-induced I/O errors without hiding unrelated failures.
+- Acknowledge durable shell approval decisions independently of command execution; recover lost responses, show execution/continuation status, and retry continuation without executing the command again. Preserve pending cards when expiry persistence fails and reject retries with unverifiable result receipts.
+- Add a shared workspace/research document pane, compact command disclosures and project chat actions. Preserve document reading position on reload and include all published SVG icons in wheel and source archives.
+- Run the same full pytest and coverage reporting/gate/upload sequence on Windows Python 3.11, 3.12 and 3.13, with one suite execution and independent artifacts per version. Include page boot diagnostics for browser failures.
+- Keep applied edits visible when workspace identity cannot be confirmed, require complete bounded content scans for provenance, and preserve UTF-8 subprocess output with explicit decoding/truncation diagnostics.
 - Harden the frontend migration boundary: split Windows check/build failures, validate terminal events before committing state, reload expanded file previews after refresh, include protocol fixtures in sdists, and remove the 26 obsolete migration skips in favor of behavior-focused coverage. Module registries now stay internal in production; the opt-in test bridge is test-only and is not enabled by the shipped page.
 - Project hybrid research facts into `task_done.research`, preserve synthesis identity and explicit restore availability, and keep research restore records tied to the owning run.
 - Load Git file diffs independently after aggregate truncation, preserve snapshot previews, render all staged/unstaged chunks, protect refreshes from stale responses, and keep focus-path navigation expanded.

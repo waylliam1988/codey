@@ -163,8 +163,7 @@ class ExecutionEvidence:
 
     def set_workspace_state(self, revision: object, fingerprint: object) -> None:
         number = valid_workspace_revision(revision)
-        if number:
-            self.workspace_revision = number
+        self.workspace_revision = number
         self.workspace_fingerprint = valid_workspace_fingerprint(fingerprint)
 
     def record(self, event: RunEvent) -> None:

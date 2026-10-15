@@ -16,6 +16,10 @@ const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../t
 const fixture = <T>(name: string): T => JSON.parse(readFileSync(resolve(fixtureRoot, name), 'utf8')) as T;
 
 describe('protocol decoders', () => {
+  it('validates output truncation as a boolean and preserves a true flag', () => {
+    expect(() => decodeServerEvent({ type: 'shell_result', truncated: 'false' })).toThrow();
+    expect(decodeServerEvent({ type: 'shell_result', truncated: true }).truncated).toBe(true);
+  });
   it('decodes the shared task and research event fixtures without dropping fields', () => {
     const taskDone = fixture<Record<string, any>>('task_done.json');
     const research = fixture<Record<string, Record<string, any>>>('research.json');
