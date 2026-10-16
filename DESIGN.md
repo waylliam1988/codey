@@ -294,7 +294,7 @@ Running copy is `Working · <current action>` or `Working · Waiting for reply`;
 
 `Thinking` appears only for nonempty reasoning text returned separately by the model. It defaults to closed, retains its source language, and has a Copy action. Never infer thinking from wait time, parse it out of answer text, or scrape model websites to manufacture this section. The same rendering applies to every connection.
 
-**Tool lines:** `.tool-line` grid — dot · kind (7ch) · path · → · result. Errors: result text `--err-text` only.
+**Tool lines:** compact text summaries without a resting container. Read shows the file and observed line range; search shows the query and retained match count (`+` means more results); edit shows the actual file and measured `+n −n`. Expand a tool to inspect its retained content or bounded edit diff. Counts and diffs come from the content actually written, never model claims. Missing before-content or a preview budget limit means `Changed · preview unavailable`, never fabricated statistics. Failed tools use a short actionable explanation; keep the complete retained error inside Details. Use `--err-text` only for the failure text.
 
 **Status rows** (done, pause, limit, error):
 
@@ -372,7 +372,7 @@ File stats stay gray in the stream; addition/deletion tints stay inside the diff
 
 **Assistant long replies:** keep the full answer expanded without Collapse/Expand actions. Preserve text selection and whole-message copying; process history uses its own disclosure and does not fold the answer.
 
-**Reading and copying:** prose, code, paths, commands, diff, and error details support native pointer selection and copying. Message/code Copy actions complement selection. Following is explicit reading state: upward wheel/touch movement, reading keys, scrollbar dragging, text selection and question navigation stop following, even 40px from the bottom. Composer keys, horizontal code scrolling and content geometry changes do not imply reading intent. Resume only when the reader actually reaches the bottom (2px rounding tolerance), releases the scrollbar there, or activates `Back to latest`. Streaming and chunked rendering respect this state. Preserve the visible reading anchor during updates, process disclosure changes and chat switching.
+**Reading and copying:** prose, code, paths, commands, diff, and error details support native pointer selection and copying. Message/code Copy actions complement selection. Following is explicit reading state: upward wheel/touch movement, reading keys, scrollbar dragging, text selection and question navigation stop following, even 40px from the bottom. Composer keys, horizontal code scrolling and content geometry changes do not imply reading intent. Resume only when the reader actually reaches the bottom (2px rounding tolerance), releases the scrollbar there, or activates `Back to latest`. Streaming and deferred selection updates respect this state. Preserve the visible reading anchor during updates, process disclosure changes and chat switching.
 
 `Back to latest` remains a centered 30px circular down-arrow button above the composer. Use a single subtle gray border, neutral background and gray stroke icon; retain its accessible name and the existing gray keyboard focus outline, without a native `title` tooltip or hover text label. Hide it while following or actually at the latest output. Metadata refresh preserves unchanged message DOM and explicit disclosure state. Hidden chat DOM is cached for at most six recent chats; older chats retain their reading offset. Do not add unread counts or another scrolling control.
 
@@ -408,13 +408,13 @@ drawer/Settings opening, or window blur. Respect reduced motion by disabling
 the width transition. Fixed UI labels stay English; question/reply excerpts
 retain their original language and are inserted as text, never HTML.
 
-Whole-message Copy icons under user messages, model answers and status messages are hidden at rest on devices with hover. Reveal only the relevant message's icon when its continuous region (body, intervening space, and button) is hovered or contains keyboard-visible focus. Preserve the button's layout space, but disable pointer interaction while hidden. Mouse focus alone must not keep an icon visible after leaving; Tab reveals the button with a gray keyboard focus background; pointer hover brightens only the icon. Keep icons visible on devices without hover. During copying, keep the icon visible and prevent duplicate activation without removing keyboard focus. After completion, retain gray success feedback for 1.2 seconds, or retryable failure feedback for 4 seconds, even after pointer exit. Code-block Copy reveals on its code region; Thinking Copy reveals on its reasoning section or keyboard-visible focus, and remains visible on devices without hover. Respect reduced-motion preferences.
+Whole-message Copy icons under user messages, model answers and status messages are hidden at rest on devices with hover. Reveal only the relevant message's icon when its continuous region (body, intervening space, and button) is hovered or contains keyboard-visible focus. Preserve the button's layout space, but disable pointer interaction while hidden. Mouse focus alone must not keep an icon visible after leaving; Tab reveals the button with a gray keyboard focus background; pointer hover brightens only the icon. Keep icons visible on devices without hover. During copying, keep the icon visible and prevent duplicate activation without removing keyboard focus. After completion, retain gray success feedback for 1.2 seconds, or retryable failure feedback for 4 seconds, even after pointer exit. Code-block Copy reveals on its code region. Thinking is one ordered disclosure without a repeated Copy control on every fragment. Respect reduced-motion preferences.
 
 Right-clicking selected chat/drawer text or an editable text selection opens a small `Copy` menu in the existing `.ctx-menu` language: dark `--panel`, gray text, 8px radius, one subtle border, and no accent. The menu item has no individual border or focus outline. Pointer opening shows plain text; hover or keyboard navigation uses the existing gray row background for focus. Copy uses the exact selected text, preserving the draft and selection; whole-message and code Copy buttons keep their existing behavior. Shift+F10 / the context-menu key opens the same selection menu. Escape returns focus and selection to the source; outside click, scrolling, window resizing, and chat switching dismiss it. Keep the menu within the viewport. A successful copy briefly shows gray `Copied`; failure shows gray `Could not copy` and leaves Copy available to retry. Do not offer a stale text selection for an unselected input or expose password selections. Desktop copying uses this menu without enabling developer/debug menus in the host.
 
 The same menu offers `Quote in reply` only for a selection inside one current assistant answer's body or code. Append ordinary editable Markdown quotation to the existing draft, retaining selected indentation, blank lines and text; place the caret after the quote with space to ask a question. Keep native Undo/Redo and focus the composer without scrolling the conversation. Do not send, attach the whole answer, or create hidden context. User messages, Thinking, tools, drawers and editable inputs retain Copy only; hidden actions are excluded from keyboard navigation. Chat switching/deletion invalidates the captured answer. Actual scrolling dismisses the menu; a queued scroll notification without movement does not.
 
-Copy success uses a temporary gray checkmark or `Copied`, with an accessible name; no success accent. Markdown links allow HTTP(S) only, tables scroll horizontally when necessary, and fenced code preserves whitespace with a quiet language label. Model output is escaped, never rendered as arbitrary HTML.
+Copy success uses a temporary gray checkmark or `Copied`, with an accessible name; no success accent. External Markdown links allow HTTP(S) only. Workspace links go through the session-bound document service. Tables scroll horizontally when necessary, and fenced code preserves whitespace with a quiet language label. Model output is escaped, never rendered as arbitrary HTML.
 
 **Shell approval:**
 
@@ -685,3 +685,104 @@ collapsed by default. Preserve diagnostic references; do not append a repeated
 `Local update paused` line after each command. Previously saved instances of
 that informational message use the same diagnostic presentation. Actual task
 pause, denial, failure and Stop states retain their normal controls.
+
+### Conversation content and continuity (2026-10-16)
+
+The middle conversation column follows one user request through work, questions,
+artifacts and the final answer. Keep one author label where the process and answer
+are contiguous, one live Working indicator, and a server-measured `Worked for Ns`
+summary when elapsed time is available. Do not estimate historical durations.
+An expanded individual tool result retains its state when the chat is rebuilt.
+
+**Markdown and files.** Use one Markdown parser for answers, Research and document
+preview: emphasis, strike-through, task lists, rules, tables, quotations and fenced
+code share the monochrome typography. Repair the common model-generated space
+before closing bold delimiters, without altering literal code. Keep pipes inside
+table code spans in their original cell. HTML remains inert; executable URL
+schemes and embedded SVG never become active content. A malformed percent escape
+or one failed image must not prevent the rest of the answer from rendering.
+
+An inline filename is a candidate until the server confirms a file in this chat's
+workspace. Do not turn `json.dumps`, private symbols or globs into file buttons.
+Explicit local links, Windows paths, line numbers and abbreviated unique file
+references use the existing scoped document entry. Missing and ambiguous paths
+retain explicit server outcomes. Confirming an image does not decode it as text:
+read raster bytes through the same scoped service (2 MiB limit; PNG/JPEG/GIF/WebP),
+display a thumbnail, and support pointer/keyboard enlargement and Escape. Image
+failure offers `Reload image` and local Details, never a model-task retry.
+
+**Deliverables.** Ordinary file mentions remain inline. An explicitly named
+deliverables list may become compact file rows with a filename, type, and Open.
+Research has one report entry using the same document pane; `View research evidence`
+and `Use in Project` are secondary menu actions. Keep evidence access available
+when no report was saved. Never add a second generic Open beside the report action.
+
+**True streaming.** Native API text deltas carry run identity, stream identity and
+monotonically ordered snapshot sequences. Local native API selections request
+streaming; existing non-native text protocols do not expose their control JSON.
+Only actual received text is shown progressively. Completed Markdown blocks keep
+their existing DOM; only the changed tail is replaced. Selection defers a content
+update until the selection is released. Final settlement updates the same answer,
+including a final answer longer than the bounded live prefix; history never plays
+a typing animation. Interrupted text stays readable with a quiet partial-response
+notice. Rendering failures offer `Render again` beside source/details and cannot
+execute a tool, regenerate a model response or erase the remaining conversation.
+
+**Pending input.** While work runs, Send queues the current draft for the next
+turn; Stop remains available. Before sending, persist the chat and a unique delivery
+identity. The server saves a version-1 SQLite receipt before admission and before
+dispatch; the browser retains only delivery identities awaiting confirmation.
+Queued inputs show `Queued · next turn`, `Return to draft` and `Remove`. Return to
+draft first removes the queued item with its current revision; it preserves newer
+draft text. Stop durably pauses queued work. Resume is explicit. A lost response,
+an interrupted dispatch, or an admitted run with no final receipt after restart
+remains visible for `Check status`; never automatically resubmit it. Completed
+receipts do not consume pending capacity and retain their deduplication identities.
+Queue recovery owns its status actions, without a second request-level Retry.
+
+**User questions.** The native `ask_user` control suspends work after acknowledging
+its exact original tool call. Display one compact question form outside folded
+process history: question, two to six radio choices, optional descriptions and
+free text, Dismiss and Confirm. Use the existing 13px title and 10px radius; no
+Reason section and no collapsible waiting header. Show `Waiting for your answer`
+without a live spinner or a duplicate Working line. Ordinary Send stays disabled
+until the question is settled. Lock controls during submission; unconfirmed answers
+offer a status check. Accepted answers are saved before entering the input queue,
+recover after restart, and resume the original model, connection revision, intent,
+native history and authorization. A choice never grants shell permission. Resumed
+commands still require their own approval. Updating another question must preserve
+the focused form and composition state. Answered cards become a quiet answer row.
+
+**Editing and long histories.** Hover/focus on a user message reveals Copy and
+`Return message to draft`. Reuse the original text as a new draft; never silently
+rewrite the historical request or rerun an executed command. Initially mount the
+latest 100 saved messages, extending backward to a complete user-request boundary.
+`Load earlier messages` prepends another window while retaining existing nodes and
+the reading anchor; `Show all for find` mounts all saved messages. This does not
+expand the existing server retention limit of 500 messages per chat. Wheel and
+reading keys inside a scrollable command, code block or table belong to that
+region until its directional edge, then may reach the outer conversation.
+
+All UI assets ship inside Codey. Runtime records, queue receipts, question records
+and serialized UI state retain version 1. SQLite connections belong to individual
+transactions and close deterministically; closing a live queued run retains its
+owning application resources until its terminal receipt is written. No runtime
+dependency on a Codex installation, compatibility migration, blind retry, fake
+streaming timer or full-answer Collapse is introduced.
+
+### 2026-10-16 boundary clarifications
+
+- A queued input rejected explicitly by admission (`input_queue_full`) or by a
+  later identity query (`input_not_found`) is a recoverable local `Not sent`
+  record. `Return to draft` removes that local record before restoring the text.
+  Transport loss and other ambiguous responses remain `Delivery unconfirmed`
+  and require `Check status`; they are never treated as safe to resend.
+- A Research report card resolves through the `runId` on its own message. A
+  message without a run identity may use the only stored Research run for that
+  session, preserving older single-run records; it never selects the latest run
+  when multiple histories exist.
+- Markdown code spans are parsed before table-pipe and emphasis repair. Ordinary
+  prose pipes and `**` inside code remain byte-for-byte literal after rendering.
+- Every confirmed local image is scheduled through the existing four-worker
+  pool. The UI no longer silently truncates image jobs at twenty; each failed
+  image keeps its own reload/details path.

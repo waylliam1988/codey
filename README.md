@@ -75,6 +75,13 @@ following even near the bottom; reach the bottom or use Back to latest to resume
 Select text in an answer and choose Quote in reply to append an editable Markdown
 quote to your draft without sending it.
 
+When a queued next-turn input is explicitly rejected by the server, the UI marks
+it `Not sent` and offers `Return to draft`; a lost or otherwise uncertain
+response remains protected by `Check status` so it cannot be duplicated. Research
+report rows open the report belonging to that run, Markdown repairs leave inline
+code literal, and local document images load in bounded batches without silently
+dropping images after a fixed count.
+
 Save changes covers model choices; Save connection covers connection fields.
 Each becomes available when its own values change. Refresh models preserves
 unsaved choices, search and focus. Changes refresh keeps the current diff readable;

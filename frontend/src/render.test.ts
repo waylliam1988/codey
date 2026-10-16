@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './render';
+import * as markdown from './markdown';
 
 // Compiled by typecheck, never executed. Unused expect-error fails if the
 // global becomes any again, so these test actual type rejection.
 function renderTypeContract(): void {
   // @ts-expect-error Rendering requires an HTML container.
   window.Render.renderMarkdown('chat', 'hello');
-  // @ts-expect-error Chunk callbacks must be callable.
-  window.Render.renderMarkdownChunked(document.body, 'hello', 42);
+  // @ts-expect-error Stable Markdown rendering accepts no completion callback.
+  window.Render.updateMarkdown(document.body, 'hello', 42);
   // @ts-expect-error Tool kind must be a string.
   window.Render.toolRowEl({ kind: 42 }, false);
 }
@@ -26,7 +27,7 @@ describe('render boundaries', () => {
   it('keeps bold intact across inline code, file actions and safe links', () => {
     const body = document.createElement('div');
     window.Render.renderMarkdown(body, '**最需要动手的地方：`selfie/ui/main_window.py` 有 2084 行。**');
-    expect(body.querySelector('strong [data-document-path]')?.textContent).toBe('selfie/ui/main_window.py');
+    expect(body.querySelector('strong [data-document-candidate]')?.textContent).toBe('selfie/ui/main_window.py');
     expect(body.textContent).not.toContain('**');
     body.replaceChildren();
     window.Render.renderMarkdown(body, '**Read [source](https://example.com) and `**literal**`**');
@@ -42,6 +43,19 @@ describe('render boundaries', () => {
     expect(window.Render.receiptChangedCount({ work: { changed_count: 2 } }, { changed_count: 3 })).toBe(2);
   });
 
+  it('isolates parser failure and retries rendering without invoking any task', () => {
+    const body = document.createElement('div');
+    const parser = vi.spyOn(markdown, 'renderMarkdownContent').mockImplementationOnce(() => {
+      throw new Error('display failed');
+    });
+    expect(() => window.Render.renderMarkdown(body, 'saved answer')).not.toThrow();
+    expect(body.querySelector('.md-render-error')).not.toBeNull();
+    body.querySelector<HTMLButtonElement>('.md-render-error button')!.click();
+    expect(body.textContent).toContain('saved answer');
+    expect(body.querySelector('.md-render-error')).toBeNull();
+    parser.mockRestore();
+  });
+
   it('preserves nested lists, code text and safe links', () => {
     const body = document.createElement('div');
     window.Render.renderMarkdown(
@@ -54,18 +68,16 @@ describe('render boundaries', () => {
     expect(body.querySelector('a')?.href).toBe('https://example.com/');
   });
 
-  it('does not publish a cancelled chunk render or call its completion', () => {
-    const scheduled: Array<() => void> = [];
-    vi.stubGlobal('requestIdleCallback', (callback: () => void) => {
-      scheduled.push(callback);
-    });
+  it('keeps a long fenced block intact when later prose arrives', () => {
     const body = document.createElement('div');
-    const done = vi.fn();
-    let current = true;
-    window.Render.renderMarkdownChunked(body, 'long paragraph\n\n'.repeat(200), done, () => current);
-    current = false;
-    for (const callback of scheduled) callback();
-    expect(body.childNodes).toHaveLength(0);
-    expect(done).not.toHaveBeenCalled();
+    const code = Array.from({ length: 200 }, (_, index) => `print(${index})`).join('\n');
+    const initial = '```python\n' + code + '\n```';
+    window.Render.updateMarkdown(body, initial);
+    const block = body.querySelector('pre')!;
+    window.Render.updateMarkdown(body, initial + '\n\nFinal paragraph');
+    expect(body.querySelectorAll('pre')).toHaveLength(1);
+    expect(body.querySelector('pre')).toBe(block);
+    expect(block.querySelector('code')?.textContent).toBe(code);
+    expect(body.querySelector('p')?.textContent).toBe('Final paragraph');
   });
 });

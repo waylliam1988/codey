@@ -24,6 +24,7 @@ from codey.agents.handoff import ConversationContext
 from codey.app import event_bus
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.conversation_registry import ConversationRegistry
+from codey.app.conversation_runtime import ConversationRuntime
 from codey.app.event_bus import EventBus, EventSubscriber
 from codey.app.event_payloads import SCHEMA_VERSION
 from codey.app.ghost_daemon import GhostSleepDaemon
@@ -127,6 +128,9 @@ class AppContext:
         self.run_traces = RunTraceStore(state_home) if state_home else None
         self.runtime_log = RuntimeSessionLog(runtime_state_home)
         self.runtime_mutations = RuntimeMutationLine(self.runtime_log)
+        self.conversation_runtime = ConversationRuntime(runtime_state_home, self.emit)
+        self.input_queue = self.conversation_runtime.inputs
+        self.user_questions = self.conversation_runtime.questions
         self.runtime_operations = RuntimeOperationStore(self.runtime_log)
         self.runtime_effects = RuntimeEffectStore(self.runtime_log)
         self.tool_result_delivery = ToolResultDeliveryStore(self.runtime_log)
@@ -496,6 +500,7 @@ class AppContext:
 
     def release_run(self, run_id: str) -> None:
         self.run_registry.release(run_id)
+        self.input_queue.wake.set()
 
     def finish_run(self, run_id: str, event: dict[str, Any]) -> bool:
         payload = self.run_registry.finish(run_id, event)
@@ -541,6 +546,8 @@ class AppContext:
                     self.shell_approval_workflow.cancel_queued()
         for event in events:
             self.record_shell_result(event)
+        if not self._close_requested:
+            self.input_queue.pause()
 
     def expire_pending_shell_approvals(self) -> None:
         """Expire every pending shell approval (task stop path).
@@ -766,12 +773,18 @@ class AppContext:
                 self.run_registry.current(),
             )
         payload = self._event_with_run_fields(payload)
+        prepared = self.conversation_runtime.prepare(self, payload)
+        if prepared is None:
+            return
+        payload = prepared
         payload["schema_version"] = SCHEMA_VERSION
         if payload.get("type") == "tool":
             payload["ok"] = payload.get("ok") is True
             if strict_exit_code(payload.get("exit_code")) is None:
                 payload.pop("exit_code", None)
         self.event_bus.emit(payload)
+        if payload.get("type") == "task_done":
+            self.input_queue.completed(str(payload.get("run_id") or ""), payload)
         self._on_event_emitted(payload)
 
     def _on_event_emitted(self, payload: dict[str, Any]) -> None:
@@ -908,6 +921,12 @@ class AppContext:
         """Return True when resources have been completely released."""
         return self._resources_closed
 
+    def _wait_background_workers(self) -> bool:
+        try:
+            return self.shell_approval_workflow.close() and self.ghost_sleep_daemon.wait(timeout=2.0)
+        except Exception:
+            return False
+
     def close(self) -> bool:
         """Release durable resources. Returns True only when fully closed.
 
@@ -929,12 +948,10 @@ class AppContext:
             self.request_stop()
 
         self.connection_status.close()
+        if not self.conversation_runtime.close(self.current_run()):
+            return False
 
-        try:
-            ghost_done = self.shell_approval_workflow.close() and self.ghost_sleep_daemon.wait(timeout=2.0)
-        except Exception:
-            ghost_done = False
-        if not ghost_done:
+        if not self._wait_background_workers():
             return False
 
         resources_closed = True
@@ -980,4 +997,3 @@ class AppContext:
             self._resources_closed = True
             return True
         return False
-

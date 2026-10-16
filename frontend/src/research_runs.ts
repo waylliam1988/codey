@@ -62,6 +62,19 @@ import type { ResearchPayload, ResearchRestoreResult, ResearchRun, Session, UiDe
     return runs.length ? runs[runs.length - 1] : null;
   }
 
+  function researchRunFor(sessionId: string, runId: string): ResearchRun | null {
+    const s = sessions().find((x) => x.id === sessionId);
+    const runs = s && Array.isArray(s.researchRuns) ? s.researchRuns : [];
+    return runs.find((run) => run.runId === runId) || null;
+  }
+
+  function researchRunForMessage(sessionId: string, runId: string): ResearchRun | null {
+    if (runId) return researchRunFor(sessionId, runId);
+    const s = sessions().find((x) => x.id === sessionId);
+    const runs = s && Array.isArray(s.researchRuns) ? s.researchRuns : [];
+    return runs.length === 1 ? runs[0] : null;
+  }
+
   async function restoreResearchRun(ownerSessionId = activeId()): Promise<ResearchRestoreResult | null> {
     const run = currentResearchRun(ownerSessionId);
     if (!run || !run.runId) return null;
@@ -113,6 +126,8 @@ import type { ResearchPayload, ResearchRestoreResult, ResearchRun, Session, UiDe
     normalize: normalizeResearchRunArtifact,
     record: recordResearchRun,
     current: currentResearchRun,
+    forRun: researchRunFor,
+    forMessage: researchRunForMessage,
     restore: restoreResearchRun,
     markRestoreAvailability: markResearchRestoreAvailability,
   };

@@ -35,6 +35,7 @@ from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
 from codey.storage.atomic_io import write_text_atomic
 from codey.toolchain.constants import EXACT_REPLACEMENT_CONTEXT_HINT, MAX_REPLACEMENTS
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
+from codey.toolchain.presentation import edit_preview
 from codey.utils.references import find_reference_hints
 from codey.utils.scan_report import byte_limit_label, render_scan_coverage
 from codey.utils.text_budget import clip_middle, prune_dependency_stack_frames
@@ -404,7 +405,7 @@ def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
     path, error = _checked_tool_path(root, rel, tool="write_file")
     if error is not None or path is None:
         return error or ToolOutcome.error("path could not be resolved")
-    before = ""
+    before: str | None = ""
     try:
         if path.is_file():
             try:
@@ -414,9 +415,9 @@ def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
             except (OSError, UnicodeDecodeError, ValueError):
                 # Best-effort hint only: the authoritative path check
                 # runs again inside _write_text_after_final_path_check.
-                before = ""
+                before = None
     except OSError:
-        before = ""
+        before = None
     write_error = _write_text_after_final_path_check(
         root,
         rel,
@@ -425,11 +426,12 @@ def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
     )
     if write_error is not None:
         return write_error
-    syntax_hint = _python_syntax_regression_hint(rel, before, content)
+    syntax_hint = _python_syntax_regression_hint(rel, before or "", content)
     return ToolOutcome(
         f"wrote {rel} ({len(content)} chars){syntax_hint}",
         True,
         changed=True,
+        presentation={"preview": edit_preview(rel, before, content)},
     )
 
 
@@ -746,6 +748,7 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         f"edited {rel} ({count} {label}){syntax_hint}",
         True,
         changed=True,
+        presentation={"preview": edit_preview(rel, content, updated)},
     )
 
 
@@ -886,7 +889,7 @@ def _format_read_file_page(
     end_line = start_line + len(selected) - 1
     partial = start_line > 1 or end_line < total
     if not partial:
-        return ToolOutcome(content, True)
+        return ToolOutcome(content, True, presentation={"preview": {"line_start": start_line, "line_end": end_line}})
     next_text = ""
     if end_line < total:
         next_offset = end_line + 1
@@ -901,6 +904,7 @@ def _format_read_file_page(
         _append_page_metadata(content, metadata),
         True,
         truncated=True,
+        presentation={"preview": {"line_start": start_line, "line_end": end_line}},
     )
 
 
@@ -1181,7 +1185,8 @@ def search_files(
         limit=page_limit,
     )
     truncated = _append_search_footers(matches, state=state, budget=budget)
-    return ToolOutcome("\n".join(matches), True, truncated=truncated)
+    return ToolOutcome("\n".join(matches), True, truncated=truncated,
+                       presentation={"preview": {"query": query, "matches": sum(bool(re.match(r".+:\d+: ", match)) for match in matches), "has_more": state.result_limited}})
 
 
 def find_references(root: Path, rel: str, symbol: str) -> ToolOutcome:

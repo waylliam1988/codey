@@ -146,6 +146,12 @@ def run_event_ui_payload(
     event: RunEvent,
 ) -> dict[str, Any] | None:
     """Render one RunEvent as the existing UI/SSE payload shape."""
+    payload: dict[str, Any]
+
+    if event.kind == "user_question":
+        metadata = dict(event.metadata)
+        identity = str(metadata.pop("id"))
+        return {"type": "user_question", "run_id": run_id, "session_id": session_id, "id": identity, "question": metadata}
 
     if event.kind == "turn":
         payload = {
@@ -210,6 +216,8 @@ def run_event_ui_payload(
         "tool_name": canonical_name,
         "path": display_path,
         "result": result,
+        "detail": event.outcome.model_text[:64_000],
+        "detail_truncated": len(event.outcome.model_text) > 64_000,
         "status": status,
         "error": status == "error",
         "ok": event.outcome.ok,
@@ -217,6 +225,9 @@ def run_event_ui_payload(
         "truncated": event.outcome.truncated,
     }
     command = str(tool_args.get("command") or "")
+    preview = event.outcome.presentation.get("preview")
+    if isinstance(preview, dict):
+        payload["preview"] = dict(preview)
     if command:
         payload["command"] = command
     # Strict exit: only real ints are projected; bool/str/float are omitted.

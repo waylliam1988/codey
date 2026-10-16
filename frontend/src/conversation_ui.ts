@@ -1,4 +1,5 @@
 import { runtime } from './runtime';
+import { nestedOwnsScroll } from './scroll_owner';
 import type { Message, Project, Session } from './types/domain';
 import type { ProcessSnapshot } from './process';
 export interface ConversationUiApi {
@@ -85,6 +86,8 @@ export interface ConversationUiDeps {
   let deps: ConversationUiDeps;
   let shownId = '';
   const views = new Map<string, ViewState>();
+  const historyStarts = new Map<string, number>();
+  const HISTORY_BATCH = 100;
   let menuTrigger: HTMLElement | null = null;
   let selectedCopy: SelectionSnapshot | null = null,
     copyGeneration = 0;
@@ -359,10 +362,18 @@ export interface ConversationUiDeps {
         welcome.className = 'welcome';
         welcome.innerHTML = '<h1>Codey</h1><p>Send a message to start.</p>';
         chat.append(welcome);
-      } else for (const m of s.messages) deps.appendMessageNode(chat, m);
+      } else {
+        let start = historyStarts.get(s.id);
+        if (start === undefined || start >= s.messages.length)
+          start = historyBoundary(s.messages, Math.max(0, s.messages.length - HISTORY_BATCH));
+        historyStarts.set(s.id, start);
+        addHistoryLoader(chat, s, start);
+        for (const m of s.messages.slice(start)) deps.appendMessageNode(chat, m);
+      }
       runtime.Process.restore(chat, disclosures);
     }
     shownId = s.id;
+    runtime.UserQuestions?.syncViews(chat);
     following = follow;
     if (changing) scrollIntent = null;
     if (following) setScroll($('chat-area').scrollHeight);
@@ -373,6 +384,45 @@ export interface ConversationUiDeps {
     captureView();
     updateLatest();
     updateNotice();
+  }
+  function historyBoundary(messages: Message[], index: number): number {
+    while (index > 0 && messages[index]?.type !== 'user') index--;
+    return index;
+  }
+  function addHistoryLoader(chat: HTMLElement, session: Session, start: number): void {
+    if (!start) return;
+    const loader = document.createElement('div');
+    loader.className = 'history-loader';
+    const earlier = document.createElement('button'),
+      all = document.createElement('button');
+    earlier.type = all.type = 'button';
+    earlier.className = all.className = 'link-btn';
+    earlier.textContent = 'Load earlier messages';
+    earlier.dataset.loadHistory = '';
+    all.textContent = 'Show all for find';
+    all.dataset.showAllHistory = '';
+    const load = (everything: boolean) => {
+      if (deps.activeSession() !== session) return;
+      const anchor = loader.nextElementSibling;
+      const top = anchor?.getBoundingClientRect().top;
+      const next = everything ? 0 : historyBoundary(session.messages, Math.max(0, start - HISTORY_BATCH));
+      const prefix = document.createElement('div');
+      for (const message of session.messages.slice(next, start)) deps.appendMessageNode(prefix, message);
+      loader.remove();
+      chat.prepend(...prefix.childNodes);
+      historyStarts.set(session.id, next);
+      addHistoryLoader(chat, session, next);
+      if (next) chat.prepend(chat.lastElementChild!);
+      following = false;
+      scrollIntent = 'history';
+      if (anchor && top !== undefined) setScroll($('chat-area').scrollTop + anchor.getBoundingClientRect().top - top);
+      captureView();
+      updateLatest();
+    };
+    earlier.onclick = () => load(false);
+    all.onclick = () => load(true);
+    loader.append(earlier, all);
+    chat.append(loader);
   }
 
   function scrollChat() {
@@ -414,6 +464,7 @@ export interface ConversationUiDeps {
   }
   function forget(id: string) {
     views.delete(id);
+    historyStarts.delete(id);
   }
 
   function menuOpened(menu: HTMLElement, anchor: HTMLElement) {
@@ -785,6 +836,7 @@ export interface ConversationUiDeps {
       'wheel',
       (e) => {
         if (e.shiftKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+        if (nestedOwnsScroll(e.target, area, e.deltaY)) return;
         if (e.deltaY < 0) stopFollowing();
         else scrollIntent = 'latest';
       },
@@ -793,6 +845,14 @@ export interface ConversationUiDeps {
     area.addEventListener('keydown', (e) => {
       const target = e.target instanceof Element ? e.target : null;
       if (e.isComposing || target?.closest('input,textarea,[contenteditable="true"]')) return;
+      if (
+        nestedOwnsScroll(
+          e.target,
+          area,
+          ['ArrowUp', 'PageUp', 'Home'].includes(e.key) || (e.key === ' ' && e.shiftKey) ? -1 : 1,
+        )
+      )
+        return;
       if (['ArrowUp', 'PageUp', 'Home'].includes(e.key) || (e.key === ' ' && e.shiftKey)) stopFollowing();
       else if (['ArrowDown', 'PageDown', 'End', ' '].includes(e.key)) scrollIntent = 'latest';
     });

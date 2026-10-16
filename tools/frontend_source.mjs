@@ -14,9 +14,8 @@ export function eraseTypes(text, fileName = 'source.ts') {
 if (process.argv[2]) {
   const root = process.argv[2];
   const result = {};
-  for (const name of fs.readdirSync(root).filter(name => name.endsWith('.ts'))) {
+  for (const name of fs.readdirSync(root).filter(name => name.endsWith('.ts') && !name.endsWith('.d.ts'))) {
     result[name] = eraseTypes(fs.readFileSync(path.join(root, name), 'utf8'), name);
   }
   process.stdout.write(JSON.stringify(result));
 }
-

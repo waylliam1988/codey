@@ -64,6 +64,8 @@ class RunEventUiPayloadTests(unittest.TestCase):
             "tool_name": "run",
             "path": "",
             "result": "exit 0",
+            "detail": outcome.model_text,
+            "detail_truncated": False,
             "status": "ok",
             "error": False,
             "ok": True,

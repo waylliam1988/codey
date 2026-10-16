@@ -2,6 +2,8 @@ import type { DocumentRef } from './document_pane';
 import { commandCard } from './command_card';
 import { approvalText } from './shell_approvals';
 import { runtime } from './runtime';
+import { hydrateDocumentContent } from './document_content';
+import { artifactRow, decorateDeliverables } from './artifacts';
 import type { Message, UiDeps } from './types/domain';
 interface MessagesDeps extends UiDeps {
   openDocument(sessionId: string, ref: DocumentRef): void;
@@ -18,6 +20,7 @@ interface MessagesDeps extends UiDeps {
 export interface MessagesApi {
   init(deps: MessagesDeps): void;
   append(chat: HTMLElement, message: Message): void;
+  updateReply(chat: HTMLElement, message: Message): boolean;
 }
 /* Message presentation; actions are supplied by the application core. */
 (function () {
@@ -25,6 +28,20 @@ export interface MessagesApi {
   let deps: MessagesDeps = {} as MessagesDeps;
   function init(nextDeps: MessagesDeps): void {
     deps = nextDeps;
+  }
+  function streamStatus(node: HTMLElement, message: Message): void {
+    let note = node.querySelector<HTMLElement>('.reply-stream-note');
+    if (message.streamState !== 'interrupted') {
+      note?.remove();
+      return;
+    }
+    if (!note) {
+      note = document.createElement('div');
+      note.className = 'reply-stream-note';
+      note.setAttribute('role', 'status');
+      node.append(note);
+    }
+    note.textContent = 'Response interrupted · partial text retained';
   }
   function append(chat: HTMLElement, m: Message): void {
     if (!runtime.Process.append(chat, m, appendContent)) appendContent(chat, m);
@@ -58,9 +75,28 @@ export interface MessagesApi {
       const body = div.querySelector<HTMLElement>('.body');
       if (body) body.textContent = String(m.text);
       addMessageCopyButton(div, messageCopyText(m));
+      const actions = document.createElement('div');
+      actions.className = 'message-actions';
+      const recall = document.createElement('button');
+      recall.type = 'button';
+      recall.className = 'msg-recall';
+      recall.setAttribute('aria-label', 'Return message to draft');
+      recall.title = 'Return message to draft';
+      recall.onclick = () => runtime.Composer.recallMessage(m.sessionId || activeId, String(m.text || ''));
+      const copy = div.querySelector('.msg-copy'),
+        feedback = div.querySelector('.copy-feedback');
+      if (copy) actions.append(copy);
+      actions.append(recall);
+      if (feedback) actions.append(feedback);
+      div.append(actions);
       chat.appendChild(div);
     } else if (m.type === 'request_status') {
       runtime.Requests.appendStatus(chat, m);
+    } else if (m.type === 'user_question') {
+      const div = document.createElement('div');
+      div.className = 'msg user-question';
+      div.append(runtime.UserQuestions.card(m.id || ''));
+      chat.append(div);
     } else if (m.type === 'turn') {
       const div = document.createElement('div');
       div.className = 'turn-divider';
@@ -75,6 +111,8 @@ export interface MessagesApi {
     } else if (m.type === 'asst') {
       const div = document.createElement('div');
       div.className = 'msg asst';
+      if (m.runId) div.dataset.runId = m.runId;
+      if (m.streamId) div.dataset.streamId = m.streamId;
       const label = document.createElement('div');
       label.className = 'msg-label';
       label.textContent = 'Codey';
@@ -82,8 +120,15 @@ export interface MessagesApi {
       const body = document.createElement('div');
       body.className = 'body md';
       div.appendChild(body);
-      runtime.Render.renderMarkdownChunked(body, m.text || '');
-      addMessageCopyButton(div, messageCopyText(m));
+      runtime.Render.updateMarkdown(body, m.text || '');
+      {
+        void hydrateDocumentContent(body, {
+          sessionId: m.sessionId || activeId,
+          workspace: currentProjectPath() || undefined,
+        }).then(() => decorateDeliverables(body));
+      }
+      if (!m.streamId || m.finalAnswer) addMessageCopyButton(div, messageCopyText(m));
+      streamStatus(div, m);
       chat.appendChild(div);
     } else if (m.type === 'tool') {
       if (FOLDABLE_TOOL_KINDS.has(m.kind || '') && !m.error) {
@@ -94,17 +139,24 @@ export interface MessagesApi {
     } else if (m.type === 'tool_pending') {
       chat.appendChild(standaloneToolEl(m));
     } else if (m.type === 'research_done') {
-      const report = runtime.ResearchRuns.current(m.sessionId || activeId)?.synthesisId;
+      const sessionId = m.sessionId || activeId;
+      const report = runtime.ResearchRuns.forMessage(sessionId, m.runId || '')?.synthesisId;
+      if (report) {
+        chat.append(
+          artifactRow(
+            'Research report.md',
+            'Research · Markdown',
+            () => deps.openDocument(sessionId, { kind: 'research', note_id: report }),
+            [
+              { label: 'View research evidence', action: () => runtime.ResearchDrawer.open(sessionId) },
+              { label: 'Use in Project', action: () => attachCurrentChatToPickedProject() },
+            ],
+          ),
+        );
+        return;
+      }
       const actions = runtime.RunDetails.actionsForMessage(m, [
-        ...(report
-          ? [
-              {
-                label: 'Open report',
-                onclick: () => deps.openDocument(m.sessionId || activeId, { kind: 'research', note_id: report }),
-              },
-            ]
-          : []),
-        { label: 'Open', onclick: () => runtime.ResearchDrawer.open(m.sessionId || activeId) },
+        { label: 'View research evidence', onclick: () => runtime.ResearchDrawer.open(m.sessionId || activeId) },
         { label: 'Use in Project', onclick: () => attachCurrentChatToPickedProject() },
       ]);
       chat.appendChild(
@@ -294,5 +346,23 @@ export interface MessagesApi {
     }
   }
 
-  runtime.Messages = { init, append };
+  function updateReply(chat: HTMLElement, message: Message): boolean {
+    if (message.type !== 'asst' || !message.streamId) return false;
+    const node = [...chat.querySelectorAll<HTMLElement>('.msg.asst')].find(
+      (node) => node.dataset.streamId === message.streamId && node.dataset.runId === message.runId,
+    );
+    const body = node?.querySelector<HTMLElement>('.body');
+    if (!node || !body) return false;
+    runtime.Render.updateMarkdown(body, message.text || '');
+    streamStatus(node, message);
+    if (message.finalAnswer && !node.querySelector('.msg-copy'))
+      runtime.Render.addMessageCopyButton(node, message.text || '');
+    if (message.streamState !== 'partial')
+      void hydrateDocumentContent(body, {
+        sessionId: message.sessionId || deps.getActiveId(),
+        workspace: deps.currentProjectPath() || undefined,
+      }).then(() => decorateDeliverables(body));
+    return true;
+  }
+  runtime.Messages = { init, append, updateReply };
 })();

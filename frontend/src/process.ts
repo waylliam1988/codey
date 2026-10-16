@@ -1,5 +1,6 @@
 import { runtime } from './runtime';
 import type { ApprovalState } from './types/domain';
+import type { ToolPreview } from './render';
 /* Optional reasoning and trusted tool records, grouped by one user request. */
 export interface ProcessSnapshot {
   runId?: string;
@@ -7,6 +8,7 @@ export interface ProcessSnapshot {
   open?: boolean;
   thinking: boolean[];
   tools: boolean[];
+  details?: Record<string, boolean>;
 }
 export interface ProcessApi {
   append(
@@ -19,6 +21,11 @@ export interface ProcessApi {
   restore(chat: HTMLElement, saved?: ProcessSnapshot[]): void;
 }
 export interface ProcessToolRecord {
+  preview?: ToolPreview;
+  result?: string;
+  elapsedMs?: number;
+  streamId?: string;
+  streamState?: string;
   approval?: Pick<ApprovalState, 'decision' | 'execution' | 'continuation'>;
   toolKey?: string;
   toolName?: string;
@@ -50,26 +57,9 @@ export interface ProcessToolRecord {
     | 'max_turns'
     | 'no_progress'
     | 'approval'
+    | 'question'
     | 'blocked';
-  interface ToolRecord {
-    approval?: Pick<ApprovalState, 'decision' | 'execution' | 'continuation'>;
-    toolKey?: string;
-    toolName?: string;
-    kind?: string;
-    path?: string;
-    activity?: string;
-    pending?: boolean;
-    error?: boolean;
-    status?: string;
-    changed?: boolean;
-    runId?: string;
-    type: string;
-    n?: string | number;
-    turn?: string | number;
-    reasoning?: string;
-    text?: string;
-    state?: string;
-  }
+  type ToolRecord = ProcessToolRecord;
   interface ProcessState {
     state: ProcessStatus;
     explicitState: boolean;
@@ -79,6 +69,7 @@ export interface ProcessToolRecord {
     touched: boolean;
     requestObserved?: boolean;
     activity?: string;
+    elapsedMs?: number;
   }
   type ProcessBlock = HTMLDivElement & { _runIds: Set<string>; _process: ProcessState };
 
@@ -192,9 +183,12 @@ export interface ProcessToolRecord {
       max_turns: 'Paused',
       no_progress: 'Paused',
       approval: 'Waiting for approval',
+      question: 'Waiting for your answer',
       blocked: 'Paused',
     };
     let text = titles[state.state] || 'Paused';
+    if (state.state === 'done' && state.elapsedMs !== undefined)
+      text += ' for ' + Math.max(1, Math.round(state.elapsedMs / 1000)) + 's';
     if (state.state === 'running')
       text += state.activity
         ? ' · ' + state.activity
@@ -212,7 +206,9 @@ export interface ProcessToolRecord {
           ? 'Activity'
           : text;
     const head = block.querySelector<HTMLElement>('.process-summary')!;
-    const awaitingApproval = state.state === 'approval';
+    const awaitingApproval = state.state === 'approval' || state.state === 'question';
+    block.querySelector<HTMLElement>('.process-approval-status')!.textContent =
+      state.state === 'question' ? 'Waiting for your answer' : 'Waiting for approval';
     block.querySelector<HTMLElement>('.process-approval-status')!.hidden = !awaitingApproval;
     block.querySelector<HTMLElement>('.process-group')!.hidden = awaitingApproval;
     const spinning = state.state === 'running' || state.state === 'sending';
@@ -245,7 +241,6 @@ export interface ProcessToolRecord {
     const section = document.createElement('div');
     section.className = 'thinking-section';
     runtime.Render.renderMarkdown(section, text.trim());
-    runtime.Render.addMessageCopyButton(section, text.trim());
     details.querySelector('.thinking-body')?.append(section);
   }
 
@@ -309,12 +304,18 @@ export interface ProcessToolRecord {
       const step = m.n ?? m.turn;
       if (m.type === 'turn' || m.type === 'thinking') thinking(block, m.reasoning || m.text, step);
       if (m.type === 'tool' || m.type === 'tool_pending') tool(block, m);
-      else if (m.type === 'run_state' && m.state) state(block, m.state as ProcessStatus);
+      else if (m.type === 'run_state' && m.state) {
+        if (m.elapsedMs !== undefined) block._process.elapsedMs = m.elapsedMs;
+        state(block, m.state as ProcessStatus);
+      }
       summary(block);
       return true;
     }
-    const block = ['shell_request', 'teach'].includes(m.type ?? '') ? ensure(chat, m.runId) : find(chat, m.runId);
+    const block = ['shell_request', 'teach', 'user_question'].includes(m.type ?? '')
+      ? ensure(chat, m.runId)
+      : find(chat, m.runId);
     if (block && ['shell_request', 'teach'].includes(m.type ?? '')) state(block, 'approval');
+    if (block && m.type === 'user_question') state(block, 'question');
     if (block && m.type === 'shell_approval_status' && m.approval) {
       const approval = m.approval;
       if (approval.decision === 'cancelled' || approval.continuation === 'cancelled') state(block, 'stopped');
@@ -334,7 +335,12 @@ export interface ProcessToolRecord {
         summary(block);
       } else if (approval.continuation === 'not_required') state(block, 'done');
     }
-    if (block && !block._process.explicitState && ['asst', 'err', 'done', 'research_done'].includes(m.type ?? '')) {
+    if (
+      block &&
+      !m.streamId &&
+      !block._process.explicitState &&
+      ['asst', 'err', 'done', 'research_done'].includes(m.type ?? '')
+    ) {
       state(block, m.type === 'err' ? 'failed' : 'done', false);
     }
     render(chat, m);
@@ -362,6 +368,12 @@ export interface ProcessToolRecord {
         tools: Array.from(processBlock.querySelectorAll('.tool-group')).map(
           (el) => !el.classList.contains('collapsed'),
         ),
+        details: Object.fromEntries(
+          Array.from(processBlock.querySelectorAll<HTMLDetailsElement>('.tool-disclosure[data-tool-key]')).map((el) => [
+            el.dataset.toolKey!,
+            el.open,
+          ]),
+        ),
       };
     });
   }
@@ -382,6 +394,10 @@ export interface ProcessToolRecord {
         if (item.tools[i] === undefined) return;
         el.classList.toggle('collapsed', !item.tools[i]);
         el.querySelector('button')?.setAttribute('aria-expanded', String(item.tools[i]));
+      });
+      block.querySelectorAll<HTMLDetailsElement>('.tool-disclosure[data-tool-key]').forEach((el) => {
+        const open = item.details?.[el.dataset.toolKey!];
+        if (open !== undefined) el.open = open;
       });
     }
   }

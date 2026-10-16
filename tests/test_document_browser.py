@@ -1,5 +1,6 @@
 """Packaged browser checks, optionally against the user's real project."""
 
+import base64
 import os
 import threading
 from pathlib import Path
@@ -11,6 +12,41 @@ from codey.app.context import AppContext
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from tests.test_ui_inplace_render import _goto_restored_ui
+
+
+def test_packaged_image_preview_and_local_failure_keep_the_answer_readable(tmp_path, monkeypatch):
+    project = tmp_path / "images"
+    project.mkdir()
+    (project / "sample.png").write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jK1sAAAAASUVORK5CYII="))
+    ctx = AppContext(tmp_path / "image-state")
+    ctx.save_ui_state({"active_id": "images", "projects": [{"id": "p", "path": str(project), "name": "Images"}],
+        "sessions": [{"id": "images", "title": "Image preview", "projectId": "p", "messages": [
+            {"type": "asst", "text": "答案仍然可读。\n\n![Sample](sample.png)\n\n![Missing](missing.png)"}]}]}, base_revision=0)
+    monkeypatch.setattr(server, "STATE", ctx)
+    httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page.goto(httpd.launch_url(f"http://127.0.0.1:{httpd.server_port}/"))
+            image = page.get_by_role("button", name="Enlarge image: Sample", exact=True)
+            expect(image).to_be_visible()
+            expect(page.locator(".md-image-error")).to_contain_text("This image could not be displayed")
+            image.focus()
+            page.keyboard.press("Enter")
+            expect(page.get_by_role("dialog", name="Sample", exact=True)).to_be_visible()
+            page.keyboard.press("Escape")
+            expect(page.get_by_role("dialog", name="Sample", exact=True)).to_have_count(0)
+            expect(image).to_be_focused()
+            expect(page.locator(".msg.asst .body")).to_contain_text("答案仍然可读。")
+            browser.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+        ctx.close()
 
 
 def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, monkeypatch):
@@ -112,10 +148,13 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
             pane.get_by_role("button", name="View source", exact=True).click()
             expect(pane.locator("pre")).to_contain_text("# ")
             pane.get_by_role("button", name="Close preview", exact=True).click()
-            page.get_by_role("button", name="Open report", exact=True).click()
+            expect(page.get_by_role("button", name="Open report", exact=True)).to_have_count(0)
+            page.locator(".artifact-row").filter(has_text="Research · Markdown").locator(".artifact-open").click()
             expect(pane.locator(".document-body .md-h1")).to_have_text("Research preview")
             pane.get_by_role("button", name="Close preview", exact=True).click()
-            page.get_by_role("button", name="Open", exact=True).click()
+            research = page.locator(".artifact-row").filter(has_text="Research · Markdown")
+            research.locator(".artifact-more > summary").click()
+            research.get_by_role("button", name="View research evidence", exact=True).click()
             page.get_by_role("button", name="Notes", exact=True).click()
             page.get_by_role("button", name="Open document", exact=True).click()
             expect(pane.locator(".document-body .md-h1")).to_have_text("Research preview")

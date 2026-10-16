@@ -57,6 +57,8 @@ declare global {
         receipt: unknown,
       ): import('../types/domain').ResearchRun | null;
       current(sessionId?: string): import('../types/domain').ResearchRun | null;
+      forRun(sessionId: string, runId: string): import('../types/domain').ResearchRun | null;
+      forMessage(sessionId: string, runId: string): import('../types/domain').ResearchRun | null;
       restore(ownerSessionId?: string): Promise<import('../types/domain').ResearchRestoreResult | null>;
       markRestoreAvailability(runIds: unknown): boolean;
     };

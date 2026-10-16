@@ -18,7 +18,8 @@ it('renders local links and output filenames as file actions without executing M
     body,
     '[报告](<E:/Selfie - 副本/docs/报告.md:12>) `docs/probe.py` <img src=x onerror=alert(1)>',
   );
-  expect(body.querySelectorAll('[data-document-path]')).toHaveLength(2);
+  expect(body.querySelectorAll('[data-document-path]')).toHaveLength(1);
+  expect(body.querySelector('[data-document-candidate]')?.textContent).toBe('docs/probe.py');
   expect(body.querySelector('[data-document-line]')?.getAttribute('data-document-line')).toBe('12');
   expect(body.querySelector('img')).toBeNull();
 });

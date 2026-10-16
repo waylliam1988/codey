@@ -172,6 +172,14 @@ def _research_json_type(pytype: type) -> str:
 
 def _all_specs() -> dict[str, ToolSpec]:
     specs = _coding_specs()
+    specs["ask_user"] = ToolSpec(
+        name="ask_user", grant="control", replay_class="safe", executor="control",
+        description="Ask a bounded choice question and pause for the user's answer. This authorizes no command. Must be the only call in the turn.",
+        parameters=(("question", {"type": "string"}), ("options", {"type": "array", "items": {"type": "string"}}),
+                    ("descriptions", {"type": "array", "items": {"type": "string"}}), ("allow_free_text", {"type": "boolean"})),
+        required=("question", "options"),
+        json_examples=('{"tool":"ask_user","args":{"question":"Which scope?","options":["Collect tests","Run tests"]}}',),
+    )
     specs["read_tool_result"] = ToolSpec(
         name="read_tool_result", grant="control", executor="receipt", replay_class="safe",
         description="Read a stored result from this task without repeating its execution. "

@@ -66,8 +66,8 @@ def operation_outcome_from_stop_reason(
         return OperationOutcome.completed(summary=summary or "done")
     if reason == "stopped":
         return OperationOutcome.aborted(reason="stopped")
-    if reason == "approval":
-        return OperationOutcome.suspended(reason="approval")
+    if reason in {"approval", "question"}:
+        return OperationOutcome.suspended(reason=reason)
     if blocked:
         return OperationOutcome.failed(reason=blocked, summary=summary)
     if reason:

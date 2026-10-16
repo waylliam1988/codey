@@ -27,8 +27,9 @@ from codey.providers.local_config import (
 from codey.providers.local_discovery import LocalEndpoint, probe_local_endpoint_detail
 from codey.providers.model_preferences import ModelDisabledError
 from codey.runs.details import load_run_details
+from codey.runtime.core.api_selection import ApiRunSelection
 from codey.storage.local_store import StoreCorruption
-from codey.task.entry_auth import derive_entry_auth
+from codey.task.entry_auth import EntryAuth, derive_entry_auth
 from codey.workspace.changes import (
     collect_changes,
     collect_git_file_diff,
@@ -592,6 +593,8 @@ def run_submit_response(  # noqa: C901, PLR0912
     submit_task: Callable[..., str | None],
     *,
     ctx: Any = None,
+    captured_selection: ApiRunSelection | None = None,
+    captured_auth: EntryAuth | None = None,
 ) -> tuple[int, dict[str, Any]]:  # noqa: C901, PLR0912
     if not isinstance(body, dict):
         return 400, {"error": "invalid json"}
@@ -614,6 +617,10 @@ def run_submit_response(  # noqa: C901, PLR0912
         else:
             return 400, {"error": "unsupported input.kind"}
     session_id = str(body.get("session_id") or "").strip() or "default"
+    if ctx is not None:
+        question = ctx.user_questions.pending(session_id)
+        if question is not None:
+            return 409, {"error": "Answer the pending question before starting another task.", "code": "question_pending", "question": question}
     input_source_run, approval_error = _approval_entry(ctx, session_id, input_source_run)
     if approval_error is not None:
         return approval_error
@@ -632,7 +639,7 @@ def run_submit_response(  # noqa: C901, PLR0912
     continue_task = input_kind == "resume_run"
     provider_id = str(body.get("provider") or DEFAULT_PROVIDER_ID).strip().lower()
     intent = str(body.get("intent") or "auto").strip().lower()
-    entry_auth = derive_entry_auth(body, project=project)
+    entry_auth = captured_auth or derive_entry_auth({**body, "task": task}, project=project)
     if intent not in {
         "auto",
         "chat",
@@ -659,7 +666,15 @@ def run_submit_response(  # noqa: C901, PLR0912
         return 400, {"error": "task required"}
     if provider_id not in PROVIDER_LABELS:
         return 400, {"error": f"unsupported provider: {provider_id}"}
-    if _model_disabled(ctx, body, provider_id):
+    if captured_selection is not None and captured_selection.connection_id != provider_id:
+        return 400, {"error": "captured model connection changed"}
+    if captured_selection is not None:
+        from codey.app.model_settings import preferences_for
+
+        disabled = not preferences_for(ctx).allows(provider_id, captured_selection.model_id)
+    else:
+        disabled = _model_disabled(ctx, body, provider_id)
+    if disabled:
         return 409, {"error": "Selected model is disabled. Choose an enabled model in Settings.", "code": "model_disabled"}
     if intent == "review" and not project:
         return 400, {"error": "project required for review"}
@@ -687,7 +702,9 @@ def run_submit_response(  # noqa: C901, PLR0912
         submit_kwargs["run_id"] = client_run_id
     if input_source_run:
         submit_kwargs["previous_run_id"] = input_source_run
-    if provider_id in API_CONNECTIONS or "model_selection" in body:
+    if captured_selection is not None:
+        submit_kwargs["model_selection"] = captured_selection
+    elif provider_id in API_CONNECTIONS or "model_selection" in body:
         captured, error = _api_selection_for_submit(ctx, provider_id, body.get("model_selection"))
         if error:
             return error

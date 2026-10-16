@@ -87,6 +87,8 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
             )
         else:
             base = None
+    if base is not None:
+        base = (*base, "ask_user")
     if not denied:
         return base
     if base is None:
@@ -393,6 +395,12 @@ def _validate_tool_args(
     spec_error = _spec_error_for(name, args if isinstance(args, dict) else {}, spec, frozen_specs)
     if spec_error:
         return {}, spec_error
+    if name == "ask_user":
+        from codey.task.questions import question_args
+        try:
+            return question_args(args), ""
+        except ValueError as exc:
+            return {}, str(exc)
     if name == "done":
         # ``done`` is a control tool with no runtime executor. Its
         # canonical ToolSpec validation above is the complete contract.
@@ -495,18 +503,18 @@ def _plan_from_tool_objects(
                 kind="snapshot_tool_mismatch",
                 tool=tool,
             )
-        if tool == "done":
+        if tool in {"done", "ask_user"}:
             if len(items) != 1:
-                return _invalid_plan("done must be the only call in a turn", tool=tool, kind="too_many_tools")
-            if not _policy_allows(policy, "done", frozen_specs):
+                return _invalid_plan(f"{tool} must be the only call in a turn", tool=tool, kind="too_many_tools")
+            if not _policy_allows(policy, tool, frozen_specs):
                 return _disallowed_plan(tool)
-            if not _controller_allows("done", controller_allowed):
+            if not _controller_allows(tool, controller_allowed):
                 return _disallowed_plan(tool, controller=True)
             validated, error = _validate_tool_args(tool, args, frozen_specs=frozen_specs)
             if error:
                 return _invalid_plan(error, tool=tool)
-            text = str(validated.get("summary") or "").strip()
-            return ToolPlan(calls=[], control=Control(kind="done", body=text), control_args=validated)
+            text = str(validated.get("summary" if tool == "done" else "question") or "").strip()
+            return ToolPlan(calls=[], control=Control(kind=tool, body=text), control_args=validated)
         if not _policy_allows(policy, tool, frozen_specs):
             return _disallowed_plan(tool)
         if not _controller_allows(tool, controller_allowed):

@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- Harden the conversation UI recovery boundaries: an explicitly rejected queued input (`input_queue_full` or `input_not_found`) becomes recoverable `Not sent` state, while unknown delivery outcomes remain status-check protected; bind Research report cards to their message run identity, preserve code literals across Markdown repairs, and load all local images through the bounded worker pool. Add regression coverage for each boundary and verify the packaged UI against the real HTTP service.
 - Make the EOF stability test tolerant of unrelated slow startup while retaining strict completion, cleanup, reader, and output assertions; keep watchdog timeout behavior covered separately. Move the approval Allow/Deny response reconciliation cases into Vitest so they use the real frontend controller and literals, remove the Python enum shims, and lock CI dependencies through generated, hash-checked requirements consumed by both Windows and Linux jobs.
 - Tighten the shell approval protocol with shared frontend literal-state definitions, runtime decoding of only valid decision/execution/continuation values, typed backend status projections, explicit continuation-fact mappings, and regression coverage for failed result writes, late approval events, and real HTTP/browser recovery.
 - Fix API Stop races on Windows by interrupting owned native sockets before buffered response closure, including sockets retained after connection handoff; classify cancellation-induced I/O errors without hiding unrelated failures.

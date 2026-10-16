@@ -1,4 +1,5 @@
 import { runtime } from './runtime';
+import { InputOutbox, type QueuedInput, type QueuedRequest } from './input_outbox';
 import type { Draft, Message, Project, Session } from './types/domain';
 import type { RunDetailsAction } from './run_details';
 
@@ -24,6 +25,7 @@ export interface ComposerDeps {
   acceptRunResponse: (response: Response, sessionId: string) => Promise<unknown>;
   attachCurrentChatToPickedProject: () => void;
   openLocalProviderConfig: () => unknown;
+  observeQueuedInput(input: QueuedInput): void;
   PROVIDERS?: string[];
 }
 export interface ComposerApi {
@@ -39,6 +41,10 @@ export interface ComposerApi {
   toggleResearchForActive(): void;
   setActiveProvider(id: string): void;
   continueTask(sessionId: string): Promise<void>;
+  recallMessage(sessionId: string, text: string): void;
+  applyQueuedInput(input: unknown): void;
+  queuedInputForRun(runId: string): QueuedInput | undefined;
+  refreshQueuedInputs(): Promise<void>;
 }
 
 /* Codey composer runtime: task input, send/stop actions, provider selection,
@@ -50,6 +56,7 @@ export interface ComposerApi {
   let handlersBound = false;
   let draftSession: Session | null = null;
   let sendingSessionId = '';
+  let outbox: InputOutbox;
 
   function liveDefaultProvider() {
     return runtime.UiState.DEFAULT_PROVIDER;
@@ -71,6 +78,16 @@ export interface ComposerApi {
   function init(nextDeps: ComposerDeps) {
     deps = nextDeps;
     PROVIDERS = deps.PROVIDERS || [];
+    if (!outbox) {
+      const element = document.createElement('div');
+      document.querySelector('.composer')!.before(element);
+      outbox = new InputOutbox(element, {
+        accepted: (request, revision) => clearDraftIfUnchanged(request.session_id, request.task, revision),
+        edit: (session, text) => recallMessage(session, text),
+        changed: () => updateSend(),
+        observe: (input) => deps.observeQueuedInput(input),
+      });
+    }
     bindHandlers();
     syncSession();
   }
@@ -99,6 +116,7 @@ export interface ComposerApi {
   }
 
   function syncSession() {
+    outbox?.setSession(activeId());
     if (!deps || draftSession === deps.activeSession()) return;
     captureDraft();
     draftSession = deps.activeSession() || null;
@@ -137,14 +155,24 @@ export interface ComposerApi {
       notice.appendChild(action);
     }
     const running = !!runningSessionId();
+    const awaitingAnswer = !!runtime.UserQuestions?.pending(activeId());
     const task = $<HTMLTextAreaElement>('task');
     const send = $<HTMLButtonElement>('send');
     const stop = $<HTMLButtonElement>('stop');
-    send.disabled = task.disabled || !has || !!reason || running || !!sendingSessionId;
-    send.style.display = running ? 'none' : '';
+    send.disabled =
+      task.disabled || !has || !!reason || !!sendingSessionId || !!outbox?.blocked(activeId()) || awaitingAnswer;
+    send.style.display = running && !has ? 'none' : '';
     stop.style.display = running ? '' : 'none';
-    $('send-hint').textContent = sendingSessionId ? 'Sending…' : running ? 'Stop' : 'Enter';
-    send.setAttribute('aria-label', sendingSessionId ? 'Sending message' : 'Send message');
+    $('send-hint').textContent = awaitingAnswer
+      ? 'Answer above'
+      : sendingSessionId
+        ? 'Sending…'
+        : running
+          ? has
+            ? 'Send next turn'
+            : 'Stop'
+          : 'Enter';
+    send.setAttribute('aria-label', sendingSessionId ? 'Sending message' : running ? 'Queue message' : 'Send message');
     const owner = deps.findSession(runningSessionId());
     stop.setAttribute('aria-label', owner ? 'Stop ' + owner.title : 'Stop');
     stop.title = owner ? 'Stop ' + owner.title : 'Stop';
@@ -328,6 +356,28 @@ export interface ComposerApi {
     captureDraft();
     const revision = deps.findSession(sessionId)?.draft.revision;
     if (revision === undefined) return;
+    if (runningSessionId()) {
+      if (outbox.blocked(sessionId) || sendingSessionId) return;
+      sendingSessionId = sessionId;
+      updateSend();
+      try {
+        if (!(await runtime.UiState.ensureSaved())) return;
+        const request: QueuedRequest = {
+          session_id: sessionId,
+          run_id: 'run_' + crypto.randomUUID().replaceAll('-', ''),
+          project: deps.sessionProjectPath(sessionId),
+          task,
+          provider,
+          intent: deps.currentIntentForSession(sessionId),
+          ...runtime.ProviderUI.runSelection(deps.findSession(sessionId), provider),
+        };
+        await outbox.enqueue(request, revision);
+      } finally {
+        sendingSessionId = '';
+        updateSend();
+      }
+      return;
+    }
     await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task, revision));
   }
 
@@ -337,6 +387,20 @@ export interface ComposerApi {
     const original = s.messages.find((m: Message) => m.type === 'user' && m.id === requestId);
     if (!original || typeof original.text !== 'string') return;
     return sendTaskFromSession(sessionId, original.text, s.provider || '', null, requestId);
+  }
+  function recallMessage(sessionId: string, text: string): void {
+    if (sessionId !== activeId()) deps.switchSession(sessionId);
+    syncSession();
+    const task = $<HTMLTextAreaElement>('task');
+    if (task.value && task.value !== text) {
+      task.value = task.value.replace(/\s*$/, '') + '\n\n' + text;
+    } else task.value = text;
+    task.focus();
+    task.setSelectionRange(task.value.length, task.value.length);
+    captureDraft();
+    resizeTask();
+    updateSend();
+    deps.persistActiveNow();
   }
 
   function quoteInReply(sessionId: string, text: string) {
@@ -364,6 +428,10 @@ export interface ComposerApi {
   }
 
   async function continueTask(sessionId: string) {
+    if (runtime.UserQuestions?.pending(sessionId)) {
+      runtime.UserQuestions.focus(sessionId);
+      return;
+    }
     if (runningSessionId() || sendingSessionId) return;
     const s = deps.findSession(sessionId);
     if (!s) return;
@@ -478,5 +546,11 @@ export interface ComposerApi {
     toggleResearchForActive,
     setActiveProvider,
     continueTask,
+    recallMessage,
+    applyQueuedInput: (input: unknown) => {
+      outbox.apply(input);
+    },
+    queuedInputForRun: (runId: string) => outbox.forRun(runId),
+    refreshQueuedInputs: () => outbox.refresh(),
   };
 })();

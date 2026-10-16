@@ -1,4 +1,8 @@
 import { DocumentPane, type DocumentRef } from './document_pane';
+import { hydrateDocumentContent } from './document_content';
+import { streamMessage, finalStreamMessage } from './reply_stream';
+import type { QueuedInput } from './input_outbox';
+import { UserQuestions, type UserQuestion } from './user_questions';
 import { createApprovalController } from './shell_approvals';
 import { runtime } from './runtime';
 import './operator_auth.ts';
@@ -59,6 +63,11 @@ interface ProviderFailure {
   message?: string;
 }
 interface ServerEventData {
+  preview?: import('./render').ToolPreview;
+  elapsed_ms?: number;
+  stream_id: string;
+  sequence: number;
+  state: string;
   type: string;
   event_id: number | string;
   cursor: number | string;
@@ -79,6 +88,8 @@ interface ServerEventData {
   changed: boolean;
   command: string;
   result: string;
+  detail: string;
+  detail_truncated: boolean;
   output: string;
   truncated: boolean;
   error_ref: string;
@@ -137,10 +148,23 @@ const documentPane = new DocumentPane({
       throw new Error('Invalid document response');
     return data;
   },
-  markdown: (container, text) => runtime.Render.renderMarkdown(container, text),
+  markdown: (container, text, scope) => {
+    runtime.Render.renderMarkdown(container, text);
+    if (scope)
+      void hydrateDocumentContent(container, {
+        sessionId: scope.sessionId,
+        workspace: scope.workspace.startsWith('research:') ? undefined : scope.workspace,
+        parent: scope.path.split('/').slice(0, -1).join('/'),
+      });
+  },
   copy: (text) => runtime.Render.copyText(text),
 });
 document.body.append(documentPane.element);
+const userQuestions = new UserQuestions({
+  observe: observeUserQuestion,
+  changed: () => runtime.Composer?.updateSend(),
+});
+runtime.UserQuestions = userQuestions;
 function openDocument(sessionId: string, ref: DocumentRef): void {
   closeOtherDrawers('document');
   void documentPane.open(sessionId, ref);
@@ -943,6 +967,18 @@ const sseEventKey = (data: ServerEvent, fallback = '') => runtime.Sse.eventKey(d
 
 function handleServerEvent(raw: unknown) {
   const data = decodeServerEvent(raw) as ServerEventData;
+  if (data.type === 'user_question' || data.type === 'user_question_state') {
+    userQuestions.apply((raw as { question: unknown }).question);
+    return;
+  }
+  if (data.type === 'conversation_input') {
+    runtime.Composer.applyQueuedInput((raw as { input: unknown }).input);
+    return;
+  }
+  if (data.type === 'task_start') {
+    const input = runtime.Composer.queuedInputForRun(data.run_id);
+    if (input) observeQueuedInput({ ...input, state: 'dispatching' });
+  }
   if (data.type === 'shell_approval_status') {
     approvalController.apply(raw);
     void reconcileRunState();
@@ -968,6 +1004,16 @@ function handleServerEvent(raw: unknown) {
     'resync_required',
   ];
   if (runId && runningRunId && !mayOutliveRun.includes(data.type) && runId !== runningRunId) return;
+  if (data.type === 'reply_stream') {
+    const session = sessions.find((session) => session.id === sid);
+    const message = session && streamMessage(session, data);
+    if (
+      message &&
+      !replaceSessionMessage(sid, (item) => item.streamId === message.streamId && item.runId === runId, message)
+    )
+      addToSession(sid, message);
+    return;
+  }
   // Server dropped queued events for this client: re-pull authoritative state.
   if (data.type === 'resync_required') {
     reconcileRunState();
@@ -1040,7 +1086,9 @@ function handleServerEvent(raw: unknown) {
       changed: data.changed === true,
       command: data.command || '',
       path: data.path || '',
-      result: (data.result || '').toString().slice(0, 200),
+      result: (data.detail ?? data.result ?? '').toString(),
+      preview: data.preview,
+      outputTruncated: data.detail_truncated || data.truncated,
       status: toolStatus,
       error: toolStatus === 'error',
       runId,
@@ -1101,7 +1149,13 @@ function handleServerEvent(raw: unknown) {
     const summary = (data.summary || '').toString();
     const reason = (data.stop_reason || 'done').toString();
     const requestFailed = runtime.Requests.finish(data);
-    addToSession(sid, { type: 'run_state', state: reason, runId, eventKey: `run-end:${runId}` });
+    addToSession(sid, {
+      type: 'run_state',
+      state: reason,
+      runId,
+      elapsedMs: typeof data.elapsed_ms === 'number' ? data.elapsed_ms : undefined,
+      eventKey: `run-end:${runId}`,
+    });
     const terminalKey = runId ? `terminal:${runId}` : '';
     const answerKey = terminalKey ? `${terminalKey}:answer` : '';
     const receiptKey = terminalKey ? `${terminalKey}:receipt` : '';
@@ -1138,7 +1192,7 @@ function handleServerEvent(raw: unknown) {
         runId,
         eventKey: terminalKey,
       });
-    } else if (reason === 'approval') {
+    } else if (reason === 'approval' || reason === 'question') {
       // shell approval card is emitted separately
     } else if (reason === 'stopped') {
       const turns = data.turns || 0;
@@ -1331,7 +1385,57 @@ function connectEvents() {
 }
 
 function addToSession(sid: string, m: Message) {
+  if (m.type === 'asst' && !m.streamId && m.runId && m.text) {
+    const session = sessions.find((session) => session.id === sid);
+    const final = session && finalStreamMessage(session, m.runId, m.text, m.eventKey || '');
+    if (final)
+      return replaceSessionMessage(sid, (item) => item.streamId === final.streamId && item.runId === m.runId, final);
+  }
   return runtime.Requests.addToSession(sid, m);
+}
+function observeQueuedInput(input: QueuedInput): void {
+  const sid = input.request.session_id,
+    runId = input.request.run_id;
+  const session = sessions.find((session) => session.id === sid);
+  if (!session) return;
+  if (
+    ['dispatching', 'submitted', 'completed', 'unconfirmed'].includes(input.state) &&
+    !session.messages.some((message) => message.queuedInputId === input.id)
+  ) {
+    addToSession(sid, {
+      type: 'user',
+      id: input.id,
+      queuedInputId: input.id,
+      text: input.request.task,
+      attempts: [
+        { runId, state: input.state === 'completed' ? 'done' : input.state === 'submitted' ? 'running' : 'sending' },
+      ],
+    });
+    addToSession(sid, { type: 'request_status', sessionId: sid, requestId: input.id });
+  }
+  if (['failed', 'unconfirmed'].includes(input.state))
+    runtime.Requests.fail(sid, runId, input.error || 'Delivery could not be confirmed', {
+      sendFailure: 'queued_input',
+    });
+  if (input.state === 'completed' && input.terminal) handleServerEvent(input.terminal);
+}
+function observeUserQuestion(question: UserQuestion): void {
+  const session = sessions.find((session) => session.id === question.session_id);
+  if (!session) return;
+  if (!session.messages.some((message) => message.type === 'user_question' && message.id === question.id))
+    addToSession(session.id, {
+      type: 'user_question',
+      id: question.id,
+      runId: question.run_id,
+      eventKey: 'question:' + question.id,
+    });
+  if (question.state !== 'pending')
+    addToSession(session.id, {
+      type: 'run_state',
+      runId: question.run_id,
+      state: question.state === 'cancelled' ? 'stopped' : question.state === 'answered' ? 'done' : 'blocked',
+      eventKey: `question-state:${question.id}:${question.revision}`,
+    });
 }
 
 function replaceSessionMessage(sid: string, predicate: (message: Message) => boolean, message: Message) {
@@ -1346,6 +1450,10 @@ function replaceSessionMessage(sid: string, predicate: (message: Message) => boo
   runtime.UiState.trackSessionMessage(s, message);
   persistActive();
   if (sid === activeId) {
+    if (runtime.Messages.updateReply($('chat'), message)) {
+      scrollChat();
+      return true;
+    }
     if (runtime.Process.replace($('chat'), message)) {
       scrollChat();
       return true;
@@ -1717,6 +1825,7 @@ async function boot() {
     openLocalProviderConfig,
     projectPickerBusy: () => projectPickerBusy,
     attachCurrentChatToPickedProject,
+    observeQueuedInput,
   });
   runtime.Messages.init({
     openDocument,
@@ -1762,6 +1871,8 @@ async function boot() {
   syncResearchUI();
   setStatus('', 'ok');
   await restoreUiStateFromServer();
+  await userQuestions.refresh();
+  await runtime.Composer.refreshQueuedInputs();
   $('task').disabled = false;
   updateSend();
   syncResearchUseProjectButton();

@@ -39,7 +39,7 @@ CONVERSATION_UI_JS = _source("conversation_ui")
 TOKENS_CSS = (ROOT / "frontend/public/assets/tokens.css").read_text(encoding="utf-8")
 APP_CSS = (ROOT / "frontend/public/assets/app.css").read_text(encoding="utf-8")
 STYLE_SOURCE = TOKENS_CSS + "\n" + APP_CSS
-RUNTIME_SOURCES = tuple(path for path in sorted(ASSET_DIR.glob("*.ts")) if not path.name.endswith(".test.ts"))
+RUNTIME_SOURCES = tuple(path for path in sorted(ASSET_DIR.glob("*.ts")) if not path.name.endswith((".test.ts", ".d.ts")))
 JS_ASSETS = re.sub(
     r"\bimport type .*?;\s*|:\s*(?:any|string|number|boolean|unknown|Message|ResearchPayload|HTMLElement|ModuleDeps|Response|Element|RunData|Record<string,\s*RunData>)(?=\s*[,)=;])",
     "",
@@ -489,19 +489,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
 
 
-    def test_chunked_render_keeps_stateful_blocks_and_cancel(self) -> None:
-        # A >120-line fenced block must render in one idle pass, never as
-        # independently parsed 120-line slices (fence/list/quote state would
-        # fork). Queued work still supports cancellation by its caller.
-        self.assertIn("function hasStatefulBlocks(text)", RENDER_JS)
-        self.assertIn("/^\\s*```/m.test(value)", RENDER_JS)
-        self.assertIn("/^\\s*>\\s?/m.test(value)", RENDER_JS)
-        self.assertIn("function renderMarkdownChunked(container, text, done, isCurrent)", RENDER_JS)
-        self.assertIn("if (!alive()) return;", RENDER_JS)
-        self.assertIn("scheduleIdleChunk(() => {", RENDER_JS)
-        self.assertIn("if (hasStatefulBlocks(value)) {", RENDER_JS)
-        self.assertIn("while (scratch.firstChild) container.appendChild(scratch.firstChild);", RENDER_JS)
-
     def test_markdown_stays_monochrome_without_syntax_highlighting(self) -> None:
         md_css_start = APP_CSS.index("assistant markdown")
         md_css_end = APP_CSS.index("tool line", md_css_start)
@@ -512,10 +499,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_code_blocks_have_quiet_copy_button(self) -> None:
         self.assertIn("function addCodeCopyButton(pre, text)", RENDER_JS)
-        self.assertIn("function appendCodeBlock(container, code, language", RENDER_JS)
+        self.assertIn("parser.renderer.rules.fence", _source("markdown"))
         self.assertIn("className = 'code-copy'", RENDER_JS)
         self.assertIn("aria-label', 'Copy code'", RENDER_JS)
-        self.assertIn("el.textContent = code", RENDER_JS)
+        self.assertIn("escape(token.content", _source("markdown"))
         self.assertIn(".md-code:hover .code-copy", STYLE_SOURCE)
         self.assertIn("await copyText(value)", RENDER_JS)
 
@@ -682,6 +669,7 @@ function makeElement(tag) {
     contains: () => false,
     click: () => {},
   };
+  Object.defineProperty(el, 'childNodes', {get: () => el.children});
   return el;
 }
 const fakeMenu = {
@@ -703,6 +691,7 @@ function fakeButton() { return { onclick: null, disabled: false, setAttribute: (
 const fakePop = { classList: { add: () => {}, remove: () => {}, contains: () => false }, contains: () => false, setAttribute: () => {} };
 global.document = {
   createElement: (tag) => makeElement(tag),
+  querySelector: () => ({before: () => {}}),
   querySelectorAll: (sel) => {
     if (sel === '.provider-item') return menuButtons.slice();
     return [];

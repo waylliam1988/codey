@@ -132,6 +132,8 @@ class RunEventUiPayloadCharacterizationTests(unittest.TestCase):
             "tool_name": "run",
             "path": "",
             "result": "exit 0: pytest -q",
+            "detail": "exit 0: pytest -q\n1 passed",
+            "detail_truncated": False,
             "status": "ok",
             "error": False,
             "ok": True,

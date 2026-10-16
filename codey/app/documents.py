@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 from pathlib import Path
@@ -63,21 +64,49 @@ def document_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, An
                 relative = path.relative_to(root).as_posix()
         if not path.is_file():
             return 404, {"ok": False, "error": "document_missing", "message": f"File not found: {relative}"}
-        with path.open("rb") as handle:
-            data = handle.read(MAX_DOCUMENT_BYTES + 1)
-        if len(data) > MAX_DOCUMENT_BYTES:
-            return 413, {"ok": False, "error": "document_too_large"}
-        if b"\0" in data:
-            return 415, {"ok": False, "error": "binary_document"}
-        try:
-            content = data.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            return 415, {"ok": False, "error": "document_not_utf8"}
-        return 200, _document(relative, path.name, content, _format(path.suffix), str(root))
+        return _file_document(path, relative, root, body.get("representation", "content"))
     except (ValueError, RuntimeError):
         return 400, {"ok": False, "error": "document_path_invalid"}
     except OSError:
         return 403, {"ok": False, "error": "document_unreadable"}
+
+
+def _file_document(path: Path, relative: str, root: Path, representation: object) -> tuple[int, dict[str, Any]]:
+    if representation == "reference":
+        return 200, {"ok": True, "path": relative, "title": path.name, "workspace": str(root)}
+    if representation not in {"content", "image"}:
+        return 400, {"ok": False, "error": "document_representation_invalid"}
+    with path.open("rb") as handle:
+        data = handle.read(MAX_DOCUMENT_BYTES + 1)
+    if len(data) > MAX_DOCUMENT_BYTES:
+        return 413, {"ok": False, "error": "document_too_large"}
+    if representation == "image":
+        return _image_document(relative, path.name, data, str(root))
+    if b"\0" in data:
+        return 415, {"ok": False, "error": "binary_document"}
+    try:
+        content = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return 415, {"ok": False, "error": "document_not_utf8"}
+    return 200, _document(relative, path.name, content, _format(path.suffix), str(root))
+
+
+def _image_document(path: str, title: str, data: bytes, workspace: str) -> tuple[int, dict[str, Any]]:
+    mime = ""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        mime = "image/png"
+    elif data.startswith(b"\xff\xd8\xff"):
+        mime = "image/jpeg"
+    elif data.startswith((b"GIF87a", b"GIF89a")):
+        mime = "image/gif"
+    elif data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        mime = "image/webp"
+    if not mime:
+        return 415, {"ok": False, "error": "image_format_unsupported"}
+    return 200, {
+        "ok": True, "format": "image", "mime": mime, "content": base64.b64encode(data).decode("ascii"),
+        "path": path, "title": title, "workspace": workspace, "version": hashlib.sha256(data).hexdigest(),
+    }
 
 
 def _reference_candidates(root: Path, reference: str) -> tuple[list[Path], bool]:

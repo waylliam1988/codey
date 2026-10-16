@@ -90,4 +90,7 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> Non
     assert result.stop_reason == "done"
     assert len(provider.prompts) == 1
     prompt = provider.prompts[0].replace(str(project), "<PROJECT>")
-    assert _sha256(prompt) == "b8d235c4915fa95f73bac5a94bb6812fb2cf7adff33ae90bb806e64abc835976"
+    # The admitted control vocabulary now includes ask_user. The fixed done,
+    # result and repair surfaces above remain independently frozen.
+    assert "ask_user" in prompt
+    assert _sha256(prompt) == "ffe50a9fda9ce0c8c60b4cc0993f1721542042e137e2e21f16b779567f4543c4"

@@ -6,14 +6,14 @@ This file records the current verification state, not an append-only experiment 
 
 | Check | Result |
 | --- | --- |
-| Final complete pytest | **8715 passed, 8 skipped, 1519 subtests; 1518.47s** |
-| Final required machine contracts | **1129 passed, 14 subtests; no skips; 322.82s** |
+| Final complete pytest | **8753 passed, 8 skipped, 1520 subtests; 1258.88s** |
+| Final required machine contracts | **1129 passed, 14 subtests; no skips; 337.24s** |
 | Production statement coverage | **88.53%**; CI minimum **85%** |
 | Production branch coverage | **78.24%**; CI minimum **75%** |
-| Coverage scope | All **419** production Python files; Python subprocesses included |
-| Full-tree mypy / Pyrefly / ty | **419 source files; all three checkers passed for Python 3.12 target** |
+| Coverage scope | All **429** production Python files; Python subprocesses included |
+| Full-tree mypy / Pyrefly / ty | **429 source files; all three checkers passed for Python 3.12 target** |
 | Ruff / diff check | passed |
-| TypeScript / Biome / Vitest | **73 tests passed; build passed** |
+| TypeScript / Biome / Vitest | **109 tests passed; build and published metadata check passed** |
 | Real HTTP protocol continuation | **22 passed**, using deterministic local peers for both native protocols |
 | Real HTTP Stop stress | **100 passed**: 50 before headers, 50 during silent error bodies |
 | Transport regression group | **64 passed**; final implementation also passed under coverage |
@@ -32,14 +32,23 @@ missing SVGs in distribution archives, document Reload losing its reading positi
 approval expiry removing pending state before durable persistence, failed expiry
 leaving claimed tickets reusable, missing result receipts being hidden by older
 continuation failure state, and Windows Stop blocking on buffered network I/O.
+The 2026-10-16 conversation UI pass additionally reproduced and fixed explicit
+input rejection locking the composer, historical Research cards opening the
+latest report, Markdown repairs changing inline code, and local images silently
+stopping after the twentieth image. The four frontend regressions were first
+red, then green; the packaged UI was verified through the real Codey HTTP server
+with Playwright.
 Real HTTP/browser checks cover approval restart, Allow/Deny, continuation retry,
 workspace document preview and sidebar actions. This run specifically passed the
-packaged UI and actual subprocess approval recovery checks (**2 passed**) plus
-the HTTP restart checks (**2 passed**).
+packaged UI and actual subprocess approval recovery checks, plus the input
+recovery and Research identity browser checks.
 
 Coverage reports were generated from the final complete-suite capture and its
 parallel subprocess data. The full-production coverage gate and JSON/XML/HTML
 generation passed. The new approval tests are included in the final suite.
+The coverage percentages above remain the latest collected coverage snapshot;
+the final pytest rerun recorded here was not used to replace them without a new
+coverage collection.
 
 This change also verified a clean Python 3.12 environment from the generated
 `requirements-ci.txt`: hash-checked installation, editable project installation
@@ -47,8 +56,9 @@ with `--no-deps --no-build-isolation`, and `pip check` all passed. CI contract
 tests confirm both Windows and Linux jobs consume that lock without
 reresolving. The EOF stability cases (including slow startup), watchdog timeout,
 approval HTTP restart, browser approval, and continuation lifecycle regressions
-all passed. The migrated Allow/Deny response reconciliation now runs in Vitest
-against the real controller; the Python bridge tests and enum shims were removed.
+all passed. The migrated Allow/Deny response reconciliation and conversation UI
+regressions run in Vitest against the real frontend modules; the Python bridge
+tests and enum shims were removed.
 
 The eight skips are explicit environment gates: six require POSIX permission,
 process-group, absolute-path or `O_NOFOLLOW` behavior; two opt into an external

@@ -396,6 +396,7 @@ def _kernel_handle_done_approval(
     intent_sink: Any,
     permission_profile: object = "coding_writer",
     provider_id: object = "",
+    on_event: Any = None,
 ) -> tuple[Any, Any, list[Any]]:
     """Handle done/approval; returns (done_action, approval, calls).
 
@@ -403,6 +404,14 @@ def _kernel_handle_done_approval(
     approval is None (proceed) or KernelResult (return).
     """
     done_action = None
+    if getattr(getattr(plan, "control", None), "kind", "") == "ask_user":
+        from codey.operations.kernel_question import pause_for_question
+        try:
+            question = pause_for_question(dict(plan.control_args), provider, reply, native, native_tools,
+                on_event=on_event, identity=identity_ref, turn=turn)
+            return KernelResult(completed=False, summary=question, turns=turn, stop_reason="question"), None, []
+        except Exception as exc:
+            return KernelResult(completed=False, summary=f"question delivery failed: {exc}", turns=turn, stop_reason="delivery_pending"), None, []
     if getattr(getattr(plan, "control", None), "kind", "") == "done":
         done_outcome = _handle_done_reply(
             session,
@@ -650,6 +659,7 @@ def run_task_kernel(
             intent_sink=intent_sink,
             permission_profile=permission_profile,
             provider_id=provider_id,
+            on_event=on_event,
         )
         if isinstance(done_action, KernelResult):
             return done_action

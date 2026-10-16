@@ -1,6 +1,19 @@
-import { parseDocumentLink } from './document_links';
+import { markdownHtml, renderMarkdownContent } from './markdown';
 import { runtime } from './runtime';
+export interface ToolPreview {
+  additions?: number;
+  deletions?: number;
+  diff?: string;
+  diff_truncated?: boolean;
+  diff_unavailable?: boolean;
+  line_start?: number;
+  line_end?: number;
+  query?: string;
+  matches?: number;
+  has_more?: boolean;
+}
 export interface ToolDisplay {
+  preview?: ToolPreview;
   kind?: string;
   path?: string;
   command?: string;
@@ -10,6 +23,7 @@ export interface ToolDisplay {
   error?: boolean;
   pending?: boolean;
   turn?: string | number;
+  outputTruncated?: boolean;
 }
 /* Codey render helpers: HTML escaping, minimal markdown, copy buttons,
    tool-line DOM builders. Zero-build asset module; pure helpers only --
@@ -110,42 +124,8 @@ const renderApi = (function () {
     div.append(btn, feedback);
   }
 
-  function applyBold(segment: string): string {
-    return segment.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
-  }
   function renderInlineMd(text: string): string {
-    const re = /`([^`\n]+)`|\[([^\]\n]+)\]\((<[^>\n]+>|[^\s)]+)\)/g;
-    let out = '';
-    const tokens: string[] = [];
-    const protect = (html: string): string => `\0${tokens.push(html) - 1}\0`;
-    const plain = (value: string): string => escapeHtml(value).replace(/\0/g, '&#0;');
-    let last = 0;
-    let m;
-    while ((m = re.exec(text)) !== null) {
-      out += plain(text.slice(last, m.index));
-      const href = m[1] ?? m[3].replace(/^<|>$/g, '');
-      const file = parseDocumentLink(href);
-      if (file) {
-        const label = m[1] !== undefined ? `<code class="md-ic">${escapeHtml(m[1])}</code>` : escapeHtml(m[2]);
-        out += protect(
-          `<button type="button" class="md-file-link" data-document-path="${escapeHtml(file.path)}"${file.line ? ` data-document-line="${file.line}"` : ''}>${label}</button>`,
-        );
-      } else if (m[1] !== undefined) out += protect(`<code class="md-ic">${escapeHtml(m[1])}</code>`);
-      else {
-        let safe = false;
-        try {
-          safe = ['http:', 'https:'].includes(new URL(href).protocol);
-        } catch {}
-        out += safe
-          ? protect(
-              `<a class="md-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${applyBold(escapeHtml(m[2]))}</a>`,
-            )
-          : plain(m[0]);
-      }
-      last = re.lastIndex;
-    }
-    out += plain(text.slice(last));
-    return applyBold(out).replace(/\0(\d+)\0/g, (_match, index) => tokens[Number(index)]);
+    return markdownHtml(text, true);
   }
   function addCodeCopyButton(pre: HTMLElement, text: unknown): void {
     const value = String(text || '');
@@ -168,270 +148,43 @@ const renderApi = (function () {
     };
     pre.appendChild(btn);
   }
-  function appendCodeBlock(container: HTMLElement, code: string, language = ''): void {
-    const pre = document.createElement('pre');
-    pre.className = 'md-code';
-    if (language) {
-      const label = document.createElement('div');
-      label.className = 'code-language';
-      label.textContent = language;
-      pre.append(label);
-    }
-    const el = document.createElement('code');
-    el.textContent = code;
-    pre.appendChild(el);
-    addCodeCopyButton(pre, code);
-    container.appendChild(pre);
-  }
-  const CHUNKED_RENDER_CHARS = 2000;
-  const CHUNKED_RENDER_LINES = 80;
-
-  function scheduleIdleChunk(fn: () => void) {
-    if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(fn, { timeout: 50 });
-      return;
-    }
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => setTimeout(fn, 0));
-      return;
-    }
-    setTimeout(fn, 0);
-  }
-
-  interface ListFrame {
-    el: HTMLOListElement | HTMLUListElement;
-    tag: 'ol' | 'ul';
-    indent: number;
-    lastLi: HTMLLIElement | null;
-  }
   function renderMarkdown(container: HTMLElement, text: unknown): void {
-    const lines = String(text == null ? '' : text)
-      .replace(/\r\n?/g, '\n')
-      .split('\n');
-    let listStack: ListFrame[] = [];
-    const tableCells = (line: string): string[] => {
-      const value = line
-        .trim()
-        .replace(/^\|/, '')
-        .replace(/(?<!\\)\|$/, '');
-      return value.split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, '|'));
-    };
-    const isTable = (index: number): boolean =>
-      index + 1 < lines.length &&
-      lines[index].includes('|') &&
-      tableCells(lines[index + 1]).every((cell) => /^:?-{3,}:?$/.test(cell)) &&
-      tableCells(lines[index]).length === tableCells(lines[index + 1]).length;
-    const flushList = () => {
-      if (listStack.length) container.appendChild(listStack[0].el);
-      listStack = [];
-    };
-    const appendListItem = (line: string): boolean => {
-      const match = line.match(/^(\s*)([-*]|\d+[.)])\s+(.*)$/);
-      if (!match) return false;
-      const spaces = match[1].replace(/\t/g, '    ').length;
-      while (listStack.length && spaces < listStack[listStack.length - 1].indent) listStack.pop();
-      let depth =
-        listStack.length && spaces > listStack[listStack.length - 1].indent
-          ? listStack.length
-          : Math.max(0, listStack.length - 1);
-      const tag = /^\d/.test(match[2]) ? 'ol' : 'ul';
-      if (depth > listStack.length) depth = listStack.length;
-      if (depth === 0 && listStack[0] && listStack[0].tag !== tag) flushList();
-      while (listStack.length > depth + 1) listStack.pop();
-      if (!listStack[depth] || listStack[depth].tag !== tag) {
-        if (depth > 0 && (!listStack[depth - 1] || !listStack[depth - 1].lastLi)) depth = 0;
-        if (depth === 0 && listStack[0] && listStack[0].tag !== tag) flushList();
-        const next = document.createElement(tag);
-        next.className = 'md-list';
-        if (depth > 0) {
-          const parent = listStack[depth - 1];
-          parent.lastLi?.appendChild(next);
-        }
-        listStack = listStack.slice(0, depth);
-        listStack[depth] = { el: next, tag, indent: spaces, lastLi: null };
-      }
-      const li = document.createElement('li');
-      li.innerHTML = renderInlineMd(match[3]);
-      listStack[depth].el.appendChild(li);
-      listStack[depth].lastLi = li;
-      return true;
-    };
-    const isBreak = (line: string): boolean =>
-      /^\s*```/.test(line) ||
-      /^#{1,6}\s+/.test(line) ||
-      /^\s*>\s?/.test(line) ||
-      /^\s*[-*]\s+/.test(line) ||
-      /^\s*\d+[.)]\s+/.test(line);
-    let i = 0;
-    while (i < lines.length) {
-      const line = lines[i];
-      if (/^\s*```/.test(line)) {
-        flushList();
-        const buf: string[] = [];
-        const language = line.replace(/^\s*```/, '').trim();
-        i++;
-        while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) {
-          buf.push(lines[i]);
-          i++;
-        }
-        i++;
-        appendCodeBlock(container, buf.join('\n'), language);
-        continue;
-      }
-      if (!line.trim()) {
-        flushList();
-        i++;
-        continue;
-      }
-      if (isTable(i)) {
-        flushList();
-        const wrapper = document.createElement('div');
-        wrapper.className = 'md-table-wrap';
-        const table = document.createElement('table');
-        table.className = 'md-table';
-        const head = document.createElement('thead'),
-          body = document.createElement('tbody');
-        const columns = tableCells(line);
-        const addRow = (target: HTMLElement, cells: string[], tag: 'th' | 'td'): void => {
-          const row = document.createElement('tr');
-          columns.forEach((_, col) => {
-            const cell = document.createElement(tag);
-            cell.innerHTML = renderInlineMd(cells[col] || '');
-            row.append(cell);
-          });
-          target.append(row);
-        };
-        addRow(head, columns, 'th');
-        i += 2;
-        while (i < lines.length && lines[i].trim() && lines[i].includes('|'))
-          addRow(body, tableCells(lines[i++]), 'td');
-        table.append(head, body);
-        wrapper.append(table);
-        container.append(wrapper);
-        continue;
-      }
-      const heading = line.match(/^(#{1,6})\s+(.*)$/);
-      if (heading) {
-        flushList();
-        const el = document.createElement('div');
-        el.className = 'md-h md-h' + Math.min(6, heading[1].length);
-        el.innerHTML = renderInlineMd(heading[2]);
-        container.appendChild(el);
-        i++;
-        continue;
-      }
-      if (/^\s*>\s?/.test(line)) {
-        flushList();
-        const quote: string[] = [];
-        while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
-          quote.push(lines[i].replace(/^\s*>\s?/, ''));
-          i++;
-        }
-        const el = document.createElement('blockquote');
-        el.className = 'md-quote';
-        el.innerHTML = renderInlineMd(quote.join('\n'));
-        container.appendChild(el);
-        continue;
-      }
-      if (appendListItem(line)) {
-        i++;
-        continue;
-      }
-      flushList();
-      const para: string[] = [];
-      while (i < lines.length && lines[i].trim() && !isBreak(lines[i]) && !isTable(i)) {
-        para.push(lines[i]);
-        i++;
-      }
-      const p = document.createElement('p');
-      p.className = 'md-p';
-      p.innerHTML = renderInlineMd(para.join('\n'));
-      container.appendChild(p);
-    }
-    flushList();
-  }
-
-  function needsChunkedRender(text: unknown) {
-    const value = String(text == null ? '' : text);
-    if (value.length > CHUNKED_RENDER_CHARS) return true;
-    let breaks = 0;
-    for (let idx = value.indexOf('\n'); idx !== -1; idx = value.indexOf('\n', idx + 1)) {
-      breaks++;
-      if (breaks > CHUNKED_RENDER_LINES) return true;
-    }
-    return false;
-  }
-
-  const STATEFUL_LIST_ITEM_LIMIT = 10;
-
-  function hasStatefulBlocks(text: unknown) {
-    // Fences, quotes, and long lists carry parser state (listStack, fence,
-    // quote runs) across lines: parsing them in fixed slices would fork or
-    // drop that state. Short lists are order-independent enough to stream.
-    const value = String(text == null ? '' : text);
-    if (/^\s*```/m.test(value)) return true;
-    if (/^\s*>\s?/m.test(value)) return true;
-    if (/\|.*\n\s*\|?\s*:?-{3,}/.test(value)) return true;
-    let items = 0;
-    const re = /^(\s*)([-*]|\d+[.)])\s+/gm;
-    let m;
-    while ((m = re.exec(value)) !== null) {
-      items++;
-      if (items > STATEFUL_LIST_ITEM_LIMIT) return true;
-    }
-    return false;
-  }
-
-  function renderMarkdownChunked(
-    container: HTMLElement,
-    text: unknown,
-    done?: () => void,
-    isCurrent?: () => boolean,
-  ): void {
-    const alive = typeof isCurrent === 'function' ? isCurrent : () => true;
-    const value = String(text == null ? '' : text);
-    const finish = () => {
-      if (alive() && typeof done === 'function') done();
-    };
-    if (!needsChunkedRender(value)) {
-      if (!alive()) return;
-      container.innerHTML = '';
-      renderMarkdown(container, value);
-      finish();
+    const value = String(text ?? '');
+    const content = document.createElement('div');
+    try {
+      renderMarkdownContent(content, value);
+    } catch (error) {
+      const boundary = document.createElement('div');
+      boundary.className = 'md-render-error';
+      const label = document.createElement('div');
+      label.textContent = 'This content could not be displayed.';
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'link-btn';
+      retry.textContent = 'Render again';
+      retry.onclick = () => {
+        const next = document.createElement('div');
+        renderMarkdown(next, value);
+        boundary.replaceWith(...next.childNodes);
+      };
+      const details = document.createElement('details'),
+        head = document.createElement('summary'),
+        source = document.createElement('pre');
+      head.textContent = 'Source and details';
+      source.textContent = value + '\n\n' + (error instanceof Error ? error.message : 'Render failed');
+      details.append(head, source);
+      boundary.append(label, retry, details);
+      container.append(boundary);
       return;
     }
-    if (hasStatefulBlocks(value)) {
-      // One idle render with intact parser state; the caller already shows a
-      // preview, so there is no sync-parse flash here.
-      scheduleIdleChunk(() => {
-        if (!alive()) return;
-        container.innerHTML = '';
-        renderMarkdown(container, value);
-        finish();
-      });
-      return;
-    }
-    const lines = value.split('\n');
-    const step = 120;
-    let idx = 0;
-    container.innerHTML = '';
-    const scratch = document.createElement('div');
-    const pump = () => {
-      if (!alive()) return;
-      const slice = lines.slice(idx, idx + step).join('\n');
-      const tmp = document.createElement('div');
-      renderMarkdown(tmp, idx === 0 ? slice : '\n' + slice);
-      while (tmp.firstChild) scratch.appendChild(tmp.firstChild);
-      idx += step;
-      if (idx < lines.length) {
-        scheduleIdleChunk(pump);
-        return;
-      }
-      if (!alive()) return;
-      while (scratch.firstChild) container.appendChild(scratch.firstChild);
-      finish();
-    };
-    scheduleIdleChunk(pump);
+    content.querySelectorAll('pre:not(.md-code)').forEach((node) => {
+      const pre = node as HTMLElement;
+      pre.classList.add('md-code');
+      pre.dataset.scrollable = '';
+      const code = pre.querySelector('code');
+      if (code) addCodeCopyButton(pre, code.textContent);
+    });
+    container.append(...content.childNodes);
   }
 
   // ============================ tool line rendering ============================
@@ -460,9 +213,98 @@ const renderApi = (function () {
     arrow.textContent = '→';
     const result = document.createElement('span');
     result.className = 'tl-result' + (m.error ? ' err' : '');
-    result.textContent = m.pending ? m.activity || m.result || 'Working' : m.result || '';
+    result.textContent = m.pending
+      ? m.activity || m.result || 'Working'
+      : m.error
+        ? /command_not_allowed/.test(m.result || '')
+          ? 'This command requires approval'
+          : 'Tool failed'
+        : m.result
+          ? 'Result available'
+          : '';
+    if (!m.pending && !m.error && m.preview) {
+      const p = m.preview;
+      if (p.additions !== undefined && p.deletions !== undefined)
+        result.textContent = `+${p.additions} −${p.deletions}`;
+      else if (p.line_start !== undefined && p.line_end !== undefined)
+        result.textContent = `lines ${p.line_start}–${p.line_end}`;
+      else if (p.matches !== undefined) {
+        path.textContent = p.query || path.textContent;
+        result.textContent = `${p.matches}${p.has_more ? '+' : ''} matches`;
+      } else if (p.diff_unavailable) result.textContent = 'Changed · preview unavailable';
+    }
     row.append(path, arrow, result);
     return row;
+  }
+
+  const renderedBlocks = new WeakMap<HTMLElement, string[]>();
+  const pendingUpdates = new WeakMap<HTMLElement, string>();
+  const waitingForSelection = new WeakSet<HTMLElement>();
+  function updateMarkdown(container: HTMLElement, text: string): void {
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && selection.anchorNode && container.contains(selection.anchorNode)) {
+      pendingUpdates.set(container, text);
+      if (waitingForSelection.has(container)) return;
+      waitingForSelection.add(container);
+      const resume = () => {
+        if (!window.getSelection() || window.getSelection()?.isCollapsed) {
+          document.removeEventListener('selectionchange', resume);
+          waitingForSelection.delete(container);
+          const pending = pendingUpdates.get(container);
+          pendingUpdates.delete(container);
+          if (pending !== undefined && container.isConnected) updateMarkdown(container, pending);
+        }
+      };
+      document.addEventListener('selectionchange', resume);
+      return;
+    }
+    const next = document.createElement('div');
+    renderMarkdown(next, text);
+    const signatures = [...next.children].map((node) => node.outerHTML);
+    const previous = renderedBlocks.get(container) || [];
+    let common = 0;
+    while (common < signatures.length && common < previous.length && signatures[common] === previous[common]) common++;
+    while (container.children.length > common) container.lastElementChild!.remove();
+    [...next.children].slice(common).forEach((node) => container.append(node));
+    renderedBlocks.set(container, signatures);
+  }
+  function toolDetails(m: ToolDisplay, compact: boolean): HTMLElement {
+    const row = toolRowEl(m, compact);
+    if (m.pending || !m.result) return row;
+    const details = document.createElement('details');
+    details.className = 'tool-disclosure';
+    if (m.toolKey) details.dataset.toolKey = m.toolKey;
+    const summary = document.createElement('summary');
+    summary.append(row);
+    const panel = document.createElement('div');
+    panel.className = 'tool-result-panel';
+    const output = document.createElement('pre');
+    output.dataset.scrollable = '';
+    const displayed = m.preview?.diff || m.result;
+    output.textContent = displayed;
+    if (m.preview?.diff) output.classList.add('tool-diff');
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'code-copy';
+    copy.textContent = m.preview?.diff ? 'Copy diff' : 'Copy retained result';
+    copy.onclick = async () => {
+      copy.textContent = (await copyText(displayed)) ? 'Copied' : 'Could not copy';
+    };
+    panel.append(output, copy);
+    details.append(summary, panel);
+    if (m.outputTruncated) {
+      const note = document.createElement('div');
+      note.className = 'tool-result-note';
+      note.textContent = 'Output was truncated. Copy includes retained result only.';
+      panel.append(note);
+    }
+    if (m.preview?.diff_truncated) {
+      const note = document.createElement('div');
+      note.className = 'tool-result-note';
+      note.textContent = 'Diff preview was truncated. Copy includes the displayed diff only.';
+      panel.append(note);
+    }
+    return details;
   }
   function foldCountLabel(kind: string, n: number): string {
     const nouns: Record<string, [string, string]> = {
@@ -512,14 +354,14 @@ const renderApi = (function () {
       div.dataset.toolPath = m.path || '';
       div.dataset.toolResult = m.result || '';
     }
-    div.appendChild(toolRowEl(m, false));
+    div.appendChild(toolDetails(m, false));
     return div;
   }
   function appendToToolGroup(group: HTMLElement, m: ToolDisplay) {
     const body = group.querySelector<HTMLElement>('.tool-group-body');
     const count = group.querySelector<HTMLElement>('.tg-count');
     if (!body || !count) throw new Error('Invalid tool group');
-    const row = toolRowEl(m, true);
+    const row = toolDetails(m, true);
     if (m.toolKey) row.dataset.toolKey = m.toolKey;
     body.appendChild(row);
     count.textContent = foldCountLabel(m.kind || '', body.children.length);
@@ -582,14 +424,10 @@ const renderApi = (function () {
     messageCopyText,
     copyText,
     addMessageCopyButton,
-    applyBold,
     renderInlineMd,
     addCodeCopyButton,
-    appendCodeBlock,
     renderMarkdown,
-    renderMarkdownChunked,
-    hasStatefulBlocks,
-    needsChunkedRender,
+    updateMarkdown,
     FOLDABLE_TOOL_KINDS,
     toolRowEl,
     foldCountLabel,

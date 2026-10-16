@@ -57,7 +57,9 @@ from codey.app.http_plumbing import (
     validate_web_root,
     write_sse_event,
 )
+from codey.app.input_queue_routes import bind_input_queue, input_action_response, inputs_response
 from codey.app.operator_auth import OperatorAuth
+from codey.app.question_routes import question_answer_response, questions_response, recover_answers
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.task.model import TaskInput
@@ -283,6 +285,8 @@ def _shell_approval_route(ctx: AppContext, body: dict[str, Any]) -> tuple[int, d
 
 
 _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, dict[str, Any]]]] = {
+    "/api/inputs": inputs_response,
+    "/api/questions": questions_response,
     "/api/model_settings": lambda ctx, _query: model_settings.settings_response(ctx),
     "/api/state": lambda ctx, _query: (200, ctx.run_state_payload()),
     "/api/shell_approval": lambda ctx, query: _shell_approval_status_route(ctx, query),
@@ -300,6 +304,8 @@ _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, d
 
 
 _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[str, Any]]]] = {
+    "/api/inputs": input_action_response,
+    "/api/questions": question_answer_response,
     "/api/model_settings": model_settings.save_response,
     "/api/model_catalog": model_settings.discover_response,
     "/api/ui_state": app_api.save_ui_state_response,
@@ -572,6 +578,8 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
         url = f"http://{host}:{actual_port}/"
         print(f"[codey] UI ready: {url}")
         launch_url = httpd.launch_url(url)
+        bind_input_queue(get_state())
+        recover_answers(get_state())
 
         def _run_httpd() -> None:
             assert httpd is not None

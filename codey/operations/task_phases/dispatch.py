@@ -98,6 +98,12 @@ def connect_and_build_frame(
     provider = preflight.provider
     provider_id = preflight.provider_id
     bind_api_usage(provider, provider_id, trace)
+    bind_display = getattr(provider, "bind_display", None)
+    if callable(bind_display):
+        def display_event(event: dict[str, Any]) -> None:
+            state.emit({**event, "run_id": run_id, "session_id": request.session_id})
+
+        bind_display(display_event)
     context_home = getattr(getattr(state, "managed_outputs", None), "root", None)
     if context_home is not None and callable(getattr(provider, "bind_context", None)):
         provider.bind_context(request.session_id, context_home.parent)

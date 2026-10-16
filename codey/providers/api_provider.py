@@ -34,6 +34,7 @@ from codey.providers.base import AssistantTurn, ProviderToolDefinition, Provider
 from codey.providers.compaction import CompactionCoordinator, ContextSnapshot
 from codey.providers.context_checkpoint import ContextRange, output_reduction_ready, replace_range
 from codey.providers.context_ledger import ContextLedger, digest
+from codey.providers.display_stream import DisplayStream
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget, RequestContextCount
 from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
 
@@ -135,6 +136,8 @@ class ApiProvider:
         self.usage_parser = usage_parser
         self.configure_request = configure_request
         self.on_usage: Callable[[ApiExchangeUsage], None] = lambda record: None
+        self._on_display: Callable[[dict[str, Any]], None] = lambda event: None
+        self._display_stream: DisplayStream | None = None
         self.connection_id = ""
         self.connection_revision = connection_revision
         self._window_ref: ProtocolWindowRef | None = None
@@ -327,6 +330,8 @@ class ApiProvider:
         if not self._send_lock.acquire(blocking=False):
             raise RuntimeError("API provider busy: concurrent sends are not supported")
         committed = False
+        display = DisplayStream(self._on_display) if self.stream and not text_only and self.purpose == "conversation" else None
+        self._display_stream = display
         try:
             with self._state_lock:
                 if expected_window_ref is not None and self._window_ref != expected_window_ref:
@@ -354,9 +359,14 @@ class ApiProvider:
                                   (turn.text, turn.reasoning) if output is not None else None,
                                   delivery_commit=delivery_commit)
             committed = output is not None
+            if display is not None:
+                display.finish(turn.text if committed else None)
             return turn
         finally:
             main_error = __import__("sys").exc_info()[1]
+            if display is not None and main_error is not None:
+                display.finish()
+            self._display_stream = None
             settle_error: BaseException | None = None
             if self._request_context is not None:
                 settle = getattr(self.request_policy, "settle", None)
@@ -485,13 +495,17 @@ class ApiProvider:
 
         exchange_id = uuid4().hex
         collector = UsageCollector(self.usage_parser)
+        def observe(event: dict[str, Any]) -> None:
+            collector.observe(event)
+            if self._display_stream is not None and not self._is_cancelled():
+                self._display_stream.observe(event)
         count, context_budget, outcome = self.last_context_count, self.context_budget, "unknown"
         try:
             body = api_transport.generate(
                 f"{self.base_url}/{self._codec.endpoint}", payload, self._headers(),
                 timeout=max(0.001, deadline - time.monotonic()), observe=self._notify_http_attempt,
                 cancelled=self._is_cancelled, opened=self._opened_response, on_control=self._opened_control,
-                on_event=collector.observe,
+                on_event=observe,
                 attempt_budget=budget,
                 idle_timeout=(self.transport_options or {}).get("body_idle_timeout")
                 if isinstance(self.transport_options, dict) else None,
@@ -515,6 +529,9 @@ class ApiProvider:
 
     def bind_usage(self, connection_id: str, sink: Callable[[ApiExchangeUsage], None]) -> None:
         self.connection_id, self.on_usage = connection_id, sink
+
+    def bind_display(self, sink: Callable[[dict[str, Any]], None]) -> None:
+        self._on_display = sink
 
     def _payload(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
                  settings: GenerationSettings) -> dict[str, Any]:

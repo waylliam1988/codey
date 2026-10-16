@@ -11,7 +11,7 @@ interface DocumentData {
 }
 interface PaneDeps {
   read(session: string, ref: DocumentRef, workspace?: string): Promise<DocumentData>;
-  markdown(container: HTMLElement, text: string): void;
+  markdown(container: HTMLElement, text: string, scope?: { path: string; workspace: string; sessionId: string }): void;
   copy(text: string): Promise<boolean>;
 }
 interface Tab {
@@ -237,7 +237,11 @@ export class DocumentPane {
     if (tab.data && !tab.error) {
       if (tab.data.format === 'markdown' && !tab.source) {
         body.classList.add('md');
-        this.deps.markdown(body, tab.data.content);
+        this.deps.markdown(body, tab.data.content, {
+          sessionId: this.session,
+          path: tab.ref.kind === 'workspace' ? tab.data.path : '',
+          workspace: tab.data.workspace,
+        });
       } else {
         const pre = document.createElement('pre');
         let content = tab.data.content;

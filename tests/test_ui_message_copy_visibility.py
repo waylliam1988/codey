@@ -38,7 +38,7 @@ def test_copy_hidden_then_reachable_across_gap_without_layout_shift(page, kind):
     stub_message_clipboard(page)
     message = append_message(page, kind, "Copy the entire message, including 中文.")
     following = append_message(page, "asst", "Following message stays in place.")
-    copy = message.locator(":scope > .msg-copy")
+    copy = message.locator(".msg-copy")
     page.mouse.move(20, 20)
     expect_opacity(copy, 0)
     expect(copy).to_have_css("pointer-events", "none")
@@ -61,6 +61,7 @@ def test_copy_hidden_then_reachable_across_gap_without_layout_shift(page, kind):
     assert page.evaluate("messageCopies") == ["Copy the entire message, including 中文."]
     page.mouse.move(20, 20)
     expect_opacity(copy, 1)  # Feedback remains visible after leaving the message.
+    expect(copy).to_have_css("pointer-events", "auto")
     expect(copy).to_have_attribute("aria-label", "Copy message")
     assert copy.evaluate("e => document.activeElement === e")
     assert not copy.evaluate("e => e.matches(':focus-visible')")
@@ -73,7 +74,7 @@ def test_copy_hidden_then_reachable_across_gap_without_layout_shift(page, kind):
 def test_keyboard_tab_reveals_copy_and_enter_copies_without_hover(page, kind):
     stub_message_clipboard(page)
     message = append_message(page, kind, "Keyboard copying.")
-    copy = message.locator(":scope > .msg-copy")
+    copy = message.locator(".msg-copy")
     message.locator(".body").click()
     page.mouse.move(20, 20)
     expect_opacity(copy, 0)
@@ -87,6 +88,10 @@ def test_keyboard_tab_reveals_copy_and_enter_copies_without_hover(page, kind):
     expect(copy).to_have_attribute("aria-label", "Copy message")
     expect_opacity(copy, 1)
     page.keyboard.press("Tab")
+    if kind == "user":
+        expect(message.get_by_role("button", name="Return message to draft", exact=True)).to_be_focused()
+        expect_opacity(copy, 1)
+        page.keyboard.press("Tab")
     expect_opacity(copy, 0)
 
 
@@ -169,7 +174,7 @@ def test_copy_remains_visible_and_tappable_without_hover(ui_browser, kind):
         expect(touch.locator("#provider-button")).to_be_enabled(timeout=15000)
         assert touch.evaluate("matchMedia('(hover: none)').matches")
         stub_message_clipboard(touch)
-        copy = append_message(touch, kind, "Tap to copy.").locator(":scope > .msg-copy")
+        copy = append_message(touch, kind, "Tap to copy.").locator(".msg-copy")
         expect_opacity(copy, 1)
         expect(copy).to_have_css("pointer-events", "auto")
         copy.tap()
@@ -179,7 +184,7 @@ def test_copy_remains_visible_and_tappable_without_hover(ui_browser, kind):
         touch.close()
 
 
-def test_whole_message_visibility_does_not_hide_code_or_thinking_copy(page):
+def test_code_copy_remains_available_without_repeated_thinking_copy(page):
     append_message(page, text="```python\nprint('hello')\n```")
     code_copy = page.locator(".code-copy")
     page.mouse.move(20, 20)
@@ -189,12 +194,8 @@ def test_whole_message_visibility_does_not_hide_code_or_thinking_copy(page):
     page.evaluate("addToSession('a',{type:'thinking',runId:'copy-review',text:'Reasoning text.'})")
     page.locator(".process-summary").click()
     page.locator(".thinking > summary").click()
-    thinking_copy = page.locator(".thinking-section > .msg-copy")
-    page.locator("#task").click()
-    page.mouse.move(20, 20)
-    expect_opacity(thinking_copy, 0)
-    page.locator(".thinking-body").hover()
-    expect_opacity(thinking_copy, 1)
+    expect(page.locator(".thinking-section > .msg-copy")).to_have_count(0)
+    expect(page.locator(".thinking-body")).to_contain_text("Reasoning text.")
 
 
 def test_long_answer_copy_path_preserves_full_text_and_pointer_selection(page):

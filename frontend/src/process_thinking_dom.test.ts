@@ -78,7 +78,7 @@ describe('process thinking DOM', () => {
     } as unknown as typeof window.Render;
   });
 
-  it('renders summary, thinking body, and copy button inside the process details', async () => {
+  it('renders thinking inside process details without a duplicate per-fragment action row', async () => {
     await import('./process');
     const chat = document.querySelector<HTMLElement>('#chat')!;
     window.Process.append(chat, { type: 'thinking', runId: 'run-1', reasoning: 'Inspect the source.' }, vi.fn());
@@ -87,7 +87,7 @@ describe('process thinking DOM', () => {
     expect(details).not.toBeNull();
     expect(details?.querySelector('summary')?.textContent).toBe('Thinking');
     expect(details?.querySelector('.thinking-body')?.textContent).toContain('Inspect the source.');
-    expect(details?.querySelector('.copy-message')).not.toBeNull();
+    expect(details?.querySelector('.copy-message')).toBeNull();
   });
 });
 

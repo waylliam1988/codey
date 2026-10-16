@@ -32,6 +32,32 @@ def test_document_content_version_changes_and_missing_is_explicit(documents):
     assert preview(ctx, path="report.md")[0] == 404
 
 
+def test_reference_confirmation_does_not_read_or_decode_binary_files(documents):
+    root, ctx = documents
+    (root / "photo.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff")
+    status, data = preview(ctx, path="photo.png", representation="reference")
+    assert status == 200
+    assert data["path"] == "photo.png"
+    assert "content" not in data
+    assert preview(ctx, path="json.dumps", representation="reference")[0] == 404
+
+
+def test_workspace_images_use_the_same_scope_and_a_bounded_image_contract(documents):
+    import base64
+
+    root, ctx = documents
+    image = b"\x89PNG\r\n\x1a\n\x00\xff"
+    (root / "photo.png").write_bytes(image)
+    status, data = preview(ctx, path="photo.png", representation="image")
+    assert status == 200
+    assert data["format"] == "image"
+    assert data["mime"] == "image/png"
+    assert base64.b64decode(data["content"]) == image
+    assert preview(ctx, path="../photo.png", representation="image")[0] == 400
+    (root / "fake.png").write_text("<script>bad</script>", encoding="utf-8")
+    assert preview(ctx, path="fake.png", representation="image")[0] == 415
+
+
 @pytest.mark.parametrize(
     "path", ["../outside.md", "C:/Windows/win.ini", "//server/share/file", "report.md:stream", "a\0b"]
 )

@@ -22,6 +22,7 @@
 | [release_gate.zh-CN.md](release_gate.zh-CN.md) | 发布验收规则与实机范围 |
 | [typechecking.md](typechecking.md) | Python 三检查器、目标版本和前端类型边界 |
 | [zen_request_profile_2026-10-08.md](zen_request_profile_2026-10-08.md) | Zen 请求适配边界；实测数字限于记录范围 |
+| [conversation_ui_implementation_2026-10-16.md](conversation_ui_implementation_2026-10-16.md) | 中间对话区实现、TDD 回归与真实页面验收记录 |
 
 ## 未来方向与实施基线
 

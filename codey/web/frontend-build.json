@@ -1,15 +1,16 @@
 {
   "files": {
-    "assets/app.css": "169590027745ee687e9a4ea9220df311defda811a777afe6b1748939e90fb0d0",
+    "assets/app.css": "985923fa22b882e6870b5475db02b49c1366366d0cbf7755b61bf4f4386b9abc",
     "assets/arrow-down.svg": "e481d38a1e5da8ce9fd671572d8548d6db0d12055ed79cc530980c04cb947367",
     "assets/chevron-down.svg": "709001d9dea74131c781b43fb16b943fa8c45ddb103e126fc2707468f849fc92",
-    "assets/codey-D8ucpAgC.js": "b24d380aa796664038b9f7a257c220f4387ead04b13fdc4c00691e03a8a9f016",
+    "assets/codey-BvKY6Hj2.js": "f2b111bef01982165c1fa18821676efdd87214f571999d9f259849ac1113d04b",
+    "assets/document.svg": "a1175c3d2806c301c455677844e6f8d990aaebd931512346bfc6e5348e346673",
     "assets/new-chat.svg": "3d2a02cf5320962f8cbebbdedfbf4b9001e8d220d700ff474847ffe9973abd28",
     "assets/spinner.svg": "fdb77fdc24c03a92c02ced6cd75d310a4168bcd1eb78c2aabcd859422022e972",
     "assets/tokens.css": "3cc83029a2a7121212647856280401602a44176a8c2d71f2e590ce4749bb416f",
     "icon.ico": "3760f945274958a729eb5e39252ea810f3817c9b66addd0ceeb027408c47109f",
-    "index.html": "fe5fd0f1352af9e2fb04bb65012c337fa66da88f14f02f4cd48d2a4db47fa7bf"
+    "index.html": "f598dc0df3845c81360e262b209b086e64dce2d48bf2e3e0c09d343bb5dd56c3"
   },
   "schema": 1,
-  "source_sha256": "ad6a5f99f909fac3f623852b90b8d1624e3d4eae8dc93fb7ed3049d595981003"
+  "source_sha256": "e794d0bc65e58986191f2f062b7e7c8e37aa78c8d100c68f54fc5a09e8ca6429"
 }

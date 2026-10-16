@@ -31,6 +31,7 @@ export interface UiStateApi {
   persistNow(): void;
   bindPagehide(): void;
   restoreFromServer(): Promise<void>;
+  ensureSaved(): Promise<boolean>;
 }
 /* Codey UI state runtime: local cache, durable snapshot sync, and versioning. */
 (function () {
@@ -425,6 +426,7 @@ export interface UiStateApi {
     );
   }
   let saveInFlight = false;
+  let savePromise: Promise<boolean> | null = null;
   let saveQueued = false;
   let serverRevision: number | null = null;
   let syncConflict = false;
@@ -457,7 +459,7 @@ export interface UiStateApi {
     // Routine saves stay silent. Only an already-visible failure gets progress.
     if (!document.getElementById('ui-save-notice')?.hidden) saveNotice('saving');
     const base = serverRevision === null ? getRevision() : serverRevision;
-    fetch('/api/ui_state', {
+    savePromise = fetch('/api/ui_state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ state: currentUiState(), base_revision: base }),
@@ -472,7 +474,7 @@ export interface UiStateApi {
           }
           syncConflict = false;
           if (!saveQueued && uiStatePersistTimer === null) saveNotice('saved');
-          return;
+          return true;
         }
         if (r.status === 409) {
           const current = Number((data && data.revision) || 0) || 0;
@@ -481,14 +483,19 @@ export interface UiStateApi {
             syncConflict = true;
             saveNotice('failed');
           }
-          return;
+          return false;
         }
         // Other failures: keep local content, do not pretend success.
         saveNotice('failed');
+        return false;
       })
-      .catch(() => saveNotice('failed'))
+      .catch(() => {
+        saveNotice('failed');
+        return false;
+      })
       .finally(() => {
         saveInFlight = false;
+        savePromise = null;
         if (saveQueued && !syncConflict) {
           saveQueued = false;
           saveUiStateToServer();
@@ -514,6 +521,12 @@ export interface UiStateApi {
     }
     cacheUiState();
     saveUiStateToServer();
+  }
+  async function ensureSaved(): Promise<boolean> {
+    if (syncConflict) return false;
+    flushUiState();
+    while (savePromise) if (!(await savePromise)) return false;
+    return !syncConflict;
   }
 
   function persistActive() {
@@ -636,5 +649,6 @@ export interface UiStateApi {
     persistNow: persistActiveNow,
     bindPagehide: bindUiStatePagehide,
     restoreFromServer: restoreUiStateFromServer,
+    ensureSaved,
   };
 })();

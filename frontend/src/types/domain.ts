@@ -70,6 +70,12 @@ export interface RequestAttempt {
   runOwner?: string;
 }
 export interface Message extends importToolDisplay {
+  elapsedMs?: number;
+  queuedInputId?: string;
+  streamId?: string;
+  streamSequence?: number;
+  streamState?: 'partial' | 'complete' | 'interrupted';
+  finalAnswer?: boolean;
   type: string;
   approval?: ApprovalState;
   approvalSubmission?: 'sending' | 'checking' | 'unconfirmed';

@@ -682,6 +682,13 @@ def _route_ghost_work(
         "continue_task": setup.continue_task,
         "provider": setup.provider_id,
         "intent": setup.request.intent,
+        "entry_auth": {
+            "requested_capabilities": setup.request.requested_capabilities,
+            "denied_capabilities": setup.request.denied_capabilities,
+            "strict_research": setup.request.strict_research,
+            "sources_open_required": setup.request.sources_open_required,
+            "project_changes_required": setup.request.project_changes_required,
+        },
     })
     return None
 

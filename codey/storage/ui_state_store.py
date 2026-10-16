@@ -28,6 +28,10 @@ MAX_EXCERPT_TEXT_CHARS = 1_500
 MAX_SHORT_STRING = 1_000
 MAX_TITLE = 160
 MESSAGE_KEYS = {
+    "streamId", "streamSequence", "streamState", "finalAnswer",
+    "queuedInputId",
+    "elapsedMs",
+    "preview",
     "approval",
     "approvalSubmission",
     "type",
@@ -141,7 +145,12 @@ def _clean_message(message: object) -> dict[str, Any] | None:
         if key not in message:
             continue
         value = message[key]
-        if key == "approval":
+        if key == "preview" and isinstance(value, dict):
+            preview: dict[str, Any] = {name: _str(value[name], 16_000 if name == "diff" else 1000) for name in ("diff", "query") if isinstance(value.get(name), str)}
+            preview.update({name: _int(value[name]) for name in ("additions", "deletions", "line_start", "line_end", "matches") if type(value.get(name)) is int})
+            preview.update({name: value[name] for name in ("diff_truncated", "diff_unavailable", "has_more") if type(value.get(name)) is bool})
+            clean[key] = preview
+        elif key == "approval":
             clean[key] = _clean_approval(value)
         elif key == "attempts":
             if isinstance(value, list):

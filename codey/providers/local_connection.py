@@ -149,6 +149,7 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
                            _local_config.resolve_local_native_tools(config), window,
                            budget.context_reserve_tokens, min(budget.context_keep_recent_tokens, window - budget.context_reserve_tokens),
                            config.thinking_enabled, config.reasoning_effort,
+                           stream=_local_config.resolve_local_native_tools(config),
                            output_tokens=budget.context_reserve_tokens, token_counter=counter,
                            budget_source="server_and_configuration" if counter == "koboldcpp" else "configuration")
 

@@ -192,3 +192,20 @@ Store 模块；它们是领域所有者，不是新的通用框架。continuity 
 共享 API 只接收连接器自有 opener/日志头选项，不导入 Zen；Local 保持 Python HTTP。MJS 打包及语法检查发现实际文件；删除 Zen 时同步移除专用测试、gate 与清单条目。UI 保存 Shell 状态、带符号整数退出码、命令预览完整性及工具状态；非法退出码保持未知。
 
 详见[当前验证](../TEST_REPORT.md)、[传输诊断](provider_ci_diagnosis_2026-10-13.zh-CN.md)与[维护审计](ui_maintenance_audit_2026-10-13.zh-CN.md)。实验全文保留在 Git；新增完整覆盖率和日志进入 `.e2e-artifacts/` 与 CI artifacts。
+
+## 中间对话区职责（2026-10-16）
+
+| 归属 | 职责 |
+| --- | --- |
+| `codey/app/input_queue.py`、`codey/app/input_queue_routes.py`、`codey/storage/conversation_db.py` | 下一轮输入的持久收据、准入/调度状态、修订校验和事务级 SQLite 句柄 |
+| `codey/app/user_questions.py`、`codey/app/question_routes.py`、`codey/operations/kernel_question.py` | 问题请求、答案接纳和继续任务身份的持久化 |
+| `frontend/src/input_outbox.ts` | 浏览器投递身份、明确拒绝后的恢复和不确定响应的状态查询；不具备执行授权能力 |
+| `frontend/src/messages.ts`、`frontend/src/research_runs.ts` | 按消息绑定 Research 报告身份及证据/文档入口 |
+| `frontend/src/markdown.ts` | 统一 Markdown 解析边界，包括代码跨度和表格处理 |
+| `frontend/src/document_content.ts` | 会话工作区范围内的文件/图片读取，以及有界图片加载和单图重试 |
+| `frontend/src/conversation_ui.ts`、`frontend/src/process.ts`、`frontend/src/reply_stream.ts` | 历史窗口、过程展示和原生流式 DOM 对账 |
+
+这些模块的发布副本由 Vite 构建，再经 `tools.publish_frontend` 写入
+`codey/web`。先修改 `frontend/src`，再构建发布，不手工编辑生成 bundle。
+对应回归测试位于 `frontend/src/*.test.ts`；HTTP/浏览器覆盖位于
+`tests/test_conversation_*.py` 和 `tests/test_document_browser.py`。

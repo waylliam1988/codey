@@ -203,3 +203,21 @@ fixtures are not a production compatibility promise.
 Shared API code accepts connector-owned opener/request-ID options without importing Zen. Local keeps Python HTTP. Optional MJS packaging and syntax checks discover existing files; removing Zen also removes its dedicated tests/gates and manifest entries. UI persistence keeps shell status, signed integer exits, command preview integrity and tool status; malformed exits stay unknown.
 
 See [current verification](../TEST_REPORT.md), [transport diagnosis](provider_ci_diagnosis_2026-10-13.zh-CN.md) and [maintenance audit](ui_maintenance_audit_2026-10-13.zh-CN.md). Historical experiment logs remain in Git; raw new coverage/log output belongs in `.e2e-artifacts/` and CI artifacts.
+
+## Conversation UI ownership (2026-10-16)
+
+| Owner | Responsibility |
+| --- | --- |
+| `codey/app/input_queue.py`, `codey/app/input_queue_routes.py`, `codey/storage/conversation_db.py` | Durable next-turn input receipts, admission/dispatch state, revision checks and transaction-scoped SQLite handles |
+| `codey/app/user_questions.py`, `codey/app/question_routes.py`, `codey/operations/kernel_question.py` | Durable question requests, answer acceptance and continuation identity |
+| `frontend/src/input_outbox.ts` | Browser delivery identities, explicit rejection recovery and uncertain-response status checks; it never authorizes execution |
+| `frontend/src/messages.ts`, `frontend/src/research_runs.ts` | Message-owned Research report identity and evidence/document actions |
+| `frontend/src/markdown.ts` | One Markdown parser boundary, including code-span and table handling |
+| `frontend/src/document_content.ts` | Scoped file/image reads and bounded image loading with isolated retries |
+| `frontend/src/conversation_ui.ts`, `frontend/src/process.ts`, `frontend/src/reply_stream.ts` | Conversation history windows, process disclosure and native streaming DOM reconciliation |
+
+The shipped copies of these modules are generated into `codey/web` by the Vite
+build and `tools.publish_frontend`. Edit `frontend/src` first, then rebuild and
+publish; do not hand-edit the generated bundle. The corresponding regression
+tests live beside the modules in `frontend/src/*.test.ts`, with HTTP/browser
+coverage under `tests/test_conversation_*.py` and `tests/test_document_browser.py`.

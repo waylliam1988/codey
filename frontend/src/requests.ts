@@ -103,6 +103,7 @@ export interface RequestsDeps {
     return (
       !!s &&
       !!request &&
+      !request.queuedInputId &&
       runtime.Models.allows(
         s.provider || '',
         runtime.ProviderUI.runSelection(s, s.provider || '').model_selection?.model,
@@ -247,7 +248,7 @@ export interface RequestsDeps {
     );
     const focused = node.contains(document.activeElement);
     const focusWasStatus = document.activeElement === node;
-    node.hidden = attempt.state !== 'failed';
+    node.hidden = attempt.state !== 'failed' || !!request.queuedInputId;
     node.replaceChildren();
     if (node.hidden) {
       if (focused && sessionId === deps.getActiveId()) deps.$('task').focus();
