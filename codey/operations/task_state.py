@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from codey.runtime.effects.shell_approval_records import ShellApprovalRecordStore
     from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from codey.storage.execution_output_store import ExecutionOutputStore
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.workspace.changes import ChangeTracker
     from codey.workspace.facts import ProjectFactsStore
@@ -59,6 +60,7 @@ class TaskSubmissionStores:
     knowledge_store: KnowledgeStore | None
     runtime_mutations: RuntimeMutationLine
     runtime_effects: RuntimeEffectStore
+    execution_outputs: ExecutionOutputStore | None = None
 
 
 class TaskState(Protocol):
@@ -84,6 +86,8 @@ class TaskState(Protocol):
     ) -> RunSnapshot | None: ...
     def release_run(self, run_id: str) -> None: ...
     def current_run(self) -> RunSnapshot | None: ...
+    def active_run_for(self, *, session_id: str = "", project: str | None = None) -> RunSnapshot | None: ...
+    def stop_flag_for(self, run_id: str) -> threading.Event: ...
     def finish_run(self, run_id: str, event: dict[str, Any]) -> bool: ...
     def start_run(self, run_id: str) -> bool: ...
     def set_run_status(self, status: str) -> None: ...
@@ -117,4 +121,15 @@ class TaskSubmissionState(TaskState, Protocol):
     def task_submission_stores(self) -> TaskSubmissionStores: ...
 
 
-__all__ = ["TaskState", "TaskSubmissionState", "TaskSubmissionStores"]
+def stop_flag_for(state: TaskState, run_id: str) -> threading.Event:
+    resolver = getattr(state, "stop_flag_for", None)
+    if callable(resolver):
+        value = resolver(run_id)
+        if isinstance(value, threading.Event):
+            return value
+    registry = getattr(state, "run_registry", None)
+    event = getattr(registry, "stop_flag", None)
+    return event if isinstance(event, threading.Event) else threading.Event()
+
+
+__all__ = ["TaskState", "TaskSubmissionState", "TaskSubmissionStores", "stop_flag_for"]

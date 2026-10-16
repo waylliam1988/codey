@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,7 +18,7 @@ from tools.local_model_gate_shell import gate_application
 
 
 @contextmanager
-def streaming_peer(protocol):
+def streaming_peer(protocol, *, hold_all=False, max_requests=2):
     release = threading.Event()
     requests, errors = [], []
 
@@ -38,7 +39,7 @@ def streaming_peer(protocol):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 requests.append(body)
                 assert body["stream"] is True
-                assert len(requests) <= 2, "unexpected repeated request"
+                assert len(requests) <= max_requests, "unexpected repeated request"
                 first = len(requests) == 1
                 head = "# 项目检查\n\n第一段已经到达。" if first else "排队补充已送达。"
                 tail = "\n\n**完整回答**，保留已显示段落。" if first else ""
@@ -57,8 +58,10 @@ def streaming_peer(protocol):
                         event({"choices": [{"index": 0, "delta": {"content": text}}]})
 
                 fragment(head)
-                if first:
-                    assert release.wait(25), "browser did not release the stream"
+                if hold_all or first:
+                    while not release.wait(0.75):
+                        self.wfile.write(b": keep-alive\n\n")
+                        self.wfile.flush()
                     fragment(tail)
                 if protocol == "openai-responses":
                     event({"type": "response.completed", "response": {"id": "response_live", "status": "completed", "output": [
@@ -82,14 +85,16 @@ def streaming_peer(protocol):
         thread.join(timeout=5)
 
 
-def seed(ctx, tmp_path, url, model):
+def seed(ctx, tmp_path, url, model, *, session_ids=("live",)):
     project = Path(os.environ.get("UI_SMOKE_PROJECT", str(tmp_path / "project")))
     if not project.exists():
         project.mkdir()
         (project / "pyproject.toml").write_text('[project]\nname="live-check"\n', encoding="utf8")
-    ctx.save_ui_state({"active_id": "live", "projects": [{"id": "p", "name": project.name, "path": str(project)}],
-        "sessions": [{"id": "live", "title": "Conversation live check", "projectId": "p", "provider": "local",
-            "modelSelection": {"connection_id": "local", "model": model, "base_url": url}, "messages": []}]}, base_revision=0)
+    sessions = [{"id": sid, "title": f"Conversation {sid}", "projectId": "p", "provider": "local",
+                 "modelSelection": {"connection_id": "local", "model": model, "base_url": url}, "messages": []}
+                for sid in session_ids]
+    ctx.save_ui_state({"active_id": session_ids[0], "projects": [{"id": "p", "name": project.name, "path": str(project)}],
+        "sessions": sessions}, base_revision=0)
 
 
 def open_live(pw, httpd):
@@ -147,6 +152,85 @@ def test_real_stream_and_queued_input_keep_one_answer_and_survive_reload(tmp_pat
                 expect(page.locator(".msg.asst")).to_have_count(2)
                 expect(page.locator(".spinner:visible")).to_have_count(0)
                 capture(page, tmp_path, f"stream-queue-{protocol}.png")
+                assert not errors
+            finally:
+                release.set()
+                browser.close()
+
+
+@pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
+def test_real_two_sessions_run_concurrently_and_stop_is_session_scoped(tmp_path, protocol):
+    """Two real HTTP/model runs must be admitted without a global busy error."""
+    with streaming_peer(protocol) as (url, release, requests, peer_errors):
+        target = GateTarget(url, "live-fixture", 32768, 8192, 12000, api_protocol=protocol, request_timeout=30)
+        with gate_application(target, tmp_path / "gate") as (httpd, ctx, events), sync_playwright() as pw:
+            seed(ctx, tmp_path, url, target.model, session_ids=("a", "b"))
+            browser, page, errors = open_live(pw, httpd)
+            try:
+                send(page, "会话 A：只读分析，不要修改文件。")
+                expect(page.locator(".msg.asst .body").first).to_contain_text("第一段已经到达。")
+                page.locator("#btn-new-chat").click()
+                expect(page.locator("#task")).to_be_enabled()
+                send(page, "会话 B：独立只读分析，不要修改文件。")
+                deadline = time.monotonic() + 10
+                while len(requests) < 2 and time.monotonic() < deadline:
+                    page.wait_for_timeout(100)
+                expect(page.locator(".msg.user")).to_have_count(1)
+                assert len(requests) == 2, f"second session was not admitted while A was streaming; errors={errors}; peer={peer_errors}; events={[e.get('type') for e in events]}"
+                assert not any("Another chat is running" in text for text in errors)
+                release.set()
+                expect(page.locator(".msg.asst")).to_have_count(1)
+                page.locator(".session-item").filter(has_text="Conversation a").click()
+                expect(page.locator(".msg.asst")).to_have_count(1)
+                assert not peer_errors and not errors
+            finally:
+                release.set()
+                browser.close()
+
+
+@pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
+def test_real_three_sessions_run_concurrently_and_stop_only_targets_selected_session(tmp_path, protocol):
+    """Three native runs use independent session lanes and a scoped Stop."""
+    with streaming_peer(protocol, hold_all=True, max_requests=3) as (url, release, requests, peer_errors):
+        target = GateTarget(url, "live-fixture", 32768, 8192, 12000, api_protocol=protocol, request_timeout=30)
+        with gate_application(target, tmp_path / "gate") as (httpd, ctx, events), sync_playwright() as pw:
+            seed(ctx, tmp_path, url, target.model, session_ids=("a", "b", "c"))
+            browser, page, errors = open_live(pw, httpd)
+            stop_requests = []
+            page.on("request", lambda request: stop_requests.append(request.post_data_json) if request.url.endswith("/api/stop") else None)
+            try:
+                send(page, "会话 A：保持流式运行。")
+                expect(page.locator(".msg.asst .body").first).to_contain_text("第一段已经到达。")
+                page.locator(".session-item").filter(has_text="Conversation b").click()
+                send(page, "会话 B：保持流式运行。")
+                page.locator(".session-item").filter(has_text="Conversation c").click()
+                send(page, "会话 C：保持流式运行。")
+                deadline = time.monotonic() + 15
+                while len(requests) < 3 and time.monotonic() < deadline:
+                    page.wait_for_timeout(100)
+                assert len(requests) == 3, f"only {len(requests)} native requests; errors={errors}; events={events}"
+                assert not any("Another chat is running" in text for text in errors)
+
+                page.locator(".session-item").filter(has_text="Conversation b").click()
+                expect(page.locator("#stop")).to_be_visible()
+                b_run_id = ctx.active_run_for(session_id="b").run_id
+                with page.expect_response(lambda response: response.url.endswith("/api/stop") and response.request.method == "POST") as stop_response:
+                    page.locator("#stop").click()
+                assert stop_response.value.ok
+                deadline = time.monotonic() + 5
+                while not ctx.run_registry.stop_flag_for(b_run_id).is_set() and time.monotonic() < deadline:
+                    page.wait_for_timeout(100)
+                assert ctx.run_registry.stop_flag_for(b_run_id).is_set(), f"Stop request was not applied; request={stop_requests}"
+                deadline = time.monotonic() + 20
+                while ctx.active_run_for(session_id="b") is not None and time.monotonic() < deadline:
+                    page.wait_for_timeout(100)
+                assert ctx.active_run_for(session_id="b") is None, f"Stop did not settle session B; request={stop_requests}; active={ctx.run_registry.active_runs()}"
+                assert ctx.active_run_for(session_id="a") is not None or ctx.active_run_for(session_id="c") is not None
+                release.set()
+                page.locator(".session-item").filter(has_text="Conversation a").click()
+                expect(page.locator(".msg.asst .body")).to_contain_text("完整回答")
+                page.locator(".session-item").filter(has_text="Conversation c").click()
+                expect(page.locator(".msg.asst .body")).to_contain_text("排队补充已送达。")
                 assert not errors
             finally:
                 release.set()

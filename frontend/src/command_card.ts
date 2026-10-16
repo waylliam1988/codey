@@ -1,5 +1,6 @@
 import { iconButton } from './icon_button';
 import type { Message } from './types/domain';
+import { mergeOutputSnapshot, type ExecutionSnapshot } from './execution_output';
 
 type Copy = (text: string) => Promise<boolean>;
 
@@ -27,20 +28,22 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
     drain_timeout: 'Output did not finish',
   };
   const status = message.shellStatus || '';
+  const running = status === 'running';
   const failure = Object.hasOwn(failures, status) ? failures[status] : undefined;
   const completed = message.approved === true && message.shellStatus === 'exit' && Number.isInteger(exit);
   const success = completed && exit === 0;
-  card.dataset.status = success ? 'success' : failure || completed ? 'failed' : 'unknown';
-  const result =
-    failure ||
-    (!message.approved
-      ? 'Denied'
-      : completed
-        ? `Command ${success ? 'completed' : 'failed'} · exit ${exit}`
-        : 'Result status unknown');
+  card.dataset.status = running ? 'running' : success ? 'success' : failure || completed ? 'failed' : 'unknown';
+  const result = running
+    ? 'Command running'
+    : failure ||
+      (!message.approved
+        ? 'Denied'
+        : completed
+          ? `Command ${success ? 'completed' : 'failed'} · exit ${exit}`
+          : 'Result status unknown');
   const label = document.createElement('span');
   label.className = 'command-label';
-  label.textContent = completed ? 'Ran' : result;
+  label.textContent = running ? 'Running' : completed ? 'Ran' : result;
   summary.append(label);
   const excerpt = document.createElement('span');
   excerpt.className = 'command-excerpt';
@@ -67,15 +70,26 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
   );
   const output = document.createElement('section');
   output.className = 'command-result';
-  const text = document.createElement('pre');
-  text.className = 'shell-output';
-  text.tabIndex = 0;
-  text.setAttribute('role', 'region');
-  text.setAttribute('aria-label', 'Command output');
-  text.textContent = message.output || '(no output)';
+  const stdoutText = document.createElement('pre');
+  stdoutText.className = 'shell-output shell-stdout';
+  stdoutText.tabIndex = 0;
+  stdoutText.setAttribute('role', 'region');
+  stdoutText.setAttribute('aria-label', 'Standard output');
+  stdoutText.textContent = message.output || (running ? 'Waiting for output…' : '(no output)');
+  const stderrText = document.createElement('pre');
+  stderrText.className = 'shell-output shell-stderr';
+  stderrText.tabIndex = 0;
+  stderrText.setAttribute('role', 'region');
+  stderrText.setAttribute('aria-label', 'Standard error');
+  stderrText.hidden = true;
   output.append(
-    copyButton(message.outputTruncated ? 'Copy retained output' : 'Copy output', message.output || '', copy),
-    text,
+    copyButton(
+      running ? 'Copy received content' : message.outputTruncated ? 'Copy retained output' : 'Copy output',
+      message.output || '',
+      copy,
+    ),
+    stdoutText,
+    stderrText,
   );
   if (message.outputTruncated || message.commandTruncated) {
     const notice = document.createElement('div');
@@ -90,5 +104,72 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
   panel.append(command, output, settlement);
   details.append(panel);
   card.append(details);
+  if (running && message.executionId) {
+    const outputCopy = output.querySelector('button') as HTMLButtonElement | null;
+    let latest: ExecutionSnapshot = { revision: -1, execution_state: 'running', stdout: '', stderr: '' };
+    const updateOutput = (stdout: string, stderr: string) => {
+      const following = textAtBottom(stdoutText);
+      const stdoutTop = stdoutText.scrollTop;
+      const stderrTop = stderrText.scrollTop;
+      stdoutText.textContent =
+        [stdout, stderr ? `[stderr]\n${stderr}` : ''].filter(Boolean).join('\n\n') || 'Waiting for output…';
+      stderrText.textContent = stderr;
+      stderrText.hidden = !stderr;
+      stdoutText.scrollTop = following ? stdoutText.scrollHeight : stdoutTop;
+      stderrText.scrollTop = stderrTop;
+      if (outputCopy) {
+        outputCopy.title = 'Copy received content';
+        outputCopy.setAttribute('aria-label', 'Copy received content');
+        outputCopy.onclick = async () => {
+          const value = [latest.stdout, latest.stderr ? `[stderr]\n${latest.stderr}` : ''].filter(Boolean).join('\n\n');
+          const ok = await copy(value);
+          outputCopy.title = ok ? 'Copied' : 'Could not copy';
+        };
+      }
+    };
+    const poll = async (): Promise<void> => {
+      while (card.isConnected || latest.revision < 0) {
+        if (!card.isConnected && latest.revision >= 0) break;
+        try {
+          const scope = new URLSearchParams({ after_revision: String(latest.revision) });
+          if (message.sessionId) scope.set('session_id', message.sessionId);
+          if (message.runId) scope.set('run_id', message.runId);
+          const response = await fetch(
+            `/api/executions/${encodeURIComponent(message.executionId!)}/output?${scope.toString()}`,
+          );
+          if (response.status !== 304 && response.ok) {
+            const data = (await response.json()) as {
+              revision?: number;
+              execution_state?: 'running' | 'settled' | 'unknown';
+              stdout?: unknown;
+              stderr?: unknown;
+            };
+            const textValue = (value: unknown) =>
+              typeof value === 'string'
+                ? value
+                : value && typeof value === 'object' && 'text' in value
+                  ? String((value as { text?: unknown }).text || '')
+                  : '';
+            const stdout = textValue(data.stdout);
+            const stderr = textValue(data.stderr);
+            latest = mergeOutputSnapshot(latest, {
+              revision: Number(data.revision || 0),
+              execution_state: data.execution_state || 'running',
+              stdout,
+              stderr,
+            });
+            updateOutput(latest.stdout, latest.stderr || '');
+            if (latest.execution_state === 'settled' || latest.execution_state === 'unknown') break;
+          }
+        } catch {}
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    };
+    void poll();
+  }
   return card;
+}
+
+function textAtBottom(element: HTMLElement): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= 8;
 }

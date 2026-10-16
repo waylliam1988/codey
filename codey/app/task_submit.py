@@ -54,6 +54,7 @@ def run_task(
     review_policy: str | None = None,
     review_source_run_id: str = "",
     model_selection: ApiRunSelection | None = None,
+    worker_key: str = "",
 ) -> None:
     # Heavy task stack stays lazy: importing this module (and server.py)
     # must not load operations/service modules/research (see test_server_lazy_state).
@@ -206,6 +207,7 @@ def submit_task(
             review_policy=review_policy,
             review_source_run_id=review_source_run_id,
             model_selection=model_selection,
+            worker_key=session_id,
         )
     except Exception:
         state.release_run(reserved.run_id)
@@ -241,9 +243,10 @@ def submit_task_after_slot_release(
         # abort_if_stopped reservation below, which closes the race where a
         # Stop lands between this peek and the reserve.
         state = get_state()
-        if state.run_registry.stop_flag.is_set():
+        stop_flag = state.run_registry.stop_flag_for(previous_run_id) if previous_run_id else state.run_registry.stop_flag
+        if stop_flag.is_set():
             return None
-        active = state.current_run()
+        active = state.active_run_for(session_id=session_id)
         if active is not None and previous_run_id and active.run_id != previous_run_id:
             return None
         submitted_run_id = submit_task(
@@ -264,7 +267,7 @@ def submit_task_after_slot_release(
         )
         if submitted_run_id is not None:
             return submitted_run_id
-        active = state.current_run()
+        active = state.active_run_for(session_id=session_id)
         if active is not None and previous_run_id and active.run_id != previous_run_id:
             return None
         if time.monotonic() >= deadline:

@@ -14,6 +14,7 @@ export type ServerEvent = {
   event_id?: number | string;
   cursor?: number | string;
   run_id?: string;
+  execution_id?: string;
   session_id?: string;
   status?: string;
   turn?: number;
@@ -47,6 +48,22 @@ export type ServerEvent = {
   exit_code?: number | null;
   retry_after?: number;
   provider_failure?: { action?: string; kind?: string; provider?: string; stage?: string };
+  failure?: {
+    schema_version: 1;
+    code: string;
+    category: string;
+    scope: string;
+    phase: string;
+    effect: string;
+    incident_id: string;
+    session_id?: string;
+    run_id?: string;
+    call_id?: string;
+    execution_id?: string;
+    resource?: { kind: string; path?: string; id?: string };
+    diagnostic?: string;
+    retry_after?: number;
+  };
   providers?: unknown;
   changes?: ChangesData;
   research?: ResearchPayload;
@@ -240,6 +257,20 @@ export function decodeRunState(value: unknown): RunState {
       state.research_restore_runs = item;
     }
   }
+  if (value.active_runs !== undefined) {
+    if (!Array.isArray(value.active_runs)) throw new Error('run state active_runs is invalid');
+    state.active_runs = value.active_runs.map((entry) => {
+      if (!isRecord(entry) || typeof entry.run_id !== 'string' || typeof entry.session_id !== 'string')
+        throw new Error('run state active run is invalid');
+      return {
+        run_id: entry.run_id,
+        session_id: entry.session_id,
+        ...(typeof entry.run_status === 'string' ? { run_status: entry.run_status } : {}),
+        ...(typeof entry.project === 'string' || entry.project === null ? { project: entry.project } : {}),
+        ...(typeof entry.provider === 'string' ? { provider: entry.provider } : {}),
+      };
+    });
+  }
   for (const key of ['last_shell_result', 'last_terminal_event', 'pending_event'] as const) {
     const item = value[key];
     if (item !== undefined && item !== null) state[key] = decodeServerEvent(item);
@@ -258,6 +289,7 @@ export function decodeServerEvent(value: unknown): ServerEvent {
   const stringFields = [
     'session_id',
     'run_id',
+    'execution_id',
     'status',
     'text',
     'tool_id',
@@ -310,6 +342,24 @@ export function decodeServerEvent(value: unknown): ServerEvent {
       (value.provider_failure.action !== undefined && typeof value.provider_failure.action !== 'string'))
   ) {
     throw new Error('server event provider_failure is invalid');
+  }
+  if (value.failure !== undefined) {
+    if (
+      !isRecord(value.failure) ||
+      value.failure.schema_version !== 1 ||
+      typeof value.failure.code !== 'string' ||
+      typeof value.failure.category !== 'string' ||
+      typeof value.failure.scope !== 'string' ||
+      typeof value.failure.phase !== 'string' ||
+      typeof value.failure.effect !== 'string' ||
+      typeof value.failure.incident_id !== 'string'
+    )
+      throw new Error('server event failure is invalid');
+    if (
+      value.failure.resource !== undefined &&
+      (!isRecord(value.failure.resource) || typeof value.failure.resource.kind !== 'string')
+    )
+      throw new Error('server event failure resource is invalid');
   }
   if (
     value.providers !== undefined &&

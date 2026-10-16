@@ -30,7 +30,7 @@ function isApprovalState(value: unknown): value is ApprovalState {
     isOneOf(row.decision, APPROVAL_DECISIONS) &&
     isOneOf(row.execution, APPROVAL_EXECUTIONS) &&
     isOneOf(row.continuation, APPROVAL_CONTINUATIONS) &&
-    ['run_id', 'source_run_id', 'continuation_run_id'].every(
+    ['run_id', 'source_run_id', 'continuation_run_id', 'execution_id'].every(
       (key) => row[key] === undefined || typeof row[key] === 'string',
     )
   );
@@ -47,13 +47,13 @@ export function approvalText(state: ApprovalState): string {
   if (state.decision === 'cancelled') return 'Approval cancelled';
   if (state.execution === 'uncertain') return 'Command outcome is uncertain; automatic execution is blocked';
   if (state.continuation === 'unavailable') return 'Saved command result is unavailable; task cannot resume';
-  if (state.continuation === 'failed') return 'Command result saved; task continuation failed';
-  if (state.continuation === 'started') return 'Command result saved; task continued';
+  if (state.continuation === 'failed') return 'Task continuation failed';
+  if (state.continuation === 'started') return 'Task continued';
   if (state.continuation === 'cancelled') return 'Task continuation cancelled';
-  if (state.continuation === 'resuming') return 'Command result saved; resuming task…';
+  if (state.continuation === 'resuming') return 'Resuming task…';
   if (state.execution === 'running') return 'Allowed; command running…';
   if (state.execution === 'queued') return 'Allowed; command queued…';
-  if (state.continuation === 'queued') return 'Command result saved; waiting to continue…';
+  if (state.continuation === 'queued') return 'Waiting to continue…';
   if (state.decision === 'deny') return 'Denied; command will not run';
   if (state.execution === 'settled') return 'Command completed';
   return 'Waiting for approval';
@@ -94,6 +94,23 @@ export function createApprovalController(deps: ApprovalDeps) {
     const index = session.messages.findIndex((m) => m.type === message.type && m.id === state.id);
     if (index >= 0) session.messages[index] = message;
     else session.messages.push(message);
+    if (request && state.execution === 'running') {
+      const running = {
+        type: 'shell_result',
+        id: state.id,
+        sessionId: session.id,
+        runId: state.run_id,
+        command: request.command,
+        cwd: request.cwd,
+        approved: true,
+        shellStatus: 'running',
+        executionId: state.execution_id,
+        eventKey: `shell-running:${state.id}:${state.revision}`,
+      };
+      const existing = session.messages.findIndex((item) => item.type === 'shell_result' && item.id === state.id);
+      if (existing >= 0) session.messages[existing] = running;
+      else session.messages.push(running);
+    }
     deps.changed(session.id);
   }
 

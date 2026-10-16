@@ -33,7 +33,7 @@ class ConversationRuntime:
             if started is not None:
                 payload["elapsed_ms"] = max(0, round((time.monotonic() - started) * 1000))
         elif kind == "user_question":
-            run = ctx.current_run()
+            run = ctx.active_run_for(session_id=str(payload.get("session_id") or ""))
             if run is None or run.run_id != run_id:
                 return None
             continuation = {**self.admissions.get(run_id, {}), "project": run.project or "", "provider": run.provider_id}
@@ -41,7 +41,7 @@ class ConversationRuntime:
             if selection is not None:
                 continuation["captured_selection"] = selection.to_payload()
             record = self.questions.request(payload["id"], payload["session_id"], run_id, payload["question"], continuation)
-            if ctx.run_registry.stop_flag.is_set() and record["state"] == "pending":
+            if ctx.stop_flag_for(run_id).is_set() and record["state"] == "pending":
                 record = self.questions.cancel(record["id"], record["revision"])
             payload["question"] = record
         return payload

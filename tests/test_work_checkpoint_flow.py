@@ -427,7 +427,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             provider = self._provider()
 
             def stopped(*_args, **_kwargs):
-                state.run_registry.stop_flag.set()
+                state.run_registry.request_stop()
                 raise ProviderActionError(ProviderFailure(
                     "DeepSeek",
                     "send",

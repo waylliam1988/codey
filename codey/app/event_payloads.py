@@ -32,7 +32,10 @@ def _payload_status(common: dict[str, object], event: dict[str, Any]) -> dict[st
 
 
 def _payload_info(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
-    return {**common, "text": clip_event_text(event.get("text") or "")}
+    payload = {**common, "text": clip_event_text(event.get("text") or "")}
+    if type(event.get("seq")) is int:
+        payload["seq"] = event["seq"]
+    return payload
 
 
 def _payload_shell_request(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
@@ -106,6 +109,9 @@ def _payload_tool(common: dict[str, object], event: dict[str, Any]) -> dict[str,
         if event.get(key) is not None:
             payload[key] = _int_or_zero(event.get(key))
     _copy_if_present(payload, event, "output_sha256", limit=80)
+    failure = event.get("failure")
+    if isinstance(failure, dict):
+        payload["failure"] = bounded_failure(failure)
     return payload
 
 
@@ -138,9 +144,13 @@ def _payload_task_done(common: dict[str, object], event: dict[str, Any]) -> dict
     failure = event.get("provider_failure")
     if isinstance(failure, dict):
         payload["provider_failure"] = _bounded_provider_failure(failure)
+        payload["failure"] = _structured_provider_failure(failure, event)
     review = event.get("review")
     if isinstance(review, dict):
         payload["review"] = _bounded_review(review)
+    failure = event.get("failure")
+    if isinstance(failure, dict):
+        payload["failure"] = bounded_failure(failure)
     return payload
 
 
@@ -363,6 +373,68 @@ def _bounded_provider_failure(failure: dict[str, Any]) -> dict[str, object]:
     facts = sanitize_failure_facts(failure.get("facts"))
     if facts:
         payload["facts"] = facts
+    return payload
+
+
+def _structured_provider_failure(failure: dict[str, Any], event: dict[str, Any]) -> dict[str, object]:
+    """Expose a bounded, finite action code alongside legacy diagnostics."""
+    kind = str(failure.get("kind") or "transient")
+    code = {
+        "authentication_required": "provider.authentication_failed",
+        "challenge_required": "provider.authentication_failed",
+        "rate_limited": "provider.rate_limited",
+        "submission_uncertain": "provider.connection_failed",
+        "response_missing": "provider.connection_failed",
+    }.get(kind, "provider.connection_failed")
+    facts_value = failure.get("facts")
+    facts: dict[str, Any] = {}
+    if isinstance(facts_value, dict):
+        facts = cast(dict[str, Any], facts_value)
+    return bounded_failure({
+        "code": code,
+        "category": "provider",
+        "scope": "request",
+        "phase": failure.get("action") or "request",
+        "effect": "unknown" if kind in {"submission_uncertain", "response_missing"} else "not_started",
+        "incident_id": str(facts.get("upstream_request_id") or "provider-failure"),
+        "source_id": str(event.get("provider") or event.get("provider_id") or ""),
+        "diagnostic": failure.get("message") or "",
+    })
+
+
+def bounded_failure(failure: dict[str, Any]) -> dict[str, object]:
+    """Project a finite failure fact without exposing executable UI actions."""
+    allowed_effects = {"not_started", "applied", "unknown", "not_applicable"}
+    payload: dict[str, object] = {
+        "schema_version": SCHEMA_VERSION,
+        "code": clip_event_text(failure.get("code") or "unknown.failure", 80),
+        "category": clip_event_text(failure.get("category") or "unknown", 40),
+        "scope": clip_event_text(failure.get("scope") or "run", 20),
+        "phase": clip_event_text(failure.get("phase") or "", 40),
+        "effect": clip_event_text(failure.get("effect") or "unknown", 20),
+        "incident_id": clip_event_text(failure.get("incident_id") or "", 120),
+    }
+    if payload["effect"] not in allowed_effects:
+        payload["effect"] = "unknown"
+    for key in ("session_id", "run_id", "call_id", "execution_id", "source_id"):
+        value = clip_event_text(failure.get(key) or "", 120)
+        if value:
+            payload[key] = value
+    resource = failure.get("resource")
+    if isinstance(resource, dict):
+        clean_resource = {"kind": clip_event_text(resource.get("kind") or "", 40)}
+        for key in ("path", "id"):
+            value = clip_event_text(resource.get(key) or "", 240)
+            if value:
+                clean_resource[key] = value
+        if clean_resource["kind"]:
+            payload["resource"] = clean_resource
+    diagnostic = clip_event_text(failure.get("diagnostic") or "", 1000)
+    if diagnostic:
+        payload["diagnostic"] = diagnostic
+    retry_after = failure.get("retry_after")
+    if type(retry_after) is int and 0 <= retry_after <= 86400:
+        payload["retry_after"] = retry_after
     return payload
 
 

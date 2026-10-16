@@ -89,7 +89,7 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
                             "shellStatus": "exit",
                             "outputTruncated": True,
                         },
-                        {"type": "research_done", "text": "Research saved", "sessionId": "preview"},
+                        {"type": "research_done", "text": "Research saved", "sessionId": "preview", "runId": "research"},
                     ],
                     "researchRuns": [
                         {"runId": "research", "synthesisId": "preview-research", "notesCreated": ["preview-research"]}
@@ -122,7 +122,7 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
             assert card.locator("summary").evaluate("el => getComputedStyle(el).color") != card.locator(
                 ".command-status"
             ).evaluate("el => getComputedStyle(el).color")
-            output = card.locator(".shell-output")
+            output = card.locator(".shell-stdout")
             expect(output).to_be_visible()
             assert output.bounding_box()["height"] <= 180
             assert output.evaluate("(el)=>el.scrollHeight > el.clientHeight")

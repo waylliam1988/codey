@@ -1,6 +1,7 @@
 """Streams require terminal framing; cancelled generations never return calls."""
 import io
 import json
+import threading
 import urllib.error
 from unittest.mock import patch
 
@@ -8,6 +9,7 @@ import pytest
 
 from codey.providers import api_transport
 from codey.providers.api_provider import ApiProvider
+from codey.runtime.core import cancellation
 
 
 def test_chat_finish_reason_without_done_frame_is_unknown():
@@ -44,6 +46,15 @@ def test_connection_refusal_is_known_not_sent_without_replay(monkeypatch):
         api_transport.generate("http://fixture.test/v1", {}, {}, timeout=1, observe=lambda **k: None)
     assert getattr(error.value, "provider_failure_kind", "") == "not_submitted"
     assert len(calls) == 1
+
+
+def test_run_cancellation_event_reaches_api_provider_transport():
+    provider = ApiProvider("http://model.test/v1", "fixture")
+    event = threading.Event()
+    with cancellation.scope(event):
+        assert provider._is_cancelled() is False
+        event.set()
+        assert provider._is_cancelled() is True
 
 
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])

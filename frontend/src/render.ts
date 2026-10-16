@@ -24,6 +24,7 @@ export interface ToolDisplay {
   pending?: boolean;
   turn?: string | number;
   outputTruncated?: boolean;
+  failure?: import('./failure_presentation').FailureInfo;
 }
 /* Codey render helpers: HTML escaping, minimal markdown, copy buttons,
    tool-line DOM builders. Zero-build asset module; pure helpers only --
@@ -70,13 +71,17 @@ const renderApi = (function () {
       area.remove();
     }
   }
-  function addMessageCopyButton(div: HTMLElement, text: unknown): void {
-    const value = String(text || '');
-    if (!value) return;
+  function addMessageCopyButton(
+    div: HTMLElement,
+    source: unknown | (() => unknown),
+    scope: 'message' | 'final' = 'message',
+  ): void {
+    const readValue = () => String(typeof source === 'function' ? source() || '' : source || '');
+    if (!readValue()) return;
     const btn = document.createElement('button');
     btn.className = 'msg-copy';
     btn.type = 'button';
-    btn.setAttribute('aria-label', 'Copy message');
+    btn.setAttribute('aria-label', scope === 'final' ? 'Copy final answer' : 'Copy message');
     const icon =
       '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V7a2 2 0 0 1 2-2h8"/></svg>';
     btn.innerHTML = icon;
@@ -98,7 +103,7 @@ const renderApi = (function () {
       feedback.textContent = '';
       let ok = false;
       try {
-        ok = await copyText(value);
+        ok = await copyText(readValue());
       } catch {}
       if (keyboardFocus && btn.isConnected && document.activeElement === document.body)
         btn.focus({ preventScroll: true });
@@ -114,7 +119,7 @@ const renderApi = (function () {
       reset = setTimeout(
         () => {
           btn.classList.remove('copied', 'copy-failed');
-          btn.setAttribute('aria-label', 'Copy message');
+          btn.setAttribute('aria-label', scope === 'final' ? 'Copy final answer' : 'Copy message');
           btn.innerHTML = icon;
           feedback.textContent = '';
         },
@@ -216,7 +221,7 @@ const renderApi = (function () {
     result.textContent = m.pending
       ? m.activity || m.result || 'Working'
       : m.error
-        ? /command_not_allowed/.test(m.result || '')
+        ? m.failure?.code === 'policy.approval_required' || /command_not_allowed/.test(m.result || '')
           ? 'This command requires approval'
           : 'Tool failed'
         : m.result
@@ -334,7 +339,8 @@ const renderApi = (function () {
     count.className = 'tg-count';
     const chev = document.createElement('span');
     chev.className = 'tg-chevron';
-    chev.textContent = '▸';
+    // The shared CSS chevron keeps tool groups consistent with Working/Ran.
+    chev.setAttribute('aria-hidden', 'true');
     summary.append(dot, kindEl, count, chev);
     const body = document.createElement('div');
     body.className = 'tool-group-body';

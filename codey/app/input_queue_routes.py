@@ -12,8 +12,17 @@ from codey.task.entry_auth import EntryAuth
 
 def bind_input_queue(ctx: Any) -> None:
     def ready() -> bool:
-        first = next((item for item in ctx.input_queue.list() if item["state"] == "queued"), None)
-        return not ctx.closed and not ctx.is_busy() and ctx.current_run() is None and not ctx.run_registry.stop_flag.is_set() and not (
+        first = next(
+            (
+                item
+                for item in ctx.input_queue.list()
+                if item["state"] == "queued"
+                and ctx.active_run_for(session_id=str(item["request"].get("session_id") or "")) is None
+                and not ctx.stop_flag_for(str(item["request"].get("run_id") or "")).is_set()
+            ),
+            None,
+        )
+        return not ctx.closed and first is not None and not (
             first and ctx.user_questions.pending(first["request"]["session_id"])
         ) and not any(
             item["decision"] == "pending" or item["continuation"] in {"queued", "resuming"}
@@ -24,7 +33,8 @@ def bind_input_queue(ctx: Any) -> None:
         selection = ApiRunSelection.from_payload(body["captured_selection"]) if "captured_selection" in body else None
         auth = EntryAuth(**body["captured_auth"]) if "captured_auth" in body else None
         result = api.run_submit_response(body, partial(task_submit.submit_task, get_state=lambda: ctx, abort_if_stopped=True), ctx=ctx, captured_selection=selection, captured_auth=auth)
-        if result[0] == 409 and ctx.run_registry.stop_flag.is_set():
+        request_run_id = str(body.get("run_id") or "")
+        if result[0] == 409 and ctx.stop_flag_for(request_run_id).is_set():
             return 409, {"error": "stopped"}
         return result
 
@@ -71,6 +81,9 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
             revision = body.get("revision")
             if type(revision) is not int:
                 raise ValueError("input revision required")
+            item = ctx.input_queue.get(identity)
+            if item is None:
+                return 404, {"ok": False, "error": "input_not_found"}
             if action == "edit":
                 if not isinstance(body.get("text"), str):
                     raise ValueError("input text required")
@@ -78,11 +91,11 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
             elif action == "remove":
                 item = ctx.input_queue.remove(identity, revision)
             elif action == "resume":
-                if ctx.current_run() is not None:
+                if ctx.active_run_for(session_id=str(item["request"].get("session_id") or "")) is not None:
                     return 409, {"ok": False, "error": "task still stopping"}
                 with ctx._shell_spawn_gate:
                     item = ctx.input_queue.resume(identity, revision)
-                    ctx.run_registry.stop_flag.clear()
+                    ctx.run_registry.clear_stop(str(item["request"].get("run_id") or ""))
             else:
                 raise ValueError("invalid input action")
         return 202, {"ok": True, "item": item}

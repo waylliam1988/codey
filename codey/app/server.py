@@ -46,6 +46,7 @@ from codey.app import provider_services as provider_services
 from codey.app import task_submit as task_submit
 from codey.app.context import AppContext
 from codey.app.documents import document_response
+from codey.app.event_payloads import machine_event_payload
 from codey.app.http_plumbing import (
     WEB_DIR,
     request_origin_allowed,
@@ -284,6 +285,39 @@ def _shell_approval_route(ctx: AppContext, body: dict[str, Any]) -> tuple[int, d
     return response
 
 
+def _transcript_route(ctx: AppContext, session_id: str, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+    try:
+        before = str((query.get("before") or [""])[0]) or None
+        limit = int((query.get("limit") or ["100"])[0])
+        return 200, ctx.transcript_store.page(session_id, before=before, limit=limit)
+    except (ValueError, TypeError) as exc:
+        return 400, {"ok": False, "error": str(exc)}
+
+
+def _transcript_search_route(ctx: AppContext, session_id: str, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+    value = str((query.get("q") or [""])[0])
+    if len(value) > 200:
+        return 400, {"ok": False, "error": "query too long"}
+    return 200, {"schema_version": 1, "session_id": session_id, "hits": ctx.transcript_store.search(session_id, value)}
+
+
+def _execution_output_route(ctx: AppContext, execution_id: str, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+    try:
+        snapshot = ctx.execution_outputs.snapshot(execution_id)
+    except KeyError:
+        return 404, {"ok": False, "error": "execution_not_found"}
+    requested_session = str((query.get("session_id") or [""])[0] or "")
+    requested_run = str((query.get("run_id") or [""])[0] or "")
+    if not requested_session or not requested_run:
+        return 403, {"ok": False, "error": "execution_scope_required"}
+    if (requested_session and requested_session != snapshot["session_id"]) or (requested_run and requested_run != snapshot["run_id"]):
+        return 404, {"ok": False, "error": "execution_not_found"}
+    after = (query.get("after_revision") or [""])[0]
+    if after and after.isdigit() and int(after) >= int(snapshot["revision"]):
+        return 304, snapshot
+    return 200, snapshot
+
+
 _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, dict[str, Any]]]] = {
     "/api/inputs": inputs_response,
     "/api/questions": questions_response,
@@ -328,7 +362,7 @@ _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[s
     ),
     "/api/teach/resume": app_api.teach_resume_response,
     "/api/new_chat": app_api.new_chat_response,
-    "/api/stop": lambda ctx, _body: app_api.stop_response(ctx),
+    "/api/stop": lambda ctx, body: app_api.stop_response(ctx, body),
 }
 
 
@@ -413,7 +447,7 @@ class Handler(BaseHTTPRequestHandler):
                 with contextlib.suppress(Exception):
                     connection.settimeout(previous_timeout)
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:  # noqa: N802, C901, PLR0912
         if not self._request_origin_allowed():
             self._deny_foreign_origin()
             return
@@ -443,6 +477,40 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/operator_session":
             self._send_json(200, {"ok": True})
             return
+        if url.path.startswith("/api/sessions/") and url.path.endswith("/messages/search"):
+            parts = url.path.split("/")
+            if len(parts) == 6 and parts[3]:
+                try:
+                    status, payload = _transcript_search_route(get_state(), parts[3], parse_qs(url.query))
+                except Exception as exc:
+                    self._send_json(500, {"error": f"{type(exc).__name__}: {exc}"})
+                    return
+                self._send_json(status, payload)
+                return
+        if url.path.startswith("/api/sessions/") and url.path.endswith("/messages"):
+            parts = url.path.split("/")
+            if len(parts) == 5 and parts[3]:
+                try:
+                    status, payload = _transcript_route(get_state(), parts[3], parse_qs(url.query))
+                except Exception as exc:
+                    self._send_json(500, {"error": f"{type(exc).__name__}: {exc}"})
+                    return
+                self._send_json(status, payload)
+                return
+        if url.path.startswith("/api/executions/") and url.path.endswith("/output"):
+            parts = url.path.split("/")
+            if len(parts) == 5 and parts[3]:
+                try:
+                    status, payload = _execution_output_route(get_state(), parts[3], parse_qs(url.query))
+                except Exception as exc:
+                    self._send_json(500, {"error": f"{type(exc).__name__}: {exc}"})
+                    return
+                if status == 304:
+                    self.send_response(304)
+                    self.end_headers()
+                else:
+                    self._send_json(status, payload)
+                return
         route = _GET_ROUTES.get(url.path)
         if route is not None:
             try:
@@ -531,7 +599,8 @@ class Handler(BaseHTTPRequestHandler):
                     replay_cursor,
                     max_event_id=q.replay_cutoff,
                 ):
-                    if not self._write_sse_event(replay, event_id=event_id):
+                    public = machine_event_payload(replay) or replay
+                    if not self._write_sse_event(public, event_id=event_id):
                         return
             while True:
                 try:
@@ -543,7 +612,8 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         break
                     continue
-                if not self._write_sse_event(ev, event_id=getattr(ev, "event_id", 0)):
+                public = machine_event_payload(ev) or ev
+                if not self._write_sse_event(public, event_id=getattr(ev, "event_id", 0)):
                     break
         finally:
             state.unsubscribe(q)

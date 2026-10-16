@@ -10,6 +10,8 @@ research, or concepts at import time.
 from __future__ import annotations
 
 import subprocess
+import uuid
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -141,6 +143,9 @@ class ShellExecutionTicket:
     generation: int
     timeout: int
     output_limit: int
+    execution_id: str = ""
+    session_id: str = ""
+    run_id: str = ""
 
 
 def _approval_generation_current(ctx: TaskState, expected: int) -> bool:
@@ -212,7 +217,9 @@ def mint_shell_ticket(
         claimed_generation = raw_generation
         current_generation = approvals.current_generation()
         try:
-            stop_set = bool(run_registry.stop_flag.is_set())
+            stop_flag_for = getattr(run_registry, "stop_flag_for", None)
+            stop_flag = stop_flag_for(str(pending.get("source_run_id") or "")) if callable(stop_flag_for) else run_registry.stop_flag
+            stop_set = bool(stop_flag.is_set())
         except Exception:
             return pending, None
         if stop_set or claimed_generation != int(current_generation or 0):
@@ -232,6 +239,9 @@ def mint_shell_ticket(
             generation=claimed_generation,
             timeout=timeout,
             output_limit=output_limit,
+            execution_id="execution_" + uuid.uuid4().hex,
+            session_id=str(pending.get("session_id") or ""),
+            run_id=str(pending.get("source_run_id") or ""),
         )
         return pending, ticket
 
@@ -262,8 +272,7 @@ def claim_shell_ticket(
 
 
 def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[str, Any]:
-    """Execute an already-claimed ticket. Final Stop check and Popen happen
-    under the spawn gate; waiting happens outside the gate."""
+    """Track execution through output settlement so shutdown can drain it."""
     raw_command: object = ticket.command
     if not isinstance(raw_command, str):
         return {
@@ -282,18 +291,63 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[s
             "exit_code": None,
             "output": "",
         }
+    begin_execution = getattr(ctx, "_begin_shell_execution", None)
+    end_execution = getattr(ctx, "_end_shell_execution", None)
+    execution_registered = False
+    if callable(begin_execution):
+        if not begin_execution():
+            return _stopped_shell_result()
+        execution_registered = True
+    try:
+        return _execute_shell_ticket(ctx, ticket, command)
+    finally:
+        if execution_registered and callable(end_execution):
+            end_execution()
+
+
+def _execute_shell_ticket(
+    ctx: TaskState,
+    ticket: ShellExecutionTicket,
+    command: str,
+) -> dict[str, Any]:
+    """Execute ticket internals; caller owns the execution lifetime."""
     proc = None
     completed = None
     job = None
     capture_truncated = False
+    observer = None
+    def mark_unavailable() -> None:
+        if output_store is not None and ticket.execution_id:
+            with suppress(Exception):
+                output_store.unavailable(ticket.execution_id)
     try:
+        output_store = getattr(ctx, "execution_outputs", None)
+        if output_store is not None and ticket.execution_id:
+            from codey.storage.execution_output_store import ExecutionOutputObserver
+
+            def publish_output_snapshot(snapshot: dict[str, Any]) -> None:
+                ctx.emit({
+                    "type": "execution_output_available",
+                    "execution_id": ticket.execution_id,
+                    "session_id": snapshot.get("session_id", ""),
+                    "run_id": snapshot.get("run_id", ""),
+                    "revision": snapshot.get("revision", 0),
+                })
+
+            output_store.create(ticket.execution_id, session_id=str(getattr(ticket, "session_id", "") or "shell"), run_id=str(getattr(ticket, "run_id", "") or "shell"))
+            observer = ExecutionOutputObserver(
+                output_store,
+                ticket.execution_id,
+                on_update=publish_output_snapshot,
+            )
         # The gate is deliberately *not* ``ctx.lock``: the final check calls
         # ``ctx.approval_generation()``, which takes ``ctx.lock`` itself, so
         # gating on ``ctx.lock`` would self-deadlock.
         with ctx._shell_spawn_gate:
             if not _approval_generation_current(ctx, ticket.generation):
                 return _stopped_shell_result()
-            stop_flag = ctx.run_registry.stop_flag
+            stop_flag_for = getattr(ctx.run_registry, "stop_flag_for", None)
+            stop_flag = stop_flag_for(ticket.run_id) if callable(stop_flag_for) else ctx.run_registry.stop_flag
             if stop_flag.is_set():
                 return _stopped_shell_result()
             # Commit point: Popen while still holding the gate so a Stop that
@@ -304,18 +358,22 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[s
                     cwd=ticket.cwd,
                     shell=True,
                 )
-        stop_flag_after = ctx.run_registry.stop_flag
+        stop_flag_for = getattr(ctx.run_registry, "stop_flag_for", None)
+        stop_flag_after = stop_flag_for(ticket.run_id) if callable(stop_flag_for) else ctx.run_registry.stop_flag
         with cancellation.scope(stop_flag_after):
             from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
 
             completed = cancellation.wait_process(
                 proc, job, command, ticket.timeout,
                 capture_limit_bytes=CAPTURE_LIMIT_BYTES,
+                observer=observer,
             )
             capture_truncated = (completed.stdout_truncated or completed.stderr_truncated)
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        mark_unavailable()
         return _stopped_shell_result()
     except cancellation.ProcessOutputReadError as exc:
+        mark_unavailable()
         return {
             "ok": False,
             "status": "output_read_error",
@@ -325,6 +383,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[s
             "truncated": True,
         }
     except cancellation.PipeDrainTimeout as exc:
+        mark_unavailable()
         # wait_process() already terminated the tree and closed the Job.
         return {
             "ok": False,
@@ -336,6 +395,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[s
             "capture_truncated": True,
         }
     except subprocess.TimeoutExpired:
+        mark_unavailable()
         # wait_process() already terminated the tree and closed the Job.
         return {
             "ok": False,
@@ -345,6 +405,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[s
             "output": "",
         }
     except Exception as exc:
+        mark_unavailable()
         # Start failures (never spawned) keep spawn_error; anything that
         # fails after the spawn gate committed is a wait failure instead.
         return {
@@ -354,6 +415,10 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[s
             "exit_code": None,
             "output": "",
         }
+    finally:
+        if observer is not None:
+            with suppress(Exception):
+                observer.close()
 
     output_parts: list[str] = []
     if completed is not None and completed.stdout:
@@ -370,7 +435,12 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[s
         "exit_code": completed.returncode if completed is not None else None,
         "output": output,
         "truncated": truncated,
+        "execution_id": ticket.execution_id,
     }
+    output_store = getattr(ctx, "execution_outputs", None)
+    if output_store is not None and ticket.execution_id:
+        with suppress(Exception):
+            output_store.settled(ticket.execution_id, completed.returncode if completed is not None else None)
     if capture_truncated:
         result["capture_truncated"] = True
     return result
@@ -431,6 +501,9 @@ def execute_approved_shell(
         generation=(generation or 0),
         timeout=resolved_timeout,
         output_limit=resolved_limit,
+        execution_id="execution_" + uuid.uuid4().hex,
+        session_id=str(getattr(ctx, "session_id", "") or "shell"),
+        run_id=str(getattr(ctx, "run_id", "") or "shell"),
     )
     return execute_shell_ticket(ctx, ticket)
 

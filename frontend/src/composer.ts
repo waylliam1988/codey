@@ -2,10 +2,14 @@ import { runtime } from './runtime';
 import { InputOutbox, type QueuedInput, type QueuedRequest } from './input_outbox';
 import type { Draft, Message, Project, Session } from './types/domain';
 import type { RunDetailsAction } from './run_details';
+import { recoveryForFailure } from './failure_presentation';
 
 export interface ComposerDeps {
   $: (id: string) => HTMLElement;
   getRunningSessionId: () => string | null;
+  getRunningRunId?: () => string | null;
+  getRunningRunIdForSession?: (sessionId: string) => string | null;
+  isSessionRunning?: (id: string) => boolean;
   getActiveId: () => string;
   currentProviderId: () => string;
   activeSession: () => Session | undefined;
@@ -30,9 +34,10 @@ export interface ComposerDeps {
 }
 export interface ComposerApi {
   init(deps: ComposerDeps): void;
+  setReady(): void;
   syncSession(): void;
   captureDraft(): void;
-  isSending(): boolean;
+  isSending(sessionId?: string): boolean;
   retryTask(sessionId: string, requestId: string): unknown;
   quoteInReply(sessionId: string, text: string): boolean;
   recoveryActions(message: Message): RunDetailsAction[];
@@ -56,6 +61,7 @@ export interface ComposerApi {
   let handlersBound = false;
   let draftSession: Session | null = null;
   let sendingSessionId = '';
+  let ready = false;
   let outbox: InputOutbox;
 
   function liveDefaultProvider() {
@@ -67,6 +73,9 @@ export interface ComposerApi {
   }
   function runningSessionId() {
     return deps.getRunningSessionId();
+  }
+  function isRunningForSession(sessionId: string) {
+    return deps.isSessionRunning ? deps.isSessionRunning(sessionId) : runningSessionId() === sessionId;
   }
   function activeId() {
     return deps.getActiveId();
@@ -117,10 +126,18 @@ export interface ComposerApi {
 
   function syncSession() {
     outbox?.setSession(activeId());
-    if (!deps || draftSession === deps.activeSession()) return;
+    if (!deps) return;
+    if (draftSession === deps.activeSession()) {
+      $<HTMLTextAreaElement>('task').disabled = !ready;
+      updateSend();
+      return;
+    }
     captureDraft();
     draftSession = deps.activeSession() || null;
     if (!draftSession) return;
+    // The textarea is scoped to the active session. A run in another session
+    // must never leave the newly selected chat's input disabled.
+    $<HTMLTextAreaElement>('task').disabled = !ready;
     const draft = draftSession.draft;
     if ($<HTMLTextAreaElement>('task').value !== draft.text) $<HTMLTextAreaElement>('task').value = draft.text;
     $<HTMLTextAreaElement>('task').setSelectionRange(draft.start, draft.end, draft.direction);
@@ -154,30 +171,40 @@ export interface ComposerApi {
       action.onclick = () => runtime.Settings.open();
       notice.appendChild(action);
     }
-    const running = !!runningSessionId();
+    const ownerSessionId = runningSessionId();
+    const running = isRunningForSession(activeId());
+    const anotherSessionRunning = !!ownerSessionId && !running;
+    const sendingCurrent = sendingSessionId === activeId();
     const awaitingAnswer = !!runtime.UserQuestions?.pending(activeId());
     const task = $<HTMLTextAreaElement>('task');
     const send = $<HTMLButtonElement>('send');
     const stop = $<HTMLButtonElement>('stop');
     send.disabled =
-      task.disabled || !has || !!reason || !!sendingSessionId || !!outbox?.blocked(activeId()) || awaitingAnswer;
+      task.disabled || !has || !!reason || sendingCurrent || !!outbox?.blocked(activeId()) || awaitingAnswer;
+    // A run belongs to its session. Other chats remain usable and can place
+    // an input in the outbox while the owner run is still active.
     send.style.display = running && !has ? 'none' : '';
+    // Send and Stop share one fixed slot. A different chat's run is opened
+    // from the top status bar; it must not put a second action beside Send in
+    // the chat that is currently being composed.
     stop.style.display = running ? '' : 'none';
     $('send-hint').textContent = awaitingAnswer
       ? 'Answer above'
-      : sendingSessionId
+      : sendingCurrent
         ? 'Sending…'
         : running
           ? has
             ? 'Send next turn'
             : 'Stop'
-          : 'Enter';
-    send.setAttribute('aria-label', sendingSessionId ? 'Sending message' : running ? 'Queue message' : 'Send message');
-    const owner = deps.findSession(runningSessionId());
+          : anotherSessionRunning
+            ? 'Enter'
+            : 'Enter';
+    send.setAttribute('aria-label', sendingCurrent ? 'Sending message' : running ? 'Queue message' : 'Send message');
+    const owner = deps.findSession(ownerSessionId);
     stop.setAttribute('aria-label', owner ? 'Stop ' + owner.title : 'Stop');
     stop.title = owner ? 'Stop ' + owner.title : 'Stop';
     const providerButton = $<HTMLButtonElement>('provider-button');
-    providerButton.disabled = task.disabled || running || !!sendingSessionId;
+    providerButton.disabled = task.disabled || running || sendingCurrent;
     const effortButton = document.getElementById('effort-button');
     if (effortButton instanceof HTMLButtonElement) effortButton.disabled = providerButton.disabled;
     if (runtime.ConversationUI) runtime.ConversationUI.updateNotice();
@@ -185,7 +212,7 @@ export interface ComposerApi {
   }
 
   function toggleResearchForActive() {
-    if (runningSessionId() || sendingSessionId) return;
+    if (runningSessionId() === activeId() || sendingSessionId === activeId()) return;
     const s = deps.activeSession();
     if (!s) return;
     s.research = !s.research;
@@ -262,6 +289,52 @@ export interface ComposerApi {
   function recoveryActions(message: Message): RunDetailsAction[] {
     const runOwner = message.runOwner || '';
     const sessionId = message.sessionId || '';
+    if (message.failure) {
+      const actions = recoveryForFailure(message.failure, {
+        execution_id: message.executionId,
+        source_id: message.failure.source_id,
+        approval_id: message.approval?.id || message.id,
+        request_id: message.requestId || message.id,
+        revision: message.approval?.revision,
+        execution: message.approval?.execution,
+        continuation: message.approval?.continuation,
+      });
+      return actions.map((action) => ({
+        label:
+          action.kind === 'check_execution'
+            ? 'Check status'
+            : action.kind === 'reload_resource'
+              ? 'Reload'
+              : action.kind === 'retry_continuation'
+                ? 'Retry continuation'
+                : action.kind === 'open_connection'
+                  ? 'Connection settings'
+                  : 'Retry request',
+        onclick: () => {
+          if (action.kind === 'check_execution')
+            void fetch(`/api/executions/${encodeURIComponent(action.executionId)}/output`);
+          else if (action.kind === 'retry_continuation')
+            void fetch('/api/shell_approval/retry', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: action.approvalId }),
+            });
+          else if (action.kind === 'retry_request') void retryTask(sessionId, message.id || '');
+          else if (action.kind === 'open_connection') void deps.openLocalProviderConfig();
+          else if (action.kind === 'focus_approval') {
+            const target = document.querySelector<HTMLElement>(`[data-approval-id="${CSS.escape(action.approvalId)}"]`);
+            target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            target?.focus({ preventScroll: true });
+          } else if (action.kind === 'reload_resource') {
+            if (message.executionId) void fetch(`/api/executions/${encodeURIComponent(message.executionId)}/output`);
+            else
+              window.dispatchEvent(
+                new CustomEvent('codey:reload-resource', { detail: { resourceId: action.resourceId } }),
+              );
+          }
+        },
+      }));
+    }
     if (message.sendFailure === 'busy' && deps.findSession(runOwner)) {
       return [
         {
@@ -276,9 +349,15 @@ export interface ComposerApi {
       return [
         {
           label: 'Choose model',
-          disabled: !!runningSessionId(),
+          disabled: isRunningForSession(sessionId),
           onclick: (e: Event) => {
-            if (!sessionId || !deps.findSession(sessionId) || runningSessionId() || sendingSessionId) return;
+            if (
+              !sessionId ||
+              !deps.findSession(sessionId) ||
+              isRunningForSession(sessionId) ||
+              sendingSessionId === sessionId
+            )
+              return;
             e?.stopPropagation();
             deps.switchSession(sessionId);
             $<HTMLButtonElement>('provider-button').click();
@@ -295,17 +374,21 @@ export interface ComposerApi {
     providerId = '',
     onSendStarted: (() => void) | null = null,
     requestId = '',
+    preclaimed = false,
   ) {
     const text = String(task || '').trim();
-    if (!text || runningSessionId() || sendingSessionId) return false;
+    if (!text || isRunningForSession(sessionId) || (sendingSessionId === sessionId && !preclaimed)) return false;
     const s = deps.findSession(sessionId);
     if (!s) return false;
     const provider = providerId || s.provider || liveDefaultProvider();
     if (!runtime.Models.allows(provider, runtime.ProviderUI.runSelection(s, provider).model_selection?.model))
       return false;
-    sendingSessionId = sessionId;
-    updateSend();
-    deps.updateComposerContext();
+    const ownsSending = !preclaimed;
+    if (ownsSending) {
+      sendingSessionId = sessionId;
+      updateSend();
+      deps.updateComposerContext();
+    }
     const started = runtime.Requests.begin(sessionId, text, requestId);
     if (!started) {
       sendingSessionId = '';
@@ -337,13 +420,16 @@ export interface ComposerApi {
       await deps.acceptRunResponse(r, sessionId);
     } catch {
       await runtime.Sse.reconcileRunState();
-      const attempt = runtime.Requests.forRun(sessionId, runId)?.attempt;
-      if (attempt?.state === 'sending') runtime.Requests.fail(sessionId, runId, 'Response was not confirmed');
+      // Admission may have succeeded even when the HTTP confirmation raced
+      // with an SSE reconnect. Keep the attempt pending until its own scoped
+      // task_start/task_done arrives instead of showing a transient failure.
       return false;
     } finally {
-      sendingSessionId = '';
-      updateSend();
-      deps.updateComposerContext();
+      if (ownsSending) {
+        sendingSessionId = '';
+        updateSend();
+        deps.updateComposerContext();
+      }
     }
     return true;
   }
@@ -353,14 +439,25 @@ export interface ComposerApi {
     const task = $<HTMLTextAreaElement>('task').value.trim();
     const provider = currentProviderId();
     if (!task) return;
-    captureDraft();
-    const revision = deps.findSession(sessionId)?.draft.revision;
-    if (revision === undefined) return;
-    if (runningSessionId()) {
-      if (outbox.blocked(sessionId) || sendingSessionId) return;
-      sendingSessionId = sessionId;
-      updateSend();
-      try {
+    // Claim this session before the state reconciliation below. Without the
+    // early claim, the composer appears idle while the first /api/state call
+    // is in flight and a second click can start a duplicate request.
+    if (sendingSessionId === sessionId) return;
+    sendingSessionId = sessionId;
+    updateSend();
+    deps.updateComposerContext();
+    // SSE can be reconnecting while the server still owns another run. Read
+    // the authoritative run snapshot before choosing direct admission versus
+    // the durable input queue; otherwise a stale local idle flag turns into a
+    // misleading "Another chat is running" error from /api/run.
+    try {
+      if (!runningSessionId()) await runtime.Sse.reconcileRunState();
+      captureDraft();
+      const revision = deps.findSession(sessionId)?.draft.revision;
+      if (revision === undefined) return;
+      if (isRunningForSession(sessionId)) {
+        if (outbox.blocked(sessionId)) return;
+        updateSend();
         if (!(await runtime.UiState.ensureSaved())) return;
         const request: QueuedRequest = {
           session_id: sessionId,
@@ -372,13 +469,21 @@ export interface ComposerApi {
           ...runtime.ProviderUI.runSelection(deps.findSession(sessionId), provider),
         };
         await outbox.enqueue(request, revision);
-      } finally {
-        sendingSessionId = '';
-        updateSend();
+        return;
       }
-      return;
+      await sendTaskFromSession(
+        sessionId,
+        task,
+        provider,
+        () => clearDraftIfUnchanged(sessionId, task, revision),
+        '',
+        true,
+      );
+    } finally {
+      sendingSessionId = '';
+      updateSend();
+      deps.updateComposerContext();
     }
-    await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task, revision));
   }
 
   function retryTask(sessionId: string, requestId: string) {
@@ -432,7 +537,7 @@ export interface ComposerApi {
       runtime.UserQuestions.focus(sessionId);
       return;
     }
-    if (runningSessionId() || sendingSessionId) return;
+    if (isRunningForSession(sessionId) || sendingSessionId === sessionId) return;
     const s = deps.findSession(sessionId);
     if (!s) return;
     if (
@@ -513,7 +618,7 @@ export interface ComposerApi {
     });
     $('composer-context').onclick = (e: MouseEvent) => {
       const target = e.target instanceof Element ? e.target.closest('.ctx-token') : null;
-      if (!target || runningSessionId()) return;
+      if (!target || runningSessionId() === activeId()) return;
       if (target.id === 'ctx-folder') {
         const s = deps.activeSession();
         if (!s || deps.sessionProject(s) || deps.projectPickerBusy()) return;
@@ -523,21 +628,32 @@ export interface ComposerApi {
       }
     };
     $('composer-context').addEventListener('keydown', (e: KeyboardEvent) => {
-      if ((e.key !== 'Enter' && e.key !== ' ') || runningSessionId()) return;
+      if ((e.key !== 'Enter' && e.key !== ' ') || runningSessionId() === activeId()) return;
       const target = e.target instanceof Element ? e.target.closest('.ctx-token') : null;
       if (!(target instanceof HTMLElement)) return;
       e.preventDefault();
       target.click();
     });
     $('send').onclick = sendActiveDraft;
-    $('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
+    $('stop').onclick = () =>
+      fetch('/api/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          run_id: deps.getRunningRunIdForSession?.(activeId()) || deps.getRunningRunId?.() || '',
+        }),
+      });
   }
 
   runtime.Composer = {
     init,
+    setReady: () => {
+      ready = true;
+      syncSession();
+    },
     syncSession,
     captureDraft,
-    isSending: () => !!sendingSessionId,
+    isSending: (sessionId?: string) => !!sendingSessionId && (!sessionId || sendingSessionId === sessionId),
     retryTask,
     quoteInReply,
     recoveryActions,

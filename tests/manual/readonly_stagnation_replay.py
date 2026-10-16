@@ -118,7 +118,9 @@ def replay(
         if mutate_after_check and number == 2:
             (project / "app.py").write_text(APP + "# changed after verification\n", encoding="utf-8")
         if cancel_after_initial and number == 5:
-            state.run_registry.stop_flag.set()
+            # Stop the active run lane; the global admission flag is only for
+            # a stop received before a run has been reserved.
+            state.run_registry.request_stop()
 
     provider = RepeatingReadProvider(
         submit_on_recovery=submit_on_recovery,

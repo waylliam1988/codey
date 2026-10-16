@@ -6,6 +6,18 @@
 
 ## 0. 顺序、共同约束与交付方法
 
+### 2026-10-16 实施状态（实测）
+
+本规格已完成 A-F 的首轮工程实现和本地 Codey HTTP/Playwright 验收。A 的 provider 公开投影同时保留旧 `provider_failure` 诊断，并增加有限 `failure` 映射；未知 provider 类型仍按连接失败显示，未经生命周期确认的 effect 不会生成重跑动作。D 已覆盖审批 shell 和普通 `run`，但当前观察接口仍采用客户端轮询，未承诺 SSE 专用输出通知；stdout/stderr 快照分开保存，前端为显示方便可在同一命令卡中合并复制。E 使用本地锁定 KaTeX/Mermaid，复杂图形超出预算或渲染失败保留源码。F 使用独立展示 archive，不改变模型协议历史；旧版本已经被裁掉且未进入 archive 的消息不能恢复，首屏仍为有界 DOM 分批挂载。
+
+运行架构补充：每个 session 是独立的 admission、事件和取消主键；同一 session 内保持串行，不同 session 可并行建立模型流。Stop 只接受目标 `run_id`，项目写任务仍受独立 writer lease 保护。真实三会话浏览器回归已覆盖 Chat Completions 和 Responses 两种协议；停止目标会话时，provider 的任务取消事件和阻塞 HTTP 读取都会被传递并及时中止。
+
+最新定向红测/绿测记录：`tests/test_execution_output.py`、`tests/test_transcript_store.py`、`frontend/src/rich_blocks.test.ts`、`frontend/src/command_card.test.ts`、`frontend/src/history_window.test.ts`、`frontend/src/user_questions.test.ts` 均通过；`tests/test_ui_manual_retry.py` 现为 23 项通过；2026-10-17 全量 pytest 为 **8784 passed / 8 skipped / 1520 subtests passed**，前端正式检查为 34 个测试文件、132 项通过。正式构建、`publish_frontend.py --check` 和真实 UI workflow/history browser 组通过。未覆盖外部模型 API、跨端口草稿迁移、所有 Mermaid 图种、完整虚拟列表和真实 Selfie 业务接口调用。
+
+2026-10-16 后续核对发现：普通 `run` 在没有 `managed_outputs`、仅配置 `execution_outputs` 时原先没有进入观察链路；已先以独立红测复现，再修复为调用 `run_command_raw` 并传递执行身份。实时输出仍采用客户端轮询，尚未承诺专用输出 SSE；observer 合并节流、命令卡 stdout/stderr 独立呈现及重建后的连续性仍是未完成边界。
+
+最新复核补充：不同 session 的并发 admission、按 run Stop 和浏览器 worker lane 已通过定向后端及真实三会话 HTTP/Playwright 回归；同一 session 仍拒绝第二个 active run。正式前端 34 个测试文件/132 项、typecheck、格式、构建及发布检查通过。初始化期间 composer 现在保持 disabled，待 UI state、问题和输入队列恢复完成后才解禁，避免草稿恢复与发送竞态。手工重试整组 23 项通过；首次发送准备态、接受响应后的权威确认和晚到事件均已补上红测/绿测。2026-10-17 全量 pytest 为 8784 passed / 8 skipped / 1520 subtests passed。
+
 先核对上一轮四项缺陷的现状，不重复实现已经存在的修复。2026-10-16 本次源码核对结果（不是本轮测试通过声明）：
 
 | 项目 | 当前源码事实 | 后续验收 |
@@ -417,6 +429,10 @@ HTTP/SQLite：1200+ 条跨重启完整；同 event 重投不重复；消息修�
 每批顺序：独立失败测试 → 确认失败不是测试接线错误 → 最小实现 → 相同测试绿 → 相邻模块回归 → 正式构建/发布一致性 → 实际浏览器链路。无需为每个 CSS 属性写镜像测试；重点测试用户动作、身份、数据保真、时序和恢复。
 
 最后统一跑前端、相关后端与正式浏览器组，并在最后一次修改后再跑扩大 pytest，不能沿用此前“8 项失败已定向修复”的扩大记录作为新版本全绿证明。保持版本 1；不新增 Codex 安装路径依赖，不保留无人使用的旧渲染器或双轨持久化。
+
+### 2026-10-17 实际完成状态
+
+A、B、C、E、F 的当前契约已接入正式前后端并通过单元、HTTP 和浏览器验证；D 已完成共同 execution identity、增量有界快照、stdout/stderr 观察和同卡 Running/Ran 原位更新。D 仍明确采用浏览器按需轮询快照，未宣称每个 chunk 的 SSE 推送或所有复杂图种支持。结构化失败的公开投影只在 SSE 边界执行，内部事件仍保留完整字段。最后一次全量 pytest 为 `8784 passed, 8 skipped, 1520 subtests passed`；未覆盖的外部模型差异和旧版本从未归档的数据仍不作承诺。
 
 ## H. 前后对比稿的解释范围
 

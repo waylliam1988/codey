@@ -33,6 +33,7 @@ from codey.operations.project_completion_context import (
     refresh_checkpoint_view as _refresh_checkpoint_view,
 )
 from codey.operations.task_context import safe_verification_candidates
+from codey.operations.task_state import stop_flag_for
 from codey.providers.diagnostics import ProviderActionError
 from codey.reviews.coordinator import change_state
 from codey.runtime.core import cancellation
@@ -208,7 +209,7 @@ def _maybe_run_completion_repair(ctx: ProjectRun) -> None:
     if not (
         ctx.proof is not None
         and not ctx.proof.satisfied
-        and not ctx.state.run_registry.stop_flag.is_set()
+        and not stop_flag_for(ctx.state, getattr(ctx.frame, "run_id", "")).is_set()
         and remaining_turns > 0
         and repair_candidate(
             ctx.proof.status,

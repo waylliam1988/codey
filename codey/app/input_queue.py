@@ -145,11 +145,11 @@ class ConversationInputQueue:
     def resume(self, identity: str, revision: int) -> dict[str, Any]:
         return self._change(identity, revision, "queued")
 
-    def pause(self) -> None:
+    def pause(self, session_id: str = "") -> None:
         snapshots = []
         with self.lock:
             for item in self.items.values():
-                if item["state"] == "queued":
+                if item["state"] == "queued" and (not session_id or item["request"].get("session_id") == session_id):
                     item.update(state="paused", revision=item["revision"] + 1)
                     snapshots.append(copy.deepcopy(item))
             if snapshots:

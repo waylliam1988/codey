@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import shutil
 import socket
 import subprocess
@@ -1672,10 +1673,11 @@ class ResearchServerHelperTests(unittest.TestCase):
 class WebAssetTests(unittest.TestCase):
     @staticmethod
     def _bundle_path() -> str:
-        bundles = sorted((server.WEB_DIR / "assets").glob("*.js"))
-        if not bundles:
-            raise AssertionError("published frontend bundle is missing")
-        return "/assets/" + bundles[0].name
+        index = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        match = re.search(r'<script[^>]+src="([^\"]+\.js)"', index)
+        if not match:
+            raise AssertionError("published frontend entry bundle is missing")
+        return match.group(1)
 
     def test_research_graph_asset_is_whitelisted(self) -> None:
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
@@ -3173,12 +3175,19 @@ class RunSnapshotTests(unittest.TestCase):
             mock.patch.object(task_submit, "submit_browser_task") as submit,
         ):
             run_id = server._submit_task("session-1", None, "hello", 8, False, "deepseek")
-            rejected = server._submit_task("session-2", None, "second", 8, False, "qwen")
+            parallel_run_id = server._submit_task("session-2", None, "second", 8, False, "qwen")
+            same_session_rejected = server._submit_task(
+                "session-1", None, "third", 8, False, "qwen"
+            )
 
         self.assertIsNotNone(run_id)
-        self.assertIsNone(rejected)
+        self.assertIsNotNone(parallel_run_id)
+        self.assertIsNone(same_session_rejected)
         self.assertTrue(state.run_registry.is_busy())
-        self.assertEqual(submit.call_args.args[-1], run_id)
+        submitted_run_ids = [call.args[-1] for call in submit.call_args_list]
+        self.assertEqual(submitted_run_ids, [run_id, parallel_run_id])
+        self.assertEqual(state.active_run_for(session_id="session-1").run_id, run_id)
+        self.assertEqual(state.active_run_for(session_id="session-2").run_id, parallel_run_id)
 
     def test_shell_continuation_does_not_submit_after_user_stop(self) -> None:
         # A Stop pressed while the approved shell command ran must win: the
@@ -3274,7 +3283,7 @@ class RunSnapshotTests(unittest.TestCase):
         submit.assert_called_once()
         self.assertEqual(submit.call_args.args[-1], run_id)
 
-    def test_shell_continuation_does_not_steal_unrelated_active_run(self) -> None:
+    def test_shell_continuation_uses_its_session_lane_when_other_session_runs(self) -> None:
         state = server.AppContext()
         active = state.reserve_run(
             session_id="session-2",
@@ -3301,8 +3310,11 @@ class RunSnapshotTests(unittest.TestCase):
                 timeout=1.0,
             )
 
-        self.assertIsNone(run_id)
-        submit.assert_not_called()
+        self.assertIsNotNone(run_id)
+        self.assertNotEqual(run_id, active.run_id)
+        submit.assert_called_once()
+        self.assertEqual(state.active_run_for(session_id="session-2").run_id, active.run_id)
+        self.assertEqual(state.active_run_for(session_id="session-1").run_id, run_id)
 
     def test_reserve_run_abort_if_stopped_is_atomic_with_the_flag(self) -> None:
         # The authoritative guard must live inside reserve_run's lock: a Stop

@@ -22,6 +22,7 @@ from codey.operations.task_context import (
     safe_project_map,
     safe_verification_candidates,
 )
+from codey.operations.task_state import stop_flag_for
 from codey.reviews.coordinator import ReviewCoordinator, change_state
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.reviews.persistence import append_review_result_ledger
@@ -221,7 +222,7 @@ def run_review_phase(ctx: ProjectRun, *, allow_repair: bool = True) -> None:
             ctx.work.evidence.has_successful_checks
             or (not ctx.work.evidence.observed_tool_events and ctx.result.checks_passed)
         ),
-        stop_requested=ctx.task_state.run_registry.stop_flag.is_set,
+        stop_requested=stop_flag_for(ctx.task_state, ctx.frame.run_id).is_set,
         refresh_project_map=partial(_refresh_review_project_map, ctx),
         build_verification_map=partial(_build_review_verification_map, ctx),
         run_review=partial(_run_review_with_trace, ctx),

@@ -2,21 +2,23 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
-## Current working tree (2026-10-16)
+## Current verification (2026-10-17)
 
 | Check | Result |
 | --- | --- |
-| Final complete pytest | **8753 passed, 8 skipped, 1520 subtests; 1258.88s** |
+| Final complete pytest | **8784 passed, 8 skipped, 1520 subtests; 1531.36s** |
 | Final required machine contracts | **1129 passed, 14 subtests; no skips; 337.24s** |
 | Production statement coverage | **88.53%**; CI minimum **85%** |
 | Production branch coverage | **78.24%**; CI minimum **75%** |
 | Coverage scope | All **429** production Python files; Python subprocesses included |
-| Full-tree mypy / Pyrefly / ty | **429 source files; all three checkers passed for Python 3.12 target** |
+| Full-tree mypy / Pyrefly / ty | **431 source files; all three checkers passed for Python 3.12 target** |
 | Ruff / diff check | passed |
-| TypeScript / Biome / Vitest | **109 tests passed; build and published metadata check passed** |
+| TypeScript / Biome / Vitest | **34 files / 132 tests passed; typecheck, build and published metadata check passed** |
 | Real HTTP protocol continuation | **22 passed**, using deterministic local peers for both native protocols |
 | Real HTTP Stop stress | **100 passed**: 50 before headers, 50 during silent error bodies |
 | Transport regression group | **64 passed**; final implementation also passed under coverage |
+| Conversation A-F live browser integration | **5 new tests plus 16 adjacent live/browser tests passed** against the packaged UI and isolated real Codey HTTP service |
+| Post-static-check regression group | **230 passed** after Ruff/mypy/Pyrefly/ty cleanup |
 | Installed wheel UI | Actual HTTP and Chromium; all 4 SVG icons loaded, Reload retained scroll position, no page errors |
 | JavaScript syntax / published assets | passed; actual wheel and source archive contents verified |
 
@@ -39,9 +41,31 @@ stopping after the twentieth image. The four frontend regressions were first
 red, then green; the packaged UI was verified through the real Codey HTTP server
 with Playwright.
 Real HTTP/browser checks cover approval restart, Allow/Deny, continuation retry,
-workspace document preview and sidebar actions. This run specifically passed the
-packaged UI and actual subprocess approval recovery checks, plus the input
-recovery and Research identity browser checks.
+workspace document preview and sidebar actions. The final A-F integration also
+covered structured provider failures and fixed recovery actions, canonical final
+answer and message copying, question draft refresh recovery, a real approved shell
+showing flushed output before process exit, local formula/Mermaid rendering, and
+archive pagination/search. Three sessions were run concurrently with session-scoped
+Stop while each session remained serial internally. The browser used the packaged
+`codey/web` assets, an isolated state directory, and deterministic local model
+peers; no external model API was called and `E:\Selfie - 副本` business files were
+not modified.
+
+The live shell observation contract is intentionally bounded: execution identity,
+incremental UTF-8 capture, bounded stdout/stderr snapshots, and same-card
+`Running` to `Ran` updates are verified. The browser currently polls snapshots on
+demand; there is no dedicated `execution_output_available` SSE stream. Cross-origin
+or cross-profile draft migration, all Mermaid graph types, a complete virtual list,
+and recovery of history that was discarded before archive introduction are not
+claimed.
+
+The final static-check pass was also red before cleanup: Ruff reported 18 findings
+(imports, dead locals and a redundant exception form), mypy reported 2 type errors,
+and Pyrefly reported 2 inference errors. The smallest source and test fixes made
+Ruff, mypy, Pyrefly and ty pass; the affected backend, approval, HTTP and live
+browser regression group then passed **230 tests**. The initial ty invocation hit a
+Windows ACL error while reading `codey/web`; after restoring the current user's
+read access, the same `ty check codey` command passed.
 
 Coverage reports were generated from the final complete-suite capture and its
 parallel subprocess data. The full-production coverage gate and JSON/XML/HTML

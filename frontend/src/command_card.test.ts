@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { commandCard } from './command_card';
+import './render';
 
 it('uses a text disclosure with only the shared trailing chevron', () => {
   const card = commandCard(
@@ -10,6 +11,14 @@ it('uses a text disclosure with only the shared trailing chevron', () => {
   expect(summary.querySelector('.command-terminal, svg, img')).toBeNull();
   expect(summary.firstElementChild?.textContent).toBe('Ran');
   expect(summary.lastElementChild?.className).toBe('command-chevron');
+});
+
+it('uses the shared masked chevron for grouped Read and Search rows', () => {
+  const read = window.Render.createToolGroup('read');
+  const search = window.Render.createToolGroup('search');
+  expect(read?.querySelector('.tg-chevron')?.textContent).toBe('');
+  expect(search?.querySelector('.tg-chevron')?.textContent).toBe('');
+  expect(read?.querySelector('.tg-chevron')?.getAttribute('aria-hidden')).toBe('true');
 });
 
 it('never labels a denial, timeout, unknown status or nonzero exit as successful', () => {
@@ -54,5 +63,74 @@ it('keeps command/output independently copyable and labels retained output hones
   expect(card.querySelector('.command-notice')?.textContent).toBe('Output truncated');
   expect(buttons[0].textContent).toBe('');
   expect(buttons[0].querySelector('svg')).not.toBeNull();
+  card.remove();
+});
+
+it('scopes live output polling to the owning session and run', async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({ revision: 1, execution_state: 'settled', stdout: { text: 'ok' }, stderr: { text: '' } }),
+        { status: 200 },
+      ),
+    );
+  vi.stubGlobal('fetch', fetcher);
+  const card = commandCard(
+    {
+      type: 'shell_result',
+      command: 'x',
+      approved: true,
+      shellStatus: 'running',
+      executionId: 'e1',
+      sessionId: 's1',
+      runId: 'run_1',
+    },
+    vi.fn(),
+  );
+  document.body.append(card);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(String(fetcher.mock.calls[0]?.[0])).toContain('session_id=s1');
+  expect(String(fetcher.mock.calls[0]?.[0])).toContain('run_id=run_1');
+  card.remove();
+  vi.unstubAllGlobals();
+});
+
+it('shows a running command card and observes bounded output before settlement', async () => {
+  const responses = [
+    new Response(
+      JSON.stringify({ revision: 1, execution_state: 'running', stdout: { text: 'first line' }, stderr: { text: '' } }),
+      { status: 200 },
+    ),
+    new Response(
+      JSON.stringify({
+        revision: 2,
+        execution_state: 'settled',
+        stdout: { text: 'first line\\nlast line' },
+        stderr: { text: 'warn' },
+      }),
+      { status: 200 },
+    ),
+  ];
+  const fetcher = vi.fn().mockImplementation(async () => responses.shift()!);
+  vi.stubGlobal('fetch', fetcher);
+  const card = commandCard(
+    {
+      type: 'shell_result',
+      command: 'python live.py',
+      approved: true,
+      shellStatus: 'running',
+      executionId: 'execution-1',
+    },
+    vi.fn(),
+  );
+  document.body.append(card);
+  expect(card.dataset.status).toBe('running');
+  expect(card.querySelector('summary')?.textContent).toContain('Running');
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  expect(fetcher).toHaveBeenCalled();
+  expect(card.querySelector('.shell-output')?.textContent).toContain('last line');
+  expect(card.querySelector('.shell-output')?.textContent).toContain('[stderr]');
+  vi.unstubAllGlobals();
   card.remove();
 });

@@ -11,7 +11,7 @@ it('replaces a bounded display prefix with the complete final answer', () => {
 });
 
 it('deduplicates snapshots and settles the same message at the terminal answer', () => {
-  const session = { messages: [] } as unknown as Session;
+  const session = { messages: [{ type: 'user', id: 'user-1', attempts: [{ runId: 'r' }] }] } as unknown as Session;
   const event = { stream_id: 's', run_id: 'r', sequence: 1, state: 'partial', text: '第一段' };
   const first = streamMessage(session, event)!;
   session.messages.push(first);
@@ -22,6 +22,9 @@ it('deduplicates snapshots and settles the same message at the terminal answer',
   expect(final.streamId).toBe('s');
   expect(final.finalAnswer).toBe(true);
   expect(final.eventKey).toBe('terminal:r:answer');
+  expect(final.contentRole).toBe('final');
+  expect(final.turnId).toBe('turn:user-1');
+  expect(final.answerId).toBe('terminal:r:answer');
   session.messages[0] = final;
   expect(streamMessage(session, { ...event, sequence: 3, text: 'late' })).toBeNull();
 });

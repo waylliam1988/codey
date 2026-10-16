@@ -69,10 +69,7 @@ import type { ResearchPayload, ResearchRestoreResult, ResearchRun, Session, UiDe
   }
 
   function researchRunForMessage(sessionId: string, runId: string): ResearchRun | null {
-    if (runId) return researchRunFor(sessionId, runId);
-    const s = sessions().find((x) => x.id === sessionId);
-    const runs = s && Array.isArray(s.researchRuns) ? s.researchRuns : [];
-    return runs.length === 1 ? runs[0] : null;
+    return runId ? researchRunFor(sessionId, runId) : null;
   }
 
   async function restoreResearchRun(ownerSessionId = activeId()): Promise<ResearchRestoreResult | null> {

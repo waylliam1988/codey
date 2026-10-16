@@ -214,6 +214,14 @@ class ProviderSelectorUiTests(unittest.TestCase):
         for forbidden in ("box-shadow", "background:", "border-radius", "#", "rgba(", "var(--err-text)"):
             self.assertNotIn(forbidden, block)
 
+    def test_disclosure_chevrons_share_the_same_brightness_tokens(self) -> None:
+        process = APP_CSS[APP_CSS.index('.process-summary::after'):APP_CSS.index('.process-summary:hover {')]
+        groups = APP_CSS[APP_CSS.index('.tool-group-summary .tg-chevron'):APP_CSS.index('.tool-group:not(.collapsed) .tg-chevron')]
+        self.assertIn('background: var(--text-dim)', process)
+        self.assertIn('background: var(--text-dim)', groups)
+        self.assertIn("mask: url(\"/assets/chevron-down.svg\")", process)
+        self.assertIn("mask: url('/assets/chevron-down.svg')", groups)
+
     def test_local_context_group_titles_follow_group_label_style(self) -> None:
         start = APP_CSS.index(".local-context-group-title")
         end = APP_CSS.index(".local-context-row", start)
@@ -421,7 +429,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
         reply_end = HTML.index("if (data.type === 'review')", reply_start)
         reply_block = HTML[reply_start:reply_end]
         self.assertIn("const answerKey = runId ? `terminal:${runId}:answer` : '';", reply_block)
-        self.assertIn("type: 'asst', text: data.text, runId, eventKey: answerKey", reply_block)
+        self.assertIn("type: 'asst'", reply_block)
+        self.assertIn("text: data.text", reply_block)
+        self.assertIn("runId", reply_block)
+        self.assertIn("eventKey: answerKey", reply_block)
+        self.assertIn("terminalAnswerMessage", reply_block)
+        self.assertIn("final || { type: 'asst'", reply_block)
 
     def test_stopped_terminal_event_renders_status_row(self) -> None:
         done_start = HTML.index("if (data.type === 'task_done')")

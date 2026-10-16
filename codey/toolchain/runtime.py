@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import json
 import os
 import re
@@ -242,6 +243,7 @@ class RunCommandRawResult:
     stdout_bytes: int
     stderr_bytes: int
     capture_truncated: bool
+    execution_id: str = ""
 
 
 def _utc_now_iso() -> str:
@@ -1243,6 +1245,9 @@ def run_command_raw(
     permission_profile: str,
     phase: str = "tool_runtime",
     capture_limit_bytes: int = CAPTURE_LIMIT_BYTES,
+    execution_store: Any = None,
+    session_id: str = "",
+    run_id: str = "",
 ) -> RunCommandRawResult | ToolOutcome:
     command = command.strip()
     decision = evaluate_action(ActionSubject(
@@ -1270,6 +1275,23 @@ def run_command_raw(
     timeout = RUN_SUITE_TIMEOUT_SECONDS if _is_suite_run_command(argv) else RUN_TIMEOUT_SECONDS
     started_at = _utc_now_iso()
     started_monotonic = time.monotonic()
+    execution_id = ""
+    observer = None
+    if execution_store is not None:
+        import uuid
+
+        from codey.storage.execution_output_store import ExecutionOutputObserver
+        execution_id = "execution_" + uuid.uuid4().hex
+        execution_store.create(execution_id, session_id=session_id or "run", run_id=run_id or "run", max_bytes=capture_limit_bytes)
+        observer = ExecutionOutputObserver(execution_store, execution_id)
+    def mark_unavailable() -> None:
+        if execution_store is not None and execution_id:
+            with contextlib.suppress(Exception):
+                execution_store.unavailable(execution_id)
+    def mark_settled(code: int | None) -> None:
+        if execution_store is not None and execution_id:
+            with contextlib.suppress(Exception):
+                execution_store.settled(execution_id, code)
     try:
         proc = cancellation.run_process(
             argv,
@@ -1278,10 +1300,13 @@ def run_command_raw(
             timeout=timeout,
             shell=False,
             capture_limit_bytes=capture_limit_bytes,
+            observer=observer,
         )
     except FileNotFoundError:
-        return ToolOutcome.error(f"command not found: {argv[0]}")
+        mark_unavailable()
+        return ToolOutcome.error(f"command not found: {argv[0]}", audit={"execution_id": execution_id} if execution_id else {})
     except cancellation.ProcessOutputReadError as exc:
+        mark_unavailable()
         finished_at = _utc_now_iso()
         duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
         return ToolOutcome.error(
@@ -1289,12 +1314,14 @@ def run_command_raw(
             "Re-run a narrower command.",
             error_code="output_read_error",
             audit={
+                "execution_id": execution_id,
                 "command_started_at": started_at,
                 "command_finished_at": finished_at,
                 "command_duration_ms": duration_ms,
             },
         )
     except cancellation.PipeDrainTimeout as exc:
+        mark_unavailable()
         finished_at = _utc_now_iso()
         duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
         return ToolOutcome.error(
@@ -1302,12 +1329,14 @@ def run_command_raw(
             f"not a success: {command}. Re-run a narrower command.",
             error_code="output_drain_timeout",
             audit={
+                "execution_id": execution_id,
                 "command_started_at": started_at,
                 "command_finished_at": finished_at,
                 "command_duration_ms": duration_ms,
             },
         )
     except subprocess.TimeoutExpired:
+        mark_unavailable()
         finished_at = _utc_now_iso()
         duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
         message = (
@@ -1321,6 +1350,7 @@ def run_command_raw(
             message,
             error_code="timeout",
             audit={
+                "execution_id": execution_id,
                 "command_started_at": started_at,
                 "command_finished_at": finished_at,
                 "command_duration_ms": duration_ms,
@@ -1334,7 +1364,7 @@ def run_command_raw(
     if proc.stderr:
         output_parts.append("[stderr]\n" + proc.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
-    return RunCommandRawResult(
+    result = RunCommandRawResult(
         command=command,
         output=output,
         ok=proc.returncode == 0,
@@ -1345,7 +1375,10 @@ def run_command_raw(
         stdout_bytes=proc.stdout_bytes,
         stderr_bytes=proc.stderr_bytes,
         capture_truncated=(proc.stdout_truncated or proc.stderr_truncated),
+        execution_id=execution_id,
     )
+    mark_settled(result.exit_code)
+    return result
 
 
 def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutcome:
@@ -1360,6 +1393,8 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
         )
     display = f"exit {raw.exit_code}: {raw.command}\n{output}"
     audit: dict[str, object] = {}
+    if raw.execution_id:
+        audit["execution_id"] = raw.execution_id
     if raw.started_at:
         audit["command_started_at"] = raw.started_at
     if raw.finished_at:

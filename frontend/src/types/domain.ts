@@ -31,6 +31,7 @@ export interface ApprovalState {
   run_id?: string;
   source_run_id?: string;
   continuation_run_id?: string;
+  execution_id?: string;
   decision: ApprovalDecision;
   execution: ApprovalExecution;
   continuation: ApprovalContinuation;
@@ -76,6 +77,27 @@ export interface Message extends importToolDisplay {
   streamSequence?: number;
   streamState?: 'partial' | 'complete' | 'interrupted';
   finalAnswer?: boolean;
+  turnId?: string;
+  contentRole?: 'commentary' | 'final';
+  answerId?: string;
+  answerPartIndex?: number;
+  failure?: {
+    schema_version: 1;
+    code: string;
+    category: string;
+    scope: 'tool' | 'run' | 'request' | 'render';
+    phase: string;
+    effect: 'not_started' | 'applied' | 'unknown' | 'not_applicable';
+    session_id?: string;
+    run_id?: string;
+    call_id?: string;
+    execution_id?: string;
+    source_id?: string;
+    incident_id: string;
+    resource?: { kind: string; path?: string; id?: string };
+    diagnostic?: string;
+    retry_after?: number;
+  };
   type: string;
   approval?: ApprovalState;
   approvalSubmission?: 'sending' | 'checking' | 'unconfirmed';
@@ -83,6 +105,7 @@ export interface Message extends importToolDisplay {
   text?: string;
   sessionId?: string;
   runId?: string;
+  executionId?: string;
   eventKey?: string;
   toolKey?: string;
   kind?: string;
@@ -294,4 +317,11 @@ export interface RunState {
   last_terminal_event?: import('../domain/protocol').ServerEvent;
   pending_event?: import('../domain/protocol').ServerEvent;
   research_restore_runs?: string[];
+  active_runs?: Array<{
+    run_id: string;
+    session_id: string;
+    run_status?: string;
+    project?: string | null;
+    provider?: string;
+  }>;
 }

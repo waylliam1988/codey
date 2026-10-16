@@ -2,6 +2,7 @@ import { runtime } from './runtime';
 import { nestedOwnsScroll } from './scroll_owner';
 import type { Message, Project, Session } from './types/domain';
 import type { ProcessSnapshot } from './process';
+import { HistoryRepository } from './history_repository';
 export interface ConversationUiApi {
   init(deps: ConversationUiDeps): void;
   renderChat(): void;
@@ -87,6 +88,8 @@ export interface ConversationUiDeps {
   let shownId = '';
   const views = new Map<string, ViewState>();
   const historyStarts = new Map<string, number>();
+  const historyRepositories = new Map<string, HistoryRepository>();
+  const archiveHydrated = new Set<string>();
   const HISTORY_BATCH = 100;
   let menuTrigger: HTMLElement | null = null;
   let selectedCopy: SelectionSnapshot | null = null,
@@ -336,6 +339,7 @@ export interface ConversationUiDeps {
     if (!deps) return;
     const s = deps.activeSession();
     if (!s) return;
+    if (!archiveHydrated.has(s.id) && s.messages.length >= 500) void hydrateArchivedHistory(s);
     runtime.Composer.syncSession();
     const p = deps.activeProject();
     renderTitle(s, p);
@@ -385,6 +389,55 @@ export interface ConversationUiDeps {
     updateLatest();
     updateNotice();
   }
+
+  async function hydrateArchivedHistory(session: Session): Promise<void> {
+    const repository = historyRepositories.get(session.id) || new HistoryRepository();
+    historyRepositories.set(session.id, repository);
+    try {
+      const page = await repository.loadLatest(session.id);
+      if (deps.activeSession() !== session) return;
+      const archived = page.items
+        .map((value) => value as unknown as Message)
+        .filter((message) => typeof message.type === 'string');
+      const messageKey = (message: Message): string => {
+        const id = message.id || message.eventKey;
+        if (id) return `id:${id}`;
+        return `body:${JSON.stringify({ type: message.type, text: message.text, result: message.result, output: message.output, command: message.command })}`;
+      };
+      const mergedById = new Map<string, Message>();
+      const unkeyed: Message[] = [];
+      for (const message of archived) {
+        const id = messageKey(message);
+        if (id) mergedById.set(id, message);
+        else unkeyed.push(message);
+      }
+      for (const message of session.messages) {
+        const id = messageKey(message);
+        if (id) mergedById.set(id, message);
+        else unkeyed.push(message);
+      }
+      const merged = [...mergedById.values(), ...unkeyed];
+      merged.sort((left, right) => {
+        const a =
+          typeof (left as Message & { ordinal?: unknown }).ordinal === 'number'
+            ? Number((left as Message & { ordinal?: unknown }).ordinal)
+            : Number.MAX_SAFE_INTEGER;
+        const b =
+          typeof (right as Message & { ordinal?: unknown }).ordinal === 'number'
+            ? Number((right as Message & { ordinal?: unknown }).ordinal)
+            : Number.MAX_SAFE_INTEGER;
+        return a - b;
+      });
+      archiveHydrated.add(session.id);
+      if (merged.length !== session.messages.length) {
+        session.messages = merged;
+        historyStarts.delete(session.id);
+        renderChat();
+      }
+    } catch {
+      // The archive is display-only; the current UI state remains usable.
+    }
+  }
   function historyBoundary(messages: Message[], index: number): number {
     while (index > 0 && messages[index]?.type !== 'user') index--;
     return index;
@@ -394,15 +447,35 @@ export interface ConversationUiDeps {
     const loader = document.createElement('div');
     loader.className = 'history-loader';
     const earlier = document.createElement('button'),
-      all = document.createElement('button');
+      all = document.createElement('button'),
+      searchButton = document.createElement('button');
     earlier.type = all.type = 'button';
     earlier.className = all.className = 'link-btn';
     earlier.textContent = 'Load earlier messages';
     earlier.dataset.loadHistory = '';
     all.textContent = 'Show all for find';
     all.dataset.showAllHistory = '';
-    const load = (everything: boolean) => {
+    searchButton.type = 'button';
+    searchButton.className = 'link-btn';
+    searchButton.textContent = 'Search this conversation';
+    searchButton.dataset.searchHistory = '';
+    const load = async (everything: boolean) => {
       if (deps.activeSession() !== session) return;
+      if (!everything && start === 0) {
+        const repository = historyRepositories.get(session.id);
+        if (repository) {
+          const page = await repository.loadEarlier(session.id);
+          if (deps.activeSession() !== session || !page) return;
+          const known = new Set(session.messages.map((message) => message.id || message.eventKey).filter(Boolean));
+          const older = page.items
+            .map((item) => item as unknown as Message)
+            .filter((message) => !known.has(message.id || message.eventKey));
+          if (older.length) session.messages = [...older, ...session.messages];
+          historyStarts.set(session.id, older.length ? 0 : start);
+          renderChat();
+          return;
+        }
+      }
       const anchor = loader.nextElementSibling;
       const top = anchor?.getBoundingClientRect().top;
       const next = everything ? 0 : historyBoundary(session.messages, Math.max(0, start - HISTORY_BATCH));
@@ -420,8 +493,60 @@ export interface ConversationUiDeps {
       updateLatest();
     };
     earlier.onclick = () => load(false);
-    all.onclick = () => load(true);
-    loader.append(earlier, all);
+    all.onclick = () => {
+      if (deps.activeSession() !== session) return;
+      const anchor = loader.nextElementSibling;
+      const top = anchor?.getBoundingClientRect().top;
+      const prefix = document.createElement('div');
+      for (const message of session.messages.slice(0, start)) deps.appendMessageNode(prefix, message);
+      loader.remove();
+      chat.prepend(...prefix.childNodes);
+      historyStarts.set(session.id, 0);
+      following = false;
+      if (anchor && top !== undefined) setScroll($('chat-area').scrollTop + anchor.getBoundingClientRect().top - top);
+      captureView();
+      updateLatest();
+    };
+    searchButton.onclick = async () => {
+      if (deps.activeSession() !== session) return;
+      let search = loader.querySelector<HTMLInputElement>('[data-history-search]');
+      if (!search) {
+        search = document.createElement('input');
+        search.type = 'search';
+        search.placeholder = 'Search this conversation';
+        search.setAttribute('aria-label', 'Search this conversation');
+        search.dataset.historySearch = '';
+        loader.insertBefore(search, earlier);
+        search.focus();
+        search.onkeydown = (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            searchButton.click();
+          }
+        };
+        return;
+      }
+      const query = search.value;
+      if (!query.trim()) return;
+      const repository = historyRepositories.get(session.id) || new HistoryRepository();
+      historyRepositories.set(session.id, repository);
+      try {
+        const hits = await repository.search(session.id, query);
+        if (deps.activeSession() !== session) return;
+        const status = document.createElement('span');
+        status.className = 'history-search-status';
+        status.textContent = hits.length ? `${hits.length} matches` : 'No matches';
+        loader.replaceChildren(status, earlier, all, searchButton);
+        window.setTimeout(() => status.remove(), 1800);
+      } catch {
+        const status = document.createElement('span');
+        status.className = 'history-search-status';
+        status.textContent = 'Search unavailable';
+        loader.prepend(status);
+        window.setTimeout(() => status.remove(), 1800);
+      }
+    };
+    loader.append(earlier, all, searchButton);
     chat.append(loader);
   }
 

@@ -199,6 +199,7 @@ def project_completion_deps(deps: TaskRunDeps) -> ProjectCompletionDeps:
             project_facts=deps.project_facts,
             work_checkpoints=deps.work_checkpoints,
             managed_outputs=deps.managed_outputs,
+            execution_outputs=deps.execution_outputs,
             knowledge_store=deps.knowledge_store,
             search_factory=deps.search_factory,
         ),

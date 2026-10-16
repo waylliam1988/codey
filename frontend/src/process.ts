@@ -210,6 +210,10 @@ export interface ProcessToolRecord {
     block.querySelector<HTMLElement>('.process-approval-status')!.textContent =
       state.state === 'question' ? 'Waiting for your answer' : 'Waiting for approval';
     block.querySelector<HTMLElement>('.process-approval-status')!.hidden = !awaitingApproval;
+    // Sending is a transport state, not a user-expandable activity. Keep the
+    // label visible while the request is admitted, but do not add a disclosure
+    // arrow that suggests there is content to inspect yet.
+    block.classList.toggle('process-sending', state.state === 'sending');
     block.querySelector<HTMLElement>('.process-group')!.hidden = awaitingApproval;
     const spinning = state.state === 'running' || state.state === 'sending';
     let spinner = head.querySelector<HTMLElement>('.spinner');

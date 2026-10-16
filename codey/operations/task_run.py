@@ -78,6 +78,7 @@ class TaskRunDeps:
     run_traces: Any = None
     evidence_ledgers: Any = None
     managed_outputs: Any = None
+    execution_outputs: Any = None
     knowledge_store: Any = None
     search_factory: Callable[[], object] | None = None
     is_git_repository: Callable[[str | Path], bool] | None = None
@@ -122,6 +123,7 @@ class TaskRunDeps:
             run_traces=stores.run_traces,
             evidence_ledgers=stores.evidence_ledgers,
             managed_outputs=stores.managed_outputs,
+            execution_outputs=stores.execution_outputs,
             knowledge_store=stores.knowledge_store,
             search_factory=search_factory,
             is_git_repository=is_git_repository,
@@ -141,7 +143,8 @@ def prepare_submission(state: TaskState, request: TaskSubmission) -> TaskSubmiss
         if kind not in ("review", "project"):
             raise ValueError("review source is only supported for review and project intents")
     if request.run_id:
-        active = state.current_run()
+        active_for = getattr(state, "active_run_for", None)
+        active = active_for(session_id=request.session_id) if callable(active_for) else state.current_run()
         if active is None:
             reserved = state.reserve_run(
                 session_id=request.session_id,
@@ -151,9 +154,8 @@ def prepare_submission(state: TaskState, request: TaskSubmission) -> TaskSubmiss
                 run_id=request.run_id,
             )
             return request if reserved is not None else None
-        # A preset run_id must match the active run; otherwise the slot is
-        # busy with somebody else. Previously any preset id bypassed the busy
-        # check and produced orphan operations downstream.
+        # A preset run_id must match this session's active run. Another
+        # session may be running independently and is irrelevant here.
         if active.run_id != request.run_id:
             return None
         return request
@@ -377,7 +379,7 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
         provider_controls.begin_task_context(session_id)
         task_context_started = True
         state.run_registry.set_last_provider_failure(None)
-        previous_cancel_event = cancellation.set_event(state.run_registry.stop_flag)
+        previous_cancel_event = cancellation.set_event(state.run_registry.stop_flag_for(run_id))
 
         # Single persistent writer: snapshot projects claim cross-process
         # ownership here; a busy project fails fast instead of forking baselines.

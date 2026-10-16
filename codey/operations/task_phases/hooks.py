@@ -176,7 +176,7 @@ class _RunHookCallbacks:
         risk = classify_shell_risk(command)
         approval_id = "shell_" + uuid.uuid4().hex[:12]
         provider_label = self.current_provider_id() if self.current_provider_id is not None else ""
-        active = self.state.current_run()
+        active = self.state.active_run_for(session_id=self.session_id)
         operation = self.work.operation
         if active is None or active.run_id != self.run_id or active.session_id != self.session_id or operation is None:
             raise RuntimeError("shell approval has no owning task")

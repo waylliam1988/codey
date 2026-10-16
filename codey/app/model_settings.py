@@ -13,17 +13,14 @@ def preferences_for(ctx: Any = None) -> ModelPreferences:
 
 
 def models_in_use(ctx: Any) -> list[dict[str, str]]:
-    active = ctx.current_run()
-    used = (
-        [
-            {
-                "provider": active.provider_id,
-                "model": getattr(ctx.run_registry.api_selection_for(active.run_id), "model_id", ""),
-            }
-        ]
-        if active
-        else []
-    )
+    active_runs = getattr(ctx, "active_runs", lambda: ())()
+    used = [
+        {
+            "provider": active.provider_id,
+            "model": getattr(ctx.run_registry.api_selection_for(active.run_id), "model_id", ""),
+        }
+        for active in active_runs
+    ]
     used.extend(
         {
             "provider": item.get("provider") or item.get("provider_id") or "",

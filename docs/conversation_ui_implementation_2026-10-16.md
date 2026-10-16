@@ -20,6 +20,11 @@
 | 明确拒绝的排队输入 | `input_queue_full` / `input_not_found` 显示 `Not sent`，可恢复草稿；未知结果仍只能查询 |
 | Research 历史卡片 | 使用消息自身 `runId` 打开对应报告；只有唯一历史运行且消息缺少 `runId` 时保留兼容回退 |
 | 本地图片数量 | 所有确认图片进入最多 4 个并发的 worker pool，不再在第 20 张后静默截断 |
+| 结构化失败 | provider、执行、输出和渲染失败通过有界 `failure` 投影；未知执行结果只提供状态查询，恢复动作按固定映射执行 |
+| 实时命令输出 | shell 审批和普通 `run` 共用 execution identity、增量 UTF-8 观察和有界 stdout/stderr 快照；运行中同一命令卡更新，异常落为 `unknown` |
+| 公式与图表 | 正文、Research、文档预览共用本地 KaTeX/Mermaid；不完整或失败块保留源码，异步图表校验块摘要和挂载节点 |
+| 展示历史 | SQLite transcript archive 使用 epoch、稳定 message identity、游标分页、字面搜索；首屏合并归档尾页，清空同步删除 UI 投影并阻止迟到写回 |
+| 提问草稿 | QuestionDraftStore 使用同 origin localStorage，支持刷新恢复、Clear draft、跨标签冲突处理和实例键；不承诺跨端口/浏览器 profile 同步 |
 
 保留已确认的 10px 圆角、13px 审批标题、无 Reason、等待审批不折叠、复制悬停出现、图标无独立黑色悬停底，以及全文回答无 Collapse。
 
@@ -43,10 +48,10 @@
 
 ## 最终验收结果
 
-- 前端：27 个测试文件、**109 项通过**；TypeScript 和 Biome 格式检查通过。
+- 前端：34 个测试文件、**132 项通过**；TypeScript 和 Biome 格式检查通过。
 - 最终正式浏览器组：**76 项通过**，包括上述真实工作区/协议链路、图片键盘放大与局部失败、长历史、审批、复制的悬停/键盘/触屏操作。
-- 最终后端与架构组：**130 项通过，391 个子测试通过**；最终全量 pytest 为 **8753 项通过、8 项跳过、1520 个子测试通过**。
-- Ruff 通过；全树 mypy 检查 429 个源文件无错误；Pyrefly 无错误；正式构建、发布一致性和 Git 空白检查通过。
+- 最终后端与架构组：定向 execution/transcript/UI 回归通过；2026-10-17 最终全量 pytest 为 **8784 项通过、8 项跳过、1520 个子测试通过**。
+- Ruff 通过；全树 mypy、Pyrefly 和 ty 检查 431 个源文件无错误；正式构建、发布一致性和 Git 空白检查通过。
 - 扩大回归遍历非 manual、非 stress 集合，得到 **8645 项通过、8 项跳过、1520 个子测试通过**，并报出 8 项失败。逐项核对后，同步了问题工具目录、提示词哈希、工具详情字段、桌面启动替身和消息操作 DOM 的既有契约；其中触屏复制不可点击以及复制反馈离开鼠标后消失属于实际样式问题，补测后修复。所有这 8 项失败均已定向复测通过，并包含在最终验收组内。修复后没有再次重跑这整个扩大集合，不把该次扩大运行描述为一次完整全绿运行。
 - 后续四项对话区缺陷按 TDD 先测红再修绿：输入队列明确拒绝恢复、Research 运行身份、Markdown 代码字面量和第 21 张本地图片均已定向通过；真实 Codey HTTP 服务与 Playwright 页面验证也已通过。
 - 额外的浏览器扩大组已有 443 项通过；其 4 个消息复制旧断言由上述新的复制行为验收替代并验证。没有忽略失败测试来取得通过结果。
@@ -117,10 +122,41 @@ python -X utf8 -m pyrefly check codey --python-version 3.13
 
 ## 适用边界
 
-- 这是正文与工具内容呈现改造；没有增加公式、Mermaid 或完整虚拟列表。
+- 公式和 Mermaid 已接入本地依赖；复杂或不合法图表超过预算时保留源码，不宣称所有 Mermaid 图种均支持。当前历史仍采用有界 DOM 分批挂载，没有引入完整虚拟列表。
 - 原生支持流式的连接显示真实增量；网站模型和非原生文本协议不制造打字动画。
-- 保留已有每会话 500 条消息的服务端保存范围；“显示全部”表示全部已保存内容。
+- UI 快照仍保留最近 500 条以控制首屏；完整展示历史写入独立 transcript archive，首次保存会导入 500 条窗口之外的 incoming messages。已被旧版本裁掉且从未进入 archive 的内容无法凭空恢复。
 - 图片文件上限为 2 MiB；错误只影响该图片，SVG 不作为可执行内容进入页面。
 - 编辑差异基于实际写入前后内容。超出预览预算或缺少可靠旧内容时明确显示不可用，不用模型参数拼造差异。
 - 长历史、控制状态和丢响应使用确定性本机用例；不据此声称已触发全部外部模型的实现差异。
-- 本记录随本次实现提交并推送；发布后的 bundle 与源码元数据已经重新校验。
+- 已完成真实 Codey HTTP + Playwright 回归：新聊天创建后可立即发送，切换会话和刷新保持 session identity；归档分页、搜索、实时 shell 输出和普通 run execution snapshot 使用隔离状态目录验证。未连接外部模型 API，也未修改 `E:\Selfie - 副本` 业务文件。
+- 发布后的 bundle 与源码元数据已经重新校验；提交与推送状态以仓库当前 Git 记录为准。
+
+## 2026-10-16 后续核对
+
+本轮重新核对了工作区中的未提交实现。此前两个定向失败（shell close gate、plain-chat terminal reply）在当前源码上各自重跑通过。新增的普通 `run` 观察 wiring 红测先因 `managed_tool_fns()` 在没有 `managed_outputs` 时直接返回 `None` 而失败，随后改为仅有 `execution_outputs` 时仍走 `run_command_raw` 并传递 session/run/execution identity；该测试与 execution/transcript/structured-failure 定向组共 14 项通过。
+
+本轮实际复跑：前端 34 个测试文件 132 项通过，`typecheck`、Biome、正式构建和 `publish_frontend.py --check` 通过；`tests/test_ui_manual_retry.py` 23 项通过；隔离状态的真实 Codey HTTP/Playwright live/history、问题、队列、授权和文档预览组通过。2026-10-17 全量 pytest 为 **8784 passed / 8 skipped / 1520 subtests passed**。未调用外部模型 API。
+
+补充复核：Read/Search 分组箭头与 Working/Ran 共用 `chevron-down.svg`、`--text-dim` 静态亮度和 `--text` 悬停亮度，并覆盖 Chromium `-webkit-mask`。当一个会话运行时，其他会话的 composer 仍可直接 Send；Stop 仅显示在运行所属会话。同一会话的后续输入才进入 InputOutbox。正式 bundle 已重新发布；`tests/test_ui_workflow.py` 的跨会话队列浏览器回归通过。
+
+本轮继续做了真实三会话并发验收：在隔离状态的 Codey HTTP 服务和 Playwright 浏览器中，A/B/C 三个 session 同时建立本地确定性模型的原生 Chat Completions 与 Responses 流（每种协议各 3 个请求），没有出现 `Another chat is running`。切换到 B 点击真实 Stop 后，后端只结束 B 的 `run_id`，A/C 继续完成。该回归位于 `tests/test_conversation_live_browser.py::test_real_three_sessions_run_concurrently_and_stop_only_targets_selected_session`。
+
+## 2026-10-17 真实 A-F 联调收尾
+
+新增 `tests/test_uncommitted_live_browser.py`，使用正式 `codey/web` 产物、真实 `CodeyHTTPServer`、Playwright、隔离状态目录和本地确定性模型 HTTP 对端，覆盖 provider 结构化失败与固定恢复入口、两段最终回答复制的原始 Markdown、公式/Mermaid、归档历史搜索、问题草稿刷新恢复，以及获批 shell 在子进程退出前显示已 flush 输出。该组 5 项（含两种协议参数）通过；原有 live、审批、文档、历史浏览器组再通过 16 项。
+
+联调中发现并修复两个后端生命周期问题：公开结构化事件投影移到 SSE 边界，避免改变内部事件订阅者的字段；shell `Running` 观察事件通过独立浏览器事件发布，不写入结算记录、不触发重复执行，最终 `shell_result` 仍以同一 approval id 原位更新。前端同时补齐了正式消息层的 session 列表依赖，确保 `Copy final answer` 汇总最新权威部分。
+
+最后一次扩大回归实际结果：`8784 passed, 8 skipped, 1520 subtests passed`。前端 `npm run check`、正式 `npm run build`、`python -X utf8 -m tools.publish_frontend` 和相关真实浏览器组均通过。测试使用本地确定性模型服务，未调用外部模型 API，也未修改 `E:\Selfie - 副本` 业务文件。
+
+这次实测还发现并修复了 Stop 的后端缺陷：任务取消事件没有进入 API provider，且阻塞的 HTTP body 读取没有主动被取消。修复后，run-scoped stop event 会传到 provider 和 transport cancellation watcher，确保目标流立即中止；先红后绿的 provider 回归位于 `tests/test_api_stream_terminal_and_cancelled_generation.py`。
+
+实时输出 D 仍是部分完成：shell 审批和普通 run 已有 execution identity、增量 UTF-8 观察和有界快照，但当前前端仍以轮询读取，没有专用 `execution_output_available` SSE；observer 仍可能按 chunk 写 SQLite，命令卡的 stdout/stderr 展示和 DOM 重建后的选区/展开连续性也未完成规格中的全部验收。因此不能把 D 或六项整体标为全部完成。
+
+## 2026-10-16 并发与恢复复核
+
+本次继续复核后，运行契约保持为“同一 session 串行、不同 session 并行”。`RunRegistry`、HTTP 提交、浏览器 worker、SSE 状态投影和 Stop 均按 `session_id`/`run_id` 分开；没有恢复全局单任务锁。定向后端与资源回归 `17 passed`，三会话真实 HTTP/Playwright 回归仍通过；正式前端 `34 files / 132 tests`、typecheck、Biome、build 和 `publish_frontend.py --check` 通过。
+
+新增的 composer ready 闸门修复了真实浏览器竞态：服务端 UI 状态、问题和输入队列完成初始恢复前，textarea 不可发送；恢复完成后才解禁，避免恢复响应覆盖用户刚输入的草稿。对应的单项发送、草稿刷新和正文浏览器回归已通过。
+
+旧的全量日志不再代表当前结果：架构阈值、全局忙状态、Shell 单一 `.shell-output` 节点和旧审批文案已按现行契约更新。手工重试整组的顺序敏感失败已先红测复现，再修复首次发送准备态、接受响应后的权威状态确认、晚到 reply/本地告警投影；`tests/test_ui_manual_retry.py` 现为 23 项通过。测试发布步骤固定为 `npm run build` 后执行 `python -X utf8 -m tools.publish_frontend` 和 `--check`，浏览器读取 `codey/web` 正式产物。

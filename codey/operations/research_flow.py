@@ -13,7 +13,7 @@ from codey.knowledge.research_interest import (
 from codey.operations.context import RunFrame, RunHooks
 from codey.operations.evidence_followup import run_evidence_followup
 from codey.operations.result import ModeOutcome
-from codey.operations.task_state import TaskState
+from codey.operations.task_state import TaskState, stop_flag_for
 from codey.policies.permissions import allows_context_source, profile_for_name
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS
 from codey.research.context import ResearchContext, RunTraceResearchSink
@@ -275,7 +275,7 @@ def build_research_context(
         permission_profile="research",
         max_turns=max_turns,
         chat_handoff=frame.research_handoff,
-        should_stop=deps.state.run_registry.stop_flag.is_set,
+        should_stop=stop_flag_for(deps.state, frame.run_id).is_set,
         trace=RunTraceResearchSink(frame.trace),
         topic_continuity_context=continuity_text,
         topic_continuity_payload=continuity_payload,
@@ -320,7 +320,7 @@ def run_research_pipeline(
             task=task,
             max_turns=max_turns,
             on_event=hooks.on_event,
-            stop_flag=deps.state.run_registry.stop_flag,
+            stop_flag=stop_flag_for(deps.state, frame.run_id),
             provider_id=frame.provider_id,
             run_id=frame.run_id,
             chat_handoff=chat_handoff,

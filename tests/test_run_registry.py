@@ -177,6 +177,24 @@ class RunRegistryTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(payloads[0]["pending_event"]["run_id"], run.run_id)
 
+    def test_distinct_sessions_have_independent_active_runs_and_stop_flags(self) -> None:
+        registry = RunRegistry()
+        first = registry.reserve(
+            session_id="session-a", project=None, task="a", provider_id="local", run_id="run-a"
+        )
+        second = registry.reserve(
+            session_id="session-b", project=None, task="b", provider_id="local", run_id="run-b"
+        )
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        self.assertEqual(registry.active_for(session_id="session-a").run_id, "run-a")
+        self.assertEqual(registry.active_for(session_id="session-b").run_id, "run-b")
+        registry.request_stop("run-a")
+        self.assertTrue(registry.stop_flag_for("run-a").is_set())
+        self.assertFalse(registry.stop_flag_for("run-b").is_set())
+        registry.finish("run-a", {"stop_reason": "stopped", "summary": "stopped"})
+        self.assertIsNotNone(registry.active_for(session_id="session-b"))
+
     def test_same_project_compares_resolved_paths(self) -> None:
         self.assertTrue(same_project(".", "."))
         self.assertFalse(same_project("", "."))

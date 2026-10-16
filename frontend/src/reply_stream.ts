@@ -23,6 +23,11 @@ export function streamMessage(session: Session, event: ReplySnapshot): Message |
   if (old && ((old.streamSequence || 0) >= event.sequence || old.finalAnswer || old.streamState !== 'partial'))
     return null;
   if (session.terminalRuns?.includes(event.run_id)) return null;
+  const request = session.messages.find(
+    (message) =>
+      message.type === 'user' && message.id && message.attempts?.some((attempt) => attempt.runId === event.run_id),
+  );
+  const turnId = request?.id ? `turn:${request.id}` : undefined;
   return {
     ...old,
     type: 'asst',
@@ -32,6 +37,7 @@ export function streamMessage(session: Session, event: ReplySnapshot): Message |
     streamState: event.state as Message['streamState'],
     text: event.text,
     finalAnswer: false,
+    ...(turnId ? { turnId } : {}),
     eventKey: `reply-stream:${event.run_id}:${event.stream_id}:${event.sequence}`,
   };
 }
@@ -46,5 +52,17 @@ export function finalStreamMessage(session: Session, runId: string, text: string
         message.streamId &&
         (message.text?.trim() === text.trim() || (message.text?.length === 64000 && text.startsWith(message.text))),
     );
-  return old ? { ...old, text, eventKey, finalAnswer: true, streamState: 'complete' } : null;
+  if (!old) return null;
+  const request = session.messages.find(
+    (message) => message.type === 'user' && message.id && message.attempts?.some((attempt) => attempt.runId === runId),
+  );
+  const turnId = old.turnId || (request?.id ? `turn:${request.id}` : '');
+  return {
+    ...old,
+    text,
+    eventKey,
+    finalAnswer: true,
+    streamState: 'complete',
+    ...(turnId ? { contentRole: 'final', turnId, answerId: eventKey, answerPartIndex: 0 } : {}),
+  };
 }

@@ -203,6 +203,8 @@ class _StreamPump:
     capture: BoundedByteCapture
     error: Exception | None = None
     finished: threading.Event = dataclasses.field(default_factory=threading.Event)
+    observer: Any = None
+    channel: str = "stdout"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -337,11 +339,19 @@ def _resume_windows_process(proc: subprocess.Popen[bytes]) -> None:
 def _pump_stream(stream: BinaryIO, state: _StreamPump) -> None:
     """Drain one pipe into its bounded capture; a read failure is sticky."""
     try:
+        read_chunk = getattr(stream, "read1", None)
+        if not callable(read_chunk):
+            read_chunk = stream.read
         while True:
-            chunk = stream.read(READ_CHUNK_BYTES)
+            chunk = read_chunk(READ_CHUNK_BYTES)
             if not chunk:
                 return
             state.capture.feed(chunk)
+            if state.observer is not None:
+                with suppress(Exception):
+                    state.observer.offer(state.channel, chunk)
+                    # Observation is auxiliary; a failed observer never
+                    # changes the execution result or stops pipe draining.
     except Exception as exc:
         state.error = exc
     finally:
@@ -415,6 +425,7 @@ def wait_process(
     timeout: float,
     *,
     capture_limit_bytes: int,
+    observer: Any = None,
 ) -> CapturedProcess:
     """Wait with bounded per-stream capture; never buffers output unbounded.
 
@@ -434,8 +445,8 @@ def wait_process(
         limit = _safe_capture_limit(capture_limit_bytes)
         head = limit // 4
         tail = limit - head
-        stdout_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail))
-        stderr_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail))
+        stdout_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail), observer=observer, channel="stdout")
+        stderr_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail), observer=observer, channel="stderr")
         streams = (
             (proc.stdout, stdout_state),
             (proc.stderr, stderr_state),
@@ -480,6 +491,9 @@ def wait_process(
                 )
         stdout_done = stdout_state.capture.finish()
         stderr_done = stderr_state.capture.finish()
+        close_observer = getattr(observer, "close", None)
+        if callable(close_observer):
+            close_observer()
         result = CapturedProcess(
             args=args,
             returncode=returncode,
@@ -496,6 +510,10 @@ def wait_process(
         if not completed:
             _terminate_process_tree(proc, job)
             _wait_readers(readers, timeout=READER_CLEANUP_TIMEOUT_SECONDS)
+        close_observer = getattr(observer, "close", None)
+        if callable(close_observer):
+            with suppress(Exception):
+                close_observer()
         _close_owned_pipes(proc, owned)
         close = getattr(job, "close", None)
         if callable(close):
@@ -511,10 +529,11 @@ def run_process(
     env: dict[str, str] | None = None,
     shell: bool = False,
     capture_limit_bytes: int,
+    observer: Any = None,
 ) -> CapturedProcess:
     """Run a captured process and terminate its process group when cancelled."""
     proc, job = start_process(args, cwd=cwd, env=env, shell=shell)
-    return wait_process(proc, job, args, timeout, capture_limit_bytes=capture_limit_bytes)
+    return wait_process(proc, job, args, timeout, capture_limit_bytes=capture_limit_bytes, observer=observer)
 
 
 def attach_process_tree(proc: subprocess.Popen[bytes] | subprocess.Popen[str]) -> ProcessTreeOwner | None:

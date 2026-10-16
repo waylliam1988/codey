@@ -301,6 +301,10 @@ def test_actual_model_and_supported_thinking_are_per_chat_and_sent_to_runtime(pa
     page.locator("#task").fill("Say hello")
     with page.expect_request("**/api/run"):
         page.locator("#send").click()
+    # The request event fires before the Playwright route callback necessarily
+    # appends its decoded body. Wait for the composer's request lifecycle to
+    # settle before asserting the captured payload.
+    page.wait_for_function("Composer.isSending() === false")
     assert requests[0]["model_selection"] == {"connection_id":"local","base_url":local["base_url"],"model":local["model"],"effort":"medium"}
 
 
@@ -525,7 +529,7 @@ def test_hybrid_task_done_research_payload_creates_graph_entry(page):
           queries: ['graph'], search_results: [], opened_sources: [], coverage: {},
           evidence_items: [], citation_map: [], counterpoints: [], quality_warnings: []}
     })""")
-    page.evaluate("ResearchDrawer.open('a')")
+    page.evaluate("ResearchDrawer.open('a', 'hybrid-run')")
     expect(page.locator("#research-drawer")).to_be_visible()
     expect(page.get_by_role("button", name="Graph", exact=True)).to_be_visible()
     page.get_by_role("button", name="Graph", exact=True).click()
@@ -708,6 +712,15 @@ def test_running_owner_and_approval_are_discoverable_without_enter_approving(pag
     expect(page.get_by_text("Run this command?", exact=True)).to_have_count(1)
 
 
+def test_new_chat_keeps_composer_usable_while_another_session_runs(page):
+    page.evaluate("applyRunState({busy:true,run_id:'run-a',session_id:'a',run_status:'running'})")
+    page.evaluate("switchSession('b')")
+    page.locator('#task').fill('independent topic')
+    expect(page.locator('#send')).to_be_enabled()
+    expect(page.locator('#provider-button')).to_be_enabled()
+    expect(page.locator('#stop')).to_be_hidden()
+
+
 def test_reading_position_and_back_to_latest(page):
     page.evaluate("""() => {
         for (let i=0; i<40; i++) addToSession('a',{type:'asst',text:'Reading paragraph '+i});
@@ -727,6 +740,8 @@ def test_search_and_inspection_scope_close_on_chat_switch(page):
     trigger = page.get_by_role("button", name="Search chats and projects", exact=True)
     search = page.get_by_role("searchbox", name="Search chats and projects")
     expect(search).to_be_hidden()
+
+
     before = trigger.bounding_box()
     new_chat = page.locator("#btn-new-chat").bounding_box()
     add_project = page.locator("#btn-add-project").bounding_box()
@@ -753,6 +768,59 @@ def test_search_and_inspection_scope_close_on_chat_switch(page):
     page.evaluate("switchSession('b')")
     expect(page.locator("#changes-drawer")).to_have_attribute("aria-hidden", "true")
     assert page.locator("#changes-drawer").evaluate("e => e.inert")
+
+
+def test_new_chat_can_start_while_another_session_is_running(page):
+    """A global execution slot must not disable a new session's admission."""
+    started = []
+    page.route("**/api/run", lambda route: (started.append(route.request.post_data_json), route.fulfill(json={"ok": True, "run_id": "run-b"})))
+    page.evaluate(
+        "applyRunState",
+        {"busy": True, "run_id": "run_old", "session_id": "a", "run_status": "running"},
+    )
+    page.locator("#btn-new-chat").click()
+    expect(page.locator("#task")).to_be_enabled()
+    page.locator("#task").fill("new chat request")
+    expect(page.locator("#send")).to_be_enabled()
+    page.locator("#send").click()
+    expect(page.locator(".pending-inputs")).to_be_hidden()
+    assert len(started) == 1
+    assert started[0]["session_id"] != "a"
+
+
+def test_three_chats_can_admit_inputs_while_first_chat_is_running(page):
+    """Two background chats can start independently while chat A runs."""
+    started = []
+    page.route("**/api/run", lambda route: (started.append(route.request.post_data_json), route.fulfill(json={"ok": True, "run_id": "run-new"})))
+    page.evaluate("applyRunState", {"busy": True, "run_id": "run_a", "session_id": "a", "run_status": "running"})
+
+    page.evaluate("switchSession('b')")
+    page.locator("#task").fill("topic B")
+    page.locator("#send").click()
+    expect(page.locator(".pending-inputs")).to_be_hidden()
+
+    page.locator("#btn-new-chat").click()
+    page.locator("#task").fill("topic C")
+    page.locator("#send").click()
+    expect(page.locator(".pending-inputs")).to_be_hidden()
+    assert {item["session_id"] for item in started} == {"b", page.evaluate("activeId")}
+
+
+def test_stale_frontend_run_state_recovers_busy_response_into_new_run(page):
+    """A disconnected SSE state must not turn a valid new-chat send into an error."""
+    started = []
+    page.route(
+        "**/api/state",
+        lambda route: route.fulfill(json={"busy": True, "run_id": "run_a", "session_id": "a", "run_status": "running"}),
+    )
+
+    page.route("**/api/run", lambda route: (started.append(route.request.post_data_json), route.fulfill(json={"ok": True, "run_id": "run-b"})))
+    page.evaluate("switchSession('b'); runningSessionId=null; runningRunId=null")
+    page.locator("#task").fill("stale state topic")
+    page.locator("#send").click()
+    page.wait_for_timeout(250)
+    expect(page.locator(".pending-inputs")).to_be_hidden()
+    assert started and started[0]["session_id"] == "b"
 
 
 @pytest.mark.parametrize("size", [(1280, 800), (720, 560), (480, 420)])

@@ -51,7 +51,7 @@ export interface ResearchRunView {
 export interface ResearchDrawerDeps {
   openDocument(sessionId: string, ref: DocumentRef): void;
   $(id: string): HTMLElement;
-  getCurrentRun(sessionId: string): ResearchRunView | null;
+  getCurrentRun(sessionId: string, runId: string): ResearchRunView | null;
   copyText(text: string): Promise<boolean>;
   closeOtherDrawers?(active?: string): void;
   getSessionTitle?(sessionId: string): string;
@@ -71,6 +71,7 @@ export interface ResearchDrawerDeps {
   const NOTE_PREVIEW_CHARS = 1500;
   const expandedResearchNoteIds = new Set();
   let boundSessionId = '';
+  let boundRunId = '';
 
   type Source = ResearchSource;
   type Citation = ResearchCitation;
@@ -95,8 +96,8 @@ export interface ResearchDrawerDeps {
     return deps.$(id);
   }
 
-  function currentResearchRun(sessionId: string) {
-    return deps.getCurrentRun(sessionId);
+  function currentResearchRun(sessionId: string, runId: string) {
+    return deps.getCurrentRun(sessionId, runId);
   }
 
   function copyText(text: string) {
@@ -107,9 +108,11 @@ export interface ResearchDrawerDeps {
     if (runtime.ResearchGraph) runtime.ResearchGraph.dispose();
   }
 
-  function openResearchDrawer(sessionId: string) {
+  function openResearchDrawer(sessionId: string, runId: string) {
+    if (!runId) return;
     if (deps.closeOtherDrawers) deps.closeOtherDrawers('research');
     boundSessionId = sessionId;
+    boundRunId = runId;
     runtime.UiState.setDrawerOpen('research-drawer', true);
     const scope = $('research-scope');
     if (scope && deps.getSessionTitle) scope.textContent = deps.getSessionTitle(sessionId);
@@ -118,6 +121,7 @@ export interface ResearchDrawerDeps {
 
   function closeResearchDrawer() {
     boundSessionId = '';
+    boundRunId = '';
     disposeResearchGraph();
     runtime.UiState.setDrawerOpen('research-drawer', false);
     $('research-drawer').classList.remove('graph-open');
@@ -125,7 +129,7 @@ export interface ResearchDrawerDeps {
 
   function renderResearchDrawer(sessionId: string) {
     disposeResearchGraph();
-    const run = currentResearchRun(sessionId);
+    const run = currentResearchRun(sessionId, sessionId === boundSessionId ? boundRunId : '');
     const body = $('research-body');
     $('research-drawer').classList.toggle('graph-open', !!run && deps.getResearchDrawerTab() === 'graph');
     if (!run) {
@@ -680,7 +684,7 @@ export interface ResearchDrawerDeps {
     }
     if (
       boundSessionId === sessionId &&
-      currentResearchRun(sessionId) === run &&
+      currentResearchRun(sessionId, boundRunId) === run &&
       $('research-drawer').classList.contains('open')
     ) {
       renderResearchDrawer(sessionId);

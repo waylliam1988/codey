@@ -624,7 +624,7 @@ def run_submit_response(  # noqa: C901, PLR0912
     input_source_run, approval_error = _approval_entry(ctx, session_id, input_source_run)
     if approval_error is not None:
         return approval_error
-    if ctx is not None and ctx.shell_approval_workflow.busy_status() is not None:
+    if ctx is not None and ctx.shell_approval_workflow.busy_status(session_id) is not None:
         return 409, {"error": "busy", "hint": "approval_in_progress"}
     client_run_id = body.get("run_id", "")
     if not isinstance(client_run_id, str) or (client_run_id and not re.fullmatch(r"run_[a-f0-9]{32}", client_run_id)):
@@ -754,7 +754,7 @@ def new_chat_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, An
         return 400, {"ok": False, "error": "session_id required"}
     if ctx.active_run_for(session_id=session_id) is not None:
         return 409, {"ok": False, "error": "run in progress"}
-    failures = ctx.forget_conversation(session_id)
+    failures = ctx.forget_conversation(session_id, preserve_ui=body.get("preserve_ui", True) is not False)
     if failures:
         return 200, {
             "ok": True,
@@ -764,8 +764,9 @@ def new_chat_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, An
     return 200, {"ok": True}
 
 
-def stop_response(ctx: Any) -> tuple[int, dict[str, Any]]:
-    ctx.request_stop()
+def stop_response(ctx: Any, body: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+    run_id = str((body or {}).get("run_id") or "").strip() or None
+    ctx.request_stop(run_id)
     return 200, {"ok": True}
 
 

@@ -17,7 +17,7 @@ from codey.operations.ghost_context import ghost_directive as _ghost_directive_f
 from codey.operations.prompting import record_local_context_trace
 from codey.operations.result import ModeOutcome
 from codey.operations.task_context import ProjectTaskContextBuilder
-from codey.operations.task_state import TaskState
+from codey.operations.task_state import TaskState, stop_flag_for
 from codey.runtime.observe.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.workspace.config import ProjectConfigLoadResult
 from codey.workspace.facts import ProjectFactsStore
@@ -129,7 +129,7 @@ def run_planning_readonly_mode(
             max_turns=request.max_turns,
             on_event=lambda event: record_planning_event(deps, frame, work, event),
             on_shell_request=None,
-            stop_flag=state.run_registry.stop_flag,
+            stop_flag=stop_flag_for(state, frame.run_id),
             fresh_chat=frame.fresh_chat,
             change_tracker=None,
             conversation=frame.conversation,

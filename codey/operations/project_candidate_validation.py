@@ -12,6 +12,7 @@ from codey.completion.verification_policy import (
 )
 from codey.operations.project_completion_context import ProjectRun, commit_runtime_operation
 from codey.operations.project_writer_phase import _run_one_writer_attempt
+from codey.operations.task_state import stop_flag_for
 from codey.reviews.coordinator import change_state
 from codey.runtime.core.operation_state import LEAF_REPAIR_SETTLED
 
@@ -52,7 +53,7 @@ def validate_stopped_candidate(ctx: ProjectRun) -> None:
     operation = ctx.work.operation
     if (previous is None or policy is None or previous.stop_reason != 'no_progress'
             or not ctx.task_changed or ctx.task_session is None or not ctx.task_session.edited_files
-            or ctx.state.run_registry.stop_flag.is_set() or operation is None
+            or stop_flag_for(ctx.state, ctx.frame.run_id).is_set() or operation is None
             or operation.candidate_validation_attempted
             or ctx.request.max_turns - previous.turns < 2
             or not all(policy.allows(grant) for grant in ('project.read', 'project.verify', 'project.write'))):
@@ -97,7 +98,7 @@ def submit_readonly_completion_candidate(ctx: ProjectRun) -> None:
         or change_state(ctx.task_changes) is not False
         or getattr(ctx.request, 'project_changes_required', False) is True
         or not ctx.work.evidence.has_successful_checks
-        or ctx.state.run_registry.stop_flag.is_set()
+        or stop_flag_for(ctx.state, getattr(ctx.frame, "run_id", "")).is_set()
         or operation is None
         or operation.candidate_validation_attempted
         or ctx.request.max_turns - previous.turns < 2

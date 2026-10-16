@@ -59,11 +59,11 @@ def test_buttons_response_loss_and_retry_preserve_single_execution(tmp_path, mon
                 page.get_by_role("button", name="Allow once" if approved else "Deny", exact=True).click()
                 expect(page.get_by_role("button", name="Retry continuation", exact=True)).to_be_visible()
                 expect(page.get_by_role("button", name="Allow once", exact=True)).to_have_count(0)
-                expect(page.locator(".shell-output")).to_contain_text(
+                expect(page.locator(".shell-stdout")).to_contain_text(
                     "BROWSER_SHELL_RESULT" if approved else "Denied by user"
                 )
                 page.get_by_role("button", name="Retry continuation", exact=True).click()
-                expect(page.get_by_text("Command result saved; task continued", exact=True)).to_be_visible()
+                expect(page.get_by_text("Task continued", exact=True)).to_be_visible()
                 assert ctx.shell_approval_workflow.wait(5)
                 assert submit.call_count == 2
                 if approved:

@@ -34,6 +34,7 @@ from codey.operations.provider_preflight import (
 )
 from codey.operations.task_context import safe_verification_candidates
 from codey.operations.task_execution import build_research_tools as _build_research_tools
+from codey.operations.task_state import stop_flag_for
 from codey.providers.capabilities import rank_providers
 from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderFailure
@@ -102,7 +103,7 @@ def _run_one_writer_attempt(
         max_turns=spec.remaining_turns,
         on_event=partial(_on_writer_event, ctx, note_turn),
         on_shell_request=ctx.hooks.on_shell_request,
-        stop_flag=ctx.state.run_registry.stop_flag,
+        stop_flag=stop_flag_for(ctx.state, ctx.frame.run_id),
         fresh_chat=spec.fresh_chat,
         change_tracker=ctx.tracker,
         conversation=ctx.frame.conversation,
@@ -296,7 +297,7 @@ def _build_writer_failover(ctx: ProjectRun) -> WriterFailoverRunner:
         clear_session=partial(_clear_provider_session, ctx),
         on_switch=partial(_on_writer_switch, ctx),
         refresh_checkpoint=partial(_refresh_checkpoint_view, ctx),
-        stopped=ctx.state.run_registry.stop_flag.is_set,
+        stopped=partial(stop_flag_for(ctx.state, ctx.frame.run_id).is_set),
     )
 
 
@@ -314,7 +315,7 @@ def _maybe_consult_consensus_after_writer(ctx: ProjectRun) -> None:
         or ctx.used_project_audit
         or ctx.result.stop_reason != "done"
         or ctx.result.changed
-        or ctx.state.run_registry.stop_flag.is_set()
+        or stop_flag_for(ctx.state, ctx.frame.run_id).is_set()
     ):
         return
     context = render_project_context(

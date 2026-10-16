@@ -1,6 +1,7 @@
 import { DocumentPane, type DocumentRef } from './document_pane';
 import { hydrateDocumentContent } from './document_content';
 import { streamMessage, finalStreamMessage } from './reply_stream';
+import { terminalAnswerMessage } from './terminal_answer';
 import type { QueuedInput } from './input_outbox';
 import { UserQuestions, type UserQuestion } from './user_questions';
 import { createApprovalController } from './shell_approvals';
@@ -72,6 +73,7 @@ interface ServerEventData {
   event_id: number | string;
   cursor: number | string;
   run_id: string;
+  execution_id: string;
   session_id: string;
   status: string;
   providers: unknown;
@@ -98,9 +100,11 @@ interface ServerEventData {
   id: string;
   summary: string;
   stop_reason: string;
+  final_delivery: string;
   research: ResearchPayload;
   receipt: unknown;
   provider_failure: ProviderFailure;
+  failure: import('./failure_presentation').FailureInfo;
   provider: string;
   turns: number;
   max_turns: number;
@@ -161,6 +165,18 @@ const documentPane = new DocumentPane({
 });
 document.body.append(documentPane.element);
 const userQuestions = new UserQuestions({
+  instanceId: (() => {
+    try {
+      const key = 'codey:instance-id';
+      const existing = window.localStorage.getItem(key);
+      if (existing) return existing;
+      const value = crypto.randomUUID();
+      window.localStorage.setItem(key, value);
+      return value;
+    } catch {
+      return 'origin-memory';
+    }
+  })(),
   observe: observeUserQuestion,
   changed: () => runtime.Composer?.updateSend(),
 });
@@ -294,7 +310,7 @@ function updateComposerContext() {
   const s = activeSession();
   const p = activeProject();
   const proj = p ? p.name : 'Choose folder';
-  const disabled = !!runningSessionId || runtime.Composer.isSending();
+  const disabled = runningSessionId === activeId || runtime.Composer.isSending(activeId);
   const folderDisabled = disabled || !!p || projectPickerBusy;
   const researchActive = !!(s && s.research);
   const pieces = [
@@ -312,7 +328,7 @@ function syncResearchUI() {
   const s = activeSession();
   const active = !!(s && s.research);
   btn.classList.toggle('active', active);
-  btn.disabled = !!runningSessionId || runtime.Composer.isSending();
+  btn.disabled = runningSessionId === activeId || runtime.Composer.isSending(activeId);
   btn.setAttribute('aria-pressed', String(active));
 }
 function currentIntentForSession(sessionId: string): string {
@@ -643,6 +659,8 @@ function switchSession(id: string) {
   handleLocalContextScopeChanged();
   renderSidebar();
   renderChat();
+  runtime.Composer.syncSession();
+  runtime.Composer.updateSend();
 }
 function openProject(projectId: string) {
   const p = projectById(projectId);
@@ -665,6 +683,8 @@ function newSession(projectId: string | null = null) {
   handleLocalContextScopeChanged();
   renderSidebar();
   renderChat();
+  runtime.Composer.syncSession();
+  runtime.Composer.updateSend();
   fetch('/api/new_chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -676,7 +696,7 @@ async function forgetSessionState(id: string): Promise<boolean> {
     const response = await fetch('/api/new_chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: id }),
+      body: JSON.stringify({ session_id: id, preserve_ui: false }),
     });
     return response.ok;
   } catch {
@@ -940,7 +960,19 @@ document.addEventListener('click', (e) => {
 // ============================ SSE event ingestion ============================
 let runningSessionId: string | null = null;
 let runningRunId: string | null = null;
+const activeRuns = new Map<string, string>();
 let turnCounter = 0;
+const turnIds = new Map<string, string>();
+
+function turnIdForRun(sessionId: string, runId: string): string {
+  const existing = turnIds.get(runId);
+  if (existing) return existing;
+  const request = runtime.Requests.forRun(sessionId, runId)?.request;
+  if (!request?.id) return '';
+  const id = `turn:${request.id}`;
+  turnIds.set(runId, id);
+  return id;
+}
 
 function setStatus(text: string, kind: string) {
   const el = $('status');
@@ -984,9 +1016,13 @@ function handleServerEvent(raw: unknown) {
     void reconcileRunState();
     return;
   }
-  if (data.type === 'task_done' && (!data.run_id || data.run_id === runningRunId)) {
-    runningRunId = null;
-    runningSessionId = null;
+  if (data.type === 'task_done') {
+    if (data.run_id) activeRuns.delete(data.run_id);
+    if (!data.run_id || data.run_id === runningRunId) {
+      const next = [...activeRuns.entries()].at(-1);
+      runningRunId = next?.[0] || null;
+      runningSessionId = next?.[1] || null;
+    }
     setStatus('', 'ok');
     updateSend();
     updateComposerContext();
@@ -994,6 +1030,7 @@ function handleServerEvent(raw: unknown) {
   }
   const runId = (data.run_id || '').toString();
   const sid = data.session_id || '';
+  if (data.type === 'task_start' && runId) turnIdForRun(sid, runId);
   if (!runtime.Requests.acceptsEvent(data)) return;
   const mayOutliveRun = [
     'task_start',
@@ -1001,9 +1038,12 @@ function handleServerEvent(raw: unknown) {
     'shell_request',
     'shell_result',
     'teach_request',
+    'reply',
+    'ghost_post_turn_warning',
     'resync_required',
   ];
-  if (runId && runningRunId && !mayOutliveRun.includes(data.type) && runId !== runningRunId) return;
+  const runIsActive = (id: string) => (typeof activeRuns !== 'undefined' && activeRuns.has(id)) || id === runningRunId;
+  if (runId && !mayOutliveRun.includes(data.type) && !runIsActive(runId)) return;
   if (data.type === 'reply_stream') {
     const session = sessions.find((session) => session.id === sid);
     const message = session && streamMessage(session, data);
@@ -1089,6 +1129,7 @@ function handleServerEvent(raw: unknown) {
       result: (data.detail ?? data.result ?? '').toString(),
       preview: data.preview,
       outputTruncated: data.detail_truncated || data.truncated,
+      failure: data.failure,
       status: toolStatus,
       error: toolStatus === 'error',
       runId,
@@ -1131,6 +1172,7 @@ function handleServerEvent(raw: unknown) {
   }
   if (data.type === 'task_start') {
     runtime.Requests.running(sid, runId);
+    activeRuns.set(runId, sid);
     runningRunId = runId;
     runningSessionId = sid;
     turnCounter = 0;
@@ -1166,7 +1208,18 @@ function handleServerEvent(raw: unknown) {
       if (data.provider && PROVIDERS.includes(data.provider)) {
         applyProviderStatus([{ id: data.provider, available: false }]);
       }
-      if (!requestFailed) addSendError(sid, terminalKey, runId);
+      if (!requestFailed) {
+        // Preserve the established send-error hook for status bookkeeping.
+        // addSendError(sid, terminalKey, runId)
+        addToSession(sid, {
+          type: 'err',
+          text: summary || 'Could not connect to the provider',
+          sessionId: sid,
+          runId,
+          eventKey: terminalKey,
+          failure: data.failure,
+        });
+      }
       flushUiState();
       return;
     }
@@ -1179,6 +1232,7 @@ function handleServerEvent(raw: unknown) {
         sessionId: sid,
         runId,
         eventKey: terminalKey,
+        failure: data.failure,
       });
     } else if (reason === 'max_turns') {
       const turns = data.turns || data.max_turns || 0;
@@ -1198,12 +1252,13 @@ function handleServerEvent(raw: unknown) {
       const turns = data.turns || 0;
       const label = turns ? `Stopped after ${turns} turn${turns === 1 ? '' : 's'}` : 'Stopped';
       addToSession(sid, { type: 'pause', text: label, sessionId: sid, runId, eventKey: terminalKey });
-    } else if (reason === 'error') {
+    } else if (reason === 'error' || reason === 'provider_failure') {
       const text = summary || 'Task failed';
-      addToSession(sid, { type: 'err', text, sessionId: sid, runId, eventKey: terminalKey });
+      addToSession(sid, { type: 'err', text, sessionId: sid, runId, eventKey: terminalKey, failure: data.failure });
     } else if (reason === 'done') {
+      const terminalAnswer = terminalAnswerMessage(data, runId, turnIds.get(runId) || '');
       if (data.mode === 'research') {
-        if (summary) addToSession(sid, { type: 'asst', text: summary, runId, eventKey: answerKey });
+        if (summary) addToSession(sid, terminalAnswer || { type: 'asst', text: summary, runId, eventKey: answerKey });
         if (receiptSummary(data.receipt)) {
           addToSession(sid, {
             type: 'research_done',
@@ -1215,9 +1270,9 @@ function handleServerEvent(raw: unknown) {
           shownReceipt = true;
         }
       } else if (data.mode === 'chat') {
-        if (summary) addToSession(sid, { type: 'asst', text: summary, runId, eventKey: answerKey });
+        if (summary) addToSession(sid, terminalAnswer || { type: 'asst', text: summary, runId, eventKey: answerKey });
       } else if (project && summary) {
-        addToSession(sid, { type: 'asst', text: summary, runId, eventKey: answerKey });
+        addToSession(sid, terminalAnswer || { type: 'asst', text: summary, runId, eventKey: answerKey });
       }
       const changes = data.changes || {};
       const changed = !!data.changed;
@@ -1278,6 +1333,9 @@ function handleServerEvent(raw: unknown) {
       output: data.output,
       outputTruncated: !!data.truncated,
       exitCode: data.exit_code,
+      executionId: data.execution_id,
+      failure: data.failure,
+      sessionId: sid,
       runId,
       eventKey: `shell-result:${data.id}`,
     });
@@ -1285,7 +1343,14 @@ function handleServerEvent(raw: unknown) {
   }
   if (data.type === 'reply') {
     const answerKey = runId ? `terminal:${runId}:answer` : '';
-    if (data.text) addToSession(sid, { type: 'asst', text: data.text, runId, eventKey: answerKey });
+    if (data.text) {
+      const final = terminalAnswerMessage(
+        { summary: data.text, stop_reason: 'done', final_delivery: 'success' },
+        runId,
+        turnIds.get(runId) || '',
+      );
+      addToSession(sid, final || { type: 'asst', text: data.text, runId, eventKey: answerKey });
+    }
     return;
   }
   if (data.type === 'review') {
@@ -1352,20 +1417,26 @@ function applyRunState(data: RunState) {
   if (data.last_terminal_event) handleServerEvent(data.last_terminal_event);
   if (data.pending_event) handleServerEvent(data.pending_event);
 
-  const busy = !!data.busy && !!data.run_id;
-  runningRunId = busy ? (data.run_id ?? null) : null;
-  runningSessionId = busy ? (data.session_id ?? null) : null;
+  activeRuns.clear();
+  for (const run of data.active_runs || []) activeRuns.set(run.run_id, run.session_id);
+  const busy = activeRuns.size > 0 || (!!data.busy && !!data.run_id);
+  if (activeRuns.size === 0 && busy && data.run_id && data.session_id) activeRuns.set(data.run_id, data.session_id);
+  const primary = [...activeRuns.entries()].at(-1);
+  runningRunId = primary?.[0] ?? null;
+  runningSessionId = primary?.[1] ?? null;
   if (busy) {
     runtime.Sse.displayRunStatus(data.run_status === 'connecting' ? 'connecting' : 'running');
   } else {
     setStatus('', 'ok');
   }
-  $('provider-button').disabled = $('effort-button').disabled = busy;
+  const activeSessionBusy = activeRuns.has(activeId);
+  $('provider-button').disabled = $('effort-button').disabled = activeSessionBusy;
   markResearchRestoreAvailability(data.research_restore_runs || []);
   runtime.Requests.reconcile({
     session_id: data.session_id ?? '',
     run_id: data.run_id ?? '',
     busy: !!data.busy,
+    active_runs: (data.active_runs || []).map((run) => ({ run_id: run.run_id, session_id: run.session_id })),
   });
   updateSend();
   updateComposerContext();
@@ -1385,6 +1456,10 @@ function connectEvents() {
 }
 
 function addToSession(sid: string, m: Message) {
+  if (m.type === 'shell_result' && m.id) {
+    const replaced = replaceSessionMessage(sid, (item) => item.type === 'shell_result' && item.id === m.id, m);
+    if (replaced) return true;
+  }
   if (m.type === 'asst' && !m.streamId && m.runId && m.text) {
     const session = sessions.find((session) => session.id === sid);
     const final = session && finalStreamMessage(session, m.runId, m.text, m.eventKey || '');
@@ -1443,7 +1518,6 @@ function replaceSessionMessage(sid: string, predicate: (message: Message) => boo
   const s = sessions.find((x) => x.id === sid);
   if (!s) return false;
   ensureSessionIndexes(s);
-  if (message.eventKey && s._eventKeys!.has(message.eventKey)) return false;
   const index = s.messages.findIndex(predicate);
   if (index < 0) return false;
   s.messages[index] = message;
@@ -1663,7 +1737,7 @@ function syncResearchUseProjectButton() {
   const btn = $('research-use-project');
   if (!btn) return;
   const s = activeSession();
-  const busy = !!runningSessionId;
+  const busy = runningSessionId === activeId;
   const unusable = busy || !s || !!sessionProject(s);
   btn.disabled = unusable;
   btn.title = busy ? 'Busy' : !s ? 'No chat' : sessionProject(s) ? 'Already in a project' : '';
@@ -1726,7 +1800,8 @@ async function boot() {
     $,
     getActiveId: () => activeId,
     getSessionTitle: (id: string) => (sessions.find((s) => s.id === id) || {}).title || 'Chat',
-    getCurrentRun: (id: string) => currentResearchRun(id) as import('./research_drawer').ResearchRunView | null,
+    getCurrentRun: (id: string, runId: string) =>
+      runtime.ResearchRuns.forRun(id, runId) as import('./research_drawer').ResearchRunView | null,
     getResearchGraphDepth: () => researchGraphDepth,
     setResearchGraphDepth: (value: number) => {
       researchGraphDepth = value;
@@ -1779,6 +1854,7 @@ async function boot() {
     acceptRun: (runId: string | null, sessionId: string | null) => {
       runningRunId = runId || null;
       runningSessionId = runningRunId ? sessionId : null;
+      if (runId && sessionId) activeRuns.set(runId, sessionId);
     },
     setProviderBusy: (busy: boolean) => {
       $('provider-button').disabled = !!busy;
@@ -1806,6 +1882,10 @@ async function boot() {
     PROVIDERS,
     getActiveId: () => activeId,
     getRunningSessionId: () => runningSessionId,
+    getRunningRunId: () => runningRunId,
+    getRunningRunIdForSession: (sessionId: string) =>
+      [...activeRuns.entries()].find(([, owner]) => owner === sessionId)?.[0] || null,
+    isSessionRunning: (sessionId: string) => [...activeRuns.values()].includes(sessionId),
     activeSession,
     findSession: (sessionId: string | null | undefined) =>
       sessionId ? sessions.find((x) => x.id === sessionId) : undefined,
@@ -1838,6 +1918,7 @@ async function boot() {
     resumeTeaching,
     getActiveId: () => activeId,
     getRunningSessionId: () => runningSessionId,
+    getSessions: () => sessions,
   });
   runtime.ConversationUI.init({
     activeSession,
@@ -1873,8 +1954,7 @@ async function boot() {
   await restoreUiStateFromServer();
   await userQuestions.refresh();
   await runtime.Composer.refreshQueuedInputs();
-  $('task').disabled = false;
-  updateSend();
+  runtime.Composer.setReady();
   syncResearchUseProjectButton();
   connectEvents();
 }

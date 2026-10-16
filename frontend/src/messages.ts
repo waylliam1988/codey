@@ -5,6 +5,7 @@ import { runtime } from './runtime';
 import { hydrateDocumentContent } from './document_content';
 import { artifactRow, decorateDeliverables } from './artifacts';
 import type { Message, UiDeps } from './types/domain';
+import { finalAnswerMarkdown } from './answer_copy';
 interface MessagesDeps extends UiDeps {
   openDocument(sessionId: string, ref: DocumentRef): void;
   statusRow(prefix: string, text: string, options?: Record<string, unknown>): HTMLElement;
@@ -127,7 +128,20 @@ export interface MessagesApi {
           workspace: currentProjectPath() || undefined,
         }).then(() => decorateDeliverables(body));
       }
-      if (!m.streamId || m.finalAnswer) addMessageCopyButton(div, messageCopyText(m));
+      if (!m.streamId || m.finalAnswer) {
+        const sessionId = m.sessionId || activeId;
+        const final = m.contentRole === 'final' && !!m.turnId && !!m.answerId;
+        addMessageCopyButton(
+          div,
+          final
+            ? () => {
+                const session = deps.getSessions?.().find((item) => item.id === sessionId);
+                return session ? finalAnswerMarkdown(session.messages, m.turnId || '') || m.text || '' : m.text || '';
+              }
+            : () => messageCopyText(m),
+          final ? 'final' : 'message',
+        );
+      }
       streamStatus(div, m);
       chat.appendChild(div);
     } else if (m.type === 'tool') {
@@ -148,7 +162,7 @@ export interface MessagesApi {
             'Research · Markdown',
             () => deps.openDocument(sessionId, { kind: 'research', note_id: report }),
             [
-              { label: 'View research evidence', action: () => runtime.ResearchDrawer.open(sessionId) },
+              { label: 'View research evidence', action: () => runtime.ResearchDrawer.open(sessionId, m.runId || '') },
               { label: 'Use in Project', action: () => attachCurrentChatToPickedProject() },
             ],
           ),
@@ -156,7 +170,10 @@ export interface MessagesApi {
         return;
       }
       const actions = runtime.RunDetails.actionsForMessage(m, [
-        { label: 'View research evidence', onclick: () => runtime.ResearchDrawer.open(m.sessionId || activeId) },
+        {
+          label: 'View research evidence',
+          onclick: () => runtime.ResearchDrawer.open(m.sessionId || activeId, m.runId || ''),
+        },
         { label: 'Use in Project', onclick: () => attachCurrentChatToPickedProject() },
       ]);
       chat.appendChild(
@@ -355,8 +372,22 @@ export interface MessagesApi {
     if (!node || !body) return false;
     runtime.Render.updateMarkdown(body, message.text || '');
     streamStatus(node, message);
-    if (message.finalAnswer && !node.querySelector('.msg-copy'))
-      runtime.Render.addMessageCopyButton(node, message.text || '');
+    if (message.finalAnswer && !node.querySelector('.msg-copy')) {
+      const sessionId = message.sessionId || deps.getActiveId();
+      const final = message.contentRole === 'final' && !!message.turnId && !!message.answerId;
+      runtime.Render.addMessageCopyButton(
+        node,
+        final
+          ? () => {
+              const session = deps.getSessions?.().find((item) => item.id === sessionId);
+              return session
+                ? finalAnswerMarkdown(session.messages, message.turnId || '') || message.text || ''
+                : message.text || '';
+            }
+          : () => message.text || '',
+        final ? 'final' : 'message',
+      );
+    }
     if (message.streamState !== 'partial')
       void hydrateDocumentContent(body, {
         sessionId: message.sessionId || deps.getActiveId(),

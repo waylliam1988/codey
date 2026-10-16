@@ -8,8 +8,10 @@ the headless runner never builds global UI state as a side effect.
 
 from __future__ import annotations
 
+import contextlib
 import tempfile
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
@@ -17,8 +19,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from codey.repairs.self_repair import SelfRepairSupervisor
-
-import contextlib
 
 from codey.agents.handoff import ConversationContext
 from codey.app import event_bus
@@ -50,8 +50,10 @@ from codey.runtime.effects.shell_approval_records import ShellApprovalFact, Shel
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.storage.managed_outputs import ManagedOutputStore
+from codey.storage.transcript_store import TranscriptStore
 from codey.storage.ui_state_store import UiStateStore
 from codey.utils.refs import strict_exit_code
 from codey.workspace.changes import ChangeTracker, SnapshotStore
@@ -92,6 +94,11 @@ class AppContext:
         # Spawn gate: Stop's generation bump and the executor's final
         # check+Popen both hold it (never self.lock: re-entrant deadlock).
         self._shell_spawn_gate = threading.Lock()
+        # Shell execution releases the spawn gate while it waits for the
+        # process. Keep shutdown from closing the output store during the
+        # small post-wait settlement window.
+        self._shell_execution_condition = threading.Condition()
+        self._shell_executions = 0
         # Read the module global at call time (not as a default value) so
         # tests can patch SSE_REPLAY_LIMIT around construction.
         self.event_bus = EventBus(
@@ -131,6 +138,8 @@ class AppContext:
         self.conversation_runtime = ConversationRuntime(runtime_state_home, self.emit)
         self.input_queue = self.conversation_runtime.inputs
         self.user_questions = self.conversation_runtime.questions
+        self.transcript_store = TranscriptStore(runtime_state_home)
+        self.execution_outputs = ExecutionOutputStore(runtime_state_home)
         self.runtime_operations = RuntimeOperationStore(self.runtime_log)
         self.runtime_effects = RuntimeEffectStore(self.runtime_log)
         self.tool_result_delivery = ToolResultDeliveryStore(self.runtime_log)
@@ -156,7 +165,7 @@ class AppContext:
         self.ghost_sleep_daemon = GhostSleepDaemon(
             lock=self.lock,
             is_busy=self.is_busy,
-            stop_requested=lambda: self.run_registry.stop_flag.is_set(),
+            stop_requested=lambda: any(run.stop_event.is_set() for run in self.run_registry.active_runs()),
             run_once=self._run_ghost_sleep_once,
         )
         self._self_repair: SelfRepairSupervisor | None = None
@@ -352,6 +361,7 @@ class AppContext:
             run_traces=self.run_traces,
             evidence_ledgers=self.evidence_ledgers,
             managed_outputs=self.managed_outputs,
+            execution_outputs=self.execution_outputs,
             knowledge_store=self.knowledge_store,
             runtime_mutations=self.runtime_mutations,
             runtime_effects=self.runtime_effects,
@@ -393,8 +403,49 @@ class AppContext:
             return self.ui_state_store.load()
 
     def save_ui_state(self, state: object, *, base_revision: int) -> dict[str, Any]:
+        # Import the complete incoming list before UiStateStore applies its
+        # bounded visible projection. This is the baseline path for older
+        # installations whose first 500-message window was clipped.
+        if isinstance(state, dict):
+            for session in state.get("sessions", []):
+                if not isinstance(session, dict):
+                    continue
+                session_id = str(session.get("id") or "")
+                messages = session.get("messages")
+                if not session_id or not isinstance(messages, list):
+                    continue
+                if not self.transcript_store.ui_save_allowed(session_id, base_revision):
+                    continue
+                epoch = self.transcript_store.epoch(session_id)
+                for message in messages:
+                    if not isinstance(message, dict):
+                        continue
+                    stream_id = str(message.get("streamId") or "")
+                    identity = f"stream:{stream_id}" if stream_id else str(message.get("id") or "")
+                    if not identity:
+                        continue
+                    with contextlib.suppress(Exception):
+                        self.transcript_store.append(session_id, message, message_id=identity, event_id=str(message.get("eventKey") or ""), epoch=epoch, turn_id=str(message.get("turnId") or ""))
         with self.ui_state_store_lock:
-            return self.ui_state_store.save(state, base_revision=base_revision)
+            saved = self.ui_state_store.save(state, base_revision=base_revision)
+        for session in saved.get("sessions", []):
+            if not isinstance(session, dict):
+                continue
+            session_id = str(session.get("id") or "")
+            for message in session.get("messages", []):
+                if not isinstance(message, dict):
+                    continue
+                stream_id = str(message.get("streamId") or "")
+                identity = f"stream:{stream_id}" if stream_id else str(message.get("id") or "")
+                if not identity:
+                    continue
+                with contextlib.suppress(Exception):
+                    if not self.transcript_store.ui_save_allowed(session_id, base_revision):
+                        continue
+                    self.transcript_store.append(session_id, message, message_id=identity, event_id=str(message.get("eventKey") or ""), epoch=self.transcript_store.epoch(session_id), turn_id=str(message.get("turnId") or ""))
+                    # The display archive is observational; UI state remains
+                    # authoritative for the current visible window.
+        return saved
 
     def visible_session_excerpt(self, session_id: str, current_request: str = "") -> str:
         with self.ui_state_store_lock:
@@ -443,7 +494,11 @@ class AppContext:
         run_id: str = "",
         abort_if_stopped: bool = False,
     ) -> RunSnapshot | None:
-        """Atomically reserve the single browser task slot.
+        """Atomically reserve the session's browser task lane.
+
+        Different sessions may reserve independent lanes concurrently. A
+        session remains serial: a second reservation for the same session is
+        rejected until its active run finishes.
 
         With ``abort_if_stopped`` a pending user Stop wins inside the same
         lock: the slot stays free, the flag is left set, and no reservation
@@ -475,6 +530,12 @@ class AppContext:
 
     def current_run(self) -> RunSnapshot | None:
         return self.run_registry.current()
+
+    def active_runs(self) -> tuple[RunSnapshot, ...]:
+        return self.run_registry.active_runs()
+
+    def stop_flag_for(self, run_id: str) -> threading.Event:
+        return self.run_registry.stop_flag_for(run_id)
 
     def is_busy(self) -> bool:
         return self.run_registry.is_busy()
@@ -518,10 +579,34 @@ class AppContext:
         return True
 
     def record_shell_result(self, event: dict[str, Any]) -> None:
+        if "failure" not in event:
+            status = str(event.get("status") or "")
+            failure_code = {
+                "output_read_error": "output.unavailable",
+                "drain_timeout": "output.unavailable",
+                "timeout": "execution.uncertain",
+                "wait_error": "execution.uncertain",
+            }.get(status)
+            if failure_code:
+                event = {
+                    **event,
+                    "failure": {
+                        "schema_version": SCHEMA_VERSION,
+                        "code": failure_code,
+                        "category": "execution" if failure_code.startswith("execution") else "output",
+                        "scope": "tool",
+                        "phase": status,
+                        "effect": "unknown",
+                        "incident_id": f"shell:{event.get('id') or 'unknown'}:{status}",
+                        "session_id": str(event.get("session_id") or ""),
+                        "run_id": str(event.get("run_id") or ""),
+                        "execution_id": str(event.get("execution_id") or ""),
+                    },
+                }
         payload = self.run_registry.record_shell_result(event)
         self.emit(payload)
 
-    def request_stop(self) -> None:
+    def request_stop(self, run_id: str | None = None) -> None:
         """Linearized Stop: flag, teach cancel, and approval expiry share one
         gate with the shell spawn path.
 
@@ -533,7 +618,7 @@ class AppContext:
         gate across final-check+Popen in ``shell_service.execute_shell_ticket``.
         """
         with self._shell_spawn_gate:
-            self.run_registry.stop_flag.set()
+            self.run_registry.request_stop(run_id)
             with self.lock:
                 self.approvals.cancel_teach()
                 if self._close_requested:
@@ -542,12 +627,17 @@ class AppContext:
                     self.approvals.invalidate_generation()
                     events: tuple[dict[str, Any], ...] = ()
                 else:
-                    events = self._expire_shell_results_locked()
-                    self.shell_approval_workflow.cancel_queued()
+                    target_session = self.run_registry.session_for(run_id) if run_id else ""
+                    events = self._expire_shell_results_locked(run_id=run_id) if run_id else self._expire_shell_results_locked()
+                    self.shell_approval_workflow.cancel_queued(target_session)
         for event in events:
             self.record_shell_result(event)
         if not self._close_requested:
-            self.input_queue.pause()
+            target_session = self.run_registry.session_for(run_id) if run_id else ""
+            if not target_session:
+                owner = self.run_registry.current()
+                target_session = owner.session_id if owner is not None else ""
+            self.input_queue.pause(target_session)
 
     def expire_pending_shell_approvals(self) -> None:
         """Expire every pending shell approval (task stop path).
@@ -787,6 +877,18 @@ class AppContext:
             self.input_queue.completed(str(payload.get("run_id") or ""), payload)
         self._on_event_emitted(payload)
 
+    def emit_browser_event(self, event: dict[str, Any]) -> None:
+        """Publish an observational event without changing internal facts.
+
+        Output observation is auxiliary: it must reach SSE clients but must
+        not look like a settled shell result to lifecycle hooks or stores.
+        """
+        with self.lock:
+            payload = event_bus.stamp_run_scope(dict(event), self.run_registry.current())
+        payload = self._event_with_run_fields(payload)
+        payload["schema_version"] = SCHEMA_VERSION
+        self.event_bus.emit(payload)
+
     def _on_event_emitted(self, payload: dict[str, Any]) -> None:
         """Transport hook: the bus and additional sinks receive the same scoped event."""
 
@@ -851,8 +953,20 @@ class AppContext:
     def conversation_for(self, session_id: str) -> ConversationContext:
         return self.conversation_registry.for_session(session_id)
 
-    def forget_conversation(self, session_id: str) -> dict[str, str]:
+    def forget_conversation(self, session_id: str, *, preserve_ui: bool = False) -> dict[str, str]:
         failures: dict[str, str] = {}
+        try:
+            with self.ui_state_store_lock:
+                ui_revision = int(self.ui_state_store.load().get("revision") or 0)
+            self.transcript_store.clear(session_id, ui_revision=ui_revision)
+        except Exception as exc:
+            failures["transcript"] = str(exc)
+        if not preserve_ui:
+            try:
+                with self.ui_state_store_lock:
+                    self.ui_state_store.forget_session(session_id)
+            except Exception as exc:
+                failures["ui_state"] = str(exc)
         # No phase may short-circuit the rest: executable pending state must
         # be cleared even when an earlier store fails (fail closed).
         try:
@@ -916,6 +1030,30 @@ class AppContext:
         """Read the shutdown signal afresh across worker boundaries."""
         return self._close_requested
 
+    def _begin_shell_execution(self) -> bool:
+        """Register a shell executor unless shutdown has already started."""
+        with self._shell_execution_condition:
+            if self._close_requested:
+                return False
+            self._shell_executions += 1
+            return True
+
+    def _end_shell_execution(self) -> None:
+        with self._shell_execution_condition:
+            self._shell_executions = max(0, self._shell_executions - 1)
+            if self._shell_executions == 0:
+                self._shell_execution_condition.notify_all()
+
+    def _wait_shell_executions(self, timeout: float = 2.0) -> bool:
+        end = time.monotonic() + timeout
+        with self._shell_execution_condition:
+            while self._shell_executions:
+                remaining = end - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._shell_execution_condition.wait(remaining)
+            return True
+
     @property
     def closed(self) -> bool:
         """Return True when resources have been completely released."""
@@ -927,7 +1065,7 @@ class AppContext:
         except Exception:
             return False
 
-    def close(self) -> bool:
+    def close(self) -> bool:  # noqa: C901, PLR0912
         """Release durable resources. Returns True only when fully closed.
 
         A live background Ghost owns its stores: when the short join
@@ -954,7 +1092,25 @@ class AppContext:
         if not self._wait_background_workers():
             return False
 
+        if not self._wait_shell_executions():
+            return False
+
         resources_closed = True
+
+        def close_store(store: object) -> bool:
+            close = getattr(store, "close", None)
+            if not callable(close):
+                return True
+            for attempt in range(3):
+                try:
+                    close()
+                    return True
+                except Exception:
+                    if attempt == 2:
+                        return False
+                    time.sleep(0.05 * (attempt + 1))
+            return False
+
         with self.lock:
             project_writer_leases = tuple(self._project_writer_leases.items())
         for project, lease in project_writer_leases:
@@ -970,9 +1126,7 @@ class AppContext:
             self._knowledge_store_enabled = False
             knowledge_store = self._knowledge_store
         if knowledge_store is not None:
-            try:
-                getattr(knowledge_store, "close", lambda: None)()
-            except Exception:
+            if not close_store(knowledge_store):
                 resources_closed = False
             else:
                 with self.lock:
@@ -980,12 +1134,16 @@ class AppContext:
                         self._knowledge_store = None
         evidence = getattr(self, "evidence_ledgers", None)
         if evidence is not None:
-            try:
-                getattr(evidence, "close", lambda: None)()
-            except Exception:
+            if not close_store(evidence):
                 resources_closed = False
             else:
                 self.evidence_ledgers = None
+        execution_outputs = getattr(self, "execution_outputs", None)
+        if execution_outputs is not None and not close_store(execution_outputs):
+            resources_closed = False
+        transcript_store = getattr(self, "transcript_store", None)
+        if transcript_store is not None and not close_store(transcript_store):
+            resources_closed = False
         if self._ephemeral_runtime_home is not None:
             try:
                 self._ephemeral_runtime_home.cleanup()

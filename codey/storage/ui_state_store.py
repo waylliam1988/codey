@@ -77,6 +77,7 @@ MESSAGE_KEYS = {
     "attempts",
     "sendFailure",
     "runOwner",
+    "turnId", "contentRole", "answerId", "answerPartIndex", "failure",
 }
 
 
@@ -137,6 +138,34 @@ def _clean_approval(value: object) -> dict[str, Any] | None:
     return clean
 
 
+def _clean_failure(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or value.get("schema_version") != 1:
+        return None
+    clean: dict[str, Any] = {}
+    for name in (
+        "schema_version", "code", "category", "scope", "phase", "effect",
+        "incident_id", "session_id", "run_id", "call_id", "execution_id", "source_id",
+        "diagnostic",
+    ):
+        raw = value.get(name)
+        if name == "schema_version":
+            if type(raw) is int and raw == 1:
+                clean[name] = raw
+        elif isinstance(raw, str):
+            clean[name] = _str(raw, 1000 if name == "diagnostic" else 160)
+    resource = value.get("resource")
+    if isinstance(resource, dict):
+        clean["resource"] = {
+            name: _str(resource.get(name), 240)
+            for name in ("kind", "path", "id")
+            if isinstance(resource.get(name), str)
+        }
+    retry_after = value.get("retry_after")
+    if type(retry_after) is int and 0 <= retry_after <= 86400:
+        clean["retry_after"] = retry_after
+    return clean
+
+
 def _clean_message(message: object) -> dict[str, Any] | None:
     if not isinstance(message, dict):
         return None
@@ -160,6 +189,10 @@ def _clean_message(message: object) -> dict[str, Any] | None:
                      if name in item}
                     for item in value[-64:] if isinstance(item, dict)
                 ]
+        elif key == "failure":
+            failure = _clean_failure(value)
+            if failure is not None:
+                clean[key] = failure
         elif key == "files":
             clean[key] = _clean_files(value)
         elif key == "exitCode":
@@ -486,6 +519,25 @@ class UiStateStore:
         )
         # Only a successful write becomes the new comparison baseline; a
         # failed write leaves the cache pointing at the last durable state.
+        self._cached_state = clean
+        return clean
+
+    def forget_session(self, session_id: str) -> dict[str, Any]:
+        """Remove a session from the durable UI projection atomically."""
+        target = str(session_id or "")
+        if not target:
+            return self._current()
+        current = self._current()
+        old_sessions = current.get("sessions", [])
+        sessions = [s for s in old_sessions if isinstance(s, dict) and str(s.get("id") or "") != target]
+        if len(sessions) == len(old_sessions):
+            return current
+        clean = dict(current)
+        clean["sessions"] = sessions
+        if clean.get("active_id") == target:
+            clean["active_id"] = str(sessions[-1].get("id") or "") if sessions else ""
+        clean["revision"] = _int(current.get("revision")) + 1
+        write_json_atomic(self.path, {"schema_version": SCHEMA_VERSION, "state": clean}, max_bytes=MAX_UI_STATE_BYTES)
         self._cached_state = clean
         return clean
 

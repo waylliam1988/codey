@@ -886,6 +886,22 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
     observe(attempt=1, data=data, phase="request", response_bytes=0, seconds=0.0)
     control = AttemptControl()
     on_control(control)
+    # The provider's cancellation callback is backed by a task-scoped event.
+    # A socket read can block without reaching a Python callback, so poll the
+    # callback in a tiny watcher and interrupt the response/control immediately.
+    watcher_stop = threading.Event()
+
+    def watch_cancellation() -> None:
+        while not watcher_stop.wait(0.05):
+            try:
+                if cancelled():
+                    control.cancel()
+                    return
+            except Exception:
+                return
+
+    watcher = threading.Thread(target=watch_cancellation, name="codey-api-cancel", daemon=True)
+    watcher.start()
     deadline_guard = threading.Timer(max(0.001, started + timeout - time.monotonic()), control.cancel)
     deadline_guard.daemon = True
     deadline_guard.start()
@@ -1024,6 +1040,7 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
         phase = "unknown"
         raise GenerationUnknownError(f"generation outcome unknown; request not resent: {exc}") from exc
     finally:
+        watcher_stop.set()
         deadline_guard.cancel()
         control.finish()
         opened(None)

@@ -23,6 +23,8 @@ export interface RequestEventData {
   status?: string;
   text?: string;
   error?: string;
+  active_runs?: Array<{ run_id: string; session_id: string }>;
+  response_ack_run_id?: string;
 }
 export interface RequestsApi {
   init(deps: RequestsDeps): void;
@@ -193,15 +195,23 @@ export interface RequestsDeps {
     );
   }
   function reconcile(data: EventData): void {
+    const active = new Set((data.active_runs || []).map((run) => `${run.session_id}\u0000${run.run_id}`));
+    if (data.run_id && data.session_id && data.busy) active.add(`${data.session_id}\u0000${data.run_id}`);
     for (const s of deps.getSessions()) {
       for (const request of s.messages.filter(
         (m: Message): m is RequestMessage => m.type === 'user' && Array.isArray(m.attempts) && m.attempts.length > 0,
       )) {
         const attempt = latest(request);
         if (!pending(attempt)) continue;
-        if (data.busy && data.run_id === attempt.runId && data.session_id === s.id) running(s.id, attempt.runId);
-        // An in-flight POST has not been admitted yet; an earlier state snapshot cannot settle it.
-        else if (attempt.state !== 'sending' || !runtime.Composer.isSending())
+        if (active.has(`${s.id}\u0000${attempt.runId}`)) running(s.id, attempt.runId);
+        // An in-flight POST has not been admitted yet. A snapshot for another
+        // session is not evidence of failure, and a delayed response may still
+        // be followed by task_start on SSE. Only explicit HTTP failure or the
+        // matching terminal event may settle a sending attempt.
+        else if (
+          attempt.state !== 'sending' &&
+          (!runtime.Composer.isSending(s.id) || attempt.runId === data.response_ack_run_id)
+        )
           fail(s.id, attempt.runId, 'Response was not confirmed');
       }
     }

@@ -1,3 +1,5 @@
+import { QuestionDraftStore, type QuestionDraft } from './question_draft_store';
+
 export interface UserQuestion {
   id: string;
   session_id: string;
@@ -13,6 +15,7 @@ export interface UserQuestion {
 interface QuestionDeps {
   observe(question: UserQuestion): void;
   changed(): void;
+  instanceId?: string;
 }
 function questionRecord(value: unknown): value is UserQuestion {
   if (!value || typeof value !== 'object') return false;
@@ -33,8 +36,38 @@ export class UserQuestions {
   private items = new Map<string, UserQuestion>();
   private phases = new Map<string, 'sending' | 'unconfirmed' | 'checking'>();
   private drafts = new Map<string, { selected: string; custom: boolean; text: string }>();
+  private readonly draftStore: QuestionDraftStore;
+  private draftTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private notices = new Map<string, string>();
+  private noticeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private editing = new Set<string>();
+  private conflicts = new Map<string, QuestionDraft>();
   private rendered = new WeakMap<HTMLElement, string>();
-  constructor(private deps: QuestionDeps) {}
+  constructor(private deps: QuestionDeps) {
+    this.draftStore = new QuestionDraftStore({ instanceId: deps.instanceId || 'default' });
+    window.addEventListener('pagehide', () => this.flushDrafts());
+    window.addEventListener('storage', (event) => {
+      if (!event.key?.startsWith('codey:question-draft:') || !event.newValue) return;
+      const identity = [...this.items.values()].find((item) => event.key?.endsWith(`:${item.session_id}:${item.id}`));
+      if (!identity) return;
+      let incoming: QuestionDraft | null = null;
+      try {
+        const value = JSON.parse(event.newValue) as QuestionDraft;
+        if (value && value.schema_version === 1) incoming = value;
+      } catch {
+        return;
+      }
+      if (this.editing.has(identity.id)) {
+        if (incoming) this.conflicts.set(identity.id, incoming);
+        this.setNotice(identity.id, 'Another tab has a newer draft');
+        this.syncViews(document.body);
+        return;
+      }
+      this.drafts.delete(identity.id);
+      this.setNotice(identity.id, 'Draft updated in another tab');
+      this.syncViews(document.body);
+    });
+  }
   pending(session: string): boolean {
     return [...this.items.values()].some((q) => q.session_id === session && q.state === 'pending');
   }
@@ -96,6 +129,7 @@ export class UserQuestions {
   private async submit(question: UserQuestion, answer: string, cancel = false): Promise<void> {
     if (this.phases.has(question.id)) return;
     this.phases.set(question.id, 'sending');
+    this.flushDraft(question.id);
     this.syncViews(document.body);
     try {
       const response = await fetch('/api/questions', {
@@ -111,6 +145,10 @@ export class UserQuestions {
       const data = await response.json();
       if (!questionRecord(data.question)) throw new Error(data.error || 'Answer was not confirmed');
       this.apply(data.question, true);
+      if (data.question.state !== 'answer_accepted' && data.question.state !== 'pending') {
+        this.draftStore.clear(question.session_id, question.id);
+        this.drafts.delete(question.id);
+      }
     } catch {
       this.phases.set(question.id, 'unconfirmed');
       this.syncViews(document.body);
@@ -120,7 +158,7 @@ export class UserQuestions {
     const identity = card.dataset.questionId!,
       q = this.items.get(identity),
       phase = this.phases.get(identity);
-    const signature = String(q?.revision) + ':' + String(phase);
+    const signature = String(q?.revision) + ':' + String(phase) + ':' + (this.notices.get(identity) || '');
     if (this.rendered.get(card) === signature) return;
     this.rendered.set(card, signature);
     card.replaceChildren();
@@ -154,14 +192,56 @@ export class UserQuestions {
       if (q.state === 'answer_accepted') card.append(check());
       return;
     }
-    const draft = this.drafts.get(identity) || { selected: q.options[0], custom: false, text: '' };
+    const hadDraft = this.drafts.has(identity);
+    const restored = this.draftStore.load(q.session_id, q.id, {
+      revision: q.revision,
+      options: q.options,
+      allow_free_text: q.allow_free_text,
+    });
+    const draft = this.drafts.get(identity) || {
+      selected: restored?.selected || q.options[0],
+      custom: restored?.custom || false,
+      text: restored?.text || '',
+    };
     this.drafts.set(identity, draft);
+    if (!hadDraft && restored) this.setNotice(identity, 'Draft restored');
     const form = document.createElement('form'),
       title = document.createElement('div'),
       fields = document.createElement('fieldset');
     title.className = 'question-title';
     title.textContent = q.question;
     fields.disabled = !!phase;
+    const conflict = this.conflicts.get(identity);
+    if (conflict) {
+      const conflictBox = document.createElement('div');
+      conflictBox.className = 'question-conflict';
+      conflictBox.textContent = 'Another tab has a newer draft.';
+      const keep = document.createElement('button');
+      keep.type = 'button';
+      keep.className = 'text-btn';
+      keep.textContent = 'Keep current';
+      keep.onclick = () => {
+        this.conflicts.delete(identity);
+        this.setNotice(identity, 'Kept current draft');
+        this.syncViews(document.body);
+      };
+      const use = document.createElement('button');
+      use.type = 'button';
+      use.className = 'text-btn';
+      use.textContent = 'Use other draft';
+      use.onclick = () => {
+        this.drafts.set(identity, {
+          selected: conflict.selected || q.options[0],
+          custom: conflict.custom,
+          text: conflict.text,
+        });
+        this.conflicts.delete(identity);
+        this.setNotice(identity, 'Draft restored');
+        this.syncViews(document.body);
+      };
+      conflictBox.append(keep, use);
+      card.append(conflictBox);
+    }
     const customText = document.createElement('textarea');
     customText.className = 'question-answer';
     customText.maxLength = 8000;
@@ -170,6 +250,7 @@ export class UserQuestions {
     customText.hidden = !draft.custom;
     customText.oninput = () => {
       draft.text = customText.value;
+      this.markDraft(q, draft);
     };
     const choice = (label: string, description: string, custom = false) => {
       const row = document.createElement('label');
@@ -183,6 +264,7 @@ export class UserQuestions {
         draft.custom = custom;
         draft.selected = label;
         customText.hidden = !custom;
+        this.markDraft(q, draft);
         if (custom) customText.focus();
       };
       const text = document.createElement('span');
@@ -202,6 +284,17 @@ export class UserQuestions {
     }
     const actions = document.createElement('div');
     actions.className = 'question-actions';
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'text-btn';
+    clear.textContent = 'Clear draft';
+    clear.disabled = !!phase;
+    clear.onclick = () => {
+      this.draftStore.clear(q.session_id, q.id);
+      this.drafts.delete(identity);
+      this.setNotice(identity, this.draftStore.lastError() || 'Draft cleared');
+      this.syncViews(document.body);
+    };
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.className = 'text-btn';
@@ -213,8 +306,16 @@ export class UserQuestions {
     confirm.className = 'text-btn question-confirm';
     confirm.textContent = phase === 'sending' ? 'Submitting…' : 'Confirm';
     confirm.disabled = !!phase;
-    actions.append(cancel, confirm);
+    actions.append(clear, cancel, confirm);
     if (phase === 'unconfirmed' || phase === 'checking') actions.append(check());
+    const notice = this.notices.get(identity);
+    if (notice) {
+      const saved = document.createElement('div');
+      saved.className = 'question-draft-notice';
+      saved.setAttribute('role', 'status');
+      saved.textContent = notice;
+      form.append(saved);
+    }
     const error = document.createElement('div');
     error.className = 'question-error';
     error.setAttribute('role', 'alert');
@@ -225,6 +326,12 @@ export class UserQuestions {
     });
     form.addEventListener('compositionend', () => {
       composing = false;
+    });
+    customText.addEventListener('focus', () => this.editing.add(identity));
+    customText.addEventListener('blur', () => this.editing.delete(identity));
+    fields.querySelectorAll<HTMLInputElement>('input').forEach((input) => {
+      input.addEventListener('focus', () => this.editing.add(identity));
+      input.addEventListener('blur', () => this.editing.delete(identity));
     });
     form.onsubmit = (event) => {
       event.preventDefault();
@@ -238,5 +345,57 @@ export class UserQuestions {
     };
     form.append(title, fields, status, error, actions);
     card.append(form);
+  }
+
+  private markDraft(question: UserQuestion, draft: { selected: string; custom: boolean; text: string }): void {
+    this.drafts.set(question.id, draft);
+    const old = this.draftTimers.get(question.id);
+    if (old) clearTimeout(old);
+    this.draftTimers.set(
+      question.id,
+      setTimeout(() => {
+        this.draftTimers.delete(question.id);
+        this.flushDraft(question.id);
+      }, 300),
+    );
+  }
+
+  private flushDraft(identity: string): void {
+    const question = this.items.get(identity);
+    const draft = this.drafts.get(identity);
+    if (!question || !draft || question.state !== 'pending') return;
+    const old = this.draftTimers.get(identity);
+    if (old) clearTimeout(old);
+    this.draftTimers.delete(identity);
+    this.draftStore.save(question.session_id, question.id, {
+      question_revision: question.revision,
+      selected: draft.selected || null,
+      custom: draft.custom,
+      text: draft.text.slice(0, 8000),
+      edit_revision: Date.now(),
+      writer_id: this.draftStore.writer(),
+      saved_at: this.draftStore.timestamp(),
+    });
+    this.setNotice(identity, this.draftStore.lastError() || 'Draft saved');
+    this.syncViews(document.body);
+  }
+
+  private setNotice(identity: string, text: string): void {
+    this.notices.set(identity, text);
+    const old = this.noticeTimers.get(identity);
+    if (old) clearTimeout(old);
+    this.noticeTimers.set(
+      identity,
+      setTimeout(() => {
+        this.notices.delete(identity);
+        this.noticeTimers.delete(identity);
+        this.syncViews(document.body);
+      }, 1800),
+    );
+  }
+
+  private flushDrafts(): void {
+    for (const identity of this.drafts.keys()) this.flushDraft(identity);
+    this.draftStore.flush();
   }
 }

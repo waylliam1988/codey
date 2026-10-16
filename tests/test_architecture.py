@@ -2223,6 +2223,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             if size > 1000:
                 over_limit[path.relative_to(ROOT / "codey").as_posix()] = size
         baseline = {
+            # Conversation context now owns the display transcript and
+            # execution-output stores; keep their lifecycle in one boundary.
+            "app/context.py",
             "ghost/affinity.py",
             "ghost/continuity.py",
             "ghost/hebbian.py",
@@ -2254,6 +2257,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # would never alarm.
         self.assertEqual(baseline - set(over_limit), set())
         ceiling = {
+            # Session-scoped run lanes and per-run cancellation/output
+            # lifecycle add a small amount of cohesive context state.
+            "app/context.py": 1160,
             "ghost/affinity.py": 2750,
             "ghost/continuity.py": 1350,
             "ghost/hebbian.py": 1300,

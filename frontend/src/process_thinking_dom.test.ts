@@ -26,6 +26,16 @@ it('advances a retried request from sending to running in the same process block
   expect(chat.querySelector('.process-title')?.textContent).toBe('Working · Waiting for reply');
 });
 
+it('keeps Sending static without a meaningless disclosure arrow', async () => {
+  await import('./process');
+  const chat = document.createElement('div');
+  window.Process.append(chat, { type: 'request_activity', runId: 'sending', state: 'sending' }, vi.fn());
+  expect(chat.querySelector('.process-title')?.textContent).toBe('Sending…');
+  expect((chat.querySelector('.process-group') as HTMLDetailsElement | null)?.hidden).toBe(false);
+  expect(chat.querySelector('.process-block')?.classList.contains('process-sending')).toBe(true);
+  expect(chat.querySelector('.process-summary')?.textContent).toBe('Sending…');
+});
+
 it('owns one progress indicator from initial request through approval and completion', async () => {
   await import('./process');
   const chat = document.createElement('div');

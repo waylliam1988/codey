@@ -254,7 +254,7 @@ Context menus (`.ctx-menu`):
 - **Status area:**
   - Idle: empty (no dot, no “Connected” label)
   - Running / connecting: CSS **spinner** + short label (`Running`, `Connecting to Edge…`)
-  - When another chat owns the run: `Running in <chat> · Open`. Stop names the same chat; the single-run limit still applies.
+  - When another chat owns the run: `Running in <chat> · Open`. `Open` returns to the owning chat, where its Stop control remains available; other chats keep the composer Send slot available for queueing.
   - Error: small dot + `--err-text` label (`Disconnected`)
 - No colored status chips in the top bar.
 
@@ -311,7 +311,9 @@ brightens text to `--text`; keep the restrained global keyboard focus outline.
 This shared rule also covers Settings actions such as `Select all`, `Clear` and
 `Refresh models`. Actual hyperlinks inside answer prose retain their underline.
 
-Submission failures use confirmed causes only: `Another chat is running · Open` navigates to the verified run owner; `Select the local model again · Choose model` opens the existing model menu in the original chat; `Codey is temporarily busy · Retry` retries the original request. Unknown causes retain `Could not send the message · Retry`. Navigation and model selection do not send automatically. Failure actions belong to the original chat and preserve newer drafts in every chat.
+Each chat is an independent run lane: one active run is allowed per session, while different sessions may send and stream concurrently. Stop carries the selected session's `run_id`; it cannot cancel another chat. Project writer leases remain a separate resource guard for write tasks. Submission failures use confirmed causes only: `Another chat is running · Open` is reserved for a verified same-session admission conflict; `Select the local model again · Choose model` opens the existing model menu in the original chat; `Codey is temporarily busy · Retry` retries the original request. Unknown causes retain `Could not send the message · Retry`. Navigation and model selection do not send automatically. Failure actions belong to the original chat and preserve newer drafts in every chat.
+
+At startup the composer restores the durable UI state, question state, and queued-input snapshot before enabling the textarea. Switching sessions remains available during that restore, but no draft can be submitted until the initial restore boundary completes; a late restore cannot overwrite an enabled user's new input.
 
 Manual Retry belongs to the fixed identity of a user message. Each explicit retry has a new execution identity, recorded under that request, and updates one status position after its existing output. Keep the user message, tool records, reading position, and newer drafts intact. While retrying, replace error text and actions with a gray spinner and `Retrying · Waiting for reply`; another failure replaces that same row. Success hides the transient row and displays the answer normally, without a success banner. Only the latest user request can be retried, and admission or an active execution disables duplicate submission. Independent errors without a request identity must not guess which question to resend.
 
@@ -472,7 +474,7 @@ Choose folder · Research                     ← enabled context actions (11.5p
 - Thinking controls require verified connection/model metadata. Active KoboldCpp Jinja and a matching `enable_thinking` template support Off/High; verified versions 1.112.2–1.117.x additionally support minimal/low/medium budgets. High uses the native unrestricted thinking budget within the total output limit. Mini/Med map to minimal/medium. Show the concrete initial level rather than Default or On. Every non-Off choice explicitly enables thinking; do not fabricate distinct Max behavior. Returned reasoning and configurable thinking are independent capabilities.
 - API model and thinking choices belong to the chat, persist with it, and are captured at admission for the next request. Background/continued requests use that chat's choices, even while another chat is visible. A new chat on the same connection inherits the active chat's selected model and thinking choices, with its own independent effort map. With no matching active choice, it uses the connection default. Connection address, credentials, API protocol, context limit, tool calling, and default model live in Settings. Pending command continuation and cold recovery retain the admitted selection. A changed connection cannot silently carry a stale chat selection or credential to another endpoint. Deleted connections preserve readable old chats and their model identity; sending requires an explicit new choice.
 - `Enter` hint: immediately before Send/Stop with a 6px gap, visible on composer focus/hover only, `--faint`. `Enter` sends; `Shift+Enter` inserts a newline.
-- **Drafts and submission:** exact text, UTF-16 caret/selection offsets and direction belong to `session.draft`, persisted with the existing local UI state across chat switches and restarts. Reuse the 400ms coalesced save and immediate saves at critical boundaries; capture the final selection before page exit. Deleting a chat deletes its draft; Clear messages retains it. Drafts do not enter model context or chat excerpts until explicitly sent. Keep input and Send unavailable until initial server restoration settles.
+- **Drafts and submission:** exact text, UTF-16 caret/selection offsets and direction belong to `session.draft`, persisted with the existing local UI state across chat switches and restarts. Question answers use `QuestionDraftStore` in the same browser origin and validate question revision/options before restore; `Clear draft` only removes that question's draft. A different tab exposes a conflict with `Keep current` / `Use other draft`. Cross-port and cross-profile recovery is not promised. Drafts do not enter model context or chat excerpts until explicitly sent.
 - A draft revision advances only on text changes and never rewinds when cleared. Admission shows `Sending…`, prevents duplicate requests, and only consumes the accepted text/revision snapshot; later edits, including editing back to the same text, remain intact. Choosing a folder changes context without sending. Save failure preserves editing and shows one quiet `Not saved · Retry` in the context row's right-hand status slot; assistive text explains `Could not save local changes`, since the save scope also includes chats and projects. Retry saves current local content without reloading it or sending a task. Only an already-visible failure changes to `Saving…`; Retry remains in place with `aria-disabled` and ignores repeat activation while saving. Normal background saves stay silent. Hide the status only after successful confirmation with no queued or coalesced edits waiting to save. Return focus to the input only if the disappearing status still owns focus; background responses never take focus from another control. A version conflict pauses automatic writes, including the exit beacon, until explicit Retry; the local cache still retains the draft. No extra row, toast, underline, separate draft API, store or save timer.
 - **Pending approval:** the command card owns `Approval required` and its Allow / Deny controls. Do not duplicate this with a composer notification or another approval action. Enter never approves a command globally. The command card remains the single approval surface.
 
@@ -758,8 +760,10 @@ the focused form and composition state. Answered cards become a quiet answer row
 rewrite the historical request or rerun an executed command. Initially mount the
 latest 100 saved messages, extending backward to a complete user-request boundary.
 `Load earlier messages` prepends another window while retaining existing nodes and
-the reading anchor; `Show all for find` mounts all saved messages. This does not
-expand the existing server retention limit of 500 messages per chat. Wheel and
+the reading anchor; `Search this conversation` queries the server archive and can
+locate messages outside the mounted tail. The UI snapshot remains bounded to 500
+messages, while the independent transcript archive retains messages imported from
+the incoming state and uses epoch-safe cursor pagination. Wheel and
 reading keys inside a scrollable command, code block or table belong to that
 region until its directional edge, then may reach the outer conversation.
 
@@ -786,3 +790,9 @@ streaming timer or full-answer Collapse is introduced.
 - Every confirmed local image is scheduled through the existing four-worker
   pool. The UI no longer silently truncates image jobs at twenty; each failed
   image keeps its own reload/details path.
+- Command output observation uses a bounded execution snapshot with separate
+  stdout/stderr capture and an execution identity. The current browser reads
+  snapshots on demand by polling while a command is running; it does not claim
+  a dedicated output SSE stream. Read or drain failures preserve the observed
+  execution as `unknown` and expose reload/status actions rather than rerunning
+  the command.

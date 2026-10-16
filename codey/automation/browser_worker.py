@@ -370,6 +370,7 @@ class BrowserWorker:
 
 _WORKER: BrowserWorker | None = None
 _WORKER_LOCK = threading.Lock()
+_SESSION_WORKERS: dict[str, BrowserWorker] = {}
 
 
 def default_worker() -> BrowserWorker:
@@ -390,13 +391,43 @@ def default_worker() -> BrowserWorker:
     return worker
 
 
+def session_worker(session_id: str) -> BrowserWorker:
+    """Return the dedicated execution lane for one conversation session.
+
+    A lane is serial for its session, while separate sessions get separate
+    Playwright threads and can make progress concurrently. The bounded queue
+    remains the backpressure boundary for each session.
+    """
+    key = str(session_id or "default")
+    with _WORKER_LOCK:
+        worker = _SESSION_WORKERS.get(key)
+        if worker is None:
+            worker = BrowserWorker(name=f"codey-browser-{key[:12]}")
+            _SESSION_WORKERS[key] = worker
+        return worker
+
+
 def submit(
     fn: Callable[..., Any],
     *args: Any,
     on_abandoned: Callable[[], None] | None = None,
     **kwargs: Any,
 ) -> bool:
-    return default_worker().submit(fn, *args, on_abandoned=on_abandoned, **kwargs)
+    worker_key = str(kwargs.pop("worker_key", "") or "")
+    if not worker_key and args and isinstance(args[0], str) and len(args) >= 8:
+        worker_key = args[0]
+    worker = session_worker(worker_key) if worker_key else default_worker()
+    return worker.submit(fn, *args, on_abandoned=on_abandoned, **kwargs)
+
+
+def submit_for(
+    session_id: str,
+    fn: Callable[..., Any],
+    *args: Any,
+    on_abandoned: Callable[[], None] | None = None,
+    **kwargs: Any,
+) -> bool:
+    return session_worker(session_id).submit(fn, *args, on_abandoned=on_abandoned, **kwargs)
 
 
 def call(
@@ -410,3 +441,11 @@ def call(
 
 def health_snapshot() -> BrowserWorkerHealth:
     return default_worker().health_snapshot()
+
+
+def close_session_workers(timeout: float = 5.0) -> None:
+    with _WORKER_LOCK:
+        workers = tuple(_SESSION_WORKERS.values())
+        _SESSION_WORKERS.clear()
+    for worker in workers:
+        worker.close(timeout)

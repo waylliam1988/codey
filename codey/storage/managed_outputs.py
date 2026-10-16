@@ -304,6 +304,7 @@ def run_command_with_managed_output(
     run_id: str,
     phase: str = "tool_runtime",
     tool_id: str = "",
+    execution_store: object | None = None,
 ) -> ToolOutcome:
     raw = tool_runtime.run_command_raw(
         root,
@@ -314,6 +315,9 @@ def run_command_with_managed_output(
         # The archive cannot recover bytes discarded by the process pumps.
         # Capture up to its existing capacity; the model preview is clipped later.
         capture_limit_bytes=MAX_MANAGED_OUTPUT_BYTES if store is not None else CAPTURE_LIMIT_BYTES,
+        execution_store=execution_store,
+        session_id=session_id,
+        run_id=run_id,
     )
     if isinstance(raw, ToolOutcome):
         return raw

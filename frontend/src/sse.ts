@@ -1,5 +1,6 @@
 import { runtime } from './runtime';
 import type { SseDeps } from './types/domain';
+import type { RunState } from './types/domain';
 import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/protocol';
 /* Codey SSE runtime: reconnect, state reconciliation, and accepted-run handoff. */
 (function () {
@@ -8,7 +9,7 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
   let deps: SseDeps;
   let evtSrc: EventSource | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let reconcilePromise: Promise<void> | null = null;
+  let reconcilePromise: Promise<RunState | null> | null = null;
   let bufferedServerEvents: ServerEvent[] = [];
   let bufferedGap = false;
   const BUFFER_LIMIT = 100;
@@ -38,15 +39,17 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
     }, 5000);
   }
 
-  function reconcileRunState(): Promise<void> {
+  function reconcileRunState(): Promise<RunState | null> {
     if (reconcilePromise) return reconcilePromise;
     bufferedServerEvents = [];
     bufferedGap = false;
     reconcilePromise = (async () => {
+      let snapshot: RunState | null = null;
       try {
         const response = await fetch('/api/state', { cache: 'no-store' });
         if (!response.ok) throw new Error('state unavailable');
-        deps.applyRunState(decodeRunState(await response.json()));
+        snapshot = decodeRunState(await response.json());
+        deps.applyRunState(snapshot);
         clearReconnectTimer();
       } catch {
         scheduleReconnectStatus();
@@ -57,7 +60,7 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
         let replayFailed = false;
         if (bufferedGap) {
           bufferedGap = false;
-          reconcileRunState();
+          void reconcileRunState();
         } else {
           for (const event of events) {
             try {
@@ -70,6 +73,7 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
           if (replayFailed) void reconcileRunState();
         }
       }
+      return snapshot;
     })();
     return reconcilePromise;
   }
@@ -109,7 +113,24 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
       deps.updateSend();
       deps.updateComposerContext();
     }
-    await reconcileRunState();
+    const initialSnapshot = await reconcileRunState();
+    if (runId) {
+      // Give the worker one event-loop turn to publish admission before
+      // treating an absent run as unconfirmed. The second snapshot keeps a
+      // normal POST/state publication race from becoming a false failure.
+      setTimeout(() => {
+        void reconcileRunState().then((snapshot) => {
+          const state = snapshot || initialSnapshot;
+          runtime.Requests.reconcile({
+            session_id: state?.session_id || sessionId,
+            run_id: state?.run_id || runId,
+            busy: state?.busy,
+            active_runs: state?.active_runs || [],
+            response_ack_run_id: runId,
+          });
+        });
+      }, 0);
+    }
   }
 
   function connect() {

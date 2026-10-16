@@ -107,6 +107,7 @@ class ApiProvider:
         self.context_ledger = ContextLedger()
         self._context_session = ""
         self._parent_cancelled: Callable[[], bool] = lambda: False
+        self._task_stop_event: Any = None
         self._result_refs: frozenset[str] = frozenset()
         self._auxiliary: ApiProvider | None = None
         self._history_revision = 0
@@ -330,6 +331,8 @@ class ApiProvider:
         if not self._send_lock.acquire(blocking=False):
             raise RuntimeError("API provider busy: concurrent sends are not supported")
         committed = False
+        from codey.runtime.core import cancellation
+        self._task_stop_event = cancellation.current_event()
         display = DisplayStream(self._on_display) if self.stream and not text_only and self.purpose == "conversation" else None
         self._display_stream = display
         try:
@@ -367,6 +370,7 @@ class ApiProvider:
             if display is not None and main_error is not None:
                 display.finish()
             self._display_stream = None
+            self._task_stop_event = None
             settle_error: BaseException | None = None
             if self._request_context is not None:
                 settle = getattr(self.request_policy, "settle", None)
@@ -785,7 +789,20 @@ class ApiProvider:
         self._compaction.wait(timeout)
 
     def _is_cancelled(self) -> bool:
-        return self._inflight_generation != self._generation or self._parent_cancelled()
+        # The task run binds its session-scoped stop event in the worker
+        # thread. Include it here so an in-flight HTTP stream is aborted when
+        # the user stops that run; generation invalidation remains independent
+        # for provider-local cancellation and late-reply protection.
+        from codey.runtime.core import cancellation
+
+        stop_event = cancellation.current_event()
+        task_event = self._task_stop_event
+        return (
+            self._inflight_generation != self._generation
+            or self._parent_cancelled()
+            or (stop_event is not None and stop_event.is_set())
+            or (task_event is not None and task_event.is_set())
+        )
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}

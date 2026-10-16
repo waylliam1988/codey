@@ -61,6 +61,7 @@ class PersistenceAccess:
     project_facts: ProjectFactsStore | None = None
     work_checkpoints: WorkCheckpointStore | None = None
     managed_outputs: ManagedOutputStore | None = None
+    execution_outputs: Any = None
     knowledge_store: KnowledgeStore | None = None
     search_factory: Callable[[], object] | None = None
 
@@ -230,7 +231,9 @@ def managed_tool_fns(
     session_id: str,
     run_id: str,
 ) -> AgentToolFns | None:
-    if deps.persistence.managed_outputs is None:
+    managed_outputs = getattr(deps.persistence, "managed_outputs", None)
+    execution_outputs = getattr(deps.persistence, "execution_outputs", None)
+    if managed_outputs is None and execution_outputs is None:
         return None
 
     def run_command(
@@ -241,17 +244,34 @@ def managed_tool_fns(
         _permission_profile: str,
         _phase: str,
     ) -> Any:
-        return run_command_with_managed_output(
+        if managed_outputs is not None:
+            return run_command_with_managed_output(
+                root,
+                rel,
+                command,
+                permission_profile=_permission_profile,
+                phase=_phase,
+                store=managed_outputs,
+                session_id=session_id,
+                run_id=run_id,
+                tool_id=tool_id,
+                execution_store=execution_outputs,
+            )
+        from codey.toolchain.runtime import ToolOutcome, project_run_command_result, run_command_raw
+
+        raw = run_command_raw(
             root,
             rel,
             command,
             permission_profile=_permission_profile,
             phase=_phase,
-            store=deps.persistence.managed_outputs,
+            execution_store=execution_outputs,
             session_id=session_id,
             run_id=run_id,
-            tool_id=tool_id,
         )
+        if isinstance(raw, ToolOutcome):
+            return raw
+        return project_run_command_result(root, raw)
 
     return AgentToolFns(run_command_with_context=run_command)
 

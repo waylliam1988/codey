@@ -51,6 +51,7 @@ class ApprovalStatus(TypedDict):
     execution: ApprovalExecution
     continuation: ApprovalContinuation
     continuation_run_id: str
+    execution_id: str
     revision: int
 
 
@@ -68,6 +69,7 @@ class ShellApprovalWorkflow:
         self._condition = threading.Condition()
         self._workers: dict[str, threading.Thread] = {}
         self._executing: set[str] = set()
+        self._execution_ids: dict[str, str] = {}
         self._submit: Submit | None = None
         self._closing = False
 
@@ -145,17 +147,18 @@ class ShellApprovalWorkflow:
             'execution': execution,
             'continuation': continuation,
             'continuation_run_id': lifecycle.continuation_run_id if lifecycle else '',
+            'execution_id': self._execution_ids.get(first.approval_id, ''),
             'revision': len(facts),
         }
 
-    def busy_status(self) -> ApprovalStatus | None:
+    def busy_status(self, session_id: str = "") -> ApprovalStatus | None:
         with self._condition:
             active_ids = tuple(self._workers)
         for approval_id in active_ids:
             state = self.status(approval_id)
             if state and (
                 state["execution"] in {"queued", "running"} or state["continuation"] in {"queued", "resuming"}
-            ):
+            ) and (not session_id or state.get("session_id") == session_id):
                 return state
         return None
 
@@ -208,7 +211,7 @@ class ShellApprovalWorkflow:
                     return 409, {**state, "code": "decision_conflict", "error": "approval already decided"}
                 return 202, dict(state)
             else:
-                if self._closing or self.ctx.run_registry.stop_flag.is_set():
+                if self._closing or self.ctx.stop_flag_for(str(facts[0].source_run_id or "")).is_set():
                     return 409, {**state, "code": "stopped", "error": "stopped"}
                 pending = self._pending(facts[0])
                 if pending is None:
@@ -264,10 +267,12 @@ class ShellApprovalWorkflow:
                 self._condition.wait(remaining)
             return True
 
-    def cancel_queued(self) -> None:
+    def cancel_queued(self, session_id: str = "") -> None:
         """Called under the Stop spawn gate and context lock."""
         for facts in self.ctx.shell_approval_records.histories().values():
             first, last = facts[0], facts[-1]
+            if session_id and first.session_id != session_id:
+                continue
             if last.kind == "approved":
                 self.ctx.record_shell_approval_fact(replace(first, kind="abandoned"))
             elif last.kind in {
@@ -356,9 +361,38 @@ class ShellApprovalWorkflow:
                 else:
                     self.ctx.record_shell_approval_fact(replace(first, kind="abandoned"))
                 return
+            if not ticket.session_id or not ticket.run_id:
+                ticket = replace(
+                    ticket,
+                    session_id=ticket.session_id or first.session_id,
+                    run_id=ticket.run_id or first.source_run_id,
+                )
             state = self.status(approval_id)
             if state:
                 self.ctx.emit(dict(state))
+            self._execution_ids[approval_id] = ticket.execution_id
+            state = self.status(approval_id)
+            if state:
+                self.ctx.emit(dict(state))
+            # Publish the execution identity at the process start boundary so
+            # the browser can observe bounded output before settlement. The
+            # later shell_result uses the same approval id and replaces this
+            # in-place projection.
+            self.ctx.emit_browser_event(
+                {
+                    "type": "shell_result",
+                    "id": approval_id,
+                    "session_id": first.session_id,
+                    "run_id": first.source_run_id,
+                    "approved": True,
+                    **shell_command_event_fields(pending),
+                    "cwd": pending["cwd"],
+                    "status": "running",
+                    "output": "",
+                    "exit_code": None,
+                    "execution_id": ticket.execution_id,
+                }
+            )
             result = shell_service.execute_shell_ticket(self.ctx, ticket)
             self._write_result(first, result, "execution_settled")
             if (result.get("stopped") or result.get("status") == "stopped") and not self.ctx.shutdown_requested():
@@ -388,6 +422,7 @@ class ShellApprovalWorkflow:
                 "exit_code": result.get("exit_code"),
                 "ok": result.get("ok"),
                 "truncated": bool(result.get("truncated")),
+                "execution_id": result.get("execution_id", ""),
             }
         )
         if pending.get("continue_after"):
@@ -404,7 +439,7 @@ class ShellApprovalWorkflow:
             return
         if self.ctx.shutdown_requested():
             return
-        if self.ctx.run_registry.stop_flag.is_set():
+        if self.ctx.stop_flag_for(first.source_run_id).is_set():
             self.ctx.record_shell_approval_fact(replace(first, kind="continuation_cancelled"))
             return
         if last.kind in {"continuation_claimed", "continuation_started", "continuation_failed"}:
@@ -423,7 +458,7 @@ class ShellApprovalWorkflow:
         plan = shell_service.build_shell_approval_continuation_plan(
             pending=pending,
             result=result,
-            active_run=self.ctx.current_run(),
+            active_run=self.ctx.active_run_for(session_id=first.session_id),
             shell_results=(),
         )
         assert self._submit is not None
@@ -453,7 +488,7 @@ class ShellApprovalWorkflow:
             "continuation_started"
             if run_id
             else "continuation_cancelled"
-            if self.ctx.run_registry.stop_flag.is_set()
+            if self.ctx.stop_flag_for(first.source_run_id).is_set()
             else "continuation_failed"
         )
         self.ctx.record_shell_approval_fact(replace(first, kind=kind, continuation_run_id=run_id or continuation_id))
