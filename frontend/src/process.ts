@@ -150,7 +150,7 @@ export interface ProcessToolRecord {
       searched = 0;
     for (const m of tools) {
       if (m.pending || m.error || m.status === 'error') continue;
-      const name = m.toolName || m.kind || '';
+      const name = runtime.Render.toolKind({ kind: m.kind, toolName: m.toolName }) || m.toolName || m.kind || '';
       if (['read', 'read_file'].includes(name) && m.path && !/^https?:/i.test(m.path)) reads.add(m.path);
       else if (
         ['edit', 'write', 'patch', 'edit_file', 'write_file', 'apply_patch', 'replace_in_file'].includes(name) &&
@@ -256,11 +256,6 @@ export interface ProcessToolRecord {
       Array.from(block.querySelectorAll<HTMLElement>('[data-tool-key]')).find((el) => el.dataset.toolKey === m.toolKey);
     const target = block.querySelector<HTMLElement>(m.error ? '.process-alerts' : '.process-body');
     if (!target) return;
-    if (existing && existing.parentElement === target && existing !== target.lastElementChild) {
-      existing.replaceWith(runtime.Render.standaloneToolEl(m));
-      summary(block);
-      return;
-    }
     if (existing) existing.remove();
     if (m.pending || m.error) target.append(runtime.Render.standaloneToolEl(m));
     else runtime.Render.appendOrFoldTool(target, m);

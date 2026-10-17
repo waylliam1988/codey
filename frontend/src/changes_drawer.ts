@@ -289,6 +289,7 @@ export interface ChangesDrawerDeps {
     wrap.className = 'change-file';
     wrap.dataset.path = file.path || '';
     const btn = document.createElement('button');
+    btn.type = 'button';
     const status = document.createElement('span');
     status.className = 'change-status';
     status.textContent = file.status || 'M';

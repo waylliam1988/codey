@@ -21,7 +21,7 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
 
   function displayRunStatus(status: string): void {
     const running = status === 'running';
-    const text = status === 'connecting' ? 'Connecting to browser…' : running ? 'Running' : status;
+    const text = status === 'connecting' ? 'Connecting…' : running ? 'Running' : status;
     deps.setStatus(text, running ? 'run' : 'warn');
   }
 

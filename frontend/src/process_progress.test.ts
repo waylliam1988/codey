@@ -27,3 +27,24 @@ it('uses settled run time and restores an individually opened tool result', () =
   window.Process.append(chat, { type: 'run_state', runId: 'r', state: 'done', elapsedMs: 42750 }, () => {});
   expect(chat.querySelector('.process-title')?.textContent).toContain('Worked for 43s');
 });
+
+it('folds out-of-order read completions into the same read group', () => {
+  const chat = document.createElement('div');
+  const pending = (toolKey: string, path: string) =>
+    ({ type: 'tool_pending', kind: 'read', path, pending: true, runId: 'r', toolKey }) as const;
+  window.Process.append(chat, pending('r:1:0', 'README.md'), () => {});
+  window.Process.append(chat, pending('r:1:1', 'selfie'), () => {});
+  window.Process.append(
+    chat,
+    { type: 'tool', kind: 'read', path: 'README.md', result: 'one', runId: 'r', toolKey: 'r:1:0' },
+    () => {},
+  );
+  window.Process.append(
+    chat,
+    { type: 'tool', kind: 'read', path: 'selfie', result: 'two', runId: 'r', toolKey: 'r:1:1' },
+    () => {},
+  );
+  expect(chat.querySelectorAll('.tool-group')).toHaveLength(1);
+  expect(chat.querySelector('.tg-count')?.textContent).toBe('2 files');
+  expect(chat.querySelector('.tool-group')?.textContent).toContain('selfie');
+});

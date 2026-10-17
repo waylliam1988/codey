@@ -402,7 +402,7 @@
 
   /* Quiet process disclosure; answers and approval cards remain outside. */
   .process-block[hidden] { display: none; }
-  .process-block { margin-bottom: 14px; }
+  .process-block { margin-bottom: 6px; }
   .process-summary, .thinking > summary { display: flex; align-items: center; gap: 7px; min-height: 26px; width: fit-content; max-width: 100%; list-style: none; color: var(--text-dim); cursor: pointer; user-select: none; font: 12px/1.7 var(--font-mono); }
   .process-summary::-webkit-details-marker, .thinking > summary::-webkit-details-marker { display: none; }
   .process-summary::after, .thinking > summary::after {
@@ -487,14 +487,27 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: var(--text-dim);
   }
+  .tool-line.no-result .tl-path {
+    grid-column: 2 / -1;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .tool-line.file-read .tl-path {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .tool-line .tl-arrow { color: var(--faint); }
   .tool-line .tl-result { color: var(--text-dim); min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
   .tool-line .tl-result.err { color: var(--err-text); }
   .tool-line.pending .tl-result { color: var(--muted); }
   .tool-line.compact { grid-template-columns: 12px minmax(0, 1fr) 12px minmax(0, 2fr); }
   .tool-line.error .tl-arrow { display: none; }
-  .tool-line.error .tl-result { grid-column: 3 / -1; }
-  .tool-line.compact.error .tl-result { grid-column: 1 / -1; }
+  .tool-line.error .tl-result { grid-column: 2 / -1; grid-row: 2; }
+  .tool-line.compact.error .tl-result { grid-column: 1 / -1; grid-row: 2; }
   .msg.tool { margin: 0; }
   .msg.tool + .msg.tool { margin-top: 0; }
 

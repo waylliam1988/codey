@@ -18,8 +18,10 @@ def _source() -> str:
 
 def test_required_runtime_modules_are_imported() -> None:
     main = (FRONTEND / "src/main.ts").read_text(encoding="utf-8")
-    for name in ("app_runtime", "operator_auth", "provider_ui", "ui_state", "sse", "composer", "conversation_ui"):
-        assert f"./{name}" in main
+    runtime = (FRONTEND / "src/app_runtime.ts").read_text(encoding="utf-8")
+    assert main.strip() == "import './app_runtime';"
+    for name in ("operator_auth", "provider_ui", "ui_state", "sse", "composer", "conversation_ui"):
+        assert f"./{name}" in runtime
 
 def test_every_html_resource_reference_exists_in_public_or_publish_output() -> None:
     refs = re.findall(r'(?:src|href)="([^"]+)"', _html())

@@ -166,6 +166,7 @@ export interface ComposerApi {
           : 'No models enabled. Choose models in ',
       );
       const action = document.createElement('button');
+      action.type = 'button';
       action.className = 'link-btn';
       action.textContent = 'Settings';
       action.onclick = () => runtime.Settings.open();

@@ -7,7 +7,7 @@
 <title>Codey</title>
 <link rel="stylesheet" href="/assets/tokens.css?v=__APP_VERSION__" />
 <link rel="stylesheet" href="/assets/app.css?v=__APP_VERSION__" />
-  <script type="module" crossorigin src="/assets/codey-l-Ysuljl.js"></script>
+  <script type="module" crossorigin src="/assets/codey-CdzggLtm.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/codey-CRLZVEeR.js">
   <link rel="modulepreload" crossorigin href="/assets/codey-_6KUYszW.js">
 </head>
@@ -15,23 +15,23 @@
 <aside id="aside">
   <div class="sidebar-resize" id="sidebar-resize" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" aria-controls="aside" tabindex="0"></div>
   <div class="sidebar-head">
-    <button class="btn-icon" id="toggle-sidebar" title="Collapse sidebar">
+    <button type="button" class="btn-icon" id="toggle-sidebar" title="Collapse sidebar" aria-label="Collapse sidebar">
       <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
     </button>
     <div class="sidebar-spacer"></div>
   </div>
   <div class="sidebar-actions">
-    <button class="sidebar-row" id="btn-new-chat">
+    <button type="button" class="sidebar-row" id="btn-new-chat">
       <span class="new-chat-icon" aria-hidden="true"></span>
       <span class="label">New chat</span>
       <span class="kbd">Ctrl+N</span>
     </button>
-    <button class="sidebar-row" id="btn-add-project">
+    <button type="button" class="sidebar-row" id="btn-add-project">
       <svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
       <span class="label">Add project</span>
     </button>
     <div class="sidebar-search">
-      <button class="sidebar-row search-toggle" id="chat-search-toggle" aria-label="Search chats and projects" aria-controls="chat-search" aria-expanded="false">
+      <button type="button" class="sidebar-row search-toggle" id="chat-search-toggle" aria-label="Search chats and projects" aria-controls="chat-search" aria-expanded="false">
         <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
         <span class="label">Search</span>
       </button>
@@ -44,7 +44,7 @@
   <div class="project-empty" id="search-empty" role="status" hidden>No matches</div>
   <div class="session-list" id="session-list"></div>
   <div class="sidebar-footer">
-    <button class="sidebar-row" id="btn-settings" aria-haspopup="dialog">
+    <button type="button" class="sidebar-row" id="btn-settings" aria-haspopup="dialog">
       <svg viewBox="0 0 24 24"><path d="m9 3-.7 2.4-2 .9L4 5.7 2 9l1.7 1.7v2.6L2 15l2 3.3 2.3-.6 2 .9L9 21h6l.7-2.4 2-.9 2.3.6 2-3.3-1.7-1.7v-2.6L22 9l-2-3.3-2.3.6-2-.9L15 3Z"/><circle cx="12" cy="12" r="3"/></svg>
       <span class="label">Settings</span>
     </button>
@@ -53,13 +53,13 @@
 
 <main>
   <div class="topbar">
-    <button class="btn-icon" id="show-sidebar" title="Show sidebar" style="display:none">
+    <button type="button" class="btn-icon" id="show-sidebar" title="Show sidebar" aria-label="Show sidebar" style="display:none">
       <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
     </button>
     <div class="sess-title" id="sess-title">New chat</div>
     <div class="topbar-actions">
       <div class="status" id="status"></div>
-      <button class="btn-icon" id="topbar-more" aria-label="More">
+      <button type="button" class="btn-icon" id="topbar-more" aria-label="More">
         <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>
       </button>
     </div>
@@ -90,20 +90,20 @@
         <textarea disabled id="task" placeholder="Send a message to Codey…" rows="1"></textarea>
       <div class="composer-bar">
         <div class="provider-chooser">
-          <button class="provider-button" id="provider-button" aria-label="Choose model" disabled>
+          <button type="button" class="provider-button" id="provider-button" aria-label="Choose model" disabled>
             <span class="dot" id="provider-dot"></span>
             <span class="name" id="provider-name">DeepSeek</span>
             <span class="chev" aria-hidden="true"></span>
           </button>
           <div class="provider-menu" id="provider-menu" aria-hidden="true">
-            <!-- Provider items are built by provider_ui.js from PROVIDER_LABELS;
+            <!-- Provider items are built by provider_ui.ts from PROVIDER_LABELS;
                  do not hand-edit a second copy here. -->
             <div class="provider-probe-warning" id="model-menu-empty" hidden>No models enabled</div>
             <div class="provider-probe-warning" id="provider-probe-warning" hidden>Provider status unavailable</div>
           </div>
         </div>
         <div class="effort-chooser" id="effort-chooser" hidden>
-          <button class="provider-button effort-button" id="effort-button" aria-label="Thinking effort" aria-haspopup="dialog" aria-controls="effort-menu" aria-expanded="false">
+          <button type="button" class="provider-button effort-button" id="effort-button" aria-label="Thinking effort" aria-haspopup="dialog" aria-controls="effort-menu" aria-expanded="false">
             <span id="effort-name">High</span>
             <span class="chev" aria-hidden="true"></span>
           </button>
@@ -111,10 +111,10 @@
         </div>
         <span class="send-hint" id="send-hint">Enter</span>
         <div class="action-slot">
-          <button class="icon-btn" id="stop" style="display:none" title="Stop">
+          <button type="button" class="icon-btn" id="stop" style="display:none" title="Stop" aria-label="Stop">
             <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none"/></svg>
           </button>
-          <button class="icon-btn send" id="send" disabled title="Send">
+          <button type="button" class="icon-btn send" id="send" disabled title="Send" aria-label="Send">
             <svg viewBox="0 0 24 24"><path d="M3 11 21 3l-7 18-3-8-8-2Z"/></svg>
           </button>
         </div>
@@ -182,17 +182,17 @@
 </dialog>
 
 <div class="ctx-menu" id="proj-menu">
-  <button data-act="newchat">New chat here</button>
-  <button data-act="rename">Rename</button>
-  <button data-act="remove" class="danger" data-confirm="Confirm remove">Remove project and chats</button>
+  <button data-act="newchat" type="button">New chat here</button>
+  <button data-act="rename" type="button">Rename</button>
+  <button data-act="remove" type="button" class="danger" data-confirm="Confirm remove">Remove project and chats</button>
 </div>
 <div class="ctx-menu" id="sess-menu">
-  <button data-act="rename">Rename</button>
-  <button data-act="delete" class="danger" data-confirm="Confirm delete">Delete chat</button>
+  <button data-act="rename" type="button">Rename</button>
+  <button data-act="delete" type="button" class="danger" data-confirm="Confirm delete">Delete chat</button>
 </div>
 <div class="ctx-menu" id="top-menu">
-  <button data-act="local-context">Local context</button>
-  <button data-act="clear" class="danger" data-confirm="Confirm clear">Clear messages</button>
+  <button data-act="local-context" type="button">Local context</button>
+  <button data-act="clear" type="button" class="danger" data-confirm="Confirm clear">Clear messages</button>
 </div>
 <div class="ctx-menu" id="local-context-menu"></div>
 <div class="ctx-menu selection-menu" id="selection-menu" role="menu" aria-label="Selection">
@@ -207,10 +207,10 @@
       <strong>Changes</strong><span id="changes-scope"></span>
       <span id="changes-subtitle">Not loaded</span>
     </div>
-    <button class="drawer-btn icon-action" id="changes-copy" aria-label="Copy diff" title="Copy diff"></button>
-    <button class="drawer-btn" id="changes-restore">Restore</button>
-    <button class="drawer-btn" id="changes-refresh">Refresh</button>
-    <button class="drawer-btn" id="changes-close">Close</button>
+    <button type="button" class="drawer-btn icon-action" id="changes-copy" aria-label="Copy diff" title="Copy diff"></button>
+    <button type="button" class="drawer-btn" id="changes-restore">Restore</button>
+    <button type="button" class="drawer-btn" id="changes-refresh">Refresh</button>
+    <button type="button" class="drawer-btn" id="changes-close">Close</button>
   </div>
   <div class="changes-body" id="changes-body">
     <div class="changes-empty">No changes</div>
@@ -223,9 +223,9 @@
       <strong>Research</strong><span id="research-scope"></span>
       <span id="research-subtitle">Not loaded</span>
     </div>
-    <button class="drawer-btn" id="research-use-project">Use in Project</button>
-    <button class="drawer-btn" id="research-restore">Restore</button>
-    <button class="drawer-btn" id="research-close">Close</button>
+    <button type="button" class="drawer-btn" id="research-use-project">Use in Project</button>
+    <button type="button" class="drawer-btn" id="research-restore">Restore</button>
+    <button type="button" class="drawer-btn" id="research-close">Close</button>
   </div>
   <div class="changes-body" id="research-body">
     <div class="changes-empty">No research yet</div>
@@ -238,9 +238,9 @@
       <strong>Local context</strong>
       <span id="local-context-subtitle">Not loaded</span>
     </div>
-    <button class="drawer-btn" id="local-context-export">Export</button>
-    <button class="drawer-btn" id="local-context-refresh">Refresh</button>
-    <button class="drawer-btn" id="local-context-close">Close</button>
+    <button type="button" class="drawer-btn" id="local-context-export">Export</button>
+    <button type="button" class="drawer-btn" id="local-context-refresh">Refresh</button>
+    <button type="button" class="drawer-btn" id="local-context-close">Close</button>
   </div>
   <div class="changes-body" id="local-context-body">
     <div class="changes-empty">Not loaded</div>

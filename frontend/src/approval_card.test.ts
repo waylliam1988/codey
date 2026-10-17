@@ -40,6 +40,12 @@ it('shows the approved compact approval layout without a reason section', () => 
   expect(submit).toHaveBeenCalledExactlyOnceWith('approval', true);
 });
 
+it('does not render a placeholder working directory when it is unavailable', () => {
+  const chat = render({ cwd: undefined });
+  expect(chat.querySelector('.sc-meta')).toBeNull();
+  expect(chat.textContent).not.toContain('.');
+});
+
 it('locks both choices and places submission progress inside the primary button', () => {
   const chat = render({ approvalSubmission: 'sending' });
   expect(Array.from(chat.querySelectorAll('button')).every((button) => button.disabled)).toBe(true);

@@ -59,14 +59,8 @@ export interface MessagesApi {
     } = deps;
     const activeId = deps.getActiveId?.() ?? '',
       runningSessionId = deps.getRunningSessionId?.() ?? null;
-    const {
-      messageCopyText,
-      addMessageCopyButton,
-      FOLDABLE_TOOL_KINDS,
-      standaloneToolEl,
-      appendOrFoldTool,
-      escapeHtml,
-    } = runtime.Render;
+    const { messageCopyText, addMessageCopyButton, isFoldableTool, standaloneToolEl, appendOrFoldTool, escapeHtml } =
+      runtime.Render;
 
     if (m.type === 'user') {
       const div = document.createElement('div');
@@ -145,7 +139,7 @@ export interface MessagesApi {
       streamStatus(div, m);
       chat.appendChild(div);
     } else if (m.type === 'tool') {
-      if (FOLDABLE_TOOL_KINDS.has(m.kind || '') && !m.error) {
+      if (isFoldableTool(m)) {
         appendOrFoldTool(chat, m);
       } else {
         chat.appendChild(standaloneToolEl(m));
@@ -221,6 +215,7 @@ export interface MessagesApi {
       const n = m.count || 0;
       count.textContent = `${n} file${n === 1 ? '' : 's'}`;
       const view = document.createElement('button');
+      view.type = 'button';
       view.className = 'link-btn';
       view.textContent = 'View diff';
       view.onclick = () => openChangesDrawer(typeof m.project === 'string' ? m.project : currentProjectPath());
@@ -251,7 +246,7 @@ export interface MessagesApi {
       title.textContent = 'Run this command?';
       const meta = document.createElement('div');
       meta.className = 'sc-meta';
-      meta.textContent = m.cwd || '.';
+      if (m.cwd) meta.textContent = m.cwd;
       const commandBody = document.createElement('div');
       commandBody.className = 'sc-command-body';
       const commandLabel = document.createElement('div');
@@ -271,9 +266,11 @@ export interface MessagesApi {
       const actions = document.createElement('div');
       actions.className = 'shell-actions';
       const deny = document.createElement('button');
+      deny.type = 'button';
       deny.className = 'text-btn';
       deny.textContent = 'Deny';
       const approve = document.createElement('button');
+      approve.type = 'button';
       approve.className = 'text-btn approval-allow';
       const submitting = m.approvalSubmission === 'sending';
       approve.textContent = submitting ? 'Submitting…' : 'Allow once';
@@ -291,6 +288,7 @@ export interface MessagesApi {
           m.approvalSubmission === 'checking' ? 'Confirming approval status…' : 'Decision could not be confirmed';
         if (m.approvalSubmission === 'unconfirmed') {
           const check = document.createElement('button');
+          check.type = 'button';
           check.className = 'text-btn';
           check.textContent = 'Check status';
           check.onclick = () => runtime.ShellApprovals.refresh(m.id || '');
@@ -300,7 +298,8 @@ export interface MessagesApi {
       approve.onclick = () => approveCommand(m.id || '', true);
       deny.onclick = () => approveCommand(m.id || '', false);
       actions.append(deny, approve);
-      commandBody.append(commandLabel, cmd, meta);
+      commandBody.append(commandLabel, cmd);
+      if (meta.textContent) commandBody.append(meta);
       if (commandIntegrity.textContent) commandBody.append(commandIntegrity);
       card.append(title, commandBody, error, actions);
       div.appendChild(card);

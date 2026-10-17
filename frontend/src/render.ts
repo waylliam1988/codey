@@ -16,6 +16,7 @@ export interface ToolPreview {
 export interface ToolDisplay {
   preview?: ToolPreview;
   kind?: string;
+  toolName?: string;
   path?: string;
   command?: string;
   result?: string;
@@ -240,6 +241,16 @@ const renderApi = (function () {
     if (kind === 'find_references') return 'references';
     return kind;
   }
+  function toolKind(m: Pick<ToolDisplay, 'kind' | 'toolName'>): string {
+    const declared = foldKind(m.kind || '');
+    return FOLDABLE_TOOL_KINDS.has(declared) ? declared : foldKind(m.toolName || '');
+  }
+  function isFoldableTool(m: Pick<ToolDisplay, 'kind' | 'toolName' | 'error' | 'pending'>): boolean {
+    return !m.error && !m.pending && FOLDABLE_TOOL_KINDS.has(toolKind(m));
+  }
+  function foldTurn(m: Pick<ToolDisplay, 'turn'>): string {
+    return m.turn === undefined ? '' : String(m.turn);
+  }
   function toolRowEl(m: ToolDisplay, compact: boolean) {
     const row = document.createElement('div');
     row.className = 'tool-line' + (compact ? ' compact' : '');
@@ -258,6 +269,7 @@ const renderApi = (function () {
     row.append(dot, kind);
     const path = document.createElement('span');
     path.className = 'tl-path';
+    if (toolKind(m) === 'read') row.classList.add('file-read');
     path.textContent = m.path || m.command || '';
     path.title = path.textContent;
     const arrow = document.createElement('span');
@@ -284,6 +296,7 @@ const renderApi = (function () {
       } else if (p.diff_unavailable) result.textContent = 'Changed · preview unavailable';
     }
     arrow.hidden = !result.textContent;
+    if (arrow.hidden) row.classList.add('no-result');
     row.append(path, arrow, result);
     return row;
   }
@@ -395,13 +408,15 @@ const renderApi = (function () {
     const pair = nouns[kind] || ['call', 'calls'];
     return n + ' ' + (n === 1 ? pair[0] : pair[1]);
   }
-  function createToolGroup(kind: string) {
+  function createToolGroup(kind: string, turn = '') {
     const group = document.createElement('div');
     group.className = 'tool-group';
+    group.classList.add('collapsed');
     group.dataset.foldkind = foldKind(kind);
+    group.dataset.foldturn = turn;
     const summary = document.createElement('button');
     summary.type = 'button';
-    summary.setAttribute('aria-expanded', 'true');
+    summary.setAttribute('aria-expanded', 'false');
     summary.className = 'tool-group-summary';
     const dot = document.createElement('span');
     dot.className = 'tl-dot';
@@ -429,8 +444,9 @@ const renderApi = (function () {
     const div = document.createElement('div');
     div.className = 'msg tool';
     if (m.toolKey) div.dataset.toolKey = m.toolKey;
-    if (FOLDABLE_TOOL_KINDS.has(m.kind || '') && !m.error && !m.pending) {
-      div.dataset.foldkind = foldKind(m.kind || '');
+    if (isFoldableTool(m)) {
+      div.dataset.foldkind = toolKind(m);
+      div.dataset.foldturn = foldTurn(m);
       div.dataset.toolPath = m.path || '';
       div.dataset.toolResult = m.result || '';
     }
@@ -444,28 +460,34 @@ const renderApi = (function () {
     const row = toolDetails(m, true);
     if (m.toolKey) row.dataset.toolKey = m.toolKey;
     body.appendChild(row);
-    count.textContent = foldCountLabel(foldKind(m.kind || ''), body.children.length);
+    count.textContent = foldCountLabel(toolKind(m), body.children.length);
   }
   function appendOrFoldTool(chat: HTMLElement, m: ToolDisplay) {
-    const kind = foldKind(m.kind || '');
-    if (!FOLDABLE_TOOL_KINDS.has(m.kind || '') || !kind) {
+    const kind = toolKind(m);
+    const turn = foldTurn(m);
+    if (!isFoldableTool(m) || !kind) {
       chat.appendChild(standaloneToolEl(m));
       return;
     }
-    const last = chat.lastElementChild;
-    if (last instanceof HTMLElement && last.classList.contains('tool-group') && last.dataset.foldkind === kind) {
-      appendToToolGroup(last, m);
+    const existingGroup = Array.from(chat.querySelectorAll<HTMLElement>('.tool-group')).find(
+      (candidate) => candidate.dataset.foldkind === kind && candidate.dataset.foldturn === turn,
+    );
+    if (existingGroup) {
+      appendToToolGroup(existingGroup, m);
       return;
     }
+    const last = chat.lastElementChild;
     if (
       last instanceof HTMLElement &&
       last.classList.contains('msg') &&
       last.classList.contains('tool') &&
-      last.dataset.foldkind === kind
+      last.dataset.foldkind === kind &&
+      last.dataset.foldturn === turn
     ) {
-      const group = createToolGroup(kind);
+      const group = createToolGroup(kind, turn);
       appendToToolGroup(group, {
         kind,
+        turn,
         path: last.dataset.toolPath || '',
         result: last.dataset.toolResult || '',
         toolKey: last.dataset.toolKey || '',
@@ -473,6 +495,26 @@ const renderApi = (function () {
       });
       appendToToolGroup(group, m);
       last.replaceWith(group);
+      return;
+    }
+    // Reasoning details can sit between read calls. Keep the first read group
+    // and append later reads to it so one turn does not produce fragmented
+    // "read 2 files" groups.
+    const earlierStandalone = Array.from(chat.querySelectorAll<HTMLElement>('.msg.tool')).find(
+      (candidate) => candidate.dataset.foldkind === kind && candidate.dataset.foldturn === turn,
+    );
+    if (earlierStandalone) {
+      const group = createToolGroup(kind, turn);
+      appendToToolGroup(group, {
+        kind,
+        turn,
+        path: earlierStandalone.dataset.toolPath || '',
+        result: earlierStandalone.dataset.toolResult || '',
+        toolKey: earlierStandalone.dataset.toolKey || '',
+        error: false,
+      });
+      appendToToolGroup(group, m);
+      earlierStandalone.replaceWith(group);
       return;
     }
     chat.appendChild(standaloneToolEl(m));
@@ -514,6 +556,8 @@ const renderApi = (function () {
     renderMarkdown,
     updateMarkdown,
     FOLDABLE_TOOL_KINDS,
+    isFoldableTool,
+    toolKind,
     toolRowEl,
     foldCountLabel,
     createToolGroup,

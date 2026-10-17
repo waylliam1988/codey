@@ -96,15 +96,49 @@ describe('render boundaries', () => {
     expect(row.querySelector('.tl-arrow')).toHaveProperty('hidden', true);
   });
 
-  it('groups canonical read tool aliases into an expanded file group', () => {
+  it('groups canonical read tool aliases into a collapsed file group', () => {
     const host = document.createElement('div');
     window.Render.appendOrFoldTool(host, { kind: 'read_file', path: 'README.md', result: 'one' });
     window.Render.appendOrFoldTool(host, { kind: 'read_file', path: 'pyproject.toml', result: 'two' });
     const group = host.querySelector<HTMLElement>('.tool-group')!;
     expect(group.dataset.foldkind).toBe('read');
-    expect(group.classList.contains('collapsed')).toBe(false);
+    expect(group.classList.contains('collapsed')).toBe(true);
     expect(group.querySelector('.tg-kind')?.textContent).toBe('read');
     expect(group.querySelector('.tg-count')?.textContent).toBe('2 files');
     expect(group.querySelectorAll('.tool-line')).toHaveLength(2);
+  });
+
+  it('groups events that provide the real tool name separately from kind', () => {
+    const host = document.createElement('div');
+    window.Render.appendOrFoldTool(host, { toolName: 'read_file', path: 'README.md', result: 'one' });
+    window.Render.appendOrFoldTool(host, { toolName: 'read_file', path: 'pyproject.toml', result: 'two' });
+    const group = host.querySelector<HTMLElement>('.tool-group')!;
+    expect(group.dataset.foldkind).toBe('read');
+    expect(group.querySelector('.tg-count')?.textContent).toBe('2 files');
+  });
+
+  it('keeps reads in one group when reasoning appears between calls', () => {
+    const host = document.createElement('div');
+    window.Render.appendOrFoldTool(host, { kind: 'read', path: 'README.md', result: 'one' });
+    const reasoning = document.createElement('details');
+    reasoning.className = 'thinking';
+    host.append(reasoning);
+    window.Render.appendOrFoldTool(host, {
+      toolName: 'read_file',
+      path: 'docs/影像零售技术栈发展方案.md',
+      result: 'two',
+    });
+    const group = host.querySelector<HTMLElement>('.tool-group')!;
+    expect(host.querySelectorAll('.tool-group')).toHaveLength(1);
+    expect(group.querySelector('.tg-count')?.textContent).toBe('2 files');
+    expect(group.textContent).toContain('docs/影像零售技术栈发展方案.md');
+  });
+
+  it('does not ellipsize a file path when there is no result column', () => {
+    const path = 'selfie/beauty/render_orchestrator/runtime_contract.py';
+    const row = window.Render.toolRowEl({ kind: 'read', path }, false);
+    expect(row.classList.contains('no-result')).toBe(true);
+    expect(row.classList.contains('file-read')).toBe(true);
+    expect(row.querySelector('.tl-path')?.textContent).toBe(path);
   });
 });

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB_DIR = ROOT / "frontend"
 ASSET_DIR = ROOT / "frontend" / "src"
 HTML = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+APP_RUNTIME_SOURCE = (ASSET_DIR / "app_runtime.ts").read_text(encoding="utf-8")
 def _source(name: str) -> str:
     # Structural checks read the compiler output for runtime shape and the
     # corresponding TypeScript source for stable statement boundaries.  The
@@ -127,16 +128,16 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("state === 'ready' || state === 'stale' ? 'ok'", PROVIDER_UI_JS)
         self.assertIn(".provider-item.active .check", STYLE_SOURCE)
         self.assertNotIn("providerAvailability(_id) { return 'ok'; }", UI_SOURCE)
-        self.assertIn("./provider_ui", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
-        self.assertIn("./ui_state", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
-        self.assertIn("./composer", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
+        self.assertIn("./provider_ui", APP_RUNTIME_SOURCE)
+        self.assertIn("./ui_state", APP_RUNTIME_SOURCE)
+        self.assertIn("./composer", APP_RUNTIME_SOURCE)
         self.assertIn("runtime.ProviderUI.init({", HTML)
         self.assertIn("runtime.ProviderUI = {", PROVIDER_UI_JS)
         self.assertIn("function applyProviderStatus(providers, isSSE = true)", HTML)
         self.assertIn("runtime.ProviderUI.applyStatus(providers, isSSE)", HTML)
         self.assertIn("function refreshProviderStatus(immediate = false)", HTML)
         self.assertIn("runtime.ProviderUI.refreshStatus(immediate)", HTML)
-        self.assertIn("./sse", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
+        self.assertIn("./sse", APP_RUNTIME_SOURCE)
         self.assertIn("runtime.Sse = {", SSE_JS)
         self.assertIn("runtime.Composer = {", COMPOSER_JS)
 
@@ -176,13 +177,17 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_local_context_entry_is_quiet_top_menu_item(self) -> None:
         self.assertNotIn('<button data-act="rename">Rename chat</button>', HTML)
-        local = HTML.index('<button data-act="local-context">Local context</button>')
-        clear = HTML.index('<button data-act="clear" class="danger"')
+        local_match = re.search(r'<button data-act="local-context"[^>]*>Local context</button>', HTML)
+        clear_match = re.search(r'<button data-act="clear"[^>]*class="danger"[^>]*>Clear messages</button>', HTML)
+        self.assertIsNotNone(local_match)
+        self.assertIsNotNone(clear_match)
+        local = local_match.start()
+        clear = clear_match.start()
 
         self.assertLess(local, clear)
         self.assertIn('id="local-context-drawer"', HTML)
         self.assertIn('<strong>Local context</strong>', HTML)
-        self.assertIn("./local_context_drawer", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
+        self.assertIn("./local_context_drawer", APP_RUNTIME_SOURCE)
         self.assertIn("runtime.LocalContextDrawer.init({", HTML)
         self.assertIn("runtime.LocalContextDrawer = {", LOCAL_CONTEXT_DRAWER_JS)
         self.assertNotIn("sidebar", LOCAL_CONTEXT_DRAWER_JS.casefold())
@@ -469,7 +474,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("data.mode === 'git' ? 'Working tree' : 'Snapshot'", CHANGES_DRAWER_JS)
         self.assertIn("/api/changes/restore", HTML)
         self.assertNotIn("Reading git diff", UI_SOURCE)
-        self.assertIn("./changes_drawer", (ROOT / "frontend/src/main.ts").read_text(encoding="utf-8"))
+        self.assertIn("./changes_drawer", APP_RUNTIME_SOURCE)
         self.assertIn("runtime.ChangesDrawer.init({", HTML)
         self.assertIn("runtime.ChangesDrawer = {", CHANGES_DRAWER_JS)
 

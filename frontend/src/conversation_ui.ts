@@ -601,6 +601,7 @@ export interface ConversationUiDeps {
       if (owner.id !== deps.getActiveId()) {
         if (!open) {
           open = document.createElement('button');
+          open.type = 'button';
           open.className = 'link-btn';
           open.textContent = 'Open';
           status.append(open);

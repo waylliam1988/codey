@@ -7,27 +7,28 @@ import type { QueuedInput } from './input_outbox';
 import { UserQuestions, type UserQuestion } from './user_questions';
 import { createApprovalController } from './shell_approvals';
 import { runtime } from './runtime';
-import './operator_auth.ts';
-import './render.ts';
-import './process.ts';
-import './messages.ts';
-import './research_graph.ts';
-import './research_drawer.ts';
-import './research_runs.ts';
-import './changes_drawer.ts';
-import './local_context_drawer.ts';
-import './run_details.ts';
-import './models.ts';
-import './model_settings.ts';
-import './settings.ts';
-import './provider_ui.ts';
-import './ui_state.ts';
-import './sse.ts';
-import './requests.ts';
-import './composer.ts';
-import './conversation_nav.ts';
-import './conversation_ui.ts';
+import './operator_auth';
+import './render';
+import './process';
+import './messages';
+import './research_graph';
+import './research_drawer';
+import './research_runs';
+import './changes_drawer';
+import './local_context_drawer';
+import './run_details';
+import './models';
+import './model_settings';
+import './settings';
+import './provider_ui';
+import './ui_state';
+import './sse';
+import './requests';
+import './composer';
+import './conversation_nav';
+import './conversation_ui';
 import './domain/protocol';
+import './api/transport';
 import type { ChangesData, Message, Project, ResearchPayload, RestoreChangesResult, Session } from './types/domain';
 import {
   decodeChangeFilePreview,
@@ -199,7 +200,7 @@ document.addEventListener('click', (event) => {
     );
   }
 });
-// escapeHtml and the receipt schema helpers live in /assets/render.js.
+// Escape and receipt helpers are provided by the render module.
 const escapeHtml = runtime.Render.escapeHtml;
 const receiptSummary = runtime.Render.receiptSummary;
 const receiptChangedCount = runtime.Render.receiptChangedCount;
@@ -295,7 +296,7 @@ function currentProviderId() {
   const s = activeSession();
   return s?.provider || liveDefaultProvider();
 }
-// Provider picker UI lives in /assets/provider_ui.js.
+// Provider picker UI lives in the provider_ui module.
 function syncProviderUI(providerId: string) {
   runtime.ProviderUI.sync(providerId);
 }
@@ -367,9 +368,11 @@ function renderSidebar() {
     row.title = p.path;
 
     const toggle = document.createElement('button');
+    toggle.type = 'button';
     toggle.className = 'project-toggle';
     const expanded = p.expanded || runtime.ConversationUI.isSearching();
     toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${p.name}`);
     const chevron = document.createElement('span');
     chevron.className = 'disclosure-chevron' + (expanded ? '' : ' is-collapsed');
     chevron.setAttribute('aria-hidden', 'true');
@@ -388,6 +391,7 @@ function renderSidebar() {
       );
     } else {
       const main = document.createElement('button');
+      main.type = 'button';
       main.className = 'project-main';
       main.textContent = p.name;
       row.appendChild(main);
@@ -396,8 +400,8 @@ function renderSidebar() {
     }
 
     const more = document.createElement('button');
+    more.type = 'button';
     more.className = 'project-more';
-    more.title = '';
     more.setAttribute('aria-label', 'More');
     more.textContent = '⋯';
     more.onclick = (e) => {
@@ -482,11 +486,13 @@ function sessionNode(s: Session) {
     if (!eventElement(e)?.closest('button')) switchSession(s.id);
   };
   const title = document.createElement('button');
+  title.type = 'button';
   title.className = 'session-title';
   title.textContent = s.title || 'Untitled';
   title.onclick = () => switchSession(s.id);
   item.appendChild(title);
   const more = document.createElement('button');
+  more.type = 'button';
   more.className = 'session-more';
   more.textContent = '⋯';
   more.setAttribute('aria-label', 'More');
@@ -625,6 +631,7 @@ function statusRow(prefix: string, text: string, opts: StatusRowOptions = {}) {
   if (opts.action) actions.push(opts.action);
   for (const action of actions) {
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'link-btn';
     btn.textContent = action.label;
     btn.disabled = !!action.disabled;
@@ -636,7 +643,7 @@ function statusRow(prefix: string, text: string, opts: StatusRowOptions = {}) {
   return div;
 }
 
-// Markdown / copy / tool-line helpers live in /assets/render.js (runtime.Render).
+// Markdown, copy, and tool-line helpers live in the render module.
 const messageCopyText = runtime.Render.messageCopyText;
 const copyText = runtime.Render.copyText;
 const addMessageCopyButton = runtime.Render.addMessageCopyButton;
@@ -1669,7 +1676,7 @@ async function maybeAddChangesSummary(sid: string, eventKey = '', runId = '') {
   } catch {}
 }
 
-// Changes drawer UI lives in /assets/changes_drawer.js; these thin wrappers
+// Changes drawer UI lives in the changes_drawer module; these thin wrappers
 // keep existing call sites and event handlers stable.
 function openChangesDrawer(project: string) {
   return runtime.ChangesDrawer.open(project);
@@ -1733,7 +1740,7 @@ function toggleResearchForActive() {
   return runtime.Composer.toggleResearchForActive();
 }
 
-// Local provider config popover lives in /assets/provider_ui.js.
+// Local provider config popover lives in the provider_ui module.
 function openLocalProviderConfig() {
   return runtime.ProviderUI.openLocalConfig();
 }
