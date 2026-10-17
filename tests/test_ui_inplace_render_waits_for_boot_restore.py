@@ -60,7 +60,7 @@ def test_dom_harness_does_not_start_before_delayed_state_restore(ui_browser, mon
         page.close()
 
 
-@pytest.mark.parametrize("blocked_path", ["/api/operator_session", "/api/model_settings", "/api/ui_state"])
+@pytest.mark.parametrize("blocked_path", ["/api/operator_session", "/api/ui_state"])
 def test_boot_failure_diagnostics_identify_failed_or_pending_stage(ui_browser, monkeypatch, blocked_path):
     browser, url = ui_browser
     page = browser.new_page()

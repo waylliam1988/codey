@@ -125,7 +125,14 @@
     padding: 0;
   }
   .project-row:hover .project-toggle { color: var(--text-dim); }
-  .project-toggle svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .disclosure-chevron {
+    display: block; width: 12px; height: 12px; flex: none;
+    background: currentColor;
+    mask: url('/assets/chevron-down.svg') center / contain no-repeat;
+    -webkit-mask: url('/assets/chevron-down.svg') center / contain no-repeat;
+    transition: transform .12s;
+  }
+  .disclosure-chevron.is-collapsed { transform: rotate(-90deg); }
   .project-main {
     background: transparent; border: 0; color: inherit; text-align: left; padding: 0; cursor: pointer;
     min-width: 0; flex: 1;
@@ -373,7 +380,7 @@
   .copy-feedback { font-size: 11px; color: var(--text-dim); margin-left: 6px; }
   .copy-feedback:empty { display: none; }
   .msg-copy svg {
-    width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8;
+    width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.5;
   }
 
   /* ---------- assistant markdown (monochrome, no highlighting) ---------- */
@@ -396,7 +403,7 @@
   /* Quiet process disclosure; answers and approval cards remain outside. */
   .process-block[hidden] { display: none; }
   .process-block { margin-bottom: 14px; }
-  .process-summary, .thinking > summary { display: flex; align-items: center; gap: 7px; min-height: 26px; width: fit-content; max-width: 100%; list-style: none; color: var(--text-dim); cursor: pointer; user-select: none; font: 12px/1.5 var(--font-sans); }
+  .process-summary, .thinking > summary { display: flex; align-items: center; gap: 7px; min-height: 26px; width: fit-content; max-width: 100%; list-style: none; color: var(--text-dim); cursor: pointer; user-select: none; font: 12px/1.7 var(--font-mono); }
   .process-summary::-webkit-details-marker, .thinking > summary::-webkit-details-marker { display: none; }
   .process-summary::after, .thinking > summary::after {
     content: ''; width: 12px; height: 12px; flex-shrink: 0;
@@ -408,7 +415,7 @@
   .process-group[open] > .process-summary::after, .thinking[open] > summary::after { transform: rotate(180deg); }
   .process-summary:hover { color: var(--text); }
   .process-summary:hover::after, .thinking > summary:hover::after { background: var(--text); color: var(--text); }
-  .process-approval-status { display: flex; align-items: center; min-height: 26px; color: var(--text-dim); font: 12px/1.5 var(--font-sans); }
+  .process-approval-status { display: flex; align-items: center; min-height: 26px; color: var(--text-dim); font: 12px/1.7 var(--font-mono); }
   .process-body { padding-top: 10px; }
   .process-diagnostic { margin-top: 8px; color: var(--text-dim); font-size: 12px; }
   .thinking-section + .thinking-section { margin-top: 12px; }
@@ -448,12 +455,14 @@
   .code-language { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-bottom: 6px; }
   .code-copy {
     position: absolute; top: 6px; right: 6px;
-    font-family: var(--font-mono); font-size: 11px;
-    background: transparent; border: 1px solid var(--border);
-    color: var(--muted); border-radius: 4px; padding: 2px 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; padding: 0;
+    background: transparent; border: 0;
+    color: var(--muted); border-radius: 4px;
     cursor: pointer; opacity: 0;
     transition: background .12s, color .12s, opacity .12s;
   }
+  .code-copy svg, .icon-action svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
   .md-code:hover .code-copy,
   .md-code:focus-within .code-copy { opacity: 1; }
   .code-copy:hover,
@@ -463,16 +472,17 @@
   /* ---------- tool line ---------- */
   .tool-line {
     display: grid;
-    grid-template-columns: 12px fit-content(18ch) minmax(0, 1fr) auto minmax(0, 2fr);
+    grid-template-columns: 12px minmax(0, 1fr) 12px minmax(0, 2fr);
     align-items: baseline;
     gap: 8px;
     font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.7;
+    min-height: 26px;
     color: var(--text-dim);
   }
   .tool-line .tl-dot { color: var(--faint); }
-  .tool-line .tl-kind { color: var(--text-dim); min-width: 0; overflow-wrap: anywhere; }
+  .tool-line .tl-kind { display: none; }
   .tool-line .tl-path {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: var(--text-dim);
@@ -481,9 +491,9 @@
   .tool-line .tl-result { color: var(--text-dim); min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
   .tool-line .tl-result.err { color: var(--err-text); }
   .tool-line.pending .tl-result { color: var(--muted); }
-  .tool-line.compact { grid-template-columns: minmax(0, 1fr) auto minmax(0, 2fr); }
+  .tool-line.compact { grid-template-columns: 12px minmax(0, 1fr) 12px minmax(0, 2fr); }
   .tool-line.error .tl-arrow { display: none; }
-  .tool-line.error .tl-result { grid-column: 2 / -1; }
+  .tool-line.error .tl-result { grid-column: 3 / -1; }
   .tool-line.compact.error .tl-result { grid-column: 1 / -1; }
   .msg.tool { margin: 0; }
   .msg.tool + .msg.tool { margin-top: 0; }
@@ -499,6 +509,7 @@
     font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.7;
+    min-height: 26px;
     color: var(--text-dim);
     cursor: pointer;
   }
@@ -543,8 +554,9 @@
   /* ---------- status rows (done / pause / limit / error / changes) ---------- */
   .status-row {
     display: flex; align-items: baseline; gap: 10px;
-    font-size: 13px;
-    margin: 4px 0 0;
+    font: 12px/1.7 var(--font-mono);
+    margin: 0;
+    min-height: 26px;
   }
   .status-row .sr-prefix {
     font-size: 10.5px;
@@ -642,9 +654,7 @@
   }
   .sc-command-body { background: var(--bg); padding: 14px 20px; }
   .sc-command-label { color: var(--muted); font-size: 12px; }
-  .shell-card .sc-meta {
-    color: var(--muted); font-family: var(--font-mono); font-size: 11.5px;
-  }
+  .shell-card .sc-meta { color: var(--muted); font: 12px/1.7 var(--font-mono); }
   .shell-card .sc-note {
     color: var(--muted);
     font-size: 12px;
@@ -657,10 +667,7 @@
     overflow-wrap: anywhere;
     padding: 12px 20px 0;
   }
-  .shell-command {
-    font-family: var(--font-mono); font-size: 12px; line-height: 1.55;
-    color: var(--text); margin: 8px 0 10px; white-space: pre-wrap; overflow-wrap: anywhere;
-  }
+  .shell-command { font: 12px/1.7 var(--font-mono); color: var(--text); margin: 4px 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .shell-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; padding: 14px 20px 18px; }
   .shell-actions .approval-allow { background: var(--text); color: var(--bg); border-color: var(--text); display: inline-flex; align-items: center; gap: 8px; }
   .shell-actions .approval-allow:hover:not(:disabled) { background: var(--text); color: var(--bg); }
@@ -802,7 +809,9 @@
   .provider-button:disabled { opacity: .55; cursor: default; }
   .provider-button .chev {
     width: 11px; height: 11px;
-    stroke: currentColor; fill: none; stroke-width: 2;
+    background: currentColor;
+    mask: url('/assets/chevron-down.svg') center / contain no-repeat;
+    -webkit-mask: url('/assets/chevron-down.svg') center / contain no-repeat;
     color: var(--faint);
     flex-shrink: 0;
   }
@@ -905,8 +914,13 @@
   .model-source { position: relative; border-bottom: 1px solid var(--border-2); }
   .model-source summary { display: flex; align-items: center; gap: 10px; padding: 14px 46px 14px 0; cursor: pointer; color: var(--text-dim); font-size: 12px; list-style: none; }
   .model-source summary::-webkit-details-marker { display: none; }
-  .model-source > details > summary::before { content: '›'; width: 10px; color: var(--muted); }
-  .model-source > details[open] > summary::before { transform: rotate(90deg); }
+  .model-source > details > summary::before {
+    content: ''; width: 12px; height: 12px; flex: none; color: var(--muted);
+    background: currentColor; mask: url('/assets/chevron-down.svg') center / contain no-repeat;
+    -webkit-mask: url('/assets/chevron-down.svg') center / contain no-repeat;
+    transform: rotate(-90deg);
+  }
+  .model-source > details[open] > summary::before { transform: rotate(0deg); }
   .model-source-count { margin-left: auto; font-size: 11.5px; }
   .settings-dialog .model-source-toggle { appearance: none; position: absolute; right: 0; top: 16px; width: 28px; height: 16px; padding: 2px; border: 1px solid var(--muted); border-radius: 10px; cursor: pointer; background: transparent; }
   .model-source-toggle::after { content: ''; display: block; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
@@ -932,7 +946,11 @@
     border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px;
     font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
   }
-  .settings-select::after { content: '⌄'; color: var(--muted); }
+  .settings-select::after {
+    content: ''; width: 12px; height: 12px; flex: none; color: var(--muted);
+    background: currentColor; mask: url('/assets/chevron-down.svg') center / contain no-repeat;
+    -webkit-mask: url('/assets/chevron-down.svg') center / contain no-repeat;
+  }
   .settings-select:focus { outline: none; }
   .settings-select:focus-visible { outline: 1px solid var(--muted); outline-offset: 2px; }
   .settings-select-menu {
@@ -949,7 +967,17 @@
   .settings-select-option:hover, .settings-select-option:focus-visible { background: var(--hover); color: var(--text); outline: none; }
   .settings-dialog .settings-mono { font-family: var(--font-mono); font-size: 12px; }
   .settings-advanced { margin-top: 20px; }
-  .settings-advanced > summary { cursor: pointer; color: var(--text-dim); font-size: 12px; }
+  .settings-advanced > summary {
+    display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-dim); font-size: 12px; list-style: none;
+  }
+  .settings-advanced > summary::-webkit-details-marker { display: none; }
+  .settings-advanced > summary::before {
+    content: ''; width: 12px; height: 12px; flex: none; background: currentColor;
+    mask: url('/assets/chevron-down.svg') center / contain no-repeat;
+    -webkit-mask: url('/assets/chevron-down.svg') center / contain no-repeat;
+    transform: rotate(-90deg);
+  }
+  .settings-advanced[open] > summary::before { transform: rotate(0deg); }
   .settings-advanced > .settings-field { margin-top: 12px; }
   .settings-advanced .settings-hint { margin-bottom: 4px; }
   .local-config-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
@@ -1033,6 +1061,7 @@
     border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px;
     font-family: inherit;
   }
+  .drawer-btn.icon-action { width: 28px; height: 28px; padding: 0; }
   .drawer-btn:hover:not(:disabled) { background: var(--hover); color: var(--text); }
   .drawer-btn:disabled { color: var(--faint); cursor: not-allowed; }
   .changes-body { overflow-y: auto; padding: 8px 12px 18px; }
@@ -1400,12 +1429,20 @@
     .spinner { animation-duration: 1.6s; }
   }
 
-  .command-card { border: 0; margin-top: 4px; margin-bottom: 4px; }
-  .command-card summary { display: flex; align-items: center; gap: 7px; min-width: 0; height: 26px; cursor: pointer; color: var(--text-dim); list-style: none; font: 12px/1.5 var(--font-sans); }
+  .command-card { border: 0; margin: 0; }
+  .activity-row { font: 12px/1.7 var(--font-mono); }
+  .command-card summary.command-summary {
+    display: grid; grid-template-columns: 12px auto minmax(0, 1fr) 12px minmax(0, 2fr) 12px;
+    align-items: baseline; gap: 8px; min-width: 0; min-height: 26px;
+    cursor: pointer; color: var(--text-dim); list-style: none;
+  }
+  .command-card summary { font: 12px/1.7 var(--font-mono); }
   .command-card summary::-webkit-details-marker { display: none; }
-  .command-label { flex-shrink: 0; }
+  .activity-dot, .command-arrow { color: var(--faint); }
+  .command-label { min-width: 0; overflow-wrap: anywhere; }
   .command-excerpt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .command-chevron { width: 12px; height: 12px; flex-shrink: 0; background: currentColor; mask: url("/assets/chevron-down.svg") center / contain no-repeat; }
+  .command-result-slot { min-width: 0; }
+  .command-chevron { width: 12px; height: 12px; flex-shrink: 0; justify-self: end; background: currentColor; mask: url("/assets/chevron-down.svg") center / contain no-repeat; -webkit-mask: url("/assets/chevron-down.svg") center / contain no-repeat; }
   .command-card details[open] .command-chevron { transform: rotate(180deg); }
   .command-panel { margin-top: 4px; border: 1px solid var(--border); border-radius: var(--panel-radius); background: var(--panel-2); overflow: hidden; }
   .command-panel-label { padding: 6px 10px 2px; color: var(--text-dim); font-size: 12px; }
@@ -1489,7 +1526,7 @@
   .task-list-item-checkbox { accent-color: var(--text-dim); margin-right: 8px; }
   .md hr { border: 0; border-top: 1px solid var(--border); margin: 18px 0; }
   .tool-disclosure { min-width: 0; }
-  .tool-disclosure > summary { list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: 8px; color: var(--text-dim); }
+  .tool-disclosure > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) 12px; align-items: baseline; gap: 8px; color: var(--text-dim); }
   .tool-disclosure > summary::-webkit-details-marker { display: none; }
   .tool-disclosure > summary::after { content: ''; width: 12px; height: 12px; flex-shrink: 0; background: currentColor; mask: url('/assets/chevron-down.svg') center / contain no-repeat; }
   .tool-disclosure[open] > summary::after { transform: rotate(180deg); }

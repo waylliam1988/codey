@@ -307,6 +307,9 @@ export interface MessagesApi {
       chat.appendChild(div);
     } else if (m.type === 'shell_approval_status' && m.approval) {
       const state = m.approval;
+      // Successful continuation is an internal transition; the shell result
+      // and the resumed answer already provide the user-facing evidence.
+      if (state.continuation === 'started') return;
       const actions =
         state.continuation === 'failed' && state.execution !== 'uncertain'
           ? [

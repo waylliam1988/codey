@@ -111,7 +111,7 @@ def test_search_finds_empty_project_and_keeps_saved_expansion(page):
     search.fill("ALPHA")
     expect(page.locator(".project-main")).to_have_text("alpha-empty")
     expect(page.locator(".project-children")).to_have_text("No chats")
-    expect(page.locator(".project-toggle path")).to_have_attribute("d", "m6 9 6 6 6-6")
+    expect(page.locator(".project-toggle .disclosure-chevron")).not_to_have_class("is-collapsed")
     expect(page.locator("#search-empty")).to_be_hidden()
     expect(page.locator(".group-label:visible")).to_have_text("PROJECTS")
     assert page.evaluate("UiState.current().projects[0].expanded") is False
@@ -120,7 +120,7 @@ def test_search_finds_empty_project_and_keeps_saved_expansion(page):
     expect(page.locator("#chat-search-toggle")).to_be_focused()
     expect(page.locator(".project-main")).to_have_count(2)
     expect(page.locator(".project-children")).to_have_count(0)
-    expect(page.locator(".project-toggle path").first).to_have_attribute("d", "m9 6 6 6-6 6")
+    assert page.locator(".project-toggle .disclosure-chevron").first.evaluate("el => el.classList.contains('is-collapsed')")
 
 
 def test_search_no_matches_is_one_empty_state_and_updates_after_rename(page):

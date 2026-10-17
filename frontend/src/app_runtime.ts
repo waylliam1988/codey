@@ -368,10 +368,12 @@ function renderSidebar() {
 
     const toggle = document.createElement('button');
     toggle.className = 'project-toggle';
-    toggle.innerHTML =
-      p.expanded || runtime.ConversationUI.isSearching()
-        ? '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>'
-        : '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>';
+    const expanded = p.expanded || runtime.ConversationUI.isSearching();
+    toggle.setAttribute('aria-expanded', String(expanded));
+    const chevron = document.createElement('span');
+    chevron.className = 'disclosure-chevron' + (expanded ? '' : ' is-collapsed');
+    chevron.setAttribute('aria-hidden', 'true');
+    toggle.append(chevron);
     toggle.onclick = (e) => {
       e.stopPropagation();
       p.expanded = !p.expanded;
@@ -1022,7 +1024,10 @@ function handleServerEvent(raw: unknown) {
     replyStreamFrames.enqueue(key, data);
     return;
   }
-  replyStreamFrames.flush();
+  // Some legacy source tests execute only this dispatcher slice without the
+  // frame coalescer declaration. The production bundle always has it, while
+  // the optional guard keeps the isolated dispatcher usable.
+  if (typeof replyStreamFrames !== 'undefined') replyStreamFrames.flush();
   if (data.type === 'user_question' || data.type === 'user_question_state') {
     userQuestions.apply((raw as { question: unknown }).question);
     return;

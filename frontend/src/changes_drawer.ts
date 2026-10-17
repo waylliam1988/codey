@@ -1,4 +1,5 @@
 import { runtime } from './runtime';
+import { createIconSvg } from './icon_button';
 import type { ChangeFilePreview, ChangesData, RestoreChangesResult } from './types/domain';
 export interface ChangesDrawerDeps {
   $(id: string): HTMLElement;
@@ -47,6 +48,10 @@ export interface ChangesDrawerDeps {
 
   function init(nextDeps: ChangesDeps): void {
     deps = nextDeps;
+    const copy = $<HTMLButtonElement>('changes-copy');
+    copy.replaceChildren(createIconSvg('copy'));
+    copy.title = 'Copy diff';
+    copy.setAttribute('aria-label', 'Copy diff');
     $('changes-refresh').onclick = () => {
       if (activeProject && !loading && !restoring) loadChangesDrawer(activeProject);
     };
@@ -84,9 +89,15 @@ export interface ChangesDrawerDeps {
       data = lastData;
     const ok = await runtime.Render.copyText(data.diff);
     if (activeProject !== project || lastData !== data) return;
-    $('changes-copy').textContent = ok ? 'Copied' : 'Could not copy';
+    const copy = $<HTMLButtonElement>('changes-copy');
+    copy.replaceChildren(createIconSvg('copy'));
+    copy.title = ok ? 'Copied' : 'Could not copy';
+    copy.setAttribute('aria-label', ok ? 'Copied' : 'Could not copy');
     setTimeout(() => {
-      if (activeProject === project && lastData === data) $('changes-copy').textContent = 'Copy diff';
+      if (activeProject === project && lastData === data) {
+        copy.title = 'Copy diff';
+        copy.setAttribute('aria-label', 'Copy diff');
+      }
     }, 1200);
   }
   async function openChangesDrawer(project: string, path = ''): Promise<void> {
@@ -97,7 +108,10 @@ export interface ChangesDrawerDeps {
       fresh = false;
       restoring = false;
       $('changes-body').replaceChildren();
-      $('changes-copy').textContent = 'Copy diff';
+      const copy = $<HTMLButtonElement>('changes-copy');
+      copy.replaceChildren(createIconSvg('copy'));
+      copy.title = 'Copy diff';
+      copy.setAttribute('aria-label', 'Copy diff');
     }
     activeProject = project;
     selectedPath = path;

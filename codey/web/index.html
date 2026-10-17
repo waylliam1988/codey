@@ -7,7 +7,7 @@
 <title>Codey</title>
 <link rel="stylesheet" href="/assets/tokens.css?v=__APP_VERSION__" />
 <link rel="stylesheet" href="/assets/app.css?v=__APP_VERSION__" />
-  <script type="module" crossorigin src="/assets/codey-Dbwjnou4.js"></script>
+  <script type="module" crossorigin src="/assets/codey-l-Ysuljl.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/codey-CRLZVEeR.js">
   <link rel="modulepreload" crossorigin href="/assets/codey-_6KUYszW.js">
 </head>
@@ -93,7 +93,7 @@
           <button class="provider-button" id="provider-button" aria-label="Choose model" disabled>
             <span class="dot" id="provider-dot"></span>
             <span class="name" id="provider-name">DeepSeek</span>
-            <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+            <span class="chev" aria-hidden="true"></span>
           </button>
           <div class="provider-menu" id="provider-menu" aria-hidden="true">
             <!-- Provider items are built by provider_ui.js from PROVIDER_LABELS;
@@ -105,7 +105,7 @@
         <div class="effort-chooser" id="effort-chooser" hidden>
           <button class="provider-button effort-button" id="effort-button" aria-label="Thinking effort" aria-haspopup="dialog" aria-controls="effort-menu" aria-expanded="false">
             <span id="effort-name">High</span>
-            <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+            <span class="chev" aria-hidden="true"></span>
           </button>
           <div class="provider-menu effort-menu" id="effort-menu" role="dialog" aria-label="Thinking effort" aria-hidden="true"></div>
         </div>
@@ -207,7 +207,7 @@
       <strong>Changes</strong><span id="changes-scope"></span>
       <span id="changes-subtitle">Not loaded</span>
     </div>
-    <button class="drawer-btn" id="changes-copy">Copy diff</button>
+    <button class="drawer-btn icon-action" id="changes-copy" aria-label="Copy diff" title="Copy diff"></button>
     <button class="drawer-btn" id="changes-restore">Restore</button>
     <button class="drawer-btn" id="changes-refresh">Refresh</button>
     <button class="drawer-btn" id="changes-close">Close</button>

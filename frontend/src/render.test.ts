@@ -80,4 +80,31 @@ describe('render boundaries', () => {
     expect(block.querySelector('code')?.textContent).toBe(code);
     expect(body.querySelector('p')?.textContent).toBe('Final paragraph');
   });
+
+  it('uses icon-only copy actions and omits redundant result availability text', () => {
+    const body = document.createElement('div');
+    window.Render.renderMarkdown(body, '```text\nhello\n```');
+    const codeCopy = body.querySelector<HTMLButtonElement>('.code-copy')!;
+    expect(codeCopy.textContent).toBe('');
+    expect(codeCopy.querySelector('svg')).not.toBeNull();
+    expect(codeCopy.getAttribute('aria-label')).toBe('Copy code');
+
+    const row = window.Render.toolRowEl({ kind: 'read', path: 'requirements.txt', result: 'full text' }, false);
+    expect(row.querySelector('.tl-kind')?.textContent).toBe('');
+    expect(row.querySelector('.tl-path')?.textContent).toBe('requirements.txt');
+    expect(row.querySelector('.tl-result')?.textContent).toBe('');
+    expect(row.querySelector('.tl-arrow')).toHaveProperty('hidden', true);
+  });
+
+  it('groups canonical read tool aliases into an expanded file group', () => {
+    const host = document.createElement('div');
+    window.Render.appendOrFoldTool(host, { kind: 'read_file', path: 'README.md', result: 'one' });
+    window.Render.appendOrFoldTool(host, { kind: 'read_file', path: 'pyproject.toml', result: 'two' });
+    const group = host.querySelector<HTMLElement>('.tool-group')!;
+    expect(group.dataset.foldkind).toBe('read');
+    expect(group.classList.contains('collapsed')).toBe(false);
+    expect(group.querySelector('.tg-kind')?.textContent).toBe('read');
+    expect(group.querySelector('.tg-count')?.textContent).toBe('2 files');
+    expect(group.querySelectorAll('.tool-line')).toHaveLength(2);
+  });
 });

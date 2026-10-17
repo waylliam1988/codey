@@ -2,14 +2,16 @@ import { expect, it, vi } from 'vitest';
 import { commandCard } from './command_card';
 import './render';
 
-it('uses a text disclosure with only the shared trailing chevron', () => {
+it('uses the shared activity-row disclosure with a trailing chevron', () => {
   const card = commandCard(
     { type: 'shell_result', command: 'python probe.py', approved: true, shellStatus: 'exit', exitCode: 0 },
     vi.fn(),
   );
   const summary = card.querySelector('summary')!;
   expect(summary.querySelector('.command-terminal, svg, img')).toBeNull();
-  expect(summary.firstElementChild?.textContent).toBe('Ran');
+  expect(summary.querySelector('.activity-dot')?.textContent).toBe('·');
+  expect(summary.querySelector('.command-label')?.textContent).toBe('Ran');
+  expect(summary.querySelector('.command-arrow')?.textContent).toBe('→');
   expect(summary.lastElementChild?.className).toBe('command-chevron');
 });
 
@@ -36,7 +38,7 @@ it('never labels a denial, timeout, unknown status or nonzero exit as successful
   }
 });
 
-it('keeps command/output independently copyable and labels retained output honestly', async () => {
+it('keeps command/output independently copyable while exposing truncation separately', async () => {
   const copy = vi.fn().mockResolvedValue(true);
   const card = commandCard(
     {
@@ -59,7 +61,7 @@ it('keeps command/output independently copyable and labels retained output hones
   expect(copy).toHaveBeenLastCalledWith('x'.repeat(4000));
   buttons[1].click();
   expect(copy).toHaveBeenLastCalledWith('参数\n'.repeat(2000));
-  expect(buttons[1].getAttribute('aria-label')).toBe('Copy retained output');
+  expect(buttons[1].getAttribute('aria-label')).toBe('Copy output');
   expect(card.querySelector('.command-notice')?.textContent).toBe('Output truncated');
   expect(buttons[0].textContent).toBe('');
   expect(buttons[0].querySelector('svg')).not.toBeNull();

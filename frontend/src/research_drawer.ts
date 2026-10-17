@@ -1,5 +1,6 @@
 import type { DocumentRef } from './document_pane';
 import { runtime } from './runtime';
+import { createIconSvg } from './icon_button';
 export interface ResearchSource {
   url?: string;
   final_url?: string;
@@ -318,11 +319,25 @@ export interface ResearchDrawerDeps {
       actions.className = 'research-card-meta';
       const copy = document.createElement('button');
       copy.type = 'button';
-      copy.className = 'drawer-btn research-copy';
-      copy.textContent = 'Copy citation';
+      copy.className = 'drawer-btn research-copy icon-action';
+      copy.title = 'Copy citation';
+      copy.setAttribute('aria-label', 'Copy citation');
+      copy.append(createIconSvg('copy'));
       copy.onclick = (e) => {
         e.stopPropagation();
-        copyText(`${number}${item.title || 'Source'} - ${url}`);
+        void copyText(`${number}${item.title || 'Source'} - ${url}`).then((ok) => {
+          copy.title = ok ? 'Copied' : 'Could not copy';
+          copy.setAttribute('aria-label', ok ? 'Copied' : 'Could not copy');
+          setTimeout(
+            () => {
+              if (copy.isConnected) {
+                copy.title = 'Copy citation';
+                copy.setAttribute('aria-label', 'Copy citation');
+              }
+            },
+            ok ? 1200 : 4000,
+          );
+        });
       };
       actions.appendChild(copy);
       card.appendChild(actions);

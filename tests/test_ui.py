@@ -519,6 +519,16 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn(".md-code:hover .code-copy", STYLE_SOURCE)
         self.assertIn("await copyText(value)", RENDER_JS)
 
+    def test_activity_rows_share_columns_and_icon_only_copy_actions(self) -> None:
+        self.assertIn("grid-template-columns: 12px minmax(0, 1fr) 12px minmax(0, 2fr)", STYLE_SOURCE)
+        self.assertIn("grid-template-columns: 12px auto minmax(0, 1fr) 12px minmax(0, 2fr) 12px", STYLE_SOURCE)
+        self.assertIn(".tool-line .tl-kind { display: none; }", STYLE_SOURCE)
+        self.assertIn("className = 'activity-row command-summary'", _source("command_card"))
+        self.assertIn("createIconSvg('copy')", RENDER_JS)
+        self.assertNotIn("Result available", RENDER_JS)
+        self.assertNotIn("content: '›'", STYLE_SOURCE)
+        self.assertNotIn("content: '⌄'", STYLE_SOURCE)
+
 
     def test_streaming_events_stay_debounced_while_user_actions_flush(self) -> None:
         # A-1: the SSE hot path (addToSession) must keep the debounced persistActive,

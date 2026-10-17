@@ -126,8 +126,8 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
             expect(output).to_be_visible()
             assert output.bounding_box()["height"] <= 180
             assert output.evaluate("(el)=>el.scrollHeight > el.clientHeight")
-            expect(card.get_by_role("button", name="Copy retained output", exact=True)).to_be_visible()
-            copy_output = card.get_by_role("button", name="Copy retained output", exact=True)
+            expect(card.get_by_role("button", name="Copy output", exact=True)).to_be_visible()
+            copy_output = card.get_by_role("button", name="Copy output", exact=True)
             output.hover()
             copy_output.hover()
             assert copy_output.evaluate("el => getComputedStyle(el).backgroundColor") == "rgba(0, 0, 0, 0)"

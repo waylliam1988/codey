@@ -18,6 +18,7 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
   card.className = 'msg shell command-card';
   const details = document.createElement('details');
   const summary = document.createElement('summary');
+  summary.className = 'activity-row command-summary';
   const exit = message.exitCode;
   const failures: Record<string, string> = {
     stopped: 'Stopped',
@@ -41,6 +42,11 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
         : completed
           ? `Command ${success ? 'completed' : 'failed'} · exit ${exit}`
           : 'Result status unknown');
+  const dot = document.createElement('span');
+  dot.className = 'activity-dot';
+  dot.textContent = '·';
+  dot.setAttribute('aria-hidden', 'true');
+  summary.append(dot);
   const label = document.createElement('span');
   label.className = 'command-label';
   label.textContent = running ? 'Running' : completed ? 'Ran' : result;
@@ -49,6 +55,14 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
   excerpt.className = 'command-excerpt';
   excerpt.textContent = message.command || '';
   summary.append(excerpt);
+  const arrow = document.createElement('span');
+  arrow.className = 'command-arrow';
+  arrow.textContent = '→';
+  arrow.setAttribute('aria-hidden', 'true');
+  const resultSlot = document.createElement('span');
+  resultSlot.className = 'command-result-slot';
+  resultSlot.setAttribute('aria-hidden', 'true');
+  summary.append(arrow, resultSlot);
   const chevron = document.createElement('span');
   chevron.className = 'command-chevron';
   chevron.setAttribute('aria-hidden', 'true');
@@ -64,10 +78,7 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
   command.className = 'command-source';
   const pre = document.createElement('pre');
   pre.textContent = message.command || '';
-  command.append(
-    copyButton(message.commandTruncated ? 'Copy retained command' : 'Copy command', message.command || '', copy),
-    pre,
-  );
+  command.append(copyButton('Copy command', message.command || '', copy), pre);
   const output = document.createElement('section');
   output.className = 'command-result';
   const stdoutText = document.createElement('pre');
@@ -83,11 +94,7 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
   stderrText.setAttribute('aria-label', 'Standard error');
   stderrText.hidden = true;
   output.append(
-    copyButton(
-      running ? 'Copy received content' : message.outputTruncated ? 'Copy retained output' : 'Copy output',
-      message.output || '',
-      copy,
-    ),
+    copyButton(running ? 'Copy received content' : 'Copy output', message.output || '', copy),
     stdoutText,
     stderrText,
   );

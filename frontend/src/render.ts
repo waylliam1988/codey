@@ -1,5 +1,6 @@
 import { markdownHtml, renderMarkdownContent } from './markdown';
 import { runtime } from './runtime';
+import { createIconSvg } from './icon_button';
 export interface ToolPreview {
   additions?: number;
   deletions?: number;
@@ -82,9 +83,8 @@ const renderApi = (function () {
     btn.className = 'msg-copy';
     btn.type = 'button';
     btn.setAttribute('aria-label', scope === 'final' ? 'Copy final answer' : 'Copy message');
-    const icon =
-      '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V7a2 2 0 0 1 2-2h8"/></svg>';
-    btn.innerHTML = icon;
+    const copyIcon = () => createIconSvg('copy');
+    btn.append(copyIcon());
     const feedback = document.createElement('span');
     feedback.className = 'copy-feedback';
     feedback.setAttribute('role', 'status');
@@ -114,13 +114,26 @@ const renderApi = (function () {
       btn.classList.toggle('copied', ok);
       btn.classList.toggle('copy-failed', !ok);
       btn.setAttribute('aria-label', ok ? 'Copied' : 'Could not copy');
-      btn.innerHTML = ok ? '<svg class="copy-check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg>' : icon;
+      btn.replaceChildren(
+        ok
+          ? (() => {
+              const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+              icon.setAttribute('class', 'copy-check');
+              icon.setAttribute('viewBox', '0 0 24 24');
+              icon.setAttribute('aria-hidden', 'true');
+              const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+              path.setAttribute('d', 'm5 12 4 4 10-10');
+              icon.append(path);
+              return icon;
+            })()
+          : copyIcon(),
+      );
       feedback.textContent = ok ? '' : 'Could not copy';
       reset = setTimeout(
         () => {
           btn.classList.remove('copied', 'copy-failed');
           btn.setAttribute('aria-label', scope === 'final' ? 'Copy final answer' : 'Copy message');
-          btn.innerHTML = icon;
+          btn.replaceChildren(copyIcon());
           feedback.textContent = '';
         },
         ok ? 1200 : 4000,
@@ -138,16 +151,32 @@ const renderApi = (function () {
     btn.className = 'code-copy';
     btn.type = 'button';
     btn.setAttribute('aria-label', 'Copy code');
-    btn.textContent = 'Copy';
+    btn.title = 'Copy code';
+    btn.append(createIconSvg('copy'));
     btn.onclick = async (e: MouseEvent) => {
       e.stopPropagation();
       const ok = await copyText(value);
       btn.classList.toggle('copied', ok);
-      btn.textContent = ok ? 'Copied' : 'Could not copy';
+      btn.replaceChildren(
+        ok
+          ? (() => {
+              const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+              icon.setAttribute('class', 'copy-check');
+              icon.setAttribute('viewBox', '0 0 24 24');
+              icon.setAttribute('aria-hidden', 'true');
+              const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+              path.setAttribute('d', 'm5 12 4 4 10-10');
+              icon.append(path);
+              return icon;
+            })()
+          : createIconSvg('copy'),
+      );
+      btn.title = ok ? 'Copied' : 'Could not copy';
       btn.setAttribute('aria-label', ok ? 'Copied' : 'Could not copy');
       setTimeout(() => {
         btn.classList.remove('copied');
-        btn.textContent = 'Copy';
+        btn.replaceChildren(createIconSvg('copy'));
+        btn.title = 'Copy code';
         btn.setAttribute('aria-label', 'Copy code');
       }, 1200);
     };
@@ -193,22 +222,40 @@ const renderApi = (function () {
   }
 
   // ============================ tool line rendering ============================
-  const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);
+  const FOLDABLE_TOOL_KINDS = new Set([
+    'read',
+    'read_file',
+    'ls',
+    'list_dir',
+    'list_directory',
+    'search',
+    'grep',
+    'references',
+    'find_references',
+  ]);
+  function foldKind(kind: string): string {
+    if (kind === 'read_file') return 'read';
+    if (kind === 'list_dir' || kind === 'list_directory') return 'ls';
+    if (kind === 'grep') return 'search';
+    if (kind === 'find_references') return 'references';
+    return kind;
+  }
   function toolRowEl(m: ToolDisplay, compact: boolean) {
     const row = document.createElement('div');
     row.className = 'tool-line' + (compact ? ' compact' : '');
     if (m.error) row.classList.add('error');
     if (m.turn) row.title = 'Step ' + m.turn;
     if (m.pending) row.classList.add('pending');
-    if (!compact) {
-      const dot = document.createElement('span');
-      dot.className = 'tl-dot';
-      dot.textContent = '·';
-      const kind = document.createElement('span');
-      kind.className = 'tl-kind';
-      kind.textContent = m.kind || '';
-      row.append(dot, kind);
-    }
+    const dot = document.createElement('span');
+    dot.className = 'tl-dot';
+    dot.textContent = '·';
+    const kind = document.createElement('span');
+    kind.className = 'tl-kind';
+    // The activity row already communicates the operation through its path or
+    // command. Keep the type track empty so Shell's "Ran" label aligns with
+    // the same path column without adding a second visual label to file rows.
+    kind.textContent = '';
+    row.append(dot, kind);
     const path = document.createElement('span');
     path.className = 'tl-path';
     path.textContent = m.path || m.command || '';
@@ -224,9 +271,7 @@ const renderApi = (function () {
         ? m.failure?.code === 'policy.approval_required' || /command_not_allowed/.test(m.result || '')
           ? 'This command requires approval'
           : 'Tool failed'
-        : m.result
-          ? 'Result available'
-          : '';
+        : '';
     if (!m.pending && !m.error && m.preview) {
       const p = m.preview;
       if (p.additions !== undefined && p.deletions !== undefined)
@@ -238,6 +283,7 @@ const renderApi = (function () {
         result.textContent = `${p.matches}${p.has_more ? '+' : ''} matches`;
       } else if (p.diff_unavailable) result.textContent = 'Changed · preview unavailable';
     }
+    arrow.hidden = !result.textContent;
     row.append(path, arrow, result);
     return row;
   }
@@ -291,9 +337,37 @@ const renderApi = (function () {
     const copy = document.createElement('button');
     copy.type = 'button';
     copy.className = 'code-copy';
-    copy.textContent = m.preview?.diff ? 'Copy diff' : 'Copy retained result';
+    const copyLabel = m.preview?.diff ? 'Copy diff' : 'Copy result';
+    copy.title = copyLabel;
+    copy.setAttribute('aria-label', copyLabel);
+    copy.append(createIconSvg('copy'));
     copy.onclick = async () => {
-      copy.textContent = (await copyText(displayed)) ? 'Copied' : 'Could not copy';
+      const ok = await copyText(displayed);
+      copy.replaceChildren(
+        ok
+          ? (() => {
+              const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+              icon.setAttribute('class', 'copy-check');
+              icon.setAttribute('viewBox', '0 0 24 24');
+              icon.setAttribute('aria-hidden', 'true');
+              const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+              path.setAttribute('d', 'm5 12 4 4 10-10');
+              icon.append(path);
+              return icon;
+            })()
+          : createIconSvg('copy'),
+      );
+      copy.title = ok ? 'Copied' : 'Could not copy';
+      copy.setAttribute('aria-label', ok ? 'Copied' : 'Could not copy');
+      setTimeout(
+        () => {
+          if (!copy.isConnected) return;
+          copy.replaceChildren(createIconSvg('copy'));
+          copy.title = copyLabel;
+          copy.setAttribute('aria-label', copyLabel);
+        },
+        ok ? 1200 : 4000,
+      );
     };
     panel.append(output, copy);
     details.append(summary, panel);
@@ -323,11 +397,11 @@ const renderApi = (function () {
   }
   function createToolGroup(kind: string) {
     const group = document.createElement('div');
-    group.className = 'tool-group collapsed';
-    group.dataset.foldkind = kind;
+    group.className = 'tool-group';
+    group.dataset.foldkind = foldKind(kind);
     const summary = document.createElement('button');
     summary.type = 'button';
-    summary.setAttribute('aria-expanded', 'false');
+    summary.setAttribute('aria-expanded', 'true');
     summary.className = 'tool-group-summary';
     const dot = document.createElement('span');
     dot.className = 'tl-dot';
@@ -356,7 +430,7 @@ const renderApi = (function () {
     div.className = 'msg tool';
     if (m.toolKey) div.dataset.toolKey = m.toolKey;
     if (FOLDABLE_TOOL_KINDS.has(m.kind || '') && !m.error && !m.pending) {
-      div.dataset.foldkind = m.kind || '';
+      div.dataset.foldkind = foldKind(m.kind || '');
       div.dataset.toolPath = m.path || '';
       div.dataset.toolResult = m.result || '';
     }
@@ -370,11 +444,16 @@ const renderApi = (function () {
     const row = toolDetails(m, true);
     if (m.toolKey) row.dataset.toolKey = m.toolKey;
     body.appendChild(row);
-    count.textContent = foldCountLabel(m.kind || '', body.children.length);
+    count.textContent = foldCountLabel(foldKind(m.kind || ''), body.children.length);
   }
   function appendOrFoldTool(chat: HTMLElement, m: ToolDisplay) {
+    const kind = foldKind(m.kind || '');
+    if (!FOLDABLE_TOOL_KINDS.has(m.kind || '') || !kind) {
+      chat.appendChild(standaloneToolEl(m));
+      return;
+    }
     const last = chat.lastElementChild;
-    if (last instanceof HTMLElement && last.classList.contains('tool-group') && last.dataset.foldkind === m.kind) {
+    if (last instanceof HTMLElement && last.classList.contains('tool-group') && last.dataset.foldkind === kind) {
       appendToToolGroup(last, m);
       return;
     }
@@ -382,11 +461,11 @@ const renderApi = (function () {
       last instanceof HTMLElement &&
       last.classList.contains('msg') &&
       last.classList.contains('tool') &&
-      last.dataset.foldkind === m.kind
+      last.dataset.foldkind === kind
     ) {
-      const group = createToolGroup(m.kind || '');
+      const group = createToolGroup(kind);
       appendToToolGroup(group, {
-        kind: m.kind,
+        kind,
         path: last.dataset.toolPath || '',
         result: last.dataset.toolResult || '',
         toolKey: last.dataset.toolKey || '',

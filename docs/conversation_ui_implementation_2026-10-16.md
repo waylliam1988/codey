@@ -153,6 +153,29 @@ python -X utf8 -m pyrefly check codey --python-version 3.13
 
 实时输出 D 仍是部分完成：shell 审批和普通 run 已有 execution identity、增量 UTF-8 观察和有界快照，但当前前端仍以轮询读取，没有专用 `execution_output_available` SSE；observer 仍可能按 chunk 写 SQLite，命令卡的 stdout/stderr 展示和 DOM 重建后的选区/展开连续性也未完成规格中的全部验收。因此不能把 D 或六项整体标为全部完成。
 
+## 2026-10-17 活动行与操作图标统一
+
+活动记录现在共享一套稳定的紧凑行轨道：前导点、路径或命令、执行箭头、结果区域和折叠箭头。`read`、`search`、`ls`、`references` 等工具类型在分组标题中表达，协议中的 `read_file`、`grep`、`list_dir`、`find_references` 会映射到相应的旧显示分组，具体文件行不再重复占用一列；分组默认展开，用户仍可用箭头收起。Shell 摘要显示 `· Ran powershell ...`，其中 `Ran` 与工具路径从同一内容列开始，命令只保留一个紧凑间距。命令列过长时仍由路径列负责截断；成功工具结果不再重复显示没有信息量的 `Result available`，只有摘要、错误或等待状态占用结果列。
+
+复制操作使用共享的 `CopyAction` 图标源。正文、Markdown 代码块、工具结果、Shell 输出、Changes、Research 和文档预览都显示同一双矩形 SVG；按钮的具体语义放在 `title` 和 `aria-label` 中，悬停、键盘聚焦和触摸设备遵循各自容器的可见性规则。`Copy retained result`、`Copy diff` 等文字不再作为悬浮按钮内容，截断说明仍作为内容状态保留。
+
+折叠控件使用共享的 `DisclosureChevron` 资源 `/assets/chevron-down.svg`。正文活动区、Shell、设置、模型来源、侧栏项目树分别使用尾部或前导布局变体，图形、尺寸、颜色和旋转规则保持一致；表示执行流向的 `→` 与跳转到最新消息的箭头继续保留为不同语义。
+
+成功的 Shell continuation 是内部状态，不再单独创建 `Task continued` 聊天行；失败、未确认和需要操作的审批状态仍可见。UI 状态保存继续在后台维护本地缓存、冲突保护和重试逻辑，常规保存不改变输入框布局。
+
+源码位于 `frontend/src` 与 `frontend/public`，`codey/web` 是由 `npm run build` 和 `python -m tools.publish_frontend` 生成的可发布副本。两者不是两套手工维护的 UI；发布校验通过源摘要和文件哈希确保副本与源码一致。这样 Python 安装包在没有 Node 的环境仍可直接提供正式页面。
+
+本轮验证入口：
+
+```powershell
+cd E:\codey\frontend
+npm run check
+npm run build
+cd ..
+python -X utf8 -m tools.publish_frontend --check
+python -X utf8 -m pytest -q
+```
+
 ## 2026-10-16 并发与恢复复核
 
 本次继续复核后，运行契约保持为“同一 session 串行、不同 session 并行”。`RunRegistry`、HTTP 提交、浏览器 worker、SSE 状态投影和 Stop 均按 `session_id`/`run_id` 分开；没有恢复全局单任务锁。定向后端与资源回归 `17 passed`，三会话真实 HTTP/Playwright 回归仍通过；正式前端 `34 files / 132 tests`、typecheck、Biome、build 和 `publish_frontend.py --check` 通过。

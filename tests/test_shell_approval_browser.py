@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import sys
 import threading
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -63,8 +64,11 @@ def test_buttons_response_loss_and_retry_preserve_single_execution(tmp_path, mon
                     "BROWSER_SHELL_RESULT" if approved else "Denied by user"
                 )
                 page.get_by_role("button", name="Retry continuation", exact=True).click()
-                expect(page.get_by_text("Task continued", exact=True)).to_be_visible()
+                expect(page.get_by_text("Task continued", exact=True)).to_have_count(0)
                 assert ctx.shell_approval_workflow.wait(5)
+                deadline = time.monotonic() + 5
+                while submit.call_count < 2 and time.monotonic() < deadline:
+                    time.sleep(0.05)
                 assert submit.call_count == 2
                 if approved:
                     assert (tmp_path / "executions").read_text().splitlines() == ["executed"]
