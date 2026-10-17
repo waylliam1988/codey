@@ -90,6 +90,21 @@ def test_accepted_draft_clear_is_durable_and_revision_never_rewinds(page, durabl
     expect(page.locator("#task")).to_have_value("")
 
 
+def test_send_admission_does_not_wait_for_slow_state_reconciliation(page):
+    pending_state = []
+    page.route("**/api/state", lambda route: pending_state.append(route))
+    page.route(
+        "**/api/run",
+        lambda route: route.fulfill(
+            json={"ok": True, "run_id": route.request.post_data_json["run_id"], "session_id": "a"}
+        ),
+    )
+    page.locator("#task").fill("send while state is slow")
+    expect(page.locator("#send")).to_be_enabled()
+    with page.expect_request("**/api/run", timeout=1000):
+        page.locator("#send").click()
+
+
 @pytest.mark.parametrize("status", [500, 409])
 def test_save_failure_and_retry_keep_current_input_without_reloading_or_running(page, status):
     calls = []

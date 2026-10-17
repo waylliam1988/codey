@@ -47,12 +47,13 @@ def test_any_source_without_discovery_keeps_clear_beside_select_all(page, models
     expect(source.get_by_role('button', name='Refresh models', exact=True)).to_have_count(0)
 
 
-def test_opening_source_groups_does_not_fetch_catalogs_or_save_preferences(page, models):
+def test_opening_settings_refreshes_builtin_catalogs_without_saving_preferences(page, models):
     requests = []
     page.on('request', lambda request: requests.append(request))
     page.locator('#btn-settings').click()
     expect(page.locator('.model-source')).to_have_count(3)
     for source in page.locator('.model-source').all():
         source.locator('summary').first.click()
-    assert not any('/api/model_catalog' in request.url for request in requests)
+    catalog_requests = [request for request in requests if '/api/model_catalog' in request.url]
+    assert [request.post_data_json['source'] for request in catalog_requests] == ['local']
     assert models[1] == []

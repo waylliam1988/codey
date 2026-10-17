@@ -57,7 +57,7 @@ export interface RequestsDeps {
   addToSession(sessionId: string, message: Message): boolean;
   appendMessageNode(chat: HTMLElement, message: Message): void;
   renderChat(): void;
-  scrollChat(): void;
+  scrollChat(capture?: boolean): void;
   statusRow(prefix: string, text: string, options: { err?: boolean; actions?: StatusAction[] }): HTMLElement;
 }
 /* A user request owns its attempts and one stable, derived status position. */
@@ -343,7 +343,6 @@ export interface RequestsDeps {
     }
   }
   function addToSession(sid: string, m: Message): boolean {
-    if (sid === deps.getActiveId()) runtime.ConversationUI.captureView();
     const s = session(sid);
     if (!s) return false;
     runtime.UiState.ensureSessionIndexes(s);
@@ -367,7 +366,7 @@ export interface RequestsDeps {
         if (anchor)
           for (const node of Array.from(chat.children))
             if (!before.has(node) && node !== anchor) chat.insertBefore(node, anchor);
-        deps.scrollChat();
+        deps.scrollChat(false);
       }
     }
     refreshActions();

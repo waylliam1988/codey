@@ -28,7 +28,9 @@ def models_in_use(ctx: Any) -> list[dict[str, str]]:
         }
         for item in ctx.approvals.shell_snapshot().values()
     )
-    used.extend({"provider": provider, "model": model} for provider, model in ctx.providers.model_uses)
+    snapshot = getattr(ctx.providers, "model_uses_snapshot", None)
+    entries = snapshot() if callable(snapshot) else tuple(ctx.providers.model_uses)
+    used.extend({"provider": provider, "model": model} for provider, model in entries)
     return used
 
 
@@ -45,8 +47,11 @@ def settings_response(ctx: Any) -> tuple[int, dict[str, Any]]:
         sources.append(
             {**store.catalog(key), "id": key, "label": label, "discoverable": True, "connection_editor": key == "local"}
         )
-    with ctx.lock:
-        in_use = models_in_use(ctx)
+    # This is a read-only settings snapshot.  Do not hold the application
+    # lifecycle lock while collecting it: a running model or shell task may
+    # legitimately keep that lock for its admission/settlement transaction,
+    # and opening Settings must remain responsive during that work.
+    in_use = models_in_use(ctx)
     return 200, {"ok": True, "preferences": store.snapshot(), "sources": sources, "in_use": in_use}
 
 

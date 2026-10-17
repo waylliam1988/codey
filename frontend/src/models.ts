@@ -5,6 +5,7 @@ import type { ModelSource, ModelState } from './types/domain';
   'use strict';
   let state: ModelState = { preferences: { revision: 0, sources: {} }, sources: [], in_use: [] };
   const listeners = new Set<() => void>();
+  let loading: Promise<ModelState> | null = null;
   function snapshot(): ModelState {
     return structuredClone(state);
   }
@@ -15,10 +16,18 @@ import type { ModelSource, ModelState } from './types/domain';
     listeners.forEach((listener) => listener());
   }
   async function load(): Promise<ModelState> {
-    const response = await fetch('/api/model_settings', { cache: 'no-store' });
-    if (!response.ok) throw new Error('Could not load models');
-    applySettings(await response.json());
-    return snapshot();
+    if (loading) return loading;
+    loading = (async () => {
+      const response = await fetch('/api/model_settings', { cache: 'no-store' });
+      if (!response.ok) throw new Error('Could not load models');
+      applySettings(await response.json());
+      return snapshot();
+    })();
+    try {
+      return await loading;
+    } finally {
+      loading = null;
+    }
   }
   function sourceFor(provider: string): ModelSource | undefined {
     return state.sources.find(

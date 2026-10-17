@@ -11,7 +11,7 @@ This file records the current verification state, not an append-only experiment 
 | Production statement coverage | **88.53%**; CI minimum **85%** |
 | Production branch coverage | **78.24%**; CI minimum **75%** |
 | Coverage scope | All **429** production Python files; Python subprocesses included |
-| Full-tree mypy / Pyrefly / ty | **431 source files; all three checkers passed for Python 3.12 target** |
+| Python static checks | `mypy codey`, `pyrefly check codey`, and `ty check codey` passed; `pyrefly check` over tests/tools still reports the repository's existing unannotated test/tool baseline |
 | Ruff / diff check | passed |
 | TypeScript / Biome / Vitest | **34 files / 132 tests passed; typecheck, build and published metadata check passed** |
 | Real HTTP protocol continuation | **22 passed**, using deterministic local peers for both native protocols |
@@ -95,6 +95,29 @@ Installed-package UI evidence is under ignored
 `.e2e-artifacts/coverage/`.
 
 Live Zen matrix: **36/42** initial cases passed; four of six failed cases passed on retest. Two Ling thinking-enabled cases remain unresolved. The free-model matrix is not all green. This review used local deterministic peers rather than new live-provider calls; its results do not establish live-provider health or release status.
+
+## 2026-10-17 response-latency regressions
+
+The current continuation pass added two independent red/green regressions. Holding
+`AppContext.lock` in a test first made `model_settings.settings_response()` hang;
+removing that long read-side lock made the same test return 200 while the lock was
+held. A browser regression then held `/api/state` open before Send; the old packaged
+UI never reached `/api/run`, while the updated composer reached the authoritative
+admission endpoint immediately. The accepted-run draft clear remains after the
+HTTP acceptance boundary, so a lost response or newer edit is not cleared.
+
+The new regression file `tests/test_current_regressions.py` passed **2/2**. The
+focused model, approval, and draft groups passed **75/75**. The frontend browser
+regression `test_send_admission_does_not_wait_for_slow_state_reconciliation` passed
+after rebuilding and publishing `codey/web`. The two-approval lifecycle regression
+also passed; no backend worker serialization bug was reproduced.
+
+Static checks for the changed production paths passed: Ruff, mypy, Pyrefly on
+`codey`, ty, TypeScript, and Biome. A full `pyrefly check` still fails on existing
+unannotated tests and tools; that failure is recorded rather than hidden. The
+packaged asset refresh came from `npm run build` followed by
+`python tools/publish_frontend.py`; no external model API or Selfie business file
+was used.
 
 ## Reports and reproduction
 

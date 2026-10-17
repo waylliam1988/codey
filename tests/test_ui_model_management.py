@@ -189,6 +189,7 @@ def test_all_sources_off_is_quiet_and_picker_never_sends_or_discovers(page, mode
     for label in ("Websites", "Optional connection", "Local"):
         page.get_by_role("checkbox", name="Enable " + label, exact=True).uncheck()
     page.locator("#model-settings-save").click()
+    after_save = len(calls)
     expect(page.locator("#local-config-pop")).to_be_hidden()
     page.locator("#task").fill("keep me")
     expect(page.locator("#model-notice")).to_contain_text("No models enabled")
@@ -200,7 +201,8 @@ def test_all_sources_off_is_quiet_and_picker_never_sends_or_discovers(page, mode
     page.locator("#task").focus()
     page.keyboard.press("Enter")
     assert not any(
-        url.endswith(("/api/run", "/api/model_catalog", "/api/local_provider", "/api/api_models")) for url in calls
+        url.endswith(("/api/run", "/api/model_catalog", "/api/local_provider", "/api/api_models"))
+        for url in calls[after_save:]
     )
     expect(page.locator("#task")).to_have_value("keep me")
 

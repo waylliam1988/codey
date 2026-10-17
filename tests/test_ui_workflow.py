@@ -399,7 +399,9 @@ def test_send_failure_keeps_draft_and_blocks_double_submission(page):
     }""")
     page.locator("#task").fill("keep this task")
     page.locator("#send").click()
-    expect(page.locator("#task")).to_have_value("keep this task")
+    # Admission owns the submitted text immediately; a rejected response
+    # restores it after the request finishes.
+    expect(page.locator("#task")).to_have_value("")
     expect(page.locator("#send")).to_be_disabled()
     page.locator("#task").press("Enter")
     assert page.evaluate("runCalls") == 1
@@ -407,6 +409,13 @@ def test_send_failure_keeps_draft_and_blocks_double_submission(page):
     expect(page.locator("#send")).to_be_enabled()
     expect(page.locator("#task")).to_have_value("keep this task")
     expect(page.locator(".status-row.err")).to_contain_text("Could not send")
+
+
+def test_preflight_rejection_restores_draft_after_admission_clear(page):
+    page.locator("#task").fill("restore after a changed model")
+    page.evaluate("Models.allows = () => false")
+    page.locator("#send").click()
+    expect(page.locator("#task")).to_have_value("restore after a changed model")
 
 
 def test_accepted_snapshot_does_not_erase_later_input_or_other_chat(page):

@@ -44,7 +44,7 @@ def test_refresh_keeps_other_groups_search_staged_choices_and_moved_focus(page, 
     with page.expect_request('**/api/model_catalog'):
         partner.get_by_role('button', name='Refresh models').click()
     search.focus()
-    pending[0].fulfill(json={'ok': True, 'source': {**source_data, 'models': [*source_data['models'], {'id':'late','name':'Late'}]}})
+    pending[-1].fulfill(json={'ok': True, 'source': {**source_data, 'models': [*source_data['models'], {'id':'late','name':'Late'}]}})
     expect(partner.get_by_role('button', name='Refresh models')).to_be_enabled()
     expect(search).to_have_value('Chosen')
     expect(search).to_be_focused()
@@ -83,6 +83,6 @@ def test_catalog_removing_focused_model_returns_focus_to_its_source(page, models
     with page.expect_request('**/api/model_catalog'):
         source.get_by_role('button', name='Refresh models').click()
     source.get_by_role('checkbox', name='Use Unselected model',exact=True).focus()
-    pending[0].fulfill(json={'ok':True,'source':{**models[0]['sources'][1],'models':models[0]['sources'][1]['models'][:1]}})
+    pending[-1].fulfill(json={'ok':True,'source':{**models[0]['sources'][1],'models':models[0]['sources'][1]['models'][:1]}})
     expect(source.get_by_role('button', name='Refresh models')).to_be_enabled()
     expect(source.locator('summary')).to_be_focused()

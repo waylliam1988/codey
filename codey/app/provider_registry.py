@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
@@ -20,6 +21,7 @@ class ProviderRegistry:
     def __init__(self, state_home: str | Path | None = None, *, emit: Callable[[dict[str, Any]], None] | None = None) -> None:
         self.model_preferences = ModelPreferences(state_home)
         self.model_uses: Counter[tuple[str, str]] = Counter()
+        self._model_uses_lock = threading.Lock()
         self._sessions: dict[str, str] = {}
         self.supervisor = (
             ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
@@ -44,6 +46,10 @@ class ProviderRegistry:
 
     def sessions_snapshot(self) -> dict[str, str]:
         return dict(self._sessions)
+
+    def model_uses_snapshot(self) -> tuple[tuple[str, str], ...]:
+        with self._model_uses_lock:
+            return tuple(self.model_uses)
 
     def failover_order(
         self,

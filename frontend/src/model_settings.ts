@@ -29,6 +29,7 @@ export interface ModelSettingsDeps {
     baseline = '',
     generation = 0,
     saving = false;
+  const autoRefreshes = new Set<string>();
   function $<K extends keyof IdMap>(id: K): IdMap[K];
   function $(id: string): HTMLElement;
   function $(id: string): HTMLElement {
@@ -223,6 +224,16 @@ export interface ModelSettingsDeps {
       });
       refresh.classList.add('model-source-refresh');
       actions.appendChild(refresh);
+      // Settings should surface immediately from the cached snapshot while
+      // the two built-in network-backed catalogs refresh in the background.
+      // Optional integrations remain explicit to avoid unexpected requests.
+      if (source.id === 'local' || source.id === 'zen') {
+        const key = `${generation}:${source.id}`;
+        if (!autoRefreshes.has(key)) {
+          autoRefreshes.add(key);
+          queueMicrotask(() => void refresh.click());
+        }
+      }
     }
     if (source.connection_editor) body.appendChild($('local-connection-editor'));
     function sync() {
@@ -269,9 +280,21 @@ export interface ModelSettingsDeps {
     $('model-settings-retry').hidden = true;
     $('model-settings-loading').hidden = false;
     $('model-source-list').hidden = true;
+    // Paint the last authoritative snapshot first. The network refresh below
+    // updates it in place, so opening Settings never waits for a connector.
+    const cached = runtime.Models.snapshot();
+    if (cached.sources.length) {
+      draft = cached;
+      baseline = preferenceKey(cached.preferences.sources);
+      render();
+      $('model-source-list').hidden = false;
+      updateSaveState();
+    }
     try {
       const loaded = await runtime.Models.load();
       if (request !== generation) return;
+      // Preserve edits made while the refresh was in flight.
+      if (draft && preferenceKey(draft.preferences.sources) !== baseline) return;
       draft = loaded;
       baseline = preferenceKey(draft?.preferences.sources ?? {});
       render();

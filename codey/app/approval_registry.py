@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from codey.agents.shell_approval import shell_command_event_fields
@@ -12,6 +13,7 @@ class ApprovalRegistry:
     def __init__(self) -> None:
         self._pending_shell: dict[str, dict[str, Any]] = {}
         self._pending_teach: dict[str, dict[str, Any]] = {}
+        self._lock = threading.RLock()
         # Monotonic epoch: Stop (expire-all) always bumps it, even when the
         # map is already empty, so an Allow that already popped its entry can
         # still detect that a Stop landed before execution. Filtered expires
@@ -20,32 +22,40 @@ class ApprovalRegistry:
         self._generation = 0
 
     def invalidate_generation(self) -> None:
-        self._generation += 1
+        with self._lock:
+            self._generation += 1
 
     def current_generation(self) -> int:
-        return self._generation
+        with self._lock:
+            return self._generation
 
     def add_shell(self, approval_id: str, pending: dict[str, Any]) -> None:
-        record = dict(pending)
-        record["_approval_generation"] = self._generation
-        self._pending_shell[approval_id] = record
+        with self._lock:
+            record = dict(pending)
+            record["_approval_generation"] = self._generation
+            self._pending_shell[approval_id] = record
 
     def pop_shell(self, approval_id: str) -> dict[str, Any] | None:
-        pending = self._pending_shell.pop(approval_id, None)
-        return dict(pending) if pending is not None else None
+        with self._lock:
+            pending = self._pending_shell.pop(approval_id, None)
+            return dict(pending) if pending is not None else None
 
     def shell_snapshot(self) -> dict[str, dict[str, Any]]:
-        return {key: dict(value) for key, value in self._pending_shell.items()}
+        with self._lock:
+            return {key: dict(value) for key, value in self._pending_shell.items()}
 
     def add_teach(self, teach_id: str, pending: dict[str, Any]) -> None:
-        self._pending_teach[teach_id] = dict(pending)
+        with self._lock:
+            self._pending_teach[teach_id] = dict(pending)
 
     def pop_teach(self, teach_id: str) -> dict[str, Any] | None:
-        pending = self._pending_teach.pop(teach_id, None)
-        return dict(pending) if pending is not None else None
+        with self._lock:
+            pending = self._pending_teach.pop(teach_id, None)
+            return dict(pending) if pending is not None else None
 
     def resume_teach(self, teach_id: str) -> bool:
-        pending = self._pending_teach.get(teach_id)
+        with self._lock:
+            pending = self._pending_teach.get(teach_id)
         event = pending.get("event") if pending is not None else None
         if event is None:
             return False
@@ -53,7 +63,8 @@ class ApprovalRegistry:
         return True
 
     def cancel_teach(self) -> tuple[dict[str, Any], ...]:
-        pending = tuple(self._pending_teach.values())
+        with self._lock:
+            pending = tuple(self._pending_teach.values())
         for item in pending:
             item["cancelled"] = True
             event = item.get("event")
@@ -62,7 +73,8 @@ class ApprovalRegistry:
         return tuple(dict(item) for item in pending)
 
     def teach_snapshot(self) -> dict[str, dict[str, Any]]:
-        return {key: dict(value) for key, value in self._pending_teach.items()}
+        with self._lock:
+            return {key: dict(value) for key, value in self._pending_teach.items()}
 
     def expire_shell_results(
         self,
@@ -73,20 +85,21 @@ class ApprovalRegistry:
         output: str = "Task stopped; command approval expired.",
     ) -> tuple[dict[str, Any], ...]:
         stale: list[dict[str, Any]] = []
-        for approval_id, pending in list(self._pending_shell.items()):
-            pending_run_id = str(pending.get("run_id") or "")
-            if run_id and pending_run_id != run_id:
-                continue
-            if exclude_run_id and pending_run_id == exclude_run_id:
-                continue
-            if session_id and str(pending.get("session_id") or "") != session_id:
-                continue
-            stale.append(self._pending_shell.pop(approval_id))
-        # Stop-all (no filters) always bumps, even with zero removals, to
-        # invalidate an already-claimed Allow. Filtered expires bump only when
-        # they remove something.
-        if stale or (not run_id and not exclude_run_id and not session_id):
-            self._generation += 1
+        with self._lock:
+            for approval_id, pending in list(self._pending_shell.items()):
+                pending_run_id = str(pending.get("run_id") or "")
+                if run_id and pending_run_id != run_id:
+                    continue
+                if exclude_run_id and pending_run_id == exclude_run_id:
+                    continue
+                if session_id and str(pending.get("session_id") or "") != session_id:
+                    continue
+                stale.append(self._pending_shell.pop(approval_id))
+            # Stop-all (no filters) always bumps, even with zero removals, to
+            # invalidate an already-claimed Allow. Filtered expires bump only when
+            # they remove something.
+            if stale or (not run_id and not exclude_run_id and not session_id):
+                self._generation += 1
         results: list[dict[str, Any]] = []
         for pending in stale:
             try:
@@ -119,10 +132,12 @@ class ApprovalRegistry:
 
     def pending_ui_event(self, active: RunSnapshot | None) -> dict[str, Any] | None:
         candidates: list[dict[str, object]] = []
-        for pending in [
-            *reversed(tuple(self._pending_teach.values())),
-            *reversed(tuple(self._pending_shell.values())),
-        ]:
+        with self._lock:
+            pending_items = [
+                *reversed(tuple(self._pending_teach.values())),
+                *reversed(tuple(self._pending_shell.values())),
+            ]
+        for pending in pending_items:
             event = pending.get("ui_event")
             if isinstance(event, dict):
                 candidates.append(event)

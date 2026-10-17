@@ -316,9 +316,10 @@ export interface ProviderUiApi {
   }
 
   async function adoptBackendCatalog() {
-    try {
-      await runtime.Models.load();
-    } catch {}
+    // Model preferences/catalogs are useful as soon as they arrive, but they
+    // must not gate boot. Settings and the composer can render from the
+    // current snapshot while this request is still probing a local endpoint.
+    void runtime.Models.load().catch(() => undefined);
     // Boot-time only: adopt the backend catalog into ui_state before init.
     // Hits the cheap static catalog (no CDP/network probe); availability
     // stays on the async /api/providers refresh path. Do not touch DOM

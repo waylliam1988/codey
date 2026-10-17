@@ -533,6 +533,154 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
         except AssertionError as exc:
             raise AssertionError(f"{exc} :: diag={_format_diagnostics(diag)}") from exc
 
+    def test_stream_replacement_does_not_capture_layout_before_in_place_update(self) -> None:
+        diag: dict[str, object] = {}
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            try:
+                page = browser.new_page(viewport={"width": 1024, "height": 768})
+                diag = _attach_page_diagnostics(page)
+                try:
+                    response = _goto_restored_ui(page, self.httpd.launch_url(self.base_url), diag=diag)
+                    diag["goto_status"] = response.status if response else None
+                except Exception as exc:
+                    raise AssertionError(f"homepage/scripts failed :: diag={_format_diagnostics(diag)}") from exc
+
+                result = page.evaluate("""() => {
+                    const sid = 'test-session-stream-capture';
+                    UiState.apply({
+                        active_id: sid,
+                        sessions: [{
+                            id: sid,
+                            title: 'Stream Capture Test',
+                            provider: 'deepseek',
+                            messages: [{
+                                type: 'asst',
+                                runId: 'run-stream',
+                                streamId: 'stream-1',
+                                streamSequence: 1,
+                                streamState: 'partial',
+                                text: 'first'
+                            }],
+                            terminalRuns: []
+                        }],
+                        projects: []
+                    });
+                    renderChat();
+                    let captures = 0;
+                    const originalCapture = ConversationUI.captureView;
+                    ConversationUI.captureView = () => { captures += 1; };
+                    const replaced = replaceSessionMessage(
+                        sid,
+                        m => m.type === 'asst' && m.streamId === 'stream-1',
+                        {
+                            type: 'asst',
+                            runId: 'run-stream',
+                            streamId: 'stream-1',
+                            streamSequence: 2,
+                            streamState: 'partial',
+                            text: 'second'
+                        }
+                    );
+                    ConversationUI.captureView = originalCapture;
+                    return {
+                        replaced,
+                        captures,
+                        text: document.querySelector('.msg.asst .body')?.textContent || ''
+                    };
+                }""")
+                assert result["replaced"] is True
+                assert result["captures"] == 0
+                assert "second" in result["text"]
+            finally:
+                browser.close()
+
+    def test_message_append_does_not_capture_layout_before_direct_dom_append(self) -> None:
+        diag: dict[str, object] = {}
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            try:
+                page = browser.new_page(viewport={"width": 1024, "height": 768})
+                diag = _attach_page_diagnostics(page)
+                try:
+                    response = _goto_restored_ui(page, self.httpd.launch_url(self.base_url), diag=diag)
+                    diag["goto_status"] = response.status if response else None
+                except Exception as exc:
+                    raise AssertionError(f"homepage/scripts failed :: diag={_format_diagnostics(diag)}") from exc
+
+                result = page.evaluate("""() => {
+                    const sid = 'test-session-append-capture';
+                    UiState.apply({
+                        active_id: sid,
+                        sessions: [{
+                            id: sid,
+                            title: 'Append Capture Test',
+                            provider: 'deepseek',
+                            messages: [{ type: 'asst', text: 'existing' }],
+                            terminalRuns: []
+                        }],
+                        projects: []
+                    });
+                    renderChat();
+                    let captures = 0;
+                    const originalCapture = ConversationUI.captureView;
+                    ConversationUI.captureView = () => { captures += 1; };
+                    const appended = addToSession(sid, { type: 'info', text: 'new event' });
+                    pushMsgToSession(sid, { type: 'user', text: 'submitted prompt' });
+                    ConversationUI.captureView = originalCapture;
+                    return {
+                        appended,
+                        captures,
+                        text: document.querySelector('#chat')?.textContent || ''
+                    };
+                }""")
+                assert result["appended"] is True
+                assert result["captures"] == 0
+                assert "new event" in result["text"]
+            finally:
+                browser.close()
+
+    def test_render_reuses_event_key_messages_without_serializing_each_message(self) -> None:
+        diag: dict[str, object] = {}
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            try:
+                page = browser.new_page(viewport={"width": 1024, "height": 768})
+                diag = _attach_page_diagnostics(page)
+                try:
+                    response = _goto_restored_ui(page, self.httpd.launch_url(self.base_url), diag=diag)
+                    diag["goto_status"] = response.status if response else None
+                except Exception as exc:
+                    raise AssertionError(f"homepage/scripts failed :: diag={_format_diagnostics(diag)}") from exc
+
+                result = page.evaluate("""() => {
+                    const sid = 'test-session-render-signatures';
+                    const messages = Array.from({length: 120}, (_, i) => ({
+                        type: 'info', text: 'event ' + i, eventKey: 'sse:' + i
+                    }));
+                    const state = {
+                        active_id: sid,
+                        sessions: [{ id: sid, title: 'Signature Test', provider: 'deepseek', messages, terminalRuns: [] }],
+                        projects: []
+                    };
+                    UiState.apply(state);
+                    renderChat();
+                    const cloned = structuredClone(state);
+                    let stringifyCalls = 0;
+                    const originalStringify = JSON.stringify;
+                    JSON.stringify = (...args) => {
+                        stringifyCalls += 1;
+                        return originalStringify(...args);
+                    };
+                    UiState.apply(cloned);
+                    renderChat();
+                    JSON.stringify = originalStringify;
+                    return { stringifyCalls };
+                }""")
+                assert result["stringifyCalls"] < 10
+            finally:
+                browser.close()
+
     def test_shell_result_titles_never_show_failed_runs_as_executed(self) -> None:
         diag: dict[str, object] = {}
         with sync_playwright() as pw:

@@ -6,7 +6,7 @@ import { HistoryRepository } from './history_repository';
 export interface ConversationUiApi {
   init(deps: ConversationUiDeps): void;
   renderChat(): void;
-  scrollChat(): void;
+  scrollChat(capture?: boolean): void;
   captureView(): void;
   isFollowing(): boolean;
   updateLatest(): void;
@@ -205,11 +205,38 @@ export interface ConversationUiDeps {
       view.nodes &&
       view.messages &&
       view.messages.length === session.messages.length &&
-      view.messages.every(
-        (m: Message, i: number) =>
-          m === session.messages[i] || JSON.stringify(m) === JSON.stringify(session.messages[i]),
-      )
+      view.messages.every((m: Message, i: number) => sameMessage(m, session.messages[i]))
     );
+  }
+  function sameMessage(previous: Message, current: Message | undefined): boolean {
+    if (!current || previous === current || previous.type !== current.type) return previous === current;
+    // Server event keys are immutable identities. This avoids deep serialization when a
+    // reconciled state snapshot recreated otherwise unchanged message objects.
+    if (previous.eventKey && previous.eventKey === current.eventKey) return true;
+    if (
+      previous.type === 'asst' &&
+      previous.text === current.text &&
+      previous.runId === current.runId &&
+      previous.streamId === current.streamId &&
+      previous.streamSequence === current.streamSequence &&
+      previous.streamState === current.streamState &&
+      previous.finalAnswer === current.finalAnswer &&
+      previous.contentRole === current.contentRole &&
+      previous.turnId === current.turnId &&
+      previous.answerId === current.answerId
+    )
+      return true;
+    if (
+      previous.type === 'user' &&
+      previous.id === current.id &&
+      previous.text === current.text &&
+      previous.attempts?.length === current.attempts?.length &&
+      previous.attempts?.every(
+        (attempt, index) => JSON.stringify(attempt) === JSON.stringify(current.attempts?.[index]),
+      )
+    )
+      return true;
+    return JSON.stringify(previous) === JSON.stringify(current);
   }
   function finishTitleEdit(edit: TitleEdit, value: string | null, restoreFocus = false): void {
     if (titleEdit !== edit) return;
@@ -550,10 +577,10 @@ export interface ConversationUiDeps {
     chat.append(loader);
   }
 
-  function scrollChat() {
+  function scrollChat(capture = true) {
     if (following) setScroll($('chat-area').scrollHeight);
     else restoreReading(views.get(shownId));
-    captureView();
+    if (capture) captureView();
     updateLatest();
     updateNotice();
   }

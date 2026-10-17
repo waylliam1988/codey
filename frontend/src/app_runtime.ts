@@ -1,6 +1,7 @@
 import { DocumentPane, type DocumentRef } from './document_pane';
 import { hydrateDocumentContent } from './document_content';
 import { streamMessage, finalStreamMessage } from './reply_stream';
+import { FrameCoalescer } from './frame_coalescer';
 import { terminalAnswerMessage } from './terminal_answer';
 import type { QueuedInput } from './input_outbox';
 import { UserQuestions, type UserQuestion } from './user_questions';
@@ -648,8 +649,8 @@ function appendMessageNode(chat: HTMLElement, m: Message) {
   runtime.Messages.append(chat, m);
 }
 
-function scrollChat() {
-  runtime.ConversationUI.scrollChat();
+function scrollChat(capture = true) {
+  runtime.ConversationUI.scrollChat(capture);
 }
 
 // ============================ session ops ============================
@@ -849,7 +850,6 @@ async function attachCurrentChatToPickedProject() {
 }
 
 function pushMsgToSession(sid: string, m: Message) {
-  if (sid === activeId) runtime.ConversationUI.captureView();
   const s = sessions.find((x) => x.id === sid);
   if (!s) return false;
   const wasEmpty = s.messages.length === 0;
@@ -873,7 +873,7 @@ function pushMsgToSession(sid: string, m: Message) {
     if (wasEmpty) renderChat();
     else {
       appendMessageNode($('chat'), m);
-      scrollChat();
+      scrollChat(false);
     }
   }
   return true;
@@ -963,6 +963,9 @@ let runningRunId: string | null = null;
 const activeRuns = new Map<string, string>();
 let turnCounter = 0;
 const turnIds = new Map<string, string>();
+const replyStreamFrames = new FrameCoalescer<ServerEventData>((key, data) => {
+  handleReplyStream(data);
+});
 
 function turnIdForRun(sessionId: string, runId: string): string {
   const existing = turnIds.get(runId);
@@ -997,8 +1000,29 @@ function setStatus(text: string, kind: string) {
 
 const sseEventKey = (data: ServerEvent, fallback = '') => runtime.Sse.eventKey(data, fallback);
 
+function handleReplyStream(data: ServerEventData) {
+  const sid = data.session_id || '';
+  const runId = (data.run_id || '').toString();
+  const runIsActive = (id: string) => activeRuns.has(id) || id === runningRunId;
+  if (!runId || !runIsActive(runId)) return;
+  if (!runtime.Requests.acceptsEvent(data)) return;
+  const session = sessions.find((session) => session.id === sid);
+  const message = session && streamMessage(session, data);
+  if (
+    message &&
+    !replaceSessionMessage(sid, (item) => item.streamId === message.streamId && item.runId === runId, message)
+  )
+    addToSession(sid, message);
+}
+
 function handleServerEvent(raw: unknown) {
   const data = decodeServerEvent(raw) as ServerEventData;
+  if (data.type === 'reply_stream') {
+    const key = `${data.run_id || ''}:${data.stream_id || ''}`;
+    replyStreamFrames.enqueue(key, data);
+    return;
+  }
+  replyStreamFrames.flush();
   if (data.type === 'user_question' || data.type === 'user_question_state') {
     userQuestions.apply((raw as { question: unknown }).question);
     return;
@@ -1044,16 +1068,6 @@ function handleServerEvent(raw: unknown) {
   ];
   const runIsActive = (id: string) => (typeof activeRuns !== 'undefined' && activeRuns.has(id)) || id === runningRunId;
   if (runId && !mayOutliveRun.includes(data.type) && !runIsActive(runId)) return;
-  if (data.type === 'reply_stream') {
-    const session = sessions.find((session) => session.id === sid);
-    const message = session && streamMessage(session, data);
-    if (
-      message &&
-      !replaceSessionMessage(sid, (item) => item.streamId === message.streamId && item.runId === runId, message)
-    )
-      addToSession(sid, message);
-    return;
-  }
   // Server dropped queued events for this client: re-pull authoritative state.
   if (data.type === 'resync_required') {
     reconcileRunState();
@@ -1514,7 +1528,6 @@ function observeUserQuestion(question: UserQuestion): void {
 }
 
 function replaceSessionMessage(sid: string, predicate: (message: Message) => boolean, message: Message) {
-  if (sid === activeId) runtime.ConversationUI.captureView();
   const s = sessions.find((x) => x.id === sid);
   if (!s) return false;
   ensureSessionIndexes(s);
@@ -1525,11 +1538,11 @@ function replaceSessionMessage(sid: string, predicate: (message: Message) => boo
   persistActive();
   if (sid === activeId) {
     if (runtime.Messages.updateReply($('chat'), message)) {
-      scrollChat();
+      scrollChat(false);
       return true;
     }
     if (runtime.Process.replace($('chat'), message)) {
-      scrollChat();
+      scrollChat(false);
       return true;
     }
     const existingNode =
@@ -1542,10 +1555,11 @@ function replaceSessionMessage(sid: string, predicate: (message: Message) => boo
       appendMessageNode(temp, message);
       if (temp.firstElementChild) {
         existingNode.replaceWith(temp.firstElementChild);
-        scrollChat();
+        scrollChat(false);
         return true;
       }
     }
+    runtime.ConversationUI.captureView();
     renderChat();
     scrollChat();
   }
@@ -1696,7 +1710,10 @@ runtime.ShellApprovals = approvalController;
 
 async function approveCommand(id: string, approved: boolean) {
   await approvalController.submit(id, approved);
-  await reconcileRunState();
+  // The approval response/SSE event is authoritative for this card. A full
+  // state snapshot can involve unrelated run work, so keep it off the click
+  // path and let it reconcile in the background.
+  void reconcileRunState();
 }
 
 // ============================ composer ============================

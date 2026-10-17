@@ -88,14 +88,26 @@ def use_model(ctx: TaskState, provider_id: str, model_id: str = "") -> Generator
     with ctx.lock:
         if not ctx.providers.model_preferences.allows(*key):
             raise ValueError("Selected model is disabled. Choose an enabled model in Settings.")
-        ctx.providers.model_uses[key] += 1
+        uses_lock = getattr(ctx.providers, "_model_uses_lock", None)
+        if uses_lock is None:
+            ctx.providers.model_uses[key] += 1
+        else:
+            with uses_lock:
+                ctx.providers.model_uses[key] += 1
     try:
         yield
     finally:
         with ctx.lock:
-            ctx.providers.model_uses[key] -= 1
-            if not ctx.providers.model_uses[key]:
-                del ctx.providers.model_uses[key]
+            uses_lock = getattr(ctx.providers, "_model_uses_lock", None)
+            if uses_lock is None:
+                ctx.providers.model_uses[key] -= 1
+                if not ctx.providers.model_uses[key]:
+                    del ctx.providers.model_uses[key]
+            else:
+                with uses_lock:
+                    ctx.providers.model_uses[key] -= 1
+                    if not ctx.providers.model_uses[key]:
+                        del ctx.providers.model_uses[key]
 
 
 PROVIDER_AVAILABILITY_TTL_S = 3.0

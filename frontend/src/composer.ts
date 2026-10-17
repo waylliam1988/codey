@@ -375,14 +375,19 @@ export interface ComposerApi {
     onSendStarted: (() => void) | null = null,
     requestId = '',
     preclaimed = false,
+    onSendRejected: (() => void) | null = null,
   ) {
     const text = String(task || '').trim();
-    if (!text || isRunningForSession(sessionId) || (sendingSessionId === sessionId && !preclaimed)) return false;
+    const reject = () => {
+      onSendRejected?.();
+      return false;
+    };
+    if (!text || isRunningForSession(sessionId) || (sendingSessionId === sessionId && !preclaimed)) return reject();
     const s = deps.findSession(sessionId);
-    if (!s) return false;
+    if (!s) return reject();
     const provider = providerId || s.provider || liveDefaultProvider();
     if (!runtime.Models.allows(provider, runtime.ProviderUI.runSelection(s, provider).model_selection?.model))
-      return false;
+      return reject();
     const ownsSending = !preclaimed;
     if (ownsSending) {
       sendingSessionId = sessionId;
@@ -393,7 +398,7 @@ export interface ComposerApi {
     if (!started) {
       sendingSessionId = '';
       updateSend();
-      return false;
+      return reject();
     }
     const runId = started.attempt.runId;
     const project = deps.sessionProjectPath(sessionId);
@@ -414,6 +419,7 @@ export interface ComposerApi {
       });
       if (!r.ok) {
         await reportSendFailure(sessionId, r, runId);
+        onSendRejected?.();
         return false;
       }
       if (typeof onSendStarted === 'function') onSendStarted();
@@ -446,12 +452,12 @@ export interface ComposerApi {
     sendingSessionId = sessionId;
     updateSend();
     deps.updateComposerContext();
-    // SSE can be reconnecting while the server still owns another run. Read
-    // the authoritative run snapshot before choosing direct admission versus
-    // the durable input queue; otherwise a stale local idle flag turns into a
-    // misleading "Another chat is running" error from /api/run.
+    // The run endpoint is the authoritative admission boundary. A blocking
+    // state reconciliation here leaves the submitted draft visible while a
+    // slow state request is in flight and prevents the actual admission
+    // request from reaching the server. Known local runs still use the durable
+    // input queue; a stale snapshot is reconciled by the existing 409 path.
     try {
-      if (!runningSessionId()) await runtime.Sse.reconcileRunState();
       captureDraft();
       const revision = deps.findSession(sessionId)?.draft.revision;
       if (revision === undefined) return;
@@ -471,14 +477,32 @@ export interface ComposerApi {
         await outbox.enqueue(request, revision);
         return;
       }
-      await sendTaskFromSession(
-        sessionId,
-        task,
-        provider,
-        () => clearDraftIfUnchanged(sessionId, task, revision),
-        '',
-        true,
-      );
+      const originalDraft = task;
+      const originalRevision = revision;
+      // Clear the visible draft at admission start. The user has already
+      // submitted this text, and waiting for the HTTP response makes a slow
+      // admission look like a stuck composer. A rejected HTTP admission puts
+      // the exact draft back unless the user has edited it meanwhile.
+      clearDraftIfUnchanged(sessionId, originalDraft, originalRevision);
+      const restoreRejectedDraft = () => {
+        const session = deps.findSession(sessionId);
+        if (!session || session.draft.text || session.draft.revision !== originalRevision + 1) return;
+        session.draft = {
+          text: originalDraft,
+          start: originalDraft.length,
+          end: originalDraft.length,
+          direction: 'none',
+          revision: session.draft.revision + 1,
+        };
+        deps.persistActiveNow();
+        if (activeId() === sessionId) {
+          const input = $<HTMLTextAreaElement>('task');
+          input.value = originalDraft;
+          resizeTask();
+          updateSend();
+        }
+      };
+      await sendTaskFromSession(sessionId, task, provider, null, '', true, restoreRejectedDraft);
     } finally {
       sendingSessionId = '';
       updateSend();
