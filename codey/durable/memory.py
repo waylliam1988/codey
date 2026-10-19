@@ -112,11 +112,7 @@ class MemoryDurableStore:
                 return replace(prior_submission, record=None)
             if mutation.submission is not None and mutation.submission.submission_id in self._submission_ids:
                 raise IdempotencyConflict("submission ID was already used")
-            self._validate_entry_chain(mutation.entries, mutation.conversation_id, head)
-            self._validate_task(mutation.task, mutation.submission, mutation.expected_attempt_token)
-            self._validate_submission_update(mutation.submission_update, mutation.entries)
-            self._validate_effects(mutation)
-            self._validate_artifacts(mutation)
+            self._validate_commit_mutation(mutation, head)
             new_revision = revision + len(mutation.entries)
             new_head = mutation.entries[-1].entry_id if mutation.entries else head
             if (
@@ -126,6 +122,8 @@ class MemoryDurableStore:
                 and not mutation.settlements
                 and mutation.submission is None
                 and mutation.submission_update is None
+                and not mutation.submission_updates
+                and not mutation.task_updates
                 and not mutation.entries
                 and not mutation.artifacts
                 and creation is None
@@ -137,9 +135,26 @@ class MemoryDurableStore:
             })
             self._commits.append(record)
             result = CommitResult(new_revision, self._sequence, record=record)
+            task_by_submission = {
+                task.submission_id: task.task_id
+                for task in ((mutation.task,) if mutation.task is not None else ()) + mutation.task_updates
+            }
+            entry_task_ids = {
+                update.input_entry_id: task_by_submission[submission_id]
+                for submission_id, update in (
+                    [(mutation.submission_update.submission_id, mutation.submission_update)]
+                    if mutation.submission_update is not None else []
+                ) + [
+                    (update.submission_id, update) for update in mutation.submission_updates
+                ]
+                if update.input_entry_id is not None and submission_id in task_by_submission
+            }
             stored_entries = tuple(
-                replace(entry, commit_seq=self._sequence,
-                        by_task_id=mutation.task.task_id if mutation.task is not None else entry.by_task_id)
+                replace(
+                    entry,
+                    commit_seq=self._sequence,
+                    by_task_id=entry.by_task_id or entry_task_ids.get(entry.entry_id),
+                )
                 for entry in mutation.entries
             )
             if creation is not None:
@@ -151,6 +166,17 @@ class MemoryDurableStore:
                 self._tasks[mutation.task.task_id] = mutation.task
                 self._history.setdefault(mutation.task.task_id, []).append(
                     transition_from_payload(self._sequence, execution_payload(mutation, new_head))
+                )
+            for task in mutation.task_updates:
+                self._tasks[task.task_id] = task
+                self._history.setdefault(task.task_id, []).append(
+                    transition_from_payload(
+                        self._sequence,
+                        execution_payload(
+                            replace(mutation, task=task, task_updates=()),
+                            new_head,
+                        ),
+                    )
                 )
             if mutation.effect is not None:
                 self._effects[mutation.effect.effect_id] = mutation.effect
@@ -164,7 +190,21 @@ class MemoryDurableStore:
             if mutation.submission_update is not None:
                 self._update_submission(mutation.submission_update, mutation.entries)
                 result = replace(result, submission_id=mutation.submission_update.submission_id)
+            for update in mutation.submission_updates:
+                self._update_submission(update, mutation.entries)
+                result = replace(result, submission_id=update.submission_id)
             return result
+
+    def _validate_commit_mutation(self, mutation: DurableMutation, head: str | None) -> None:
+        self._validate_entry_chain(mutation.entries, mutation.conversation_id, head)
+        self._validate_task(mutation.task, mutation.submission, mutation.expected_attempt_token)
+        for task in mutation.task_updates:
+            self._validate_task(task)
+        self._validate_submission_update(mutation.submission_update, mutation.entries)
+        for update in mutation.submission_updates:
+            self._validate_submission_update(update, mutation.entries)
+        self._validate_effects(mutation)
+        self._validate_artifacts(mutation)
 
     def _write_submission(self, mutation: DurableMutation, revision: int, record: CommitRecord) -> None:
         submission = mutation.submission
@@ -284,8 +324,10 @@ class MemoryDurableStore:
             + mutation.effects + mutation.settlements
         }
         task_ids = set(self._tasks)
-        if mutation.task is not None:
-            task_ids.add(mutation.task.task_id)
+        task_ids.update(
+            task.task_id
+            for task in ((mutation.task,) if mutation.task is not None else ()) + mutation.task_updates
+        )
         for artifact in mutation.artifacts:
             if artifact.handle in self._artifacts:
                 raise CommitConflict("artifact handle already exists")

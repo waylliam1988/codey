@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from functools import wraps
 from typing import TypeVar, cast
 
@@ -49,6 +49,13 @@ from codey.durable.workflow import WorkflowDefinition, workflow_digest
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
+
+
+@dataclass(frozen=True)
+class _BoundaryPlacement:
+    entry: EntryDraft | None
+    task: TaskCheckpoint | None
+    update: SubmissionUpdate
 
 
 def _process_is_alive(value: object) -> bool:
@@ -650,9 +657,143 @@ class DurableSession:
         # Pi places passive writes first, then selected user inputs in inbox
         # order.  Keep that ordering even when a write was admitted later.
         selected.sort(key=lambda item: (0 if item.mode == "write" else 1, queued.index(item)))
-        for item in selected:
-            self.place_submission(item.submission_id)
+        if not selected:
+            return ()
+
+        head, conversation_revision = self.store.head(conversation_id)
+        current_head = head
+        entries: list[EntryDraft] = []
+        task_updates: list[TaskCheckpoint] = []
+        submission_updates: list[SubmissionUpdate] = []
+        visible_entry_ids = {entry.entry_id for entry in self.context(conversation_id)}
+        task_by_submission = {
+            task.submission_id: task
+            for task in self.store.tasks()
+            if task.conversation_id == conversation_id
+        }
+
+        for submission in selected:
+            placement = self._prepare_boundary_placement(
+                submission,
+                current_head=current_head,
+                visible_entry_ids=visible_entry_ids,
+                task_by_submission=task_by_submission,
+            )
+            if placement.entry is not None:
+                entries.append(placement.entry)
+                visible_entry_ids.add(placement.entry.entry_id)
+                current_head = placement.entry.entry_id
+            if placement.task is not None:
+                task_updates.append(placement.task)
+            submission_updates.append(placement.update)
+
+        self._commit(DurableMutation(
+            conversation_id=conversation_id,
+            expected_revision=conversation_revision,
+            entries=tuple(entries),
+            task_updates=tuple(task_updates),
+            submission_updates=tuple(submission_updates),
+        ))
         return tuple(self.store.submission(item.submission_id) for item in selected)
+
+    def _prepare_boundary_placement(
+        self,
+        submission: SubmissionRecord,
+        *,
+        current_head: str | None,
+        visible_entry_ids: set[str],
+        task_by_submission: Mapping[str, TaskCheckpoint],
+    ) -> _BoundaryPlacement:
+        if submission.mode == "write":
+            return self._prepare_boundary_write(
+                submission, submission.content,
+                current_head=current_head, visible_entry_ids=visible_entry_ids,
+            )
+        task = task_by_submission.get(submission.submission_id)
+        if task is None:
+            raise CommitConflict("queued submission has no task")
+        if task.status in {TaskStatus.CANCELLED, TaskStatus.FAILED, TaskStatus.COMPLETED}:
+            raise CommitConflict("cannot place a terminal task")
+        content = submission.content
+        text = content.get("text") if isinstance(content, Mapping) else None
+        if not isinstance(text, str) or not text.strip():
+            raise CommitConflict("queued submission has no input text")
+        entry = EntryDraft(
+            entry_id=f"entry-{uuid.uuid4().hex}", conversation_id=submission.conversation_id,
+            parent_id=current_head, kind="user_message", payload={"text": text}, by_task_id=task.task_id,
+        )
+        thawed_state = thaw_json(task.state)
+        if not isinstance(thawed_state, Mapping):
+            raise CommitConflict("task state is corrupt")
+        state = dict(thawed_state)
+        state["input_state"] = "placed"
+        state["input_entry_id"] = entry.entry_id
+        return _BoundaryPlacement(
+            entry, replace(task, revision=task.revision + 1, state=state),
+            SubmissionUpdate(
+                submission_id=submission.submission_id, conversation_id=submission.conversation_id,
+                expected_status=submission.status, status=submission.status,
+                input_entry_id=entry.entry_id, placement=SubmissionPlacement.PLACED,
+            ),
+        )
+
+    def _prepare_boundary_write(
+        self,
+        submission: SubmissionRecord,
+        content: Mapping[str, object] | None,
+        *,
+        current_head: str | None,
+        visible_entry_ids: set[str],
+    ) -> _BoundaryPlacement:
+        if not isinstance(content, Mapping):
+            raise CommitConflict("queued write has no content")
+        kind, data = content.get("kind"), content.get("data")
+        display_only, model = content.get("display_only"), content.get("model")
+        edits, head_target = content.get("edits"), content.get("head")
+        if (
+            not isinstance(kind, str) or not kind or not isinstance(data, Mapping)
+            or type(display_only) is not bool
+            or (head_target is not None and (not isinstance(head_target, str) or not head_target))
+        ):
+            raise CommitConflict("queued write content is invalid")
+        try:
+            normalized_model, normalized_edits = admission.normalize_passive_fields(
+                model if isinstance(model, Mapping) else None,
+                edits if isinstance(edits, Sequence) and not isinstance(edits, (str, bytes)) else None,
+            )
+        except ValueError as exc:
+            raise CommitConflict("queued write content is invalid") from exc
+        if model is not None and normalized_model is None:
+            raise CommitConflict("queued write model is invalid")
+        if edits is not None and normalized_edits is None:
+            raise CommitConflict("queued write edits are invalid")
+        if display_only and (normalized_model is not None or normalized_edits is not None or head_target is not None):
+            raise CommitConflict("display-only writes cannot carry context metadata")
+        if head_target is not None and head_target != "self" and head_target not in visible_entry_ids:
+            return _BoundaryPlacement(
+                None, None, SubmissionUpdate(
+                    submission_id=submission.submission_id, conversation_id=submission.conversation_id,
+                    expected_status=submission.status, status=SubmissionStatus.UNANSWERED, reason="stale",
+                ),
+            )
+        payload: dict[str, object] = {"data": dict(data), "display_only": display_only}
+        if normalized_model is not None:
+            payload["model"] = normalized_model
+        if normalized_edits is not None:
+            payload["edits"] = normalized_edits
+        if head_target is not None:
+            payload.update({"head": head_target, "head_marker": True})
+        entry = EntryDraft(
+            entry_id=f"entry-{uuid.uuid4().hex}", conversation_id=submission.conversation_id,
+            parent_id=current_head, kind=kind, payload=payload,
+        )
+        return _BoundaryPlacement(
+            entry, None, SubmissionUpdate(
+                submission_id=submission.submission_id, conversation_id=submission.conversation_id,
+                expected_status=submission.status, status=SubmissionStatus.DONE,
+                input_entry_id=entry.entry_id, placement=SubmissionPlacement.PLACED,
+            ),
+        )
 
     def _place_write_submission(self, submission: SubmissionRecord) -> CommitResult:
         content = submission.content

@@ -240,7 +240,13 @@ class SQLiteDurableStore:
                         "UPDATE conversations SET head_entry_id=?, revision=?, updated_at=? WHERE id=?",
                         (mutation.entries[-1].entry_id, new_revision, datetime.now(UTC).isoformat(), mutation.conversation_id),
                     )
-                elif mutation.task is not None or mutation.effect is not None or mutation.submission_update is not None:
+                elif (
+                    mutation.task is not None
+                    or mutation.task_updates
+                    or mutation.effect is not None
+                    or mutation.submission_update is not None
+                    or mutation.submission_updates
+                ):
                     database.execute(
                         "UPDATE conversations SET updated_at=? WHERE id=?",
                         (datetime.now(UTC).isoformat(), mutation.conversation_id),
@@ -264,12 +270,14 @@ class SQLiteDurableStore:
                         ),
                     )
                 _write_task(database, mutation.task)
+                _write_tasks(database, mutation.task_updates)
                 _write_effect(database, mutation.effect, mutation.expected_effect_status)
                 _write_effects(database, mutation.effects)
                 for settlement in mutation.settlements:
                     _write_effect(database, settlement, "pending")
                 _write_artifacts(database, mutation.artifacts)
-                _write_submission_update(database, mutation.submission_update)
+                _write_submission_update(database, mutation.submission_update, mutation.entries)
+                _write_submission_updates(database, mutation.submission_updates, mutation.entries)
                 database.execute("COMMIT")
                 return CommitResult(
                     revision=new_revision,
@@ -277,8 +285,13 @@ class SQLiteDurableStore:
                     submission_id=(
                         mutation.submission.submission_id
                         if mutation.submission is not None
-                        else None if mutation.submission_update is None
-                        else mutation.submission_update.submission_id
+                        else (
+                            mutation.submission_update.submission_id
+                            if mutation.submission_update is not None
+                            else mutation.submission_updates[-1].submission_id
+                            if mutation.submission_updates
+                            else None
+                        )
                     ),
                     record=record,
                 )
@@ -599,10 +612,22 @@ class SQLiteDurableStore:
         with closing(self._connect()) as database:
             rows = database.execute(
                 "SELECT seq, json_extract(payload, '$._workflow') AS workflow FROM commits "
-                "WHERE json_extract(payload, '$._workflow.task.task_id')=? "
-                "AND (? IS NULL OR seq<=?) ORDER BY seq", (task_id, through, through),
+                "WHERE json_extract(payload, '$._workflow') IS NOT NULL "
+                "AND (? IS NULL OR seq<=?) ORDER BY seq", (through, through),
             ).fetchall()
-            return tuple(transition_from_payload(int(row["seq"]), json.loads(row["workflow"])) for row in rows)
+            history: list[TaskTransition] = []
+            for row in rows:
+                raw = json.loads(row["workflow"])
+                task_rows = raw.get("tasks")
+                matches = (
+                    isinstance(task_rows, list)
+                    and any(isinstance(item, dict) and item.get("task_id") == task_id for item in task_rows)
+                )
+                legacy_task = raw.get("task")
+                legacy_match = isinstance(legacy_task, dict) and legacy_task.get("task_id") == task_id
+                if matches or legacy_match:
+                    history.append(transition_from_payload(int(row["seq"]), raw, task_id))
+            return tuple(history)
 
 
 def _entries(database: sqlite3.Connection, conversation_id: str) -> tuple[EntryDraft, ...]:
@@ -703,9 +728,13 @@ def _validate_mutation(
             raise CommitConflict("entry ID already exists")
         parent = entry.entry_id
     _validate_task(database, mutation.task, mutation.submission, mutation.expected_attempt_token)
+    for task in mutation.task_updates:
+        _validate_task(database, task)
     _validate_effect(database, mutation)
     _validate_artifacts(database, mutation)
     _validate_submission_update(database, mutation.submission_update, mutation.entries)
+    for update in mutation.submission_updates:
+        _validate_submission_update(database, update, mutation.entries)
 
 
 def _validate_task(
@@ -837,12 +866,15 @@ def _validate_artifacts(database: sqlite3.Connection, mutation: DurableMutation)
         for effect in ((mutation.effect,) if mutation.effect is not None else ())
         + mutation.effects + mutation.settlements
     }
+    proposed_tasks = {
+        task.task_id for task in ((mutation.task,) if mutation.task is not None else ()) + mutation.task_updates
+    }
     for artifact in mutation.artifacts:
         if database.execute("SELECT 1 FROM artifacts WHERE handle=?", (artifact.handle,)).fetchone() is not None:
             raise CommitConflict("artifact handle already exists")
         if artifact.owner_task_id is not None:
             task_exists = database.execute("SELECT 1 FROM tasks WHERE id=?", (artifact.owner_task_id,)).fetchone() is not None
-            if not task_exists and (mutation.task is None or mutation.task.task_id != artifact.owner_task_id):
+            if not task_exists and artifact.owner_task_id not in proposed_tasks:
                 raise CommitConflict("artifact owner task does not exist")
         if artifact.owner_effect_id is not None:
             effect_exists = database.execute("SELECT 1 FROM effects WHERE id=?", (artifact.owner_effect_id,)).fetchone() is not None
@@ -882,11 +914,23 @@ def _validate_submission_update(
 
 
 def _write_entries(database: sqlite3.Connection, mutation: DurableMutation, revision: int, sequence: int) -> None:
+    task_by_submission = {
+        task.submission_id: task.task_id
+        for task in ((mutation.task,) if mutation.task is not None else ()) + mutation.task_updates
+    }
+    entry_task_ids = {
+        update.input_entry_id: task_by_submission[update.submission_id]
+        for update in (
+            ((mutation.submission_update,) if mutation.submission_update is not None else ())
+            + mutation.submission_updates
+        )
+        if update.input_entry_id is not None and update.submission_id in task_by_submission
+    }
     for ordinal, entry in enumerate(mutation.entries, start=revision + 1):
         database.execute(
             "INSERT INTO entries(id, conversation_id, parent_id, kind, payload, ordinal, commit_seq, by_task_id) VALUES(?,?,?,?,?,?,?,?)",
             (entry.entry_id, entry.conversation_id, entry.parent_id, entry.kind, _encode(entry.payload), ordinal, sequence,
-             mutation.task.task_id if mutation.task is not None else None),
+             entry.by_task_id or entry_task_ids.get(entry.entry_id)),
         )
 
 
@@ -901,6 +945,11 @@ def _write_task(database: sqlite3.Connection, task: TaskCheckpoint | None) -> No
         (task.task_id, task.conversation_id, task.submission_id, task.phase, task.revision, _encode(task.provider_snapshot), _encode(task.state),
          task.current_turn_id, task.pending_effect_id, TaskStatus(str(task.status)).value, task.schema_version),
     )
+
+
+def _write_tasks(database: sqlite3.Connection, tasks: tuple[TaskCheckpoint, ...]) -> None:
+    for task in tasks:
+        _write_task(database, task)
 
 
 def _write_effect(database: sqlite3.Connection, effect: EffectRecord | None, expected_status: str | None) -> None:
@@ -953,7 +1002,11 @@ def _artifact_from_row(row: sqlite3.Row) -> ArtifactRecord:
     )
 
 
-def _write_submission_update(database: sqlite3.Connection, update: SubmissionUpdate | None) -> None:
+def _write_submission_update(
+    database: sqlite3.Connection,
+    update: SubmissionUpdate | None,
+    entries: tuple[EntryDraft, ...] = (),
+) -> None:
     if update is None:
         return
     cursor = database.execute(
@@ -973,3 +1026,12 @@ def _write_submission_update(database: sqlite3.Connection, update: SubmissionUpd
     )
     if cursor.rowcount != 1:
         raise CommitConflict("submission status changed")
+
+
+def _write_submission_updates(
+    database: sqlite3.Connection,
+    updates: tuple[SubmissionUpdate, ...],
+    entries: tuple[EntryDraft, ...] = (),
+) -> None:
+    for update in updates:
+        _write_submission_update(database, update, entries)

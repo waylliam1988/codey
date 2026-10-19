@@ -800,10 +800,12 @@ class DurableMutation:
     entries: tuple[EntryDraft, ...] = ()
     submission: SubmissionDraft | None = None
     task: TaskCheckpoint | None = None
+    task_updates: tuple[TaskCheckpoint, ...] = ()
     effect: EffectRecord | None = None
     effects: tuple[EffectRecord, ...] = ()
     expected_effect_status: str | None = None
     submission_update: SubmissionUpdate | None = None
+    submission_updates: tuple[SubmissionUpdate, ...] = ()
     settlements: tuple[EffectRecord, ...] = ()
     artifacts: tuple[ArtifactRecord, ...] = ()
     expected_attempt_token: str | None = None
@@ -815,46 +817,75 @@ class DurableMutation:
     def __post_init__(self) -> None:
         if not self.conversation_id or self.expected_revision < 0:
             raise ValueError("conversation identity and non-negative revision are required")
-        if self.create_conversation is not None and self.delete_conversation is not None:
-            raise ValueError("a mutation cannot create and delete a conversation")
-        if self.delete_conversation is not None and any((
-            self.entries, self.submission, self.task, self.effect, self.effects,
-            self.submission_update, self.settlements, self.artifacts, self.approval,
-        )):
-            raise ValueError("conversation deletion cannot include other durable changes")
-        if any(entry.conversation_id != self.conversation_id for entry in self.entries):
-            raise ValueError("all mutation entries must belong to its conversation")
-        if self.submission is not None:
-            if self.submission.conversation_id != self.conversation_id:
-                raise ValueError("submission belongs to another conversation")
-            if self.submission.entry is not None and self.submission.entry not in self.entries:
-                raise ValueError("submission entry must be part of the same mutation")
-        if self.task is not None and self.task.conversation_id != self.conversation_id:
-            raise ValueError("task belongs to another conversation")
-        if self.effect is not None and self.task is not None and self.effect.task_id != self.task.task_id:
-            raise ValueError("effect must belong to the task in this mutation")
-        effect_ids = [effect.effect_id for effect in (*self.effects, *self.settlements)]
-        if len(effect_ids) != len(set(effect_ids)):
-            raise ValueError("effect IDs must be unique within a mutation")
-        effect_task_ids = {effect.task_id for effect in (*self.effects, *self.settlements)}
-        if len(effect_task_ids) > 1 or (self.task is not None and effect_task_ids and effect_task_ids != {self.task.task_id}):
-            raise ValueError("effects must belong to one task in this mutation")
-        if self.effect is not None and self.effect.effect_id in effect_ids:
-            raise ValueError("effect cannot be listed twice in a mutation")
-        _validate_artifact_handles(self.artifacts)
-        if self.expected_effect_status is not None and self.effect is None:
-            raise ValueError("expected_effect_status requires an effect update")
-        if any(effect.settlement is None or effect.status == "pending" for effect in self.settlements):
-            raise ValueError("effect settlements require a terminal outcome")
-        if self.submission_update is not None and self.submission_update.conversation_id != self.conversation_id:
-            raise ValueError("submission update belongs to another conversation")
-        if self.approval is not None:
-            if self.approval.conversation_id != self.conversation_id:
-                raise ValueError("approval belongs to another conversation")
-            if self.task is not None and self.approval.task_id != self.task.task_id:
-                raise ValueError("approval must belong to the task in this mutation")
-        if self.expected_approval_status is not None and self.approval is None:
-            raise ValueError("expected_approval_status requires an approval update")
+        _validate_mutation_shape(self)
+
+
+def _validate_mutation_shape(mutation: DurableMutation) -> None:
+    if mutation.create_conversation is not None and mutation.delete_conversation is not None:
+        raise ValueError("a mutation cannot create and delete a conversation")
+    if mutation.delete_conversation is not None and any((
+        mutation.entries, mutation.submission, mutation.task, mutation.task_updates,
+        mutation.effect, mutation.effects, mutation.submission_update, mutation.submission_updates,
+        mutation.settlements, mutation.artifacts, mutation.approval,
+    )):
+        raise ValueError("conversation deletion cannot include other durable changes")
+    if any(entry.conversation_id != mutation.conversation_id for entry in mutation.entries):
+        raise ValueError("all mutation entries must belong to its conversation")
+    if mutation.submission is not None:
+        if mutation.submission.conversation_id != mutation.conversation_id:
+            raise ValueError("submission belongs to another conversation")
+        if mutation.submission.entry is not None and mutation.submission.entry not in mutation.entries:
+            raise ValueError("submission entry must be part of the same mutation")
+    _validate_mutation_tasks(mutation)
+    _validate_mutation_effects(mutation)
+    _validate_mutation_submissions(mutation)
+    if mutation.approval is not None:
+        if mutation.approval.conversation_id != mutation.conversation_id:
+            raise ValueError("approval belongs to another conversation")
+        if mutation.task is not None and mutation.approval.task_id != mutation.task.task_id:
+            raise ValueError("approval must belong to the task in this mutation")
+    if mutation.expected_approval_status is not None and mutation.approval is None:
+        raise ValueError("expected_approval_status requires an approval update")
+
+
+def _validate_mutation_tasks(mutation: DurableMutation) -> None:
+    all_tasks = ((mutation.task,) if mutation.task is not None else ()) + mutation.task_updates
+    task_ids = [task.task_id for task in all_tasks]
+    if len(task_ids) != len(set(task_ids)):
+        raise ValueError("task IDs must be unique within a mutation")
+    if any(task.conversation_id != mutation.conversation_id for task in all_tasks):
+        raise ValueError("task belongs to another conversation")
+
+
+def _validate_mutation_effects(mutation: DurableMutation) -> None:
+    if mutation.effect is not None and mutation.task is not None and mutation.effect.task_id != mutation.task.task_id:
+        raise ValueError("effect must belong to the task in this mutation")
+    effect_ids = [effect.effect_id for effect in (*mutation.effects, *mutation.settlements)]
+    if len(effect_ids) != len(set(effect_ids)):
+        raise ValueError("effect IDs must be unique within a mutation")
+    effect_task_ids = {effect.task_id for effect in (*mutation.effects, *mutation.settlements)} | (
+        {mutation.effect.task_id} if mutation.effect is not None else set()
+    )
+    if len(effect_task_ids) > 1 or (
+        mutation.task is not None and effect_task_ids and effect_task_ids != {mutation.task.task_id}
+    ):
+        raise ValueError("effects must belong to one task in this mutation")
+    if mutation.effect is not None and mutation.effect.effect_id in effect_ids:
+        raise ValueError("effect cannot be listed twice in a mutation")
+    _validate_artifact_handles(mutation.artifacts)
+    if mutation.expected_effect_status is not None and mutation.effect is None:
+        raise ValueError("expected_effect_status requires an effect update")
+    if any(effect.settlement is None or effect.status == "pending" for effect in mutation.settlements):
+        raise ValueError("effect settlements require a terminal outcome")
+
+
+def _validate_mutation_submissions(mutation: DurableMutation) -> None:
+    all_updates = ((mutation.submission_update,) if mutation.submission_update is not None else ()) + mutation.submission_updates
+    update_ids = [update.submission_id for update in all_updates]
+    if len(update_ids) != len(set(update_ids)):
+        raise ValueError("submission IDs must be unique within a mutation")
+    if any(update.conversation_id != mutation.conversation_id for update in all_updates):
+        raise ValueError("submission update belongs to another conversation")
 
 
 EXECUTION_STATE_KEYS = (

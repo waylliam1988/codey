@@ -54,13 +54,17 @@ def checkpoint_from_payload(raw: Mapping[str, object]) -> TaskCheckpoint:
 
 
 def execution_payload(mutation: DurableMutation, head: str | None) -> dict[str, object]:
-    task = mutation.task
-    if task is None:
+    tasks = ((mutation.task,) if mutation.task is not None else ()) + mutation.task_updates
+    if not tasks:
         return {}
     changes = ((mutation.effect,) if mutation.effect is not None else ()) + mutation.effects + mutation.settlements
     return {
         "schema_version": 1,
-        "task": checkpoint_payload(task),
+        # Keep the singular field for the original timeline format while
+        # carrying every checkpoint changed by one atomic mutation.  Readers
+        # can select the checkpoint belonging to the task they are replaying.
+        "task": checkpoint_payload(tasks[0]),
+        "tasks": [checkpoint_payload(task) for task in tasks],
         "head_entry_id": head,
         "effects": [
             {
@@ -74,20 +78,36 @@ def execution_payload(mutation: DurableMutation, head: str | None) -> dict[str, 
     }
 
 
-def transition_from_payload(sequence: int, raw: Mapping[str, object]) -> TaskTransition:
+def transition_from_payload(
+    sequence: int,
+    raw: Mapping[str, object],
+    task_id: str | None = None,
+) -> TaskTransition:
     if raw.get("schema_version") != 1:
         raise ValueError("unsupported workflow timeline schema")
     effects = cast(list[dict[str, object]], raw["effects"])
+    raw_task: Mapping[str, object]
+    task_rows = raw.get("tasks")
+    if task_id is not None and isinstance(task_rows, (list, tuple)):
+        selected = next(
+            (item for item in task_rows if isinstance(item, Mapping) and item.get("task_id") == task_id),
+            None,
+        )
+        if selected is None:
+            raise KeyError(f"task {task_id!r} is not present in timeline commit")
+        raw_task = selected
+    else:
+        raw_task = cast(Mapping[str, object], raw["task"])
     return TaskTransition(
         sequence,
-        checkpoint_from_payload(cast(Mapping[str, object], raw["task"])),
+        checkpoint_from_payload(raw_task),
         tuple(EffectRecord(
             effect_id=str(effect["effect_id"]), task_id=str(effect["task_id"]),
             category=str(effect["category"]), replay_class=str(effect["replay_class"]),
             args_digest=str(effect["args_digest"]), status=str(effect["status"]),
             intent=cast(Mapping[str, object], effect["intent"]),
             settlement=cast(Mapping[str, object] | None, effect["settlement"]),
-        ) for effect in effects),
+        ) for effect in effects if task_id is None or effect.get("task_id") == task_id),
         cast(str | None, raw["head_entry_id"]),
     )
 

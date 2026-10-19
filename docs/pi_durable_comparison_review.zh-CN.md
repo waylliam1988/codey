@@ -1055,4 +1055,42 @@ Codey 已消除“第二个应用 Session 可以无条件接管同一 durable DB
 - `RuntimeSessionLog` 相关旧测试和手工脚本仍需逐项迁移为只读 audit projection 或 durable contract；
 - generation boundary 的多事实原子提交、native context range、scheduler 完整生命周期仍是主要差距。
 
+## 30. 第二十六段：generation boundary 的多事实原子提交
+
+本段把上一段仍未完成的 boundary placement 差距收窄。此前 `place_boundary_inputs()` 虽然每个输入都通过 durable mutation，但一个 Pi generation boundary 选中多个 steer/follow-up 时会产生多个 commit。现在一个 boundary 预先构造所有 entry、task checkpoint 和 submission update，再通过一个 `DurableMutation` 提交。
+
+### 30.1 已完成
+
+- `DurableMutation` 支持同一事务中的多个 `task_updates` 和 `submission_updates`，并校验 task/submission 身份不重复且属于当前 conversation；
+- Memory/SQLite 都在同一 commit sequence 写入全部 entry、task checkpoint 和 submission placement/update；任何校验或写入失败都不会留下部分 boundary；
+- 每个 queued input 的 entry 保留自己的 `by_task_id`，不会把一批输入错误归属于某个主 task；
+- commit projection 会为同一 boundary 发布全部 task progress 和 submission completion 投影；
+- SQLite timeline 同一 commit 可携带多个 task checkpoint，`task_history()` 会按 task 选择对应 checkpoint；旧的单 task timeline payload 仍可读取；
+- `post_tools`/`final` 的 steer 优先、follow-up 延迟、passive write 排序和 stale write 语义保持不变；
+- 保持冷启动约束：`SCHEMA_VERSION = 1`，没有旧 schema migration、fallback 或恢复旁路。
+
+### 30.2 验证
+
+```text
+tests/durable/test_inbox_placement.py：35 passed
+tests/durable/test_store_contract.py：46 passed
+mypy：Success: no issues found in 6 source files
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 30.3 与 Pi 的结果
+
+Codey 现在达到 Pi generation boundary 的核心 mutation 语义：一个 boundary 的多项输入不会被拆成多个 durable commit，entry、task checkpoint、submission placement 和 commit cursor 可以一起恢复。Codey 额外保留了 task attempt fencing、权限/审批、provider snapshot、verification 和 completion proof。
+
+仍低于 Pi 或尚未接通的部分：
+
+- native provider 的 queued input 还没有进入同一 native protocol message range；
+- tool effect settlement、当前 task checkpoint 和下一 generation checkpoint 还需在真实 provider 执行路径中证明同一事务边界；
+- scheduler 的 owner graph、background ownership、abort handler、close join 和持久化 reverse index 仍未完整实现；
+- fork-local inbox 还没有 Pi `InboxDoc` 的 snapshot/history 语义；
+- Runtime JSONL、AppContext、`operation_state.py` 和 DurableSession 的最终结构卫生审查仍待完成。
+
 

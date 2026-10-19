@@ -260,6 +260,40 @@ def test_generation_boundary_places_steer_at_post_tools_and_follow_up_at_final(
     ]
 
 
+def test_boundary_places_selected_user_inputs_in_one_durable_commit(
+    session: DurableSession,
+) -> None:
+    session.admit_input(
+        conversation_id="chat", request_id="active", task_id="active",
+        text="current", provider_snapshot={},
+    )
+    session.start_task("active", state={})
+    first = session.admit_input(
+        conversation_id="chat", request_id="steer-1", task_id="steer-1",
+        text="first direction", provider_snapshot={}, placement=SubmissionPlacement.QUEUED,
+        mode="steer",
+    )
+    second = session.admit_input(
+        conversation_id="chat", request_id="steer-2", task_id="steer-2",
+        text="second direction", provider_snapshot={}, placement=SubmissionPlacement.QUEUED,
+        mode="steer",
+    )
+    before = session.commit_sequence()
+
+    placed = session.place_boundary_inputs("chat", at="post_tools", steering_mode="all")
+
+    assert [item.request_id for item in placed] == ["steer-1", "steer-2"]
+    assert session.commit_sequence() == before + 1
+    assert session.store.submission(str(first.submission_id)).placement is SubmissionPlacement.PLACED
+    assert session.store.submission(str(second.submission_id)).placement is SubmissionPlacement.PLACED
+    entries = session.entries("chat")
+    assert [entry.by_task_id for entry in entries[-2:]] == ["steer-1", "steer-2"]
+    assert session.task("steer-1").state["input_state"] == "placed"
+    assert session.task("steer-2").state["input_state"] == "placed"
+    assert session.store.task_history("steer-1")[-1].task.revision == 1
+    assert session.store.task_history("steer-2")[-1].task.revision == 1
+
+
 def test_display_only_write_is_done_without_task_and_excluded_from_context(
     session: DurableSession,
 ) -> None:

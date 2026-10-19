@@ -28,6 +28,11 @@ def mutation_projection(mutation: DurableMutation) -> dict[str, object]:
             "type": "task_progressed", "task_id": task.task_id,
             "phase": task.phase, "status": task.status, "revision": task.revision,
         })
+    for task in mutation.task_updates:
+        projections.append({
+            "type": "task_progressed", "task_id": task.task_id,
+            "phase": task.phase, "status": task.status, "revision": task.revision,
+        })
     for effect in ((mutation.effect,) if mutation.effect is not None else ()) + mutation.effects + mutation.settlements:
         if effect.settlement is not None:
             projections.append({
@@ -35,13 +40,15 @@ def mutation_projection(mutation: DurableMutation) -> dict[str, object]:
                 "effect_id": effect.effect_id, "status": effect.status,
             })
     update = mutation.submission_update
-    if update is not None and update.status in {
-        SubmissionStatus.DONE, SubmissionStatus.UNANSWERED, SubmissionStatus.CANCELLED,
-    }:
-        projections.append({
-            "type": "submission_completed", "submission_id": update.submission_id,
-            "status": update.status, "answer_entry_id": update.answer_entry_id,
-        })
+    updates = ((update,) if update is not None else ()) + mutation.submission_updates
+    for update in updates:
+        if update.status in {
+            SubmissionStatus.DONE, SubmissionStatus.UNANSWERED, SubmissionStatus.CANCELLED,
+        }:
+            projections.append({
+                "type": "submission_completed", "submission_id": update.submission_id,
+                "status": update.status, "answer_entry_id": update.answer_entry_id,
+            })
     return {
         "session_id": mutation.conversation_id,
         "entry_ids": [entry.entry_id for entry in mutation.entries],
