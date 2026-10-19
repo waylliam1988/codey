@@ -88,10 +88,18 @@ class KernelEffectSink:
         self._replay_classes = {row.intent.effect_id: row.intent.replay_class for row in previous}
         self._old_pending = {row.intent.effect_id for row in previous if row.is_pending}
 
-    def begin_turn(self, items: list[tuple[str, ToolCall, int]], *, turn: int, specs: Any = None) -> None:
+    def begin_turn(
+        self,
+        items: list[tuple[str, ToolCall, int]],
+        *,
+        turn: int,
+        specs: Any = None,
+        scope: str = "",
+    ) -> None:
         intents: list[RuntimeEffectIntent] = []
         batch_items: list[DeliveryBatchItem] = []
-        batch_id = new_batch_id(self.run_id, turn)
+        batch_key = f"{self.run_id}:{scope}" if scope else self.run_id
+        batch_id = new_batch_id(batch_key, turn)
         for identity, call, index in items:
             if identity in self._old_pending:
                 continue

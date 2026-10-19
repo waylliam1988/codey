@@ -172,6 +172,23 @@ def _research_json_type(pytype: type) -> str:
 
 def _all_specs() -> dict[str, ToolSpec]:
     specs = _coding_specs()
+    specs["codemode"] = ToolSpec(
+        name="codemode",
+        grant="project.read",
+        executor="codemode",
+        replay_class="safe",
+        description=(
+            "Execute one bounded JavaScript program in the local CodeMode sandbox. "
+            "Only frozen read-only tools are available through tools.*; writes, approval, "
+            "network access, and recursive codemode calls are unavailable."
+        ),
+        parameters=(
+            ("code", {"type": "string"}),
+            ("language", {"type": "string", "enum": ["javascript", "js"]}),
+        ),
+        required=("code",),
+        json_examples=('{"tool":"codemode","args":{"code":"return await tools.read_file({path:\"app.py\"});"}}',),
+    )
     specs["ask_user"] = ToolSpec(
         name="ask_user", grant="control", replay_class="safe", executor="control",
         description="Ask a bounded choice question and pause for the user's answer. This authorizes no command. Must be the only call in the turn.",
@@ -409,7 +426,7 @@ def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None)
             allowed = {str(n or "").strip().lower() for n in controller_allowed}
         except TypeError:
             allowed = None
-    order = ("list_dir", "read_file", "read_files", "grep", "find_references", "parallel", "edit", "run", "shell",
+    order = ("list_dir", "read_file", "read_files", "grep", "find_references", "parallel", "codemode", "edit", "run", "shell",
              "web_search", "open_url", "source_search", "knowledge_search", "knowledge_read",
              "knowledge_write", "knowledge_link", "read_tool_result", "done")
     names: list[str] = []

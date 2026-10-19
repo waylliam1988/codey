@@ -879,8 +879,34 @@ def _call_execute_turn(
 ) -> Any:
     """Run one execution turn; faults fail closed as provider_failure."""
     try:
+        effective_runnable = dict(runnable or {})
+        if "codemode" not in effective_runnable:
+            from codey.codemode.kernel import build_execute_turn_executor
+
+            effective_runnable["codemode"] = build_execute_turn_executor(
+                session=session,
+                snapshot=snapshot,
+                run_id=run_id,
+                effect_scope=effect_scope,
+                turn=int(turn),
+                project_path=project_path,
+                tool_fns=tool_fns,
+                research_tools=research_tools,
+                change_tracker=change_tracker,
+                managed_outputs=managed_outputs,
+                session_id=session_id,
+                permission_profile=permission_profile,
+                delivered=delivered_map or None,
+                intent_sink=intent_sink,
+                controller_allowed=controller,
+                execution_evidence=outer_evidence,
+                workspace_ignored_paths=workspace_ignored_paths,
+                workspace_revision_store=workspace_revision_store,
+                stop_flag=stop_flag,
+                executors=effective_runnable,
+            )
         return _execute_turn(
-            session, calls, executors=runnable, run_id=run_id,
+            session, calls, executors=effective_runnable, run_id=run_id,
             effect_scope=effect_scope, turn=turn, project_path=project_path,
             tool_fns=tool_fns, research_tools=research_tools,
             change_tracker=change_tracker, managed_outputs=managed_outputs,

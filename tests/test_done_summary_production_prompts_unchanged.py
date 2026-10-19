@@ -93,4 +93,4 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> Non
     # The admitted control vocabulary now includes ask_user. The fixed done,
     # result and repair surfaces above remain independently frozen.
     assert "ask_user" in prompt
-    assert _sha256(prompt) == "89e4eb036d2788706ef6ce4dfe978cc5589686eaf4ccdf43035e067faef6e2a5"
+    assert _sha256(prompt) == "b2f6a4d49b3f5177dc7046989056d20ac24bf5cc466226b4f46f2f5d1eac918f"

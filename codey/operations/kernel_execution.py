@@ -299,8 +299,10 @@ def execute_turn(
         frozen_specs=frozen_specs,
         custom_executors=frozen_custom_executor_map(snapshot),
     )
-    _begin_pending_intents(intent_sink, calls, session, delivered_map, identity_ref, active_turn, base_index,
-                           frozen_specs=frozen_specs)
+    _begin_pending_intents(
+        intent_sink, calls, session, delivered_map, identity_ref, active_turn, base_index,
+        frozen_specs=frozen_specs, batch_scope=effect_scope,
+    )
     return _execute_slots(
         session, calls, runnable, delegate, identity_ref, active_turn, base_index,
         delivered_map, intent_sink, controller_allowed, project_path,
@@ -353,7 +355,7 @@ def _precheck_abort(
 def _begin_pending_intents(
     intent_sink: Any, calls: list[ToolCall], session: TaskSession,
     delivered_map: dict[str, ToolResult], identity_ref: str, active_turn: int, base_index: int,
-    *, frozen_specs: Any = None,
+    *, frozen_specs: Any = None, batch_scope: str = "",
 ) -> None:
     if intent_sink is None or not calls:
         return
@@ -364,7 +366,12 @@ def _begin_pending_intents(
         and turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset) not in session.executed
     ]
     if pending_items:
-        intent_sink.begin_turn(pending_items, turn=active_turn, specs=frozen_specs)
+        try:
+            intent_sink.begin_turn(pending_items, turn=active_turn, specs=frozen_specs, scope=batch_scope)
+        except TypeError as exc:
+            if "scope" not in str(exc):
+                raise
+            intent_sink.begin_turn(pending_items, turn=active_turn, specs=frozen_specs)
 
 
 def _settle_delivered_slot(
