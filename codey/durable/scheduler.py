@@ -98,6 +98,7 @@ class DurableTaskScheduler:
     def notify(self, task_id: str | None = None, *, start: bool = True) -> None:
         pending: set[str] | None = None
         requeued = False
+        dependents: set[str] = set()
         if task_id is None:
             tasks = self._session.pending_tasks()
             pending = {task.task_id for task in tasks if task.status == TaskStatus.PENDING}
@@ -105,6 +106,11 @@ class DurableTaskScheduler:
             try:
                 task = self._session.task(task_id)
                 requeued = task.status == TaskStatus.PENDING and not task.attempt_token
+                dependents = {
+                    candidate.task_id
+                    for candidate in self._session.tasks()
+                    if task_id in candidate.waiting_on and candidate.status == TaskStatus.WAITING
+                }
             except KeyError:
                 return
         with self._lock:
@@ -115,8 +121,11 @@ class DurableTaskScheduler:
             else:
                 if requeued:
                     self._scheduled.discard(task_id)
-                if task_id not in self._scheduled:
+                if requeued and task_id not in self._scheduled:
                     self._pending.add(task_id)
+                for dependent in dependents:
+                    self._scheduled.discard(dependent)
+                    self._pending.add(dependent)
         self._wake.set()
         if start:
             self._ensure_thread()
@@ -169,8 +178,9 @@ class DurableTaskScheduler:
             if not self._enabled or not self._pending or self._closed.is_set():
                 return
             self._closed.clear()
-            self._thread = threading.Thread(target=self._run, name="codey-durable-scheduler", daemon=True)
-            self._thread.start()
+            thread = threading.Thread(target=self._run, name="codey-durable-scheduler", daemon=True)
+            self._thread = thread
+        thread.start()
 
     def _reconcile(self) -> None:
         if self._workflows:

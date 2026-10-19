@@ -635,3 +635,23 @@ mypy / pyrefly / ty / ruff 全部通过
 
 这仍是 scheduler invocation 的第一层边界。Codey 还没有 Pi 的 abort handler invocation、background ownership boundary、close 时 join 全部 invocation，以及由 waiting reverse index 驱动的局部 reconcile；下一段再处理其中一个，不把所有 scheduler 语义一次性塞进 `DurableTaskScheduler`。
 
+## 17. 第十四段：waiting reverse index 的局部唤醒
+
+Pi 在 task settlement 后通过 waiting reverse index 只重新考虑受影响的 waiter。Codey 原先的 `notify(task_id)` 只把 task 自身放进候选；waiter 依赖全量 reconcile 或调用方手动触发，两个 waiter 共享 child 时尤其容易留下未唤醒的 pending 状态。
+
+本段已完成：
+
+- `DurableTaskScheduler.notify(task_id)` 从 durable task facts 派生依赖该 task 的 `WAITING` waiters，并把所有受影响 waiter 放入候选；
+- terminal child 本身不再被无意义地重新排队；
+- 现有 `reconcile_waiting_tasks()` 继续是状态转换 owner，reverse index 只负责局部唤醒，不复制 task 状态；
+- scheduler thread 创建时释放 scheduler lock 后再启动，避免唤醒路径与 worker bootstrap 互相等待。
+
+红测覆盖两个 waiter 等待同一个 child：child 完成后只调用 `notify("child")`，scheduler 就会依次 dispatch 两个 waiter。与 blocked/abort/scheduler/ownership 测试合并聚焦结果：
+
+```text
+21 passed
+mypy / pyrefly / ty / ruff 全部通过
+```
+
+这仍不是完整 Pi index kernel：跨 Session 的 reverse index 需要从 durable commit 重建，等待关系的删除/修改也还没有独立索引表；当前实现优先保证语义和恢复正确，再在性能段决定是否需要持久化 placement/index。
+
