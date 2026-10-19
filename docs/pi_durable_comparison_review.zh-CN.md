@@ -592,3 +592,25 @@ mypy / pyrefly / ty / ruff 全部通过
 
 旧的 backend `store.delete_conversation()` 原始方法仍保留给底层 contract 测试和离线维护入口；生产 `DurableSession` 已不再调用它。后续结构清理阶段需要把这些 backend 专用写入口收窄，避免形成第二条业务写入路径。
 
+## 15. 第十二段：scheduler blocked reason 与 registry recheck
+
+Pi 的 scheduler 对缺失、过旧或迁移失败的 task definition 返回派生的 blocked reason：任务保持 pending/waiting，不被错误 terminalize；registry 改变时重新考虑。Codey 原先只是在 `_workflow_ready()` 返回 false 后把 task 从本轮内存候选移除，外部无法区分“暂时 blocked”和“已经不再存在”。
+
+本段已完成：
+
+- `DurableTaskScheduler.blocked_tasks` 暴露当前 registry 下的 `{task_id: reason}`，reason 使用 `missing_task`、`task_too_old`、`migration_failed`；
+- blocked reason 是 scheduler 派生状态，没有污染 `TaskCheckpoint` 或把 runtime registry 错写成 durable 事实；
+- `set_workflows()` 提供窄的 registry replacement 入口，清除旧 blocked cache 并唤醒 scheduler；
+- 任务仍保持 `PENDING`，定义恢复后重新进入候选并只 dispatch 一次；
+- 原有 restart/abandon 测试改用显式 `force=True` 模拟同一 pytest 进程内的进程退出，生产 scheduler 仍走 live-PID 安全恢复。
+
+测试与静态检查：
+
+```text
+test_scheduler.py + test_scheduler_blocked.py + task ownership/finalization
+19 passed
+mypy / pyrefly / ty / ruff 全部通过
+```
+
+这只补齐 Pi 的 blocked 可观察语义，尚未实现 Pi 的 `TaskInvocation`、abort invocation、background boundary 或 waiting reverse index；下一 scheduler 段应先处理 durable abort mark 与 active invocation signal 的边界。
+

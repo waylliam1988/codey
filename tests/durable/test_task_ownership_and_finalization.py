@@ -156,7 +156,7 @@ def test_abandon_on_restart_is_terminalized_without_redispatch(tmp_path: Path) -
 
     restarted = DurableSession(SQLiteDurableStore(path))
     try:
-        restarted.recover_scheduler_state()
+        restarted.recover_scheduler_state(force=True)
         task = restarted.task("task")
         assert task.phase == "failed"
         assert task.status == TaskStatus.FAILED

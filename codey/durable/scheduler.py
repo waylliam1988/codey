@@ -37,6 +37,7 @@ class DurableTaskScheduler:
         self._pending: set[str] = set()
         self._inflight: set[str] = set()
         self._scheduled: set[str] = set()
+        self._blocked: dict[str, str] = {}
         self._thread: threading.Thread | None = None
         self._recovered = False
         self._enabled = False
@@ -45,6 +46,19 @@ class DurableTaskScheduler:
     def in_flight(self) -> tuple[str, ...]:
         with self._lock:
             return tuple(sorted(self._inflight))
+
+    @property
+    def blocked_tasks(self) -> dict[str, str]:
+        """Return derived reasons for tasks the current registry cannot run."""
+        with self._lock:
+            return dict(self._blocked)
+
+    def set_workflows(self, workflows: Mapping[str, WorkflowDefinition]) -> None:
+        """Replace the registry snapshot and reconsider previously blocked work."""
+        with self._lock:
+            self._workflows = dict(workflows)
+            self._blocked.clear()
+        self.notify()
 
     def start(self) -> None:
         self._enabled = True
@@ -146,12 +160,17 @@ class DurableTaskScheduler:
                 self._inflight.add(task_id)
             try:
                 task = self._session.task(task_id)
-                if not self._workflow_ready(task):
+                block_reason = self._workflow_block_reason(task)
+                if block_reason is not None:
                     # A missing, newer, or migration-incompatible workflow is
                     # durably inspectable but must never be handed to a
                     # worker that cannot interpret its checkpoint.
+                    with self._lock:
+                        self._blocked[task_id] = block_reason
                     self._remove(task_id)
                     continue
+                with self._lock:
+                    self._blocked.pop(task_id, None)
                 if task.state.get("cancel_requested"):
                     self._session.cancel_task(
                         task_id,
@@ -205,24 +224,30 @@ class DurableTaskScheduler:
         with self._lock:
             self._pending.discard(task_id)
 
-    def _workflow_ready(self, task: TaskCheckpoint) -> bool:
+    def _workflow_block_reason(self, task: TaskCheckpoint) -> str | None:
         name = task.workflow_name
         if name is None:
-            return True
+            return None
         definition = self._workflows.get(name)
-        if definition is None or task.workflow_version != definition.version:
-            return False
+        if definition is None:
+            return "missing_task"
+        if task.workflow_version > definition.version:
+            return "task_too_old"
+        if task.workflow_version < definition.version:
+            return "migration_failed"
         contract = task.state.get("workflow_replay_contract", "deterministic-v1")
         if contract != definition.replay_contract:
-            return False
+            return "migration_failed"
         from codey.durable.workflow import workflow_digest
 
-        return task.replay_digest == workflow_digest(
+        if task.replay_digest != workflow_digest(
             definition.name,
             definition.version,
             task.workflow_input,
             task.workflow_checkpoint,
-        )
+        ):
+            return "migration_failed"
+        return None
 
 
 __all__ = ["DurableTaskScheduler"]
