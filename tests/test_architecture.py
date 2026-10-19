@@ -2281,11 +2281,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # Conversation context now owns the display transcript and
             # execution-output stores; keep their lifecycle in one boundary.
             "app/context.py",
-            "ghost/affinity.py",
             "ghost/continuity.py",
-            "ghost/hebbian.py",
-            "ghost/inbox.py",
-            "ghost/work_queue.py",
             "providers/controls.py",
             # Transport lifecycle and pooled HTTP plumbing are one cohesive
             # boundary; the stop-race fix crossed the 1000-line warning by one.
