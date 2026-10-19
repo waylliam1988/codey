@@ -1035,4 +1035,24 @@ ruff：All checks passed
 
 Codey 已消除“第二个应用 Session 可以无条件接管同一 durable DB”的硬风险，并保留 task attempt fencing 作为更细粒度的 worker 保护。相对 Pi 仍不足的是完整 scheduler invocation/abort/join 生命周期：lease 只禁止第二个应用 owner，不能替代 Pi 对任务级 live index、abort handler、background ownership 和 completing/finalization 的完整协调。
 
+## 29. 第二十五段：删除已失效的旧 input queue 测试入口
+
+本段是结构卫生清理。生产代码已经只保留 `DurableConversationInputQueue`，但旧测试仍导入不存在的 `ConversationInputQueue`，在 pytest collection 阶段失败。不能为了旧测试重新引入独立 input SQLite 或兼容 facade。
+
+### 29.1 已完成
+
+- 删除 `tests/test_conversation_input_queue.py` 这套针对已删除生产类的测试；
+- durable input 的 admission、restart、queued abort 和不创建第二 task 的行为继续由 `tests/durable/test_input_queue_authority.py` 与 inbox contract 覆盖；
+- 生产代码没有新增 fallback、旧写入路径或测试专用兼容层；
+- `SCHEMA_VERSION = 1` 保持不变。
+
+### 29.2 与 Pi 的结果
+
+这一步没有增加运行时能力，但消除了一个会误导维护者的死测试入口，测试现在跟随 durable-only 主架构。它使代码卫生更接近 Pi 的单一 input owner，也避免把旧 queue 误认为仍受支持。
+
+仍未完成：
+
+- `RuntimeSessionLog` 相关旧测试和手工脚本仍需逐项迁移为只读 audit projection 或 durable contract；
+- generation boundary 的多事实原子提交、native context range、scheduler 完整生命周期仍是主要差距。
+
 
