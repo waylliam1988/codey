@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import threading
 import time
 
@@ -67,6 +68,78 @@ def test_app_context_abort_handler_reaches_live_run_stop_event(tmp_path) -> None
         assert state.stop_flag_for("task").is_set()
     finally:
         state.close()
+
+
+def test_abort_event_terminates_real_shell_process_tree(tmp_path) -> None:
+    from codey.runtime.core import cancellation
+
+    stop = threading.Event()
+    proc, job = cancellation.start_process(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        cwd=tmp_path,
+    )
+    result: list[object] = []
+
+    def wait() -> None:
+        try:
+            with cancellation.scope(stop):
+                cancellation.wait_process(
+                    proc, job, "sleep", 30, capture_limit_bytes=1024,
+                )
+        except BaseException as exc:
+            result.append(exc)
+
+    worker = threading.Thread(target=wait)
+    worker.start()
+    time.sleep(0.1)
+    stop.set()
+    worker.join(5)
+
+    assert not worker.is_alive()
+    assert isinstance(result[0], cancellation.TaskCancelled)
+    assert proc.poll() is not None
+
+
+def test_abort_event_reaches_provider_transport_and_invalidates_reply() -> None:
+    from unittest.mock import patch
+
+    from codey.providers import api_transport
+    from codey.providers.api_provider import ApiProvider
+    from codey.runtime.core import cancellation
+
+    provider = ApiProvider("http://fixture.test/v1", "fixture")
+    stop = threading.Event()
+    opened = threading.Event()
+    finished = threading.Event()
+    errors: list[BaseException] = []
+
+    def generate(*_args, **kwargs):
+        active = type("Response", (), {"close": lambda self: None})()
+        kwargs["opened"](active)
+        opened.set()
+        while not stop.is_set():
+            time.sleep(0.01)
+        finished.set()
+        raise api_transport.GenerationUnknownError("cancelled")
+
+    def run() -> None:
+        try:
+            with cancellation.scope(stop):
+                provider.send_turn("hello")
+        except BaseException as exc:
+            errors.append(exc)
+
+    with patch.object(api_transport, "generate", generate):
+        worker = threading.Thread(target=run)
+        worker.start()
+        assert opened.wait(2)
+        stop.set()
+        worker.join(5)
+
+    assert finished.is_set()
+    assert not worker.is_alive()
+    assert errors and isinstance(errors[0], api_transport.GenerationUnknownError)
+    assert provider._messages == []
 
 
 def _wait_until(predicate, timeout: float = 2.0) -> bool:

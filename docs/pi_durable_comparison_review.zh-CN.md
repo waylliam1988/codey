@@ -1415,6 +1415,28 @@ Codey 现在在 finalization 的恢复事实、事务边界和 scheduler 重启�
 - shell/provider abort 仍需真实长请求与真实子进程的端到端清理注入；
 - InboxDoc snapshot/history、Runtime JSONL 降级清理、AppContext 与巨型模块拆分仍待完成。
 
+## 42. 第三十八段：真实 shell/provider abort cleanup 验证
+
+本段完成第三个目标块的物理边界验证。此前 `AppContext._abort_durable_task()` 已把 durable cancel barrier 接到 run-scoped stop event、shell approval expiry 和 provider transport；本段补上真实资源故障测试，防止“只改数据库状态、物理资源仍运行”的回归。
+
+### 42.1 已完成
+
+- 真实 `start_process()` + `wait_process()` 测试证明 stop event 会触发 process tree termination、reader cleanup 和 worker 返回 `TaskCancelled`；
+- 真实 `ApiProvider` transport 测试证明 stop event 会中止 generation、使 late reply 变成 `GenerationUnknownError`，且不会提交 provider history；
+- AppContext abort handler、scheduler abort invocation、shell approval expiry 的既有顺序测试继续通过；
+- 不增加第二套取消状态，不把 UI/JSONL 当作 cleanup 事实源。
+
+### 42.2 与 Pi 的结果
+
+Codey 现在在 abort 的安全边界上超过 Pi durable 的通用任务内核：取消先持久化，再通过同一 run identity 物理中止 provider/socket 和 shell/process tree，并对未知结果保持 fail-closed；真实资源测试也锁定了这一保证。
+
+仍低于 Pi 或尚未完成的部分：
+
+- InboxDoc snapshot/history 尚未完成；
+- Runtime JSONL 仍需明确降级为 isolated audit/debug adapter 并清理误导性接线；
+- AppContext、DurableSession、SQLiteDurableStore 的职责拆分和巨型模块卫生审查仍待完成；
+- 其他 provider sink 的 generation boundary 统一接入仍需补齐。
+
 ## 41. 第三十七段：provider generation settlement / placement / checkpoint 单事务
 
 本段把 provider 成功响应的 settlement 与 generation boundary 合并。主 task 路径现在先持久化 provider intent，响应 settlement 暂存到当前 generation；在 `post_tools` 或 `final` boundary，由 `RuntimeMutationLine.settle_provider_effect_at_boundary()` 将 provider settlement、runtime checkpoint、boundary placement、conversation entries/head 和 submission 更新一次提交。提交失败时，所有这些事实都保持旧值。
