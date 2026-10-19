@@ -3500,7 +3500,9 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["error"], "request body too large")
 
     def test_shell_approval_continuation_uses_current_active_provider(self) -> None:
-        state = make_app_state(self)
+        state_root = tempfile.TemporaryDirectory()
+        self.addCleanup(state_root.cleanup)
+        state = server.AppContext(Path(state_root.name) / "state", start_scheduler=False)
         self.addCleanup(state.close)
         with tempfile.TemporaryDirectory() as project_dir:
             run = state.reserve_run(
@@ -3560,10 +3562,17 @@ class RunSnapshotTests(unittest.TestCase):
 
             self.assertEqual(response.status, 202)
             self.assertEqual(state.shell_approval_workflow.status("shell-1")["continuation"], "started")
-            self.assertEqual(submit.call_args.args[5], "qwen")
+            self.assertEqual(
+                state.shell_approval_workflow.status("shell-1")["continuation_run_id"],
+                run.run_id,
+            )
+            submit.assert_not_called()
+            self.assertTrue(state.close())
 
     def test_shell_approval_response_uses_safe_defaults_when_pending_fields_are_missing(self) -> None:
-        state = make_app_state(self)
+        state_root = tempfile.TemporaryDirectory()
+        self.addCleanup(state_root.cleanup)
+        state = server.AppContext(Path(state_root.name) / "state", start_scheduler=False)
         self.addCleanup(state.close)
         with tempfile.TemporaryDirectory() as td:
             _persist_approval(state, _complete_shell_pending({
@@ -3596,20 +3605,17 @@ class RunSnapshotTests(unittest.TestCase):
 
                 self.assertTrue(state.shell_approval_workflow.wait(5))
             self.assertEqual(status, 202)
-        self.assertEqual(state.shell_approval_workflow.status("shell-1")["continuation"], "failed")
+        self.assertEqual(state.shell_approval_workflow.status("shell-1")["continuation"], "started")
         execute.assert_called_once()
         ticket = execute.call_args.args[1]
         self.assertIs(execute.call_args.args[0], state)
         self.assertEqual(ticket.command, "pytest")
         self.assertEqual(ticket.generation, 0)
         self.assertTrue(str(ticket.cwd))
-        setup.assert_called_once()
-        build.assert_called_once()
-        self.assertEqual(submit.call_args.args[0], "session-1")
-        self.assertEqual(submit.call_args.args[1], td)
-        self.assertEqual(submit.call_args.args[2], "Continue prompt")
-        self.assertEqual(submit.call_args.args[3], app_api.DEFAULT_MAX_TURNS)
-        self.assertEqual(submit.call_args.args[5], DEFAULT_PROVIDER_ID)
+        submit.assert_not_called()
+        setup.assert_not_called()
+        build.assert_not_called()
+        self.assertTrue(state.close())
 
     def test_shell_approval_response_bounds_current_pending_command_event(self) -> None:
         state = make_app_state(self)
