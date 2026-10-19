@@ -593,10 +593,16 @@ class TaskCheckpoint:
         attempt = state.get("attempt_number", 0)
         token = state.get("attempt_token", "")
         owner = state.get("attempt_owner", "")
-        if type(attempt) is not int or attempt < 0 or not isinstance(token, str) or not isinstance(owner, str):
+        process_id = state.get("attempt_process_id", 0)
+        if (type(attempt) is not int or attempt < 0 or not isinstance(token, str)
+                or not isinstance(owner, str) or type(process_id) is not int or process_id < 0):
             raise ValueError("invalid task execution attempt")
         if bool(token) != bool(owner) or (token and attempt == 0):
             raise ValueError("invalid task execution attempt ownership")
+        if token and process_id <= 0:
+            raise ValueError("running task attempt requires an owner process")
+        if not token and process_id != 0:
+            raise ValueError("unowned task cannot retain an owner process")
         pending_ids = state.get("pending_effect_ids")
         if pending_ids is not None:
             if not isinstance(pending_ids, list):
@@ -704,6 +710,7 @@ class DurableMutation:
 EXECUTION_STATE_KEYS = (
     "attempt_token",
     "attempt_owner",
+    "attempt_process_id",
     "attempt_number",
     "input_state",
     "question",
@@ -724,6 +731,12 @@ def valid_execution_attempt(previous_state: Mapping[str, object], previous_statu
         return (old_number == new_number
                 and previous_state.get("attempt_owner", "") == current.state.get("attempt_owner", ""))
     if not current.attempt_token:
-        return current.status in {TaskStatus.PENDING, TaskStatus.WAITING} and new_number == old_number
+        return current.status in {
+            TaskStatus.PENDING,
+            TaskStatus.WAITING,
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+        } and new_number == old_number
     return (previous_status == TaskStatus.PENDING and current.status == TaskStatus.RUNNING
             and not previous_token and type(old_number) is int and new_number == old_number + 1)

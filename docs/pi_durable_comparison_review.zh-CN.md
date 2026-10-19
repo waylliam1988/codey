@@ -517,3 +517,35 @@ Codey 已为 `DurableSession.branch()`、`MemoryDurableStore.branch()` 和 `SQLi
 
 本段仍未收敛 create/fork/delete 的 canonical mutation：它们还需要进入明确的 commit/publication 语义，后续再处理，避免把 branch CAS 和生命周期变更混成一个不可审查的大 patch。
 
+## 12. 第九段：多 Session 的 live attempt ownership fencing
+
+Pi durable 的 scheduler 恢复不能只看 `RUNNING` 状态；恢复者必须知道旧 attempt 是否仍被活跃执行者持有，否则第二个 Session 会把正在运行的外部 effect 当成进程崩溃后的 abandoned work。Codey 这一段采用 task attempt 级 fencing：
+
+- `claim_task()` 在 checkpoint 中同时写入随机 `attempt_token`、Session `attempt_owner` 和 `attempt_process_id`；
+- 默认 `recover_scheduler_state()` 只回收 owner 进程已经不存在的 running attempt；活跃 PID 永不被普通 scheduler 恢复抢占；
+- `force=True` 是显式的行政/测试恢复入口，用于同一 pytest 进程模拟“进程已经退出”的 crash boundary；生产 scheduler 不使用它；
+- `unclaim_task()`、`wait_task()`、approval continuation、cancel/fail terminalization 和用户问题唤醒统一清理 token、Session owner 与 process id；
+- `TaskCheckpoint` 拒绝 token/owner/process id 不一致的 execution state，terminal release 仍通过同一 attempt CAS；
+- `Runtime JSONL`、UI 和 trace 没有参与 ownership recovery 判断。
+
+### 12.1 红测与验证
+
+先新增 `tests/durable/test_live_owner_recovery.py`：owner Session claim task 后，observer Session 的普通 recovery 必须保留 `RUNNING`、`attempt_token` 和 `attempt_process_id`。随后把原来在同一进程内伪造 restart 的 fencing 测试改为显式 `force=True`，并把 storage failure 测试改为验证 Session failure latch 后由 observer 读取未改变的 pending checkpoint。
+
+分段结果：
+
+```text
+test_live_owner_recovery.py   1 passed
+test_execution_fencing.py    14 passed
+test_worker_fencing.py        1 passed
+test_scheduler.py            11 passed
+```
+
+局部检查：mypy、pyrefly、ty 和 ruff 全部通过。
+
+Windows 下把 live-owner 文件和 execution 文件放在同一 pytest invocation 时，pytest 在第二个测试 fixture setup 阶段出现顺序相关 `KeyboardInterrupt`；反向顺序和各文件单独运行均通过。这是测试生命周期/运行器隔离问题，不能通过让生产 recovery 忽略活跃 PID 来迁就，后续应单独定位测试收尾与 runner 行为。
+
+### 12.2 Pi 对照结论
+
+Codey 已超过此前“无 owner 识别、无跨 Session recovery fence”的实现，也保留了 Codey 的 fail-closed effect 语义。当前仍有两个边界差距：跨进程数据库 open fencing 尚未实现，Session `close()` 也没有把本 Session 的 running attempts 做显式 graceful handoff；这两项留在 scheduler/storage ownership 段继续处理。本段不能宣布 scheduler 全面超过 Pi。
+

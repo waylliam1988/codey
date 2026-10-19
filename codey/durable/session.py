@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import uuid
 from collections.abc import Callable, Generator, Mapping
@@ -44,6 +45,30 @@ from codey.durable.workflow import WorkflowDefinition, workflow_digest
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
+
+
+def _process_is_alive(value: object) -> bool:
+    """Return whether a durable attempt owner process is still running."""
+    if type(value) is not int or value <= 0:
+        return False
+    try:
+        os.kill(value, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _release_attempt_state(state: Mapping[str, object]) -> dict[str, object]:
+    """Clear volatile scheduler ownership while preserving logical state."""
+    released = dict(state)
+    released["attempt_token"] = ""
+    released["attempt_owner"] = ""
+    released["attempt_process_id"] = 0
+    return released
 
 
 def _mutation_line(method: Callable[..., _T]) -> Callable[..., _T]:
@@ -656,8 +681,7 @@ class DurableSession:
             state.pop("resume_entry_id", None)
             # Keep the single checkpoint revision consumed by the effect
             # settlement. The wakeup is part of that same transition.
-            state["attempt_token"] = ""
-            state["attempt_owner"] = ""
+            state = _release_attempt_state(state)
             next_task = replace(next_task, state=state, status=TaskStatus.PENDING)
         updated_approval = replace(
             current_approval,
@@ -970,7 +994,7 @@ class DurableSession:
             current,
             phase="cancelled",
             revision=current.revision + 1,
-            state={**dict(state), "pending_effect_ids": []},
+            state={**_release_attempt_state(state), "pending_effect_ids": []},
             pending_effect_id=None,
             status=TaskStatus.CANCELLED,
         )
@@ -1007,23 +1031,27 @@ class DurableSession:
         if type(attempt) is not int:
             raise ValueError("invalid task attempt number")
         state = {**current.state, "attempt_number": attempt + 1,
-                 "attempt_owner": self._owner_id, "attempt_token": f"attempt-{uuid.uuid4().hex}"}
+                 "attempt_owner": self._owner_id, "attempt_token": f"attempt-{uuid.uuid4().hex}",
+                 "attempt_process_id": os.getpid()}
         next_task = replace(current, phase=phase, revision=current.revision + 1, state=state, status=TaskStatus.RUNNING)
         _head, revision = self.store.head(current.conversation_id)
         return self._commit(DurableMutation(current.conversation_id, revision, task=next_task,
                                            expected_attempt_token=current.attempt_token))
 
     @_mutation_line
-    def recover_scheduler_state(self) -> None:
+    def recover_scheduler_state(self, *, force: bool = False) -> None:
         """Return abandoned scheduler ownership to the durable pending queue.
 
         A process can die after claiming a task but before its worker begins.
         The logical phase remains intact; only the volatile scheduler status is
         reset, so recovery resumes the exact checkpoint rather than replaying
-        the submission as a new task.
+        the submission as a new task. A live owner is never reclaimed unless
+        an administrative caller explicitly forces recovery.
         """
         for task in self.store.pending_tasks():
             if task.status != TaskStatus.RUNNING:
+                continue
+            if not force and _process_is_alive(task.state.get("attempt_process_id")):
                 continue
             try:
                 if task.state.get("abandon_on_restart") is True:
@@ -1041,7 +1069,7 @@ class DurableSession:
                         reason=str(task.state.get("cancel_reason") or "cancelled"),
                     )
                     continue
-                state = {**task.state, "attempt_token": "", "attempt_owner": ""}
+                state = _release_attempt_state(task.state)
                 next_task = replace(task, revision=task.revision + 1, state=state, status=TaskStatus.PENDING)
                 _head, revision = self.store.head(task.conversation_id)
                 self._commit(DurableMutation(task.conversation_id, revision, task=next_task,
@@ -1055,7 +1083,7 @@ class DurableSession:
         if current.status != TaskStatus.RUNNING:
             raise ValueError(f"task is not running: {current.status}")
         phase = "accepted" if current.phase == "dispatching" else current.phase
-        state = {**current.state, "attempt_token": "", "attempt_owner": ""}
+        state = _release_attempt_state(current.state)
         next_task = replace(current, phase=phase, revision=current.revision + 1, state=state, status=TaskStatus.PENDING)
         _head, revision = self.store.head(current.conversation_id)
         return self._commit(DurableMutation(current.conversation_id, revision, task=next_task))
@@ -1114,11 +1142,10 @@ class DurableSession:
         next_task = replace(
             current,
             revision=current.revision + 1,
-            state={**dict(current.state), **dict(state or {}),
+            state={**_release_attempt_state({**dict(current.state), **dict(state or {})}),
                    "waiting_on": dependencies,
                    "join_policy": join_policy,
-                   "join_wait": on is not None,
-                   "attempt_token": "", "attempt_owner": ""},
+                   "join_wait": on is not None},
             status=TaskStatus.PENDING if answered else TaskStatus.WAITING,
         )
         return self._commit(
@@ -1243,7 +1270,7 @@ class DurableSession:
             current,
             phase="failed",
             revision=current.revision + 1,
-            state={**dict(current.state), **dict(state), "pending_effect_ids": []},
+            state={**_release_attempt_state({**dict(current.state), **dict(state)}), "pending_effect_ids": []},
             pending_effect_id=None,
             status=TaskStatus.FAILED,
         )

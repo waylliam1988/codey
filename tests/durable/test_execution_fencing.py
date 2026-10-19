@@ -5,7 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import CommitConflict, DurableSession, EffectRecord, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import (
+    CommitConflict,
+    DurableSession,
+    EffectRecord,
+    MemoryDurableStore,
+    SessionFailedError,
+    SQLiteDurableStore,
+)
 from codey.durable.model import DurableMutation, TaskStatus
 from codey.durable.scheduler import DurableTaskScheduler
 
@@ -42,7 +49,7 @@ def test_stale_session_cannot_settle_after_restart_even_using_a_fresh_checkpoint
     effect = EffectRecord("effect", "task", "provider_send", "unsafe", "digest", "pending", {})
     old.record_effect_intent("task", effect)
     old_token = old.task("task").attempt_token
-    restarted.recover_scheduler_state()
+    restarted.recover_scheduler_state(force=True)
     restarted.claim_task("task")
     checkpoint = restarted.task("task")
     assert checkpoint.attempt_token != old_token
@@ -102,10 +109,12 @@ def test_store_rejects_nonterminal_mutation_after_durable_cancel_barrier(session
 
 
 def test_failed_claim_never_assigns_local_execution_ownership(sessions, monkeypatch):
-    session, _ = sessions
+    session, observer = sessions
     original = session.store.commit
     monkeypatch.setattr(session.store, "commit", lambda _mutation: (_ for _ in ()).throw(OSError("disk failed")))
     with pytest.raises(OSError, match="disk failed"):
         session.claim_task("task")
     monkeypatch.setattr(session.store, "commit", original)
-    assert session.task("task").status == TaskStatus.PENDING
+    with pytest.raises(SessionFailedError):
+        session.task("task")
+    assert observer.task("task").status == TaskStatus.PENDING

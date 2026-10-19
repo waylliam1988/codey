@@ -170,7 +170,7 @@ class DurableUserQuestionStore:
             status = task.status
             if status == TaskStatus.WAITING:
                 status = TaskStatus.PENDING
-                state.update(attempt_token="", attempt_owner="")
+                state.update(attempt_token="", attempt_owner="", attempt_process_id=0)
             next_task = replace(task, revision=task.revision + 1, state=state, status=status)
             return DurableMutation(task.conversation_id, conversation_revision, entries=(entry,), task=next_task,
                                    expected_attempt_token=task.attempt_token)

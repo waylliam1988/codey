@@ -273,6 +273,10 @@ def test_restart_does_not_redispatch_running_task_with_cancel_intent(tmp_path: P
     first.close()
 
     restarted = DurableSession(SQLiteDurableStore(path))
+    # This test simulates a process restart inside one pytest process. The
+    # production recovery path protects live PIDs, so use explicit
+    # administrative recovery for the simulated crash boundary.
+    restarted.recover_scheduler_state(force=True)
     dispatched: list[str] = []
     scheduler = DurableTaskScheduler(
         restarted, lambda task: dispatched.append(task.task_id) or True, retry_interval=0.01

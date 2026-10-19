@@ -34,7 +34,7 @@ def test_old_worker_cannot_settle_after_restart_reclaims_attempt() -> None:
     )
 
     restarted = DurableSession(store)
-    restarted.recover_scheduler_state()
+    restarted.recover_scheduler_state(force=True)
     restarted.claim_task("task")
     assert restarted.task("task").attempt_token != old_attempt
 
