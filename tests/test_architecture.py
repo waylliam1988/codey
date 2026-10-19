@@ -2307,9 +2307,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # these entry points together makes the owner visible; extracting
             # them into generic repositories would increase call-chain size.
             "durable/session.py",
-            # SQLite schema/query mapping is one cohesive durable store; the
-            # cold-start schema contract keeps it as a single owner.
-            "durable/sqlite.py",
             # Task loop owns the complete admission/turn/finalization flow.
             "operations/task_loop.py",
             "toolchain/runtime.py",
@@ -2369,7 +2366,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # DurableSession owner; keep a measured ceiling until a semantic
             # split can move a whole owner without adding repositories.
             "durable/session.py": 2140,
-            "durable/sqlite.py": 1200,
             "operations/task_loop.py": 1100,
             # LF/CRLF line-boundary note (was a one-line overclaim).
             # PLR split 2026-09-26: 1381 lines after search_files scan split.

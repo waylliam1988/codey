@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-import uuid
 from collections.abc import Mapping
 from contextlib import closing
 from datetime import UTC, datetime
@@ -40,7 +39,14 @@ from codey.durable.model import (
     valid_task_status_transition,
     valid_task_transition,
 )
-from codey.durable.schema import MIGRATIONS, SCHEMA_VERSION, validate_schema
+from codey.durable.sqlite_records import (
+    artifact_from_row,
+    effect_from_row,
+    entry_from_row,
+    submission_from_row,
+    task_from_row,
+)
+from codey.durable.sqlite_schema import initialize_database
 from codey.durable.timeline import (
     TaskTransition,
     execution_payload,
@@ -55,7 +61,7 @@ class SQLiteDurableStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize()
+        self._database_id = initialize_database(self._connect)
 
     def _connect(self) -> sqlite3.Connection:
         database = sqlite3.connect(self.path, isolation_level=None, timeout=30)
@@ -67,88 +73,6 @@ class SQLiteDurableStore:
     @property
     def database_id(self) -> str:
         return self._database_id
-
-    def _initialize(self) -> None:
-        with closing(self._connect()) as database:
-            user_version = int(database.execute("PRAGMA user_version").fetchone()[0])
-            if user_version > SCHEMA_VERSION:
-                raise SchemaVersionError("durable database uses a newer schema")
-            database.execute("PRAGMA journal_mode=WAL")
-            database.execute("BEGIN IMMEDIATE")
-            try:
-                tables = {
-                    str(row["name"])
-                    for row in database.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-                    ).fetchall()
-                }
-                if "schema_migrations" not in tables:
-                    if tables:
-                        raise SchemaVersionError(
-                            "durable database has tables but no schema migration marker"
-                        )
-                    database.execute(
-                        "CREATE TABLE schema_migrations "
-                        "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL) STRICT"
-                    )
-                    fresh = True
-                    applied: tuple[int, ...] = ()
-                else:
-                    rows = database.execute(
-                        "SELECT version FROM schema_migrations ORDER BY version"
-                    ).fetchall()
-                    applied = tuple(int(row["version"]) for row in rows)
-                    if not applied:
-                        raise SchemaVersionError(
-                            "durable database has an empty schema migration marker"
-                        )
-                    fresh = False
-                if not fresh:
-                    if applied != (SCHEMA_VERSION,) or user_version != SCHEMA_VERSION:
-                        raise SchemaVersionError(
-                            "durable database is not the current cold-start schema"
-                        )
-                    try:
-                        marker = database.execute(
-                            "SELECT value FROM schema_metadata WHERE key='durable_schema'"
-                        ).fetchone()
-                    except sqlite3.OperationalError as exc:
-                        raise SchemaVersionError(
-                            "durable database is missing the current schema marker"
-                        ) from exc
-                    if marker is None or str(marker["value"]) != str(SCHEMA_VERSION):
-                        raise SchemaVersionError(
-                            "durable database is missing the current schema marker"
-                        )
-                    validate_schema(database)
-                else:
-                    for version, statements in MIGRATIONS:
-                        if version != SCHEMA_VERSION:
-                            raise SchemaVersionError("durable migration table is incomplete")
-                        for statement in statements:
-                            database.execute(statement)
-                        database.execute(
-                            "INSERT INTO schema_migrations(version, applied_at) VALUES(?,?)",
-                            (version, datetime.now(UTC).isoformat()),
-                        )
-                    database.execute(
-                        "INSERT INTO schema_metadata(key, value) VALUES('durable_schema', ?)",
-                        (str(SCHEMA_VERSION),),
-                    )
-                    database.execute(
-                        "INSERT INTO schema_metadata(key, value) VALUES('database_id', ?)",
-                        (f"database-{uuid.uuid4().hex}",),
-                    )
-                identity = database.execute("SELECT value FROM schema_metadata WHERE key='database_id'").fetchone()
-                if identity is None or not str(identity["value"]).startswith("database-"):
-                    raise SchemaVersionError("durable database identity is missing or invalid")
-                self._database_id = str(identity["value"])
-                database.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-                database.execute("COMMIT")
-            except BaseException:
-                if database.in_transaction:
-                    database.execute("ROLLBACK")
-                raise
 
     def create_conversation(self, conversation_id: str, *, parent_conversation_id: str | None = None, parent_entry_id: str | None = None) -> None:
         if not conversation_id:
@@ -392,36 +316,14 @@ class SQLiteDurableStore:
             row = database.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row is None:
                 raise KeyError(f"unknown task: {task_id}")
-            return TaskCheckpoint(
-                task_id=str(row["id"]),
-                conversation_id=str(row["conversation_id"]),
-                submission_id=str(row["submission_id"]),
-                phase=str(row["phase"]),
-                revision=int(row["revision"]),
-                provider_snapshot=json.loads(row["provider_snapshot"]),
-                state=json.loads(row["state"]),
-                current_turn_id=row["current_turn_id"],
-                pending_effect_id=row["pending_effect_id"],
-                status=str(row["status"]),
-                schema_version=int(row["schema_version"]),
-            )
+            return task_from_row(row)
 
     def effect(self, effect_id: str) -> EffectRecord:
         with closing(self._connect()) as database:
             row = database.execute("SELECT * FROM effects WHERE id=?", (effect_id,)).fetchone()
             if row is None:
                 raise KeyError(f"unknown effect: {effect_id}")
-            settlement = row["settlement"]
-            return EffectRecord(
-                effect_id=str(row["id"]),
-                task_id=str(row["task_id"]),
-                category=str(row["category"]),
-                replay_class=str(row["replay_class"]),
-                args_digest=str(row["args_digest"]),
-                status=str(row["status"]),
-                intent=json.loads(row["intent"]),
-                settlement=None if settlement is None else json.loads(settlement),
-            )
+            return effect_from_row(row)
 
     def approval(self, approval_id: str) -> ApprovalRecord:
         with closing(self._connect()) as database:
@@ -443,56 +345,31 @@ class SQLiteDurableStore:
                 "FROM effects WHERE task_id=? ORDER BY rowid",
                 (task_id,),
             ).fetchall()
-            return tuple(
-                EffectRecord(
-                    effect_id=str(row["id"]),
-                    task_id=str(row["task_id"]),
-                    category=str(row["category"]),
-                    replay_class=str(row["replay_class"]),
-                    args_digest=str(row["args_digest"]),
-                    status=str(row["status"]),
-                    intent=json.loads(row["intent"]),
-                    settlement=None if row["settlement"] is None else json.loads(row["settlement"]),
-                )
-                for row in rows
-            )
+            return tuple(effect_from_row(row) for row in rows)
 
     def artifact(self, handle: str) -> ArtifactRecord:
         with closing(self._connect()) as database:
             row = database.execute("SELECT * FROM artifacts WHERE handle=?", (handle,)).fetchone()
             if row is None:
                 raise KeyError(f"unknown artifact: {handle}")
-            return _artifact_from_row(row)
+            return artifact_from_row(row)
 
     def artifacts_for_task(self, task_id: str) -> tuple[ArtifactRecord, ...]:
         with closing(self._connect()) as database:
             rows = database.execute("SELECT * FROM artifacts WHERE owner_task_id=? ORDER BY handle", (task_id,)).fetchall()
-            return tuple(_artifact_from_row(row) for row in rows)
+            return tuple(artifact_from_row(row) for row in rows)
 
     def artifacts_for_effect(self, effect_id: str) -> tuple[ArtifactRecord, ...]:
         with closing(self._connect()) as database:
             rows = database.execute("SELECT * FROM artifacts WHERE owner_effect_id=? ORDER BY handle", (effect_id,)).fetchall()
-            return tuple(_artifact_from_row(row) for row in rows)
+            return tuple(artifact_from_row(row) for row in rows)
 
     def submission(self, submission_id: str) -> SubmissionRecord:
         with closing(self._connect()) as database:
             row = database.execute("SELECT * FROM submissions WHERE id=?", (submission_id,)).fetchone()
             if row is None:
                 raise KeyError(f"unknown submission: {submission_id}")
-            detail = row["detail"]
-            return SubmissionRecord(
-                submission_id=str(row["id"]),
-                conversation_id=str(row["conversation_id"]),
-                request_id=str(row["request_id"]),
-                status=SubmissionStatus(str(row["status"])),
-                input_entry_id=None if row["entry_id"] is None else str(row["entry_id"]),
-                answer_entry_id=row["answer_entry_id"],
-                reason=row["reason"],
-                detail=None if detail is None else json.loads(detail),
-                placement=SubmissionPlacement(str(row["placement"])),
-                mode=str(row["mode"]),
-                content=json.loads(str(row["content"])),
-            )
+            return submission_from_row(row)
 
     def queued_submissions(self, conversation_id: str | None = None) -> tuple[SubmissionRecord, ...]:
         with closing(self._connect()) as database:
@@ -507,22 +384,7 @@ class SQLiteDurableStore:
                     "ORDER BY commit_seq, id",
                     (conversation_id, SubmissionStatus.QUEUED.value, SubmissionPlacement.QUEUED.value),
                 ).fetchall()
-            return tuple(
-                SubmissionRecord(
-                    submission_id=str(row["id"]),
-                    conversation_id=str(row["conversation_id"]),
-                    request_id=str(row["request_id"]),
-                    status=SubmissionStatus(str(row["status"])),
-                    input_entry_id=None if row["entry_id"] is None else str(row["entry_id"]),
-                    answer_entry_id=row["answer_entry_id"],
-                    reason=row["reason"],
-                    detail=None if row["detail"] is None else json.loads(str(row["detail"])),
-                    placement=SubmissionPlacement(str(row["placement"])),
-                    mode=str(row["mode"]),
-                    content=json.loads(str(row["content"])),
-                )
-                for row in rows
-            )
+            return tuple(submission_from_row(row) for row in rows)
 
     def submission_result_for_request(
         self, conversation_id: str, request_id: str, fingerprint: str,
@@ -543,22 +405,7 @@ class SQLiteDurableStore:
             rows = database.execute(
                 "SELECT * FROM tasks WHERE status NOT IN ('completed','failed','cancelled') ORDER BY rowid"
             ).fetchall()
-            return tuple(
-                TaskCheckpoint(
-                    task_id=str(row["id"]),
-                    conversation_id=str(row["conversation_id"]),
-                    submission_id=str(row["submission_id"]),
-                    phase=str(row["phase"]),
-                    revision=int(row["revision"]),
-                    provider_snapshot=json.loads(row["provider_snapshot"]),
-                    state=json.loads(row["state"]),
-                    current_turn_id=row["current_turn_id"],
-                    pending_effect_id=row["pending_effect_id"],
-                    status=str(row["status"]),
-                    schema_version=int(row["schema_version"]),
-                )
-                for row in rows
-            )
+            return tuple(task_from_row(row) for row in rows)
 
     def finalization_queue(self) -> tuple[str, ...]:
         with closing(self._connect()) as database:
@@ -570,22 +417,7 @@ class SQLiteDurableStore:
     def tasks(self) -> tuple[TaskCheckpoint, ...]:
         with closing(self._connect()) as database:
             rows = database.execute("SELECT * FROM tasks ORDER BY rowid").fetchall()
-            return tuple(
-                TaskCheckpoint(
-                    task_id=str(row["id"]),
-                    conversation_id=str(row["conversation_id"]),
-                    submission_id=str(row["submission_id"]),
-                    phase=str(row["phase"]),
-                    revision=int(row["revision"]),
-                    provider_snapshot=json.loads(row["provider_snapshot"]),
-                    state=json.loads(row["state"]),
-                    current_turn_id=row["current_turn_id"],
-                    pending_effect_id=row["pending_effect_id"],
-                    status=str(row["status"]),
-                    schema_version=int(row["schema_version"]),
-                )
-                for row in rows
-            )
+            return tuple(task_from_row(row) for row in rows)
 
     def waiting_dependents(self, task_id: str) -> tuple[TaskCheckpoint, ...]:
         with closing(self._connect()) as database:
@@ -595,22 +427,7 @@ class SQLiteDurableStore:
                 "WHERE task_waiters.waited_task_id=? ORDER BY tasks.rowid",
                 (task_id,),
             ).fetchall()
-            return tuple(
-                TaskCheckpoint(
-                    task_id=str(row["id"]),
-                    conversation_id=str(row["conversation_id"]),
-                    submission_id=str(row["submission_id"]),
-                    phase=str(row["phase"]),
-                    revision=int(row["revision"]),
-                    provider_snapshot=json.loads(row["provider_snapshot"]),
-                    state=json.loads(row["state"]),
-                    current_turn_id=row["current_turn_id"],
-                    pending_effect_id=row["pending_effect_id"],
-                    status=str(row["status"]),
-                    schema_version=int(row["schema_version"]),
-                )
-                for row in rows
-            )
+            return tuple(task_from_row(row) for row in rows)
 
     def owned_dependents(self, task_id: str) -> tuple[TaskCheckpoint, ...]:
         with closing(self._connect()) as database:
@@ -620,22 +437,7 @@ class SQLiteDurableStore:
                 "WHERE task_owners.owner_task_id=? ORDER BY tasks.rowid",
                 (task_id,),
             ).fetchall()
-            return tuple(
-                TaskCheckpoint(
-                    task_id=str(row["id"]),
-                    conversation_id=str(row["conversation_id"]),
-                    submission_id=str(row["submission_id"]),
-                    phase=str(row["phase"]),
-                    revision=int(row["revision"]),
-                    provider_snapshot=json.loads(row["provider_snapshot"]),
-                    state=json.loads(row["state"]),
-                    current_turn_id=row["current_turn_id"],
-                    pending_effect_id=row["pending_effect_id"],
-                    status=str(row["status"]),
-                    schema_version=int(row["schema_version"]),
-                )
-                for row in rows
-            )
+            return tuple(task_from_row(row) for row in rows)
 
     def acquire_scheduler_owner(self, owner_id: str, process_id: int) -> None:
         if not owner_id or type(process_id) is not int or process_id <= 0:
@@ -734,11 +536,7 @@ def _entries(database: sqlite3.Connection, conversation_id: str) -> tuple[EntryD
     ).fetchall()
     if not rows and database.execute("SELECT 1 FROM conversations WHERE id=?", (conversation_id,)).fetchone() is None:
         raise KeyError(f"unknown conversation: {conversation_id}")
-    return tuple(
-        EntryDraft(str(row["id"]), str(row["conversation_id"]), row["parent_id"], str(row["kind"]),
-                   json.loads(row["payload"]), int(row["commit_seq"]), row["by_task_id"])
-        for row in rows
-    )
+    return tuple(entry_from_row(row) for row in rows)
 
 
 def _conversation_parent(database: sqlite3.Connection, conversation_id: str) -> tuple[str | None, str | None]:
@@ -1110,19 +908,6 @@ def _write_artifacts(database: sqlite3.Connection, artifacts: tuple[ArtifactReco
             (artifact.handle, artifact.sha256, artifact.byte_count, artifact.storage_path,
              artifact.owner_task_id, artifact.owner_effect_id, artifact.created_at, _encode(artifact.metadata)),
         )
-
-
-def _artifact_from_row(row: sqlite3.Row) -> ArtifactRecord:
-    return ArtifactRecord(
-        handle=str(row["handle"]),
-        sha256=str(row["sha256"]),
-        byte_count=int(row["byte_count"]),
-        storage_path=str(row["storage_path"]),
-        owner_task_id=None if row["owner_task_id"] is None else str(row["owner_task_id"]),
-        owner_effect_id=None if row["owner_effect_id"] is None else str(row["owner_effect_id"]),
-        created_at=str(row["created_at"]),
-        metadata=json.loads(str(row["metadata"])),
-    )
 
 
 def _write_submission_update(

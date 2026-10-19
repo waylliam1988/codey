@@ -1553,4 +1553,39 @@ ruff：All checks passed
 SCHEMA_VERSION = 1
 ```
 
+## 46. 第四十二段：SQLite 持久化映射与 schema owner 拆分
+
+本段针对 `SQLiteDurableStore` 的实际职责边界做了拆分审查。它原先同时包含冷启动 schema、连接初始化、事务约束、查询编排和大量 row-to-model 解码；这些职责可以在不改变 mutation owner 的情况下分离。
+
+### 46.1 已完成
+
+- `codey/durable/sqlite_schema.py` 独立拥有 schema 1 的冷启动创建、严格校验、database identity 和 WAL 初始化；`SCHEMA_VERSION = 1`、拒绝旧/新 schema、无删除数据库和无 fallback 语义保持不变；
+- `codey/durable/sqlite_records.py` 独立拥有 SQLite row 到 `TaskCheckpoint`、`EffectRecord`、`SubmissionRecord`、`ArtifactRecord` 和 `EntryDraft` 的解码；重复的 JSON/enum 映射从 SQL 事务代码中移除；
+- `SQLiteDurableStore` 现在集中表达连接、事务、CAS、约束、索引查询和写入顺序，文件从约 1160 行降到约 945 行；
+- 新增 row mapping contract test，并保留 schema、store、cold-start 和 architecture guard 测试；
+- `DurableSession` 本段没有硬拆。它仍是唯一的 mutation line、attempt fencing、scheduler reconcile、effect settlement 和 close/failure owner；拆成通用 repository 或 mixin 会分散锁和 recovery 语义，增加调用链而不减少事实 owner。
+
+### 46.2 与 Pi 的结果
+
+Codey 现在在 SQLite 的 schema 生命周期、持久化映射和事务编排边界上比之前更容易审计，且 durable store 已不再因为行数超过 1000 而隐藏多个职责。相对 Pi，Codey 仍保留更强的权限/审批、provider snapshot、effect fail-closed、completion proof 和 Research 证据边界。
+
+仍待量化的部分：
+
+- `DurableSession` 仍约 2100 行，但当前职责是单一 durable mutation owner；需要找到能整体移动 scheduler/recovery owner 的边界后再拆，不能只为降低行数拆分；
+- AppContext 已有 runtime adapter 和生命周期边界，本段没有再增加 facade；
+- 长时间并发 soak/chaos、CodeMode 写沙箱与跨执行 `store/load`、全量 pytest 仍未完成。
+
+### 46.3 本段验证
+
+```text
+SQLite row mapping contract：1 passed
+schema/store/cold-start contracts：50 passed
+architecture long-file guard：1 passed
+mypy：Success: no issues found
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
 
