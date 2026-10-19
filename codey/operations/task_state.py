@@ -38,7 +38,6 @@ if TYPE_CHECKING:
     from codey.runs.trace import RunTraceStore
     from codey.runs.work_checkpoint import WorkCheckpointStore
     from codey.runtime.effects.effect_records import RuntimeEffectStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.execution_output_store import ExecutionOutputStore
     from codey.storage.managed_outputs import ManagedOutputStore
@@ -75,7 +74,6 @@ class TaskState(Protocol):
     run_registry: RunRegistry
     providers: ProviderRegistry
     approvals: ApprovalRegistry
-    runtime_log: RuntimeSessionLog
     runtime_mutations: RuntimeMutationLine
 
     def reserve_run(

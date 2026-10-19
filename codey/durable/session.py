@@ -34,6 +34,7 @@ from codey.durable.model import (
 from codey.durable.reducer import with_effect_intents, with_effect_settlement
 from codey.durable.store import DurableStore
 from codey.durable.timeline import TaskSnapshot, TaskTransition, snapshot_at
+from codey.durable.workflow import WorkflowDefinition, workflow_digest
 
 logger = logging.getLogger(__name__)
 
@@ -306,12 +307,62 @@ class DurableSession:
         task_state: Mapping[str, object] | None = None,
         initial_phase: str = "accepted",
         tool_results: tuple[Mapping[str, object], ...] = (),
+        owner_task_id: str | None = None,
+        abandon_on_restart: bool = False,
+        workflow_name: str | None = None,
+        workflow_version: int = 1,
+        workflow_input: Mapping[str, object] | None = None,
+        workflow_checkpoint: Mapping[str, object] | None = None,
+        workflow_replay_contract: str = "deterministic-v1",
     ) -> CommitResult:
         return admission.admit_input(
             self, conversation_id=conversation_id, request_id=request_id, task_id=task_id,
             text=text, provider_snapshot=provider_snapshot, task_state=task_state,
             initial_phase=initial_phase, tool_results=tool_results,
+            owner_task_id=owner_task_id, abandon_on_restart=abandon_on_restart,
+            workflow_name=workflow_name, workflow_version=workflow_version,
+            workflow_input=workflow_input, workflow_checkpoint=workflow_checkpoint,
+            workflow_replay_contract=workflow_replay_contract,
         )
+
+    @_mutation_line
+    def reconcile_workflows(self, definitions: Mapping[str, WorkflowDefinition]) -> tuple[str, ...]:
+        """Apply explicit pure migrations; incompatible definitions stay blocked."""
+        changed: list[str] = []
+        for task in self.store.tasks():
+            name = task.workflow_name
+            if name is None:
+                continue
+            definition = definitions.get(name)
+            if definition is None:
+                continue
+            if task.workflow_version > definition.version:
+                continue
+            if task.workflow_version == definition.version:
+                continue
+            try:
+                checkpoint = definition.migrate_checkpoint(task.workflow_checkpoint, task.workflow_version)
+            except ValueError:
+                continue
+            state = {
+                **dict(task.state),
+                "workflow_version": definition.version,
+                "workflow_checkpoint": checkpoint,
+                "workflow_replay_contract": definition.replay_contract,
+                "workflow_replay_digest": workflow_digest(
+                    definition.name, definition.version, task.workflow_input, checkpoint,
+                ),
+                "workflow_blocked_reason": None,
+            }
+            _head, revision = self.store.head(task.conversation_id)
+            self._commit(DurableMutation(
+                task.conversation_id,
+                revision,
+                task=replace(task, revision=task.revision + 1, state=state),
+                expected_attempt_token=task.attempt_token,
+            ))
+            changed.append(task.task_id)
+        return tuple(changed)
 
     @_mutation_line
     def fork_task(
@@ -654,6 +705,20 @@ class DurableSession:
                     by_task_id=task_id,
                 ),
             )
+        merged_state = {
+            **dict(current.state), **state,
+            **{key: current.state[key] for key in (*EXECUTION_STATE_KEYS, "operation", "delivery_batches", "approvals")
+               if key in current.state},
+        }
+        if current.workflow_name is not None and isinstance(merged_state.get("workflow_checkpoint"), Mapping):
+            raw_version = merged_state.get("workflow_version")
+            version = raw_version if type(raw_version) is int else current.workflow_version
+            merged_state["workflow_replay_digest"] = workflow_digest(
+                current.workflow_name,
+                version,
+                current.workflow_input,
+                cast(Mapping[str, object], merged_state["workflow_checkpoint"]),
+            )
         next_task = TaskCheckpoint(
             task_id=current.task_id,
             conversation_id=current.conversation_id,
@@ -661,9 +726,7 @@ class DurableSession:
             phase=phase,
             revision=current.revision + 1,
             provider_snapshot=current.provider_snapshot,
-            state={**dict(current.state), **state,
-                   **{key: current.state[key] for key in (*EXECUTION_STATE_KEYS, "operation", "delivery_batches", "approvals")
-                      if key in current.state}},
+            state=merged_state,
             current_turn_id=current.current_turn_id,
             pending_effect_id=current.pending_effect_id,
             status=task_status if task_status is not None else task_status_for_phase(phase),
@@ -698,6 +761,31 @@ class DurableSession:
             submission_status=SubmissionStatus.RUNNING,
         )
 
+    def _owned_descendants(self, task_id: str) -> tuple[TaskCheckpoint, ...]:
+        """Return the durable ownership subtree, deepest children first."""
+        tasks = tuple(self.store.tasks())
+        children: dict[str, list[TaskCheckpoint]] = {}
+        for task in tasks:
+            if task.owner_task_id is not None:
+                children.setdefault(task.owner_task_id, []).append(task)
+        result: list[TaskCheckpoint] = []
+        seen: set[str] = set()
+
+        def visit(parent: str) -> None:
+            for child in children.get(parent, ()):
+                if child.task_id in seen:
+                    continue
+                seen.add(child.task_id)
+                visit(child.task_id)
+                result.append(child)
+
+        visit(task_id)
+        return tuple(result)
+
+    def _live_owned_descendants(self, task_id: str) -> tuple[TaskCheckpoint, ...]:
+        return tuple(task for task in self._owned_descendants(task_id)
+                     if task.status not in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED})
+
     @_mutation_line
     def request_cancel(
         self, task_id: str, *, reason: str = "cancelled",
@@ -723,7 +811,30 @@ class DurableSession:
         # validator because it is not a terminal cancellation transition.
         if current.state.get("cancel_requested") and not state_update:
             return CommitResult(current.revision, self.store.commit_sequence())
+
+        # Cancellation intent flows down the durable ownership tree. Running
+        # descendants receive a barrier first; queued descendants can be
+        # terminalized immediately. The owner itself is held until the tree
+        # drains, so a terminal owner always implies that its ordinary work
+        # has stopped.
+        for child in self._owned_descendants(task_id):
+            if child.status in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:
+                continue
+            if child.status == TaskStatus.RUNNING:
+                self.request_cancel(child.task_id, reason=reason)
+            else:
+                self.cancel_task(child.task_id, reason=reason)
+        current = self.store.task(task_id)
         state = {**dict(current.state), **dict(state_update or {}), "cancel_requested": True, "cancel_reason": reason}
+        if self._live_owned_descendants(task_id):
+            status = current.status if current.status in {TaskStatus.RUNNING, TaskStatus.COMPLETING} else TaskStatus.WAITING
+            _head, revision = self.store.head(current.conversation_id)
+            return self._commit(DurableMutation(
+                current.conversation_id,
+                revision,
+                task=replace(current, revision=current.revision + 1, state=state, status=status),
+                expected_attempt_token=current.attempt_token,
+            ))
         if current.status == TaskStatus.RUNNING:
             _head, revision = self.store.head(current.conversation_id)
             next_task = replace(current, revision=current.revision + 1, state=state)
@@ -741,7 +852,24 @@ class DurableSession:
             return CommitResult(current.revision, self.store.commit_sequence())
         if current.status in {TaskStatus.COMPLETED, TaskStatus.FAILED}:
             raise CommitConflict(f"terminal task cannot be cancelled: {current.status}")
+        for child in self._owned_descendants(task_id):
+            if child.status in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:
+                continue
+            if child.status == TaskStatus.RUNNING:
+                self.request_cancel(child.task_id, reason=reason)
+            else:
+                self.cancel_task(child.task_id, reason=reason)
+        current = self.store.task(task_id)
         state = {**dict(current.state), "cancel_requested": True, "cancel_reason": reason}
+        if self._live_owned_descendants(task_id):
+            _head, revision = self.store.head(current.conversation_id)
+            status = current.status if current.status in {TaskStatus.RUNNING, TaskStatus.COMPLETING} else TaskStatus.WAITING
+            return self._commit(DurableMutation(
+                current.conversation_id,
+                revision,
+                task=replace(current, revision=current.revision + 1, state=state, status=status),
+                expected_attempt_token=current.attempt_token,
+            ))
         return self._cancel_terminal(current, state=state, reason=reason)
 
     def _cancel_terminal(
@@ -812,6 +940,14 @@ class DurableSession:
             if task.status != TaskStatus.RUNNING:
                 continue
             try:
+                if task.state.get("abandon_on_restart") is True:
+                    self.fail_task(
+                        task.task_id,
+                        "abandoned on restart",
+                        state={"abort_reason": "restart"},
+                        expected_attempt_token=task.attempt_token,
+                    )
+                    continue
                 if task.state.get("cancel_requested"):
                     self._cancel_terminal(
                         task,
@@ -839,7 +975,14 @@ class DurableSession:
         return self._commit(DurableMutation(current.conversation_id, revision, task=next_task))
 
     @_mutation_line
-    def wait_task(self, task_id: str, *, state: Mapping[str, object] | None = None) -> CommitResult:
+    def wait_task(
+        self,
+        task_id: str,
+        *,
+        state: Mapping[str, object] | None = None,
+        on: tuple[str, ...] | None = None,
+        join_policy: str = "allSettled",
+    ) -> CommitResult:
         """Park a live task at its exact logical checkpoint.
 
         Waiting is scheduler ownership state, not a synthetic task phase.  It
@@ -856,6 +999,28 @@ class DurableSession:
                 current, state={**dict(current.state), **dict(state or {})},
                 reason=str(current.state.get("cancel_reason") or "cancelled"),
             )
+        if join_policy not in {"failFast", "allSettled"}:
+            raise ValueError("unknown task join policy")
+        dependencies = current.waiting_on if on is None else tuple(dict.fromkeys(on))
+        if task_id in dependencies:
+            raise CommitConflict("a task cannot wait on itself")
+        known = {task.task_id: task for task in self.store.tasks()}
+        for dependency in dependencies:
+            if dependency not in known:
+                raise CommitConflict(f"unknown waiting task: {dependency}")
+            cursor = known[dependency]
+            walked: set[str] = set()
+            while cursor.waiting_on:
+                if cursor.task_id in walked:
+                    break
+                walked.add(cursor.task_id)
+                if task_id in cursor.waiting_on:
+                    raise CommitConflict("task wait cycle")
+                next_id = cursor.waiting_on[0]
+                next_cursor = known.get(next_id)
+                if next_cursor is None:
+                    break
+                cursor = next_cursor
         question = current.state.get("question")
         answered = (state is not None and state.get("stop_reason") == "question"
                     and isinstance(question, Mapping) and question.get("state") == "answered")
@@ -863,7 +1028,11 @@ class DurableSession:
         next_task = replace(
             current,
             revision=current.revision + 1,
-            state={**dict(current.state), **dict(state or {}), "attempt_token": "", "attempt_owner": ""},
+            state={**dict(current.state), **dict(state or {}),
+                   "waiting_on": dependencies,
+                   "join_policy": join_policy,
+                   "join_wait": on is not None,
+                   "attempt_token": "", "attempt_owner": ""},
             status=TaskStatus.PENDING if answered else TaskStatus.WAITING,
         )
         return self._commit(
@@ -877,6 +1046,8 @@ class DurableSession:
 
     @_mutation_line
     def finish_task(self, task_id: str, answer: str, *, state: Mapping[str, object]) -> CommitResult:
+        if self._live_owned_descendants(task_id):
+            return self._hold_completion(task_id, answer, state)
         return self.advance_task(
             task_id=task_id,
             phase="completed",
@@ -889,6 +1060,8 @@ class DurableSession:
     def complete_task(self, task_id: str, answer: str, *, state: Mapping[str, object]) -> CommitResult:
         """Commit the terminal answer after making completion explicit."""
         current = self.store.task(task_id)
+        if self._live_owned_descendants(task_id):
+            return self._hold_completion(task_id, answer, state)
         if current.phase != "completion_pending":
             if current.phase in {"accepted", "dispatching"}:
                 self.start_task(task_id, state=state)
@@ -897,8 +1070,82 @@ class DurableSession:
                 self.advance_task(task_id=task_id, phase="completion_pending", state=state)
         return self.finish_task(task_id, answer, state=state)
 
+    def _hold_completion(self, task_id: str, answer: str, state: Mapping[str, object]) -> CommitResult:
+        current = self.store.task(task_id)
+        if current.phase in {"accepted", "dispatching"}:
+            self.start_task(task_id, state=state)
+            current = self.store.task(task_id)
+        if current.phase != "completion_pending":
+            self.advance_task(task_id=task_id, phase="completion_pending", state=state,
+                              task_status=TaskStatus.COMPLETING)
+            current = self.store.task(task_id)
+        return self.advance_task(
+            task_id=task_id,
+            phase="completion_pending",
+            state={**dict(state), "completion_answer": answer, "completion_state": dict(state)},
+            task_status=TaskStatus.COMPLETING,
+        )
+
     @_mutation_line
-    def fail_task(self, task_id: str, reason: str, *, state: Mapping[str, object]) -> CommitResult:
+    def reconcile_waiting_tasks(self) -> None:
+        """Reconcile durable joins without relying on scheduler memory."""
+        for task in self.store.tasks():
+            if task.status != TaskStatus.WAITING or task.state.get("cancel_requested"):
+                continue
+            if not task.waiting_on and task.state.get("join_wait") is not True:
+                continue
+            if not task.waiting_on:
+                self.advance_task(task_id=task.task_id, phase=task.phase, state={"waiting_on": []},
+                                  task_status=TaskStatus.PENDING)
+                continue
+            children = {candidate.task_id: candidate for candidate in self.store.tasks()}
+            missing = [task_id for task_id in task.waiting_on if task_id not in children]
+            if missing:
+                self.fail_task(task.task_id, "waiting task disappeared", state={"join_error": missing})
+                continue
+            joined = [children[task_id] for task_id in task.waiting_on]
+            if task.join_policy == "failFast" and any(child.status in {TaskStatus.FAILED, TaskStatus.CANCELLED} for child in joined):
+                failed = next(child for child in joined if child.status in {TaskStatus.FAILED, TaskStatus.CANCELLED})
+                child_reason = self.store.submission(failed.submission_id).reason
+                self.fail_task(
+                    task.task_id,
+                    child_reason or f"owned task {failed.task_id} did not complete",
+                    state={"join_failed_task": failed.task_id},
+                )
+                continue
+            if all(child.status in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED} for child in joined):
+                self.advance_task(task_id=task.task_id, phase=task.phase,
+                                  state={"waiting_on": [], "join_results": {
+                                      child.task_id: str(child.status) for child in joined}},
+                                  task_status=TaskStatus.PENDING)
+
+    @_mutation_line
+    def reconcile_finalization(self) -> None:
+        """Finish held outcomes and cancellation intents after owned work drains."""
+        self.reconcile_waiting_tasks()
+        for task in self.store.tasks():
+            if task.status not in {TaskStatus.COMPLETING, TaskStatus.WAITING}:
+                continue
+            if self._live_owned_descendants(task.task_id):
+                continue
+            if task.state.get("cancel_requested"):
+                self._cancel_terminal(task, state=dict(task.state), reason=str(task.state.get("cancel_reason") or "cancelled"))
+                continue
+            if task.status == TaskStatus.COMPLETING:
+                answer = task.state.get("completion_answer")
+                completion_state = task.state.get("completion_state", {})
+                if isinstance(answer, str) and isinstance(completion_state, Mapping):
+                    self.finish_task(task.task_id, answer, state=completion_state)
+
+    @_mutation_line
+    def fail_task(
+        self,
+        task_id: str,
+        reason: str,
+        *,
+        state: Mapping[str, object],
+        expected_attempt_token: str | None = None,
+    ) -> CommitResult:
         """Settle unknown effects and fail the task/submission in one commit."""
         current = self.store.task(task_id)
         _head, revision = self.store.head(current.conversation_id)
@@ -925,6 +1172,7 @@ class DurableSession:
                     submission.submission_id, current.conversation_id,
                     submission.status, SubmissionStatus.UNANSWERED, reason=reason,
                 ),
+                expected_attempt_token=expected_attempt_token,
             )
         )
 
@@ -1038,6 +1286,12 @@ class DurableSession:
         return conversation_ops.context(self, conversation_id, leaf_id=leaf_id)
 
     @_mutation_line
+    def context_at(
+        self, conversation_id: str, commit_seq: int, *, leaf_id: str | None = None,
+    ) -> tuple[EntryDraft, ...]:
+        return conversation_ops.context_at(self, conversation_id, commit_seq, leaf_id=leaf_id)
+
+    @_mutation_line
     def context_snapshot(
         self,
         conversation_id: str,
@@ -1050,6 +1304,21 @@ class DurableSession:
         return conversation_ops.context_snapshot(
             self, conversation_id, token_budget=token_budget, leaf_id=leaf_id,
             before_entry_id=before_entry_id, token_counter=token_counter,
+        )
+
+    @_mutation_line
+    def context_snapshot_at(
+        self,
+        conversation_id: str,
+        commit_seq: int,
+        *,
+        token_budget: int,
+        leaf_id: str | None = None,
+        token_counter: Callable[[tuple[Mapping[str, object], ...]], int] | None = None,
+    ) -> ContextSnapshot:
+        return conversation_ops.context_snapshot_at(
+            self, conversation_id, commit_seq, token_budget=token_budget,
+            leaf_id=leaf_id, token_counter=token_counter,
         )
 
     @_mutation_line

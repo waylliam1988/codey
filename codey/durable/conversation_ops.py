@@ -213,6 +213,49 @@ def context(session: Any, conversation_id: str, *, leaf_id: str | None = None) -
     )
 
 
+def context_at(
+    session: Any,
+    conversation_id: str,
+    commit_seq: int,
+    *,
+    leaf_id: str | None = None,
+) -> tuple[EntryDraft, ...]:
+    """Rebuild a conversation path using only facts committed by ``commit_seq``."""
+    if type(commit_seq) is not int or commit_seq < 0:
+        raise ValueError("historical commit sequence must be a non-negative integer")
+
+    def visible(scope: str) -> tuple[EntryDraft, ...]:
+        return tuple(entry for entry in session.store.entries(scope) if entry.commit_seq <= commit_seq)
+
+    local = visible(conversation_id)
+    if leaf_id is None:
+        leaf = local[-1].entry_id if local else session.store.conversation_parent(conversation_id)[1]
+    else:
+        leaf = leaf_id
+    return context_path(
+        conversation_id,
+        leaf,
+        entries=visible,
+        parent=session.store.conversation_parent,
+    )
+
+
+def context_snapshot_at(
+    session: Any,
+    conversation_id: str,
+    commit_seq: int,
+    *,
+    token_budget: int,
+    leaf_id: str | None = None,
+    token_counter: Callable[[tuple[Mapping[str, object], ...]], int] | None = None,
+) -> ContextSnapshot:
+    return build_context(
+        context_at(session, conversation_id, commit_seq, leaf_id=leaf_id),
+        token_budget=token_budget,
+        token_counter=token_counter,
+    )
+
+
 def context_snapshot(
     session: Any,
     conversation_id: str,
@@ -285,7 +328,7 @@ def _decode_history_cursor(value: str) -> tuple[str, str]:
 
 
 __all__ = [
-    "append_message", "branch", "context", "context_snapshot", "delete_conversation",
+    "append_message", "branch", "context", "context_at", "context_snapshot", "context_snapshot_at", "delete_conversation",
     "entries", "fork", "history_page", "latest_context_snapshot", "save_context_snapshot",
     "search_history",
 ]

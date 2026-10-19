@@ -6,6 +6,7 @@ from pathlib import Path
 
 from codey.durable import CommitConflict, DurableSession, SQLiteDurableStore, TaskStatus
 from codey.durable.scheduler import DurableTaskScheduler
+from codey.durable.workflow import WorkflowDefinition
 
 
 def _admit(session: DurableSession, task_id: str) -> None:
@@ -51,6 +52,70 @@ def test_scheduler_retries_durable_task_when_worker_queue_is_full(tmp_path: Path
         assert accepted.is_set()
         assert attempts[:2] == ["task-1", "task-1"]
         assert session.task("task-1").phase == "provider_prepared"
+    finally:
+        scheduler.close()
+        session.close()
+
+
+def test_scheduler_blocks_workflow_without_a_compatible_definition(tmp_path: Path) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    session.admit_input(
+        conversation_id="conversation-1",
+        request_id="request-1",
+        task_id="task-1",
+        text="workflow",
+        provider_snapshot={"provider_id": "local"},
+        workflow_name="counter",
+        workflow_version=2,
+        workflow_input={"limit": 3},
+        workflow_checkpoint={"value": 1},
+    )
+    dispatched: list[str] = []
+    scheduler = DurableTaskScheduler(
+        session,
+        lambda task: dispatched.append(task.task_id) or True,
+        workflows={"counter": WorkflowDefinition(name="counter", version=1)},
+    )
+    try:
+        scheduler._reconcile()
+        assert dispatched == []
+        assert session.task("task-1").status == TaskStatus.PENDING
+    finally:
+        scheduler.close()
+        session.close()
+
+
+def test_scheduler_migrates_workflow_before_dispatch(tmp_path: Path) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    session.admit_input(
+        conversation_id="conversation-1",
+        request_id="request-1",
+        task_id="task-1",
+        text="workflow",
+        provider_snapshot={"provider_id": "local"},
+        workflow_name="counter",
+        workflow_version=1,
+        workflow_input={"limit": 3},
+        workflow_checkpoint={"value": 1},
+    )
+    dispatched: list[str] = []
+    scheduler = DurableTaskScheduler(
+        session,
+        lambda task: dispatched.append(task.task_id) or True,
+        workflows={
+            "counter": WorkflowDefinition(
+                name="counter",
+                version=2,
+                migrate=lambda checkpoint: {**checkpoint, "migrated": True},
+            )
+        },
+    )
+    try:
+        scheduler._reconcile()
+        assert dispatched == ["task-1"]
+        task = session.task("task-1")
+        assert task.workflow_version == 2
+        assert task.workflow_checkpoint["migrated"] is True
     finally:
         scheduler.close()
         session.close()

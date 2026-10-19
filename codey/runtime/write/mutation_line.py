@@ -104,13 +104,17 @@ def _resolve_abandoned_delivery(
 
 class RuntimeMutationLine:
     """Single writer-facing API for runtime durable mutations."""
-    def __init__(self, session_log: RuntimeSessionLog, *, durable: Any | None = None) -> None:
+    def __init__(self, session_log: RuntimeSessionLog | None = None, *, durable: Any | None = None) -> None:
+        if session_log is None and durable is None:
+            raise ValueError("a runtime mutation line needs durable storage or a session log")
         self.session_log = session_log
         self.durable = durable
 
     def _mutate(self, session_id: str, run_id: str, mutation: Callable[..., Any], *,
                 messages: tuple[tuple[str, Mapping[str, object]], ...] = ()) -> None:
         if self.durable is None:
+            if self.session_log is None:
+                raise RuntimeError("runtime mutation line has no storage")
             self.session_log.mutate(session_id, mutation)
             return
         checkpoint = importlib.import_module("codey.durable.checkpoint")

@@ -19,6 +19,7 @@ from codey.durable.model import (
     TaskCheckpoint,
     thaw_json,
 )
+from codey.durable.workflow import workflow_digest
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
@@ -28,12 +29,36 @@ def admit_input(
     session: DurableSession, *, conversation_id: str, request_id: str, task_id: str,
     text: str, provider_snapshot: Mapping[str, object], task_state: Mapping[str, object] | None = None,
     initial_phase: str = "accepted", tool_results: tuple[Mapping[str, object], ...] = (),
+    owner_task_id: str | None = None,
+    abandon_on_restart: bool = False,
+    workflow_name: str | None = None,
+    workflow_version: int = 1,
+    workflow_input: Mapping[str, object] | None = None,
+    workflow_checkpoint: Mapping[str, object] | None = None,
+    workflow_replay_contract: str = "deterministic-v1",
     creation: CreateConversation | None = None,
 ) -> CommitResult:
     if not text.strip():
         raise ValueError("input text is required")
     if initial_phase not in {"accepted", "dispatching"}:
         raise ValueError("input admission phase must be accepted or dispatching")
+    if owner_task_id is not None:
+        if owner_task_id == task_id:
+            raise ValueError("a task cannot own itself")
+        try:
+            session.store.task(owner_task_id)
+        except KeyError as exc:
+            raise ValueError(f"owner task does not exist: {owner_task_id}") from exc
+    if type(abandon_on_restart) is not bool:
+        raise ValueError("abandon_on_restart must be boolean")
+    if workflow_name is not None and not workflow_name:
+        raise ValueError("workflow name is required")
+    if type(workflow_version) is not int or workflow_version < 1:
+        raise ValueError("workflow version must be a positive integer")
+    if not workflow_replay_contract:
+        raise ValueError("workflow replay contract is required")
+    workflow_input = dict(workflow_input or {})
+    workflow_checkpoint = dict(workflow_checkpoint or {})
     if session.store.has_conversation(conversation_id):
         head, revision = session.store.head(conversation_id)
     else:
@@ -44,6 +69,13 @@ def admit_input(
         "provider_snapshot": provider_snapshot,
         "tool_results": tuple(dict(result) for result in tool_results),
         "workflow_origin": (task_state or {}).get("workflow_origin"),
+        "owner_task_id": owner_task_id,
+        "abandon_on_restart": abandon_on_restart,
+        "workflow_name": workflow_name,
+        "workflow_version": workflow_version,
+        "workflow_input": workflow_input,
+        "workflow_checkpoint": workflow_checkpoint,
+        "workflow_replay_contract": workflow_replay_contract,
     })
     # Check idempotency before deriving any branch entries.  A retry of a
     # continuation must return the original commit without trying to
@@ -82,6 +114,23 @@ def admit_input(
         entry=entry,
         fingerprint=fingerprint,
     )
+    state = {
+        **dict(task_state or {}),
+        "input_entry_id": entry.entry_id,
+        "owner_task_id": owner_task_id,
+        "abandon_on_restart": abandon_on_restart,
+    }
+    if workflow_name is not None:
+        state.update({
+            "workflow_name": workflow_name,
+            "workflow_version": workflow_version,
+            "workflow_input": workflow_input,
+            "workflow_checkpoint": workflow_checkpoint,
+            "workflow_replay_contract": workflow_replay_contract,
+            "workflow_replay_digest": workflow_digest(
+                workflow_name, workflow_version, workflow_input, workflow_checkpoint,
+            ),
+        })
     task = TaskCheckpoint(
         task_id=task_id,
         conversation_id=conversation_id,
@@ -89,7 +138,7 @@ def admit_input(
         phase=initial_phase,
         revision=0,
         provider_snapshot=provider_snapshot,
-        state={"input_entry_id": entry.entry_id, **dict(task_state or {})},
+        state=state,
     )
     return session._commit(
         DurableMutation(

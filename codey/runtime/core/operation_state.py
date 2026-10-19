@@ -575,7 +575,9 @@ def _parse_operation_terminal(
 class RuntimeOperationStore:
     """Read projection for one run's durable operation state."""
 
-    def __init__(self, session_log: RuntimeSessionLog, *, durable: Any | None = None) -> None:
+    def __init__(self, session_log: RuntimeSessionLog | None = None, *, durable: Any | None = None) -> None:
+        if session_log is None and durable is None:
+            raise ValueError("an operation store needs durable storage or a session log")
         self.session_log = session_log
         self.durable = durable
 
@@ -590,6 +592,8 @@ class RuntimeOperationStore:
         # Missing log -> None (entries() is empty). Corrupt log must raise
         # RuntimeOperationTransitionError so callers fail closed instead of
         # silently starting a fresh operation and replaying settled effects.
+        if self.session_log is None:
+            raise RuntimeError("operation store has no storage")
         return operation_state_from_entries(
             self.session_log.entries(session_id),
             session_id=session_id,

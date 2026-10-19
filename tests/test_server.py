@@ -3180,7 +3180,7 @@ class RunSnapshotTests(unittest.TestCase):
 
         state = server.AppContext()
         self.assertIsInstance(state.runtime_operations, RuntimeOperationStore)
-        self.assertIsNotNone(state.runtime_log)
+        self.assertFalse(hasattr(state, "runtime_log"))
         self.assertIsNone(state.ghost_inbox)
 
     def test_state_home_lazily_constructs_ghost_stores(self) -> None:

@@ -636,6 +636,27 @@ def _validate_task(
         raise CommitConflict("new task must start at revision zero")
     if row is None and not valid_task_transition(None, task.phase):
         raise CommitConflict("new task must start in accepted or dispatching phase")
+    owner_task_id = task.owner_task_id
+    if owner_task_id is not None:
+        if owner_task_id == task.task_id:
+            raise CommitConflict("a task cannot own itself")
+        owner = database.execute("SELECT id FROM tasks WHERE id=?", (owner_task_id,)).fetchone()
+        if owner is None:
+            raise CommitConflict("owner task does not exist")
+        seen: set[str] = {task.task_id}
+        cursor = owner_task_id
+        while cursor not in seen:
+            seen.add(cursor)
+            parent = database.execute("SELECT state FROM tasks WHERE id=?", (cursor,)).fetchone()
+            if parent is None:
+                break
+            raw = json.loads(parent["state"])
+            next_owner = raw.get("owner_task_id") if isinstance(raw, dict) else None
+            if not isinstance(next_owner, str) or not next_owner:
+                break
+            cursor = next_owner
+        if cursor in seen and cursor == task.task_id:
+            raise CommitConflict("task ownership cycle")
     if row is not None:
         previous_state = json.loads(row["state"])
         if previous_state.get("cancel_requested") and task.phase not in {"cancelled", "failed"}:

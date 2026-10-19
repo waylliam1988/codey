@@ -9,12 +9,13 @@ eligible for retry; the logical phase is never replaced by a synthetic task.
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 
 from codey.durable.errors import CommitConflict
 from codey.durable.model import TaskCheckpoint, TaskStatus
 from codey.durable.session import DurableSession
+from codey.durable.workflow import WorkflowDefinition
 
 
 class DurableTaskScheduler:
@@ -24,10 +25,12 @@ class DurableTaskScheduler:
         dispatch: Callable[[TaskCheckpoint], bool],
         *,
         retry_interval: float = 0.25,
+        workflows: Mapping[str, WorkflowDefinition] | None = None,
     ) -> None:
         self._session = session
         self._dispatch = dispatch
         self._retry_interval = max(0.01, float(retry_interval))
+        self._workflows = dict(workflows or {})
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._closed = threading.Event()
@@ -48,6 +51,7 @@ class DurableTaskScheduler:
         if not self._recovered:
             self._session.recover_scheduler_state()
             self._recovered = True
+        self._session.reconcile_finalization()
         self.notify()
         self._ensure_thread()
 
@@ -129,6 +133,9 @@ class DurableTaskScheduler:
             self._thread.start()
 
     def _reconcile(self) -> None:
+        if self._workflows:
+            self._session.reconcile_workflows(self._workflows)
+        self._session.reconcile_finalization()
         self.notify(start=False)
         with self._lock:
             candidates = tuple(sorted(self._pending - self._inflight - self._scheduled))
@@ -139,6 +146,12 @@ class DurableTaskScheduler:
                 self._inflight.add(task_id)
             try:
                 task = self._session.task(task_id)
+                if not self._workflow_ready(task):
+                    # A missing, newer, or migration-incompatible workflow is
+                    # durably inspectable but must never be handed to a
+                    # worker that cannot interpret its checkpoint.
+                    self._remove(task_id)
+                    continue
                 if task.state.get("cancel_requested"):
                     self._session.cancel_task(
                         task_id,
@@ -191,6 +204,25 @@ class DurableTaskScheduler:
     def _remove(self, task_id: str) -> None:
         with self._lock:
             self._pending.discard(task_id)
+
+    def _workflow_ready(self, task: TaskCheckpoint) -> bool:
+        name = task.workflow_name
+        if name is None:
+            return True
+        definition = self._workflows.get(name)
+        if definition is None or task.workflow_version != definition.version:
+            return False
+        contract = task.state.get("workflow_replay_contract", "deterministic-v1")
+        if contract != definition.replay_contract:
+            return False
+        from codey.durable.workflow import workflow_digest
+
+        return task.replay_digest == workflow_digest(
+            definition.name,
+            definition.version,
+            task.workflow_input,
+            task.workflow_checkpoint,
+        )
 
 
 __all__ = ["DurableTaskScheduler"]

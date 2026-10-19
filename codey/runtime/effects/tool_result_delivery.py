@@ -1135,7 +1135,9 @@ def _build_delivery_projections(
 class ToolResultDeliveryStore:
     """Read projection for tool-result delivery receipts."""
 
-    def __init__(self, session_log: RuntimeSessionLog, *, durable: Any = None) -> None:
+    def __init__(self, session_log: RuntimeSessionLog | None = None, *, durable: Any = None) -> None:
+        if session_log is None and durable is None:
+            raise ValueError("a delivery store needs durable storage or a session log")
         self._session_log = session_log
         self.durable = durable
 
@@ -1148,10 +1150,12 @@ class ToolResultDeliveryStore:
             except KeyError:
                 return ()
             return checkpoint_entries(task, effects, session_id=session_id)
+        if self._session_log is None:
+            raise RuntimeError("delivery store has no storage")
         return self._session_log.entries(session_id)
 
     @property
-    def session_log(self) -> RuntimeSessionLog:
+    def session_log(self) -> RuntimeSessionLog | None:
         return self._session_log
 
     def _iter_validated_delivery_records(

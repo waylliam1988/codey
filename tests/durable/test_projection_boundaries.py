@@ -40,3 +40,27 @@ def test_history_routes_read_durable_context(tmp_path: Path) -> None:
         assert [hit["entry_id"] for hit in result["hits"]] == [page["items"][1]["id"]]
     finally:
         assert state.close()
+
+
+def test_durable_app_context_has_no_runtime_jsonl_fact_source(tmp_path: Path) -> None:
+    state = AppContext(tmp_path / "state", start_scheduler=False)
+    try:
+        assert not hasattr(state, "runtime_log")
+        state.durable.admit_input(
+            conversation_id="conversation-1",
+            request_id="request-1",
+            task_id="task-1",
+            text="hello",
+            provider_snapshot={"provider_id": "local"},
+        )
+        state.runtime_mutations.accept_operation(
+            session_id="conversation-1",
+            run_id="task-1",
+            provider_id="local",
+            turn_budget=1,
+            max_repair_rounds=0,
+        )
+        assert not (tmp_path / "state" / "runtime").exists()
+        assert state.runtime_operations.load("conversation-1", "task-1") is not None
+    finally:
+        assert state.close()

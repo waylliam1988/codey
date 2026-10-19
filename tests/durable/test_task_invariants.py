@@ -40,7 +40,7 @@ def test_scheduler_status_transition_matrix_is_explicit() -> None:
     assert valid_task_status_transition(TaskStatus.RUNNING, TaskStatus.COMPLETING)
     assert valid_task_status_transition(TaskStatus.COMPLETING, TaskStatus.COMPLETED)
 
-    assert not valid_task_status_transition(TaskStatus.PENDING, TaskStatus.WAITING)
+    assert valid_task_status_transition(TaskStatus.PENDING, TaskStatus.WAITING)
     assert not valid_task_status_transition(TaskStatus.WAITING, TaskStatus.COMPLETING)
     assert not valid_task_status_transition(TaskStatus.COMPLETING, TaskStatus.RUNNING)
     assert not valid_task_status_transition(TaskStatus.COMPLETED, TaskStatus.RUNNING)

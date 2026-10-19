@@ -59,12 +59,54 @@ FROZEN_TASK_STATE_KEYS = (
     "task_policy",
     "reviewer_selection",
     "workflow_origin",
+    # Ownership is immutable: a task cannot move between owners after it has
+    # been admitted.  The scheduler derives cancellation and finalization
+    # from this durable edge rather than from an in-memory task tree.
+    "owner_task_id",
+    "abandon_on_restart",
+    "workflow_name",
+    "workflow_input",
+    "workflow_replay_contract",
 )
 
 
 def valid_frozen_task_state(previous: Mapping[str, object], current: Mapping[str, object]) -> bool:
     return all(key not in previous or (key in current and thaw_json(previous[key]) == thaw_json(current[key]))
                for key in FROZEN_TASK_STATE_KEYS)
+
+
+def _validate_task_scheduler_state(state: Mapping[str, object]) -> None:
+    owner = state.get("owner_task_id")
+    if owner is not None and (not isinstance(owner, str) or not owner):
+        raise ValueError("owner task ID must be a non-empty string")
+    waiting_on = state.get("waiting_on", ())
+    if not isinstance(waiting_on, (list, tuple)):
+        raise ValueError("waiting task dependencies must be a list")
+    if any(not isinstance(item, str) or not item for item in waiting_on):
+        raise ValueError("waiting task dependencies must be non-empty strings")
+    if len(waiting_on) != len(set(waiting_on)):
+        raise ValueError("waiting task dependencies must be unique")
+    join_policy = state.get("join_policy", "allSettled")
+    if join_policy not in {"failFast", "allSettled"}:
+        raise ValueError("unknown task join policy")
+    abandon = state.get("abandon_on_restart", False)
+    if type(abandon) is not bool:
+        raise ValueError("abandon_on_restart must be boolean")
+
+
+def _validate_workflow_state(state: Mapping[str, object]) -> None:
+    workflow_name = state.get("workflow_name")
+    if workflow_name is not None and (not isinstance(workflow_name, str) or not workflow_name):
+        raise ValueError("workflow name must be a non-empty string")
+    workflow_version = state.get("workflow_version", 1)
+    if type(workflow_version) is not int or workflow_version < 1:
+        raise ValueError("workflow version must be a positive integer")
+    for key in ("workflow_input", "workflow_checkpoint"):
+        if not isinstance(state.get(key, {}), Mapping):
+            raise ValueError(f"{key} must be an object")
+    replay_digest = state.get("workflow_replay_digest")
+    if replay_digest is not None and (not isinstance(replay_digest, str) or not replay_digest):
+        raise ValueError("workflow replay digest must be a non-empty string")
 
 
 def valid_task_transition(previous: str | None, current: str) -> bool:
@@ -146,7 +188,7 @@ TASK_TERMINAL_STATUSES = frozenset(
 TASK_STATUS_TRANSITIONS: Mapping[TaskStatus, frozenset[TaskStatus]] = MappingProxyType(
     {
         TaskStatus.PENDING: frozenset(
-            {TaskStatus.PENDING, TaskStatus.RUNNING, TaskStatus.FAILED, TaskStatus.CANCELLED}
+            {TaskStatus.PENDING, TaskStatus.RUNNING, TaskStatus.WAITING, TaskStatus.FAILED, TaskStatus.CANCELLED}
         ),
         TaskStatus.RUNNING: frozenset(
             {
@@ -485,6 +527,48 @@ class TaskCheckpoint:
         value = self.state.get("attempt_token")
         return value if isinstance(value, str) else ""
 
+    @property
+    def owner_task_id(self) -> str | None:
+        value = self.state.get("owner_task_id")
+        return value if isinstance(value, str) and value else None
+
+    @property
+    def waiting_on(self) -> tuple[str, ...]:
+        value = self.state.get("waiting_on", ())
+        if isinstance(value, (list, tuple)):
+            return tuple(item for item in value if isinstance(item, str))
+        return ()
+
+    @property
+    def join_policy(self) -> str:
+        value = self.state.get("join_policy", "allSettled")
+        return value if isinstance(value, str) and value in {"failFast", "allSettled"} else "allSettled"
+
+    @property
+    def workflow_name(self) -> str | None:
+        value = self.state.get("workflow_name")
+        return value if isinstance(value, str) and value else None
+
+    @property
+    def workflow_version(self) -> int:
+        value = self.state.get("workflow_version", 1)
+        return value if type(value) is int and value >= 1 else 1
+
+    @property
+    def workflow_input(self) -> Mapping[str, object]:
+        value = self.state.get("workflow_input", {})
+        return value if isinstance(value, Mapping) else {}
+
+    @property
+    def workflow_checkpoint(self) -> Mapping[str, object]:
+        value = self.state.get("workflow_checkpoint", {})
+        return value if isinstance(value, Mapping) else {}
+
+    @property
+    def replay_digest(self) -> str | None:
+        value = self.state.get("workflow_replay_digest")
+        return value if isinstance(value, str) and value else None
+
     def __post_init__(self) -> None:
         if not self.task_id or not self.conversation_id or not self.submission_id or not self.phase:
             raise ValueError("task identity and phase are required")
@@ -504,6 +588,8 @@ class TaskCheckpoint:
         state = cast(dict[str, object], thaw_json(self.state))
         _validate_json(provider_snapshot)
         _validate_json(state)
+        _validate_task_scheduler_state(state)
+        _validate_workflow_state(state)
         attempt = state.get("attempt_number", 0)
         token = state.get("attempt_token", "")
         owner = state.get("attempt_owner", "")

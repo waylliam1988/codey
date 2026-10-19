@@ -79,7 +79,7 @@ def test_production_admission_restores_original_selection_after_settings_and_res
             ),
             task_state={"task": "task", "provider_id": "local", "model_selection": admitted.model_selection},
         )
-        TaskRuntime(state.runtime_log, lambda _: OperationOutcome.suspended(reason="approval")).run(admitted)
+        TaskRuntime(None, lambda _: OperationOutcome.suspended(reason="approval"), durable=state.durable).run(admitted)
     finally:
         state.close()
     local_config.save_local_config(replace(config, model="second", api_protocol="openai-completions"))

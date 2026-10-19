@@ -43,11 +43,11 @@ class _SubmittedTaskOperation:
 
 
 class TaskRuntime:
-    """Schedule submitted tasks through the runtime session log."""
+    """Schedule submitted tasks through durable storage or a standalone log."""
 
     def __init__(
         self,
-        session_log: RuntimeSessionLog,
+        session_log: RuntimeSessionLog | None,
         executor: TaskExecutor,
         *,
         prepare: TaskPreparer | None = None,
@@ -59,6 +59,8 @@ class TaskRuntime:
         self.prepare = prepare
         self.on_unstarted_failure = on_unstarted_failure
         self.durable = durable
+        if session_log is None and durable is None:
+            raise ValueError("a task runtime needs durable storage or a session log")
         self.mutations = RuntimeMutationLine(session_log, durable=durable)
 
     def run(self, request: TaskSubmission) -> None:
@@ -143,11 +145,16 @@ class TaskRuntime:
             operation = checkpoint.operation_from_checkpoint(task, request.session_id)
             if operation is not None and operation.leaf == LEAF_TERMINAL:
                 return
-        current = operation_state_from_entries(
-            self.session_log.entries(request.session_id),
-            session_id=request.session_id,
-            run_id=request.run_id,
-        ) if self.durable is None else None
+        if self.durable is None:
+            if self.session_log is None:
+                raise RuntimeError("task runtime has no storage")
+            current = operation_state_from_entries(
+                self.session_log.entries(request.session_id),
+                session_id=request.session_id,
+                run_id=request.run_id,
+            )
+        else:
+            current = None
         if current is not None and current.leaf == LEAF_TERMINAL:
             return
         settled = self.mutations.mark_terminal(

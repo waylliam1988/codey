@@ -23,6 +23,7 @@ from codey.durable.scheduler import DurableTaskScheduler
 from codey.durable.session import DurableSession
 from codey.durable.sqlite import SQLiteDurableStore
 from codey.durable.store import DurableStore
+from codey.durable.workflow import WorkflowDefinition, workflow_digest
 
 __all__ = [
     "CommitConflict",
@@ -50,4 +51,6 @@ __all__ = [
     "TaskStatus",
     "build_context",
     "decide_recovery",
+    "WorkflowDefinition",
+    "workflow_digest",
 ]

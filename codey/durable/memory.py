@@ -269,6 +269,23 @@ class MemoryDurableStore:
             raise CommitConflict("new task must start at revision zero")
         if existing is None and not valid_task_transition(None, task.phase):
             raise CommitConflict("new task must start in accepted phase")
+        owner_task_id = task.owner_task_id
+        if owner_task_id is not None:
+            if owner_task_id == task.task_id:
+                raise CommitConflict("a task cannot own itself")
+            if owner_task_id not in self._tasks:
+                raise CommitConflict("owner task does not exist")
+            seen: set[str] = {task.task_id}
+            cursor = owner_task_id
+            while cursor not in seen:
+                seen.add(cursor)
+                parent = self._tasks.get(cursor)
+                next_owner = parent.owner_task_id if parent is not None else None
+                if next_owner is None:
+                    break
+                cursor = next_owner
+            if cursor == task.task_id:
+                raise CommitConflict("task ownership cycle")
         if existing is not None:
             if existing.state.get("cancel_requested") and task.phase not in {"cancelled", "failed"}:
                 raise CommitConflict("task cancellation barrier is active")

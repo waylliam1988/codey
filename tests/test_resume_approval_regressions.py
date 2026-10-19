@@ -151,7 +151,7 @@ def test_cold_start_rebuild_restores_source_run_api_selection(tmp_path) -> None:
             task_state={"task": "source task", "provider_id": "local"},
             initial_phase="dispatching",
         )
-        TaskRuntime(state.runtime_log, lambda _: OperationOutcome.suspended(reason="approval")).run(request)
+        TaskRuntime(None, lambda _: OperationOutcome.suspended(reason="approval"), durable=state.durable).run(request)
         _durable_requested_approval(
             state,
             approval_id="approval-cold-start",
@@ -217,7 +217,8 @@ def test_rehydrated_approval_can_be_denied_and_resume_source_run(tmp_path) -> No
         state.close()
 
     restarted = AppContext(tmp_path)
-    submit = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("continuation task must not be submitted"))
+    def submit(*args, **kwargs):
+        raise AssertionError("continuation task must not be submitted")
     try:
         status, payload = app_api.shell_approval_response(
             restarted,

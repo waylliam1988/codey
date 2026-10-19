@@ -49,7 +49,6 @@ from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact, ShellApprovalRecordStore
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.storage.local_store import DEFAULT_STATE_HOME
@@ -138,7 +137,6 @@ class AppContext(GhostStoreAccessors):
         self.workspace_revisions = WorkspaceRevisionStore(runtime_state_home)
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
         self.run_traces = RunTraceStore(state_home) if state_home else None
-        self.runtime_log = RuntimeSessionLog(runtime_state_home)
         self._durable_services = DurableAppServices.open(
             runtime_state_home / "durable.sqlite3",
             publish=self._publish_durable_commit,
@@ -151,13 +149,17 @@ class AppContext(GhostStoreAccessors):
         self.conversation_runtime = ConversationRuntime(
             runtime_state_home, self.emit, durable=self.durable
         )
-        self.runtime_mutations = RuntimeMutationLine(self.runtime_log, durable=self.durable)
+        # Runtime lifecycle projections are durable-backed adapters.  The
+        # standalone JSONL session log remains available to isolated kernel
+        # callers, but AppContext never constructs it or lets it participate
+        # in production recovery.
+        self.runtime_mutations = RuntimeMutationLine(durable=self.durable)
         self.input_queue = self.conversation_runtime.inputs
         self.user_questions = self.conversation_runtime.questions
         self.execution_outputs = ExecutionOutputStore(runtime_state_home)
-        self.runtime_operations = RuntimeOperationStore(self.runtime_log, durable=self.durable)
-        self.runtime_effects = RuntimeEffectStore(self.runtime_log, durable=self.durable)
-        self.tool_result_delivery = ToolResultDeliveryStore(self.runtime_log, durable=self.durable)
+        self.runtime_operations = RuntimeOperationStore(durable=self.durable)
+        self.runtime_effects = RuntimeEffectStore(durable=self.durable)
+        self.tool_result_delivery = ToolResultDeliveryStore(durable=self.durable)
         self.shell_approval_records = ShellApprovalRecordStore(runtime_state_home)
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
@@ -983,7 +985,6 @@ class AppContext(GhostStoreAccessors):
             ("ghost_work_queue", "ghost_work_queue", lambda s: s.delete_scope("session", session_id=session_id)),
             ("ghost_affinity", "ghost_affinity", lambda s: s.delete_scope("session", session_id=session_id)),
             ("run_traces", "run_traces", lambda s: s.delete_session(session_id)),
-            ("runtime_log", "runtime_log", lambda s: s.delete_session(session_id)),
         )
         for store_name, attr_name, method in operations:
             target = getattr(self, attr_name, None)

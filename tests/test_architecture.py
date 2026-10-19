@@ -2349,9 +2349,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # Durable-backed delivery reconstruction and bounded projection
             # validation add a small amount of owned code here.
             "runtime/effects/tool_result_delivery.py": 1270,
-            # Cancellation barrier and durable recovery settlement are kept
-            # beside the session mutation owner; no generic repository split.
-            "durable/session.py": 1080,
+            # Cancellation barrier, ownership joins, workflow reconciliation,
+            # and durable recovery settlement are kept beside the session
+            # mutation owner.  This is the one explicit durable mutation
+            # facade; splitting it into repositories would duplicate the
+            # transaction boundary and make ownership less visible.
+            "durable/session.py": 1370,
             # LF/CRLF line-boundary note (was a one-line overclaim).
             # PLR split 2026-09-26: 1381 lines after search_files scan split.
             "toolchain/runtime.py": 1440,
