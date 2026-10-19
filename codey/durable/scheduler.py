@@ -74,6 +74,7 @@ class DurableTaskScheduler:
         self._inflight: set[str] = set()
         self._scheduled: set[str] = set()
         self._blocked: dict[str, str] = {}
+        self._finalization: set[str] = set()
         self._invocations: dict[str, TaskInvocation] = {}
         self._abort_invocations: dict[str, AbortInvocation] = {}
         self._reconcile_requested = False
@@ -194,6 +195,11 @@ class DurableTaskScheduler:
         if task_id is None:
             tasks = self._session.pending_tasks()
             pending = {task.task_id for task in tasks if task.status == TaskStatus.PENDING}
+            finalization = {
+                task.task_id
+                for task in tasks
+                if task.status in {TaskStatus.COMPLETING, TaskStatus.WAITING}
+            }
             if include_queued_submissions:
                 queued_submissions = bool(self._session.queued_submissions())
         else:
@@ -212,8 +218,13 @@ class DurableTaskScheduler:
                 assert pending is not None
                 self._scheduled.intersection_update(pending)
                 self._pending.update(pending - self._scheduled)
+                self._finalization.update(finalization)
                 self._reconcile_requested = self._reconcile_requested or queued_submissions
             else:
+                if task is not None and task.status in {TaskStatus.COMPLETING, TaskStatus.WAITING}:
+                    self._finalization.add(task_id)
+                if task is not None and task.owner_task_id is not None:
+                    self._finalization.add(task.owner_task_id)
                 if requeued:
                     self._scheduled.discard(task_id)
                 if requeued and task_id not in self._scheduled:
@@ -305,8 +316,11 @@ class DurableTaskScheduler:
         if self._workflows:
             self._session.reconcile_workflows(self._workflows)
         self._place_ready_inputs()
-        self._session.reconcile_finalization()
         self.notify(start=False, include_queued_submissions=False)
+        with self._lock:
+            finalization = tuple(sorted(self._finalization))
+            self._finalization.clear()
+        self._session.reconcile_finalization(finalization)
         with self._lock:
             candidates = tuple(sorted(self._pending - self._inflight - self._scheduled))
         for task_id in candidates:

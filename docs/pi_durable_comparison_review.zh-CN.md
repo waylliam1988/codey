@@ -1319,4 +1319,41 @@ Codey 现在在 owner/downward graph 的 durable reverse lookup 上达到 Pi sch
 - abort handler 尚未在真实 shell/provider host 中接入；
 - InboxDoc snapshot/history、Runtime JSONL 清理、AppContext/巨型模块结构审查仍待进行。
 
+## 38. 第三十四段：commit-driven local finalization reconcile
+
+本段继续收敛 owner/waiting graph 的调度语义。此前 reverse index 已经存在，但 scheduler 每次 reconcile 仍调用无参数 `reconcile_finalization()`，内部再次扫描所有 tasks；因此索引只减少了唤醒扫描，未真正限制状态重算范围。
+
+### 38.1 已完成
+
+- `reconcile_waiting_tasks(task_id)` 支持针对单个 durable join 候选重算，依赖 child 通过窄的 `store.task()` 查询读取；
+- `reconcile_finalization(task_ids)` 支持候选集合，只有显式无参数启动恢复/管理操作才执行全量 reconcile；
+- scheduler 从 durable pending checkpoints、waiting reverse index 和 owner edge 收集 finalization 候选，然后只提交这些 task 的 waiting/finalization 状态转换；
+- child settlement 触发 owner parent 的局部 finalization，completion hold 不再依赖全量 task scan；
+- 既有全量入口仍保留给冷启动恢复和显式 reconcile，生产运行路径使用候选集合；
+- 故障注入测试禁止 local reconcile 调用 `store.tasks()`，仍能完成 parent completion；
+- `SCHEMA_VERSION = 1` 保持不变，没有新增投影、兼容分支或旧恢复路径。
+
+### 38.2 验证
+
+```text
+local reconcile 故障测：1 passed
+ownership/finalization + scheduler + waiting reverse index：22 passed
+mypy：Success
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 38.3 与 Pi 的结果
+
+Codey 现在不仅拥有 Pi 风格的 owner/waiting reverse index，还让实际 scheduler 状态重算遵循 commit-driven local candidate 语义；parent cancellation、completion hold 和 fail-fast join 的受影响范围更容易证明。Codey 继续保留 Pi 没有的 attempt fencing、权限/审批、未知 effect fail-closed 和 completion proof。
+
+仍低于 Pi 或尚未完成的部分：
+
+- finalization/fail-fast 候选目前由 scheduler durable snapshot 组织，尚未形成独立持久化 finalization queue；
+- provider generation 的 settlement、boundary placement、下一 checkpoint 故障事务仍待完成；
+- abort handler 尚未在真实 shell/provider host 中接入；
+- InboxDoc snapshot/history、Runtime JSONL 清理、AppContext/巨型模块结构审查仍待进行。
+
 

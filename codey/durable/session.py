@@ -1653,9 +1653,10 @@ class DurableSession:
         )
 
     @_mutation_line
-    def reconcile_waiting_tasks(self) -> None:
+    def reconcile_waiting_tasks(self, task_id: str | None = None) -> None:
         """Reconcile durable joins without relying on scheduler memory."""
-        for task in self.store.tasks():
+        tasks = (self.store.tasks() if task_id is None else (self.store.task(task_id),))
+        for task in tasks:
             if task.status != TaskStatus.WAITING or task.state.get("cancel_requested"):
                 continue
             if not task.waiting_on and task.state.get("join_wait") is not True:
@@ -1664,8 +1665,13 @@ class DurableSession:
                 self.advance_task(task_id=task.task_id, phase=task.phase, state={"waiting_on": []},
                                   task_status=TaskStatus.PENDING)
                 continue
-            children = {candidate.task_id: candidate for candidate in self.store.tasks()}
-            missing = [task_id for task_id in task.waiting_on if task_id not in children]
+            children: dict[str, TaskCheckpoint] = {}
+            missing: list[str] = []
+            for dependency in task.waiting_on:
+                try:
+                    children[dependency] = self.store.task(dependency)
+                except KeyError:
+                    missing.append(dependency)
             if missing:
                 self.fail_task(task.task_id, "waiting task disappeared", state={"join_error": missing})
                 continue
@@ -1686,10 +1692,25 @@ class DurableSession:
                                   task_status=TaskStatus.PENDING)
 
     @_mutation_line
-    def reconcile_finalization(self) -> None:
+    def reconcile_finalization(self, task_ids: tuple[str, ...] | None = None) -> None:
         """Finish held outcomes and cancellation intents after owned work drains."""
-        self.reconcile_waiting_tasks()
-        for task in self.store.tasks():
+        if task_ids is None:
+            self.reconcile_waiting_tasks()
+            tasks = self.store.tasks()
+        else:
+            unique_ids = tuple(dict.fromkeys(task_ids))
+            for task_id in unique_ids:
+                self.reconcile_waiting_tasks(task_id)
+            selected: list[TaskCheckpoint] = []
+            for task_id in unique_ids:
+                try:
+                    candidate = self.store.task(task_id)
+                except KeyError:
+                    continue
+                if candidate.status in {TaskStatus.COMPLETING, TaskStatus.WAITING}:
+                    selected.append(candidate)
+            tasks = tuple(selected)
+        for task in tasks:
             if task.status not in {TaskStatus.COMPLETING, TaskStatus.WAITING}:
                 continue
             if self._live_owned_descendants(task.task_id):
