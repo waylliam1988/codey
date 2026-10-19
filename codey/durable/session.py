@@ -653,6 +653,62 @@ class DurableSession:
         self._commit(mutation)
         return tuple(self.store.submission(item.submission_id) for item in selected)
 
+    @_mutation_line
+    def merge_generation_boundary(
+        self,
+        mutation: DurableMutation,
+        *,
+        task_id: str,
+        at: str,
+        steering_mode: str = "one-at-a-time",
+        follow_up_mode: str = "one-at-a-time",
+    ) -> tuple[tuple[SubmissionRecord, ...], DurableMutation]:
+        """Fold boundary placement into an already derived task mutation.
+
+        Runtime provider settlement and generation placement must share one
+        durable commit.  The runtime reducer supplies the task/effect rows;
+        this method appends the boundary rows and advances that same task
+        checkpoint before the caller submits the mutation.
+        """
+        if mutation.task is None or mutation.task.task_id != task_id:
+            raise CommitConflict("generation boundary mutation must own the active task")
+        selected, boundary = self._prepare_boundary_mutation(
+            mutation.conversation_id,
+            at=at,
+            steering_mode=steering_mode,
+            follow_up_mode=follow_up_mode,
+            task_id=task_id,
+        )
+        if boundary.expected_revision != mutation.expected_revision:
+            raise CommitConflict("generation boundary conversation revision changed")
+        base_head = mutation.entries[-1].entry_id if mutation.entries else self.store.head(
+            mutation.conversation_id
+        )[0]
+        rebased_entries: list[EntryDraft] = []
+        for entry in boundary.entries:
+            rebased = replace(entry, parent_id=base_head)
+            rebased_entries.append(rebased)
+            base_head = rebased.entry_id
+
+        active_state = thaw_json(mutation.task.state)
+        if not isinstance(active_state, Mapping):
+            raise CommitConflict("generation boundary task state is corrupt")
+        next_active = replace(
+            mutation.task,
+            state={**dict(active_state), "generation_boundary": at},
+        )
+        boundary_updates = tuple(
+            update for update in boundary.task_updates if update.task_id != task_id
+        )
+        merged = replace(
+            mutation,
+            entries=mutation.entries + tuple(rebased_entries),
+            task=next_active,
+            task_updates=mutation.task_updates + boundary_updates,
+            submission_updates=mutation.submission_updates + boundary.submission_updates,
+        )
+        return tuple(selected), merged
+
     def _prepare_boundary_mutation(
         self,
         conversation_id: str,

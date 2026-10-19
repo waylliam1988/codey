@@ -125,7 +125,9 @@ def delivery_snapshot(batch: DeliveryBatchProjection) -> dict[str, object]:
 def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
                       derive_rows: Callable[..., Any], *,
                       messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
-                      artifacts: tuple[ArtifactRecord, ...] = ()) -> None:
+                      artifacts: tuple[ArtifactRecord, ...] = (),
+                      generation_boundary: str | None = None,
+                      boundary_result: list[object] | None = None) -> None:
     from codey.runtime.core.operation_state import RuntimeOperationTransitionError
     from codey.runtime.log.session_projection import reduce_session
     from codey.runtime.log.session_view import load_session_view
@@ -190,7 +192,16 @@ def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
             entry = EntryDraft(f"entry-{uuid.uuid4().hex}", session_id, head, kind, payload, by_task_id=run_id)
             appended.append(entry)
             head = entry.entry_id
-        return DurableMutation(session_id, revision, task=next_task, entries=tuple(appended),
-                               effects=tuple(intents), settlements=tuple(settlements), artifacts=artifacts)
+        mutation = DurableMutation(
+            session_id, revision, task=next_task, entries=tuple(appended),
+            effects=tuple(intents), settlements=tuple(settlements), artifacts=artifacts,
+        )
+        if generation_boundary is not None:
+            selected, mutation = durable.merge_generation_boundary(
+                mutation, task_id=run_id, at=generation_boundary,
+            )
+            if boundary_result is not None:
+                boundary_result.extend(selected)
+        return mutation
 
     durable.transact_task(run_id, derive)

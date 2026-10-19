@@ -20,6 +20,7 @@ from codey.runtime.effects.effect_records import (
     SENT_STATE_SETTLED,
     SETTLEMENT_STATUS_ERROR,
     SETTLEMENT_STATUS_OK,
+    RuntimeEffectError,
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
     RuntimeEffectStore,
@@ -73,7 +74,8 @@ class KernelEffectSink:
                  provider_id: str, phase: str = "writer",
                  recovered_batch_id: str = "",
                  managed_outputs: Any = None,
-                 durable: Any = None) -> None:
+                 durable: Any = None,
+                 defer_generation_settlement: bool = False) -> None:
         self.mutations = mutations
         self.session_id = session_id
         self.run_id = run_id
@@ -83,6 +85,8 @@ class KernelEffectSink:
         self.send_index = 0
         self.managed_outputs = managed_outputs
         self.durable = durable
+        self.defer_generation_settlement = defer_generation_settlement
+        self._pending_provider_settlement: tuple[RuntimeEffectSettlement, tuple[tuple[str, dict[str, object]], ...]] | None = None
         store = RuntimeEffectStore(durable=durable)
         previous = store.load_effects(session_id, run_id)
         self._replay_classes = {row.intent.effect_id: row.intent.replay_class for row in previous}
@@ -139,6 +143,23 @@ class KernelEffectSink:
     def has_unsettled(self, identity: str) -> bool:
         return identity in self._old_pending
 
+    def defer_provider_settlement(
+        self,
+        settlement: RuntimeEffectSettlement,
+        messages: tuple[tuple[str, dict[str, object]], ...] = (),
+    ) -> None:
+        if not self.defer_generation_settlement:
+            raise RuntimeEffectError("provider settlement deferral is disabled")
+        if self._pending_provider_settlement is not None:
+            raise RuntimeEffectError("a provider generation settlement is already pending")
+        self._pending_provider_settlement = (settlement, messages)
+
+    def pending_provider_settlement(self) -> tuple[RuntimeEffectSettlement, tuple[tuple[str, dict[str, object]], ...]] | None:
+        return self._pending_provider_settlement
+
+    def clear_provider_settlement(self) -> None:
+        self._pending_provider_settlement = None
+
     def settle(self, identity: str, ok: bool, *, result: Any = None, exit_code: int | None = None) -> None:
         from codey.operations.kernel_receipts import result_receipt_fields, tool_history_messages
 
@@ -186,6 +207,13 @@ class KernelRecordedProvider(ProviderAdapter):
 
     def _send(self, name: str, *args: Any, **kwargs: Any) -> Any:
         sink = self.sink
+        pending = sink.pending_provider_settlement()
+        if pending is not None:
+            previous, previous_messages = pending
+            sink.mutations.settle_provider_effect(
+                sink.session_id, sink.run_id, previous, messages=previous_messages,
+            )
+            sink.clear_provider_settlement()
         sink.send_index += 1
         effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, sink.run_id)
         surface = json.dumps(args, ensure_ascii=False, default=str)
@@ -236,11 +264,13 @@ class KernelRecordedProvider(ProviderAdapter):
                 session_id=sink.session_id, run_id=sink.run_id,
                 status=SETTLEMENT_STATUS_OK, sent_state=SENT_STATE_SETTLED,
             )
-        sink.mutations.settle_provider_effect(
-            sink.session_id, sink.run_id,
-            settlement,
-            messages=_reply_messages(reply) if sink.durable is not None else (),
-        )
+        messages = _reply_messages(reply) if sink.durable is not None else ()
+        if sink.defer_generation_settlement:
+            sink.defer_provider_settlement(settlement, messages)
+        else:
+            sink.mutations.settle_provider_effect(
+                sink.session_id, sink.run_id, settlement, messages=messages,
+            )
         sink.delivery_batch_id = ""
         return reply
 

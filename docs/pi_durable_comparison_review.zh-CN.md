@@ -1415,4 +1415,27 @@ Codey 现在在 finalization 的恢复事实、事务边界和 scheduler 重启�
 - shell/provider abort 仍需真实长请求与真实子进程的端到端清理注入；
 - InboxDoc snapshot/history、Runtime JSONL 降级清理、AppContext 与巨型模块拆分仍待完成。
 
+## 41. 第三十七段：provider generation settlement / placement / checkpoint 单事务
+
+本段把 provider 成功响应的 settlement 与 generation boundary 合并。主 task 路径现在先持久化 provider intent，响应 settlement 暂存到当前 generation；在 `post_tools` 或 `final` boundary，由 `RuntimeMutationLine.settle_provider_effect_at_boundary()` 将 provider settlement、runtime checkpoint、boundary placement、conversation entries/head 和 submission 更新一次提交。提交失败时，所有这些事实都保持旧值。
+
+### 41.1 已完成
+
+- `DurableSession.merge_generation_boundary()` 能把已派生的 runtime task/effect mutation 与 boundary placement 合并，并正确重排 entry parent 链；
+- `checkpoint.mutate_checkpoint()` 支持 generation boundary 合并，仍由 `DurableSession.transact_task()` 统一 CAS 和发布；
+- `RuntimeMutationLine.settle_provider_effect_at_boundary()` 成为 provider settlement + placement + checkpoint 的单一入口；
+- 主 task provider sink 支持暂存成功 generation settlement，在 boundary 处一次提交；下一次 provider send 会先收口上一 generation，避免 pending receipt 遗留；
+- 故障注入证明 commit 失败时 provider effect、task checkpoint、submission placement 和 history 都不变；
+- 旧的普通 provider settlement API 保持用于没有 generation boundary 的隔离流程，不新增第二套生产事实源。
+
+### 41.2 与 Pi 的结果
+
+Codey 现在在 provider generation 的 durable transaction 边界上超过此前实现并达到 Pi durable 所需的 atomic settlement/checkpoint 语义，同时保留 provider uncertainty、权限、审批、未知 effect fail-closed 和 completion proof。
+
+仍低于 Pi 或尚未完成的部分：
+
+- 其他较窄的 evidence/project/research provider 入口还需统一启用 deferred generation sink；
+- shell/provider 真实长请求与子进程 abort cleanup 的端到端测试仍待完成；
+- InboxDoc snapshot/history、Runtime JSONL 降级清理、AppContext 与巨型模块拆分仍待完成。
+
 

@@ -487,7 +487,38 @@ class RuntimeMutationLine:
         *,
         messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
     ) -> RuntimeEffectSettlement:
+        committed, _placed = self._settle_provider_effect(
+            session_id, run_id, settlement, messages=messages,
+        )
+        return committed
+
+    def settle_provider_effect_at_boundary(
+        self,
+        session_id: str,
+        run_id: str,
+        settlement: RuntimeEffectSettlement,
+        *,
+        boundary: str,
+        messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
+    ) -> tuple[object, ...]:
+        """Settle a provider generation and place its inbox in one commit."""
+        _committed, placed = self._settle_provider_effect(
+            session_id, run_id, settlement, messages=messages,
+            generation_boundary=boundary,
+        )
+        return placed
+
+    def _settle_provider_effect(
+        self,
+        session_id: str,
+        run_id: str,
+        settlement: RuntimeEffectSettlement,
+        *,
+        messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
+        generation_boundary: str | None = None,
+    ) -> tuple[RuntimeEffectSettlement, tuple[object, ...]]:
         committed: RuntimeEffectSettlement | None = None
+        placed: list[object] = []
 
         def mutation(projection: Any, entries: Any) -> Any:
             nonlocal committed
@@ -502,10 +533,14 @@ class RuntimeMutationLine:
             committed = prepared
             return rows
 
-        self._mutate(session_id, run_id, mutation, messages=messages)
+        checkpoint = importlib.import_module("codey.durable.checkpoint")
+        checkpoint.mutate_checkpoint(
+            self.durable, session_id, run_id, mutation, messages=messages,
+            generation_boundary=generation_boundary, boundary_result=placed,
+        )
         if committed is None:
             raise RuntimeEffectError("provider effect settlement was not committed")
-        return committed
+        return committed, tuple(placed)
 
     def begin_tool_batch(
         self,

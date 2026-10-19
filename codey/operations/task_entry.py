@@ -43,6 +43,7 @@ def _durable_boundary_callback(
     deps: Any,
     session_id: str,
     task_id: str = "",
+    sink: Any = None,
 ) -> Callable[[str], str | None] | None:
     """Build the narrow callback used by the kernel generation boundary."""
     durable = getattr(getattr(deps, "state", None), "durable", None)
@@ -52,9 +53,17 @@ def _durable_boundary_callback(
         return None
 
     def place_boundary(boundary: str) -> str | None:
-        placed = durable.commit_generation_boundary(
-            session_id, task_id=task_id, at=boundary,
-        )
+        pending = sink.pending_provider_settlement() if sink is not None else None
+        if pending is not None:
+            settlement, messages = pending
+            placed = sink.mutations.settle_provider_effect_at_boundary(
+                session_id, task_id, settlement, boundary=boundary, messages=messages,
+            )
+            sink.clear_provider_settlement()
+        else:
+            placed = durable.commit_generation_boundary(
+                session_id, task_id=task_id, at=boundary,
+            )
         texts: list[str] = []
         for submission in placed:
             content = getattr(submission, "content", None)
@@ -224,6 +233,7 @@ def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, An
             recovered_batch_id=str(getattr(frame, "recovered_tool_result_batch_id", "") or ""),
             managed_outputs=getattr(deps, "managed_outputs", None),
             durable=admitted_durable(deps.state, frame.run_id),
+            defer_generation_settlement=admitted_durable(deps.state, frame.run_id) is not None,
         )
         active_provider = KernelRecordedProvider(active_provider, intent_sink)
     if getattr(frame, "conversation", None) is not None:
@@ -485,7 +495,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                     },
                     trace_recorder=getattr(frame, "trace", None),
                     on_boundary=_durable_boundary_callback(
-                        deps, str(request.session_id or ""), frame.run_id,
+                        deps, str(request.session_id or ""), frame.run_id, intent_sink,
                     ),
                 ),
             ),
