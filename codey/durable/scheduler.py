@@ -320,47 +320,19 @@ class DurableTaskScheduler:
                 self._session.place_submission(submission.submission_id)
             except (CommitConflict, KeyError, ValueError):
                 continue
-        queued_by_conversation: dict[str, list[TaskCheckpoint]] = {}
-        for task in tasks:
-            if task.state.get("input_state") != "queued":
-                continue
-            if task.conversation_id in active_by_conversation:
-                continue
-            queued_by_conversation.setdefault(task.conversation_id, []).append(task)
-
-        # Pi's boundary applies passive writes first, then steer inputs, and
-        # only then follow-ups.  Keep the durable admission order within each
-        # class; the queue mode controls whether that class contributes one
-        # item or the whole class at this boundary.
-        selected: list[TaskCheckpoint] = []
-        for conversation_tasks in queued_by_conversation.values():
-            by_mode = {
-                mode: [
-                    task for task in conversation_tasks
-                    if str(task.state.get("input_mode") or "follow_up") == mode
-                ]
-                for mode in ("write", "steer", "follow_up")
-            }
-            selected.extend(by_mode["write"])
-            steer_selected = (
-                by_mode["steer"]
-                if self._steering_mode == "all"
-                else by_mode["steer"][:1]
-            )
-            selected.extend(steer_selected)
-            # A steer owns this boundary. Follow-ups remain queued until the
-            # next boundary so a late steering input cannot be overtaken by
-            # an older continuation.
-            if not steer_selected:
-                selected.extend(
-                    by_mode["follow_up"]
-                    if self._follow_up_mode == "all"
-                    else by_mode["follow_up"][:1]
-                )
-
-        for task in selected:
+        queued_conversations = {
+            submission.conversation_id
+            for submission in self._session.queued_submissions()
+            if submission.conversation_id not in active_by_conversation
+        }
+        for conversation_id in queued_conversations:
             try:
-                self._session.place_submission(task.submission_id)
+                self._session.place_boundary_inputs(
+                    conversation_id,
+                    at="final",
+                    steering_mode=self._steering_mode,
+                    follow_up_mode=self._follow_up_mode,
+                )
             except (CommitConflict, KeyError, ValueError):
                 continue
 

@@ -839,6 +839,48 @@ ruff：All checks passed
 
 Codey 现在已经具备 Pi head marker 的核心恢复性质：旧 context 不会在 reset 后重新进入 provider 请求，过期 queued summary 不会制造幽灵 entry，并且 stale 原因属于 durable submission 状态。仍未完成的是完整 `EntryDraft` 的 `model/head/edits` 结构、position-based inbox removal、postTools/final 同事务 boundary，以及 fork-local inbox document。
 
+## 24. 第二十段：generation boundary 接入实际 kernel
+
+本段继续沿用冷启动 `SCHEMA_VERSION = 1`，没有改动或回滚 `01bb0e09`。目标是把前面已经存在的 queued/placed 事实接到实际 provider 轮次，而不是只让 scheduler 在 task 终态后补放置。
+
+### 24.1 已完成
+
+- `DurableSession.place_boundary_inputs()` 成为明确的 `post_tools`/`final` placement 入口；它按 durable submission 顺序选择 write、steer、follow-up，并复用现有 `place_submission()` 的原子 entry/task/submission 提交。
+- `DurableTaskScheduler` 的空闲 conversation placement 改为调用同一 boundary API，删除 scheduler 内重复的 mode 分组和选择逻辑；active task 期间的 display-only write 仍可独立落地。
+- `KernelObservationDeps.on_boundary` 接入 `run_task_kernel()`：工具轮次结束调用 `post_tools`，done handoff 调用 `final`。entry kernel 为真实 durable session 构造 callback，文本 provider 会把新 placed user input 放进下一次 prompt。
+- steer 继续拥有当前 boundary；因此较晚到达的 steer 不会被较早 follow-up 越过。follow-up 在下一 boundary 再放置。这是 Codey 在交互安全上的明确策略，和 Pi 在 final boundary 同时选择两类输入的通用策略不同。
+- callback 失败会按 provider failure 收口，不能吞掉 durable placement 或继续向 provider 发送下一轮。
+
+### 24.2 红测与验证
+
+先加入 generation boundary 红测，再实现 durable API 和 kernel callback。当前聚焦结果：
+
+```text
+inbox placement + scheduler + text kernel + native regression: 58 passed
+mypy: Success
+pyrefly: 0 errors
+ty: All checks passed
+ruff: All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 24.3 相对 Pi 的结果和未完成项
+
+已经更强或更清楚的地方：
+
+- placement 现在有唯一的 durable boundary API，scheduler 和真实 task kernel 不再各自猜一套队列规则；
+- 文本 provider 的工具轮次后 steer 输入可以在下一次请求前进入 prompt，placement 不依赖 UI、trace 或 JSONL；
+- callback 错误会 fail closed，保持 Codey 的 provider/effect 安全边界。
+
+仍低于 Pi 的地方：
+
+- 当前每个选中的 submission 仍通过一个独立 durable commit 放置；Pi 在 generation 的 boundary transaction 中同时完成 inbox、tool round、下一 generation checkpoint 和 live state 更新。Codey 尚未把这些事实合并为一个多任务 boundary mutation；
+- native provider 为了保持未完成 tool-call 的 protocol receipt 链，当前只提交 durable placement，尚未把 queued user entry 编入同一 native request 的最终 provider message range；
+- fork-local inbox 目前只有 queue 查询隔离测试，还没有 Pi `InboxDoc` 那样的 fork snapshot/history 语义；
+- scheduler 仍缺 Pi 的完整 owner graph、background boundary、abort handler invocation 和持久化 reverse index。
+
+本段结论：Codey 已把 admitted/queued/placed 从“只在 scheduler 终态补偿”推进到真实文本 kernel 的 generation boundary；但要达到 Pi 的完整 generation 原子性，下一段必须把 tool settlement、boundary placement 和下一次 task checkpoint 收进同一 durable mutation，并补 native protocol window 的 context 重建测试。
+
 ## 24. 第二十段：完整 passive entry metadata
 
 本段继续收敛 Pi inbox 的 passive write 语义。此前 `admit_write()` 只能把 `data`、`display_only` 和第一层 `head` 保存下来；这会丢失 provider/model 归属和 context edit，queued placement 也无法证明重启后仍是同一条 entry draft。本段保持冷启动 `SCHEMA_VERSION = 1`，不增加迁移、不恢复旧写入路径。

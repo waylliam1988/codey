@@ -220,6 +220,46 @@ def test_steer_is_selected_before_follow_up_at_the_same_boundary(session: Durabl
     scheduler.close()
 
 
+def test_generation_boundary_places_steer_at_post_tools_and_follow_up_at_final(
+    session: DurableSession,
+) -> None:
+    """Queued inputs must be admitted at the provider boundary, not terminalization.
+
+    Pi applies a postTools boundary before starting the next generation.  A
+    steering input therefore becomes visible before an older follow-up, while
+    the follow-up remains queued until the final boundary.
+    """
+    session.admit_input(
+        conversation_id="chat", request_id="active", task_id="active",
+        text="current", provider_snapshot={},
+    )
+    session.start_task("active", state={})
+    follow_up = session.admit_input(
+        conversation_id="chat", request_id="follow-up", task_id="follow-up",
+        text="continue later", provider_snapshot={}, placement=SubmissionPlacement.QUEUED,
+        mode="follow_up",
+    )
+    steer = session.admit_input(
+        conversation_id="chat", request_id="steer", task_id="steer",
+        text="change direction now", provider_snapshot={}, placement=SubmissionPlacement.QUEUED,
+        mode="steer",
+    )
+
+    placed = session.place_boundary_inputs("chat", at="post_tools")
+
+    assert [item.request_id for item in placed] == ["steer"]
+    assert session.store.submission(str(steer.submission_id)).placement is SubmissionPlacement.PLACED
+    assert session.store.submission(str(follow_up.submission_id)).placement is SubmissionPlacement.QUEUED
+    assert [entry.payload["text"] for entry in session.entries("chat")] == ["current", "change direction now"]
+
+    placed_final = session.place_boundary_inputs("chat", at="final")
+
+    assert [item.request_id for item in placed_final] == ["follow-up"]
+    assert [entry.payload["text"] for entry in session.entries("chat")] == [
+        "current", "change direction now", "continue later",
+    ]
+
+
 def test_display_only_write_is_done_without_task_and_excluded_from_context(
     session: DurableSession,
 ) -> None:

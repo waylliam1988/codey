@@ -9,7 +9,7 @@ kernel. All production tool calls converge in
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from functools import partial
@@ -37,6 +37,32 @@ _TASK_KINDS = frozenset({"project", "research", "hybrid", "planning", "planning_
 class FreshSessionOutcome:
     ok: bool
     error: str = ""
+
+
+def _durable_boundary_callback(
+    deps: Any,
+    session_id: str,
+) -> Callable[[str], str | None] | None:
+    """Build the narrow callback used by the kernel generation boundary."""
+    durable = getattr(getattr(deps, "state", None), "durable", None)
+    if durable is None or not callable(getattr(durable, "place_boundary_inputs", None)):
+        return None
+    if not session_id or not durable.has_conversation(session_id):
+        return None
+
+    def place_boundary(boundary: str) -> str | None:
+        placed = durable.place_boundary_inputs(session_id, at=boundary)
+        texts: list[str] = []
+        for submission in placed:
+            content = getattr(submission, "content", None)
+            if not isinstance(content, Mapping):
+                continue
+            text = content.get("text")
+            if isinstance(text, str) and text.strip():
+                texts.append(text.strip())
+        return "\n\n".join(texts) or None
+
+    return place_boundary
 
 
 def _open_fresh_session(
@@ -455,6 +481,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                         "research_ledger": getattr(research_tools, "ledger", None),
                     },
                     trace_recorder=getattr(frame, "trace", None),
+                    on_boundary=_durable_boundary_callback(deps, str(request.session_id or "")),
                 ),
             ),
         )

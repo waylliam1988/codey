@@ -108,6 +108,12 @@ class KernelObservationDeps:
     on_shell_request: Callable[[Any], None] | None = None
     trace_recorder: Any = None
     propagate_provider_failure: bool = False
+    # Called after a completed tool round or before final task handoff.  The
+    # callback owns durable inbox placement; its returned text is appended to
+    # the next text-provider prompt.  Native providers keep their protocol
+    # receipt chain intact and therefore consume the durable placement on the
+    # following generation boundary.
+    on_boundary: Callable[[str], str | None] | None = None
 
 
 @dataclass(frozen=True)
@@ -538,7 +544,22 @@ def _resume_start(value: object) -> int:
     return max(1, turn)
 
 
-def run_task_kernel(
+def _call_boundary(
+    callback: Callable[[str], str | None] | None,
+    boundary: str,
+    turns_used: int,
+    *,
+    propagate: bool,
+) -> KernelResult | str:
+    if callback is None:
+        return ""
+    try:
+        return str(callback(boundary) or "")
+    except Exception as exc:
+        return _provider_failure(exc, turns_used, propagate=propagate)
+
+
+def run_task_kernel(  # noqa: PLR0915
     session: TaskSession,
     *,
     request: KernelRunRequest,
@@ -564,6 +585,7 @@ def run_task_kernel(
     on_event = request.observation.on_event
     on_shell_request = request.observation.on_shell_request
     propagate_provider_failure = request.observation.propagate_provider_failure
+    on_boundary = request.observation.on_boundary
     start_turn = request.transport.start_turn
     initial_results = request.transport.initial_results
     provider_session_changed = request.transport.provider_session_changed
@@ -666,6 +688,12 @@ def run_task_kernel(
             on_event=on_event,
         )
         if isinstance(done_action, KernelResult):
+            if done_action.stop_reason == "done":
+                boundary_result = _call_boundary(
+                    on_boundary, "final", turns_used, propagate=propagate_provider_failure,
+                )
+                if isinstance(boundary_result, KernelResult):
+                    return boundary_result
             return done_action
         if done_action is not None:
             state.prompt, state.pending_reply = done_action
@@ -690,6 +718,12 @@ def run_task_kernel(
         if isinstance(results_or_failure, KernelResult):
             return results_or_failure
         results = results_or_failure
+        boundary_result = _call_boundary(
+            on_boundary, "post_tools", turns_used, propagate=propagate_provider_failure,
+        )
+        if isinstance(boundary_result, KernelResult):
+            return boundary_result
+        boundary_prompt = boundary_result
         try:
             _events._emit_tool_results(on_event, session, results, run_id=startup.identity_ref, turn=turn)
         except RecoveryFailed as exc:
@@ -699,8 +733,11 @@ def run_task_kernel(
                 turns=turns_used,
                 stop_reason="recovery_failure",
             )
-        advance = _advance_after_results(native, results, session, state.pending_messages,
-                                         completion_context=completion_context)
+        advance = _advance_after_results(
+            native, results, session, state.pending_messages,
+            completion_context=completion_context,
+            boundary_prompt=boundary_prompt,
+        )
         if isinstance(advance, KernelResult):
             return advance
         state.pending_messages, state.prompt = advance
@@ -868,6 +905,7 @@ def _advance_after_results(
     pending_native_messages: list[ProviderToolResult] | None,
     *,
     completion_context: Any = None,
+    boundary_prompt: str = "",
 ) -> tuple[list[ProviderToolResult] | None, str] | KernelResult:
     """Deliver native receipts or build the next text prompt."""
     if native:
@@ -883,6 +921,8 @@ def _advance_after_results(
         if messages:
             return messages, ""
     base_prompt = _prompt._format_results(results, session)
+    if boundary_prompt:
+        base_prompt = f"{base_prompt}\n\nNew user input at provider boundary:\n{boundary_prompt}"
     prepared = prepare_coding_context(session, completion_context=completion_context)
     current_context = render_coding_context(prepared) if prepared is not None else ""
     if current_context:

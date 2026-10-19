@@ -596,6 +596,64 @@ class DurableSession:
             )
         )
 
+    @_mutation_line
+    def place_boundary_inputs(
+        self,
+        conversation_id: str,
+        *,
+        at: str,
+        steering_mode: str = "one-at-a-time",
+        follow_up_mode: str = "one-at-a-time",
+    ) -> tuple[SubmissionRecord, ...]:
+        """Place the inbox items selected by one generation boundary.
+
+        ``post_tools`` admits passive writes and steering inputs.  Follow-ups
+        wait for ``final`` unless a queued reset write forces that boundary.
+        Selection is derived from durable submission order; each selected item
+        is then placed through the existing atomic submission mutation.  The
+        method is deliberately narrow so the provider boundary has one named
+        entry point without introducing a generic repository layer.
+        """
+        if at not in {"post_tools", "final"}:
+            raise ValueError("boundary must be 'post_tools' or 'final'")
+        if steering_mode not in {"all", "one-at-a-time"}:
+            raise ValueError("invalid steering queue mode")
+        if follow_up_mode not in {"all", "one-at-a-time"}:
+            raise ValueError("invalid follow-up queue mode")
+        queued = list(self.store.queued_submissions(conversation_id))
+        reset = any(
+            item.mode == "write"
+            and isinstance(item.content, Mapping)
+            and item.content.get("head") == "self"
+            for item in queued
+        )
+        final = at == "final" or reset
+        writes = [item for item in queued if item.mode == "write"]
+        steers = [item for item in queued if item.mode == "steer"]
+        follow_ups = [item for item in queued if item.mode == "follow_up"]
+        selected_users = (
+            steers if steering_mode == "all" else steers[:1]
+        )
+        # A steering input owns the current boundary.  Follow-ups stay queued
+        # until the next boundary, even when this is a final handoff; this
+        # keeps a late steer from being overtaken by an older continuation.
+        if final and not selected_users:
+            selected_users += (
+                follow_ups if follow_up_mode == "all" else follow_ups[:1]
+            )
+        selected_ids = {item.submission_id for item in writes}
+        selected_ids.update(item.submission_id for item in selected_users)
+        selected = [
+            item for item in queued
+            if item.submission_id in selected_ids
+        ]
+        # Pi places passive writes first, then selected user inputs in inbox
+        # order.  Keep that ordering even when a write was admitted later.
+        selected.sort(key=lambda item: (0 if item.mode == "write" else 1, queued.index(item)))
+        for item in selected:
+            self.place_submission(item.submission_id)
+        return tuple(self.store.submission(item.submission_id) for item in selected)
+
     def _place_write_submission(self, submission: SubmissionRecord) -> CommitResult:
         content = submission.content
         if not isinstance(content, Mapping):

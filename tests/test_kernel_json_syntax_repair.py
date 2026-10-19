@@ -5,7 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
+from codey.operations.task_loop import (
+    KernelExecutionDeps,
+    KernelObservationDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolResult
@@ -98,4 +104,36 @@ def test_shared_kernel_repairs_json_without_executing_malformed_reply(tmp_path):
     assert not result.completed and result.stop_reason == "max_turns"
     assert (tmp_path / "test_example.py").read_text(encoding="utf-8") == CONTENT
     assert len(executions) == 1
+    assert len(prompts) == 2
+
+
+def test_text_provider_receives_durable_boundary_input_before_next_generation() -> None:
+    prompts: list[str] = []
+    boundaries: list[str] = []
+
+    def send(prompt: str) -> str:
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            return json.dumps({"tool": "read_file", "args": {"path": "README.md"}})
+        assert "change direction now" in prompt
+        return '{"tool":"done","args":{"summary":"finished"}}'
+
+    def read_file(call):
+        return ToolResult(ok=True, call=call, model_text="read")
+
+    result = run_task_kernel(
+        TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})), max_turns=3),
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(provider=SimpleNamespace(send=send), run_id="boundary"),
+            execution=KernelExecutionDeps(executors={"read_file": read_file}),
+            observation=KernelObservationDeps(
+                on_boundary=lambda boundary: boundaries.append(boundary) or (
+                    "change direction now" if boundary == "post_tools" else None
+                ),
+            ),
+        ),
+    )
+
+    assert result.stop_reason == "done"
+    assert boundaries == ["post_tools", "final"]
     assert len(prompts) == 2
