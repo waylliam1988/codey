@@ -42,6 +42,18 @@ def test_history_routes_read_durable_context(tmp_path: Path) -> None:
         assert state.close()
 
 
+def test_history_route_treats_new_ui_only_chat_as_empty_history(tmp_path: Path) -> None:
+    state = AppContext(tmp_path / "state")
+    try:
+        status, page = _transcript_route(state, "new-chat", {})
+        assert status == 200
+        assert page["session_id"] == "new-chat"
+        assert page["items"] == []
+        assert page["has_more"] is False
+    finally:
+        assert state.close()
+
+
 def test_durable_app_context_has_no_runtime_jsonl_fact_source(tmp_path: Path) -> None:
     state = AppContext(tmp_path / "state", start_scheduler=False)
     try:

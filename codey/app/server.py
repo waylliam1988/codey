@@ -310,6 +310,20 @@ def _shell_approval_route(ctx: AppContext, body: dict[str, Any]) -> tuple[int, d
 
 
 def _transcript_route(ctx: AppContext, session_id: str, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+    # A newly created chat has UI metadata before it has a durable conversation.
+    # Its first history read is therefore a valid empty snapshot, rather than a
+    # load failure.  The conversation is created when the first message is
+    # admitted (or when an explicit durable operation needs it).
+    if not ctx.durable.has_conversation(session_id):
+        return 200, {
+            "schema_version": 1,
+            "session_id": session_id,
+            "epoch": ctx.durable.database_id,
+            "snapshot_revision": 0,
+            "items": [],
+            "before_cursor": None,
+            "has_more": False,
+        }
     try:
         before = str((query.get("before") or [""])[0]) or None
         limit = int((query.get("limit") or ["100"])[0])

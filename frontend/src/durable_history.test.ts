@@ -112,6 +112,13 @@ it('offers a visible retry when durable history cannot be loaded', async () => {
   await vi.waitFor(() => expect(session.messages).toHaveLength(1));
 });
 
+it('renders history retry as a quiet text action', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+  runtime.ConversationUI.renderChat();
+  await vi.waitFor(() => expect(document.querySelector('[data-history-retry]')).not.toBeNull());
+  expect(document.querySelector<HTMLButtonElement>('[data-history-retry]')?.className).toBe('link-btn');
+});
+
 it('refreshes from a replayed durable commit without an active run', async () => {
   vi.stubGlobal(
     'fetch',

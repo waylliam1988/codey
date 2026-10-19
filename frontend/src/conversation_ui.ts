@@ -439,9 +439,10 @@ export interface ConversationUiDeps {
     if (history.failed(s.id)) {
       const notice = document.createElement('div');
       notice.className = 'history-loader';
-      notice.textContent = 'Could not load conversation history. ';
+      notice.append(document.createTextNode('Could not load conversation history'));
       const retry = document.createElement('button');
       retry.type = 'button';
+      retry.className = 'link-btn';
       retry.textContent = 'Retry';
       retry.dataset.historyRetry = '';
       retry.onclick = () => {
