@@ -9,6 +9,17 @@ OUTPUT_OMISSION_MARKER = "\n\n... middle of output omitted ...\n\n"
 TRUNCATION_MARKER = "\n[truncated]"
 
 
+def estimate_tokens(text: str) -> int:
+    """Approximate text cost; final admission uses the provider request counter.
+
+    ASCII averages four characters per token. Count each non-ASCII code point
+    separately so CJK and mixed-language text is not charged at the ASCII rate.
+    This heuristic is not a tokenizer or a guaranteed upper bound.
+    """
+    ascii_chars = sum(char.isascii() for char in text)
+    return (ascii_chars + 3) // 4 + len(text) - ascii_chars
+
+
 def clip_tail(value: object, limit: int, marker: str = TRUNCATION_MARKER) -> str:
     """Truncate to a total character budget, reserving room for the marker.
 

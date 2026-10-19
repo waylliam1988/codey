@@ -1,0 +1,781 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+import uuid
+from collections.abc import Mapping
+from contextlib import closing
+from datetime import UTC, datetime
+from pathlib import Path
+
+from codey.durable.ancestry import context_path
+from codey.durable.errors import CommitConflict, IdempotencyConflict, SchemaVersionError
+from codey.durable.events import mutation_projection
+from codey.durable.model import (
+    ApprovalRecord,
+    CommitRecord,
+    CommitResult,
+    DurableMutation,
+    EffectRecord,
+    EntryDraft,
+    SubmissionDraft,
+    SubmissionRecord,
+    SubmissionStatus,
+    SubmissionUpdate,
+    TaskCheckpoint,
+    TaskStatus,
+    same_submission,
+    thaw_json,
+    valid_execution_attempt,
+    valid_frozen_task_state,
+    valid_submission_transition,
+    valid_task_status_transition,
+    valid_task_transition,
+)
+from codey.durable.schema import MIGRATIONS, SCHEMA_VERSION, validate_schema
+from codey.durable.timeline import (
+    TaskTransition,
+    execution_payload,
+    public_commit_payload,
+    transition_from_payload,
+)
+
+
+class SQLiteDurableStore:
+    """SQLite implementation of the durable append contract."""
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        database = sqlite3.connect(self.path, isolation_level=None, timeout=30)
+        database.row_factory = sqlite3.Row
+        database.execute("PRAGMA synchronous=FULL")
+        database.execute("PRAGMA foreign_keys=ON")
+        return database
+
+    @property
+    def database_id(self) -> str:
+        return self._database_id
+
+    def _initialize(self) -> None:
+        with closing(self._connect()) as database:
+            user_version = int(database.execute("PRAGMA user_version").fetchone()[0])
+            if user_version > SCHEMA_VERSION:
+                raise SchemaVersionError("durable database uses a newer schema")
+            database.execute("PRAGMA journal_mode=WAL")
+            database.execute("BEGIN IMMEDIATE")
+            try:
+                tables = {
+                    str(row["name"])
+                    for row in database.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                    ).fetchall()
+                }
+                if "schema_migrations" not in tables:
+                    if tables:
+                        raise SchemaVersionError(
+                            "durable database has tables but no schema migration marker"
+                        )
+                    database.execute(
+                        "CREATE TABLE schema_migrations "
+                        "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL) STRICT"
+                    )
+                    fresh = True
+                    applied: tuple[int, ...] = ()
+                else:
+                    rows = database.execute(
+                        "SELECT version FROM schema_migrations ORDER BY version"
+                    ).fetchall()
+                    applied = tuple(int(row["version"]) for row in rows)
+                    if not applied:
+                        raise SchemaVersionError(
+                            "durable database has an empty schema migration marker"
+                        )
+                    fresh = False
+                if not fresh:
+                    if applied != (SCHEMA_VERSION,) or user_version != SCHEMA_VERSION:
+                        raise SchemaVersionError(
+                            "durable database is not the current cold-start schema"
+                        )
+                    try:
+                        marker = database.execute(
+                            "SELECT value FROM schema_metadata WHERE key='durable_schema'"
+                        ).fetchone()
+                    except sqlite3.OperationalError as exc:
+                        raise SchemaVersionError(
+                            "durable database is missing the current schema marker"
+                        ) from exc
+                    if marker is None or str(marker["value"]) != str(SCHEMA_VERSION):
+                        raise SchemaVersionError(
+                            "durable database is missing the current schema marker"
+                        )
+                    validate_schema(database)
+                else:
+                    for version, statements in MIGRATIONS:
+                        if version != SCHEMA_VERSION:
+                            raise SchemaVersionError("durable migration table is incomplete")
+                        for statement in statements:
+                            database.execute(statement)
+                        database.execute(
+                            "INSERT INTO schema_migrations(version, applied_at) VALUES(?,?)",
+                            (version, datetime.now(UTC).isoformat()),
+                        )
+                    database.execute(
+                        "INSERT INTO schema_metadata(key, value) VALUES('durable_schema', ?)",
+                        (str(SCHEMA_VERSION),),
+                    )
+                    database.execute(
+                        "INSERT INTO schema_metadata(key, value) VALUES('database_id', ?)",
+                        (f"database-{uuid.uuid4().hex}",),
+                    )
+                identity = database.execute("SELECT value FROM schema_metadata WHERE key='database_id'").fetchone()
+                if identity is None or not str(identity["value"]).startswith("database-"):
+                    raise SchemaVersionError("durable database identity is missing or invalid")
+                self._database_id = str(identity["value"])
+                database.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                database.execute("COMMIT")
+            except BaseException:
+                if database.in_transaction:
+                    database.execute("ROLLBACK")
+                raise
+
+    def create_conversation(self, conversation_id: str, *, parent_conversation_id: str | None = None, parent_entry_id: str | None = None) -> None:
+        if not conversation_id:
+            raise ValueError("conversation_id is required")
+        with closing(self._connect()) as database:
+            existing = database.execute(
+                "SELECT parent_conversation_id, parent_entry_id FROM conversations WHERE id=?",
+                (conversation_id,),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing["parent_conversation_id"] != parent_conversation_id
+                    or existing["parent_entry_id"] != parent_entry_id
+                ):
+                    raise CommitConflict("conversation identity already exists with different ancestry")
+                return
+            database.execute(
+                "INSERT INTO conversations(id, head_entry_id, revision, parent_conversation_id, parent_entry_id) VALUES(?, NULL, 0, ?, ?)",
+                (conversation_id, parent_conversation_id, parent_entry_id),
+            )
+
+    def append(self, draft: EntryDraft, *, expected_revision: int) -> CommitResult:
+        return self.commit(DurableMutation(draft.conversation_id, expected_revision, entries=(draft,)))
+
+    def submit(self, draft: SubmissionDraft) -> CommitResult:
+        _head, revision = self.head(draft.conversation_id)
+        return self.commit(DurableMutation(draft.conversation_id, revision, entries=(draft.entry,), submission=draft))
+
+    def commit(self, mutation: DurableMutation) -> CommitResult:
+        with closing(self._connect()) as database:
+            database.execute("BEGIN IMMEDIATE")
+            try:
+                existing_submission = _find_submission(database, mutation.submission)
+                if existing_submission is not None:
+                    return existing_submission
+                creation = mutation.create_conversation
+                if creation is not None:
+                    if database.execute("SELECT 1 FROM conversations WHERE id=?", (mutation.conversation_id,)).fetchone():
+                        raise CommitConflict("conversation already exists")
+                    if creation.parent_conversation_id is not None:
+                        context_path(
+                            creation.parent_conversation_id, creation.parent_entry_id,
+                            entries=lambda scope: _entries(database, scope),
+                            parent=lambda scope: _conversation_parent(database, scope),
+                        )
+                    database.execute(
+                        "INSERT INTO conversations(id, head_entry_id, revision, parent_conversation_id, parent_entry_id) "
+                        "VALUES(?, NULL, 0, ?, ?)",
+                        (mutation.conversation_id, creation.parent_conversation_id, creation.parent_entry_id),
+                    )
+                current_revision, head = _read_conversation(database, mutation.conversation_id)
+                _validate_mutation(database, mutation, current_revision, head)
+                if mutation.submission is not None and database.execute(
+                    "SELECT 1 FROM submissions WHERE id=?",
+                    (mutation.submission.submission_id,),
+                ).fetchone() is not None:
+                    raise IdempotencyConflict("submission ID was already used")
+                new_head = mutation.entries[-1].entry_id if mutation.entries else head
+                record = _new_commit(database, "durable", {
+                    **mutation_projection(mutation), "_workflow": execution_payload(mutation, new_head),
+                })
+                sequence = record.sequence
+                _write_entries(database, mutation, current_revision, sequence)
+                new_revision = current_revision + len(mutation.entries)
+                if mutation.entries:
+                    database.execute(
+                        "UPDATE conversations SET head_entry_id=?, revision=?, updated_at=? WHERE id=?",
+                        (mutation.entries[-1].entry_id, new_revision, datetime.now(UTC).isoformat(), mutation.conversation_id),
+                    )
+                elif mutation.task is not None or mutation.effect is not None or mutation.submission_update is not None:
+                    database.execute(
+                        "UPDATE conversations SET updated_at=? WHERE id=?",
+                        (datetime.now(UTC).isoformat(), mutation.conversation_id),
+                    )
+                if mutation.submission is not None:
+                    database.execute(
+                        "INSERT INTO submissions(id, conversation_id, request_id, entry_id, revision, fingerprint) VALUES(?,?,?,?,?,?)",
+                        (
+                            mutation.submission.submission_id,
+                            mutation.submission.conversation_id,
+                            mutation.submission.request_id,
+                            mutation.submission.entry.entry_id,
+                            new_revision,
+                            mutation.submission.fingerprint,
+                        ),
+                    )
+                _write_task(database, mutation.task)
+                _write_effect(database, mutation.effect, mutation.expected_effect_status)
+                _write_effects(database, mutation.effects)
+                for settlement in mutation.settlements:
+                    _write_effect(database, settlement, "pending")
+                _write_submission_update(database, mutation.submission_update)
+                database.execute("COMMIT")
+                return CommitResult(
+                    revision=new_revision,
+                    sequence=sequence,
+                    submission_id=None if mutation.submission is None else mutation.submission.submission_id,
+                    record=record,
+                )
+            except BaseException:
+                if database.in_transaction:
+                    database.execute("ROLLBACK")
+                raise
+
+    def entries(self, conversation_id: str) -> tuple[EntryDraft, ...]:
+        with closing(self._connect()) as database:
+            return _entries(database, conversation_id)
+
+    def head(self, conversation_id: str) -> tuple[str | None, int]:
+        with closing(self._connect()) as database:
+            row = database.execute("SELECT head_entry_id, revision FROM conversations WHERE id=?", (conversation_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"unknown conversation: {conversation_id}")
+            return row["head_entry_id"], int(row["revision"])
+
+    def branch(self, conversation_id: str, entry_id: str) -> CommitResult:
+        with closing(self._connect()) as database:
+            database.execute("BEGIN IMMEDIATE")
+            try:
+                row = database.execute("SELECT revision FROM conversations WHERE id=?", (conversation_id,)).fetchone()
+                if row is None:
+                    raise KeyError(f"unknown conversation: {conversation_id}")
+                if database.execute("SELECT 1 FROM entries WHERE conversation_id=? AND id=?", (conversation_id, entry_id)).fetchone() is None:
+                    raise KeyError(f"unknown entry: {entry_id}")
+                revision = int(row["revision"]) + 1
+                record = _new_commit(database, "branch", {"session_id": conversation_id, "head_entry_id": entry_id})
+                database.execute("UPDATE conversations SET head_entry_id=?, revision=? WHERE id=?", (entry_id, revision, conversation_id))
+                database.execute("COMMIT")
+                return CommitResult(revision, record.sequence, record=record)
+            except BaseException:
+                if database.in_transaction:
+                    database.execute("ROLLBACK")
+                raise
+
+    def fork(self, conversation_id: str, entry_id: str, child_conversation_id: str) -> CommitResult:
+        with closing(self._connect()) as database:
+            database.execute("BEGIN IMMEDIATE")
+            try:
+                context_path(
+                    conversation_id, entry_id,
+                    entries=lambda scope: _entries(database, scope),
+                    parent=lambda scope: _conversation_parent(database, scope),
+                )
+                database.execute(
+                    "INSERT INTO conversations(id, head_entry_id, revision, parent_conversation_id, parent_entry_id) VALUES(?, NULL, 0, ?, ?)",
+                    (child_conversation_id, conversation_id, entry_id),
+                )
+                record = _new_commit(database, "fork", {
+                    "session_id": child_conversation_id, "parent_session_id": conversation_id, "parent_entry_id": entry_id,
+                })
+                database.execute("COMMIT")
+                return CommitResult(0, record.sequence, record=record)
+            except BaseException:
+                if database.in_transaction:
+                    database.execute("ROLLBACK")
+                raise
+
+    def delete_conversation(self, conversation_id: str) -> None:
+        with closing(self._connect()) as database:
+            database.execute("BEGIN IMMEDIATE")
+            try:
+                if database.execute("SELECT 1 FROM conversations WHERE id=?", (conversation_id,)).fetchone() is None:
+                    raise KeyError(f"unknown conversation: {conversation_id}")
+                if database.execute(
+                    "SELECT 1 FROM conversations WHERE parent_conversation_id=? LIMIT 1",
+                    (conversation_id,),
+                ).fetchone() is not None:
+                    raise CommitConflict("conversation has forked children")
+                task_rows = database.execute(
+                    "SELECT id FROM tasks WHERE conversation_id=?", (conversation_id,)
+                ).fetchall()
+                task_ids = [str(row[0]) for row in task_rows]
+                if task_ids:
+                    database.executemany("DELETE FROM effects WHERE task_id=?", ((task_id,) for task_id in task_ids))
+                database.execute("DELETE FROM tasks WHERE conversation_id=?", (conversation_id,))
+                database.execute("DELETE FROM submissions WHERE conversation_id=?", (conversation_id,))
+                database.execute("DELETE FROM entries WHERE conversation_id=?", (conversation_id,))
+                database.execute("DELETE FROM conversations WHERE id=?", (conversation_id,))
+                database.execute("COMMIT")
+            except BaseException:
+                if database.in_transaction:
+                    database.execute("ROLLBACK")
+                raise
+
+    def conversation_parent(self, conversation_id: str) -> tuple[str | None, str | None]:
+        with closing(self._connect()) as database:
+            return _conversation_parent(database, conversation_id)
+
+    def has_conversation(self, conversation_id: str) -> bool:
+        with closing(self._connect()) as database:
+            row = database.execute("SELECT 1 FROM conversations WHERE id=?", (conversation_id,)).fetchone()
+            return bool(row)
+
+    def task(self, task_id: str) -> TaskCheckpoint:
+        with closing(self._connect()) as database:
+            row = database.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"unknown task: {task_id}")
+            return TaskCheckpoint(
+                task_id=str(row["id"]),
+                conversation_id=str(row["conversation_id"]),
+                submission_id=str(row["submission_id"]),
+                phase=str(row["phase"]),
+                revision=int(row["revision"]),
+                provider_snapshot=json.loads(row["provider_snapshot"]),
+                state=json.loads(row["state"]),
+                current_turn_id=row["current_turn_id"],
+                pending_effect_id=row["pending_effect_id"],
+                status=str(row["status"]),
+                schema_version=int(row["schema_version"]),
+            )
+
+    def effect(self, effect_id: str) -> EffectRecord:
+        with closing(self._connect()) as database:
+            row = database.execute("SELECT * FROM effects WHERE id=?", (effect_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"unknown effect: {effect_id}")
+            settlement = row["settlement"]
+            return EffectRecord(
+                effect_id=str(row["id"]),
+                task_id=str(row["task_id"]),
+                category=str(row["category"]),
+                replay_class=str(row["replay_class"]),
+                args_digest=str(row["args_digest"]),
+                status=str(row["status"]),
+                intent=json.loads(row["intent"]),
+                settlement=None if settlement is None else json.loads(settlement),
+            )
+
+    def approval(self, approval_id: str) -> ApprovalRecord:
+        with closing(self._connect()) as database:
+            rows = database.execute("SELECT state FROM tasks").fetchall()
+            for row in rows:
+                state = json.loads(row["state"])
+                approvals: dict[str, object] = (
+                    state.get("approvals", {}) if isinstance(state, dict) else {}
+                )
+                payload = approvals.get(approval_id) if isinstance(approvals, dict) else None
+                if isinstance(payload, dict):
+                    return ApprovalRecord.from_payload(payload)
+            raise KeyError(f"unknown approval: {approval_id}")
+
+    def effects_for_task(self, task_id: str) -> tuple[EffectRecord, ...]:
+        with closing(self._connect()) as database:
+            rows = database.execute(
+                "SELECT id, task_id, category, replay_class, args_digest, status, intent, settlement "
+                "FROM effects WHERE task_id=? ORDER BY rowid",
+                (task_id,),
+            ).fetchall()
+            return tuple(
+                EffectRecord(
+                    effect_id=str(row["id"]),
+                    task_id=str(row["task_id"]),
+                    category=str(row["category"]),
+                    replay_class=str(row["replay_class"]),
+                    args_digest=str(row["args_digest"]),
+                    status=str(row["status"]),
+                    intent=json.loads(row["intent"]),
+                    settlement=None if row["settlement"] is None else json.loads(row["settlement"]),
+                )
+                for row in rows
+            )
+
+    def submission(self, submission_id: str) -> SubmissionRecord:
+        with closing(self._connect()) as database:
+            row = database.execute("SELECT * FROM submissions WHERE id=?", (submission_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"unknown submission: {submission_id}")
+            detail = row["detail"]
+            return SubmissionRecord(
+                submission_id=str(row["id"]),
+                conversation_id=str(row["conversation_id"]),
+                request_id=str(row["request_id"]),
+                status=SubmissionStatus(str(row["status"])),
+                input_entry_id=str(row["entry_id"]),
+                answer_entry_id=row["answer_entry_id"],
+                reason=row["reason"],
+                detail=None if detail is None else json.loads(detail),
+            )
+
+    def submission_result_for_request(
+        self, conversation_id: str, request_id: str, fingerprint: str,
+    ) -> CommitResult | None:
+        with closing(self._connect()) as database:
+            row = database.execute(
+                "SELECT id, fingerprint, revision, entry_id FROM submissions WHERE conversation_id=? AND request_id=?",
+                (conversation_id, request_id),
+            ).fetchone()
+            if row is None:
+                return None
+            if str(row["fingerprint"]) != fingerprint:
+                raise IdempotencyConflict("request_id was already admitted with different durable result content")
+            commit = database.execute(
+                "SELECT commit_seq FROM entries WHERE id=?", (row["entry_id"],)
+            ).fetchone()
+            if commit is None:
+                raise IdempotencyConflict("admitted submission has no entry commit")
+            return CommitResult(int(row["revision"]), int(commit["commit_seq"]), str(row["id"]))
+
+    def pending_tasks(self) -> tuple[TaskCheckpoint, ...]:
+        with closing(self._connect()) as database:
+            rows = database.execute(
+                "SELECT * FROM tasks WHERE status NOT IN ('completed','failed','cancelled') ORDER BY rowid"
+            ).fetchall()
+            return tuple(
+                TaskCheckpoint(
+                    task_id=str(row["id"]),
+                    conversation_id=str(row["conversation_id"]),
+                    submission_id=str(row["submission_id"]),
+                    phase=str(row["phase"]),
+                    revision=int(row["revision"]),
+                    provider_snapshot=json.loads(row["provider_snapshot"]),
+                    state=json.loads(row["state"]),
+                    current_turn_id=row["current_turn_id"],
+                    pending_effect_id=row["pending_effect_id"],
+                    status=str(row["status"]),
+                    schema_version=int(row["schema_version"]),
+                )
+                for row in rows
+            )
+
+    def tasks(self) -> tuple[TaskCheckpoint, ...]:
+        with closing(self._connect()) as database:
+            rows = database.execute("SELECT * FROM tasks ORDER BY rowid").fetchall()
+            return tuple(
+                TaskCheckpoint(
+                    task_id=str(row["id"]),
+                    conversation_id=str(row["conversation_id"]),
+                    submission_id=str(row["submission_id"]),
+                    phase=str(row["phase"]),
+                    revision=int(row["revision"]),
+                    provider_snapshot=json.loads(row["provider_snapshot"]),
+                    state=json.loads(row["state"]),
+                    current_turn_id=row["current_turn_id"],
+                    pending_effect_id=row["pending_effect_id"],
+                    status=str(row["status"]),
+                    schema_version=int(row["schema_version"]),
+                )
+                for row in rows
+            )
+
+    def close(self) -> None:
+        return None
+
+    def commit_sequence(self) -> int:
+        with closing(self._connect()) as database:
+            return int(database.execute("SELECT COALESCE(MAX(seq), 0) FROM commits").fetchone()[0])
+
+    def commits_after(self, sequence: int, *, limit: int = 512) -> tuple[CommitRecord, ...]:
+        bounded = max(1, min(2048, int(limit)))
+        with closing(self._connect()) as database:
+            rows = database.execute(
+                "SELECT seq, kind, committed_at, payload FROM commits WHERE seq>? ORDER BY seq LIMIT ?",
+                (int(sequence), bounded),
+            ).fetchall()
+            return tuple(
+                CommitRecord(int(row["seq"]), str(row["kind"]), str(row["committed_at"]),
+                             public_commit_payload(json.loads(row["payload"])))
+                for row in rows
+            )
+
+    def task_history(self, task_id: str, *, through: int | None = None) -> tuple[TaskTransition, ...]:
+        with closing(self._connect()) as database:
+            rows = database.execute(
+                "SELECT seq, json_extract(payload, '$._workflow') AS workflow FROM commits "
+                "WHERE json_extract(payload, '$._workflow.task.task_id')=? "
+                "AND (? IS NULL OR seq<=?) ORDER BY seq", (task_id, through, through),
+            ).fetchall()
+            return tuple(transition_from_payload(int(row["seq"]), json.loads(row["workflow"])) for row in rows)
+
+
+def _entries(database: sqlite3.Connection, conversation_id: str) -> tuple[EntryDraft, ...]:
+    rows = database.execute(
+        "SELECT id, conversation_id, parent_id, kind, payload, commit_seq, by_task_id "
+        "FROM entries WHERE conversation_id=? ORDER BY ordinal", (conversation_id,),
+    ).fetchall()
+    if not rows and database.execute("SELECT 1 FROM conversations WHERE id=?", (conversation_id,)).fetchone() is None:
+        raise KeyError(f"unknown conversation: {conversation_id}")
+    return tuple(
+        EntryDraft(str(row["id"]), str(row["conversation_id"]), row["parent_id"], str(row["kind"]),
+                   json.loads(row["payload"]), int(row["commit_seq"]), row["by_task_id"])
+        for row in rows
+    )
+
+
+def _conversation_parent(database: sqlite3.Connection, conversation_id: str) -> tuple[str | None, str | None]:
+    row = database.execute(
+        "SELECT parent_conversation_id, parent_entry_id FROM conversations WHERE id=?", (conversation_id,),
+    ).fetchone()
+    if row is None:
+        raise KeyError(f"unknown conversation: {conversation_id}")
+    return row["parent_conversation_id"], row["parent_entry_id"]
+
+
+def _encode(payload: object) -> str:
+    return json.dumps(thaw_json(payload), ensure_ascii=False, separators=(",", ":"), sort_keys=True, allow_nan=False)
+
+
+def _same_entry(row: sqlite3.Row, entry: EntryDraft) -> bool:
+    return (
+        row["parent_id"] == entry.parent_id
+        and str(row["kind"]) == entry.kind
+        and str(row["payload"]) == _encode(entry.payload)
+    )
+
+
+def _find_submission(database: sqlite3.Connection, draft: SubmissionDraft | None) -> CommitResult | None:
+    if draft is None:
+        return None
+    row = database.execute(
+        "SELECT s.id, s.fingerprint, s.revision, e.id AS entry_id, e.parent_id, e.kind, e.payload, e.commit_seq "
+        "FROM submissions s JOIN entries e ON e.id=s.entry_id "
+        "WHERE s.conversation_id=? AND s.request_id=?",
+        (draft.conversation_id, draft.request_id),
+    ).fetchone()
+    if row is None:
+        return None
+    stored_entry = EntryDraft(str(row["entry_id"]), draft.conversation_id, row["parent_id"], str(row["kind"]), json.loads(row["payload"]))
+    stored = SubmissionDraft(str(row["id"]), draft.request_id, draft.conversation_id, stored_entry, str(row["fingerprint"]))
+    if not same_submission(stored, draft):
+        raise IdempotencyConflict("request_id was already admitted with different input")
+    return CommitResult(int(row["revision"]), int(row["commit_seq"]), str(row["id"]))
+
+
+def _new_commit(database: sqlite3.Connection, kind: str, payload: Mapping[str, object]) -> CommitRecord:
+    committed_at = datetime.now(UTC).isoformat()
+    identity = database.execute("SELECT value FROM schema_metadata WHERE key='database_id'").fetchone()
+    if identity is None:
+        raise SchemaVersionError("durable database identity is missing")
+    payload = {**payload, "database_id": str(identity["value"])}
+    cursor = database.execute(
+        "INSERT INTO commits(kind, committed_at, payload) VALUES(?, ?, ?)",
+        (kind, committed_at, _encode(payload)),
+    )
+    if cursor.lastrowid is None:
+        raise RuntimeError("SQLite did not return a commit sequence")
+    return CommitRecord(int(cursor.lastrowid), kind, committed_at, public_commit_payload(payload))
+
+
+def _read_conversation(database: sqlite3.Connection, conversation_id: str) -> tuple[int, str | None]:
+    row = database.execute("SELECT head_entry_id, revision FROM conversations WHERE id=?", (conversation_id,)).fetchone()
+    if row is None:
+        raise KeyError(f"unknown conversation: {conversation_id}")
+    return int(row["revision"]), row["head_entry_id"]
+
+
+def _validate_mutation(
+    database: sqlite3.Connection,
+    mutation: DurableMutation,
+    revision: int,
+    head: str | None,
+) -> None:
+    if revision != mutation.expected_revision:
+        raise CommitConflict("conversation revision changed")
+    parent = head
+    for entry in mutation.entries:
+        if entry.parent_id != parent:
+            raise CommitConflict("mutation entries do not extend the active branch")
+        if database.execute("SELECT 1 FROM entries WHERE id=?", (entry.entry_id,)).fetchone() is not None:
+            raise CommitConflict("entry ID already exists")
+        parent = entry.entry_id
+    _validate_task(database, mutation.task, mutation.submission, mutation.expected_attempt_token)
+    _validate_effect(database, mutation)
+    _validate_submission_update(database, mutation.submission_update, mutation.entries)
+
+
+def _validate_task(
+    database: sqlite3.Connection,
+    task: TaskCheckpoint | None,
+    proposed_submission: SubmissionDraft | None = None,
+    expected_attempt_token: str | None = None,
+) -> None:
+    if task is None:
+        return
+    submission = database.execute(
+        "SELECT conversation_id FROM submissions WHERE id=?",
+        (task.submission_id,),
+    ).fetchone()
+    proposed_matches = (
+        proposed_submission is not None
+        and proposed_submission.submission_id == task.submission_id
+        and proposed_submission.conversation_id == task.conversation_id
+    )
+    if (submission is None and not proposed_matches) or (
+        submission is not None and str(submission["conversation_id"]) != task.conversation_id
+    ):
+        raise CommitConflict("task must belong to a committed submission")
+    row = database.execute(
+        "SELECT conversation_id, submission_id, revision, provider_snapshot, phase, status, state FROM tasks WHERE id=?",
+        (task.task_id,),
+    ).fetchone()
+    if row is None and task.revision != 0:
+        raise CommitConflict("new task must start at revision zero")
+    if row is None and not valid_task_transition(None, task.phase):
+        raise CommitConflict("new task must start in accepted or dispatching phase")
+    if row is not None:
+        previous_state = json.loads(row["state"])
+        if previous_state.get("cancel_requested") and task.phase not in {"cancelled", "failed"}:
+            raise CommitConflict("task cancellation barrier is active")
+        if not valid_execution_attempt(previous_state, TaskStatus(str(row["status"])), task, expected_attempt_token):
+            raise CommitConflict("task execution attempt changed")
+        if task.revision != int(row["revision"]) + 1:
+            raise CommitConflict("task revision changed")
+        if (
+            str(row["conversation_id"]) != task.conversation_id
+            or str(row["submission_id"]) != task.submission_id
+            or str(row["provider_snapshot"]) != _encode(task.provider_snapshot)
+        ):
+            raise CommitConflict("task identity is immutable")
+        if not valid_frozen_task_state(json.loads(row["state"]), task.state):
+            raise CommitConflict("admitted task state is immutable")
+        previous_phase = str(row["phase"])
+        if not valid_task_transition(previous_phase, task.phase):
+            raise CommitConflict(f"invalid task phase transition: {previous_phase} -> {task.phase}")
+        previous_status = TaskStatus(str(row["status"]))
+        if not valid_task_status_transition(previous_status, TaskStatus(str(task.status))):
+            raise CommitConflict(f"invalid task status transition: {previous_status} -> {task.status}")
+    elif not valid_task_status_transition(None, TaskStatus(str(task.status))):
+        raise CommitConflict("new task must start with a non-terminal scheduler status")
+
+
+def _validate_effect(database: sqlite3.Connection, mutation: DurableMutation) -> None:
+    effects = ((mutation.effect,) if mutation.effect is not None else ()) + mutation.effects + mutation.settlements
+    if not effects:
+        return
+    if mutation.task is None:
+        raise CommitConflict("effect mutation requires its task checkpoint")
+    for effect in effects:
+        task_exists = database.execute("SELECT 1 FROM tasks WHERE id=?", (effect.task_id,)).fetchone() is not None
+        task_is_new = mutation.task is not None and mutation.task.task_id == effect.task_id
+        if not task_exists and not task_is_new:
+            raise CommitConflict("effect task does not exist")
+        row = database.execute(
+            "SELECT task_id, category, replay_class, args_digest, status, intent, settlement FROM effects WHERE id=?",
+            (effect.effect_id,),
+        ).fetchone()
+        if row is None:
+            if (effect is mutation.effect and mutation.expected_effect_status is not None) or effect in mutation.settlements:
+                raise CommitConflict("effect status changed")
+            continue
+        expected = "pending" if effect in mutation.settlements else mutation.expected_effect_status
+        if row["settlement"] is not None:
+            raise CommitConflict("effect is already settled")
+        if (effect is not mutation.effect and effect not in mutation.settlements) or row["status"] != expected:
+            raise CommitConflict("effect status changed")
+        original = (str(row["task_id"]), str(row["category"]), str(row["replay_class"]), str(row["args_digest"]), str(row["intent"]))
+        candidate = (effect.task_id, effect.category, effect.replay_class, effect.args_digest, _encode(effect.intent))
+        if original != candidate:
+            raise CommitConflict("effect identity is immutable")
+
+
+def _validate_submission_update(
+    database: sqlite3.Connection,
+    update: SubmissionUpdate | None,
+    entries: tuple[EntryDraft, ...],
+) -> None:
+    if update is None:
+        return
+    row = database.execute(
+        "SELECT conversation_id, status FROM submissions WHERE id=?",
+        (update.submission_id,),
+    ).fetchone()
+    if row is None or str(row["conversation_id"]) != update.conversation_id:
+        raise CommitConflict("unknown submission")
+    current = SubmissionStatus(str(row["status"]))
+    if current != update.expected_status or not valid_submission_transition(current, update.status):
+        raise CommitConflict("submission status changed")
+    if update.answer_entry_id is not None and update.answer_entry_id not in {entry.entry_id for entry in entries}:
+        raise CommitConflict("answer entry must be part of the same commit")
+
+
+def _write_entries(database: sqlite3.Connection, mutation: DurableMutation, revision: int, sequence: int) -> None:
+    for ordinal, entry in enumerate(mutation.entries, start=revision + 1):
+        database.execute(
+            "INSERT INTO entries(id, conversation_id, parent_id, kind, payload, ordinal, commit_seq, by_task_id) VALUES(?,?,?,?,?,?,?,?)",
+            (entry.entry_id, entry.conversation_id, entry.parent_id, entry.kind, _encode(entry.payload), ordinal, sequence,
+             mutation.task.task_id if mutation.task is not None else None),
+        )
+
+
+def _write_task(database: sqlite3.Connection, task: TaskCheckpoint | None) -> None:
+    if task is None:
+        return
+    database.execute(
+        "INSERT INTO tasks(id, conversation_id, submission_id, phase, revision, provider_snapshot, state, current_turn_id, pending_effect_id, status, schema_version) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET phase=excluded.phase, revision=excluded.revision, "
+        "provider_snapshot=excluded.provider_snapshot, state=excluded.state, current_turn_id=excluded.current_turn_id, "
+        "pending_effect_id=excluded.pending_effect_id, status=excluded.status, schema_version=excluded.schema_version",
+        (task.task_id, task.conversation_id, task.submission_id, task.phase, task.revision, _encode(task.provider_snapshot), _encode(task.state),
+         task.current_turn_id, task.pending_effect_id, TaskStatus(str(task.status)).value, task.schema_version),
+    )
+
+
+def _write_effect(database: sqlite3.Connection, effect: EffectRecord | None, expected_status: str | None) -> None:
+    if effect is None:
+        return
+    settlement = None if effect.settlement is None else _encode(effect.settlement)
+    if expected_status is None:
+        database.execute(
+            "INSERT INTO effects(id, task_id, category, replay_class, args_digest, status, intent, settlement) VALUES(?,?,?,?,?,?,?,?)",
+            (effect.effect_id, effect.task_id, effect.category, effect.replay_class, effect.args_digest, effect.status, _encode(effect.intent), settlement),
+        )
+        return
+    cursor = database.execute(
+        "UPDATE effects SET status=?, settlement=? WHERE id=? AND status=?",
+        (effect.status, settlement, effect.effect_id, expected_status),
+    )
+    if cursor.rowcount != 1:
+        raise CommitConflict("effect status changed")
+
+
+def _write_effects(database: sqlite3.Connection, effects: tuple[EffectRecord, ...]) -> None:
+    for effect in effects:
+        database.execute(
+            "INSERT INTO effects(id, task_id, category, replay_class, args_digest, status, intent, settlement) VALUES(?,?,?,?,?,?,?,?)",
+            (effect.effect_id, effect.task_id, effect.category, effect.replay_class, effect.args_digest, effect.status, _encode(effect.intent),
+             None if effect.settlement is None else _encode(effect.settlement)),
+        )
+
+
+def _write_submission_update(database: sqlite3.Connection, update: SubmissionUpdate | None) -> None:
+    if update is None:
+        return
+    cursor = database.execute(
+        "UPDATE submissions SET status=?, answer_entry_id=?, reason=?, detail=? "
+        "WHERE id=? AND conversation_id=? AND status=?",
+        (
+            update.status.value,
+            update.answer_entry_id,
+            update.reason,
+            None if update.detail is None else _encode(update.detail),
+            update.submission_id,
+            update.conversation_id,
+            update.expected_status.value,
+        ),
+    )
+    if cursor.rowcount != 1:
+        raise CommitConflict("submission status changed")
