@@ -968,4 +968,29 @@ fork ancestry + compaction + fork-local inbox：9 passed
 
 这移除了“fork 后完全没有 local inbox 隔离”的硬差距。仍未完成的是 queued submission placement 与 provider `postTools`/`final` boundary 的同一事务，以及跨 conversation 的更复杂共享引用和回收语义；后者按 Pi 的最小 parent-cap 目标暂不提前引入。
 
+## 28. 第二十四段：DurableAppServices 的 DB open fencing
+
+本段补上 Pi 单一 Harness ownership 对应的应用边界。此前 Codey 只有 task attempt token/process fencing；两个独立 `DurableAppServices` 仍可同时打开同一个 `durable.sqlite3`，第二个实例启动恢复时可能误判第一个实例的 running task。现在在 services 层持有已有 OS-backed `acquire_lease()`，lease 覆盖整个 scheduler/session 生命周期。
+
+### 28.1 已完成
+
+- 第一个 `DurableAppServices.open(database_path)` 持有数据库 sidecar lease；同一进程或跨进程的第二个 open 立即以 `LockTimeout` 失败；
+- 第一个 services 完整 close 后 lease 释放，数据库可以重新打开；
+- store/session 直接构造仍可用于 Memory/SQLite contract 和 observer 测试，ownership fencing 只约束应用级 services，避免把测试或只读检查错误地变成全局单实例；
+- lease 获取失败或 schema open 失败时会释放已获取的句柄；`SCHEMA_VERSION = 1` 不变，用户要求保留的 `01bb0e09` schema reset 路径未修改。
+
+### 28.2 验证
+
+```text
+DurableAppServices lifecycle + same-database open fence：3 passed
+mypy codey/app/durable_services.py：Success
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+```
+
+### 28.3 与 Pi 的结果
+
+Codey 已消除“第二个应用 Session 可以无条件接管同一 durable DB”的硬风险，并保留 task attempt fencing 作为更细粒度的 worker 保护。相对 Pi 仍不足的是完整 scheduler invocation/abort/join 生命周期：lease 只禁止第二个应用 owner，不能替代 Pi 对任务级 live index、abort handler、background ownership 和 completing/finalization 的完整协调。
+
 

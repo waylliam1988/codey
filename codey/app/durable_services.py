@@ -20,6 +20,7 @@ from codey.durable.model import (
     DurableMutation,
     TaskCheckpoint,
 )
+from codey.storage.file_lock import FileLease, acquire_lease
 
 
 @dataclass
@@ -30,6 +31,7 @@ class DurableAppServices:
     scheduler: DurableTaskScheduler
     _scheduler_closed: bool = False
     _session_closed: bool = False
+    _database_lease: FileLease | None = None
 
     @classmethod
     def open(
@@ -41,17 +43,22 @@ class DurableAppServices:
         start: bool = True,
     ) -> DurableAppServices:
         database_path = Path(database_path)
+        lease = acquire_lease(database_path)
         try:
-            session = DurableSession(SQLiteDurableStore(database_path))
-        except SchemaVersionError:
-            # The application is intentionally cold-start only.  There is no
-            # durable migration or legacy-history compatibility layer: an old
-            # database is discarded and replaced with the current schema.
-            # SQLite may leave WAL/SHM/journal sidecars behind, so remove all
-            # of them before opening the fresh store.
-            for suffix in ("", "-wal", "-shm", "-journal"):
-                database_path.with_name(database_path.name + suffix).unlink(missing_ok=True)
-            session = DurableSession(SQLiteDurableStore(database_path))
+            try:
+                session = DurableSession(SQLiteDurableStore(database_path))
+            except SchemaVersionError:
+                # The application is intentionally cold-start only.  There is no
+                # durable migration or legacy-history compatibility layer: an old
+                # database is discarded and replaced with the current schema.
+                # SQLite may leave WAL/SHM/journal sidecars behind, so remove all
+                # of them before opening the fresh store.
+                for suffix in ("", "-wal", "-shm", "-journal"):
+                    database_path.with_name(database_path.name + suffix).unlink(missing_ok=True)
+                session = DurableSession(SQLiteDurableStore(database_path))
+        except BaseException:
+            lease.release()
+            raise
         scheduler = DurableTaskScheduler(session, dispatch)
         def observe(result: CommitResult, mutation: DurableMutation) -> None:
             del result
@@ -70,7 +77,7 @@ class DurableAppServices:
         session.observe_commits(observe)
         if publish is not None:
             session.subscribe_commits(publish)
-        services = cls(session, scheduler)
+        services = cls(session, scheduler, _database_lease=lease)
         if start:
             scheduler.start()
         return services
@@ -91,6 +98,9 @@ class DurableAppServices:
         if not self._session_closed:
             self.session.close()
             self._session_closed = True
+            if self._database_lease is not None:
+                self._database_lease.release()
+                self._database_lease = None
         return True
 
 
