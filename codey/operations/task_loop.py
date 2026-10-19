@@ -96,6 +96,7 @@ class KernelExecutionDeps:
     workspace_ignored_paths: Any = ()
     workspace_revision_store: Any = None
     ensure_workspace_writer: Callable[[], None] | None = None
+    durable: Any = None
 
 
 @dataclass(frozen=True)
@@ -713,6 +714,7 @@ def run_task_kernel(  # noqa: PLR0915
             startup.delivered, intent_sink, controller, _outer_evidence,
             workspace_ignored_paths, workspace_revision_store,
             turns_used, propagate_provider_failure, stop_flag,
+            durable=request.execution.durable,
             snapshot=turn_snapshot,
         )
         if isinstance(results_or_failure, KernelResult):
@@ -875,6 +877,7 @@ def _call_execute_turn(
     delivered_map: Any, intent_sink: Any, controller: Any, outer_evidence: Any,
     workspace_ignored_paths: Any, workspace_revision_store: Any,
     turns_used: int, propagate_provider_failure: bool, stop_flag: Any = None,
+    durable: Any = None,
     snapshot: Any = None,
 ) -> Any:
     """Run one execution turn; faults fail closed as provider_failure."""
@@ -904,6 +907,8 @@ def _call_execute_turn(
                 workspace_revision_store=workspace_revision_store,
                 stop_flag=stop_flag,
                 executors=effective_runnable,
+                durable=durable,
+                allow_writes=permission_profile == "coding_writer" and project_path is not None,
             )
         return _execute_turn(
             session, calls, executors=effective_runnable, run_id=run_id,

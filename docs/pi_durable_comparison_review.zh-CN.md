@@ -1588,4 +1588,39 @@ ruff：All checks passed
 SCHEMA_VERSION = 1
 ```
 
+## 47. 第四十三段：SQLite 并发 soak/chaos 与 CodeMode 写沙箱/state
+
+本段完成最后两项未收尾能力。并发测试使用真实 SQLite WAL、多个独立连接、同一 conversation 的 CAS 冲突和一次提交故障；CodeMode 则把写权限和跨执行状态接回现有 kernel/durable task owner。
+
+### 47.1 已完成
+
+- 新增 bounded concurrent WAL soak：4 个独立 `DurableSession` 连接并发追加 100 条 conversation entries，CAS 冲突自动重试，验证所有写入收敛、commit sequence 连续且无重复；
+- chaos 分支注入一次 SQLite commit 失败，确认 session 关闭重开后事实数量不增加也不丢失；
+- CodeMode 默认仍是只读 catalog；只有显式 `allow_writes=True` 且冻结 spec 拥有 `project.write` 时，`edit`/`run` 才会暴露；shell 永远不直接暴露给 Node worker，仍经过普通 approval/effect 路径；
+- `CodeModeHost`、`CodeModeKernelExecutor` 和生产 `build_execute_turn_executor()` 共享同一写权限开关，子调用仍回到 `execute_turn()`，因此 workspace identity、permission、effect settlement 和 verification 边界不变；
+- 新增 `DurableCodeModeState`，把小型 JSON state 存在 task checkpoint 的 `codemode_state` 命名空间；限制 key 数、key 大小、value 大小和非有限 JSON；
+- Node worker 新增受控 `store(key, value)` / `load(key)` RPC，新的 executor/process 可以从 durable checkpoint 读取此前 state；没有 durable task 时 state 明确不可用；
+- 没有新增 schema 表，保持 `SCHEMA_VERSION = 1`，没有 UI、JSONL 或独立 CodeMode 文件状态源。
+
+### 47.2 与 Pi 的结果
+
+Codey 现在在可重复的 SQLite 并发恢复证明和 CodeMode 的权限/执行审计边界上完成最后缺口：写操作必须经过 frozen catalog、project.write 和 kernel effect 路径，跨执行 state 由 task checkpoint 持久化。相对 Pi，Codey 继续保留审批、未知 effect fail-closed、provider snapshot、completion proof 和 Research evidence。
+
+仍需持续验证的部分：
+
+- 当前 soak 是 bounded gate-safe 版本，nightly/weekly 长时间 CLI soak 仍应在 CI 或专用机器上运行；
+- CodeMode 的写入组合仍受现有 `edit`/`run` 工具和 workspace identity 约束，尚未开放 shell 直通或任意文件系统 API；
+- `DurableSession` 仍保持单一 mutation owner，没有为了行数拆成 repository/mixin。
+
+### 47.3 本段验证
+
+```text
+CodeMode + durable state + kernel integration：25 passed
+SQLite concurrency soak/chaos：1 passed
+mypy：Success: no issues found
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
 

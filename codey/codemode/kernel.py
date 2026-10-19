@@ -5,7 +5,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from codey.codemode.catalog import build_catalog_snapshot, build_read_only_catalog
+from codey.codemode.catalog import build_catalog_snapshot, build_codemode_catalog
 from codey.codemode.host import CodeModeHost
 from codey.codemode.output import externalize_value
 from codey.codemode.protocol import parse_codemode_args
@@ -29,13 +29,15 @@ class CodeModeKernelExecutor:
         session_id: str = "",
         run_id: str = "",
         max_inline_bytes: int = 200_000,
+        allow_writes: bool = False,
+        state_store: Any = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
             raise ValueError("execution_id must be non-empty")
         self.catalog = catalog if isinstance(catalog, ToolCatalogSnapshot) else build_catalog_snapshot(catalog)
-        if any(not entry.read_only for entry in self.catalog.entries):
-            raise ValueError("CodeMode first version accepts read-only tools only")
+        if any(not entry.read_only for entry in self.catalog.entries) and not allow_writes:
+            raise ValueError("CodeMode write tools require allow_writes=True")
         self.execute_child = execute_child
         self.runtime = runtime or NodeWorkerRuntime()
         self.limits = limits or CodeModeLimits()
@@ -45,6 +47,8 @@ class CodeModeKernelExecutor:
         if isinstance(max_inline_bytes, bool) or not isinstance(max_inline_bytes, int) or max_inline_bytes <= 0:
             raise ValueError("max_inline_bytes must be a positive integer")
         self.max_inline_bytes = max_inline_bytes
+        self.allow_writes = bool(allow_writes)
+        self.state_store = state_store
 
     def execute(self, call: ToolCall) -> ToolResult:
         try:
@@ -55,6 +59,7 @@ class CodeModeKernelExecutor:
             execution_id=self.execution_id,
             catalog=self.catalog.entries,
             execute=self.execute_child,
+            allow_writes=self.allow_writes,
             transform_value=lambda value: externalize_value(
                 value,
                 store=self.artifact_store,
@@ -68,6 +73,7 @@ class CodeModeKernelExecutor:
             catalog=self.catalog.entries,
             invoke=host.invoke,
             limits=self.limits,
+            state_store=self.state_store,
         )
         audit = {
             "codemode_execution_id": self.execution_id,
@@ -113,12 +119,25 @@ def build_execute_turn_executor(
     stop_flag: Any = None,
     executors: Mapping[str, Callable[[ToolCall], Any]] | None = None,
     limits: CodeModeLimits | None = None,
+    durable: Any = None,
+    allow_writes: bool = False,
+    state_store: Any = None,
 ) -> Callable[[ToolCall], ToolResult]:
     """Build the production parent executor; every child re-enters execute_turn."""
     from codey.operations.kernel_execution import execute_turn
 
     frozen_specs = getattr(snapshot, "frozen_specs", ()) or ()
-    catalog = build_read_only_catalog({str(getattr(spec, "name", "")): spec for spec in frozen_specs})
+    if state_store is None and durable is not None and run_id:
+        try:
+            from codey.codemode.state import DurableCodeModeState
+
+            state_store = DurableCodeModeState(durable, str(run_id))
+        except (KeyError, ValueError):
+            state_store = None
+    catalog = build_codemode_catalog(
+        {str(getattr(spec, "name", "")): spec for spec in frozen_specs},
+        allow_writes=allow_writes,
+    )
     child_executors = {key: value for key, value in dict(executors or {}).items() if key != "codemode"}
 
     def run_parent(call: ToolCall) -> ToolResult:
@@ -167,6 +186,8 @@ def build_execute_turn_executor(
             catalog=catalog,
             execute_child=execute_child,
             limits=limits,
+            allow_writes=allow_writes,
+            state_store=state_store,
             artifact_store=managed_outputs,
             session_id=session_id,
             run_id=str(run_id or ""),

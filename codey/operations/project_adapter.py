@@ -264,6 +264,7 @@ def run(request: AgentRequest) -> RunResult:
                 permission_profile=request.permission_profile,
                 workspace_revision_store=request.workspace_revision_store,
                 workspace_ignored_paths=request.workspace_ignored_paths,
+                durable=request.durable,
             ),
             observation=KernelObservationDeps(
                 intent_sink=intent_sink,

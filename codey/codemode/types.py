@@ -52,6 +52,7 @@ class ToolCatalogEntry:
     namespace: str = ""
     read_only: bool = True
     parallel_safe: bool = False
+    grant: str = ""
 
     def __post_init__(self) -> None:
         name = str(self.name or "").strip()

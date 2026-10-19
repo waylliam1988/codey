@@ -442,6 +442,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                     workspace_ignored_paths=ignored,
                     workspace_revision_store=getattr(deps, "workspace_revisions", None),
                     ensure_workspace_writer=ensure_workspace_writer,
+                    durable=getattr(getattr(deps, "state", None), "durable", None),
                 ),
                 observation=KernelObservationDeps(
                     intent_sink=intent_sink,

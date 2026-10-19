@@ -22,12 +22,16 @@ class CodeModeHost:
         catalog: Sequence[ToolCatalogEntry],
         execute: Callable[[ToolCall], object],
         transform_value: Callable[[object], object] | None = None,
+        allow_writes: bool = False,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
             raise ValueError("execution_id must be non-empty")
-        if any(not entry.read_only for entry in catalog):
-            raise ValueError("CodeMode first version accepts read-only tools only")
+        if any(not entry.read_only for entry in catalog) and not allow_writes:
+            raise ValueError("CodeMode read-only host requires allow_writes=True for write tools")
+        if any(not entry.read_only and entry.grant != "project.write" for entry in catalog):
+            raise ValueError("CodeMode only permits project.write tools")
+        self._allow_writes = bool(allow_writes)
         self._allowed = frozenset(entry.name for entry in catalog)
         self._execute = execute
         self._transform_value = transform_value

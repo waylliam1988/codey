@@ -5,6 +5,7 @@ const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity 
 let active = null;
 const pending = new Map();
 let nextCall = 0;
+let nextStateCall = 0;
 
 function send(message) {
   process.stdout.write(JSON.stringify(message) + "\n");
@@ -49,6 +50,15 @@ function toolsProxy(path = []) {
   });
 }
 
+function stateCall(op, key, value) {
+  if (!active?.stateEnabled) {
+    return Promise.reject(new Error("codemode state is unavailable"));
+  }
+  const callId = `state-${++nextStateCall}`;
+  send({ type: "state", callId, op, key, ...(op === "store" ? { value } : {}) });
+  return new Promise((resolve, reject) => pending.set(callId, { resolve, reject, state: true }));
+}
+
 function deniedSource(code) {
   return /\b(?:process|require|import|fetch|eval|globalThis|__dirname|__filename|child_process|fs|constructor)\b/i.test(code)
     || /\bFunction\s*\(/.test(code)
@@ -73,9 +83,16 @@ async function execute(request) {
     },
     calls: 0,
     pending: 0,
+    stateEnabled: Boolean(request.stateEnabled),
+    storeWrites: {},
   };
   const context = vm.createContext({
     tools: toolsProxy(),
+    store: (key, value) => {
+      active.storeWrites[String(key)] = value;
+      return stateCall("store", String(key), value);
+    },
+    load: (key) => stateCall("load", String(key)),
     console: Object.freeze({ log() {}, error() {} }),
   });
   try {
@@ -86,7 +103,7 @@ async function execute(request) {
       send({ type: "done", ok: false, errorCode: "output_limit", error: "codemode output exceeds output byte limit", childCalls: active.calls });
       return;
     }
-    send({ type: "done", ok: true, value: jsonValue(value), childCalls: active.calls });
+    send({ type: "done", ok: true, value: jsonValue(value), childCalls: active.calls, storeWrites: active.storeWrites });
   } catch (error) {
     send({ type: "done", ok: false, errorCode: String(error?.code ?? "execution_error"), error: String(error?.message ?? error), childCalls: active.calls });
   } finally {
@@ -97,11 +114,11 @@ async function execute(request) {
 rl.on("line", async (line) => {
   let message;
   try { message = JSON.parse(line); } catch { send({ type: "error", code: "protocol", message: "invalid request JSON" }); return; }
-  if (message.type === "result") {
+  if (message.type === "result" || message.type === "stateResult") {
     const waiter = pending.get(message.callId);
     if (!waiter) return;
     pending.delete(message.callId);
-    if (active) active.pending = Math.max(0, active.pending - 1);
+    if (active && message.type === "result") active.pending = Math.max(0, active.pending - 1);
     if (message.ok) waiter.resolve(message.value); else {
       const error = new Error(String(message.error ?? "tool call failed"));
       error.code = String(message.errorCode ?? "tool_error");

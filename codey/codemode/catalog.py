@@ -24,6 +24,7 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, Any] | ToolCatalogEntry])
             description=str(row.get("description", "")),
             parameters=row.get("parameters", {}) if isinstance(row.get("parameters", {}), Mapping) else {},
             namespace=str(row.get("namespace", "") or ""),
+            grant=str(row.get("grant", "") or ""),
             read_only=bool(row.get("read_only", True)),
             parallel_safe=bool(row.get("parallel_safe", False)),
         )
@@ -44,6 +45,7 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, Any] | ToolCatalogEntry])
             "description": entry.description,
             "parameters": entry.parameters,
             "namespace": entry.namespace,
+            "grant": entry.grant,
             "read_only": entry.read_only,
             "parallel_safe": entry.parallel_safe,
         }
@@ -70,6 +72,7 @@ def build_catalog_from_specs(specs: Mapping[str, Any] | Iterable[Any]) -> ToolCa
                 for key, schema in (getattr(spec, "parameters", ()) or ())
             },
             "namespace": executor,
+            "grant": str(getattr(spec, "grant", "") or ""),
             "read_only": str(getattr(spec, "replay_class", "unsafe")) == "safe",
             "parallel_safe": str(getattr(spec, "replay_class", "unsafe")) == "safe",
         })
@@ -92,12 +95,39 @@ def build_read_only_catalog(specs: Mapping[str, Any] | Iterable[Any]) -> ToolCat
             description=entry.description,
             parameters=entry.parameters,
             namespace=entry.namespace,
+            grant=entry.grant,
             read_only=True,
             parallel_safe=entry.name in {"list_dir", "read_file", "grep"},
         )
         for entry in snapshot.entries
     )
     return ToolCatalogSnapshot(entries, snapshot.digest)
+
+
+def build_codemode_catalog(
+    specs: Mapping[str, Any] | Iterable[Any], *, allow_writes: bool = False,
+) -> ToolCatalogSnapshot:
+    """Build the frozen CodeMode catalog for one permission snapshot.
+
+    Read tools remain limited to the existing safe project/source/knowledge
+    surface.  Explicit write mode adds only project ``edit`` and ``run``;
+    shell is always kept behind the normal approval path and is never exposed
+    directly to the Node worker.
+    """
+    snapshot = build_catalog_from_specs(specs)
+    allowed: list[ToolCatalogEntry] = []
+    for entry in snapshot.entries:
+        if (
+            (entry.read_only and entry.namespace in {"project", "source", "knowledge"})
+            or (
+                allow_writes
+                and entry.name in {"edit", "run"}
+                and entry.namespace == "project"
+                and entry.grant == "project.write"
+            )
+        ):
+            allowed.append(entry)
+    return build_catalog_snapshot(allowed)
 
 
 def render_declarations(snapshot: ToolCatalogSnapshot) -> str:

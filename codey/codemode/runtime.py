@@ -23,6 +23,7 @@ class CodeModeRuntime(Protocol):
         *,
         catalog: Sequence[ToolCatalogEntry],
         invoke: ToolInvoker,
+        state_store: Any = None,
         limits: CodeModeLimits | None = None,
     ) -> CodeModeResult:
         """Run one program and mediate all host calls through ``invoke``."""
@@ -41,6 +42,7 @@ class NodeWorkerRuntime:
         *,
         catalog: Sequence[ToolCatalogEntry],
         invoke: ToolInvoker,
+        state_store: Any = None,
         limits: CodeModeLimits | None = None,
     ) -> CodeModeResult:
         active_limits = limits or CodeModeLimits()
@@ -98,13 +100,14 @@ class NodeWorkerRuntime:
                 "maxPendingPromises": active_limits.max_pending_promises,
                 "maxOutputBytes": active_limits.max_output_bytes,
             },
+            "stateEnabled": state_store is not None,
         }
         executor: ThreadPoolExecutor | None = None
         try:
             self._write_line(stdin, request)
             executor = ThreadPoolExecutor(max_workers=active_limits.max_concurrent_calls)
             return self._drive(
-                process, stdin, messages, invoke, active_limits, started, executor,
+                process, stdin, messages, invoke, state_store, active_limits, started, executor,
             )
         finally:
             if executor is not None:
@@ -119,11 +122,13 @@ class NodeWorkerRuntime:
         stdin: Any,
         messages: queue.Queue[dict[str, Any]],
         invoke: ToolInvoker,
+        state_store: Any,
         limits: CodeModeLimits,
         started: float,
         executor: ThreadPoolExecutor,
     ) -> CodeModeResult:
         pending: dict[str, Future[dict[str, Any]]] = {}
+        store_writes: dict[str, object] = {}
         while True:
             self._flush_completed(pending, stdin)
             elapsed = time.monotonic() - started
@@ -145,6 +150,9 @@ class NodeWorkerRuntime:
                 else:
                     pending[call_id] = executor.submit(self._handle_call, message, invoke)
                 continue
+            if kind == "state":
+                self._handle_state(message, stdin, state_store, store_writes)
+                continue
             if kind == "done":
                 return CodeModeResult(
                     bool(message.get("ok")), value=message.get("value"),
@@ -152,11 +160,45 @@ class NodeWorkerRuntime:
                     error_code=str(message.get("errorCode", "") or ""),
                     error=str(message.get("error", "") or ""),
                     child_calls=int(message.get("childCalls", 0) or 0),
+                    store_writes=store_writes,
                 )
             if kind == "error":
                 return CodeModeResult(False, error_code=str(message.get("code", "worker_error")), error=str(message.get("message", "worker error")))
             if kind == "eof":
                 return CodeModeResult(False, error_code="worker_exit", error="codemode worker exited without a result")
+
+    @staticmethod
+    def _handle_state(
+        message: dict[str, Any], stdin: Any, state_store: Any, store_writes: dict[str, object],
+    ) -> None:
+        call_id = str(message.get("callId", ""))
+        key = str(message.get("key", ""))
+        operation = str(message.get("op", ""))
+        if state_store is None:
+            NodeWorkerRuntime._write_line(
+                stdin,
+                {"type": "stateResult", "callId": call_id, "ok": False,
+                 "errorCode": "state_unavailable", "error": "codemode state is unavailable"},
+            )
+            return
+        try:
+            if operation == "store":
+                value = message.get("value")
+                state_store.store(key, value)
+                store_writes[key] = value
+                response = {"type": "stateResult", "callId": call_id, "ok": True, "value": True}
+            elif operation == "load":
+                response = {
+                    "type": "stateResult", "callId": call_id, "ok": True,
+                    "value": state_store.load(key),
+                }
+            else:
+                response = {"type": "stateResult", "callId": call_id, "ok": False,
+                            "errorCode": "state_operation", "error": "unknown state operation"}
+        except Exception as exc:
+            response = {"type": "stateResult", "callId": call_id, "ok": False,
+                        "errorCode": "state_error", "error": str(exc)[:400]}
+        NodeWorkerRuntime._write_line(stdin, response, call_id=call_id)
 
     @staticmethod
     def _plain_json(value: object) -> object:
