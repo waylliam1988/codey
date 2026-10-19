@@ -31,6 +31,7 @@ from codey.durable.model import (
     EffectRecord,
     EntryDraft,
     SubmissionPlacement,
+    SubmissionRecord,
     SubmissionStatus,
     SubmissionUpdate,
     TaskCheckpoint,
@@ -370,6 +371,10 @@ class DurableSession:
         return tuple(self.store.pending_tasks())
 
     @_mutation_line
+    def queued_submissions(self) -> tuple[SubmissionRecord, ...]:
+        return tuple(self.store.queued_submissions())
+
+    @_mutation_line
     def tasks(self) -> tuple[TaskCheckpoint, ...]:
         """Read every checkpoint for projections that need terminal history."""
         return tuple(self.store.tasks())
@@ -440,6 +445,27 @@ class DurableSession:
         )
 
     @_mutation_line
+    def admit_write(
+        self,
+        *,
+        conversation_id: str,
+        request_id: str,
+        kind: str,
+        data: Mapping[str, object],
+        display_only: bool = True,
+        placement: SubmissionPlacement | str = SubmissionPlacement.PLACED,
+    ) -> CommitResult:
+        return admission.admit_write(
+            self,
+            conversation_id=conversation_id,
+            request_id=request_id,
+            kind=kind,
+            data=data,
+            display_only=display_only,
+            placement=placement,
+        )
+
+    @_mutation_line
     def place_submission(self, submission_id: str) -> CommitResult:
         """Place one queued input into history and make its task runnable atomically."""
         submission = self.store.submission(submission_id)
@@ -447,6 +473,8 @@ class DurableSession:
             return CommitResult(0, self.store.commit_sequence(), submission_id)
         if submission.status is not SubmissionStatus.QUEUED:
             raise CommitConflict("only queued submissions may be placed")
+        if submission.mode == "write":
+            return self._place_write_submission(submission)
         task = next(
             (candidate for candidate in self.store.tasks() if candidate.submission_id == submission_id),
             None,
@@ -493,6 +521,43 @@ class DurableSession:
                 expected_attempt_token=task.attempt_token,
             )
         )
+
+    def _place_write_submission(self, submission: SubmissionRecord) -> CommitResult:
+        content = submission.content
+        if not isinstance(content, Mapping):
+            raise CommitConflict("queued write has no content")
+        kind = content.get("kind")
+        data = content.get("data")
+        display_only = content.get("display_only")
+        if (
+            not isinstance(kind, str)
+            or not kind
+            or not isinstance(data, Mapping)
+            or type(display_only) is not bool
+        ):
+            raise CommitConflict("queued write content is invalid")
+        head, revision = self.store.head(submission.conversation_id)
+        entry = EntryDraft(
+            entry_id=f"entry-{uuid.uuid4().hex}",
+            conversation_id=submission.conversation_id,
+            parent_id=head,
+            kind=kind,
+            payload={"data": dict(data), "display_only": display_only},
+        )
+        update = SubmissionUpdate(
+            submission_id=submission.submission_id,
+            conversation_id=submission.conversation_id,
+            expected_status=submission.status,
+            status=SubmissionStatus.DONE,
+            input_entry_id=entry.entry_id,
+            placement=SubmissionPlacement.PLACED,
+        )
+        return self._commit(DurableMutation(
+            conversation_id=submission.conversation_id,
+            expected_revision=revision,
+            entries=(entry,),
+            submission_update=update,
+        ))
 
     @_mutation_line
     def reconcile_workflows(self, definitions: Mapping[str, WorkflowDefinition]) -> tuple[str, ...]:

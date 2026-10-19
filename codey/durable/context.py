@@ -39,6 +39,7 @@ def build_context(
         entry
         for entry in window
         if entry.kind not in {"context_snapshot", "context_edit", "display_message"}
+        and not _is_display_only(entry)
         and not _is_aborted_assistant(entry)
     ]
     for entry in reversed(candidates):
@@ -125,6 +126,11 @@ def _is_aborted_assistant(entry: EntryDraft) -> bool:
         "error",
         "interrupted",
     }
+
+
+def _is_display_only(entry: EntryDraft) -> bool:
+    payload = thaw_json(entry.payload)
+    return isinstance(payload, Mapping) and payload.get("display_only") is True
 
 
 def _summary_text(value: object) -> str:

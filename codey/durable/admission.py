@@ -17,6 +17,7 @@ from codey.durable.model import (
     EntryDraft,
     SubmissionDraft,
     SubmissionPlacement,
+    SubmissionStatus,
     TaskCheckpoint,
     thaw_json,
 )
@@ -167,6 +168,65 @@ def admit_input(
             create_conversation=creation,
         )
     )
+
+
+def admit_write(
+    session: DurableSession, *, conversation_id: str, request_id: str,
+    kind: str, data: Mapping[str, object], display_only: bool = True,
+    placement: SubmissionPlacement | str = SubmissionPlacement.PLACED,
+) -> CommitResult:
+    """Durably admit one passive entry write without creating a task."""
+    if not kind or kind.startswith("pi."):
+        raise ValueError("write kind must be non-empty and outside the reserved pi namespace")
+    if not isinstance(data, Mapping):
+        raise ValueError("write data must be an object")
+    if type(display_only) is not bool:
+        raise ValueError("display_only must be boolean")
+    placement = SubmissionPlacement(placement)
+    content = {"kind": kind, "data": dict(data), "display_only": display_only}
+    fingerprint = _fingerprint({
+        "kind": kind,
+        "data": content["data"],
+        "display_only": display_only,
+        "placement": placement,
+        "mode": "write",
+    })
+    existing = session.store.submission_result_for_request(conversation_id, request_id, fingerprint)
+    if existing is not None:
+        return existing
+    if session.store.has_conversation(conversation_id):
+        head, revision = session.store.head(conversation_id)
+        creation = None
+    else:
+        head, revision = None, 0
+        creation = CreateConversation()
+    entry = None
+    if placement is SubmissionPlacement.PLACED:
+        entry = EntryDraft(
+            entry_id=f"entry-{uuid.uuid4().hex}",
+            conversation_id=conversation_id,
+            parent_id=head,
+            kind=kind,
+            payload={"data": dict(data), "display_only": display_only},
+        )
+    submission = SubmissionDraft(
+        submission_id=f"submission-{uuid.uuid4().hex}",
+        request_id=request_id,
+        conversation_id=conversation_id,
+        entry=entry,
+        fingerprint=fingerprint,
+        status=(SubmissionStatus.DONE if placement is SubmissionPlacement.PLACED else SubmissionStatus.QUEUED),
+        placement=placement,
+        mode="write",
+        content=content,
+    )
+    return session._commit(DurableMutation(
+        conversation_id=conversation_id,
+        expected_revision=revision,
+        entries=() if entry is None else (entry,),
+        submission=submission,
+        create_conversation=creation,
+    ))
 
 
 

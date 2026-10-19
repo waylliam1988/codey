@@ -251,7 +251,12 @@ def valid_task_status_transition(previous: TaskStatus | None, current: TaskStatu
 
 SUBMISSION_TRANSITIONS: Mapping[SubmissionStatus, frozenset[SubmissionStatus]] = MappingProxyType(
     {
-        SubmissionStatus.QUEUED: frozenset({SubmissionStatus.RUNNING, SubmissionStatus.UNANSWERED, SubmissionStatus.CANCELLED}),
+        SubmissionStatus.QUEUED: frozenset({
+            SubmissionStatus.RUNNING,
+            SubmissionStatus.DONE,
+            SubmissionStatus.UNANSWERED,
+            SubmissionStatus.CANCELLED,
+        }),
         SubmissionStatus.RUNNING: frozenset(
             {SubmissionStatus.DONE, SubmissionStatus.UNANSWERED, SubmissionStatus.CANCELLED}
         ),
@@ -328,11 +333,15 @@ class SubmissionDraft:
         object.__setattr__(self, "placement", placement)
         if self.entry is not None and self.entry.conversation_id != self.conversation_id:
             raise ValueError("submission entry belongs to another conversation")
-        object.__setattr__(self, "status", SubmissionStatus(self.status))
-        if self.status != SubmissionStatus.QUEUED:
-            raise ValueError("new submissions must start queued")
         if self.mode not in {"steer", "follow_up", "write"}:
             raise ValueError("unknown submission mode")
+        object.__setattr__(self, "status", SubmissionStatus(self.status))
+        if self.status != SubmissionStatus.QUEUED and not (
+            self.mode == "write"
+            and self.status is SubmissionStatus.DONE
+            and placement is SubmissionPlacement.PLACED
+        ):
+            raise ValueError("new input submissions must start queued")
         if placement is SubmissionPlacement.PLACED and self.entry is None:
             raise ValueError("placed submissions require an entry")
         if placement is SubmissionPlacement.QUEUED and self.entry is not None:
@@ -378,8 +387,12 @@ class SubmissionRecord:
             content = cast(dict[str, object], thaw_json(self.content))
             _validate_json(content)
             object.__setattr__(self, "content", _freeze_json(content))
-        if self.status == SubmissionStatus.DONE and not self.answer_entry_id:
-            raise ValueError("completed submissions require an answer entry")
+        if self.status == SubmissionStatus.DONE:
+            if self.mode == "write":
+                if not self.input_entry_id:
+                    raise ValueError("completed writes require an entry")
+            elif not self.answer_entry_id:
+                raise ValueError("completed submissions require an answer entry")
         if self.status != SubmissionStatus.DONE and self.answer_entry_id is not None:
             raise ValueError("only completed submissions may reference an answer entry")
 
@@ -407,8 +420,8 @@ class SubmissionUpdate:
             detail = cast(dict[str, object], thaw_json(self.detail))
             _validate_json(detail)
             object.__setattr__(self, "detail", _freeze_json(detail))
-        if self.status == SubmissionStatus.DONE and not self.answer_entry_id:
-            raise ValueError("completed submissions require an answer entry")
+        if self.status == SubmissionStatus.DONE and self.answer_entry_id is None and self.input_entry_id is None:
+            raise ValueError("completed submissions require an entry")
         if self.status != SubmissionStatus.DONE and self.answer_entry_id is not None:
             raise ValueError("only completed submissions may reference an answer entry")
         if self.placement is not None:

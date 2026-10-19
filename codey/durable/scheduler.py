@@ -59,6 +59,7 @@ class DurableTaskScheduler:
         self._scheduled: set[str] = set()
         self._blocked: dict[str, str] = {}
         self._invocations: dict[str, TaskInvocation] = {}
+        self._reconcile_requested = False
         self._thread: threading.Thread | None = None
         self._recovered = False
         self._enabled = False
@@ -103,13 +104,22 @@ class DurableTaskScheduler:
         self.notify()
         self._ensure_thread()
 
-    def notify(self, task_id: str | None = None, *, start: bool = True) -> None:
+    def notify(
+        self,
+        task_id: str | None = None,
+        *,
+        start: bool = True,
+        include_queued_submissions: bool = True,
+    ) -> None:
         pending: set[str] | None = None
         requeued = False
         dependents: set[str] = set()
+        queued_submissions = False
         if task_id is None:
             tasks = self._session.pending_tasks()
             pending = {task.task_id for task in tasks if task.status == TaskStatus.PENDING}
+            if include_queued_submissions:
+                queued_submissions = bool(self._session.queued_submissions())
         else:
             try:
                 task = self._session.task(task_id)
@@ -126,6 +136,7 @@ class DurableTaskScheduler:
                 assert pending is not None
                 self._scheduled.intersection_update(pending)
                 self._pending.update(pending - self._scheduled)
+                self._reconcile_requested = self._reconcile_requested or queued_submissions
             else:
                 if requeued:
                     self._scheduled.discard(task_id)
@@ -183,7 +194,7 @@ class DurableTaskScheduler:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return
-            if not self._enabled or not self._pending or self._closed.is_set():
+            if not self._enabled or (not self._pending and not self._reconcile_requested) or self._closed.is_set():
                 return
             self._closed.clear()
             thread = threading.Thread(target=self._run, name="codey-durable-scheduler", daemon=True)
@@ -191,11 +202,13 @@ class DurableTaskScheduler:
         thread.start()
 
     def _reconcile(self) -> None:
+        with self._lock:
+            self._reconcile_requested = False
         if self._workflows:
             self._session.reconcile_workflows(self._workflows)
         self._place_ready_inputs()
         self._session.reconcile_finalization()
-        self.notify(start=False)
+        self.notify(start=False, include_queued_submissions=False)
         with self._lock:
             candidates = tuple(sorted(self._pending - self._inflight - self._scheduled))
         for task_id in candidates:
@@ -296,6 +309,17 @@ class DurableTaskScheduler:
             if task.state.get("input_state") != "queued"
             and task.status not in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
         }
+        for submission in self._session.queued_submissions():
+            if submission.mode != "write":
+                continue
+            content = submission.content
+            display_only = isinstance(content, Mapping) and content.get("display_only") is True
+            if not display_only and submission.conversation_id in active_by_conversation:
+                continue
+            try:
+                self._session.place_submission(submission.submission_id)
+            except (CommitConflict, KeyError, ValueError):
+                continue
         queued_by_conversation: dict[str, list[TaskCheckpoint]] = {}
         for task in tasks:
             if task.state.get("input_state") != "queued":

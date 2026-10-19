@@ -20,6 +20,7 @@ from codey.durable.model import (
     SubmissionDraft,
     SubmissionPlacement,
     SubmissionRecord,
+    SubmissionStatus,
     SubmissionUpdate,
     TaskCheckpoint,
     TaskStatus,
@@ -386,6 +387,15 @@ class MemoryDurableStore:
                 if item.record.submission_id == submission_id:
                     return item.record
             raise KeyError(f"unknown submission: {submission_id}")
+
+    def queued_submissions(self) -> tuple[SubmissionRecord, ...]:
+        with self._lock:
+            return tuple(
+                item.record
+                for item in self._submissions.values()
+                if item.record.status is SubmissionStatus.QUEUED
+                and item.record.placement is SubmissionPlacement.QUEUED
+            )
 
     def submission_result_for_request(
         self, conversation_id: str, request_id: str, fingerprint: str,

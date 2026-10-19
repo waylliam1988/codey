@@ -680,6 +680,8 @@ mypy / pyrefly / ty / ruff 全部通过
 
 本节覆盖前面阶段性记录之后的实际代码。前文中把以下能力列为“待补”的描述已经过时：
 
+> 本节是 placement 改造前的历史快照；第 20 至 22 段是后续提交后的权威状态，阅读当前结论时以后续段落为准。
+
 - `DurableSession` 已区分 `observe_commits()`（内部一致性观察）和 `subscribe_commits()`（外部投影）；内部观察失败会封存 Session，外部投影失败只记录日志。
 - conversation 的 create/fork/delete 已通过 durable commit 产生 commit sequence 和投影；branch 已有 revision CAS。
 - TaskCheckpoint 已保存 attempt token、owner 和 owner process id；普通恢复不会回收仍存活的进程所有者。
@@ -743,7 +745,7 @@ ruff: All checks passed
 当前 placement 是“conversation 空闲后放置”的最小 durable 语义，还没有 Pi 的：
 
 - steer/follow-up 的 first/all boundary 策略；
-- queued passive write 与 display-only write；
+- 非 display-only 的完整 passive write；
 - reset/head placement 和 stale write 规则；
 - placement 与 active generation boundary 的同一事务衔接。
 
@@ -777,8 +779,37 @@ SCHEMA_VERSION = 1
 
 仍低于 Pi 的部分：
 
-- `write` 目前复用文本 input 的最小表示，还没有 Pi 的 display-only write、head/reset 和 stale placement；
+- `write` 已能表达无 task 的 display-only entry，但还没有 Pi 的完整 passive write、head/reset 和 stale placement；
 - placement 仍由 scheduler 调用 `place_submission()` 分步完成，尚未与 provider generation 的 post-tools/final boundary 共用一个事务；
 - queued input 的跨进程 scheduler ownership、完整 invocation/background/abort kernel 仍未达到 Pi 的完整度。
+
+## 22. 第十八段：display-only passive write
+
+本段补上 Pi inbox 中最小但容易遗漏的一类提交：不触发 generation、没有 task、可以在 active task 期间落地的 display-only write。
+
+### 22.1 已完成
+
+- `DurableSession.admit_write()` 使用和 input 相同的 request-id 幂等入口，但不创建 `TaskCheckpoint`；
+- placed write 在 submission、entry 和 commit sequence 同一事务中直接进入 `DONE`；queued write 只保存 submission content，等待 scheduler placement；
+- Memory/SQLite 都能列出 queued submissions，scheduler 会放置 display-only write，即使 conversation 仍有 active task；
+- display-only entry 通过 durable payload 标记，在 `ContextBuilder` 中被排除，不会伪装成 provider system message；
+- 重复 request-id 返回原提交，不会重复 entry；冷启动 schema 仍为 `SCHEMA_VERSION = 1`，没有 migration 或旧写入 fallback。
+
+### 22.2 验证
+
+```text
+inbox placement + display-only write + scheduler + store contract: 74 passed
+新增 display-only write 专项：4 passed
+mypy：Success
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+```
+
+### 22.3 与 Pi 仍有差距
+
+- 当前 `admit_write()` 只实现 display-only payload，尚未支持带 model/head/edits 的完整 passive entry draft；
+- 尚未实现 `head: "self"` reset、head cutoff、stale write settlement 和 postTools/final 的事务边界；
+- queued write 的提交顺序已经 durable，但还没有 Pi `pi.inbox` document 那样的 position-based removal 和 fork-local inbox snapshot。
 
 

@@ -246,7 +246,7 @@ class SQLiteDurableStore:
                     )
                 if mutation.submission is not None:
                     database.execute(
-                        "INSERT INTO submissions(id, conversation_id, request_id, entry_id, revision, fingerprint, placement, mode, content, commit_seq) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO submissions(id, conversation_id, request_id, entry_id, revision, fingerprint, status, placement, mode, content, commit_seq) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             mutation.submission.submission_id,
                             mutation.submission.conversation_id,
@@ -254,6 +254,7 @@ class SQLiteDurableStore:
                             None if mutation.submission.entry is None else mutation.submission.entry.entry_id,
                             new_revision,
                             mutation.submission.fingerprint,
+                            SubmissionStatus(mutation.submission.status).value,
                             SubmissionPlacement(mutation.submission.placement).value,
                             mutation.submission.mode,
                             _encode(mutation.submission.content or {}),
@@ -465,6 +466,29 @@ class SQLiteDurableStore:
                 placement=SubmissionPlacement(str(row["placement"])),
                 mode=str(row["mode"]),
                 content=json.loads(str(row["content"])),
+            )
+
+    def queued_submissions(self) -> tuple[SubmissionRecord, ...]:
+        with closing(self._connect()) as database:
+            rows = database.execute(
+                "SELECT * FROM submissions WHERE status=? AND placement=? ORDER BY rowid",
+                (SubmissionStatus.QUEUED.value, SubmissionPlacement.QUEUED.value),
+            ).fetchall()
+            return tuple(
+                SubmissionRecord(
+                    submission_id=str(row["id"]),
+                    conversation_id=str(row["conversation_id"]),
+                    request_id=str(row["request_id"]),
+                    status=SubmissionStatus(str(row["status"])),
+                    input_entry_id=None if row["entry_id"] is None else str(row["entry_id"]),
+                    answer_entry_id=row["answer_entry_id"],
+                    reason=row["reason"],
+                    detail=None if row["detail"] is None else json.loads(str(row["detail"])),
+                    placement=SubmissionPlacement(str(row["placement"])),
+                    mode=str(row["mode"]),
+                    content=json.loads(str(row["content"])),
+                )
+                for row in rows
             )
 
     def submission_result_for_request(

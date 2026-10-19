@@ -44,6 +44,8 @@ class DurableAppServices:
         def observe(result: CommitResult, mutation: DurableMutation) -> None:
             del result
             if mutation.task is None:
+                if mutation.submission is not None and mutation.submission.mode == "write":
+                    scheduler.notify()
                 return
             if mutation.task.status in TASK_TERMINAL_STATUSES:
                 # A terminal boundary may free a conversation for a queued

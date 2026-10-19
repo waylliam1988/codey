@@ -5,7 +5,14 @@ from pathlib import Path
 import pytest
 
 from codey.app.context import AppContext
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore, SubmissionPlacement
+from codey.durable import (
+    DurableSession,
+    MemoryDurableStore,
+    SQLiteDurableStore,
+    SubmissionPlacement,
+    SubmissionStatus,
+    TaskStatus,
+)
 from codey.durable.scheduler import DurableTaskScheduler
 
 
@@ -210,3 +217,83 @@ def test_steer_is_selected_before_follow_up_at_the_same_boundary(session: Durabl
     assert session.store.submission(str(steer.submission_id)).placement is SubmissionPlacement.PLACED
     assert session.store.submission(str(follow_up.submission_id)).placement is SubmissionPlacement.QUEUED
     scheduler.close()
+
+
+def test_display_only_write_is_done_without_task_and_excluded_from_context(
+    session: DurableSession,
+) -> None:
+    result = session.admit_write(
+        conversation_id="chat",
+        request_id="notice-1",
+        kind="notice",
+        data={"text": "saved locally"},
+        display_only=True,
+    )
+
+    submission = session.store.submission(str(result.submission_id))
+    assert submission.status is SubmissionStatus.DONE
+    assert submission.input_entry_id is not None
+    assert session.tasks() == ()
+    assert session.context_snapshot("chat", token_budget=100).messages == ()
+    assert session.entries("chat")[0].kind == "notice"
+
+    retry = session.admit_write(
+        conversation_id="chat",
+        request_id="notice-1",
+        kind="notice",
+        data={"text": "saved locally"},
+        display_only=True,
+    )
+    assert retry.sequence == result.sequence
+    assert len(session.entries("chat")) == 1
+
+
+def test_queued_display_only_write_places_without_creating_a_task() -> None:
+    session = DurableSession(MemoryDurableStore())
+    result = session.admit_write(
+        conversation_id="chat",
+        request_id="notice-queued",
+        kind="notice",
+        data={"text": "later"},
+        display_only=True,
+        placement=SubmissionPlacement.QUEUED,
+    )
+    assert session.entries("chat") == ()
+    assert session.store.submission(str(result.submission_id)).status is SubmissionStatus.QUEUED
+
+    scheduler = DurableTaskScheduler(session, lambda _task: True)
+    scheduler._reconcile()
+    scheduler.close()
+
+    submission = session.store.submission(str(result.submission_id))
+    assert submission.status is SubmissionStatus.DONE
+    assert len(session.entries("chat")) == 1
+    assert session.tasks() == ()
+
+
+def test_display_only_write_can_land_while_a_task_is_active() -> None:
+    session = DurableSession(MemoryDurableStore())
+    session.admit_input(
+        conversation_id="chat",
+        request_id="active",
+        task_id="active",
+        text="working",
+        provider_snapshot={},
+    )
+    session.start_task("active", state={})
+    result = session.admit_write(
+        conversation_id="chat",
+        request_id="notice-busy",
+        kind="notice",
+        data={"text": "while busy"},
+        display_only=True,
+        placement=SubmissionPlacement.QUEUED,
+    )
+
+    scheduler = DurableTaskScheduler(session, lambda _task: True)
+    scheduler._reconcile()
+    scheduler.close()
+
+    assert session.store.submission(str(result.submission_id)).status is SubmissionStatus.DONE
+    assert [entry.kind for entry in session.entries("chat")] == ["user_message", "notice"]
+    assert session.task("active").status is TaskStatus.RUNNING
