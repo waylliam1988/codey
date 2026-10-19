@@ -11,11 +11,23 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Mapping
 from contextlib import suppress
+from dataclasses import dataclass
 
 from codey.durable.errors import CommitConflict
-from codey.durable.model import TaskCheckpoint, TaskStatus
+from codey.durable.model import CommitResult, TaskCheckpoint, TaskStatus
 from codey.durable.session import DurableSession
 from codey.durable.workflow import WorkflowDefinition
+
+
+@dataclass
+class TaskInvocation:
+    """Volatile dispatch invocation bound to one durable attempt."""
+
+    task_id: str
+    attempt_token: str
+    mode: str
+    signal: threading.Event
+    done: threading.Event
 
 
 class DurableTaskScheduler:
@@ -38,6 +50,7 @@ class DurableTaskScheduler:
         self._inflight: set[str] = set()
         self._scheduled: set[str] = set()
         self._blocked: dict[str, str] = {}
+        self._invocations: dict[str, TaskInvocation] = {}
         self._thread: threading.Thread | None = None
         self._recovered = False
         self._enabled = False
@@ -59,6 +72,19 @@ class DurableTaskScheduler:
             self._workflows = dict(workflows)
             self._blocked.clear()
         self.notify()
+
+    def invocation(self, task_id: str) -> TaskInvocation | None:
+        with self._lock:
+            return self._invocations.get(task_id)
+
+    def abort_task(self, task_id: str, *, reason: str = "cancelled") -> CommitResult:
+        """Durably mark cancellation, then signal the active dispatch invocation."""
+        result = self._session.request_cancel(task_id, reason=reason)
+        with self._lock:
+            invocation = self._invocations.get(task_id)
+        if invocation is not None:
+            invocation.signal.set()
+        return result
 
     def start(self) -> None:
         self._enabled = True
@@ -187,10 +213,32 @@ class DurableTaskScheduler:
                     self._remove(task_id)
                     continue
                 claimed = self._session.task(task_id)
-                with self._session.execution(task_id, claimed.attempt_token):
-                    accepted = bool(self._dispatch(claimed))
+                invocation = TaskInvocation(
+                    task_id=task_id,
+                    attempt_token=claimed.attempt_token,
+                    mode="run",
+                    signal=threading.Event(),
+                    done=threading.Event(),
+                )
+                with self._lock:
+                    self._invocations[task_id] = invocation
+                try:
+                    with self._session.execution(task_id, claimed.attempt_token):
+                        accepted = bool(self._dispatch(claimed))
+                finally:
+                    invocation.done.set()
+                    with self._lock:
+                        if self._invocations.get(task_id) is invocation:
+                            self._invocations.pop(task_id, None)
                 if accepted:
                     current = self._session.task(task_id)
+                    if current.state.get("cancel_requested"):
+                        self._session.cancel_task(
+                            task_id,
+                            reason=str(current.state.get("cancel_reason") or "cancelled"),
+                        )
+                        self._remove(task_id)
+                        continue
                     with self._lock:
                         if current.status == TaskStatus.PENDING:
                             self._scheduled.discard(task_id)
@@ -250,4 +298,4 @@ class DurableTaskScheduler:
         return None
 
 
-__all__ = ["DurableTaskScheduler"]
+__all__ = ["DurableTaskScheduler", "TaskInvocation"]

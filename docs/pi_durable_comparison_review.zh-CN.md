@@ -614,3 +614,24 @@ mypy / pyrefly / ty / ruff 全部通过
 
 这只补齐 Pi 的 blocked 可观察语义，尚未实现 Pi 的 `TaskInvocation`、abort invocation、background boundary 或 waiting reverse index；下一 scheduler 段应先处理 durable abort mark 与 active invocation signal 的边界。
 
+## 16. 第十三段：scheduler invocation signal 与 abort 顺序
+
+Pi 的 abort 顺序要求先提交 durable abort mark，再 signal 当前 `TaskInvocation`，避免 signal 先发生而 durable recovery 看不到取消事实。Codey 原先只有 task state 中的 `cancel_requested`，scheduler 没有可观察的 active dispatch invocation，host 也无法通过 scheduler 取得 attempt-bound signal。
+
+本段已完成：
+
+- 增加轻量 volatile `TaskInvocation`，绑定 `task_id`、`attempt_token`、`mode`、`signal` 和 `done`；它不成为 durable 事实源；
+- scheduler 在 claim 成功后登记 invocation，dispatch callback 返回或抛错时标记 done 并移除；
+- `abort_task()` 先调用 `DurableSession.request_cancel()` 写入取消屏障，再 signal active invocation；
+- dispatch 返回后若发现 durable cancel barrier，scheduler 立即 terminalize cancellation，不把取消任务重新放回普通 pending 队列；
+- 原有 worker attempt CAS 继续拒绝 barrier 之后的非 terminal mutation。
+
+红测让 dispatch callback 持有 invocation signal：主线程调用 `abort_task()` 后，先观察 durable `cancel_requested`，再观察 callback 收到 signal，最后确认 task terminal cancelled。scheduler、blocked、ownership/finalization 合并聚焦结果：
+
+```text
+20 passed
+mypy / pyrefly / ty / ruff 全部通过
+```
+
+这仍是 scheduler invocation 的第一层边界。Codey 还没有 Pi 的 abort handler invocation、background ownership boundary、close 时 join 全部 invocation，以及由 waiting reverse index 驱动的局部 reconcile；下一段再处理其中一个，不把所有 scheduler 语义一次性塞进 `DurableTaskScheduler`。
+
