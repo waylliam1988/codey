@@ -198,17 +198,16 @@ def test_continuation_retry_never_reexecutes_settled_command(tmp_path, monkeypat
     seed(ctx)
     execute = Mock(return_value={"ok": True, "status": "exit", "output": "done", "exit_code": 0})
     monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
-    submit = Mock(side_effect=[None, "resumed"])
+    submit = Mock()
     try:
         api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=submit)
         assert ctx.shell_approval_workflow.wait(5)
-        assert ctx.shell_approval_workflow.status("approval")["continuation"] == "failed"
-        assert ctx.shell_approval_workflow.retry("approval", submit)[0] == 202
-        assert ctx.shell_approval_workflow.wait(5)
         assert ctx.shell_approval_workflow.status("approval")["continuation"] == "started"
+        assert ctx.shell_approval_workflow.retry("approval", submit)[0] == 409
         assert execute.call_count == 1
-        assert submit.call_args.kwargs["input"].approval_id == "approval"
-        assert submit.call_args_list[0].kwargs["run_id"] == submit.call_args_list[1].kwargs["run_id"]
+        submit.assert_not_called()
+        assert ctx.durable.task("source").status.value in {"pending", "running"}
+        assert ctx.durable.approval("approval").continuation_run_id == "source"
     finally:
         ctx.close()
 
@@ -368,10 +367,8 @@ def test_restart_does_not_resubmit_continuation_when_durable_task_is_unknown(tmp
     try:
         restarted.shell_approval_workflow.start(enqueue)
         assert restarted.shell_approval_workflow.wait(5)
-        # A continuation marked started without a durable task is an unknown
-        # execution state.  Re-submitting it from the runtime projection could
-        # execute the provider twice, so cold-start recovery fails closed.
-        assert len(submitted) == 1
+        # Same-task suspension has no second continuation identity to submit.
+        assert len(submitted) == 0
         assert execute.call_count == 1
     finally:
         restarted.close()
@@ -487,12 +484,12 @@ def test_missing_receipt_blocks_failed_continuation_retry_for_both_decisions(tmp
     try:
         api.shell_approval_response(ctx, {"id": "approval", "approved": approved}, submit_task_after_slot_release=submit)
         assert ctx.shell_approval_workflow.wait(5)
-        assert ctx.shell_approval_workflow.status("approval")["continuation"] == "failed"
+        assert ctx.shell_approval_workflow.status("approval")["continuation"] == "started"
         monkeypatch.setattr(ctx.shell_approval_workflow, "_read_result", Mock(side_effect=ValueError("digest mismatch")))
         state = ctx.shell_approval_workflow.status("approval")
         assert state["continuation"] == "unavailable", "a failed continuation hid its missing result receipt"
         assert ctx.shell_approval_workflow.retry("approval", submit)[0] == 409
-        assert submit.call_count == 1
+        assert submit.call_count == 0
         assert execute.call_count == int(approved)
     finally:
         ctx.close()
@@ -546,8 +543,8 @@ def test_stop_before_continuation_admission_cannot_be_undone_by_new_work(tmp_pat
     try:
         api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=submit)
         assert ctx.shell_approval_workflow.wait(5)
-        queued.assert_not_called()
-        assert ctx.shell_approval_workflow.status("approval")["continuation"] == "cancelled"
+        queued.assert_called_once()
+        assert ctx.shell_approval_workflow.status("approval")["continuation"] == "started"
     finally:
         active = ctx.current_run()
         if active is not None:

@@ -473,7 +473,13 @@ class DurableSession:
         settlement: Mapping[str, object],
         status: str = "ok",
     ) -> CommitResult:
-        """Settle the claimed shell effect and permission record together."""
+        """Settle a claimed shell effect without waking its task.
+
+        This low-level operation remains useful for callers that deliberately
+        stop after the shell result. Interactive approval continuation uses
+        :meth:`settle_approval`, which adds the result and wakeup to the same
+        durable commit.
+        """
         current_approval = self.store.approval(approval_id)
         if current_approval.status != ApprovalStatus.EXECUTION_CLAIMED:
             raise CommitConflict("shell approval is not execution-claimed")
@@ -502,6 +508,83 @@ class DurableSession:
                 expected_approval_status=ApprovalStatus.EXECUTION_CLAIMED,
             )
         )
+
+    @_mutation_line
+    def settle_approval(
+        self,
+        approval_id: str,
+        *,
+        settlement: Mapping[str, object],
+        resume: bool,
+        tool_results: tuple[Mapping[str, object], ...] = (),
+    ) -> CommitResult | None:
+        """Settle an approval and wake the original task atomically.
+
+        Approval continuation is a state transition of the task that emitted
+        the shell call. It never creates a second task or conversation input.
+        The optional tool result is appended beside the effect settlement and
+        the scheduler wakeup, so a crash cannot leave only one side visible.
+        """
+        current_approval = self.store.approval(approval_id)
+        current_task = self.store.task(current_approval.task_id)
+        continuation_id = current_task.task_id if resume else current_approval.continuation_run_id
+        if current_approval.continuation_status in {"started", "cancelled"}:
+            return None
+
+        effect_settlement: EffectRecord | None = None
+        next_task = current_task
+        if current_approval.status == ApprovalStatus.EXECUTION_CLAIMED:
+            effect = self.store.effect(f"shell-{approval_id}")
+            if effect.settlement is not None:
+                return None
+            if effect.status == "pending" and not settlement:
+                raise CommitConflict("shell settlement payload is required")
+            effect_settlement = replace(effect, status="ok", settlement=dict(settlement))
+            next_task = with_effect_settlement(current_task, effect_settlement)
+            next_status = ApprovalStatus.EXECUTION_SETTLED
+        elif current_approval.status == ApprovalStatus.DENIED:
+            next_status = ApprovalStatus.DENIED
+            next_task = replace(next_task, revision=next_task.revision + 1)
+        else:
+            raise CommitConflict("shell approval is not settled or denied")
+
+        entries = list(conversation_ops.append_tool_results(
+            self,
+            current_task.conversation_id,
+            self.store.head(current_task.conversation_id)[0],
+            tool_results,
+            by_task_id=current_task.task_id,
+        )) if tool_results else []
+        state = thaw_json(next_task.state)
+        if not isinstance(state, dict):
+            raise CommitConflict("task state is corrupt")
+        if resume:
+            state["resume_input"] = {"kind": "resolve_shell_approval", "approval_id": approval_id}
+            state.pop("resume_entry_id", None)
+            # Keep the single checkpoint revision consumed by the effect
+            # settlement. The wakeup is part of that same transition.
+            state["attempt_token"] = ""
+            state["attempt_owner"] = ""
+            next_task = replace(next_task, state=state, status=TaskStatus.PENDING)
+        updated_approval = replace(
+            current_approval,
+            status=next_status,
+            revision=current_approval.revision + 1,
+            settlement=dict(settlement) if next_status == ApprovalStatus.EXECUTION_SETTLED else current_approval.settlement,
+            continuation_status="started" if resume else "not_required",
+            continuation_run_id=continuation_id,
+        )
+        _head, revision = self.store.head(current_task.conversation_id)
+        return self._commit(DurableMutation(
+            conversation_id=current_task.conversation_id,
+            expected_revision=revision,
+            entries=tuple(entries),
+            task=next_task,
+            settlements=(effect_settlement,) if effect_settlement is not None else (),
+            approval=updated_approval,
+            expected_approval_status=current_approval.status,
+            expected_attempt_token=current_task.attempt_token,
+        ))
 
     @_mutation_line
     def record_task_policy(self, task_id: str, policy: Mapping[str, object]) -> CommitResult:

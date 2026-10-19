@@ -30,6 +30,7 @@ def _claim_execution_fact(ctx: Any, pending: dict[str, Any], approval_id: str) -
                     status="pending",
                     intent={
                         "approval_id": approval_id,
+                        "call_id": str(pending.get("call_id") or ""),
                         "command_ref": str(pending.get("command_ref") or ""),
                         "command_digest": str(pending.get("command_digest") or ""),
                         "cwd": str(pending.get("cwd") or "."),
