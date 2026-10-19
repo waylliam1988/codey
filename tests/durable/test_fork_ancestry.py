@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore, SubmissionPlacement
 
 
 @pytest.fixture(params=["memory", "sqlite"])
@@ -80,3 +80,31 @@ def test_inherited_fork_and_compaction_rebuild_after_restart(tmp_path: Path) -> 
         assert [message["content"] for message in expected.messages] == ["retained summary", "new"]
     finally:
         reopened.close()
+
+
+def test_fork_has_a_local_inbox_without_copying_parent_queue(session: DurableSession) -> None:
+    root_entry = session.append_message("root", "user_message", {"text": "root"})
+    queued = session.admit_input(
+        conversation_id="root",
+        request_id="queued-root",
+        task_id="queued-root-task",
+        text="parent only",
+        provider_snapshot={"provider_id": "local"},
+        placement=SubmissionPlacement.QUEUED,
+    )
+    child = session.fork("root", root_entry.entry_id)
+
+    assert session.queued_submissions("root") == (session.store.submission(str(queued.submission_id)),)
+    assert session.queued_submissions(child) == ()
+
+    child_queued = session.admit_input(
+        conversation_id=child,
+        request_id="queued-child",
+        task_id="queued-child-task",
+        text="child only",
+        provider_snapshot={"provider_id": "local"},
+        placement=SubmissionPlacement.QUEUED,
+    )
+    assert [item.request_id for item in session.queued_submissions("root")] == ["queued-root"]
+    assert [item.request_id for item in session.queued_submissions(child)] == ["queued-child"]
+    assert session.store.submission(str(child_queued.submission_id)).conversation_id == child

@@ -949,4 +949,23 @@ Codey 现在拥有比 Pi 更明确的 artifact 安全边界：外部 bytes 不�
 - scheduler reverse index、background ownership、abort/close join、跨进程 DB open fencing；
 - Runtime JSONL 旧 projection 的最终清理，以及 AppContext、`operation_state.py` 和 DurableSession 的结构拆分审查。
 
+## 27. 第二十三段：fork-local inbox 隔离
+
+本段补上对 Pi fork 语义的实际回归证明。Codey 的 submission 本来就带有 `conversation_id`，fork 只创建带 parent cap 的 child conversation，不复制父 conversation 的 queued submissions；因此可以得到 Pi 所需的最小 fork-local inbox 语义，而不引入共享 entry 引用或级联垃圾回收。
+
+### 27.1 已完成
+
+- fork 后 child 的 queued inbox 为空，父 conversation 的 queued item 保持原样；
+- child 新增 queued input 只出现在 child，不能污染 parent queue；
+- parent/child 的 queued position 查询都按各自 durable admission 顺序读取；
+- 该隔离在 Memory/SQLite fork ancestry contract 中由回归测试锁定。
+
+### 27.2 验证与边界
+
+```text
+fork ancestry + compaction + fork-local inbox：9 passed
+```
+
+这移除了“fork 后完全没有 local inbox 隔离”的硬差距。仍未完成的是 queued submission placement 与 provider `postTools`/`final` boundary 的同一事务，以及跨 conversation 的更复杂共享引用和回收语义；后者按 Pi 的最小 parent-cap 目标暂不提前引入。
+
 
