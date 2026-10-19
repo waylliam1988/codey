@@ -32,7 +32,6 @@ from codey.runtime.effects.keep_policies import (
 )
 from codey.runtime.effects.replay_policy import is_replayable_safe_tool
 from codey.runtime.log.entries import RuntimeLogEntry
-from codey.runtime.log.session_log import RuntimeSessionLog
 
 SCHEMA_VERSION = 1
 EFFECT_KIND = "tool_result_delivery"
@@ -1135,28 +1134,19 @@ def _build_delivery_projections(
 class ToolResultDeliveryStore:
     """Read projection for tool-result delivery receipts."""
 
-    def __init__(self, session_log: RuntimeSessionLog | None = None, *, durable: Any = None) -> None:
-        if session_log is None and durable is None:
-            raise ValueError("a delivery store needs durable storage or a session log")
-        self._session_log = session_log
+    def __init__(self, *, durable: Any) -> None:
+        if durable is None:
+            raise ValueError("a delivery store requires durable storage")
         self.durable = durable
 
     def _entries(self, session_id: str, run_id: str) -> tuple[RuntimeLogEntry, ...]:
-        if self.durable is not None:
-            from codey.durable.checkpoint import checkpoint_entries
+        from codey.durable.checkpoint import checkpoint_entries
 
-            try:
-                task, effects = self.durable.task_facts(run_id)
-            except KeyError:
-                return ()
-            return checkpoint_entries(task, effects, session_id=session_id)
-        if self._session_log is None:
-            raise RuntimeError("delivery store has no storage")
-        return self._session_log.entries(session_id)
-
-    @property
-    def session_log(self) -> RuntimeSessionLog | None:
-        return self._session_log
+        try:
+            task, effects = self.durable.task_facts(run_id)
+        except KeyError:
+            return ()
+        return checkpoint_entries(task, effects, session_id=session_id)
 
     def _iter_validated_delivery_records(
         self,

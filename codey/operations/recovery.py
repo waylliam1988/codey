@@ -77,7 +77,7 @@ def recover_effects_for_resume(
     # deliberately disabled in recovery tests; that must not erase facts.
     store = _runtime_effect_store(deps)
     if store is None:
-        store = RuntimeEffectStore(None, durable=durable)
+        store = RuntimeEffectStore(durable=durable)
     try:
         facts = _settled_facts(
             store.load_effects(session_id, run_id), pending.recovered_tool_outcomes,
@@ -165,7 +165,7 @@ def _settled_delivery_batch_id(
     """Return a projection batch only after durable recovery says continue."""
     if mutations is None:
         return ""
-    delivery_store = ToolResultDeliveryStore(mutations.session_log, durable=mutations.durable)
+    delivery_store = ToolResultDeliveryStore(durable=mutations.durable)
     try:
         batches = delivery_store.load_batches(session_id, run_id)
     except (OSError, ValueError, TypeError, AttributeError):
@@ -374,7 +374,7 @@ def _pending_delivery_batch(
         raise ValueError("production recovery requires durable runtime mutations")
     session_id = str(intents[0].session_id)
     pending_ids = {intent.effect_id for intent in intents}
-    batches = ToolResultDeliveryStore(mutations.session_log, durable=mutations.durable).load_batches(session_id, run_id)
+    batches = ToolResultDeliveryStore(durable=mutations.durable).load_batches(session_id, run_id)
     matching = [batch for batch in batches
                 if not batch.is_terminal and pending_ids.issubset(set(batch.intent.tool_refs))]
     if len(matching) != 1:
@@ -739,8 +739,6 @@ def record_entry_policy(
         # Lightweight callers without the durable runtime are not a recovery
         # boundary. The real RuntimeMutationLine always exposes this setter;
         # when it does, failures propagate to prevent an unrecorded policy.
-        if not hasattr(mutations, "session_log"):
-            return
         raise RuntimeError("task policy persistence is unavailable")
     setter(session_id, run_id, policy=payload)
 

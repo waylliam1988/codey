@@ -671,7 +671,6 @@ def run_task_submission(deps: Any, request: TaskSubmission) -> None:
         return execute_task_run(replace(deps, connect_provider=connect_selected), request)
 
     runtime = TaskRuntime(
-        None,
         execute,
         prepare=prepare,
         on_unstarted_failure=partial(release_unstarted_submission, deps.state),

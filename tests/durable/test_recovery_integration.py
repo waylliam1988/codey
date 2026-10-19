@@ -5,6 +5,7 @@ from codey.durable import DurableSession, EffectRecord, MemoryDurableStore
 from codey.durable.model import thaw_json
 from codey.operations.recovery import recover_effects_for_resume
 from codey.runtime.core.models import ToolCall
+from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectIntent,
@@ -12,7 +13,6 @@ from codey.runtime.effects.effect_records import (
     prepare_intent,
 )
 from codey.runtime.effects.replay_policy import ReplayClass
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 
@@ -139,21 +139,18 @@ def test_unsafe_tool_recovery_fails_closed_before_projection_can_replay(tmp_path
         "task-1",
         EffectRecord(
             "effect-1", "task-1", "tool_call", "unsafe", "digest-1", "pending",
-            {
-                "tool_name": "edit",
-                "lane": "writer",
-                "operation_id": "operation-1",
-                "session_id": "conversation-1",
-                "run_id": "task-1",
-            },
+            RuntimeEffectIntent(
+                "effect-1", EFFECT_CATEGORY_TOOL_CALL, "conversation-1", "task-1",
+                lane=lane_for_run("task-1"), operation_id=operation_id_for_run("task-1"), tool_name="edit",
+                args_digest="digest-1", replay_class=ReplayClass.UNSAFE,
+            ).to_payload(),
         ),
     )
 
-    mutations = RuntimeMutationLine(RuntimeSessionLog(tmp_path / "runtime"))
     result = recover_effects_for_resume(
         SimpleNamespace(
             state=SimpleNamespace(durable=durable),
-            runtime_mutations=mutations,
+            runtime_mutations=None,
             runtime_effects=None,
             tool_result_delivery=None,
         ),
@@ -189,10 +186,11 @@ def test_task_policy_is_recovered_from_checkpoint_and_cannot_be_replaced() -> No
 
 
 def test_production_recovery_requires_an_admitted_durable_task(tmp_path: Path) -> None:
-    mutations = RuntimeMutationLine(RuntimeSessionLog(tmp_path / "runtime"))
+    durable = DurableSession(MemoryDurableStore())
+    mutations = RuntimeMutationLine(durable=durable)
     result = recover_effects_for_resume(
         SimpleNamespace(
-            state=SimpleNamespace(),
+            state=SimpleNamespace(durable=durable),
             runtime_mutations=mutations,
             runtime_effects=None,
             tool_result_delivery=None,
@@ -205,7 +203,14 @@ def test_production_recovery_requires_an_admitted_durable_task(tmp_path: Path) -
 
 
 def test_recovery_never_uses_runtime_projection_as_authority(tmp_path: Path) -> None:
-    mutations = RuntimeMutationLine(RuntimeSessionLog(tmp_path / "runtime"))
+    durable = DurableSession(MemoryDurableStore())
+    durable.admit_input(
+        conversation_id="conversation-1", request_id="request-1", task_id="task-1",
+        text="continue", provider_snapshot={"provider_id": "local"},
+    )
+    durable.claim_task("task-1")
+    durable.start_task("task-1", state={})
+    mutations = RuntimeMutationLine(durable=durable)
     mutations.accept_operation(
         session_id="conversation-1", run_id="task-1", project=str(tmp_path),
         provider_id="local", turn_budget=3, max_repair_rounds=0, task_kind="project",
@@ -214,7 +219,7 @@ def test_recovery_never_uses_runtime_projection_as_authority(tmp_path: Path) -> 
 
     result = recover_effects_for_resume(
         SimpleNamespace(
-            state=SimpleNamespace(),
+            state=SimpleNamespace(durable=durable),
             runtime_mutations=mutations,
             runtime_effects=None,
             tool_result_delivery=None,
@@ -222,7 +227,7 @@ def test_recovery_never_uses_runtime_projection_as_authority(tmp_path: Path) -> 
         session_id="conversation-1", run_id="task-1", project=str(tmp_path), task_kind="project",
     )
 
-    assert result.ok is False
+    assert result.ok is True
 
 
 def test_pending_durable_tool_intent_cannot_be_overruled_by_idle_runtime_log(tmp_path: Path) -> None:
@@ -238,20 +243,18 @@ def test_pending_durable_tool_intent_cannot_be_overruled_by_idle_runtime_log(tmp
         "task-1",
         EffectRecord(
             "effect-1", "task-1", "tool_call", "safe", "digest-1", "pending",
-            {"tool_name": "read", "replay_args": {"path": "a.txt"}},
+            RuntimeEffectIntent(
+                "effect-1", EFFECT_CATEGORY_TOOL_CALL, "conversation-1", "task-1",
+                lane=lane_for_run("task-1"), operation_id=operation_id_for_run("task-1"),
+                tool_name="read", args_digest="digest-1", replay_class=ReplayClass.SAFE,
+                replay_args={"path": "a.txt"},
+            ).to_payload(),
         ),
     )
-    mutations = RuntimeMutationLine(RuntimeSessionLog(tmp_path / "runtime"))
-    mutations.accept_operation(
-        session_id="conversation-1", run_id="task-1", project="", provider_id="local",
-        turn_budget=3, max_repair_rounds=0, task_kind="chat",
-    )
-    mutations.mark_writer_running("conversation-1", "task-1", provider_id="local")
-
     result = recover_effects_for_resume(
         SimpleNamespace(
             state=SimpleNamespace(durable=durable),
-            runtime_mutations=mutations,
+            runtime_mutations=None,
             runtime_effects=None,
             tool_result_delivery=None,
         ),
@@ -336,7 +339,7 @@ def test_safe_tool_recovery_ignores_unbound_runtime_batch(tmp_path: Path) -> Non
             "pending", intent.to_payload(),
         ),
     )
-    mutations = RuntimeMutationLine(RuntimeSessionLog(tmp_path / "runtime"))
+    mutations = RuntimeMutationLine(durable=durable)
     mutations.accept_operation(
         session_id="conversation-1", run_id="task-1", project=str(project),
         provider_id="local", turn_budget=4, max_repair_rounds=0, task_kind="project",
@@ -346,7 +349,7 @@ def test_safe_tool_recovery_ignores_unbound_runtime_batch(tmp_path: Path) -> Non
     result = recover_effects_for_resume(
         SimpleNamespace(
             state=SimpleNamespace(durable=durable),
-            runtime_mutations=mutations,
+            runtime_mutations=None,
             runtime_effects=None,
             tool_result_delivery=None,
             managed_outputs=None,
@@ -390,8 +393,7 @@ def test_safe_tool_recovery_reuses_existing_runtime_intent_and_batch(tmp_path: P
             replay_args={"path": "a.txt"},
         ),
     )
-    log = RuntimeSessionLog(tmp_path / "runtime")
-    mutations = RuntimeMutationLine(log, durable=durable)
+    mutations = RuntimeMutationLine(durable=durable)
     mutations.accept_operation(
         session_id="conversation-1", run_id="task-1", project=str(project),
         provider_id="local", turn_budget=4, max_repair_rounds=0, task_kind="project",
@@ -408,8 +410,8 @@ def test_safe_tool_recovery_reuses_existing_runtime_intent_and_batch(tmp_path: P
     deps = SimpleNamespace(
         state=SimpleNamespace(durable=durable),
         runtime_mutations=mutations,
-        runtime_effects=RuntimeEffectStore(log, durable=durable),
-        tool_result_delivery=ToolResultDeliveryStore(log, durable=durable),
+        runtime_effects=RuntimeEffectStore(durable=durable),
+        tool_result_delivery=ToolResultDeliveryStore(durable=durable),
         managed_outputs=None,
     )
 
@@ -421,7 +423,7 @@ def test_safe_tool_recovery_reuses_existing_runtime_intent_and_batch(tmp_path: P
     assert result.ok is True
     assert result.recovered_tool_result_batch_id == "batch-existing"
     assert len(result.recovered_tool_outcomes) == 1
-    projections = RuntimeEffectStore(log, durable=durable).load_effects("conversation-1", "task-1")
+    projections = RuntimeEffectStore(durable=durable).load_effects("conversation-1", "task-1")
     assert [item.intent.effect_id for item in projections] == ["effect-1"]
     assert projections[0].settlement is not None
     assert projections[0].settlement.replay_count == 1

@@ -27,7 +27,6 @@ from codey.runtime.effects.replay_policy import (
     ReplayClass,
     is_replayable_safe_tool,
 )
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.storage.local_store import session_key
 
 SCHEMA_VERSION = 1
@@ -852,8 +851,9 @@ def find_effect(
 class RuntimeEffectStore:
     """Projection store for external effect intents and settlements."""
 
-    def __init__(self, session_log: RuntimeSessionLog | None = None, *, durable: Any | None = None) -> None:
-        self.session_log = session_log
+    def __init__(self, *, durable: Any) -> None:
+        if durable is None:
+            raise ValueError("an effect store requires durable storage")
         self.durable = durable
 
     def load_effects(
@@ -862,15 +862,7 @@ class RuntimeEffectStore:
         run_id: str,
     ) -> tuple[RuntimeEffectProjection, ...]:
         """Load and aggregate all effect intent/settlement pairs for a run in strict chronological order."""
-        if self.durable is not None:
-            return _durable_effects(self.durable, run_id=run_id)
-        if self.session_log is None:
-            return ()
-        return effects_from_entries(
-            self.session_log.entries(session_id),
-            session_id=session_id,
-            run_id=run_id,
-        )
+        return _durable_effects(self.durable, run_id=run_id)
 
     def pending_effects(
         self,

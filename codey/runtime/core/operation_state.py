@@ -23,7 +23,6 @@ from codey.runtime.core.operation_payload import (
 )
 from codey.runtime.core.outcome import OperationOutcome, operation_outcome_from_stop_reason
 from codey.runtime.log.entries import RuntimeLogEntry
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_projection import RuntimeProjection
 from codey.storage.local_store import project_key, session_key
 
@@ -575,30 +574,18 @@ def _parse_operation_terminal(
 class RuntimeOperationStore:
     """Read projection for one run's durable operation state."""
 
-    def __init__(self, session_log: RuntimeSessionLog | None = None, *, durable: Any | None = None) -> None:
-        if session_log is None and durable is None:
-            raise ValueError("an operation store needs durable storage or a session log")
-        self.session_log = session_log
+    def __init__(self, *, durable: Any) -> None:
+        if durable is None:
+            raise ValueError("an operation store requires durable storage")
         self.durable = durable
 
     def load(self, session_id: str, run_id: str) -> RuntimeOperationState | None:
-        if self.durable is not None:
-            try:
-                task = self.durable.task(run_id)
-            except KeyError:
-                return None
-            checkpoint = cast(_CheckpointAdapter, importlib.import_module("codey.durable.checkpoint"))
-            return checkpoint.operation_from_checkpoint(task, session_id)
-        # Missing log -> None (entries() is empty). Corrupt log must raise
-        # RuntimeOperationTransitionError so callers fail closed instead of
-        # silently starting a fresh operation and replaying settled effects.
-        if self.session_log is None:
-            raise RuntimeError("operation store has no storage")
-        return operation_state_from_entries(
-            self.session_log.entries(session_id),
-            session_id=session_id,
-            run_id=run_id,
-        )
+        try:
+            task = self.durable.task(run_id)
+        except KeyError:
+            return None
+        checkpoint = cast(_CheckpointAdapter, importlib.import_module("codey.durable.checkpoint"))
+        return checkpoint.operation_from_checkpoint(task, session_id)
 
 
 class _CheckpointAdapter(Protocol):

@@ -440,6 +440,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.write.provider_effects",
             "codey.runtime.write.tool_batches",
             "codey.runtime.effects.tool_result_delivery",
+            "codey.durable.checkpoint",
+            "codey.durable.session",
             "codey.storage.atomic_io",
             "codey.storage.file_lock",
             "codey.storage.local_store",

@@ -82,7 +82,7 @@ class KernelEffectSink:
         self.send_index = 0
         self.managed_outputs = managed_outputs
         self.durable = durable
-        store = RuntimeEffectStore(mutations.session_log, durable=durable)
+        store = RuntimeEffectStore(durable=durable)
         previous = store.load_effects(session_id, run_id)
         self._replay_classes = {row.intent.effect_id: row.intent.replay_class for row in previous}
         self._old_pending = {row.intent.effect_id for row in previous if row.is_pending}

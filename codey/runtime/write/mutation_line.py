@@ -1,9 +1,8 @@
 """Serialized runtime mutation boundary.
 
 Every production mutation of durable operation state, effect ledger, delivery
-ledger, and operation settlement goes through this line. The callback passed to
-``RuntimeSessionLog.mutate`` stays pure: it reads the current projection and
-entries, decides the next bounded records, and commits them as one batch.
+ledger, and operation settlement goes through the durable checkpoint adapter.
+Audit projections are read separately and cannot be selected as a write backend.
 """
 
 from __future__ import annotations
@@ -68,7 +67,6 @@ from codey.runtime.effects.effect_records import (
 )
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent, abandoned_entry
 from codey.runtime.log.entries import RuntimeLogEntry
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_view import load_session_view
 from codey.runtime.write.delivery_recovery import build_delivery_recovered_rows
 from codey.runtime.write.provider_effects import (
@@ -104,19 +102,13 @@ def _resolve_abandoned_delivery(
 
 class RuntimeMutationLine:
     """Single writer-facing API for runtime durable mutations."""
-    def __init__(self, session_log: RuntimeSessionLog | None = None, *, durable: Any | None = None) -> None:
-        if session_log is None and durable is None:
-            raise ValueError("a runtime mutation line needs durable storage or a session log")
-        self.session_log = session_log
+    def __init__(self, *, durable: Any) -> None:
+        if durable is None:
+            raise ValueError("a runtime mutation line requires durable storage")
         self.durable = durable
 
     def _mutate(self, session_id: str, run_id: str, mutation: Callable[..., Any], *,
                 messages: tuple[tuple[str, Mapping[str, object]], ...] = ()) -> None:
-        if self.durable is None:
-            if self.session_log is None:
-                raise RuntimeError("runtime mutation line has no storage")
-            self.session_log.mutate(session_id, mutation)
-            return
         checkpoint = importlib.import_module("codey.durable.checkpoint")
         checkpoint.mutate_checkpoint(self.durable, session_id, run_id, mutation, messages=messages)
 
