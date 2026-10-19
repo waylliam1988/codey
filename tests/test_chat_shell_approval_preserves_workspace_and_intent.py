@@ -1,4 +1,4 @@
-"""Allow and Deny resume Chat in its original workspace and authorization."""
+"""Allow and deny resume Chat in its original task and authorization."""
 from contextlib import closing
 from unittest.mock import Mock
 
@@ -32,15 +32,19 @@ def test_shell_decision_resumes_chat_without_project_workflow(tmp_path, monkeypa
         approval_id, record = next(iter(pending.items()))
         workspace = root if attached else home / "workspaces" / session_key("chat-shell")
         assert record["project"] == str(workspace)
-        submitted = Mock(return_value="continued-run")
+        submitted = Mock(return_value="unexpected-new-task")
         status, payload = shell_approval_response(state, {"id": approval_id, "approved": approved},
                                                  submit_task_after_slot_release=submitted)
         assert status == 202
         assert state.shell_approval_workflow.wait(5)
         assert state.shell_approval_workflow.status(approval_id)["continuation"] == "started"
-        args = submitted.call_args.args
-        assert args[1] == (str(root) if attached else None)
-        assert args[6] == "chat"
-        assert submitted.call_args.kwargs["previous_run_id"] == record["run_id"]
+        # Approval settlement wakes the original durable task.  It must not
+        # create a continuation submission with a second task identity.
+        assert submitted.call_count == 0
+        assert state.shell_approval_workflow.status(approval_id)["continuation_run_id"] == record["run_id"]
+        assert len(state.durable.tasks()) == 1
+        task = state.durable.task(record["run_id"])
+        assert task.state["project"] == (str(root) if attached else None)
+        assert task.state["intent"] == "chat"
         assert not state.pending_shell_approvals()
         assert state.wait_for_ghost_sleep(timeout=30)
