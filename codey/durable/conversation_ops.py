@@ -17,7 +17,14 @@ from typing import Any, cast
 from codey.durable.ancestry import context_path
 from codey.durable.context import ContextSnapshot, build_context
 from codey.durable.errors import CommitConflict
-from codey.durable.model import CommitResult, CreateConversation, DurableMutation, EntryDraft, thaw_json
+from codey.durable.model import (
+    CommitResult,
+    CreateConversation,
+    DeleteConversation,
+    DurableMutation,
+    EntryDraft,
+    thaw_json,
+)
 
 
 def entries(session: Any, conversation_id: str) -> tuple[EntryDraft, ...]:
@@ -199,15 +206,13 @@ def fork(session: Any, conversation_id: str, entry_id: str, *, child_conversatio
     return child_id
 
 
-def delete_conversation(session: Any, conversation_id: str) -> None:
-    session._ensure_writable()
-    try:
-        session.store.delete_conversation(conversation_id)
-    except (CommitConflict, KeyError, TypeError, ValueError):
-        raise
-    except Exception:
-        session._sealed = True
-        raise
+def delete_conversation(session: Any, conversation_id: str) -> CommitResult:
+    _head, revision = session.store.head(conversation_id)
+    return cast(CommitResult, session._commit(DurableMutation(
+        conversation_id=conversation_id,
+        expected_revision=revision,
+        delete_conversation=DeleteConversation(),
+    )))
 
 
 def context(session: Any, conversation_id: str, *, leaf_id: str | None = None) -> tuple[EntryDraft, ...]:

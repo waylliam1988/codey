@@ -1392,9 +1392,9 @@ class DurableSession:
         return conversation_ops.fork(self, conversation_id, entry_id, child_conversation_id=child_conversation_id)
 
     @_mutation_line
-    def delete_conversation(self, conversation_id: str) -> None:
+    def delete_conversation(self, conversation_id: str) -> CommitResult:
         """Delete an unreferenced conversation without orphaning a fork."""
-        conversation_ops.delete_conversation(self, conversation_id)
+        return conversation_ops.delete_conversation(self, conversation_id)
 
     @_mutation_line
     def context(self, conversation_id: str, *, leaf_id: str | None = None) -> tuple[EntryDraft, ...]:

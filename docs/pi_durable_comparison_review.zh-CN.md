@@ -570,3 +570,25 @@ mypy / pyrefly / ty / ruff 全部通过
 
 本段仍有一个明确未收尾项：`delete_conversation()` 仍直接调用 backend，删除事实没有 durable commit，也没有可补发的 deletion projection。下一段只处理删除事务和 child/dependency 约束，不把 artifact 或 scheduler 语义混进来。
 
+## 14. 第十一段：conversation delete 接入 durable commit
+
+删除是另一条容易被忽略的恢复旁路。此前 `DurableSession.delete_conversation()` 直接调用 backend，删除成功后没有 `commit_seq`、没有 projection，SSE 断线客户端无法知道某个 conversation 已经被移除；同时 parent 有 child 时的拒绝只存在于 backend 专用路径。
+
+本段已完成：
+
+- 新增明确的 `DeleteConversation` mutation，禁止和 entry、task、effect、submission 或 approval 混在同一 mutation；
+- Memory 与 SQLite 在各自事务内检查 child cap、写 `conversation_deleted` projection、清理该 conversation 的 entries/submissions/tasks/effects，再提交 deletion commit；
+- `DurableSession.delete_conversation()` 读取当前 revision 后走 `_commit()`，因此 publication failure、SSE cursor 和 Session failure latch 与其他 durable mutation 一致；
+- 删除 parent 的 child 约束在 commit 前检查，失败不会改变 head、sequence 或 source/child conversation；
+- SQLite 开启 foreign keys 时按 effects → tasks → submissions → entries → conversation 的顺序删除，避免半删除状态。
+
+红测与扩展结果：
+
+```text
+test_conversation_delete_commit.py + 相关 commit/fork/store contract
+73 passed
+mypy / pyrefly / ty / ruff 全部通过
+```
+
+旧的 backend `store.delete_conversation()` 原始方法仍保留给底层 contract 测试和离线维护入口；生产 `DurableSession` 已不再调用它。后续结构清理阶段需要把这些 backend 专用写入口收窄，避免形成第二条业务写入路径。
+

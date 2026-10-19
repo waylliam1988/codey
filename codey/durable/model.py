@@ -654,6 +654,11 @@ class CreateConversation:
 
 
 @dataclass(frozen=True)
+class DeleteConversation:
+    pass
+
+
+@dataclass(frozen=True)
 class DurableMutation:
     conversation_id: str
     expected_revision: int
@@ -669,10 +674,18 @@ class DurableMutation:
     approval: ApprovalRecord | None = None
     expected_approval_status: ApprovalStatus | str | None = None
     create_conversation: CreateConversation | None = None
+    delete_conversation: DeleteConversation | None = None
 
     def __post_init__(self) -> None:
         if not self.conversation_id or self.expected_revision < 0:
             raise ValueError("conversation identity and non-negative revision are required")
+        if self.create_conversation is not None and self.delete_conversation is not None:
+            raise ValueError("a mutation cannot create and delete a conversation")
+        if self.delete_conversation is not None and any((
+            self.entries, self.submission, self.task, self.effect, self.effects,
+            self.submission_update, self.settlements, self.approval,
+        )):
+            raise ValueError("conversation deletion cannot include other durable changes")
         if any(entry.conversation_id != self.conversation_id for entry in self.entries):
             raise ValueError("all mutation entries must belong to its conversation")
         if self.submission is not None:

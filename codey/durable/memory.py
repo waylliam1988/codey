@@ -100,6 +100,8 @@ class MemoryDurableStore:
                 if prior_submission is not None:
                     return prior_submission
                 raise CommitConflict("conversation revision changed")
+            if mutation.delete_conversation is not None:
+                return self._commit_delete_conversation(mutation, revision)
             if mutation.submission is not None:
                 key = (mutation.conversation_id, mutation.submission.request_id)
                 existing = self._submissions.get(key)
@@ -200,6 +202,36 @@ class MemoryDurableStore:
                     current.fingerprint,
                 )
             return result
+
+    def _commit_delete_conversation(self, mutation: DurableMutation, revision: int) -> CommitResult:
+        if any(parent == mutation.conversation_id for parent, _entry in self._parents.values()):
+            raise CommitConflict("conversation has forked children")
+        self._sequence += 1
+        record = CommitRecord(self._sequence, "durable", datetime.now(UTC).isoformat(), {
+            **mutation_projection(mutation), "database_id": self.database_id,
+        })
+        self._commits.append(record)
+        submission_keys = [
+            key for key, value in self._submissions.items()
+            if value.record.conversation_id == mutation.conversation_id
+        ]
+        task_ids = [
+            task_id for task_id, task in self._tasks.items()
+            if task.conversation_id == mutation.conversation_id
+        ]
+        for key in submission_keys:
+            self._submission_ids.discard(self._submissions[key].record.submission_id)
+            self._submissions.pop(key, None)
+        for task_id in task_ids:
+            self._tasks.pop(task_id, None)
+            self._history.pop(task_id, None)
+        for effect_id, effect in tuple(self._effects.items()):
+            if effect.task_id in task_ids:
+                self._effects.pop(effect_id, None)
+        self._entries.pop(mutation.conversation_id, None)
+        self._heads.pop(mutation.conversation_id, None)
+        self._parents.pop(mutation.conversation_id, None)
+        return CommitResult(revision + 1, self._sequence, record=record)
 
     def _validate_effects(self, mutation: DurableMutation) -> None:
         effect_rows = ((mutation.effect,) if mutation.effect is not None else ()) + mutation.effects + mutation.settlements

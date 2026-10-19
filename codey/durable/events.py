@@ -13,6 +13,11 @@ def mutation_projection(mutation: DurableMutation) -> dict[str, object]:
             "parent_conversation_id": creation.parent_conversation_id,
             "parent_entry_id": creation.parent_entry_id,
         })
+    if mutation.delete_conversation is not None:
+        projections.append({
+            "type": "conversation_deleted",
+            "conversation_id": mutation.conversation_id,
+        })
     projections.extend([
         {"type": "entry_appended", "entry_id": entry.entry_id, "kind": entry.kind}
         for entry in mutation.entries

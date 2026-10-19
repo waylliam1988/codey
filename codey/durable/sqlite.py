@@ -192,6 +192,33 @@ class SQLiteDurableStore:
                         (mutation.conversation_id, creation.parent_conversation_id, creation.parent_entry_id),
                     )
                 current_revision, head = _read_conversation(database, mutation.conversation_id)
+                if mutation.delete_conversation is not None:
+                    child = database.execute(
+                        "SELECT 1 FROM conversations WHERE parent_conversation_id=? LIMIT 1",
+                        (mutation.conversation_id,),
+                    ).fetchone()
+                    if child is not None:
+                        raise CommitConflict("conversation has forked children")
+                    if current_revision != mutation.expected_revision:
+                        raise CommitConflict("conversation revision changed")
+                    record = _new_commit(database, "durable", {
+                        **mutation_projection(mutation),
+                    })
+                    task_ids = [
+                        str(row[0]) for row in database.execute(
+                            "SELECT id FROM tasks WHERE conversation_id=?",
+                            (mutation.conversation_id,),
+                        ).fetchall()
+                    ]
+                    if task_ids:
+                        placeholders = ",".join("?" for _ in task_ids)
+                        database.execute(f"DELETE FROM effects WHERE task_id IN ({placeholders})", task_ids)
+                    database.execute("DELETE FROM tasks WHERE conversation_id=?", (mutation.conversation_id,))
+                    database.execute("DELETE FROM submissions WHERE conversation_id=?", (mutation.conversation_id,))
+                    database.execute("DELETE FROM entries WHERE conversation_id=?", (mutation.conversation_id,))
+                    database.execute("DELETE FROM conversations WHERE id=?", (mutation.conversation_id,))
+                    database.execute("COMMIT")
+                    return CommitResult(current_revision + 1, record.sequence, record=record)
                 _validate_mutation(database, mutation, current_revision, head)
                 if mutation.submission is not None and database.execute(
                     "SELECT 1 FROM submissions WHERE id=?",
