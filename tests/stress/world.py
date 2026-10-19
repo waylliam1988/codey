@@ -21,7 +21,8 @@ from typing import Any
 
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.event_bus import EventBus
-from codey.ghost.event_log import GhostEventLog
+from codey.ghost.record_store import GhostRecords
+from codey.ghost.sqlite import GhostSQLite
 from codey.repairs.journal import RepairJournal
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import (
@@ -110,13 +111,7 @@ class StressWorld:
         self.operations = RuntimeOperationStore(self.log)
         self.effects = RuntimeEffectStore(self.log)
         self.delivery = ToolResultDeliveryStore(self.log)
-        self.ghost = GhostEventLog(
-            self.state_home / "ghost" / "stress.jsonl",
-            schema_version=self.GHOST_SCHEMA_VERSION,
-            source_name="stress.jsonl",
-            allowed_event_kinds=(self.GHOST_KIND,),
-            bad_row_policy="warn",
-        )
+        self.ghost = GhostRecords(GhostSQLite(self.state_home), "inbox")
         self.bus = EventBus(replay_limit=512)
         self.approvals = ApprovalRegistry()
         self.journal = RepairJournal(self.state_home)
@@ -264,11 +259,13 @@ class StressWorld:
             for index in range(n)
         ]
         self._ghost_seq += n
-        assert self.ghost.append(events)
+        with self.ghost.transaction():
+            self.ghost.append(events)
+            self.ghost.mark_applied()
         return events
 
     def ghost_rows(self) -> tuple:
-        return tuple(self.ghost.read().rows)
+        return tuple(self.ghost.events())
 
     # -- bus / approvals / journal ----------------------------------------------
 

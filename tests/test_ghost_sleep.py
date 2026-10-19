@@ -6,15 +6,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import codey.ghost.sleep as sleep_module
 from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityResult, GhostContinuityStore
-from codey.ghost.event_log import event_file_stats as ghost_event_file_stats
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import GhostSignal
 from codey.ghost.sleep import GhostSleepBudget, GhostSleepStore
 from codey.ghost.work_queue import GhostWorkQueueStore
+from tests.ghost_fixtures import event_text as sql_event_text
 
 
 def _accepted_signal() -> GhostSignal:
@@ -40,21 +39,24 @@ class GhostSleepTests(unittest.TestCase):
                 session_id="session-1",
                 project=str(Path(td)),
             )
-            payload = json.loads(sleep.state_path.read_text(encoding="utf-8"))
-            event_text = sleep.events_path.read_text(encoding="utf-8")
+            payload = sleep.export_state()["sleep"]
+            event_text = sql_event_text(sleep)
 
         self.assertFalse(report.cancelled)
-        self.assertEqual([step.name for step in report.steps], [
-            "projection_health",
-            "affinity_sync",
-            "hebbian_decay",
-            "affinity_decay",
-            "continuity_refresh",
-            "event_compaction",
-            "report",
-        ])
+        self.assertEqual(
+            [step.name for step in report.steps],
+            [
+                "projection_health",
+                "affinity_sync",
+                "hebbian_decay",
+                "affinity_decay",
+                "continuity_refresh",
+                "event_compaction",
+                "report",
+            ],
+        )
         self.assertEqual(payload["report"]["cycle_id"], report.cycle_id)
-        self.assertIn('"type":"ghost_sleep_report"', event_text)
+        self.assertIn("ghost_sleep_report", event_text)
         forbidden = (
             "assistant reply body",
             "RAW SOURCE",
@@ -77,73 +79,13 @@ class GhostSleepTests(unittest.TestCase):
             sleep = GhostSleepStore(td)
 
             report = sleep.run_once(should_cancel=should_cancel)
-            payload = json.loads(sleep.state_path.read_text(encoding="utf-8"))
+            payload = sleep.export_state()["sleep"]
 
         self.assertTrue(report.cancelled)
         self.assertEqual([step.name for step in report.steps], ["projection_health", "report"])
         self.assertIn("hebbian_decay", report.pending_steps)
         self.assertNotIn("report", report.pending_steps)
         self.assertEqual(payload["report"]["pending_steps"], list(report.pending_steps))
-
-    def test_sleep_events_unreadable_blocks_report_write(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            sleep = GhostSleepStore(td)
-            sleep.events_path.parent.mkdir(parents=True, exist_ok=True)
-            sleep.events_path.write_bytes(b"\xff\xfe\xff")
-
-            report = sleep.run_once()
-
-            self.assertFalse(sleep.state_path.exists())
-            self.assertFalse(report.steps[-1].ok)
-            self.assertEqual(report.steps[-1].skipped_reason, "events_read_blocked")
-            self.assertIn("sleep_events_unreadable", report.steps[-1].warnings)
-
-    def test_projection_health_reports_bad_events_without_rewriting(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            inbox = GhostInboxStore(td)
-            inbox.events_path.parent.mkdir(parents=True, exist_ok=True)
-            inbox.events_path.write_bytes(b"\xff\xfe\xff")
-            before = inbox.events_path.read_bytes()
-            sleep = GhostSleepStore(td)
-
-            report = sleep.run_once(inbox_store=inbox)
-            after = inbox.events_path.read_bytes()
-
-        health = report.steps[0]
-        self.assertEqual(health.name, "projection_health")
-        self.assertFalse(health.ok)
-        self.assertIn("inbox_events_unreadable", health.warnings)
-        self.assertEqual(after, before)
-
-    def test_sleep_does_not_decay_over_unreadable_hebbian_events(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            inbox = GhostInboxStore(td)
-            created = inbox.ingest_signals(
-                (_accepted_signal(),),
-                session_id="s1",
-                run_id="r1",
-                user_text="以后回答短一点",
-            )
-            hebbian = GhostHebbianStore(td)
-            hebbian.reinforce_candidate(created[0])
-            self.assertTrue(hebbian.state_path.exists())
-            hebbian.events_path.write_bytes(b"\xff\xfe\xff")
-            before = hebbian.events_path.read_bytes()
-            sleep = GhostSleepStore(td)
-
-            report = sleep.run_once(
-                hebbian_store=hebbian,
-                budget=GhostSleepBudget(hebbian_decay_min_interval_seconds=0),
-            )
-            after = hebbian.events_path.read_bytes()
-
-        health = next(step for step in report.steps if step.name == "projection_health")
-        decay_step = next(step for step in report.steps if step.name == "hebbian_decay")
-        self.assertFalse(health.ok)
-        self.assertIn("hebbian_events_unreadable", health.warnings)
-        self.assertEqual(decay_step.skipped_reason, "events_read_blocked")
-        self.assertIn("hebbian_events_unreadable", decay_step.warnings)
-        self.assertEqual(after, before)
 
     def test_hebbian_decay_min_interval_noop_does_not_write_decay_event(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -156,14 +98,14 @@ class GhostSleepTests(unittest.TestCase):
             )
             hebbian = GhostHebbianStore(td)
             hebbian.reinforce_candidate(created[0])
-            before = hebbian.events_path.read_text(encoding="utf-8")
+            before = sql_event_text(hebbian)
             sleep = GhostSleepStore(td)
 
             report = sleep.run_once(
                 hebbian_store=hebbian,
                 budget=GhostSleepBudget(hebbian_decay_min_interval_seconds=24 * 60 * 60),
             )
-            after = hebbian.events_path.read_text(encoding="utf-8")
+            after = sql_event_text(hebbian)
 
         decay_step = next(step for step in report.steps if step.name == "hebbian_decay")
         self.assertEqual(decay_step.skipped_reason, "min_interval")
@@ -201,16 +143,24 @@ class GhostSleepTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             continuity = GhostContinuityStore(td)
             continuity.sync_from_sources(
-                knowledge_store=mock.Mock(index=mock.Mock(recent=mock.Mock(return_value=[{
-                    "id": "note-1",
-                    "type": "synthesis",
-                    "title": "Provider recovery",
-                    "body": "Research synthesis.",
-                    "open_questions": '["Should we keep tracking provider recovery?"]',
-                    "updated": "2999-01-01T00:00:00Z",
-                    "session_id": "s1",
-                    "project": "",
-                }]))),
+                knowledge_store=mock.Mock(
+                    index=mock.Mock(
+                        recent=mock.Mock(
+                            return_value=[
+                                {
+                                    "id": "note-1",
+                                    "type": "synthesis",
+                                    "title": "Provider recovery",
+                                    "body": "Research synthesis.",
+                                    "open_questions": '["Should we keep tracking provider recovery?"]',
+                                    "updated": "2999-01-01T00:00:00Z",
+                                    "session_id": "s1",
+                                    "project": "",
+                                }
+                            ]
+                        )
+                    )
+                ),
                 session_id="s1",
                 run_id="r1",
                 mode="chat",
@@ -232,77 +182,6 @@ class GhostSleepTests(unittest.TestCase):
         compaction = next(step for step in report.steps if step.name == "event_compaction")
         self.assertEqual(compaction.counts["stale_work_claims"], 1)
         self.assertEqual(item.status, "queued")
-
-    def test_public_compaction_reports_unreadable_event_logs(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            stores = (
-                ("events_unreadable", GhostInboxStore(td)),
-                ("hebbian_events_unreadable", GhostHebbianStore(td)),
-                ("continuity_events_unreadable", GhostContinuityStore(td)),
-            )
-            for warning, store in stores:
-                with self.subTest(warning=warning):
-                    store.events_path.parent.mkdir(parents=True, exist_ok=True)
-                    store.events_path.write_bytes(b"\xff\xfe\xff")
-
-                    result = store.compact_if_needed()
-
-                    self.assertFalse(result["ok"])
-                    self.assertFalse(result["compacted"])
-                    self.assertIn(warning, result["warnings"])
-
-    def test_event_file_stats_checks_byte_cap_before_decoding(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            path = Path(td) / "events.jsonl"
-            path.write_bytes(b"\xff\xfe\xff\xfe")
-
-            cases = (
-                (
-                    "events_too_large",
-                    ghost_event_file_stats(
-                        path,
-                        max_bytes=1,
-                        too_large_warning="events_too_large",
-                        unreadable_warning="events_unreadable",
-                    ),
-                ),
-                (
-                    "hebbian_events_too_large",
-                    ghost_event_file_stats(
-                        path,
-                        max_bytes=1,
-                        too_large_warning="hebbian_events_too_large",
-                        unreadable_warning="hebbian_events_unreadable",
-                    ),
-                ),
-                (
-                    "continuity_events_too_large",
-                    ghost_event_file_stats(
-                        path,
-                        max_bytes=1,
-                        too_large_warning="continuity_events_too_large",
-                        unreadable_warning="continuity_events_unreadable",
-                    ),
-                ),
-            )
-
-        for warning, stats in cases:
-            with self.subTest(warning=warning):
-                self.assertTrue(stats["readable"])
-                self.assertEqual(stats["warning"], warning)
-                self.assertEqual(stats["bytes"], 4)
-
-    def test_sleep_compaction_checks_byte_cap_before_decoding(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            sleep = GhostSleepStore(td)
-            sleep.events_path.parent.mkdir(parents=True, exist_ok=True)
-            sleep.events_path.write_bytes(b"\xff\xfe\xff\xfe")
-
-            with mock.patch.object(sleep_module, "MAX_SLEEP_EVENTS_BYTES", 1):
-                sleep._compact_if_needed()
-
-            self.assertEqual(sleep.events_path.read_bytes(), b"\xff\xfe\xff\xfe")
-            self.assertEqual(sleep.last_warnings, ("sleep_events_too_large",))
 
     def test_continuity_refresh_passes_no_user_focus_excerpt(self) -> None:
         class FakeContinuity:

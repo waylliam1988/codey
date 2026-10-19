@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from codey.ghost import affinity, continuity, directive, hebbian, inbox, sleep, work_queue
+from codey.ghost import affinity, continuity, directive, sleep, work_queue
 from codey.ghost._warnings import (
     bounded_warnings,
-    event_read_warnings,
 )
+from codey.ghost.affinity_model import MAX_AFFINITY_WARNINGS
+from codey.ghost.work_queue_model import MAX_WORK_WARNINGS
 
 
 class GhostWarningsEquivalenceTests(unittest.TestCase):
@@ -14,11 +15,11 @@ class GhostWarningsEquivalenceTests(unittest.TestCase):
         sample = ["b", "a", "b", "", "a", "c"]
         self.assertEqual(
             work_queue._bounded_warnings(sample),
-            bounded_warnings(sample, limit=work_queue.MAX_WORK_WARNINGS, redact_sensitive=True),
+            bounded_warnings(sample, limit=MAX_WORK_WARNINGS, redact_sensitive=True),
         )
         self.assertEqual(
             affinity._bounded_warnings(sample),
-            bounded_warnings(sample, limit=affinity.MAX_AFFINITY_WARNINGS),
+            bounded_warnings(sample, limit=MAX_AFFINITY_WARNINGS),
         )
         self.assertEqual(
             continuity._bounded_warnings(sample),
@@ -33,52 +34,6 @@ class GhostWarningsEquivalenceTests(unittest.TestCase):
             bounded_warnings(sample, limit=sleep.MAX_SLEEP_WARNINGS, redact_sensitive=True),
         )
 
-    def test_event_mappers_match_shared_helpers(self) -> None:
-        self.assertEqual(
-            work_queue._event_read_warnings(["work_events.jsonl:too_large", "x"]),
-            event_read_warnings(
-                ["work_events.jsonl:too_large", "x"],
-                stream="work_events",
-                limit=work_queue.MAX_WORK_WARNINGS,
-                redact_sensitive=True,
-            ),
-        )
-        self.assertEqual(
-            affinity._event_read_warnings(["affinity_events.jsonl:unreadable"]),
-            ("affinity_events_unreadable",),
-        )
-        self.assertEqual(
-            continuity._event_read_warnings(["continuity_events.jsonl:too_large"]),
-            ("continuity_events_too_large",),
-        )
-        self.assertEqual(
-            hebbian._event_read_warnings(["hebbian_events.jsonl:too_large", "x"]),
-            event_read_warnings(
-                ["hebbian_events.jsonl:too_large", "x"],
-                stream="hebbian_events",
-                limit=hebbian.MAX_HEBBIAN_WARNINGS,
-            ),
-        )
-        # Unified loop must dedupe, drop empties, and clip (legacy slice kept all).
-        sample = ["b", "a", "b", "", "a", "c", "x" * 500]
-        self.assertEqual(
-            hebbian._event_read_warnings(sample),
-            event_read_warnings(
-                sample, stream="hebbian_events", limit=hebbian.MAX_HEBBIAN_WARNINGS
-            ),
-        )
-        self.assertEqual(
-            inbox._event_read_warnings(sample),
-            event_read_warnings(sample, stream="events", limit=inbox.MAX_EVENT_WARNINGS),
-        )
-        self.assertEqual(
-            inbox._event_read_warnings(["events.jsonl:unreadable"]),
-            ("events_unreadable",),
-        )
-        self.assertEqual(
-            sleep._sleep_event_read_warnings(["sleep_events.jsonl:too_large"]),
-            ("sleep_events_too_large",),
-        )
 
 
 if __name__ == "__main__":

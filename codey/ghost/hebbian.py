@@ -2,32 +2,21 @@
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
 from pathlib import Path
 
 from codey.ghost import _common
-from codey.ghost._warnings import event_read_warnings
-from codey.ghost.event_log import (
-    GhostEventLog,
-    count_jsonl_rows,
-)
-from codey.ghost.event_log import (
+from codey.ghost.events import (
     compact_result_payload as _shared_compact_payload,
 )
-from codey.ghost.event_log import (
+from codey.ghost.events import (
     control_event as _ghost_control_event,
 )
-from codey.ghost.event_log import (
-    event_file_stats as _shared_event_file_stats,
-)
-from codey.ghost.event_projection import (
+from codey.ghost.events import (
     over_compact_budget,
-    read_projection_payload,
 )
 from codey.ghost.graph_primitives import (
     any_decay_due as _shared_any_decay_due,
@@ -44,16 +33,14 @@ from codey.ghost.graph_primitives import (
 from codey.ghost.graph_primitives import (
     decayed_by_half_life as _shared_decayed_by_half_life,
 )
+from codey.ghost.graph_store import GhostGraph
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
+from codey.ghost.sqlite import GhostSQLite
 from codey.runtime.core import cancellation
-from codey.storage.event_state import reset_event_backed_state
-from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
-    delete_file,
-    write_json_atomic,
 )
 from codey.utils.refs import coerce_float, coerce_int
 
@@ -67,10 +54,11 @@ def _safe_count(value: object) -> int:
         return max(0, coerce_int(value or 0))
     except (TypeError, ValueError, OverflowError):
         return 0
+
+
 MAX_GHOST_NODES = 500
 MAX_GHOST_EDGES = 2_000
 MAX_HEBBIAN_EVENTS = 5_000
-MAX_HEBBIAN_STATE_BYTES = 4 * 1024 * 1024
 MAX_HEBBIAN_EVENTS_BYTES = 4 * 1024 * 1024
 MAX_NODE_EVIDENCE_REFS = 32
 MAX_EDGE_EVIDENCE_REFS = 32
@@ -83,23 +71,10 @@ MIN_EDGE_WEIGHT = 0.01
 MAX_EDGE_OUT_DEGREE = 8
 
 
-MAX_HEBBIAN_WARNINGS = 20
-
 NODE_KINDS = SIGNAL_KINDS
 NODE_STATUSES = ("active", "superseded", "expired")
 EDGE_RELATIONS = ("coactivated_with",)
 _STATE_KIND = "ghost_hebbian_state_projection"
-_HEBBIAN_EVENT_TYPES = frozenset(
-    {
-        "ghost_hebbian_node_upsert",
-        "ghost_hebbian_node_superseded",
-        "ghost_hebbian_edge_upsert",
-        "ghost_hebbian_candidate_removed",
-        "ghost_hebbian_scope_deleted",
-        "ghost_hebbian_state_decayed",
-        "ghost_hebbian_store_compacted",
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -246,22 +221,9 @@ class GhostReinforceResult:
 
 class GhostHebbianStore:
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
-        self.directory = Path(state_home) / "ghost"
-        self.state_path = self.directory / "state.json"
-        self.events_path = self.directory / "hebbian_events.jsonl"
+        self.database = GhostSQLite(state_home)
+        self.graph = GhostGraph(self.database, "hebbian")
         self.last_warnings: tuple[str, ...] = ()
-        self._events_read_blocked = False
-
-    def _event_log(self) -> GhostEventLog:
-        return GhostEventLog(
-            self.events_path,
-            schema_version=HEBBIAN_SCHEMA_VERSION,
-            max_bytes=MAX_HEBBIAN_EVENTS_BYTES,
-            max_warnings=MAX_HEBBIAN_WARNINGS,
-            source_name="hebbian_events.jsonl",
-            allowed_event_kinds=_HEBBIAN_EVENT_TYPES,
-            bad_row_policy="warn",
-        )
 
     def reinforce_candidate(
         self,
@@ -277,10 +239,8 @@ class GhostHebbianStore:
         if not candidate.evidence_refs:
             return GhostReinforceResult(False, "missing_evidence_ref")
         try:
-            with with_file_lock(self.events_path):
+            with self.graph.transaction():
                 nodes, edges = self._load_state_unlocked()
-                if self._events_read_blocked:
-                    return GhostReinforceResult(False, "events_read_blocked")
                 node_by_id = {node.id: node for node in nodes}
                 edge_by_key = {_edge_key(edge): edge for edge in edges}
                 now = _common.now_iso_z()
@@ -311,13 +271,9 @@ class GhostHebbianStore:
                     edges = _bounded_edges(edge_by_key.values(), node_ids={node.id for node in nodes})
                     events = [_node_event(node, action="superseded") for node in changed_nodes]
                     events.extend(_edge_event(edge, action="reinforced") for edge in changed_edges)
-                    if not self._append_events_or_rewrite_state(events, nodes, edges):
-                        return GhostReinforceResult(False, "event_write_failed")
-                    try:
-                        self._write_projection(nodes, edges)
-                    except (OSError, TypeError, ValueError):
-                        delete_file(self.state_path)
-                    self._compact_if_needed(nodes, edges)
+                    self._append_events(events)
+                    self._write_state(nodes, edges)
+                    self.compact_if_needed()
                     reason = "backfilled_edges" if changed_edges else "superseded_conflicts"
                     return GhostReinforceResult(
                         True,
@@ -356,13 +312,9 @@ class GhostHebbianStore:
                     for changed_node in changed_nodes
                 ]
                 events.extend(_edge_event(edge, action="reinforced") for edge in changed_edges)
-                if not self._append_events_or_rewrite_state(events, nodes, edges):
-                    return GhostReinforceResult(False, "event_write_failed")
-                try:
-                    self._write_projection(nodes, edges)
-                except (OSError, TypeError, ValueError):
-                    delete_file(self.state_path)
-                self._compact_if_needed(nodes, edges)
+                self._append_events(events)
+                self._write_state(nodes, edges)
+                self.compact_if_needed()
                 return GhostReinforceResult(True, "reinforced", node=node, edges=tuple(changed_edges))
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
@@ -398,10 +350,8 @@ class GhostHebbianStore:
         return tuple(results)
 
     def remove_candidate(self, candidate: GhostMemoryCandidate) -> dict[str, int]:
-        with with_file_lock(self.events_path):
+        with self.graph.transaction():
             nodes, edges = self._load_state_unlocked()
-            if self._events_read_blocked:
-                raise OSError("hebbian events are unreadable")
             candidate_node_id = node_id_for_candidate(candidate)
             removed_ids = {
                 node.id for node in nodes if node.id == candidate_node_id or candidate.id in node.candidate_ids
@@ -427,12 +377,7 @@ class GhostHebbianStore:
                     now=_common.now_iso_z(),
                 ),
             )
-            # Symmetric with the reinforce path: a projection write failure
-            # invalidates the derived projection, not the authoritative events.
-            try:
-                self._write_projection(remaining_nodes, remaining_edges)
-            except (OSError, TypeError, ValueError):
-                delete_file(self.state_path)
+            self._write_state(remaining_nodes, remaining_edges)
             return {"nodes": len(removed_ids), "edges": len(removed_edges)}
 
     def list_nodes(
@@ -443,7 +388,7 @@ class GhostHebbianStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[GhostNode, ...]:
-        with with_file_lock(self.events_path):
+        with self.graph.transaction(write=False):
             return self._list_nodes_unlocked(
                 status=status,
                 scope=scope,
@@ -459,12 +404,7 @@ class GhostHebbianStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[GhostNode, ...]:
-        try:
-            nodes, _edges = self._load_state_unlocked()
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception:
-            return ()
+        nodes, _edges = self._load_state_unlocked()
         statuses = _status_filter(status, allowed=NODE_STATUSES)
         normalized_scope = (scope or "").strip().lower()
         scope_ref = _scope_ref_for_filter(normalized_scope, project=project, session_id=session_id)
@@ -480,7 +420,7 @@ class GhostHebbianStore:
         return tuple(sorted(rows, key=lambda item: (item.weight, item.updated_at), reverse=True))
 
     def list_edges(self, *, relation: str = "") -> tuple[GhostEdge, ...]:
-        with with_file_lock(self.events_path):
+        with self.graph.transaction(write=False):
             return self._list_edges_unlocked(relation=relation)
 
     def _list_edges_unlocked(self, *, relation: str = "") -> tuple[GhostEdge, ...]:
@@ -495,7 +435,7 @@ class GhostHebbianStore:
         return tuple(sorted(rows, key=lambda item: (item.weight, item.updated_at), reverse=True))
 
     def export_state(self) -> dict[str, object]:
-        with with_file_lock(self.events_path):
+        with self.graph.transaction(write=False):
             nodes, edges = self._load_state_unlocked()
             return {
                 "schema_version": HEBBIAN_SCHEMA_VERSION,
@@ -505,13 +445,9 @@ class GhostHebbianStore:
             }
 
     def reset_all(self) -> bool:
-        try:
-            reset_event_backed_state(self.events_path, self.state_path)
-            self.last_warnings = ()
-            self._events_read_blocked = False
-            return True
-        except OSError:
-            return False
+        self.graph.reset()
+        self.last_warnings = ()
+        return True
 
     def delete_scope(
         self,
@@ -526,7 +462,7 @@ class GhostHebbianStore:
         scope_ref = _scope_ref_for_filter(normalized_scope, project=project, session_id=session_id)
         if normalized_scope in {"project", "session"} and not scope_ref:
             raise ValueError(f"{normalized_scope} reference is required")
-        with with_file_lock(self.events_path):
+        with self.graph.transaction():
             nodes, edges = self._load_state_unlocked()
             removed_ids = {
                 node.id
@@ -555,16 +491,16 @@ class GhostHebbianStore:
                     now=_common.now_iso_z(),
                 ),
             )
-            self._write_projection(remaining_nodes, remaining_edges)
+            self._write_state(remaining_nodes, remaining_edges)
             return {"nodes": len(removed_ids), "edges": len(removed_edges)}
 
     def rebuild_from_events(self) -> bool:
         try:
-            with with_file_lock(self.events_path):
+            with self.graph.transaction():
                 nodes, edges = self._rebuild_state_from_events_unlocked()
                 if nodes is None or edges is None:
                     return False
-                self._write_projection(nodes, edges)
+                self._write_state(nodes, edges)
                 return True
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
@@ -572,18 +508,7 @@ class GhostHebbianStore:
             return False
 
     def decay(self, *, min_interval_seconds: int = 0) -> dict[str, object]:
-        with with_file_lock(self.events_path):
-            if self.events_path.exists():
-                self._read_events_unlocked()
-                if self._events_read_blocked:
-                    return {
-                        "removed_nodes": 0,
-                        "removed_edges": 0,
-                        "decayed_nodes": 0,
-                        "decayed_edges": 0,
-                        "skipped_reason": "events_read_blocked",
-                        "warnings": list(self.last_warnings),
-                    }
+        with self.graph.transaction():
             nodes, edges = self._load_state_unlocked()
             now = _common.now_iso_z()
             interval = max(0, coerce_int(min_interval_seconds or 0))
@@ -632,7 +557,7 @@ class GhostHebbianStore:
                     now=_common.now_iso_z(),
                 ),
             )
-            self._write_projection(bounded_nodes, bounded_edges)
+            self._write_state(bounded_nodes, bounded_edges)
             return {
                 "removed_nodes": removed_nodes,
                 "removed_edges": removed_edges,
@@ -642,99 +567,26 @@ class GhostHebbianStore:
             }
 
     def compact_if_needed(self) -> dict[str, object]:
-        try:
-            with with_file_lock(self.events_path):
-                before = _shared_event_file_stats(
-                    self.events_path,
-                    max_bytes=MAX_HEBBIAN_EVENTS_BYTES,
-                    too_large_warning="hebbian_events_too_large",
-                    unreadable_warning="hebbian_events_unreadable",
-                )
-                if not before["readable"]:
-                    warning = str(before["warning"] or "hebbian_events_unreadable")
-                    self.last_warnings = (warning,)
-                    return _shared_compact_payload(False, False, before, before, [warning])
-                if not before["warning"]:
-                    read = self._event_log().read_locked()
-                    self._events_read_blocked = read.blocked
-                    self.last_warnings = _event_read_warnings(read.warnings)
-                    if self._events_read_blocked:
-                        return _shared_compact_payload(
-                            False, False, before, before, self.last_warnings
-                        )
-                if not over_compact_budget(
-                    before, max_events=MAX_HEBBIAN_EVENTS, max_bytes=MAX_HEBBIAN_EVENTS_BYTES
-                ):
-                    return _shared_compact_payload(
-                        True, False, before, before, self.last_warnings
-                    )
-                nodes, edges = self._load_state_unlocked()
-                if self._events_read_blocked:
-                    return _shared_compact_payload(
-                        False, False, before, before, self.last_warnings
-                    )
-                self._compact_if_needed(nodes, edges)
-                after = _shared_event_file_stats(
-                    self.events_path,
-                    max_bytes=MAX_HEBBIAN_EVENTS_BYTES,
-                    too_large_warning="hebbian_events_too_large",
-                    unreadable_warning="hebbian_events_unreadable",
-                )
-                return _shared_compact_payload(
-                    True, after != before, before, after, self.last_warnings
-                )
-        except (OSError, TypeError, ValueError):
-            return _shared_compact_payload(False, False, {}, {}, self.last_warnings)
+        with self.graph.transaction():
+            before = self.graph.event_stats()
+            if not over_compact_budget(before, max_events=MAX_HEBBIAN_EVENTS, max_bytes=MAX_HEBBIAN_EVENTS_BYTES):
+                return _shared_compact_payload(True, False, before, before, ())
+            nodes, edges = self._load_state_unlocked()
+            self._rewrite_events_from_state(nodes, edges)
+            self._write_state(nodes, edges)
+            after = self.graph.event_stats()
+            return _shared_compact_payload(True, True, before, after, ())
 
     def _load_state_unlocked(self) -> tuple[list[GhostNode], list[GhostEdge]]:
-        self._events_read_blocked = False
-        payload = self._read_projection_payload_unlocked()
-        if payload is not None:
-            nodes, edges = self._rows_from_projection(payload)
-            if nodes is not None and edges is not None:
-                return nodes, edges
-        rebuilt_nodes, rebuilt_edges = self._rebuild_state_from_events_unlocked()
-        if rebuilt_nodes is None or rebuilt_edges is None:
-            return [], []
-        with contextlib.suppress(OSError, TypeError, ValueError):
-            self._write_projection(rebuilt_nodes, rebuilt_edges)
-        return rebuilt_nodes, rebuilt_edges
-
-    def _read_projection_payload_unlocked(self) -> dict[str, object] | None:
-        payload, reason = read_projection_payload(
-            self.state_path,
-            schema_version=HEBBIAN_SCHEMA_VERSION,
-            kind=_STATE_KIND,
-            max_bytes=MAX_HEBBIAN_STATE_BYTES,
-        )
-        if reason in ("corrupt", "wrong_schema"):
-            self._quarantine(self.state_path)
-            return None
-        return payload
-
-    def _rows_from_projection(
-        self,
-        payload: dict[str, object],
-    ) -> tuple[list[GhostNode] | None, list[GhostEdge] | None]:
-        raw_nodes = payload.get("nodes")
-        raw_edges = payload.get("edges")
-        if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
-            return None, None
-        nodes = [
-            node for node in (GhostNode.from_payload(item) for item in raw_nodes[:MAX_GHOST_NODES]) if node is not None
-        ]
-        node_ids = {node.id for node in nodes}
-        edges = [
-            edge
-            for edge in (GhostEdge.from_payload(item) for item in raw_edges[:MAX_GHOST_EDGES])
-            if edge is not None and edge.source in node_ids and edge.target in node_ids
-        ]
-        return _bounded_nodes(nodes), _bounded_edges(edges, node_ids=node_ids)
+        raw_nodes, raw_edges = self.graph.rows()
+        nodes = [GhostNode.from_payload(row) for row in raw_nodes]
+        edges = [GhostEdge.from_payload(row) for row in raw_edges]
+        if any(node is None for node in nodes) or any(edge is None for edge in edges):
+            raise OSError("invalid Ghost Hebbian graph row")
+        return [node for node in nodes if node is not None], [edge for edge in edges if edge is not None]
 
     def _rebuild_state_from_events_unlocked(self) -> tuple[list[GhostNode] | None, list[GhostEdge] | None]:
         events = self._read_events_unlocked()
-        if self._events_read_blocked:
-            return None, None
         nodes: dict[str, GhostNode] = {}
         edges: dict[tuple[str, str, str], GhostEdge] = {}
         for event in events:
@@ -752,16 +604,12 @@ class GhostHebbianStore:
         return bounded_nodes, bounded_edges
 
     def _read_events_unlocked(self) -> tuple[dict[str, object], ...]:
-        read = self._event_log().read()
-        self._events_read_blocked = read.blocked
-        self.last_warnings = _event_read_warnings(read.warnings)
-        return tuple(read.rows)
+        return tuple(self.graph.events())
 
-    def _write_projection(self, nodes: Iterable[GhostNode], edges: Iterable[GhostEdge]) -> None:
+    def _write_state(self, nodes: Iterable[GhostNode], edges: Iterable[GhostEdge]) -> None:
         node_rows = _bounded_nodes(nodes)
         edge_rows = _bounded_edges(edges, node_ids={node.id for node in node_rows})
-        payload = self._projection_payload(node_rows, edge_rows)
-        write_json_atomic(self.state_path, payload, max_bytes=MAX_HEBBIAN_STATE_BYTES)
+        self.graph.replace_rows((node.to_payload() for node in node_rows), (edge.to_payload() for edge in edge_rows))
 
     def _projection_payload(
         self,
@@ -774,42 +622,15 @@ class GhostHebbianStore:
         return {
             "schema_version": HEBBIAN_SCHEMA_VERSION,
             "kind": _STATE_KIND,
-            "source": "hebbian_events.jsonl",
+            "source": "ghost.sqlite3:hebbian",
             "updated_at": _common.now_iso_z(),
             "nodes": [node.to_payload() for node in node_rows],
             "edges": [edge.to_payload() for edge in edge_rows],
             "warnings": list(self.last_warnings),
         }
 
-    def _append_events(self, events: Iterable[dict[str, object]]) -> bool:
-        return self._event_log().append(events)
-
-    def _append_events_or_rewrite_state(
-        self,
-        events: Iterable[dict[str, object]],
-        nodes: Iterable[GhostNode],
-        edges: Iterable[GhostEdge],
-    ) -> bool:
-        if self._append_events(events):
-            return True
-        try:
-            self._rewrite_events_from_state(
-                nodes,
-                edges,
-                control_event=_ghost_control_event(
-                    schema_version=HEBBIAN_SCHEMA_VERSION,
-                    event_name="ghost_hebbian_store_compacted",
-                    payload={
-                        "reason": "event_bytes_limit",
-                        "max_events": MAX_HEBBIAN_EVENTS,
-                        "max_event_bytes": MAX_HEBBIAN_EVENTS_BYTES,
-                    },
-                    now=_common.now_iso_z(),
-                ),
-            )
-        except (OSError, TypeError, ValueError):
-            return False
-        return True
+    def _append_events(self, events: Iterable[dict[str, object]]) -> None:
+        self.graph.append(events)
 
     def _rewrite_events_from_state(
         self,
@@ -827,50 +648,7 @@ class GhostHebbianStore:
         self._write_events_atomic(events)
 
     def _write_events_atomic(self, events: Iterable[dict[str, object]]) -> None:
-        self._event_log().write_atomic(events)
-
-    def _compact_if_needed(
-        self,
-        nodes: Iterable[GhostNode],
-        edges: Iterable[GhostEdge],
-    ) -> None:
-        try:
-            event_bytes = self.events_path.stat().st_size
-            if event_bytes > MAX_HEBBIAN_EVENTS_BYTES:
-                line_count = MAX_HEBBIAN_EVENTS + 1
-            else:
-                line_count = count_jsonl_rows(self.events_path)
-        except OSError:
-            return
-        if not over_compact_budget(
-            {"events": line_count, "bytes": event_bytes},
-            max_events=MAX_HEBBIAN_EVENTS,
-            max_bytes=MAX_HEBBIAN_EVENTS_BYTES,
-        ):
-            return
-        reason = "event_bytes_limit" if event_bytes > MAX_HEBBIAN_EVENTS_BYTES else "event_count_limit"
-        with contextlib.suppress(OSError, TypeError, ValueError):
-            self._rewrite_events_from_state(
-                nodes,
-                edges,
-                control_event=_ghost_control_event(
-                    schema_version=HEBBIAN_SCHEMA_VERSION,
-                    event_name="ghost_hebbian_store_compacted",
-                    payload={
-                        "reason": reason,
-                        "max_events": MAX_HEBBIAN_EVENTS,
-                        "max_event_bytes": MAX_HEBBIAN_EVENTS_BYTES,
-                    },
-                    now=_common.now_iso_z(),
-                ),
-            )
-
-    def _quarantine(self, path: Path) -> None:
-        try:
-            target = path.with_name(f"{path.name}.quarantine.{_compact_timestamp()}")
-            path.replace(target)
-        except OSError:
-            pass
+        self.graph.append(events, replace=True)
 
 
 def node_id_for_candidate(candidate: GhostMemoryCandidate) -> str:
@@ -1065,9 +843,7 @@ def _any_decay_due(
 
 
 def _bounded_nodes(nodes: Iterable[GhostNode]) -> list[GhostNode]:
-    return _shared_bound_graph_nodes(
-        nodes, min_active_weight=MIN_NODE_WEIGHT, limit=MAX_GHOST_NODES
-    )
+    return _shared_bound_graph_nodes(nodes, min_active_weight=MIN_NODE_WEIGHT, limit=MAX_GHOST_NODES)
 
 
 def _bounded_edges(edges: Iterable[GhostEdge], *, node_ids: set[str]) -> list[GhostEdge]:
@@ -1204,11 +980,3 @@ def _clamp01(value: float) -> float:
     if not math.isfinite(number):
         return 0.0
     return round(max(0.0, min(1.0, number)), 6)
-
-
-def _compact_timestamp() -> str:
-    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-
-
-def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
-    return event_read_warnings(warnings, stream="hebbian_events", limit=MAX_HEBBIAN_WARNINGS)

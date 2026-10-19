@@ -338,7 +338,7 @@ class GhostKnowledgeSweepTests(unittest.TestCase):
             self.fail("_content_budget crashed on bad budget")
 
     def test_compact_result_no_crash(self):
-        from codey.ghost.event_log import compact_result_payload
+        from codey.ghost.events import compact_result_payload
         try:
             compact_result_payload(True, False, {"events": "abc", "bytes": 0}, {}, [])
         except (ValueError, TypeError, OverflowError):

@@ -48,7 +48,9 @@ class GhostReplayTests(unittest.TestCase):
             world.ghost_append(4)
             base = world.ghost_rows()
             replayed = (base[1], base[2], base[1], base[2], base[2])
-            assert world.ghost.append(list(replayed))
+            with world.ghost.transaction():
+                world.ghost.append(list(replayed))
+                world.ghost.mark_applied()
             oracle = InvariantChecker(seed=31)
             oracle.check_replay_idempotent(_fold, base, replayed)
             world.restart()
@@ -68,7 +70,9 @@ class GhostReplayTests(unittest.TestCase):
                 _fold(incremental), _fold(rebuilt)
             )
             # Full rewrite of the same rows converges to the same fold.
-            world.ghost.write_atomic(list(rebuilt))
+            with world.ghost.transaction():
+                world.ghost.append(list(rebuilt), replace=True)
+                world.ghost.mark_applied()
             oracle.check_projection_rebuildable(
                 _fold(incremental), _fold(world.ghost_rows())
             )

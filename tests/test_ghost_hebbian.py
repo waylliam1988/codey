@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import math
 import tempfile
 import unittest
@@ -17,6 +16,7 @@ from codey.ghost.hebbian import (
 )
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.schema import GhostSignal
+from tests.ghost_fixtures import event_text
 
 
 def _signal(
@@ -89,7 +89,7 @@ class GhostHebbianStoreTests(unittest.TestCase):
             self.assertAlmostEqual(nodes[0].weight, NODE_LEARNING_RATE * 0.8)
             self.assertIn(candidate.id, nodes[0].candidate_ids)
             self.assertEqual(nodes[0].evidence_refs, candidate.evidence_refs)
-            self.assertIn("ghost_hebbian_node_upsert", hebbian.events_path.read_text(encoding="utf-8"))
+            self.assertIn("ghost_hebbian_node_upsert", event_text(hebbian))
 
     def test_candidate_and_rejected_rows_are_not_reinforced(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -205,10 +205,10 @@ class GhostHebbianStoreTests(unittest.TestCase):
             hebbian = GhostHebbianStore(td)
             candidate = _ingest_one(inbox, _signal(confidence=0.9), project=td)
             hebbian.reinforce_candidate(candidate)
-            before = hebbian.events_path.read_text(encoding="utf-8")
+            before = event_text(hebbian)
 
             result = hebbian.decay(min_interval_seconds=24 * 60 * 60)
-            after = hebbian.events_path.read_text(encoding="utf-8")
+            after = event_text(hebbian)
 
             self.assertEqual(result["skipped_reason"], "min_interval")
             self.assertEqual(after, before)
@@ -311,7 +311,7 @@ class GhostHebbianStoreTests(unittest.TestCase):
             self.assertEqual(removed, {"nodes": 1, "edges": 1})
             self.assertEqual(len(hebbian.list_nodes()), 1)
             self.assertEqual(hebbian.list_edges(), ())
-            self.assertNotIn("Prefer concise replies.", hebbian.events_path.read_text(encoding="utf-8"))
+            self.assertNotIn("Prefer concise replies.", event_text(hebbian))
 
     def test_duplicate_evidence_can_backfill_missing_coactivation_edge(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -432,7 +432,7 @@ class GhostHebbianStoreTests(unittest.TestCase):
             self.assertEqual(removed["nodes"], 1)
             self.assertEqual(hebbian.list_nodes(scope="project", project=project_a), ())
             self.assertEqual(len(hebbian.list_nodes(scope="project", project=project_b)), 1)
-            self.assertNotIn("Project A memory unique phrase", hebbian.events_path.read_text(encoding="utf-8"))
+            self.assertNotIn("Project A memory unique phrase", event_text(hebbian))
 
     def test_coactivation_edges_only_use_same_run_accepted_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -511,100 +511,20 @@ class GhostHebbianStoreTests(unittest.TestCase):
 
             self.assertEqual(len(hebbian.list_edges()), 1)
 
-    def test_bad_projection_is_quarantined_and_rebuilt_from_events(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            inbox = GhostInboxStore(td)
-            hebbian = GhostHebbianStore(td)
-            candidate = _ingest_one(inbox, _signal(), project=td)
-            hebbian.reinforce_candidate(candidate)
-            hebbian.state_path.write_text("{bad json", encoding="utf-8")
-
-            nodes = hebbian.list_nodes()
-
-            self.assertEqual(len(nodes), 1)
-            self.assertTrue(list(hebbian.directory.glob("state.json.quarantine.*")))
-
-    def test_bad_hebbian_event_line_is_skipped_with_warning(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            inbox = GhostInboxStore(td)
-            hebbian = GhostHebbianStore(td)
-            candidate = _ingest_one(inbox, _signal(), project=td)
-            hebbian.reinforce_candidate(candidate)
-            with hebbian.events_path.open("a", encoding="utf-8", newline="\n") as handle:
-                handle.write("{bad json\n")
-            hebbian.state_path.unlink()
-
-            nodes = hebbian.list_nodes()
-
-            self.assertEqual(len(nodes), 1)
-            self.assertTrue(any("bad_json" in item for item in hebbian.last_warnings))
-
-    def test_projection_write_failure_is_fail_open_and_rebuildable(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            inbox = GhostInboxStore(td)
-            hebbian = GhostHebbianStore(td)
-            candidate = _ingest_one(inbox, _signal(), project=td)
-
-            with mock.patch("codey.ghost.hebbian.write_json_atomic", side_effect=OSError("disk full")):
-                result = hebbian.reinforce_candidate(candidate)
-
-            self.assertTrue(result.applied)
-            self.assertFalse(hebbian.state_path.exists())
-            self.assertEqual(len(hebbian.list_nodes()), 1)
-
-    def test_oversize_events_block_ingest_without_overwriting_projection(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            inbox = GhostInboxStore(td)
-            hebbian = GhostHebbianStore(td)
-            old_candidate = _ingest_one(inbox, _signal(value_key="old"), run_id="r1", project=td)
-            hebbian.reinforce_candidate(_accept(inbox, old_candidate))
-            old_events = hebbian.events_path.read_text(encoding="utf-8")
-            hebbian.state_path.unlink()
-            new_candidate = _ingest_one(
-                inbox,
-                _signal(summary="New memory", quote="以后记住 new", value_key="new"),
-                run_id="r2",
-                project=td,
-            )
-
-            with mock.patch("codey.ghost.hebbian.MAX_HEBBIAN_EVENTS_BYTES", 1):
-                result = hebbian.reinforce_candidate(_accept(inbox, new_candidate))
-
-            self.assertFalse(result.applied)
-            self.assertEqual(result.reason, "events_read_blocked")
-            self.assertEqual(hebbian.last_warnings, ("hebbian_events_too_large",))
-            self.assertFalse(hebbian.state_path.exists())
-            self.assertEqual(hebbian.events_path.read_text(encoding="utf-8"), old_events)
-
     def test_rebuild_reset_and_export_work(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             hebbian = GhostHebbianStore(td)
             candidate = _ingest_one(inbox, _signal(), project=td)
             hebbian.reinforce_candidate(candidate)
-            hebbian.state_path.unlink()
 
             self.assertTrue(hebbian.rebuild_from_events())
             exported = hebbian.export_state()
             self.assertEqual(len(exported["state"]["nodes"]), 1)
             self.assertEqual(len(exported["events"]), 1)
             self.assertTrue(hebbian.reset_all())
-            self.assertFalse(hebbian.state_path.exists())
-            self.assertFalse(hebbian.events_path.exists())
-
-    def test_export_skips_bad_event_line_but_keeps_warning(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            inbox = GhostInboxStore(td)
-            hebbian = GhostHebbianStore(td)
-            candidate = _ingest_one(inbox, _signal(), project=td)
-            hebbian.reinforce_candidate(candidate)
-            with hebbian.events_path.open("a", encoding="utf-8", newline="\n") as handle:
-                handle.write(json.dumps({"schema_version": 999}) + "\n")
-
-            exported = hebbian.export_state()
-
-            self.assertEqual(len(exported["state"]["nodes"]), 1)
-            self.assertTrue(exported["warnings"])
+            self.assertEqual(hebbian.list_nodes(), ())
+            self.assertFalse(bool(event_text(hebbian)))
 
     def test_unknown_node_kinds_are_not_loaded(self) -> None:
         self.assertNotIn("boundary_preference", NODE_KINDS)

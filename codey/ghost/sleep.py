@@ -6,47 +6,35 @@ existing projections, compacts event logs, and writes a bounded report.
 
 from __future__ import annotations
 
-import contextlib
-import json
+import sqlite3
 import uuid
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from time import perf_counter
 from typing import Any, SupportsIndex, SupportsInt, TypeAlias, cast
 
 from codey.ghost import _common
-from codey.ghost._warnings import bounded_warnings, event_read_warnings
+from codey.ghost._warnings import bounded_warnings
 from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityStore
-from codey.ghost.event_log import (
-    GhostEventLog,
-    count_jsonl_rows,
-)
-from codey.ghost.event_log import (
+from codey.ghost.events import (
     control_event as _ghost_control_event,
 )
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
+from codey.ghost.record_store import GhostRecords
 from codey.ghost.schema import clip_signal_text
+from codey.ghost.sqlite import GhostSQLite
 from codey.ghost.work_queue import GhostWorkQueueStore
-from codey.storage.event_state import reset_event_backed_state
-from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
-    StoreCorruption,
-    backup_corrupt_file,
-    delete_file,
-    read_json_strict,
-    write_json_atomic,
 )
-from codey.workspace.paths import read_text_bounded
 
 _INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 SLEEP_SCHEMA_VERSION = 1
 MAX_SLEEP_EVENTS = 1_000
-MAX_SLEEP_STATE_BYTES = 512 * 1024
 MAX_SLEEP_EVENTS_BYTES = 512 * 1024
 MAX_SLEEP_WARNINGS = 20
 DEFAULT_HEBBIAN_DECAY_MIN_INTERVAL_SECONDS = 6 * 60 * 60
@@ -159,27 +147,9 @@ class GhostSleepReport:
 
 class GhostSleepStore:
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
-        self.directory = Path(state_home) / "ghost"
-        self.state_path = self.directory / "sleep_state.json"
-        self.events_path = self.directory / "sleep_events.jsonl"
+        self.database = GhostSQLite(state_home)
+        self.records = GhostRecords(self.database, "sleep")
         self.last_warnings: tuple[str, ...] = ()
-        self._events_read_blocked = False
-
-    def _event_log(self) -> GhostEventLog:
-        return GhostEventLog(
-            self.events_path,
-            schema_version=SLEEP_SCHEMA_VERSION,
-            max_bytes=MAX_SLEEP_EVENTS_BYTES,
-            max_warnings=MAX_SLEEP_WARNINGS,
-            source_name="sleep_events.jsonl",
-            allowed_event_kinds=(
-                "ghost_sleep_report",
-                "ghost_sleep_events_compacted",
-                "ghost_sleep_reset",
-                "ghost_sleep_scope_deleted",
-            ),
-            bad_row_policy="block",
-        )
 
     def run_once(
         self,
@@ -276,39 +246,29 @@ class GhostSleepStore:
             warnings=final_warnings,
         )
         if report_step.ok:
-            with with_file_lock(self.events_path):
-                if self._append_events([_report_event(final_report)]):
-                    with contextlib.suppress(OSError, TypeError, ValueError):
-                        self._write_projection(final_report)
+            try:
+                with self.records.transaction():
+                    self._append_events([_report_event(final_report)])
+                    self._write_state(final_report)
                     self._compact_if_needed()
-                else:
-                    failed_step = GhostSleepStepResult(
-                        "report",
-                        False,
-                        skipped_reason="event_write_failed",
-                        counts={"reports_written": 0},
-                        warnings=("sleep_event_write_failed",),
-                        duration_ms=report_step.duration_ms,
-                    )
-                    final_report = GhostSleepReport(
-                        schema_version=SLEEP_SCHEMA_VERSION,
-                        cycle_id=cycle_id,
-                        trigger=cursor.trigger,
-                        run_id=cursor.run_id,
-                        session_id=cursor.session_id,
-                        project=cursor.project,
-                        started_at=started_at,
-                        finished_at=_common.now_iso_z(),
-                        cancelled=cancelled,
-                        steps=(*tuple(steps), failed_step),
-                        pending_steps=pending_steps,
-                        warnings=_bounded_warnings((*warnings, *failed_step.warnings)),
-                    )
+            except (OSError, ValueError, TypeError, sqlite3.Error) as exc:
+                failed_step = GhostSleepStepResult(
+                    "report",
+                    False,
+                    skipped_reason="report_write_failed",
+                    counts={"reports_written": 0},
+                    warnings=(f"sleep_report_write_failed:{type(exc).__name__}",),
+                )
+                final_report = replace(
+                    final_report,
+                    steps=(*tuple(steps), failed_step),
+                    warnings=_bounded_warnings((*warnings, *failed_step.warnings)),
+                )
         self.last_warnings = final_report.warnings
         return final_report
 
     def export_state(self) -> dict[str, object]:
-        with with_file_lock(self.events_path):
+        with self.records.transaction(write=False):
             events = self._read_events_unlocked()
             event_warnings = self.last_warnings
             state = self._read_state_payload_unlocked()
@@ -320,13 +280,9 @@ class GhostSleepStore:
             }
 
     def reset_all(self) -> bool:
-        try:
-            reset_event_backed_state(self.events_path, self.state_path)
-            self.last_warnings = ()
-            self._events_read_blocked = False
-            return True
-        except OSError:
-            return False
+        self.records.reset()
+        self.last_warnings = ()
+        return True
 
     def delete_scope(
         self,
@@ -344,10 +300,8 @@ class GhostSleepStore:
             raise ValueError("project is required for project scope deletion")
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
-        with with_file_lock(self.events_path):
+        with self.records.transaction():
             events = self._read_events_unlocked()
-            if self._events_read_blocked:
-                raise OSError("ghost sleep events are unreadable")
             kept: list[dict[str, object]] = []
             removed = 0
             for event in events:
@@ -386,9 +340,10 @@ class GhostSleepStore:
             if state_deleted:
                 latest = _latest_report_from_events(kept)
                 if latest is None:
-                    delete_file(self.state_path)
+                    self.records.replace_rows(())
                 else:
-                    self._write_projection(latest)
+                    self._write_state(latest)
+            self.records.mark_applied()
             return {"reports": removed, "state_deleted": state_deleted}
 
     def _projection_health_step(
@@ -400,35 +355,38 @@ class GhostSleepStore:
         work_queue_store: GhostWorkQueueStore | None,
         affinity_store: GhostAffinityStore | None,
     ) -> GhostSleepStepResult:
-        specs = [
-            ("inbox_projection", getattr(inbox_store, "inbox_path", None), 2 * 1024 * 1024, "json"),
-            ("inbox_events", getattr(inbox_store, "events_path", None), 4 * 1024 * 1024, "jsonl"),
-            ("hebbian_projection", getattr(hebbian_store, "state_path", None), 4 * 1024 * 1024, "json"),
-            ("hebbian_events", getattr(hebbian_store, "events_path", None), 4 * 1024 * 1024, "jsonl"),
-            ("continuity_projection", getattr(continuity_store, "projection_path", None), 1024 * 1024, "json"),
-            ("continuity_events", getattr(continuity_store, "events_path", None), 1024 * 1024, "jsonl"),
-            ("work_queue_projection", getattr(work_queue_store, "projection_path", None), 1024 * 1024, "json"),
-            ("work_queue_events", getattr(work_queue_store, "events_path", None), 1024 * 1024, "jsonl"),
-            ("affinity_projection", getattr(affinity_store, "projection_path", None), 1024 * 1024, "json"),
-            ("affinity_events", getattr(affinity_store, "events_path", None), 1024 * 1024, "jsonl"),
-            ("sleep_projection", self.state_path, MAX_SLEEP_STATE_BYTES, "json"),
-            ("sleep_events", self.events_path, MAX_SLEEP_EVENTS_BYTES, "jsonl"),
-        ]
-        warnings: list[str] = []
-        counts = {"checked": 0, "present": 0, "missing": 0, "unreadable": 0, "too_large": 0}
-        for name, path_obj, max_bytes, kind in specs:
-            if not isinstance(path_obj, Path):
-                continue
-            result = _probe_file(path_obj, max_bytes=max_bytes, kind=kind)
-            counts["checked"] += 1
-            counts[result] = counts.get(result, 0) + 1
-            if result in {"unreadable", "too_large"}:
-                warnings.append(f"{name}_{result}")
+        with self.database.connection() as database:
+            database.execute("BEGIN")
+            checks = [str(row[0]) for row in database.execute("PRAGMA quick_check")]
+            foreign_keys = list(database.execute("PRAGMA foreign_key_check"))
+            cursors = database.execute(
+                "WITH owners AS (SELECT collection FROM memory_consumers UNION SELECT collection FROM memory_events) "
+                "SELECT count(*) FROM owners o LEFT JOIN memory_consumers c USING(collection) "
+                "WHERE coalesce(c.applied_sequence,0) != "
+                "(SELECT coalesce(max(sequence),0) FROM memory_events e WHERE e.collection=o.collection)"
+            ).fetchone()[0]
+            graph_cursors = database.execute(
+                "WITH owners AS (SELECT graph FROM graph_consumers UNION SELECT graph FROM graph_events) "
+                "SELECT count(*) FROM owners o LEFT JOIN graph_consumers c USING(graph) "
+                "WHERE coalesce(c.applied_sequence,0) != "
+                "(SELECT coalesce(max(sequence),0) FROM graph_events e WHERE e.graph=o.graph)"
+            ).fetchone()[0]
+        warnings = []
+        if checks != ["ok"]:
+            warnings.append("ghost_integrity_failed")
+        if foreign_keys:
+            warnings.append("ghost_foreign_keys_failed")
+        if cursors or graph_cursors:
+            warnings.append("ghost_consumer_cursor_mismatch")
         return GhostSleepStepResult(
-            name="projection_health",
-            ok=counts["unreadable"] == 0 and counts["too_large"] == 0,
-            counts=counts,
-            warnings=_bounded_warnings(warnings),
+            "projection_health",
+            not warnings,
+            counts={
+                "databases_checked": 1,
+                "invalid_cursors": cursors + graph_cursors,
+                "foreign_key_errors": len(foreign_keys),
+            },
+            warnings=tuple(warnings),
         )
 
     def _affinity_sync_step(
@@ -595,18 +553,8 @@ class GhostSleepStore:
         )
 
     def _report_write_allowed_step(self) -> GhostSleepStepResult:
-        with with_file_lock(self.events_path):
-            if self.events_path.exists():
-                self._read_events_unlocked()
-                if self._events_read_blocked:
-                    return GhostSleepStepResult(
-                        "report",
-                        False,
-                        skipped_reason="events_read_blocked",
-                        counts={"reports_written": 0},
-                        warnings=self.last_warnings,
-                    )
-            return GhostSleepStepResult("report", True, counts={"reports_written": 1})
+        self.records.rows()
+        return GhostSleepStepResult("report", True, counts={"reports_written": 1})
 
     def _read_report_unlocked(self) -> GhostSleepReport | None:
         payload = self._read_state_payload_unlocked()
@@ -615,61 +563,41 @@ class GhostSleepStore:
         return GhostSleepReport.from_payload(payload.get("report"))
 
     def _read_state_payload_unlocked(self) -> dict[str, object] | None:
-        try:
-            payload = read_json_strict(self.state_path, max_bytes=MAX_SLEEP_STATE_BYTES)
-        except StoreCorruption:
-            backup_corrupt_file(self.state_path)
-            return None
-        if not isinstance(payload, dict):
-            return None
-        if type(payload.get("schema_version")) is not int or payload.get("schema_version") != SLEEP_SCHEMA_VERSION:
-            return None
-        if payload.get("kind") != _STATE_KIND:
-            return None
-        return payload
+        return self.records.payload()
 
-    def _write_projection(self, report: GhostSleepReport) -> None:
-        write_json_atomic(
-            self.state_path,
-            {
-                "schema_version": SLEEP_SCHEMA_VERSION,
-                "kind": _STATE_KIND,
-                "source": "sleep_events.jsonl",
-                "updated_at": _common.now_iso_z(),
-                "report": report.to_payload(),
-                "warnings": list(report.warnings),
-            },
-            max_bytes=MAX_SLEEP_STATE_BYTES,
+    def _write_state(self, report: GhostSleepReport) -> None:
+        self.records.replace_rows(
+            [
+                {
+                    "id": "latest",
+                    "scope": "session",
+                    "scope_ref": report.session_id,
+                    "payload": {
+                        "schema_version": SLEEP_SCHEMA_VERSION,
+                        "kind": _STATE_KIND,
+                        "source": "ghost.sqlite3:sleep",
+                        "updated_at": _common.now_iso_z(),
+                        "report": report.to_payload(),
+                        "warnings": list(report.warnings),
+                    },
+                }
+            ]
         )
 
     def _read_events_unlocked(self) -> list[dict[str, object]]:
-        read = self._event_log().read()
-        self._events_read_blocked = read.blocked
-        self.last_warnings = _sleep_event_read_warnings(read.warnings)
-        return list(read.rows)
+        return self.records.events()
 
-    def _append_events(self, events: Iterable[dict[str, object]]) -> bool:
-        return self._event_log().append(events)
+    def _append_events(self, events: Iterable[dict[str, object]]) -> None:
+        self.records.append(events)
 
     def _write_events_atomic(self, events: Iterable[dict[str, object]]) -> None:
-        self._event_log().write_atomic(events)
+        self.records.append(events, replace=True)
 
     def _compact_if_needed(self) -> None:
-        with with_file_lock(self.events_path):
-            try:
-                event_bytes = self.events_path.stat().st_size
-                if event_bytes > MAX_SLEEP_EVENTS_BYTES:
-                    event_count = MAX_SLEEP_EVENTS + 1
-                else:
-                    event_count = count_jsonl_rows(self.events_path)
-            except OSError:
-                return
-            if event_count <= MAX_SLEEP_EVENTS and event_bytes <= MAX_SLEEP_EVENTS_BYTES:
-                return
-            events = self._read_events_unlocked()
-            if self._events_read_blocked:
-                return
-            self._write_events_atomic(events[-MAX_SLEEP_EVENTS:])
+        stats = self.records.event_stats()
+        if stats["events"] > MAX_SLEEP_EVENTS or stats["bytes"] > MAX_SLEEP_EVENTS_BYTES:
+            self._write_events_atomic(self.records.events()[-MAX_SLEEP_EVENTS:])
+            self.records.mark_applied()
 
 
 def _timed_step(name: str, fn: Callable[[], GhostSleepStepResult]) -> GhostSleepStepResult:
@@ -702,10 +630,7 @@ def _step_from_payload(payload: object) -> GhostSleepStepResult | None:
         return None
     raw_counts = payload.get("counts")
     counts_source = raw_counts if isinstance(raw_counts, dict) else dict[str, object]()
-    counts = {
-        clip_signal_text(key, 80): _int(value)
-        for key, value in counts_source.items()
-    }
+    counts = {clip_signal_text(key, 80): _int(value) for key, value in counts_source.items()}
     return GhostSleepStepResult(
         name=name,
         ok=bool(payload.get("ok")),
@@ -752,33 +677,8 @@ def _scope_matches_report(
     return False
 
 
-def _probe_file(path: Path, *, max_bytes: int, kind: str) -> str:
-    try:
-        if not path.exists():
-            return "missing"
-        if path.stat().st_size > max_bytes:
-            return "too_large"
-        text = read_text_bounded(path, max_bytes=max_bytes)
-        if kind == "json":
-            if text.strip():
-                json.loads(text)
-        elif kind == "jsonl":
-            for line in text.splitlines():
-                if line.strip():
-                    json.loads(line)
-        return "present"
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return "unreadable"
-
-
 def _bounded_warnings(warnings: object) -> tuple[str, ...]:
     return bounded_warnings(warnings, limit=MAX_SLEEP_WARNINGS, redact_sensitive=True)
-
-
-def _sleep_event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
-    return event_read_warnings(
-        warnings, stream="sleep_events", limit=MAX_SLEEP_WARNINGS, redact_sensitive=True
-    )
 
 
 def _list(value: object) -> list[object]:

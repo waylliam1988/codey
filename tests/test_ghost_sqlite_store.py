@@ -6,6 +6,45 @@ from pathlib import Path
 from codey.ghost.observations import GhostObservationStore
 
 
+def test_connection_configuration_failure_closes_the_handle(tmp_path: Path, monkeypatch) -> None:
+    import pytest
+
+    from codey.ghost.sqlite import GhostSQLite
+
+    closed = []
+    connect = sqlite3.connect
+
+    class Connection(sqlite3.Connection):
+        def execute(self, sql, parameters=()):
+            if sql == "PRAGMA synchronous=FULL":
+                raise sqlite3.OperationalError("injected configuration failure")
+            return super().execute(sql, parameters)
+
+        def close(self):
+            closed.append(True)
+            super().close()
+
+    monkeypatch.setattr(sqlite3, "connect", lambda *args, **kwargs: connect(*args, **kwargs, factory=Connection))
+    with pytest.raises(sqlite3.OperationalError, match="injected"):
+        GhostSQLite(tmp_path)
+    assert closed == [True]
+
+
+def test_concurrent_first_open_preserves_all_writes(tmp_path: Path) -> None:
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    barrier = threading.Barrier(8)
+
+    def append(index):
+        barrier.wait(timeout=10)
+        _append(GhostObservationStore(tmp_path), f"concurrent-{index}")
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(append, range(8)))
+    assert len(GhostObservationStore(tmp_path).read_all()) == 8
+
+
 def _append(store: GhostObservationStore, run_id: str, *, session_id: str = "s") -> None:
     assert store.append_completed(
         run_id=run_id,

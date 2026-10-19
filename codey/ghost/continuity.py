@@ -6,7 +6,6 @@ transcript store, a truth layer, or a learning loop.
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
@@ -16,32 +15,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from codey.ghost import _common
-from codey.ghost._warnings import bounded_warnings, event_read_warnings
-from codey.ghost.event_log import (
-    GhostEventLog,
-    count_jsonl_rows,
-)
-from codey.ghost.event_log import (
+from codey.ghost._warnings import bounded_warnings
+from codey.ghost.events import (
     control_event as _ghost_control_event,
-)
-from codey.ghost.event_log import (
-    event_file_stats as _shared_event_file_stats,
 )
 from codey.ghost.graph_primitives import parse_ts
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.numbers import coerce_unit_float
+from codey.ghost.record_store import GhostRecords
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
+from codey.ghost.sqlite import GhostSQLite
 from codey.ghost.typed_fields import dangerous_text, render_typed_field, safe_rendered_body
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.runtime.core import cancellation
-from codey.storage.event_state import reset_event_backed_state
-from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
-    StoreCorruption,
-    backup_corrupt_file,
-    read_json_strict,
-    write_json_atomic,
 )
 from codey.utils.refs import coerce_int
 
@@ -55,20 +43,11 @@ MAX_CONTINUITY_LINE_CHARS = 160
 MAX_CONTINUITY_ITEMS = 120
 MAX_RENDERED_CONTINUITY_ITEMS = 8
 MAX_CONTINUITY_EVENTS = 2_000
-MAX_CONTINUITY_STATE_BYTES = 1024 * 1024
 MAX_CONTINUITY_EVENTS_BYTES = 1024 * 1024
 MAX_CONTINUITY_WARNINGS = 20
 MAX_CONTINUITY_TEXT_CHARS = 160
 MAX_CONTINUITY_METADATA_KEYS = 12
 _PROJECTION_KIND = "ghost_continuity_projection"
-_CONTINUITY_EVENT_TYPES = frozenset(
-    {
-        "ghost_continuity_item_upsert",
-        "ghost_continuity_synced",
-        "ghost_continuity_scope_deleted",
-        "ghost_continuity_events_compacted",
-    }
-)
 
 CONTINUITY_KINDS = frozenset(
     {
@@ -228,22 +207,9 @@ class GhostContinuityResult:
 
 class GhostContinuityStore:
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
-        self.directory = Path(state_home) / "ghost"
-        self.projection_path = self.directory / "continuity.json"
-        self.events_path = self.directory / "continuity_events.jsonl"
+        self.database = GhostSQLite(state_home)
+        self.records = GhostRecords(self.database, "continuity")
         self.last_warnings: tuple[str, ...] = ()
-        self._events_read_blocked = False
-
-    def _event_log(self) -> GhostEventLog:
-        return GhostEventLog(
-            self.events_path,
-            schema_version=CONTINUITY_SCHEMA_VERSION,
-            max_bytes=MAX_CONTINUITY_EVENTS_BYTES,
-            max_warnings=MAX_CONTINUITY_WARNINGS,
-            source_name="continuity_events.jsonl",
-            allowed_event_kinds=_CONTINUITY_EVENT_TYPES,
-            bad_row_policy="quarantine_tail",
-        )
 
     def sync_from_sources(
         self,
@@ -259,55 +225,41 @@ class GhostContinuityStore:
     ) -> GhostContinuityResult:
         warnings: list[str] = []
         try:
-            with with_file_lock(self.events_path):
+            now = _common.now_iso_z()
+            candidates: list[GhostContinuityItem] = []
+            candidates.extend(_items_from_hebbian(hebbian_store, now=now, warnings=warnings))
+            candidates.extend(
+                _items_from_task(
+                    user_focus_excerpt,
+                    now=now,
+                    session_id=session_id,
+                    run_id=run_id,
+                    project=project,
+                    mode=mode,
+                    warnings=warnings,
+                )
+            )
+            candidates.extend(
+                _items_from_run_projection(
+                    run_projection,
+                    now=now,
+                    project=project,
+                    warnings=warnings,
+                )
+            )
+            candidates.extend(
+                _items_from_knowledge(
+                    knowledge_store,
+                    now=now,
+                    session_id=session_id,
+                    project=project,
+                    warnings=warnings,
+                )
+            )
+
+            with self.records.transaction():
                 now = _common.now_iso_z()
                 existing = list(self._load_items_unlocked())
-                if self.events_path.exists():
-                    self._read_events_unlocked()
-                    if self._events_read_blocked:
-                        self.last_warnings = _bounded_warnings([*warnings, *self.last_warnings])
-                        return GhostContinuityResult(
-                            False,
-                            skipped_reason="events_read_blocked",
-                            warnings=self.last_warnings,
-                        )
-                if self._events_read_blocked and not existing:
-                    self.last_warnings = _bounded_warnings([*warnings, *self.last_warnings])
-                    return GhostContinuityResult(
-                        False,
-                        skipped_reason="events_read_blocked",
-                        warnings=self.last_warnings,
-                    )
-                candidates: list[GhostContinuityItem] = []
-                candidates.extend(_items_from_hebbian(hebbian_store, now=now, warnings=warnings))
-                candidates.extend(
-                    _items_from_task(
-                        user_focus_excerpt,
-                        now=now,
-                        session_id=session_id,
-                        run_id=run_id,
-                        project=project,
-                        mode=mode,
-                        warnings=warnings,
-                    )
-                )
-                candidates.extend(
-                    _items_from_run_projection(
-                        run_projection,
-                        now=now,
-                        project=project,
-                        warnings=warnings,
-                    )
-                )
-                candidates.extend(
-                    _items_from_knowledge(
-                        knowledge_store,
-                        now=now,
-                        session_id=session_id,
-                        project=project,
-                        warnings=warnings,
-                    )
-                )
 
                 active_existing = _bounded_items(item for item in existing if not _is_expired(item, now))
                 merged, changed_items = _merge_items(active_existing, candidates, now=now)
@@ -340,19 +292,10 @@ class GhostContinuityStore:
                             payload_cleaner=_clean_metadata,
                         )
                     )
-                    if not self._append_events(events):
-                        try:
-                            self._rewrite_events_from_items(merged)
-                        except (OSError, TypeError, ValueError):
-                            self.last_warnings = _bounded_warnings([*warnings, "event_write_failed"])
-                            return GhostContinuityResult(
-                                False,
-                                skipped_reason="event_write_failed",
-                                warnings=self.last_warnings,
-                            )
+                    self._append_events(events)
                 elif projection_changed:
                     self._rewrite_events_from_items(merged)
-                self._write_projection(merged, now=now, warnings=warnings)
+                self._write_state(merged, now=now, warnings=warnings)
                 self._compact_if_needed(merged)
                 self.last_warnings = _bounded_warnings(warnings)
                 return GhostContinuityResult(
@@ -374,7 +317,7 @@ class GhostContinuityStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[GhostContinuityItem, ...]:
-        with with_file_lock(self.events_path):
+        with self.records.transaction(write=False):
             return self._list_items_unlocked(scope=scope, project=project, session_id=session_id)
 
     def _list_items_unlocked(
@@ -395,7 +338,7 @@ class GhostContinuityStore:
         return tuple(sorted(rows, key=_item_sort_key))
 
     def export_state(self) -> dict[str, object]:
-        with with_file_lock(self.events_path):
+        with self.records.transaction(write=False):
             events = self._read_events_unlocked()
             event_warnings = self.last_warnings
             projection = _projection_payload(
@@ -411,13 +354,9 @@ class GhostContinuityStore:
             }
 
     def reset_all(self) -> bool:
-        try:
-            reset_event_backed_state(self.events_path, self.projection_path)
-            self.last_warnings = ()
-            self._events_read_blocked = False
-            return True
-        except OSError:
-            return False
+        self.records.reset()
+        self.last_warnings = ()
+        return True
 
     def delete_scope(
         self,
@@ -435,7 +374,7 @@ class GhostContinuityStore:
             raise ValueError("project is required for project scope deletion")
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
-        with with_file_lock(self.events_path):
+        with self.records.transaction():
             items = list(self._load_items_unlocked())
             kept = [
                 item
@@ -462,141 +401,54 @@ class GhostContinuityStore:
                 now=_common.now_iso_z(),
                 payload_cleaner=_clean_metadata,
             )
-            if not self._append_events([event]):
-                return 0
-            self._write_projection(kept, now=_common.now_iso_z(), warnings=[])
+            self._append_events([event])
+            self._write_state(kept, now=_common.now_iso_z(), warnings=[])
             self._compact_if_needed(kept)
             return removed
 
     def rebuild_from_events(self) -> bool:
         try:
-            with with_file_lock(self.events_path):
+            with self.records.transaction():
                 events = self._read_events_unlocked()
-                if self._events_read_blocked:
-                    return False
                 items = _items_from_events(events)
-                self._write_projection(_bounded_items(items), now=_common.now_iso_z(), warnings=[])
+                self._write_state(_bounded_items(items), now=_common.now_iso_z(), warnings=[])
         except (OSError, TypeError, ValueError):
             return False
         return True
 
     def _load_items_unlocked(self) -> tuple[GhostContinuityItem, ...]:
-        items = _read_projected_items_from_path(self.projection_path)
-        if items:
-            return items
-        events = self._read_events_unlocked()
-        if self._events_read_blocked:
-            return ()
-        rebuilt = tuple(_bounded_items(_items_from_events(events)))
-        if rebuilt:
-            with contextlib.suppress(OSError, TypeError, ValueError):
-                self._write_projection(rebuilt, now=_common.now_iso_z(), warnings=[])
-        return rebuilt
+        rows = []
+        for payload in self.records.rows():
+            item = GhostContinuityItem.from_payload(payload)
+            if item is None:
+                raise ValueError("invalid stored Ghost continuity item")
+            rows.append(item)
+        return tuple(_bounded_items(rows))
 
     def compact_if_needed(self) -> dict[str, object]:
-        try:
-            with with_file_lock(self.events_path):
-                before = _shared_event_file_stats(
-                    self.events_path,
-                    max_bytes=MAX_CONTINUITY_EVENTS_BYTES,
-                    too_large_warning="continuity_events_too_large",
-                    unreadable_warning="continuity_events_unreadable",
-                )
-                if not before["readable"]:
-                    warning = str(before["warning"] or "continuity_events_unreadable")
-                    self.last_warnings = (warning,)
-                    return {
-                        "ok": False,
-                        "compacted": False,
-                        "events_before": before["events"],
-                        "events_after": before["events"],
-                        "bytes_before": before["bytes"],
-                        "bytes_after": before["bytes"],
-                        "warnings": [warning],
-                    }
-                if not before["warning"]:
-                    read = self._event_log().read_locked()
-                    self._events_read_blocked = read.blocked
-                    self.last_warnings = _event_read_warnings(read.warnings)
-                    if self._events_read_blocked:
-                        return {
-                            "ok": False,
-                            "compacted": False,
-                            "events_before": before["events"],
-                            "events_after": before["events"],
-                            "bytes_before": before["bytes"],
-                            "bytes_after": before["bytes"],
-                            "warnings": list(self.last_warnings),
-                        }
-                if coerce_int(before["events"]) <= MAX_CONTINUITY_EVENTS and coerce_int(before["bytes"]) <= MAX_CONTINUITY_EVENTS_BYTES:
-                    return {
-                        "ok": True,
-                        "compacted": False,
-                        "events_before": before["events"],
-                        "events_after": before["events"],
-                        "bytes_before": before["bytes"],
-                        "bytes_after": before["bytes"],
-                        "warnings": list(self.last_warnings),
-                    }
-                items = self._load_items_unlocked()
-                if self._events_read_blocked:
-                    return {
-                        "ok": False,
-                        "compacted": False,
-                        "events_before": before["events"],
-                        "events_after": before["events"],
-                        "bytes_before": before["bytes"],
-                        "bytes_after": before["bytes"],
-                        "warnings": list(self.last_warnings),
-                    }
-                self._compact_if_needed(items)
-                after = _shared_event_file_stats(
-                    self.events_path,
-                    max_bytes=MAX_CONTINUITY_EVENTS_BYTES,
-                    too_large_warning="continuity_events_too_large",
-                    unreadable_warning="continuity_events_unreadable",
-                )
-                return {
-                    "ok": True,
-                    "compacted": after != before,
-                    "events_before": before["events"],
-                    "events_after": after["events"],
-                    "bytes_before": before["bytes"],
-                    "bytes_after": after["bytes"],
-                    "warnings": list(self.last_warnings),
-                }
-        except (OSError, TypeError, ValueError):
+        with self.records.transaction():
+            before = self.records.event_stats()
+            items = self._load_items_unlocked()
+            self._compact_if_needed(items)
+            after = self.records.event_stats()
             return {
-                "ok": False,
-                "compacted": False,
-                "events_before": 0,
-                "events_after": 0,
-                "bytes_before": 0,
-                "bytes_after": 0,
+                "ok": True,
+                "compacted": after != before,
+                "events_before": before["events"],
+                "events_after": after["events"],
+                "bytes_before": before["bytes"],
+                "bytes_after": after["bytes"],
                 "warnings": list(self.last_warnings),
             }
 
-    def _write_projection(
-        self,
-        items: Iterable[GhostContinuityItem],
-        *,
-        now: str,
-        warnings: Iterable[str],
-    ) -> None:
-        write_json_atomic(
-            self.projection_path,
-            _projection_payload(items, generated_at=now, warnings=_bounded_warnings(list(warnings))),
-            max_bytes=MAX_CONTINUITY_STATE_BYTES,
-        )
+    def _write_state(self, items: Iterable[GhostContinuityItem], *, now: str, warnings: Iterable[str]) -> None:
+        self.records.replace_rows(item.to_payload() for item in _bounded_items(items))
 
-    def _append_events(self, events: Iterable[dict[str, object]]) -> bool:
-        return self._event_log().append(events)
+    def _append_events(self, events: Iterable[dict[str, object]]) -> None:
+        self.records.append(events)
 
     def _read_events_unlocked(self) -> list[dict[str, object]]:
-        read = self._event_log().read()
-        self._events_read_blocked = read.blocked
-        self.last_warnings = _event_read_warnings(read.warnings)
-        return list(read.rows)
+        return self.records.events()
 
     def _rewrite_events_from_items(self, items: Iterable[GhostContinuityItem]) -> None:
         rows = [_item_event(item, action="upsert") for item in _bounded_items(items)]
@@ -609,21 +461,13 @@ class GhostContinuityStore:
                 payload_cleaner=_clean_metadata,
             )
         )
-        self._event_log().write_atomic(rows)
+        self.records.append(rows, replace=True)
 
     def _compact_if_needed(self, items: Iterable[GhostContinuityItem]) -> None:
-        try:
-            event_bytes = self.events_path.stat().st_size
-            if event_bytes > MAX_CONTINUITY_EVENTS_BYTES:
-                event_count = MAX_CONTINUITY_EVENTS + 1
-            else:
-                event_count = count_jsonl_rows(self.events_path)
-        except OSError:
-            return
-        if event_count <= MAX_CONTINUITY_EVENTS and event_bytes <= MAX_CONTINUITY_EVENTS_BYTES:
-            return
-        with contextlib.suppress(OSError):
+        stats = self.records.event_stats()
+        if stats["events"] > MAX_CONTINUITY_EVENTS or stats["bytes"] > MAX_CONTINUITY_EVENTS_BYTES:
             self._rewrite_events_from_items(items)
+            self.records.mark_applied()
 
 
 def build_ghost_continuity(
@@ -636,7 +480,7 @@ def build_ghost_continuity(
     if store is None:
         return GhostContinuity("")
     try:
-        items = _read_projected_items_from_path(store.projection_path)
+        items = store.list_items()
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
@@ -699,24 +543,6 @@ def render_ghost_continuity(
         warnings=_bounded_warnings(warnings),
         truncated=truncated,
     )
-
-
-def _read_projected_items_from_path(path: Path) -> tuple[GhostContinuityItem, ...]:
-    try:
-        payload = read_json_strict(path, max_bytes=MAX_CONTINUITY_STATE_BYTES)
-    except StoreCorruption:
-        backup_corrupt_file(path)
-        return ()
-    if not isinstance(payload, dict):
-        return ()
-    if type(payload.get("schema_version")) is not int or payload.get("schema_version") != CONTINUITY_SCHEMA_VERSION:
-        return ()
-    if payload.get("kind") != _PROJECTION_KIND:
-        return ()
-    raw_items = payload.get("items")
-    if not isinstance(raw_items, list):
-        return ()
-    return tuple(item for item in (GhostContinuityItem.from_payload(row) for row in raw_items) if item is not None)
 
 
 def _items_from_hebbian(
@@ -1275,12 +1101,6 @@ def _looks_like_question(value: object) -> bool:
 
 def _bounded_warnings(warnings: object) -> tuple[str, ...]:
     return bounded_warnings(warnings, limit=MAX_CONTINUITY_WARNINGS)
-
-
-def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
-    return event_read_warnings(
-        warnings, stream="continuity_events", limit=MAX_CONTINUITY_WARNINGS
-    )
 
 
 __all__ = [

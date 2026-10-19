@@ -399,7 +399,7 @@ def _projection_payload(
     return {
         "schema_version": __import__("codey.ghost.affinity_model", fromlist=["AFFINITY_SCHEMA_VERSION"]).AFFINITY_SCHEMA_VERSION,
         "kind": _STATE_KIND,
-        "source": "affinity_events.jsonl",
+        "source": "ghost.sqlite3:affinity",
         "generated_at": generated_at,
         "nodes": [node.to_payload() for node in node_rows],
         "edges": [edge.to_payload() for edge in edge_rows],

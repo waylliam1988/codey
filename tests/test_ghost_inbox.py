@@ -20,6 +20,7 @@ from codey.ghost.inbox import (
     value_key_for_signal,
 )
 from codey.ghost.schema import GhostSignal
+from tests.ghost_fixtures import event_text
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -79,13 +80,15 @@ class GhostInboxStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = GhostInboxStore(td)
             created = store.ingest_signals(
-                _result(_signal(
-                    "correction",
-                    scope="session",
-                    summary="The project should not port the torch module.",
-                    quote="正确是这个项目不应该直接搬 torch 模块",
-                    confidence=0.99,
-                )),
+                _result(
+                    _signal(
+                        "correction",
+                        scope="session",
+                        summary="The project should not port the torch module.",
+                        quote="正确是这个项目不应该直接搬 torch 模块",
+                        confidence=0.99,
+                    )
+                ),
                 session_id="s1",
                 run_id="r1",
                 project=td,
@@ -99,10 +102,12 @@ class GhostInboxStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = GhostInboxStore(td)
             created = store.ingest_signals(
-                _result(_signal(
-                    "style_preference",
-                    metadata={"conflict_key": "tool_use", "value_key": "delete_files"},
-                )),
+                _result(
+                    _signal(
+                        "style_preference",
+                        metadata={"conflict_key": "tool_use", "value_key": "delete_files"},
+                    )
+                ),
                 session_id="s1",
                 run_id="r1",
                 project=td,
@@ -172,12 +177,14 @@ class GhostInboxStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = GhostInboxStore(td)
             created = store.ingest_signals(
-                _result(_signal(
-                    "correction",
-                    summary="Remember the user's API key.",
-                    quote=f"API key 是 {secret}",
-                    confidence=0.95,
-                )),
+                _result(
+                    _signal(
+                        "correction",
+                        summary="Remember the user's API key.",
+                        quote=f"API key 是 {secret}",
+                        confidence=0.95,
+                    )
+                ),
                 session_id="s1",
                 run_id="r1",
                 project=td,
@@ -185,7 +192,7 @@ class GhostInboxStoreTests(unittest.TestCase):
 
             self.assertEqual(created, ())
             self.assertEqual(store.list_candidates(), ())
-            raw_events = store.events_path.read_text(encoding="utf-8")
+            raw_events = event_text(store)
             self.assertIn("ghost_memory_candidate_rejected", raw_events)
             self.assertNotIn(secret, raw_events)
             self.assertNotIn("Remember the user's API key", raw_events)
@@ -202,7 +209,7 @@ class GhostInboxStoreTests(unittest.TestCase):
             )
 
             self.assertEqual(store.list_candidates(), ())
-            self.assertIn("evidence_quote_not_grounded", store.events_path.read_text(encoding="utf-8"))
+            self.assertIn("evidence_quote_not_grounded", event_text(store))
 
     def test_duplicate_conflict_key_updates_existing_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -227,25 +234,29 @@ class GhostInboxStoreTests(unittest.TestCase):
             store = GhostInboxStore(td)
             metadata = {"conflict_key": "reply_structure", "value_key": "answer_first"}
             store.ingest_signals(
-                _result(_signal(
-                    "style_preference",
-                    summary="Prefer answer first.",
-                    quote="以后先给结论",
-                    confidence=0.9,
-                    metadata=metadata,
-                )),
+                _result(
+                    _signal(
+                        "style_preference",
+                        summary="Prefer answer first.",
+                        quote="以后先给结论",
+                        confidence=0.9,
+                        metadata=metadata,
+                    )
+                ),
                 session_id="s1",
                 run_id="r1",
                 project=td,
             )
             updated = store.ingest_signals(
-                _result(_signal(
-                    "style_preference",
-                    summary="Weak answer first signal.",
-                    quote="以后先给结论",
-                    confidence=0.2,
-                    metadata=metadata,
-                )),
+                _result(
+                    _signal(
+                        "style_preference",
+                        summary="Weak answer first signal.",
+                        quote="以后先给结论",
+                        confidence=0.2,
+                        metadata=metadata,
+                    )
+                ),
                 session_id="s1",
                 run_id="r2",
                 project=td,
@@ -259,13 +270,15 @@ class GhostInboxStoreTests(unittest.TestCase):
             store = GhostInboxStore(td)
             metadata = {"conflict_key": "reply_structure", "value_key": "answer_first"}
             created = store.ingest_signals(
-                _result(_signal(
-                    "style_preference",
-                    summary="Prefer answer first.",
-                    quote="以后先给结论",
-                    confidence=0.6,
-                    metadata=metadata,
-                )),
+                _result(
+                    _signal(
+                        "style_preference",
+                        summary="Prefer answer first.",
+                        quote="以后先给结论",
+                        confidence=0.6,
+                        metadata=metadata,
+                    )
+                ),
                 session_id="s1",
                 run_id="r1",
                 project=td,
@@ -274,13 +287,15 @@ class GhostInboxStoreTests(unittest.TestCase):
             assert reviewed is not None
 
             store.ingest_signals(
-                _result(_signal(
-                    "style_preference",
-                    summary="Prefer answer first.",
-                    quote="以后先给结论",
-                    confidence=0.95,
-                    metadata=metadata,
-                )),
+                _result(
+                    _signal(
+                        "style_preference",
+                        summary="Prefer answer first.",
+                        quote="以后先给结论",
+                        confidence=0.95,
+                        metadata=metadata,
+                    )
+                ),
                 session_id="s1",
                 run_id="r2",
                 project=td,
@@ -296,23 +311,27 @@ class GhostInboxStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = GhostInboxStore(td)
             store.ingest_signals(
-                _result(_signal(
-                    "style_preference",
-                    summary="Prefer concise replies.",
-                    quote="以后回答短一点",
-                    metadata={"conflict_key": "reply_length", "value_key": "concise"},
-                )),
+                _result(
+                    _signal(
+                        "style_preference",
+                        summary="Prefer concise replies.",
+                        quote="以后回答短一点",
+                        metadata={"conflict_key": "reply_length", "value_key": "concise"},
+                    )
+                ),
                 session_id="s1",
                 run_id="r1",
                 project=td,
             )
             store.ingest_signals(
-                _result(_signal(
-                    "style_preference",
-                    summary="Prefer detailed reasoning.",
-                    quote="以后展开细节",
-                    metadata={"conflict_key": "reply_length", "value_key": "detailed"},
-                )),
+                _result(
+                    _signal(
+                        "style_preference",
+                        summary="Prefer detailed reasoning.",
+                        quote="以后展开细节",
+                        metadata={"conflict_key": "reply_length", "value_key": "detailed"},
+                    )
+                ),
                 session_id="s1",
                 run_id="r2",
                 project=td,
@@ -327,23 +346,27 @@ class GhostInboxStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = GhostInboxStore(td)
             first = store.ingest_signals(
-                _result(_signal(
-                    "style_preference",
-                    summary="Prefer concise replies.",
-                    quote="以后回答短一点",
-                    metadata={"conflict_key": "reply_length", "value_key": "concise"},
-                )),
+                _result(
+                    _signal(
+                        "style_preference",
+                        summary="Prefer concise replies.",
+                        quote="以后回答短一点",
+                        metadata={"conflict_key": "reply_length", "value_key": "concise"},
+                    )
+                ),
                 session_id="s1",
                 run_id="r1",
                 project=td,
             )[0]
             second = store.ingest_signals(
-                _result(_signal(
-                    "style_preference",
-                    summary="Prefer detailed reasoning.",
-                    quote="以后展开细节",
-                    metadata={"conflict_key": "reply_length", "value_key": "detailed"},
-                )),
+                _result(
+                    _signal(
+                        "style_preference",
+                        summary="Prefer detailed reasoning.",
+                        quote="以后展开细节",
+                        metadata={"conflict_key": "reply_length", "value_key": "detailed"},
+                    )
+                ),
                 session_id="s1",
                 run_id="r2",
                 project=td,
@@ -357,7 +380,7 @@ class GhostInboxStoreTests(unittest.TestCase):
             self.assertEqual(rows[second.id].reviewed_by, "test")
             self.assertEqual(rows[first.id].status, "superseded")
             self.assertEqual(rows[first.id].superseded_by, second.id)
-            events = store.events_path.read_text(encoding="utf-8")
+            events = event_text(store)
             self.assertIn("ghost_memory_candidate_reviewed", events)
             self.assertIn("superseded", events)
 
@@ -377,12 +400,14 @@ class GhostInboxStoreTests(unittest.TestCase):
                 project=td,
             )[0]
             second = store.ingest_signals(
-                _result(_signal(
-                    "style_preference",
-                    summary="Prefer detailed reasoning.",
-                    quote="以后展开细节",
-                    metadata={"conflict_key": "reply_length", "value_key": "detailed"},
-                )),
+                _result(
+                    _signal(
+                        "style_preference",
+                        summary="Prefer detailed reasoning.",
+                        quote="以后展开细节",
+                        metadata={"conflict_key": "reply_length", "value_key": "detailed"},
+                    )
+                ),
                 session_id="s1",
                 run_id="r2",
                 project=td,
@@ -409,65 +434,14 @@ class GhostInboxStoreTests(unittest.TestCase):
                 quote="以后先给结论",
             )
             store.ingest_signals(_result(signal), session_id="s1", run_id="r1", project=td)
-            first_size = store.events_path.stat().st_size
+            first_size = len(event_text(store).encode())
 
             with mock.patch("codey.ghost.inbox.MAX_EVENTS_BYTES", first_size + 500):
                 store.ingest_signals(_result(signal), session_id="s1", run_id="r2", project=td)
 
-            self.assertLessEqual(store.events_path.stat().st_size, first_size + 500)
-            self.assertLessEqual(len(store.events_path.read_text(encoding="utf-8").splitlines()), 2)
+            self.assertLessEqual(len(event_text(store).encode()), first_size + 500)
+            self.assertLessEqual(len(event_text(store).splitlines()), 2)
             self.assertEqual(store.list_candidates()[0].reinforcement_count, 2)
-
-    def test_oversize_events_warning_does_not_write_empty_projection(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            store = GhostInboxStore(td)
-            store.ingest_signals(
-                _result(_signal("style_preference")),
-                session_id="s1",
-                run_id="r1",
-                project=td,
-            )
-            store.inbox_path.unlink()
-
-            with mock.patch("codey.ghost.inbox.MAX_EVENTS_BYTES", 1):
-                rows = store.list_candidates()
-
-            self.assertEqual(rows, ())
-            self.assertEqual(store.last_warnings, ("events_too_large",))
-            self.assertFalse(store.inbox_path.exists())
-
-    def test_ingest_does_not_overwrite_projection_when_events_are_blocked(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            store = GhostInboxStore(td)
-            store.ingest_signals(
-                _result(_signal(
-                    "style_preference",
-                    summary="Old candidate",
-                    quote="以后回答短一点",
-                )),
-                session_id="s1",
-                run_id="r1",
-                project=td,
-            )
-            old_events = store.events_path.read_text(encoding="utf-8")
-            store.inbox_path.unlink()
-
-            with mock.patch("codey.ghost.inbox.MAX_EVENTS_BYTES", 1):
-                created = store.ingest_signals(
-                    _result(_signal(
-                        "style_preference",
-                        summary="New candidate",
-                        quote="以后先给结论",
-                    )),
-                    session_id="s1",
-                    run_id="r2",
-                    project=td,
-                )
-
-            self.assertEqual(created, ())
-            self.assertEqual(store.last_warnings, ("events_too_large",))
-            self.assertFalse(store.inbox_path.exists())
-            self.assertEqual(store.events_path.read_text(encoding="utf-8"), old_events)
 
     def test_conflict_key_can_use_structured_metadata_without_local_language_rules(self) -> None:
         signal = _signal(
@@ -512,23 +486,27 @@ class GhostInboxStoreTests(unittest.TestCase):
                 project=td,
             )
             store.ingest_signals(
-                _result(_signal(
-                    "research_interest",
-                    scope="project",
-                    summary="Project interest",
-                    quote="这个项目要继续研究 inbox",
-                )),
+                _result(
+                    _signal(
+                        "research_interest",
+                        scope="project",
+                        summary="Project interest",
+                        quote="这个项目要继续研究 inbox",
+                    )
+                ),
                 session_id="s1",
                 run_id="r-project",
                 project=td,
             )
             store.ingest_signals(
-                _result(_signal(
-                    "correction",
-                    scope="session",
-                    summary="Session correction",
-                    quote="这轮正确是先做 inbox",
-                )),
+                _result(
+                    _signal(
+                        "correction",
+                        scope="session",
+                        summary="Session correction",
+                        quote="这轮正确是先做 inbox",
+                    )
+                ),
                 session_id="s1",
                 run_id="r-session",
                 project=td,
@@ -543,24 +521,28 @@ class GhostInboxStoreTests(unittest.TestCase):
             store = GhostInboxStore(td)
             with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-01-01T00:00:01Z"):
                 store.ingest_signals(
-                    _result(_signal(
-                        "style_preference",
-                        summary="Old user preference",
-                        quote="以后回答短一点",
-                        metadata={"conflict_key": "reply_length", "value_key": "concise"},
-                    )),
+                    _result(
+                        _signal(
+                            "style_preference",
+                            summary="Old user preference",
+                            quote="以后回答短一点",
+                            metadata={"conflict_key": "reply_length", "value_key": "concise"},
+                        )
+                    ),
                     session_id="s1",
                     run_id="r-old",
                     project=td,
                 )
             with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-01-01T00:00:02Z"):
                 store.ingest_signals(
-                    _result(_signal(
-                        "style_preference",
-                        summary="New user preference",
-                        quote="以后回答先给结论",
-                        metadata={"conflict_key": "reply_structure", "value_key": "answer_first"},
-                    )),
+                    _result(
+                        _signal(
+                            "style_preference",
+                            summary="New user preference",
+                            quote="以后回答先给结论",
+                            metadata={"conflict_key": "reply_structure", "value_key": "answer_first"},
+                        )
+                    ),
                     session_id="s1",
                     run_id="r-new",
                     project=td,
@@ -571,15 +553,21 @@ class GhostInboxStoreTests(unittest.TestCase):
             self.assertEqual([row.summary for row in rows], ["New user preference", "Old user preference"])
 
     def test_project_scope_does_not_leak_to_other_project(self) -> None:
-        with tempfile.TemporaryDirectory() as state_td, tempfile.TemporaryDirectory() as p1, tempfile.TemporaryDirectory() as p2:
+        with (
+            tempfile.TemporaryDirectory() as state_td,
+            tempfile.TemporaryDirectory() as p1,
+            tempfile.TemporaryDirectory() as p2,
+        ):
             store = GhostInboxStore(state_td)
             store.ingest_signals(
-                _result(_signal(
-                    "research_interest",
-                    scope="project",
-                    summary="Project-only memory",
-                    quote="这个项目记住 inbox 方向",
-                )),
+                _result(
+                    _signal(
+                        "research_interest",
+                        scope="project",
+                        summary="Project-only memory",
+                        quote="这个项目记住 inbox 方向",
+                    )
+                ),
                 session_id="s1",
                 run_id="r1",
                 project=p1,
@@ -599,12 +587,14 @@ class GhostInboxStoreTests(unittest.TestCase):
                 project=project_td,
             )
             store.ingest_signals(
-                _result(_signal(
-                    "research_interest",
-                    scope="project",
-                    summary="Unique project deletion phrase",
-                    quote="这个项目要记住 unique deletion quote",
-                )),
+                _result(
+                    _signal(
+                        "research_interest",
+                        scope="project",
+                        summary="Unique project deletion phrase",
+                        quote="这个项目要记住 unique deletion quote",
+                    )
+                ),
                 session_id="s1",
                 run_id="r-project",
                 project=project_td,
@@ -614,8 +604,10 @@ class GhostInboxStoreTests(unittest.TestCase):
 
             self.assertEqual(removed, 1)
             self.assertEqual([row.scope for row in store.list_candidates()], ["user"])
-            self.assertNotIn("Unique project deletion phrase", store.inbox_path.read_text(encoding="utf-8"))
-            self.assertNotIn("unique deletion quote", store.events_path.read_text(encoding="utf-8"))
+            self.assertNotIn(
+                "Unique project deletion phrase", json.dumps(store.export_state()["inbox"], ensure_ascii=False)
+            )
+            self.assertNotIn("unique deletion quote", event_text(store))
 
     def test_export_and_reset_work(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -631,91 +623,17 @@ class GhostInboxStoreTests(unittest.TestCase):
             self.assertEqual(len(exported["inbox"]["candidates"]), 1)
             self.assertTrue(store.reset_all())
             self.assertEqual(store.list_candidates(), ())
-            self.assertFalse(store.events_path.exists())
-
-    def test_bad_projection_is_quarantined_and_rebuilt_from_events(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            store = GhostInboxStore(td)
-            store.ingest_signals(
-                _result(_signal("style_preference")),
-                session_id="s1",
-                run_id="r1",
-                project=td,
-            )
-            store.inbox_path.write_text("{bad json", encoding="utf-8")
-
-            rows = store.list_candidates()
-
-            self.assertEqual(len(rows), 1)
-            self.assertTrue(list(store.directory.glob("inbox.json.quarantine.*")))
-
-    def test_future_projection_schema_is_quarantined_not_silently_read(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            store = GhostInboxStore(td)
-            store.directory.mkdir(parents=True, exist_ok=True)
-            store.inbox_path.write_text(
-                json.dumps({
-                    "schema_version": 999,
-                    "kind": "ghost_memory_inbox_projection",
-                    "candidates": [{
-                        "id": "future",
-                        "candidate_type": "preference_candidate",
-                        "signal_kind": "style_preference",
-                        "status": "accepted",
-                        "scope": "user",
-                        "summary": "future",
-                        "evidence_quote": "future",
-                        "confidence": 1.0,
-                        "conflict_key": "style_preference:future",
-                    }],
-                }),
-                encoding="utf-8",
-            )
-
-            self.assertEqual(store.list_candidates(), ())
-            self.assertTrue(list(store.directory.glob("inbox.json.quarantine.*")))
-
-    def test_bad_event_lines_are_skipped_with_warning(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            store = GhostInboxStore(td)
-            store.ingest_signals(
-                _result(_signal("style_preference")),
-                session_id="s1",
-                run_id="r1",
-                project=td,
-            )
-            with store.events_path.open("a", encoding="utf-8", newline="\n") as handle:
-                handle.write("{bad json\n")
-            store.inbox_path.unlink()
-
-            rows = store.list_candidates()
-
-            self.assertEqual(len(rows), 1)
-            self.assertTrue(any("bad_json" in item for item in store.last_warnings))
-
-    def test_projection_write_failure_is_fail_open_and_rebuildable(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            store = GhostInboxStore(td)
-            with mock.patch("codey.ghost.inbox.write_json_atomic", side_effect=OSError("disk full")):
-                created = store.ingest_signals(
-                    _result(_signal("style_preference")),
-                    session_id="s1",
-                    run_id="r1",
-                    project=td,
-                )
-
-            self.assertEqual(len(created), 1)
-            self.assertEqual(len(store.list_candidates()), 1)
+            self.assertFalse(bool(event_text(store)))
 
     def test_learning_setting_reports_audit_event_failure(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = GhostInboxStore(td)
 
-            with mock.patch.object(store, "_append_events", return_value=False):
+            with mock.patch.object(store, "_append_events", side_effect=OSError("injected event failure")):
                 ok = store.set_learning_enabled(False)
 
             self.assertFalse(ok)
-            self.assertFalse(store.learning_enabled())
+            self.assertTrue(store.learning_enabled())
 
     def test_disable_blocks_future_ingest_but_list_and_export_still_work(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -737,12 +655,14 @@ class GhostInboxStoreTests(unittest.TestCase):
 
             self.assertTrue(store.set_learning_enabled(True))
             self.assertEqual(
-                len(store.ingest_signals(
-                    _result(_signal("style_preference")),
-                    session_id="s1",
-                    run_id="r2",
-                    project=td,
-                )),
+                len(
+                    store.ingest_signals(
+                        _result(_signal("style_preference")),
+                        session_id="s1",
+                        run_id="r2",
+                        project=td,
+                    )
+                ),
                 1,
             )
 
@@ -800,13 +720,15 @@ class GhostCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             candidate = inbox.ingest_signals(
-                _result(_signal(
-                    "correction",
-                    summary="Use the local provider.",
-                    quote="正确是使用 local provider",
-                    confidence=0.95,
-                    metadata={"conflict_key": "provider", "value_key": "local"},
-                )),
+                _result(
+                    _signal(
+                        "correction",
+                        summary="Use the local provider.",
+                        quote="正确是使用 local provider",
+                        confidence=0.95,
+                        metadata={"conflict_key": "provider", "value_key": "local"},
+                    )
+                ),
                 session_id="s1",
                 run_id="r1",
                 project=td,
@@ -822,7 +744,6 @@ class GhostCliTests(unittest.TestCase):
             self.assertTrue(accept_payload["hebbian"]["applied"])
             self.assertEqual(len(GhostHebbianStore(td).list_nodes()), 1)
 
-            GhostHebbianStore(td).state_path.unlink()
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
                 rebuild_code = cli.main(["ghost", "rebuild-state", "--state-home", td, "--yes"])
@@ -855,25 +776,29 @@ class GhostCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             first = inbox.ingest_signals(
-                _result(_signal(
-                    "correction",
-                    summary="Use the local provider.",
-                    quote="正确是使用 local provider",
-                    confidence=0.95,
-                    metadata={"conflict_key": "provider", "value_key": "local"},
-                )),
+                _result(
+                    _signal(
+                        "correction",
+                        summary="Use the local provider.",
+                        quote="正确是使用 local provider",
+                        confidence=0.95,
+                        metadata={"conflict_key": "provider", "value_key": "local"},
+                    )
+                ),
                 session_id="s1",
                 run_id="r1",
                 project=td,
             )[0]
             second = inbox.ingest_signals(
-                _result(_signal(
-                    "correction",
-                    summary="Keep the response concise.",
-                    quote="正确是回答要简洁",
-                    confidence=0.95,
-                    metadata={"conflict_key": "reply_length", "value_key": "concise"},
-                )),
+                _result(
+                    _signal(
+                        "correction",
+                        summary="Keep the response concise.",
+                        quote="正确是回答要简洁",
+                        confidence=0.95,
+                        metadata={"conflict_key": "reply_length", "value_key": "concise"},
+                    )
+                ),
                 session_id="s1",
                 run_id="r1",
                 project=td,
@@ -934,12 +859,15 @@ class GhostCliTests(unittest.TestCase):
         loaded = json.loads(rows[-1])
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["candidates"], [])
-        self.assertEqual(loaded, {
-            "code": 0,
-            "browser": False,
-            "providers": False,
-            "tool_runtime": False,
-        })
+        self.assertEqual(
+            loaded,
+            {
+                "code": 0,
+                "browser": False,
+                "providers": False,
+                "tool_runtime": False,
+            },
+        )
 
 
 class GhostInboxArchitectureTests(unittest.TestCase):
@@ -976,11 +904,7 @@ def _imported_modules(path: Path) -> set[str]:
 
 
 def _matches_any_prefix(modules: set[str], prefixes: set[str]) -> bool:
-    return any(
-        module == prefix or module.startswith(prefix + ".")
-        for module in modules
-        for prefix in prefixes
-    )
+    return any(module == prefix or module.startswith(prefix + ".") for module in modules for prefix in prefixes)
 
 
 if __name__ == "__main__":

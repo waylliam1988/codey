@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from tests.ghost_fixtures import decode_events, seed_events
+
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -444,7 +446,6 @@ def _seed_case_item(
 
 
 def _write_work_snapshot(store, items) -> None:
-    store.events_path.parent.mkdir(parents=True, exist_ok=True)
     event = {
         "schema_version": WORK_QUEUE_SCHEMA_VERSION,
         "type": "ghost_work_snapshot",
@@ -453,10 +454,7 @@ def _write_work_snapshot(store, items) -> None:
         "reason": "manual_seed",
         "items": [item.to_payload() for item in items],
     }
-    store.events_path.write_text(
-        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    seed_events(store, decode_events(json.dumps(event, ensure_ascii=False, separators=(',', ':'), sort_keys=True) + '\n'))
     assert store.rebuild_from_events()
 
 

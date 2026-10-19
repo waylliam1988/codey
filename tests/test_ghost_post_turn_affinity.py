@@ -18,6 +18,7 @@ from codey.research.report_quality import review_report_quality
 from codey.research.run_result import ResearchRunResult
 from codey.runtime.core.run_result import RunResult
 from codey.task.model import TaskSubmission
+from tests.ghost_fixtures import decode_events, event_text, seed_events
 
 RESEARCH_ITERATION = "codey.operations.research_iteration.run_research_iteration"
 
@@ -105,7 +106,6 @@ def _queued_research_item(*, title: str, concept: str, priority: float):
 
 
 def _write_work_snapshot(store, items) -> None:
-    store.events_path.parent.mkdir(parents=True, exist_ok=True)
     event = {
         "schema_version": WORK_QUEUE_SCHEMA_VERSION,
         "type": "ghost_work_snapshot",
@@ -114,10 +114,7 @@ def _write_work_snapshot(store, items) -> None:
         "reason": "test_seed",
         "items": [item.to_payload() for item in items],
     }
-    store.events_path.write_text(
-        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    seed_events(store, decode_events(json.dumps(event, ensure_ascii=False, separators=(',', ':'), sort_keys=True) + '\n'))
     assert store.rebuild_from_events()
 
 
@@ -313,7 +310,7 @@ def test_provider_failure_exception_path_syncs_affinity_behavior() -> None:
             run_task_submission(runner, TaskSubmission("s1", None, "hello", 8, False, "deepseek"))
             assert state.wait_for_ghost_sleep(timeout=30)
         nodes = state.ghost_affinity.list_nodes(kind="provider_behavior", session_id="s1")
-        raw = state.ghost_affinity.events_path.read_text(encoding="utf-8")
+        raw = event_text(state.ghost_affinity)
 
     assert nodes
     assert "transient" in raw

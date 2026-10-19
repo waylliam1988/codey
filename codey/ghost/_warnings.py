@@ -38,39 +38,5 @@ def bounded_warnings(
     return tuple(out)
 
 
-def map_event_warnings(warnings: Iterable[str], *, stream: str) -> list[str]:
-    """Map raw event-file warnings to store-scoped warning ids."""
-    mapped: list[str] = []
-    too_large = f"{stream}.jsonl:too_large"
-    unreadable = f"{stream}.jsonl:unreadable"
-    for warning in warnings:
-        if warning == too_large:
-            mapped.append(f"{stream}_too_large")
-        elif warning == unreadable:
-            mapped.append(f"{stream}_unreadable")
-        else:
-            mapped.append(warning)
-    return mapped
 
-
-def event_read_warnings(
-    warnings: Iterable[str],
-    *,
-    stream: str,
-    limit: int,
-    redact_sensitive: bool = False,
-) -> tuple[str, ...]:
-    """Map event-file warnings then apply the shared bounded loop."""
-    return bounded_warnings(
-        map_event_warnings(warnings, stream=stream),
-        limit=limit,
-        redact_sensitive=redact_sensitive,
-    )
-
-
-__all__ = [
-    "WARNING_TEXT_LIMIT",
-    "bounded_warnings",
-    "event_read_warnings",
-    "map_event_warnings",
-]
+__all__ = ["WARNING_TEXT_LIMIT", "bounded_warnings"]

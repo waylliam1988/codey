@@ -10,7 +10,6 @@ from unittest import mock
 
 import pytest
 
-import codey.ghost.work_queue as work_queue_module
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.work_queue import (
     GhostWorkQueueStore,
@@ -22,12 +21,13 @@ from codey.ghost.work_queue_events import (
     WORK_ITEM_TRANSITION_ACTIONS,
     WORK_ITEM_TRANSITION_MATRIX,
     _items_deleted_event,
+    items_from_events,
 )
 from codey.ghost.work_queue_model import WORK_QUEUE_SCHEMA_VERSION, _session_ref
 from codey.ghost.work_queue_sources import new_item
 from codey.runs.ledger_projection import RunLedgerProjection
 from codey.runs.work_checkpoint import WorkCheckpointStore
-from codey.storage.local_store import delete_file
+from tests.ghost_fixtures import decode_events, event_text, seed_events
 
 FRESH_TS = "2999-01-01T00:00:00Z"
 
@@ -53,7 +53,6 @@ class _FakeKnowledge:
 
 
 def _write_work_snapshot(store: GhostWorkQueueStore, items) -> None:
-    store.events_path.parent.mkdir(parents=True, exist_ok=True)
     event = {
         "schema_version": WORK_QUEUE_SCHEMA_VERSION,
         "type": "ghost_work_snapshot",
@@ -62,9 +61,8 @@ def _write_work_snapshot(store: GhostWorkQueueStore, items) -> None:
         "reason": "test_seed",
         "items": [item.to_payload() for item in items],
     }
-    store.events_path.write_text(
-        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
-        encoding="utf-8",
+    seed_events(
+        store, decode_events(json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n")
     )
     assert store.rebuild_from_events()
 
@@ -97,12 +95,13 @@ def _work_transition_event(current, *, action: str, patch: dict[str, object], ev
 
 
 def _write_work_events(store: GhostWorkQueueStore, events: list[dict[str, object]]) -> None:
-    store.events_path.parent.mkdir(parents=True, exist_ok=True)
-    store.events_path.write_text(
-        "".join(
-            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n" for event in events
+    seed_events(
+        store,
+        decode_events(
+            "".join(
+                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n" for event in events
+            )
         ),
-        encoding="utf-8",
     )
     assert store.rebuild_from_events()
 
@@ -154,7 +153,7 @@ def test_sync_from_research_open_question_creates_queued_item_without_raw_body()
 
         exported = store.export_state()
         items = exported["work_queue"]["items"]
-        raw = Path(td, "ghost", "work_events.jsonl").read_text(encoding="utf-8")
+        raw = event_text(store)
 
     assert len(items) == 1
     assert items[0]["kind"] == "research"
@@ -375,74 +374,6 @@ def test_run_projection_failure_creates_project_followup() -> None:
     assert "run-bad" in items[0].run_refs
 
 
-def test_events_are_source_of_truth_and_stale_projection_does_not_drop_audit(monkeypatch) -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store, item_id = _seed_research_work_item(td)
-        original_write = work_queue_module.write_json_atomic
-        block_state = {"enabled": True}
-
-        def flaky_write(path, *args, **kwargs) -> None:
-            if block_state["enabled"] and Path(path).name == "work_items.json":
-                raise OSError("projection down")
-            original_write(path, *args, **kwargs)
-
-        monkeypatch.setattr(work_queue_module, "write_json_atomic", flaky_write)
-        claimed = store.claim_next(session_id="s1", run_id="run-1", user_request="continue")
-        assert claimed.ok
-        listed = store.list_items()[0]
-        block_state["enabled"] = False
-
-        with mock.patch.object(work_queue_module, "MAX_WORK_EVENTS", 1):
-            compact = store.compact_if_needed()
-        raw = store.events_path.read_text(encoding="utf-8")
-
-    assert compact["ok"] is True
-    assert listed.status == "running"
-    assert item_id in raw
-    assert "run-1" in raw
-
-
-def test_unreadable_events_block_mutating_sync_before_projection_update() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store, _item_id = _seed_research_work_item(td)
-        before = store.projection_path.read_text(encoding="utf-8")
-        store.events_path.write_bytes(b"\xff\xfe\xff")
-
-        result = store.sync_from_sources(
-            run_projection=RunLedgerProjection(
-                run_id="run-bad",
-                session_id="s1",
-                project="E:/demo",
-                mode="agent",
-                stop_reason="error",
-                has_run_started=True,
-                has_run_finished=True,
-            ),
-            session_id="s1",
-            project="E:/demo",
-        )
-        after = store.projection_path.read_text(encoding="utf-8")
-
-    assert not result.ok
-    assert result.skipped_reason == "events_read_blocked"
-    assert before == after
-    assert "work_events_unreadable" in result.warnings
-
-
-def test_missing_events_with_projection_blocks_next_mutation() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store, item_id = _seed_research_work_item(td)
-        delete_file(store.events_path)
-
-        claimed = store.claim_next(session_id="s1", run_id="run-1", user_request="continue")
-        exported = store.export_state()
-
-    assert not claimed.ok
-    assert claimed.skipped_reason == "work_events_missing"
-    assert {item["id"] for item in exported["work_queue"]["items"]} == {item_id}
-    assert not store.events_path.exists()
-
-
 def test_expired_running_claim_is_reclaimed_on_next_claim() -> None:
     with tempfile.TemporaryDirectory() as td:
         store, item_id = _seed_research_work_item(td)
@@ -454,7 +385,7 @@ def test_expired_running_claim_is_reclaimed_on_next_claim() -> None:
         )
         second = store.claim_next(session_id="s1", run_id="run-2", user_request="continue")
         item = store.list_items()[0]
-        raw = store.events_path.read_text(encoding="utf-8")
+        raw = event_text(store)
 
     assert first.ok
     assert second.ok
@@ -514,12 +445,13 @@ def test_delete_scope_and_reset_cover_work_queue() -> None:
         removed = store.delete_scope("session", session_id="s1")
         after_delete = store.list_items()
         reset_ok = store.reset_all()
+        after_reset = store.export_state()
 
     assert removed == {"removed": 1, "warnings": []}
     assert after_delete == ()
     assert reset_ok
-    assert not store.projection_path.exists()
-    assert not store.events_path.exists()
+    assert after_reset["work_queue"]["items"] == []
+    assert after_reset["work_events"] == []
 
 
 def test_queue_item_does_not_reopen_done_or_running_and_clears_old_completion_fields() -> None:
@@ -843,276 +775,167 @@ def test_concurrent_source_sync_merges_refs_and_priority() -> None:
 
 
 def test_old_work_upsert_event_is_unsupported_for_mutation() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        store.events_path.parent.mkdir(parents=True, exist_ok=True)
-        store.events_path.write_text(
-            json.dumps(
-                {
-                    "schema_version": WORK_QUEUE_SCHEMA_VERSION,
-                    "type": "ghost_work_item_upsert",
-                    "event_id": "old",
-                    "ts": FRESH_TS,
-                    "item": {},
-                }
+    with pytest.raises(ValueError):
+        items_from_events(
+            decode_events(
+                json.dumps(
+                    {
+                        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
+                        "type": "ghost_work_item_upsert",
+                        "event_id": "old",
+                        "ts": FRESH_TS,
+                        "item": {},
+                    }
+                )
+                + "\n"
             )
-            + "\n",
-            encoding="utf-8",
         )
-
-        result = store.sync_from_sources(
-            research_interest_candidates=(
-                _interest_candidate(
-                    candidate_id="candidate",
-                    question="Research provider recovery follow-up",
-                    source_ref="source",
-                    source_refs=("note:source",),
-                    priority=0.8,
-                ),
-            ),
-            session_id="s1",
-        )
-
-    assert not result.ok
-    assert result.skipped_reason == "events_read_blocked"
-    assert any("unsupported_event" in warning for warning in result.warnings)
 
 
 def test_work_snapshot_with_invalid_item_is_unsupported_for_mutation() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        store.events_path.parent.mkdir(parents=True, exist_ok=True)
-        store.events_path.write_text(
-            json.dumps(
-                {
-                    "schema_version": WORK_QUEUE_SCHEMA_VERSION,
-                    "type": "ghost_work_snapshot",
-                    "event_id": "bad-snapshot",
-                    "ts": FRESH_TS,
-                    "reason": "test",
-                    "items": [{"id": "missing-required-fields"}],
-                }
+    with pytest.raises(ValueError):
+        items_from_events(
+            decode_events(
+                json.dumps(
+                    {
+                        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
+                        "type": "ghost_work_snapshot",
+                        "event_id": "bad-snapshot",
+                        "ts": FRESH_TS,
+                        "reason": "test",
+                        "items": [{"id": "missing-required-fields"}],
+                    }
+                )
+                + "\n"
             )
-            + "\n",
-            encoding="utf-8",
         )
-
-        result = store.sync_from_sources(
-            research_interest_candidates=(
-                _interest_candidate(
-                    candidate_id="candidate",
-                    question="Research provider recovery follow-up",
-                    source_ref="source",
-                    source_refs=("note:source",),
-                    priority=0.8,
-                ),
-            ),
-            session_id="s1",
-        )
-
-    assert not result.ok
-    assert result.skipped_reason == "events_read_blocked"
-    assert any("invalid_event" in warning for warning in result.warnings)
 
 
 def test_work_transition_missing_precondition_is_unsupported_for_mutation() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        item = new_item(
-            kind="research",
-            status="queued",
-            scope="session",
-            scope_ref=_session_ref("s1"),
-            title="Research provider recovery follow-up",
-            why_now="Bounded local test.",
-            priority=0.8,
-            confidence=0.9,
-            source="test",
-            source_ref="source",
-            evidence_refs=("note:source",),
-            run_refs=(),
-            now=FRESH_TS,
+    item = new_item(
+        kind="research",
+        status="queued",
+        scope="session",
+        scope_ref=_session_ref("s1"),
+        title="Research provider recovery follow-up",
+        why_now="Bounded local test.",
+        priority=0.8,
+        confidence=0.9,
+        source="test",
+        source_ref="source",
+        evidence_refs=("note:source",),
+        run_refs=(),
+        now=FRESH_TS,
+    )
+    transition = _work_transition_event(
+        item,
+        action="claim",
+        patch={"status": "running", "started_run_id": "run-1", "retry_count": 1},
+        event_id="bad-transition",
+    )
+    del transition["precondition"]["expected_retry_count"]
+    with pytest.raises(ValueError):
+        items_from_events(
+            decode_events(
+                "".join(
+                    json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                    for event in (_work_observed_event(item), transition)
+                )
+            )
         )
-        transition = _work_transition_event(
-            item,
-            action="claim",
-            patch={"status": "running", "started_run_id": "run-1", "retry_count": 1},
-            event_id="bad-transition",
-        )
-        del transition["precondition"]["expected_retry_count"]
-        store.events_path.parent.mkdir(parents=True, exist_ok=True)
-        store.events_path.write_text(
-            "".join(
-                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
-                for event in (_work_observed_event(item), transition)
-            ),
-            encoding="utf-8",
-        )
-
-        result = store.claim_next(session_id="s1", run_id="run-2", user_request="continue")
-
-    assert not result.ok
-    assert result.skipped_reason == "events_read_blocked"
-    assert any("invalid_event" in warning for warning in result.warnings)
 
 
 def test_work_transition_malformed_running_missing_started_run_id_is_fail_closed() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        item = new_item(
-            kind="research",
-            status="queued",
-            scope="session",
-            scope_ref=_session_ref("s1"),
-            title="Research provider recovery follow-up",
-            why_now="Bounded local test.",
-            priority=0.8,
-            confidence=0.9,
-            source="test",
-            source_ref="source",
-            evidence_refs=("note:source",),
-            run_refs=(),
-            now=FRESH_TS,
+    item = new_item(
+        kind="research",
+        status="queued",
+        scope="session",
+        scope_ref=_session_ref("s1"),
+        title="Research provider recovery follow-up",
+        why_now="Bounded local test.",
+        priority=0.8,
+        confidence=0.9,
+        source="test",
+        source_ref="source",
+        evidence_refs=("note:source",),
+        run_refs=(),
+        now=FRESH_TS,
+    )
+    # Transition to running but with empty started_run_id
+    bad_transition = {
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_item_transitioned",
+        "event_id": "bad-claim-event",
+        "ts": FRESH_TS,
+        "action": "claim",
+        "item_id": item.id,
+        "precondition": {
+            "expected_status": "queued",
+            "expected_started_run_id": "",
+            "expected_retry_count": 0,
+        },
+        "patch": {
+            "status": "running",
+            "started_run_id": "",  # missing / empty started_run_id
+            "retry_count": 1,
+        },
+    }
+    with pytest.raises(ValueError):
+        items_from_events(
+            decode_events(
+                "".join(
+                    json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                    for event in (_work_observed_event(item), bad_transition)
+                )
+            )
         )
-        # Transition to running but with empty started_run_id
-        bad_transition = {
-            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
-            "type": "ghost_work_item_transitioned",
-            "event_id": "bad-claim-event",
-            "ts": FRESH_TS,
-            "action": "claim",
-            "item_id": item.id,
-            "precondition": {
-                "expected_status": "queued",
-                "expected_started_run_id": "",
-                "expected_retry_count": 0,
-            },
-            "patch": {
-                "status": "running",
-                "started_run_id": "",  # missing / empty started_run_id
-                "retry_count": 1,
-            },
-        }
-        store.events_path.parent.mkdir(parents=True, exist_ok=True)
-        store.events_path.write_text(
-            "".join(
-                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
-                for event in (_work_observed_event(item), bad_transition)
-            ),
-            encoding="utf-8",
-        )
-
-        result = store.claim_next(session_id="s1", run_id="run-2", user_request="continue")
-
-    assert not result.ok
-    assert result.skipped_reason == "events_read_blocked"
-    assert any("invalid_event" in warning for warning in result.warnings)
 
 
 def test_work_transition_malformed_done_missing_proof_refs_is_fail_closed() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        item = new_item(
-            kind="research",
-            status="running",
-            scope="session",
-            scope_ref=_session_ref("s1"),
-            title="Research provider recovery follow-up",
-            why_now="Bounded local test.",
-            priority=0.8,
-            confidence=0.9,
-            source="test",
-            source_ref="source",
-            evidence_refs=("note:source",),
-            run_refs=(),
-            now=FRESH_TS,
-        )
-        item = replace(item, started_run_id="run-1", retry_count=1)
-        bad_complete_transition = {
-            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
-            "type": "ghost_work_item_transitioned",
-            "event_id": "bad-complete-event",
-            "ts": FRESH_TS,
-            "action": "complete",
-            "item_id": item.id,
-            "precondition": {
-                "expected_status": "running",
-                "expected_started_run_id": "run-1",
-                "expected_retry_count": 1,
-            },
-            "patch": {
-                "status": "done",
-                "completed_run_id": "run-1",
-                "proof_refs": [],  # empty proof_refs is invalid for done
-                "updated_at": FRESH_TS,
-            },
-        }
-        store.events_path.parent.mkdir(parents=True, exist_ok=True)
-        store.events_path.write_text(
-            "".join(
-                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
-                for event in (_work_observed_event(item), bad_complete_transition)
-            ),
-            encoding="utf-8",
-        )
-
-        with pytest.raises(OSError, match="ghost work events are unreadable"):
-            store.complete_item(item.id, run_id="run-1", proof_refs=("checkpoint:1",))
-
-        assert store.last_warnings
-        assert any("invalid_event" in warning for warning in store.last_warnings)
-
-        claim_result = store.claim_next(session_id="s1", run_id="run-2", user_request="continue")
-        assert not claim_result.ok
-        assert claim_result.skipped_reason == "events_read_blocked"
-
-
-def test_work_queue_compact_if_needed_detects_missing_events_file() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        store.projection_path.parent.mkdir(parents=True, exist_ok=True)
-        store.projection_path.write_text("{}", encoding="utf-8")
-        assert not store.events_path.exists()
-        assert store.projection_path.exists()
-
-        compacted = store.compact_if_needed()
-
-    assert not compacted["ok"]
-    assert "work_events_missing" in compacted["warnings"]
-    assert store.last_warnings == ("work_events_missing",)
-
-
-def test_work_queue_mutation_result_propagates_projection_write_failure_warning() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        with mock.patch.object(store, "_write_projection", side_effect=OSError("disk full")):
-            result = store.sync_from_sources(
-                research_interest_candidates=(
-                    _interest_candidate(
-                        candidate_id="c1",
-                        question="Research provider recovery follow-up",
-                        source_ref="source",
-                        source_refs=("note:source",),
-                        priority=0.8,
-                    ),
-                ),
-                session_id="s1",
+    item = new_item(
+        kind="research",
+        status="running",
+        scope="session",
+        scope_ref=_session_ref("s1"),
+        title="Research provider recovery follow-up",
+        why_now="Bounded local test.",
+        priority=0.8,
+        confidence=0.9,
+        source="test",
+        source_ref="source",
+        evidence_refs=("note:source",),
+        run_refs=(),
+        now=FRESH_TS,
+    )
+    item = replace(item, started_run_id="run-1", retry_count=1)
+    bad_complete_transition = {
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_item_transitioned",
+        "event_id": "bad-complete-event",
+        "ts": FRESH_TS,
+        "action": "complete",
+        "item_id": item.id,
+        "precondition": {
+            "expected_status": "running",
+            "expected_started_run_id": "run-1",
+            "expected_retry_count": 1,
+        },
+        "patch": {
+            "status": "done",
+            "completed_run_id": "run-1",
+            "proof_refs": [],  # empty proof_refs is invalid for done
+            "updated_at": FRESH_TS,
+        },
+    }
+    with pytest.raises(ValueError):
+        items_from_events(
+            decode_events(
+                "".join(
+                    json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                    for event in (_work_observed_event(item), bad_complete_transition)
+                )
             )
-
-    assert result.ok
-    assert "work_projection_write_failed" in result.warnings
-    assert "work_projection_write_failed" in store.last_warnings
-
-
-def test_work_queue_delete_scope_propagates_projection_write_failure_warning() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store, _item_id = _seed_research_work_item(td)
-        with mock.patch.object(store, "_write_projection", side_effect=OSError("disk full")):
-            result = store.delete_scope("session", session_id="s1")
-
-    assert result["removed"] == 1
-    assert "work_projection_write_failed" in result["warnings"]
-    assert "work_projection_write_failed" in store.last_warnings
+        )
 
 
 def test_work_queue_claim_missing_retry_or_lease_is_invalid_event() -> None:
@@ -1139,19 +962,15 @@ def test_work_queue_claim_missing_retry_or_lease_is_invalid_event() -> None:
                 "updated_at": FRESH_TS,
             },
         }
-        store.events_path.write_text(
-            "".join(
-                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
-                for event in (_work_observed_event(item), bad_claim)
-            ),
-            encoding="utf-8",
-        )
-
-        assert store._read_events_unlocked() == []
-        assert store._events_read_blocked
-        assert any("invalid_event" in warning for warning in store.last_warnings)
-        with pytest.raises(OSError, match="ghost work events are unreadable"):
-            store.complete_item(item.id, run_id="run-1", proof_refs=("research_proof:" + "a" * 16,))
+        with pytest.raises(ValueError):
+            items_from_events(
+                decode_events(
+                    "".join(
+                        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                        for event in (_work_observed_event(item), bad_claim)
+                    )
+                )
+            )
 
 
 def test_work_queue_complete_with_mismatched_proof_fails_closed() -> None:
@@ -1198,19 +1017,15 @@ def test_work_queue_complete_with_mismatched_proof_fails_closed() -> None:
                 "updated_at": FRESH_TS,
             },
         }
-        store.events_path.write_text(
-            "".join(
-                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
-                for event in (_work_observed_event(item), valid_claim, bad_complete)
-            ),
-            encoding="utf-8",
-        )
-
-        assert store._read_events_unlocked() == []
-        assert store._events_read_blocked
-        assert any("invalid_event" in warning for warning in store.last_warnings)
-        with pytest.raises(OSError, match="ghost work events are unreadable"):
-            store.complete_item(item.id, run_id="run-1", proof_refs=("research_proof:" + "a" * 16,))
+        with pytest.raises(ValueError):
+            items_from_events(
+                decode_events(
+                    "".join(
+                        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                        for event in (_work_observed_event(item), valid_claim, bad_complete)
+                    )
+                )
+            )
 
 
 def test_work_queue_release_to_queued_retaining_lease_is_invalid() -> None:
@@ -1236,19 +1051,15 @@ def test_work_queue_release_to_queued_retaining_lease_is_invalid() -> None:
                 "updated_at": FRESH_TS,
             },
         }
-        store.events_path.write_text(
-            "".join(
-                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
-                for event in (_work_observed_event(item), bad_release)
-            ),
-            encoding="utf-8",
-        )
-
-        assert store._read_events_unlocked() == []
-        assert store._events_read_blocked
-        assert any("invalid_event" in warning for warning in store.last_warnings)
-        with pytest.raises(OSError, match="ghost work events are unreadable"):
-            store.queue_item(item.id)
+        with pytest.raises(ValueError):
+            items_from_events(
+                decode_events(
+                    "".join(
+                        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                        for event in (_work_observed_event(item), bad_release)
+                    )
+                )
+            )
 
 
 def test_complete_item_requires_run_id_without_corrupting_events() -> None:
@@ -1256,20 +1067,20 @@ def test_complete_item_requires_run_id_without_corrupting_events() -> None:
         store, item_id = _seed_research_work_item(td)
         claimed = store.claim_next(session_id="s1", run_id="run-1", user_request="继续")
         assert claimed.ok
-        before = store.events_path.read_text(encoding="utf-8")
+        before = event_text(store)
         result = store.complete_item(item_id, run_id="", proof_refs=("research_proof:" + "a" * 16,))
         assert result is None
-        assert store.events_path.read_text(encoding="utf-8") == before
+        assert event_text(store) == before
         assert store._read_events_unlocked()
-        assert not store._events_read_blocked
+        assert store.export_state()["warnings"] == []
         assert store.list_items()[0].status == "running"
 
         # Also verify that a mismatched run_id is rejected without corrupting or modifying running item
         mismatched_result = store.complete_item(item_id, run_id="run-2", proof_refs=("research_proof:" + "a" * 16,))
         assert mismatched_result is None
-        assert store.events_path.read_text(encoding="utf-8") == before
+        assert event_text(store) == before
         assert store._read_events_unlocked()
-        assert not store._events_read_blocked
+        assert store.export_state()["warnings"] == []
         assert store.list_items()[0].status == "running"
 
 
@@ -1295,19 +1106,15 @@ def test_work_transition_malformed_queue_missing_retry_count_fails_closed() -> N
                 "updated_at": FRESH_TS,
             },
         }
-        store.events_path.write_text(
-            "".join(
-                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
-                for event in (_work_observed_event(item), bad_queue)
-            ),
-            encoding="utf-8",
-        )
-
-        assert store._read_events_unlocked() == []
-        assert store._events_read_blocked
-        assert any("invalid_event" in warning for warning in store.last_warnings)
-        with pytest.raises(OSError, match="ghost work events are unreadable"):
-            store.queue_item(item.id)
+        with pytest.raises(ValueError):
+            items_from_events(
+                decode_events(
+                    "".join(
+                        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                        for event in (_work_observed_event(item), bad_queue)
+                    )
+                )
+            )
 
 
 def test_work_transition_complete_mismatched_run_id_fails_closed() -> None:
@@ -1353,138 +1160,103 @@ def test_work_transition_complete_mismatched_run_id_fails_closed() -> None:
                 "updated_at": FRESH_TS,
             },
         }
-        store.events_path.write_text(
-            "".join(
-                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
-                for event in (_work_observed_event(item), valid_claim, mismatched_complete)
-            ),
-            encoding="utf-8",
-        )
-
-        assert store._read_events_unlocked() == []
-        assert store._events_read_blocked
-        assert any("invalid_event" in warning for warning in store.last_warnings)
-        with pytest.raises(OSError, match="ghost work events are unreadable"):
-            store.complete_item(item.id, run_id="run-1", proof_refs=("research_proof:" + "a" * 16,))
+        with pytest.raises(ValueError):
+            items_from_events(
+                decode_events(
+                    "".join(
+                        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                        for event in (_work_observed_event(item), valid_claim, mismatched_complete)
+                    )
+                )
+            )
 
 
 def test_work_snapshot_with_invalid_state_invariants_fails_closed() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        # queued item carrying old completed_run_id or proof_refs
-        invalid_queued_payload = {
-            "id": "gwi_test_queued_1",
-            "kind": "research",
-            "status": "queued",
-            "scope": "session",
-            "scope_ref": "s1",
-            "title": "Research test task",
-            "why_now": "Bounded test.",
-            "priority": 0.8,
-            "confidence": 0.9,
-            "source": "user",
-            "source_ref": "seed",
-            "completed_run_id": "old-run",  # invalid on queued item
-            "proof_refs": ["research_proof:" + "a" * 16],  # invalid on queued item
-        }
-        event = {
-            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
-            "type": "ghost_work_snapshot",
-            "event_id": "test_bad_snapshot",
-            "ts": FRESH_TS,
-            "reason": "test_seed",
-            "items": [invalid_queued_payload],
-        }
-        store.events_path.parent.mkdir(parents=True, exist_ok=True)
-        store.events_path.write_text(
-            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
-            encoding="utf-8",
+    # queued item carrying old completed_run_id or proof_refs
+    invalid_queued_payload = {
+        "id": "gwi_test_queued_1",
+        "kind": "research",
+        "status": "queued",
+        "scope": "session",
+        "scope_ref": "s1",
+        "title": "Research test task",
+        "why_now": "Bounded test.",
+        "priority": 0.8,
+        "confidence": 0.9,
+        "source": "user",
+        "source_ref": "seed",
+        "completed_run_id": "old-run",  # invalid on queued item
+        "proof_refs": ["research_proof:" + "a" * 16],  # invalid on queued item
+    }
+    event = {
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_snapshot",
+        "event_id": "test_bad_snapshot",
+        "ts": FRESH_TS,
+        "reason": "test_seed",
+        "items": [invalid_queued_payload],
+    }
+    with pytest.raises(ValueError):
+        items_from_events(
+            decode_events(json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n")
         )
-
-        assert store._read_events_unlocked() == []
-        assert store._events_read_blocked
-        assert any("invalid_event" in warning for warning in store.last_warnings)
-        claim_result = store.claim_next(session_id="s1", run_id="run-1", user_request="继续")
-        assert not claim_result.ok
-        assert claim_result.skipped_reason == "events_read_blocked"
-        with pytest.raises(OSError, match="ghost work events are unreadable"):
-            store.queue_item("gwi_test_queued_1")
 
 
 def test_work_snapshot_done_item_missing_completed_run_id_fails_closed() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        # done item with proof_refs but missing completed_run_id
-        invalid_done_payload = {
-            "id": "gwi_test_done_1",
-            "kind": "research",
-            "status": "done",
-            "scope": "session",
-            "scope_ref": "s1",
-            "title": "Research test task",
-            "why_now": "Bounded test.",
-            "priority": 0.8,
-            "confidence": 0.9,
-            "source": "user",
-            "source_ref": "seed",
-            "completed_run_id": "",  # missing completed_run_id on done item
-            "proof_refs": ["research_proof:" + "a" * 16],
-        }
-        event = {
-            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
-            "type": "ghost_work_snapshot",
-            "event_id": "test_bad_done_snapshot",
-            "ts": FRESH_TS,
-            "reason": "test_seed",
-            "items": [invalid_done_payload],
-        }
-        store.events_path.parent.mkdir(parents=True, exist_ok=True)
-        store.events_path.write_text(
-            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
-            encoding="utf-8",
+    # done item with proof_refs but missing completed_run_id
+    invalid_done_payload = {
+        "id": "gwi_test_done_1",
+        "kind": "research",
+        "status": "done",
+        "scope": "session",
+        "scope_ref": "s1",
+        "title": "Research test task",
+        "why_now": "Bounded test.",
+        "priority": 0.8,
+        "confidence": 0.9,
+        "source": "user",
+        "source_ref": "seed",
+        "completed_run_id": "",  # missing completed_run_id on done item
+        "proof_refs": ["research_proof:" + "a" * 16],
+    }
+    event = {
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_snapshot",
+        "event_id": "test_bad_done_snapshot",
+        "ts": FRESH_TS,
+        "reason": "test_seed",
+        "items": [invalid_done_payload],
+    }
+    with pytest.raises(ValueError):
+        items_from_events(
+            decode_events(json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n")
         )
-
-        assert store._read_events_unlocked() == []
-        assert store._events_read_blocked
-        assert any("invalid_event" in warning for warning in store.last_warnings)
-        assert store.list_items() == ()
-        with pytest.raises(OSError, match="ghost work events are unreadable"):
-            store.complete_item("gwi_test_done_1", run_id="run-1", proof_refs=("research_proof:" + "a" * 16,))
 
 
 def test_work_observed_event_with_extra_item_field_fails_closed() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        item = new_item(
-            kind="research",
-            status="queued",
-            scope="session",
-            scope_ref=_session_ref("s1"),
-            title="Research provider recovery follow-up",
-            why_now="Bounded local test.",
-            priority=0.8,
-            confidence=0.9,
-            source="test",
-            source_ref="source",
-            evidence_refs=("note:source",),
-            run_refs=(),
-            now=FRESH_TS,
+    item = new_item(
+        kind="research",
+        status="queued",
+        scope="session",
+        scope_ref=_session_ref("s1"),
+        title="Research provider recovery follow-up",
+        why_now="Bounded local test.",
+        priority=0.8,
+        confidence=0.9,
+        source="test",
+        source_ref="source",
+        evidence_refs=("note:source",),
+        run_refs=(),
+        now=FRESH_TS,
+    )
+    payload = item.to_payload()
+    payload["raw_extra"] = "raw-extra-fixture"
+    event = _work_observed_event(item)
+    event["item"] = payload
+    with pytest.raises(ValueError):
+        items_from_events(
+            decode_events(json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n")
         )
-        payload = item.to_payload()
-        payload["raw_extra"] = "raw-extra-fixture"
-        event = _work_observed_event(item)
-        event["item"] = payload
-        store.events_path.parent.mkdir(parents=True, exist_ok=True)
-        store.events_path.write_text(
-            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-
-        result = store.claim_next(session_id="s1", run_id="run-1", user_request="continue")
-
-    assert not result.ok
-    assert result.skipped_reason == "events_read_blocked"
-    assert any("invalid_event" in warning for warning in result.warnings)
 
 
 @pytest.mark.parametrize(
@@ -1502,113 +1274,75 @@ def test_work_observed_event_with_noncanonical_numeric_field_fails_closed(
     field: str,
     bad_value: object,
 ) -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        item = new_item(
-            kind="research",
-            status="queued",
-            scope="session",
-            scope_ref=_session_ref("s1"),
-            title="Research provider recovery follow-up",
-            why_now="Bounded local test.",
-            priority=0.8,
-            confidence=0.9,
-            source="test",
-            source_ref="source",
-            evidence_refs=("note:source",),
-            run_refs=(),
-            now=FRESH_TS,
+    item = new_item(
+        kind="research",
+        status="queued",
+        scope="session",
+        scope_ref=_session_ref("s1"),
+        title="Research provider recovery follow-up",
+        why_now="Bounded local test.",
+        priority=0.8,
+        confidence=0.9,
+        source="test",
+        source_ref="source",
+        evidence_refs=("note:source",),
+        run_refs=(),
+        now=FRESH_TS,
+    )
+    payload = item.to_payload()
+    payload[field] = bad_value
+    event = _work_observed_event(item)
+    event["item"] = payload
+    with pytest.raises(ValueError):
+        items_from_events(
+            decode_events(json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n")
         )
-        payload = item.to_payload()
-        payload[field] = bad_value
-        event = _work_observed_event(item)
-        event["item"] = payload
-        store.events_path.parent.mkdir(parents=True, exist_ok=True)
-        store.events_path.write_text(
-            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-
-        result = store.claim_next(session_id="s1", run_id="run-1", user_request="continue")
-
-    assert not result.ok
-    assert result.skipped_reason == "events_read_blocked"
-    assert any("invalid_event" in warning for warning in result.warnings)
 
 
 def test_work_expired_delete_event_with_noncanonical_empty_fields_fails_closed() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        item = new_item(
-            kind="research",
-            status="queued",
-            scope="session",
-            scope_ref=_session_ref("s1"),
-            title="Research provider recovery follow-up",
-            why_now="Bounded local test.",
-            priority=0.8,
-            confidence=0.9,
-            source="test",
-            source_ref="source",
-            evidence_refs=("note:source",),
-            run_refs=(),
-            now=FRESH_TS,
+    item = new_item(
+        kind="research",
+        status="queued",
+        scope="session",
+        scope_ref=_session_ref("s1"),
+        title="Research provider recovery follow-up",
+        why_now="Bounded local test.",
+        priority=0.8,
+        confidence=0.9,
+        source="test",
+        source_ref="source",
+        evidence_refs=("note:source",),
+        run_refs=(),
+        now=FRESH_TS,
+    )
+    event = _items_deleted_event(reason="expired", expected_items=(item,), ts=FRESH_TS)
+    event["payload"]["item_ids"] = [None]
+    event["payload"]["scope"] = "not-a-scope"
+    with pytest.raises(ValueError):
+        items_from_events(
+            decode_events(json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n")
         )
-        event = _items_deleted_event(reason="expired", expected_items=(item,), ts=FRESH_TS)
-        event["payload"]["item_ids"] = [None]
-        event["payload"]["scope"] = "not-a-scope"
-        store.events_path.parent.mkdir(parents=True, exist_ok=True)
-        store.events_path.write_text(
-            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-
-        result = store.claim_next(session_id="s1", run_id="run-1", user_request="continue")
-
-    assert not result.ok
-    assert result.skipped_reason == "events_read_blocked"
-    assert any("invalid_event" in warning for warning in result.warnings)
 
 
 def test_work_scope_deleted_event_with_wrong_ref_shape_fails_closed() -> None:
-    with tempfile.TemporaryDirectory() as td:
-        store = GhostWorkQueueStore(td)
-        event = {
-            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
-            "type": "ghost_work_items_deleted",
-            "event_id": "bad-scope-delete",
-            "ts": FRESH_TS,
-            "payload": {
-                "reason": "scope_deleted",
-                "item_ids": [],
-                "expected_items": [],
-                "scope": "project",
-                "project_ref": "",
-                "session_ref": "s1",
-            },
-        }
-        store.events_path.parent.mkdir(parents=True, exist_ok=True)
-        store.events_path.write_text(
-            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
-            encoding="utf-8",
+    event = {
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_items_deleted",
+        "event_id": "bad-scope-delete",
+        "ts": FRESH_TS,
+        "payload": {
+            "reason": "scope_deleted",
+            "item_ids": [],
+            "expected_items": [],
+            "scope": "project",
+            "project_ref": "",
+            "session_ref": "s1",
+        },
+    }
+    with pytest.raises(ValueError):
+        items_from_events(
+            decode_events(json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n")
         )
-
-        result = store.sync_from_sources(
-            research_interest_candidates=(
-                _interest_candidate(
-                    candidate_id="candidate",
-                    question="Research provider recovery follow-up",
-                    source_ref="source",
-                    source_refs=("note:source",),
-                    priority=0.8,
-                ),
-            ),
-            session_id="s1",
-        )
-
-    assert not result.ok
-    assert result.skipped_reason == "events_read_blocked"
-    assert any("invalid_event" in warning for warning in result.warnings)
 
 
 def test_work_queue_schema_version_stays_cold_start_v1() -> None:

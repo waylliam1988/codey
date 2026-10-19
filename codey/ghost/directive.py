@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 import math
+import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from pathlib import Path
 from typing import Any
 
 from codey.ghost import _common
 from codey.ghost._warnings import bounded_warnings
 from codey.ghost.graph_primitives import parse_ts
 from codey.ghost.hebbian import (
-    HEBBIAN_SCHEMA_VERSION,
-    MAX_HEBBIAN_STATE_BYTES,
     MIN_NODE_WEIGHT,
     NODE_HALF_LIFE_DAYS,
     GhostHebbianStore,
@@ -21,7 +19,6 @@ from codey.ghost.hebbian import (
 )
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.typed_fields import dangerous_text, render_typed_field
-from codey.storage.local_store import StoreCorruption, read_json_strict
 from codey.utils.refs import coerce_float, coerce_int
 
 DEFAULT_DIRECTIVE_BUDGET = 900
@@ -82,8 +79,8 @@ def build_ghost_directive(
     if store is None:
         return GhostDirective("")
     try:
-        nodes = _read_projected_nodes(store)
-    except Exception:
+        nodes = store.list_nodes()
+    except (OSError, ValueError, sqlite3.Error):
         return GhostDirective("", warnings=("store_unreadable",))
     hints = tuple(affinity_hints or ())
     if affinity_store is not None and not hints:
@@ -204,33 +201,6 @@ def _node_scope_matches(node: GhostNode, *, project_ref: str, session_ref: str) 
     return node.scope == "user"
 
 
-def _read_projected_nodes(store: GhostHebbianStore) -> tuple[GhostNode, ...]:
-    """Read the Hebbian projection without rebuilding, quarantining, or writing."""
-
-    state_path = getattr(store, "state_path", None)
-    if state_path is None:
-        return ()
-    try:
-        payload = read_json_strict(Path(state_path), max_bytes=MAX_HEBBIAN_STATE_BYTES)
-    except StoreCorruption:
-        # Read-only consumer: never mutate (no quarantine, no backup). The
-        # owning Hebbian store quarantines on its own loads.
-        return ()
-    if not isinstance(payload, dict):
-        return ()
-    if type(payload.get("schema_version")) is not int or payload.get("schema_version") != HEBBIAN_SCHEMA_VERSION:
-        return ()
-    if payload.get("kind") != "ghost_hebbian_state_projection":
-        return ()
-    raw_nodes = payload.get("nodes")
-    if not isinstance(raw_nodes, list):
-        return ()
-    rows = [
-        node
-        for node in (GhostNode.from_payload(item) for item in raw_nodes)
-        if node is not None
-    ]
-    return tuple(rows)
 
 
 def _resolve_competing_nodes(

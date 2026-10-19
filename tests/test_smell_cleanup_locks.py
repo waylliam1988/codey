@@ -156,46 +156,6 @@ class GhostWarningsUnificationLocks(unittest.TestCase):
         )
         self.assertNotIn("slice_event_warnings", set(warnings_mod.__all__))
 
-    def test_inbox_and_hebbian_use_shared_bounded_loop(self) -> None:
-        """RED before fix: inbox/hebbian keep duplicates/empties/unclipped."""
-        from codey.ghost import hebbian, inbox
-        from codey.ghost._warnings import event_read_warnings
-
-        sample = [
-            "hebbian_events.jsonl:too_large",
-            "hebbian_events.jsonl:too_large",
-            "",
-            "x" * 500,
-            "custom-warning",
-            "custom-warning",
-        ]
-        self.assertEqual(
-            hebbian._event_read_warnings(sample),
-            event_read_warnings(
-                sample, stream="hebbian_events", limit=hebbian.MAX_HEBBIAN_WARNINGS
-            ),
-        )
-        inbox_sample = [
-            "events.jsonl:unreadable",
-            "events.jsonl:unreadable",
-            "",
-            "y" * 500,
-            "custom-warning",
-            "custom-warning",
-        ]
-        self.assertEqual(
-            inbox._event_read_warnings(inbox_sample),
-            event_read_warnings(
-                inbox_sample, stream="events", limit=inbox.MAX_EVENT_WARNINGS
-            ),
-        )
-        # The shared loop must dedupe, drop empties, and clip to 180 chars.
-        cleaned = event_read_warnings(
-            sample, stream="hebbian_events", limit=hebbian.MAX_HEBBIAN_WARNINGS
-        )
-        self.assertNotIn("", cleaned)
-        self.assertEqual(len(cleaned), len(set(cleaned)))
-        self.assertTrue(all(len(item) <= 180 for item in cleaned))
 
 
 class ShellApprovalFallbackLocks(unittest.TestCase):

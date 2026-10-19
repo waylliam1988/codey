@@ -663,7 +663,7 @@ class GhostDirectiveTests(unittest.TestCase):
         self.assertNotIn("Ghost", directive.text)
         self.assertEqual(len(directive.selected_nodes), 1)
 
-    def test_build_directive_does_not_rebuild_missing_projection(self) -> None:
+    def test_build_directive_reads_committed_sqlite_without_writing(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             created = inbox.ingest_signals(
@@ -677,14 +677,10 @@ class GhostDirectiveTests(unittest.TestCase):
 
             hebbian = GhostHebbianStore(td)
             hebbian.reinforce_candidate(created[0])
-            state_path = Path(td) / "ghost" / "state.json"
-            self.assertTrue(state_path.exists())
-            state_path.unlink()
+            with mock.patch.object(hebbian, "_write_state", side_effect=AssertionError("read must not write")):
+                directive = build_ghost_directive(hebbian, project=td, session_id="s1")
 
-            directive = build_ghost_directive(hebbian, project=td, session_id="s1")
-
-        self.assertEqual(directive.text, "")
-        self.assertFalse(state_path.exists())
+        self.assertIn("reply structure = answer first", directive.text)
 
     def test_build_directive_does_not_quarantine_bad_projection(self) -> None:
         with tempfile.TemporaryDirectory() as td:

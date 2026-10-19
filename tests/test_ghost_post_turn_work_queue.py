@@ -26,6 +26,7 @@ from codey.runs.work_checkpoint import WorkCheckpointStore
 from codey.runtime.core import cancellation
 from codey.runtime.core.run_result import RunResult
 from codey.task.model import TaskSubmission
+from tests.ghost_fixtures import decode_events, seed_events
 
 RESEARCH_ITERATION = "codey.operations.research_iteration.run_research_iteration"
 
@@ -227,11 +228,7 @@ def _seed_review_item(state: server.AppContext, project: Path) -> str:
         "reason": "test_seed",
         "items": [item.to_payload()],
     }
-    state.ghost_work_queue.events_path.parent.mkdir(parents=True, exist_ok=True)
-    state.ghost_work_queue.events_path.write_text(
-        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    seed_events(state.ghost_work_queue, decode_events(json.dumps(event, ensure_ascii=False, separators=(',', ':'), sort_keys=True) + '\n'))
     assert state.ghost_work_queue.rebuild_from_events()
     return item.id
 

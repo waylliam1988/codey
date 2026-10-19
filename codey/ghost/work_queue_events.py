@@ -13,7 +13,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import replace
 
 from codey.ghost import _common
-from codey.ghost._warnings import bounded_warnings, event_read_warnings
+from codey.ghost._warnings import bounded_warnings
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.work_queue_model import (
     KIND_PRIORITY,
@@ -114,6 +114,8 @@ def items_from_events(events: Iterable[dict[str, object]]) -> list[GhostWorkItem
     """Replay one event sequence into work items (deterministic, pure)."""
     by_id: dict[str, GhostWorkItem] = {}
     for event in events:
+        if not _valid_work_event(event):
+            raise ValueError("invalid Ghost work event envelope")
         event_type = str(event.get("type") or "")
         now = _common.event_ts(event)
         if event_type == "ghost_work_snapshot":
@@ -121,12 +123,13 @@ def items_from_events(events: Iterable[dict[str, object]]) -> list[GhostWorkItem
         elif event_type == "ghost_work_item_observed":
             item = GhostWorkItem.from_payload(event.get("item"))
             if item is None:
-                continue
+                raise ValueError("invalid Ghost work item")
             item = replace(item, created_at=item.created_at or now, updated_at=item.updated_at or now)
             merged, _changed = _merge_items(by_id.values(), (item,), now=now)
             by_id = {row.id: row for row in _bounded_items(merged)}
         elif event_type == "ghost_work_item_transitioned":
-            _apply_transition_event(by_id, event, now=now)
+            if _apply_transition_event(by_id, event, now=now) == "invalid":
+                raise ValueError("invalid Ghost work transition")
         elif event_type == "ghost_work_items_deleted":
             _apply_items_deleted_event(by_id, event)
     return list(by_id.values())
@@ -926,10 +929,6 @@ def _bounded_warnings(warnings: Iterable[object]) -> tuple[str, ...]:
     return bounded_warnings(warnings, limit=MAX_WORK_WARNINGS, redact_sensitive=True)
 
 
-def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
-    return event_read_warnings(
-        warnings, stream="work_events", limit=MAX_WORK_WARNINGS, redact_sensitive=True
-    )
 
 
 __all__ = [

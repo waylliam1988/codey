@@ -93,7 +93,7 @@ def test_model_leaf_has_no_store_or_io_dependency() -> None:
         "codey.ghost.affinity_events",
         "codey.storage.file_lock",
         "codey.storage.local_store",
-        "codey.ghost.event_log",
+        "codey.ghost.events",
     ):
         assert banned not in imports, banned
     text = (ROOT / "codey" / "ghost" / "affinity_model.py").read_text(encoding="utf-8-sig")

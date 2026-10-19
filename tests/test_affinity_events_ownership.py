@@ -108,7 +108,7 @@ def test_store_calls_events_owner_with_real_function() -> None:
     from codey.ghost import affinity_events as events
 
     assert store_module.replay_affinity_events is events.replay_affinity_events
-    src = inspect.getsource(store_module.GhostAffinityStore._load_state_for_read_unlocked)
+    src = inspect.getsource(store_module.GhostAffinityStore.sync_from_sources)
     assert "replay_affinity_events" in src
 
 

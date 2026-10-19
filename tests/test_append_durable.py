@@ -34,21 +34,6 @@ class AppendDurableTests(unittest.TestCase):
                 writer.append("info", text="hello")
             self.assertTrue(durable.called)
 
-    def test_ghost_event_log_uses_durable_append(self) -> None:
-        from codey.ghost.event_log import GhostEventLog
-
-        with tempfile.TemporaryDirectory() as td:
-            log = GhostEventLog(
-                Path(td) / "events.jsonl",
-                source_name="test",
-                schema_version=1,
-            )
-            with mock.patch(
-                "codey.storage.atomic_io.append_bytes_durable",
-                wraps=append_bytes_durable,
-            ) as durable:
-                self.assertTrue(log.append([{"schema_version": 1}]))
-            self.assertTrue(durable.called)
 
 
 

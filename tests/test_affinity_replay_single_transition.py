@@ -194,21 +194,22 @@ def test_duplicate_source_does_not_reinforce_twice() -> None:
     assert nodes_once[0].weight == nodes_twice[0].weight
 
 
-def test_single_read_with_events_performs_single_full_replay() -> None:
+def test_sqlite_read_does_not_replay_the_event_history() -> None:
     import tempfile
     from unittest import mock
 
     from codey.ghost import affinity as store_module
     from codey.ghost.affinity import GhostAffinityStore
     from codey.ghost.affinity_events import _node_reinforced_event
+    from tests.ghost_fixtures import seed_events
 
     now = "2999-01-01T00:00:00Z"
     with tempfile.TemporaryDirectory() as td:
         store = GhostAffinityStore(td)
-        store._event_log().write_atomic([_node_reinforced_event(_node_spec("solo"), ts=now)])
+        seed_events(store, [_node_reinforced_event(_node_spec("solo"), ts=now)])
         with mock.patch.object(
             store_module, "replay_affinity_events", wraps=store_module.replay_affinity_events
         ) as spy:
             nodes = store.list_nodes()
             assert [n.key for n in nodes] == ["solo"]
-            assert spy.call_count == 1
+            assert spy.call_count == 0

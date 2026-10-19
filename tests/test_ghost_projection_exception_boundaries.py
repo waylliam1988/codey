@@ -32,7 +32,7 @@ def test_ghost_experiences_still_fails_closed_for_corrupt_observation_storage() 
     state = SimpleNamespace(
         ghost_inbox=SimpleNamespace(learning_enabled=lambda: True),
         ghost_observations=SimpleNamespace(
-            read_committed=mock.Mock(side_effect=OSError("observations unavailable")),
+            retrieve=mock.Mock(side_effect=OSError("observations unavailable")),
         ),
     )
     assert ghost_context.ghost_experiences(state, session_id="s", query="hello") == ""
