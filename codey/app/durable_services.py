@@ -34,11 +34,19 @@ class DurableAppServices:
         dispatch: Callable[[TaskCheckpoint], bool],
         start: bool = True,
     ) -> DurableAppServices:
-        session = DurableSession(
-            SQLiteDurableStore(database_path),
-            on_commit=publish,
-        )
+        session = DurableSession(SQLiteDurableStore(database_path))
         scheduler = DurableTaskScheduler(session, dispatch)
+        def observe(result: CommitResult, mutation: DurableMutation) -> None:
+            del result
+            if (
+                mutation.task is not None
+                and any(key in mutation.task.state for key in ("input_identity", "resume_input", "workflow_origin"))
+            ):
+                scheduler.notify(mutation.task.task_id)
+
+        session.observe_commits(observe)
+        if publish is not None:
+            session.subscribe_commits(publish)
         services = cls(session, scheduler)
         if start:
             scheduler.start()

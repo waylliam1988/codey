@@ -16,3 +16,11 @@ class SchemaVersionError(DurableStoreError):
 
 class SessionSealedError(DurableStoreError):
     """The open session can no longer accept writes after a storage failure."""
+
+
+class SessionFailedError(SessionSealedError):
+    """The session failed after a durable commit or internal adoption error."""
+
+    def __init__(self, cause: BaseException) -> None:
+        super().__init__("durable session failed; close and reopen it")
+        self.cause = cause

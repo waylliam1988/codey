@@ -455,3 +455,47 @@ compileall passed
 
 本段结论：runtime durable-only cutover 已有代码和聚焦测试证据，旧写入路径不再可由生产构造器选择；下一段应处理 Session failure/sealing/close contract 与内部 publication 失败语义。
 
+## 10. 第七段：Session failure、publication 与 close contract
+
+### 10.1 Pi 对照结论
+
+Pi Session 把 commit 后的内部 adoption 与外部 projection 分开：内部 observer 失败会使 Session 进入 `SessionFailed`，外部 listener 失败只报告；close 先封 admission、通知 close listeners，再等待已接纳工作和 storage 收尾。失败后的后续调用在到达 backend 前就拒绝，必须 close/reopen 后从 durable facts 恢复。
+
+### 10.2 Codey 已补齐
+
+- `DurableSession` 增加 `observe_commits()`、`subscribe_commits()`、`subscribe_close()` 三个明确入口。
+- internal observer 在 durable commit 已成功后抛错，会记录 failure cause、封存 Session、通知 close listeners，并让当前调用抛出原始错误；后续调用抛 `SessionFailedError`。
+- external projection listener 的错误只记录，不改变 durable commit 或 Session 健康状态。
+- mutation line 的所有读写入口统一经过 usable check；close listener 触发前 admission 已封锁，重复 close 不会重复通知。
+- `DurableAppServices` 把 scheduler notification 接到 internal observer，把 SSE/UI publish 留在 external subscriber，避免 scheduler adoption 失败被当成普通投影错误吞掉。
+- SQLite task validation 的 ownership-cycle 和 existing-task CAS 检查拆成纯 helper，保持 transaction owner 不变并消除 ruff complexity 告警。
+
+### 10.3 红测与验证
+
+新增 `tests/durable/test_session_lifecycle_contract.py`，先锁定三种行为再实现：
+
+1. internal adoption failure 后 durable task 已提交但 Session failed；
+2. external projection failure 不封存 Session；
+3. close 先封 admission、close listener 只运行一次。
+
+本段聚焦结果：
+
+```text
+147 passed, 399 subtests passed
+```
+
+局部类型与 lint：
+
+```text
+mypy     Success: no issues found in 58 source files
+pyrefly  0 errors
+ty       All checks passed
+ruff     All checks passed
+```
+
+### 10.4 尚未完成
+
+当前 close 仍是同步轻量实现，SQLite backend 每次操作临时连接，因此没有 Pi `GuardedStorage` 那种“等待所有 underway backend calls 再关闭”的异步等待集合；这需要在后续 storage/ownership 阶段单独补测试。多进程同一 durable DB 的 open fencing 也尚未解决。
+
+本段结论：Codey 已达到 Pi 的 failure latch、internal/external publication 分层和 close admission 语义；storage underway drain 与跨进程 ownership 仍是 durable 内核差距。
+

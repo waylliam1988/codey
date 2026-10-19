@@ -528,12 +528,13 @@ def test_approval_claim_failure_leaves_authorization_and_effect_untouched(
     monkeypatch.setattr(session.store, "commit", lambda _mutation: (_ for _ in ()).throw(OSError("disk full")))
     with pytest.raises(OSError, match="disk full"):
         session.claim_approval_and_begin_effect("approval-rollback", effect)
-    assert session.approval("approval-rollback").status == ApprovalStatus.APPROVED
-    assert session.task("task-1") == before_task
+    reopened = DurableSession(session.store)
+    assert reopened.approval("approval-rollback").status == ApprovalStatus.APPROVED
+    assert reopened.task("task-1") == before_task
     with pytest.raises(KeyError):
-        session.effect("shell-effect-rollback")
-    assert session.commit_sequence() == before_seq
-    session.close()
+        reopened.effect("shell-effect-rollback")
+    assert reopened.commit_sequence() == before_seq
+    reopened.close()
 
 
 def test_claimed_shell_effect_is_marked_unknown_after_restart(tmp_path: Path) -> None:

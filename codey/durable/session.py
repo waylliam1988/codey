@@ -13,7 +13,12 @@ from typing import TypeVar, cast
 from codey.durable import admission, conversation_ops
 from codey.durable.context import ContextSnapshot
 from codey.durable.effects import interrupted_effect
-from codey.durable.errors import CommitConflict, IdempotencyConflict, SessionSealedError
+from codey.durable.errors import (
+    CommitConflict,
+    IdempotencyConflict,
+    SessionFailedError,
+    SessionSealedError,
+)
 from codey.durable.model import (
     EXECUTION_STATE_KEYS,
     ApprovalRecord,
@@ -53,6 +58,7 @@ def _mutation_line(method: Callable[..., _T]) -> Callable[..., _T]:
     @wraps(method)
     def run(self: DurableSession, *args: object, **kwargs: object) -> _T:
         with self._write_lock:
+            self._ensure_usable()
             return method(self, *args, **kwargs)
 
     return cast(Callable[..., _T], run)
@@ -76,6 +82,11 @@ class DurableSession:
         self._write_lock = threading.RLock()
         self._sealed = False
         self._closed = False
+        self._failure: BaseException | None = None
+        self._internal_listeners: list[Callable[[CommitResult, DurableMutation], None]] = []
+        self._commit_listeners: list[Callable[[CommitResult, DurableMutation], None]] = []
+        self._close_listeners: list[Callable[[], None]] = []
+        self._close_notified = False
         self._owner_id = f"owner-{uuid.uuid4().hex}"
         self._execution: ContextVar[tuple[str, str] | None] = ContextVar("durable_execution", default=None)
 
@@ -100,8 +111,8 @@ class DurableSession:
             return result
         except (CommitConflict, IdempotencyConflict, KeyError, TypeError, ValueError):
             raise
-        except Exception:
-            self._sealed = True
+        except Exception as exc:
+            self._fail(exc)
             raise
 
     def _materialize_approval(self, mutation: DurableMutation) -> DurableMutation:
@@ -177,12 +188,23 @@ class DurableSession:
         return replace(mutation, task=proposed, approval=None, expected_approval_status=None)
 
     def _ensure_writable(self) -> None:
+        self._ensure_usable()
+
+    def _ensure_usable(self) -> None:
+        if self._failure is not None:
+            raise SessionFailedError(self._failure) from self._failure
         if self._sealed:
             raise SessionSealedError(
                 "durable session is sealed after a storage failure; reopen it"
             )
         if self._closed:
             raise SessionSealedError("durable session is closed; reopen it")
+
+    def _fail(self, error: BaseException) -> None:
+        if self._failure is None:
+            self._failure = error
+            self._sealed = True
+            self._notify_close()
 
     @_mutation_line
     def transact_task(
@@ -223,14 +245,78 @@ class DurableSession:
             self._execution.reset(binding)
 
     def _publish_commit(self, result: CommitResult, mutation: DurableMutation) -> None:
-        callback = self._on_commit
-        if callback is not None and result.record is not None:
+        if result.record is None:
+            return
+        listeners = list(self._internal_listeners)
+        for listener in listeners:
             try:
-                callback(result, mutation)
+                listener(result, mutation)
+            except Exception as exc:
+                self._fail(exc)
+                raise
+        external = list(self._commit_listeners)
+        callback = self._on_commit
+        if callback is not None:
+            external.insert(0, callback)
+        for listener in external:
+            try:
+                listener(result, mutation)
             except Exception:
-                # Publication is a projection. A listener failure cannot
-                # make an already committed durable mutation appear failed.
+                # External publication is a projection. A listener failure
+                # cannot make an already committed durable mutation fail.
                 logger.exception("durable commit publication failed")
+
+    def observe_commits(
+        self, listener: Callable[[CommitResult, DurableMutation], None]
+    ) -> Callable[[], None]:
+        with self._write_lock:
+            self._ensure_usable()
+            self._internal_listeners.append(listener)
+
+        def unsubscribe() -> None:
+            with self._write_lock:
+                if listener in self._internal_listeners:
+                    self._internal_listeners.remove(listener)
+
+        return unsubscribe
+
+    def subscribe_commits(
+        self, listener: Callable[[CommitResult, DurableMutation], None]
+    ) -> Callable[[], None]:
+        with self._write_lock:
+            self._ensure_usable()
+            self._commit_listeners.append(listener)
+
+        def unsubscribe() -> None:
+            with self._write_lock:
+                if listener in self._commit_listeners:
+                    self._commit_listeners.remove(listener)
+
+        return unsubscribe
+
+    def subscribe_close(self, listener: Callable[[], None]) -> Callable[[], None]:
+        with self._write_lock:
+            self._ensure_usable()
+            self._close_listeners.append(listener)
+
+        def unsubscribe() -> None:
+            with self._write_lock:
+                if listener in self._close_listeners:
+                    self._close_listeners.remove(listener)
+
+        return unsubscribe
+
+    def _notify_close(self) -> None:
+        if self._close_notified:
+            return
+        self._close_notified = True
+        listeners = list(self._close_listeners)
+        self._close_listeners.clear()
+        for listener in listeners:
+            try:
+                listener()
+            except Exception:
+                logger.exception("durable session close listener failed")
 
     @_mutation_line
     def create_conversation(self, conversation_id: str) -> None:
@@ -240,8 +326,8 @@ class DurableSession:
                 self.store.create_conversation(conversation_id)
             except (CommitConflict, KeyError, TypeError, ValueError):
                 raise
-            except Exception:
-                self._sealed = True
+            except Exception as exc:
+                self._fail(exc)
                 raise
 
     @_mutation_line
@@ -1234,15 +1320,17 @@ class DurableSession:
             expected_status=existing.status,
         )
 
-    @_mutation_line
     def close(self) -> None:
         with self._write_lock:
             if self._closed:
                 return
+            self._closed = True
+            self._notify_close()
             try:
                 self.store.close()
-            finally:
-                self._closed = True
+            except Exception as exc:
+                self._fail(exc)
+                raise
 
     @_mutation_line
     def commit_sequence(self) -> int:

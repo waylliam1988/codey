@@ -2356,7 +2356,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # mutation owner.  This is the one explicit durable mutation
             # facade; splitting it into repositories would duplicate the
             # transaction boundary and make ownership less visible.
-            "durable/session.py": 1370,
+            # Session failure latch, internal/external commit observers, and
+            # close listeners are part of the same mutation-line contract.
+            "durable/session.py": 1460,
             # LF/CRLF line-boundary note (was a one-line overclaim).
             # PLR split 2026-09-26: 1381 lines after search_files scan split.
             "toolchain/runtime.py": 1440,

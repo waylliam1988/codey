@@ -209,13 +209,6 @@ class AppContext(GhostStoreAccessors):
                 self._deferred_durable_events.append(payload)
             else:
                 self.emit(payload)
-        scheduler = getattr(self, "durable_scheduler", None)
-        if (
-            scheduler is not None
-            and mutation.task is not None
-            and any(key in mutation.task.state for key in ("input_identity", "resume_input", "workflow_origin"))
-        ):
-            scheduler.notify(mutation.task.task_id)
 
     def _flush_deferred_durable_events(self) -> None:
         while True:

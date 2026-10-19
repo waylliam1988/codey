@@ -1,7 +1,12 @@
 """Durable conversation primitives with atomic append and submission admission."""
 
 from codey.durable.context import ContextSnapshot, build_context
-from codey.durable.errors import CommitConflict, IdempotencyConflict, SessionSealedError
+from codey.durable.errors import (
+    CommitConflict,
+    IdempotencyConflict,
+    SessionFailedError,
+    SessionSealedError,
+)
 from codey.durable.memory import MemoryDurableStore
 from codey.durable.model import (
     TASK_CHECKPOINT_SCHEMA_VERSION,
@@ -40,6 +45,7 @@ __all__ = [
     "EntryDraft",
     "IdempotencyConflict",
     "SessionSealedError",
+    "SessionFailedError",
     "MemoryDurableStore",
     "SQLiteDurableStore",
     "SubmissionDraft",

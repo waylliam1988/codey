@@ -637,50 +637,67 @@ def _validate_task(
     if row is None and not valid_task_transition(None, task.phase):
         raise CommitConflict("new task must start in accepted or dispatching phase")
     owner_task_id = task.owner_task_id
-    if owner_task_id is not None:
-        if owner_task_id == task.task_id:
-            raise CommitConflict("a task cannot own itself")
-        owner = database.execute("SELECT id FROM tasks WHERE id=?", (owner_task_id,)).fetchone()
-        if owner is None:
-            raise CommitConflict("owner task does not exist")
-        seen: set[str] = {task.task_id}
-        cursor = owner_task_id
-        while cursor not in seen:
-            seen.add(cursor)
-            parent = database.execute("SELECT state FROM tasks WHERE id=?", (cursor,)).fetchone()
-            if parent is None:
-                break
-            raw = json.loads(parent["state"])
-            next_owner = raw.get("owner_task_id") if isinstance(raw, dict) else None
-            if not isinstance(next_owner, str) or not next_owner:
-                break
-            cursor = next_owner
-        if cursor in seen and cursor == task.task_id:
-            raise CommitConflict("task ownership cycle")
+    _validate_task_owner(database, task, owner_task_id)
     if row is not None:
-        previous_state = json.loads(row["state"])
-        if previous_state.get("cancel_requested") and task.phase not in {"cancelled", "failed"}:
-            raise CommitConflict("task cancellation barrier is active")
-        if not valid_execution_attempt(previous_state, TaskStatus(str(row["status"])), task, expected_attempt_token):
-            raise CommitConflict("task execution attempt changed")
-        if task.revision != int(row["revision"]) + 1:
-            raise CommitConflict("task revision changed")
-        if (
-            str(row["conversation_id"]) != task.conversation_id
-            or str(row["submission_id"]) != task.submission_id
-            or str(row["provider_snapshot"]) != _encode(task.provider_snapshot)
-        ):
-            raise CommitConflict("task identity is immutable")
-        if not valid_frozen_task_state(json.loads(row["state"]), task.state):
-            raise CommitConflict("admitted task state is immutable")
-        previous_phase = str(row["phase"])
-        if not valid_task_transition(previous_phase, task.phase):
-            raise CommitConflict(f"invalid task phase transition: {previous_phase} -> {task.phase}")
-        previous_status = TaskStatus(str(row["status"]))
-        if not valid_task_status_transition(previous_status, TaskStatus(str(task.status))):
-            raise CommitConflict(f"invalid task status transition: {previous_status} -> {task.status}")
+        _validate_existing_task(row, task, expected_attempt_token)
     elif not valid_task_status_transition(None, TaskStatus(str(task.status))):
         raise CommitConflict("new task must start with a non-terminal scheduler status")
+
+
+def _validate_task_owner(
+    database: sqlite3.Connection,
+    task: TaskCheckpoint,
+    owner_task_id: str | None,
+) -> None:
+    if owner_task_id is None:
+        return
+    if owner_task_id == task.task_id:
+        raise CommitConflict("a task cannot own itself")
+    owner = database.execute("SELECT id FROM tasks WHERE id=?", (owner_task_id,)).fetchone()
+    if owner is None:
+        raise CommitConflict("owner task does not exist")
+    seen: set[str] = {task.task_id}
+    cursor = owner_task_id
+    while cursor not in seen:
+        seen.add(cursor)
+        parent = database.execute("SELECT state FROM tasks WHERE id=?", (cursor,)).fetchone()
+        if parent is None:
+            break
+        raw = json.loads(parent["state"])
+        next_owner = raw.get("owner_task_id") if isinstance(raw, dict) else None
+        if not isinstance(next_owner, str) or not next_owner:
+            break
+        cursor = next_owner
+    if cursor in seen and cursor == task.task_id:
+        raise CommitConflict("task ownership cycle")
+
+
+def _validate_existing_task(
+    row: sqlite3.Row,
+    task: TaskCheckpoint,
+    expected_attempt_token: str | None,
+) -> None:
+    previous_state = json.loads(row["state"])
+    if previous_state.get("cancel_requested") and task.phase not in {"cancelled", "failed"}:
+        raise CommitConflict("task cancellation barrier is active")
+    if not valid_execution_attempt(previous_state, TaskStatus(str(row["status"])), task, expected_attempt_token):
+        raise CommitConflict("task execution attempt changed")
+    if task.revision != int(row["revision"]) + 1:
+        raise CommitConflict("task revision changed")
+    if (
+        str(row["conversation_id"]) != task.conversation_id
+        or str(row["submission_id"]) != task.submission_id
+        or str(row["provider_snapshot"]) != _encode(task.provider_snapshot)
+    ):
+        raise CommitConflict("task identity is immutable")
+    if not valid_frozen_task_state(json.loads(row["state"]), task.state):
+        raise CommitConflict("admitted task state is immutable")
+    previous_phase = str(row["phase"])
+    if not valid_task_transition(previous_phase, task.phase):
+        raise CommitConflict(f"invalid task phase transition: {previous_phase} -> {task.phase}")
+    previous_status = TaskStatus(str(row["status"]))
+    if not valid_task_status_transition(previous_status, TaskStatus(str(task.status))):
+        raise CommitConflict(f"invalid task status transition: {previous_status} -> {task.status}")
 
 
 def _validate_effect(database: sqlite3.Connection, mutation: DurableMutation) -> None:
