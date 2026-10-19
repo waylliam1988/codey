@@ -34,6 +34,7 @@ from codey.app.ghost_services import GhostStoreAccessors, GhostStores
 from codey.app.knowledge_indexer import KnowledgeIndexer
 from codey.app.provider_registry import ProviderRegistry
 from codey.app.run_registry import RunRegistry, RunSnapshot
+from codey.app.runtime_adapters import DurableRuntimeAdapters
 from codey.durable.model import (
     CommitResult,
     DurableMutation,
@@ -46,11 +47,7 @@ from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.trace import RunTraceStore
 from codey.runs.work_checkpoint import WorkCheckpointStore
-from codey.runtime.core.operation_state import RuntimeOperationStore
-from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact, ShellApprovalRecordStore
-from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.storage.managed_outputs import ManagedOutputStore
@@ -151,17 +148,20 @@ class AppContext(GhostStoreAccessors):
         self.conversation_runtime = ConversationRuntime(
             runtime_state_home, self.emit, durable=self.durable
         )
-        # Runtime lifecycle projections are durable-backed adapters.  The
-        # standalone JSONL session log remains available to isolated kernel
-        # callers, but AppContext never constructs it or lets it participate
-        # in production recovery.
-        self.runtime_mutations = RuntimeMutationLine(durable=self.durable)
+        # Runtime lifecycle projections share one explicit durable owner.  The
+        # standalone JSONL session log remains available only to isolated
+        # audit/debug callers; AppContext never constructs it or recovers from
+        # it.
+        self.runtime_adapters = DurableRuntimeAdapters.open(self.durable)
+        # These aliases keep the existing TaskState protocol surface while
+        # pointing at the one explicit adapter owner above.
+        self.runtime_mutations = self.runtime_adapters.mutations
+        self.runtime_operations = self.runtime_adapters.operations
+        self.runtime_effects = self.runtime_adapters.effects
+        self.tool_result_delivery = self.runtime_adapters.delivery
         self.input_queue = self.conversation_runtime.inputs
         self.user_questions = self.conversation_runtime.questions
         self.execution_outputs = ExecutionOutputStore(runtime_state_home)
-        self.runtime_operations = RuntimeOperationStore(durable=self.durable)
-        self.runtime_effects = RuntimeEffectStore(durable=self.durable)
-        self.tool_result_delivery = ToolResultDeliveryStore(durable=self.durable)
         self.shell_approval_records = ShellApprovalRecordStore(runtime_state_home)
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
@@ -342,8 +342,8 @@ class AppContext(GhostStoreAccessors):
             managed_outputs=self.managed_outputs,
             execution_outputs=self.execution_outputs,
             knowledge_store=self.knowledge_store,
-            runtime_mutations=self.runtime_mutations,
-            runtime_effects=self.runtime_effects,
+            runtime_mutations=self.runtime_adapters.mutations,
+            runtime_effects=self.runtime_adapters.effects,
         )
 
     @property

@@ -1,6 +1,9 @@
-"""Append-only runtime session log.
+"""Isolated append-only runtime audit log.
 
-The log records bounded facts and references about runtime operations.  It does
+The production runtime does not construct or recover from this JSONL adapter.
+It remains available for isolated audit/debug tools and legacy experiments. The
+durable session/checkpoint/effect tables are the only production facts.
+This log records bounded facts and references about runtime operations. It does
 not persist raw prompts, model replies, command output, or diffs.
 """
 

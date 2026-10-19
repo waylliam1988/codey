@@ -1478,4 +1478,42 @@ Codey 现在在输入队列的 snapshot/history 可重建性上达到 Pi durable
 
 最后一个大块仍待完成：清理 Runtime JSONL 的生产接线、收拢 AppContext 的生命周期边界、删除死代码和重复 wiring，并对 DurableSession/SQLiteDurableStore 做有证据的模块卫生审查；这些完成后再统一更新最终的 Pi 对照结论。
 
+## 44. 第四十段：Runtime JSONL 隔离、AppContext 边界与结构卫生
+
+本段完成最后一个大块的生产边界收敛。Runtime JSONL 没有被删除，因为它仍可作为隔离的审计/debug 适配器供旧实验和专门测试使用；但生产代码不再构造它，也不从它恢复任务、effect 或提交状态。
+
+### 44.1 已完成
+
+- 新增显式的 `DurableRuntimeAdapters`，由 `AppContext` 一次性用同一个 `DurableSession` 构造 mutation line、operation/effect/delivery projection；旧属性只是协议兼容别名，不是第二个事实 owner；
+- `AppContext.build_task_submission_stores()` 直接使用该 adapter owner，runtime JSONL 不参与任务恢复；
+- `RuntimeSessionLog` 文档明确降级为 isolated audit/debug adapter，生产路径没有 `RuntimeSessionLog` import 或构造；架构测试锁定这一边界；
+- UI 状态回归测试确认 transcript/message 内容不会写入 `ui-state.json`，UI 仍只能通过 durable conversation projection 读取历史；
+- 迁移一个不适应 sealed-session 语义的故障测试：提交失败后先关闭并重新打开 durable session，再验证 effect/checkpoint 没有改变；测试不再要求主代码保留失败后继续读的旧行为；
+- 架构长文件护栏纳入当前确实超过 1000 行且职责仍连贯的 `durable/sqlite.py`、`operations/task_loop.py`，并提高 `DurableSession` 的实测 ceiling；没有引入通用 ServiceContainer、repository 或无语义拆分；
+- `SCHEMA_VERSION = 1` 保持不变，未加入 migration、旧库删除或 fallback 写入路径。
+
+### 44.2 与 Pi 的结果
+
+Codey 现在在生产事实 owner、JSONL 恢复隔离、UI projection 边界和提交失败后的 reopen 语义上达到或超过 Pi durable 的工程要求，并额外保留权限/审批、provider snapshot、未知 effect fail-closed、completion proof、verification 和 Research ledger。AppContext 的 runtime 组装边界已经可以单独阅读和测试，旧 runtime fallback 不再隐藏在 facade 中。
+
+仍不能宣称全面超过 Pi 的地方：
+
+- `DurableSession` 和 `SQLiteDurableStore` 仍然是较大的明确 owner；它们有长文件护栏，但尚未完成能保持事务语义的更深语义拆分；
+- evidence/project/research provider sink 尚未全部统一到 deferred generation settlement；
+- 尚未运行全量 pytest，也没有完成长期并发 soak/chaos 测试；本轮只运行了相关 durable、架构、故障注入和类型/静态检查；
+- CodeMode 的写沙箱与跨执行 store/load 仍未开放，旧 RuntimeSessionLog 文件也仍存在于隔离工具和测试中。
+
+### 44.3 本段验证
+
+```text
+runtime boundary / legacy fallback / transaction-owner / architecture：19 passed
+mypy：Success: no issues found
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+这五个大块完成后，Codey 的事实路径可以从 input admission、task checkpoint、effect intent/settlement、generation boundary、finalization queue、InboxDoc 和 recovery 一路追到 durable commit；UI、JSONL、trace 和 Research ledger 都没有恢复解释权。相对 Pi，Codey 在安全执行和验证边界上更强；相对 Pi 内核，长程并发 soak、全部 provider sink 收敛和更细粒度模块拆分仍是后续可量化的工作，而不是已经完成的保证。
+
 

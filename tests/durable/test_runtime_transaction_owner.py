@@ -66,10 +66,14 @@ def test_runtime_settlement_failure_leaves_effect_and_reducer_pending(tmp_path, 
     with pytest.raises(OSError, match="injected"):
         line.settle_provider_effect("s", "r", RuntimeEffectSettlement(
             "p1", "provider_send", "s", "r", "ok", sent_state="settled"))
-    assert durable.task("r") == before
-    assert durable.effect("p1").settlement is None
-    assert not (tmp_path / "runtime" / "sessions").exists()
+    # A failed durable commit seals the session. Recovery must reopen the
+    # database before inspecting the unchanged facts.
     durable.close()
+    reopened = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    assert reopened.task("r") == before
+    assert reopened.effect("p1").settlement is None
+    assert not (tmp_path / "runtime" / "sessions").exists()
+    reopened.close()
 
 
 def test_kernel_tool_settlement_and_delivery_ack_are_single_commits(tmp_path, monkeypatch):
