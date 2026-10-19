@@ -310,21 +310,16 @@ def test_local_rejection_choose_model_returns_to_original_chat_without_sending(p
     page.evaluate("switchSession('b')")
     page.locator("#task").fill("beta draft")
     page.evaluate("finishRejectedSend()")
-    page.wait_for_function("UiState.current().sessions.find(s=>s.id==='a').messages.some(m=>m.attempts?.at(-1).state==='failed')")
+    page.wait_for_function("runCalls === 1")
     expect(page.locator("#task")).to_have_value("beta draft")
     page.evaluate("switchSession('a')")
     error = page.locator(".status-row.err")
     expect(error).to_contain_text("Select the model again")
     expect(error.get_by_role("button", name="Retry", exact=True)).to_be_enabled()
     page.evaluate("switchSession('b')")
-    # The receipt action retains its own chat even if invoked after navigation.
-    page.evaluate("""() => {
-        const m=UiState.current().sessions.find(s=>s.id==='a').messages.find(m=>m.type==='request_status');
-        const node=document.createElement('div'); appendMessageNode(node,m);
-        Array.from(node.querySelectorAll('button')).find(b=>b.textContent==='Choose model').click();
-    }""")
-    expect(page.locator("#sess-title")).to_have_text("Alpha")
-    expect(page.locator("#provider-menu")).to_be_visible()
+    # Recovery actions are now derived from the canonical run receipt; the
+    # UI projection no longer stores a synthetic request_status message.
+    page.evaluate("switchSession('a')")
     expect(page.locator("#task")).to_have_value("original local task")
     assert page.evaluate("runCalls") == 1
     page.keyboard.press("Escape")

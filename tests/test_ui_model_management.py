@@ -157,8 +157,10 @@ def test_actual_model_names_and_new_catalog_entries_do_not_change_allowlist(page
 
 def test_removing_optional_source_removes_ui_without_rewriting_old_chat(page, models):
     page.evaluate("""() => {
-      const s=UiState.current().sessions.find(s=>s.id==='a');
+      const state = UiState.current();
+      const s=state.sessions.find(s=>s.id==='a');
       s.provider='partner';s.modelSelection={connection_id:'partner',model:'chosen-model',name:'Chosen model',efforts:{}};
+      UiState.apply(state);
       Composer.syncSession();ProviderUI.sync('partner');
     }""")
     page.locator("#task").fill("old draft")

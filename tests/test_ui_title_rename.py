@@ -198,6 +198,8 @@ def test_only_chat_breadcrumb_is_editable_and_title_fits_narrow_window(page):
         const state=UiState.current();
         state.projects.push({id:'project',name:'Project name',path:'E:/project',expanded:true});
         state.sessions[0].projectId='project'; renderSidebar(); renderChat();
+        UiState.apply(state);
+        renderSidebar(); renderChat();
     }""")
     page.locator(".crumb-proj").click()
     expect(page.get_by_role("textbox", name="Chat title", exact=True)).to_have_count(0)
@@ -289,7 +291,7 @@ def test_rename_preserves_message_dom_selection_and_reading_offset(page):
 
 
 def test_first_message_does_not_replace_active_or_confirmed_custom_title(page):
-    page.evaluate("UiState.current().sessions[0].title='New chat'; renderSidebar(); renderChat();")
+    page.evaluate("const state=UiState.current(); state.sessions[0].title='New chat'; UiState.apply(state); renderSidebar(); renderChat();")
     editor = start_rename(page)
     editor.fill("My chosen name")
     page.evaluate("addToSession('a',{type:'user',text:'Automatic title source'})")

@@ -8,6 +8,7 @@ import pytest
 from playwright.sync_api import expect
 
 from codey.app.api import run_submit_response
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.storage.ui_state_store import UiStateStore
 from tests import test_ui_workflow as workflow
 
@@ -151,7 +152,10 @@ def test_attempt_identity_is_known_before_the_http_response(page):
     calls, state = backend(page)
     run_id = send(page, calls)
     assert re.fullmatch(r"run_[a-f0-9]{32}", run_id)
-    request = page.evaluate("UiState.current().sessions.find(s => s.id === 'a').messages.find(m => m.type === 'user')")
+    # UiState is the durable UI metadata snapshot and deliberately has no
+    # conversation messages.  The live message projection is owned by the
+    # conversation runtime until the canonical history endpoint is refreshed.
+    request = page.evaluate("sessions.find(s => s.id === activeId)?.messages.find(m => m.type === 'user')")
     assert request["id"]
     assert request["attempts"][0]["runId"] == run_id
 
@@ -162,8 +166,23 @@ def test_attempt_recovery_fields_survive_storage(tmp_path):
                "sendFailure": "model_selection", "runOwner": "b", "warning": "Local update paused"}
     messages = [{"type": "user", "id": "message-1", "text": "original", "attempts": [attempt]},
                 {"type": "request_status", "requestId": "message-1", "sessionId": "a"}]
-    store.save({"active_id": "a", "sessions": [{"id": "a", "messages": messages}], "projects": []}, base_revision=0)
-    assert store.load()["sessions"][0]["messages"] == messages
+    store.save({"active_id": "a", "sessions": [{"id": "a"}], "projects": []}, base_revision=0)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    try:
+        durable.create_conversation("a")
+        user = durable.append_message("a", "user_message", messages[0])
+        durable.append_message("a", "display_message", {**messages[1], "requestId": user.entry_id})
+    finally:
+        durable.close()
+    reopened = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    try:
+        user, status = reopened.history_page("a")["items"]
+        assert user["text"] == "original"
+        assert user["attempts"] == [attempt]
+        assert status["requestId"] == user["id"]
+        assert "messages" not in UiStateStore(tmp_path).load()["sessions"][0]
+    finally:
+        reopened.close()
 
 
 def test_run_admission_preserves_the_client_attempt_identity():
@@ -241,19 +260,26 @@ def test_terminal_event_before_ack_is_not_revived_and_double_retry_is_blocked(pa
 
 
 @pytest.mark.parametrize("restored", ["failed", "running", "missing"])
-def test_restored_request_recovers_in_place(page, tmp_path, restored):
+def test_restored_request_recovers_in_place(page, tmp_path, restored, request):
     run_id = "run_" + "c" * 32
     messages = [{"type": "user", "id": "restored", "text": "original", "attempts": [
         {"runId": run_id, "state": "failed" if restored == "failed" else "running", "error": "Original failure"}]},
         {"type": "request_status", "sessionId": "a", "requestId": "restored"}]
     store = UiStateStore(tmp_path)
-    store.save({"active_id": "a", "sessions": [{"id": "a", "provider": "deepseek", "messages": messages}], "projects": []}, base_revision=0)
+    store.save({"active_id": "a", "sessions": [{"id": "a", "provider": "deepseek"}], "projects": []}, base_revision=0)
     saved = store.load()
     page.route("**/api/ui_state", lambda route: route.fulfill(json={"ok": True, "state": saved}))
+    durable = page.codey_context.durable
+    durable.create_conversation("a")
+    request.addfinalizer(lambda: durable.delete_conversation("a"))
+    user = durable.append_message("a", "user_message", messages[0])
+    durable.append_message("a", "display_message", {**messages[1], "requestId": user.entry_id})
     calls, state = backend(page)
     state.update(busy=restored == "running", run_id=run_id, session_id="a")
     page.reload()
-    page.wait_for_function("UiState.current().sessions[0].messages.length === 2")
+    page.wait_for_function("sessions.find(s => s.id === activeId)?.messages.length === 2")
+    assert page.evaluate("sessions.find(s => s.id === activeId).messages[0].entryId") == user.entry_id
+    assert "messages" not in page.evaluate("UiState.current().sessions[0]")
     page.evaluate("Sse.reconcileRunState()")
     expect(page.locator(".msg.user")).to_have_count(1)
     if restored == "running":
@@ -331,8 +357,20 @@ def test_prior_attempt_still_releases_global_busy_state_after_retry_admission_re
 def test_continuation_model_recovery_also_survives_storage(tmp_path):
     store = UiStateStore(tmp_path)
     message = {"type": "err", "text": "Select the model again", "sessionId": "a", "sendFailure": "model_selection", "runOwner": ""}
-    store.save({"active_id": "a", "sessions": [{"id": "a", "messages": [message]}], "projects": []}, base_revision=0)
-    assert store.load()["sessions"][0]["messages"] == [message]
+    store.save({"active_id": "a", "sessions": [{"id": "a"}], "projects": []}, base_revision=0)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    try:
+        durable.create_conversation("a")
+        durable.append_message("a", "display_message", message)
+    finally:
+        durable.close()
+    reopened = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    try:
+        restored, = reopened.history_page("a")["items"]
+        assert {key: restored[key] for key in message} == message
+        assert "messages" not in UiStateStore(tmp_path).load()["sessions"][0]
+    finally:
+        reopened.close()
 
 
 def test_orphan_local_update_warnings_are_folded_without_pause_spam(page):

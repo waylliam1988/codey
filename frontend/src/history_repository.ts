@@ -13,6 +13,7 @@ export interface HistoryResult {
   hasMore: boolean;
   cursor: string | null;
   epoch: string;
+  revision: number;
 }
 
 export class HistoryRepository {
@@ -21,26 +22,35 @@ export class HistoryRepository {
   private page: HistoryResult | null = null;
   private loading = false;
 
+  get current(): HistoryResult | null {
+    return this.page;
+  }
+
+  invalidate(): void {
+    this.generation++;
+    this.page = null;
+    this.loading = false;
+  }
+
   switchSession(sessionId: string): void {
     if (this.session !== sessionId) {
       this.session = sessionId;
-      this.generation++;
-      this.page = null;
-      this.loading = false;
+      this.invalidate();
     }
   }
 
-  async loadLatest(sessionId: string): Promise<HistoryResult> {
+  async loadLatest(sessionId: string): Promise<HistoryResult | null> {
     this.switchSession(sessionId);
-    const generation = this.generation;
+    const generation = ++this.generation;
+    this.loading = false;
     const page = await this.fetchPage(sessionId, '');
-    if (generation !== this.generation || this.session !== sessionId)
-      return this.page || { items: [], hasMore: false, cursor: null, epoch: '' };
+    if (generation !== this.generation || this.session !== sessionId) return null;
     this.page = {
       items: dedupe(page.items),
       hasMore: page.has_more,
       cursor: page.before_cursor || null,
       epoch: page.epoch,
+      revision: page.snapshot_revision,
     };
     return this.page;
   }
@@ -49,19 +59,23 @@ export class HistoryRepository {
     if (sessionId !== this.session) return null;
     if (!this.page?.hasMore || !this.page.cursor || this.loading) return this.page;
     const generation = this.generation;
+    const previous = this.page;
     this.loading = true;
     try {
       const page = await this.fetchPage(sessionId, this.page.cursor);
       if (generation !== this.generation || this.session !== sessionId) return null;
+      if (page.epoch !== previous.epoch || page.snapshot_revision !== previous.revision)
+        return await this.loadLatest(sessionId);
       this.page = {
-        items: dedupe([...page.items, ...this.page.items]),
+        items: dedupe([...page.items, ...previous.items]),
         hasMore: page.has_more,
         cursor: page.before_cursor || null,
         epoch: page.epoch,
+        revision: page.snapshot_revision,
       };
       return this.page;
     } finally {
-      this.loading = false;
+      if (generation === this.generation) this.loading = false;
     }
   }
 
@@ -86,8 +100,15 @@ export class HistoryRepository {
       data.schema_version !== 1 ||
       data.session_id !== sessionId ||
       typeof data.epoch !== 'string' ||
+      !data.epoch ||
+      !Number.isSafeInteger(data.snapshot_revision) ||
+      (data.snapshot_revision as number) < 0 ||
       !Array.isArray(data.items) ||
-      typeof data.has_more !== 'boolean'
+      !data.items.every(
+        (item) => item && typeof item === 'object' && typeof item.id === 'string' && item.id.length > 0,
+      ) ||
+      typeof data.has_more !== 'boolean' ||
+      (data.has_more && (typeof data.before_cursor !== 'string' || !data.before_cursor))
     )
       throw new Error('Invalid conversation history response');
     return data as HistoryPage;

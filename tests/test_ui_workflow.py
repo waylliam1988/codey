@@ -5,7 +5,7 @@ import threading
 from io import BytesIO
 from pathlib import Path
 from unittest import mock
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -19,9 +19,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(scope="module")
 def ui_browser(tmp_path_factory):
-    state = server.AppContext(tmp_path_factory.mktemp("ui-workflow") / "state")
+    app_context = server.AppContext(tmp_path_factory.mktemp("ui-workflow") / "state")
     original = server.STATE
-    server.STATE = state
+    server.STATE = app_context
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -34,13 +34,15 @@ def ui_browser(tmp_path_factory):
         httpd.shutdown()
         httpd.server_close()
         thread.join(timeout=2)
-        state.close()
+        app_context.close()
         server.STATE = original
 
 
 @pytest.fixture
 def page(ui_browser):
     browser, url = ui_browser
+    app_context = server.STATE
+    assert app_context is not None
     page = browser.new_page(viewport={"width": 1280, "height": 800})
     boot_errors = []
     page.on("pageerror", lambda error: boot_errors.append(str(error)))
@@ -63,19 +65,39 @@ def page(ui_browser):
     catalog = [{"id": key, "label": label, "available": True} for key, label in
                [("deepseek", "DeepSeek"), ("mimo", "MiMo"), ("stepfun", "StepFun"),
                 ("qwen", "Qwen"), ("glm", "GLM"), ("local", "Local")]]
-    state = {"active_id": "a", "sessions": [
+    ui_state = {"active_id": "a", "sessions": [
         {"id": "a", "title": "Alpha", "provider": "deepseek", "messages": []},
         {"id": "b", "title": "Beta", "provider": "mimo", "messages": []}], "projects": []}
 
     def api(route):
-        path = route.request.url.split("/api/")[-1].split("?")[0]
+        parsed = urlsplit(route.request.url)
+        path = parsed.path.split("/api/")[-1]
         data = {"ok": True}
         if path in {"provider_catalog", "providers"}:
             data = {"providers": catalog, "default": "deepseek"}
         elif path == "model_settings":
             data = model_management_payload()
         elif path == "ui_state" and route.request.method == "GET":
-            data = {"state": state}
+            data = {"state": ui_state}
+        elif path.startswith("sessions/") and path.endswith("/messages"):
+            session_id = path.split("/")[1]
+            query = parse_qs(parsed.query)
+            try:
+                data = app_context.durable.history_page(
+                    session_id,
+                    before=(query.get("before") or [None])[0],
+                    limit=int((query.get("limit") or ["100"])[0]),
+                )
+            except (KeyError, ValueError):
+                data = {
+                    "schema_version": 1,
+                    "session_id": session_id,
+                    "epoch": app_context.durable.database_id,
+                    "snapshot_revision": 0,
+                    "items": [],
+                    "before_cursor": None,
+                    "has_more": False,
+                }
         elif path == "pick_folder":
             data = {"ok": True, "path": "E:/project-alpha", "name": "Project Alpha"}
         route.fulfill(json=data)
@@ -89,11 +111,12 @@ def page(ui_browser):
             page.wait_for_function("UiState.current().active_id === 'a'", polling=100)
         except (AssertionError, PlaywrightTimeoutError) as exc:
             status = page.locator(".status-row").all_text_contents()
-            state = page.evaluate("() => ({active_id: UiState?.current().active_id, "
+            boot_state = page.evaluate("() => ({active_id: UiState?.current().active_id, "
                                   "session_ids: UiState?.current().sessions.map(s => s.id), "
                                   "visibility: document.visibilityState})")
-            raise AssertionError(f"UI boot failed: {boot_errors}; status: {status}; state: {state}") from exc
+            raise AssertionError(f"UI boot failed: {boot_errors}; status: {status}; state: {boot_state}") from exc
         page.wait_for_load_state("networkidle")
+        page.codey_context = app_context
         yield page
     finally:
         page.close()
@@ -313,8 +336,9 @@ def test_saved_effort_selection_remains_per_chat(page, old, expected):
     local = model_settings_route(page)
     apply_model_metadata(page, local)
     page.evaluate("""([local, old]) => {
-        const s=UiState.current().sessions.find(s=>s.id==='a');
-        s.provider='local'; s.modelSelection={connection_id:'local',base_url:local.base_url,model:local.model,effort:old};
+        const s=sessions.find(s=>s.id==='a');
+        s.provider='local'; s.modelSelection={connection_id:'local',base_url:local.base_url,model:local.model,effort:old,efforts:{[local.model]:old}};
+        setActiveProvider('local');
         ProviderUI.sync('local');
     }""", [local,old])
     expect(page.locator("#effort-name")).to_have_text(expected)
@@ -431,7 +455,7 @@ def test_accepted_snapshot_does_not_erase_later_input_or_other_chat(page):
     page.evaluate("switchSession('b')")
     page.locator("#task").fill("beta task")
     page.evaluate("finishSend()")
-    page.wait_for_function("UiState.current().sessions[0].messages.some(m => m.type === 'user')")
+    page.wait_for_function("sessions.find(s => s.id === 'a').messages.some(m => m.type === 'user')")
     expect(page.locator("#task")).to_have_value("beta task")
     page.evaluate("switchSession('a')")
     expect(page.locator("#task")).to_have_value("later edit")

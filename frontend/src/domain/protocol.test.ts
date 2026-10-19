@@ -16,6 +16,12 @@ const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../t
 const fixture = <T>(name: string): T => JSON.parse(readFileSync(resolve(fixtureRoot, name), 'utf8')) as T;
 
 describe('protocol decoders', () => {
+  it('validates durable cursor and entry identities before accepting replay', () => {
+    const event = { type: 'durable_commit', session_id: 'chat', commit_seq: 1, entry_ids: ['entry'] };
+    expect(decodeServerEvent(event)).toEqual(event);
+    for (const change of [{ commit_seq: -1 }, { commit_seq: '1' }, { entry_ids: [null] }, { session_id: '' }])
+      expect(() => decodeServerEvent({ ...event, ...change })).toThrow('durable');
+  });
   it('validates output truncation as a boolean and preserves a true flag', () => {
     expect(() => decodeServerEvent({ type: 'shell_result', truncated: 'false' })).toThrow();
     expect(decodeServerEvent({ type: 'shell_result', truncated: true }).truncated).toBe(true);

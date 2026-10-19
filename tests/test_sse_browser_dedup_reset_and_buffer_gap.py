@@ -11,7 +11,7 @@ from tools.frontend_source import frontend_source
 SOURCE = Path(__file__).resolve().parents[1] / "frontend/src/sse.ts"
 
 
-@pytest.mark.parametrize("scenario", ["dedup_reset", "buffer_gap"])
+@pytest.mark.parametrize("scenario", ["dedup_reset", "composite_cursor", "buffer_gap"])
 def test_browser_cursor_and_reconcile_gap(scenario):
     node = shutil.which("node")
     if node is None:
@@ -24,7 +24,7 @@ const handled = [], applied = [], pending = [], sources = [];
 class EventSource { constructor(url) {this.url=url; sources.push(this);} }
 EventSource.OPEN=1;
 const window = {};
-    const context = vm.createContext({window, EventSource, setTimeout, clearTimeout,
+    const context = vm.createContext({window, EventSource, URLSearchParams, setTimeout, clearTimeout,
       fetch: () => new Promise(resolve => pending.push(resolve)),
       decodeServerEvent: value => value, decodeRunState: value => value});
 vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
@@ -40,6 +40,14 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
     emit(0,{type:'resync_required',cursor:0,reason:'sse_cursor_ahead'});
     emit(1,{type:'tool'}); emit(1,{type:'tool'});
     assert.deepEqual(handled.map(x=>x.type),['tool','resync_required','tool']);
+  } else if (process.argv[2]==='composite_cursor') {
+    emit('9:10',{type:'durable_commit',commit_seq:10});
+    emit('9:10',{type:'durable_commit',commit_seq:10});
+    emit('9:11',{type:'durable_commit',commit_seq:11});
+    emit('8:12',{type:'durable_commit',commit_seq:12});
+    emit('10:11',{type:'tool',commit_seq:11});
+    assert.deepEqual(handled.map(x=>x.type),['durable_commit','durable_commit','durable_commit','tool']);
+    assert.equal(window.Sse.eventKey({event_id:'9:10'}),'sse:9:10');
   } else {
     const first = window.Sse.reconcileRunState();
     for(let i=1;i<=101;i++) emit(i,{type:'tool'});

@@ -11,9 +11,14 @@ export type ProviderStatus = Array<{ id: string; available?: boolean; freshness?
 import type { ChangeFile, ChangeFilePreview, ChangesData, ResearchPayload, RunState } from '../types/domain';
 export type ServerEvent = {
   type: string;
+  commit_seq?: number;
+  database_id?: string;
+  after_commit_seq?: number;
+  entry_ids?: string[];
   event_id?: number | string;
   cursor?: number | string;
   run_id?: string;
+  task_id?: string;
   execution_id?: string;
   session_id?: string;
   status?: string;
@@ -286,9 +291,28 @@ export function decodeServerEvent(value: unknown): ServerEvent {
   if (!isRecord(value) || typeof value.type !== 'string' || value.type.length === 0) {
     throw new Error('server event is invalid');
   }
+  if (
+    value.type === 'hello' &&
+    (typeof value.database_id !== 'string' ||
+      !value.database_id ||
+      !Number.isSafeInteger(value.after_commit_seq) ||
+      (value.after_commit_seq as number) < 0)
+  )
+    throw new Error('durable cursor handshake is invalid');
+  if (
+    value.type === 'durable_commit' &&
+    (typeof value.session_id !== 'string' ||
+      !value.session_id ||
+      !Number.isSafeInteger(value.commit_seq) ||
+      (value.commit_seq as number) <= 0 ||
+      (value.entry_ids !== undefined &&
+        (!Array.isArray(value.entry_ids) || !value.entry_ids.every((id) => typeof id === 'string' && id.length > 0))))
+  )
+    throw new Error('durable commit is invalid');
   const stringFields = [
     'session_id',
     'run_id',
+    'task_id',
     'execution_id',
     'status',
     'text',

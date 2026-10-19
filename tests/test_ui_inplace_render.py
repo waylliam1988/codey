@@ -263,10 +263,15 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                         {type:'turn', n:1, runId:'new'},
                         {type:'tool_pending', kind:'read', path:'two.py', runId:'new', toolKey:'new:1'},
                     ];
-                    const snapshot = rows => ({active_id:sid, projects:[], sessions:[{
-                        id:sid, title:'History', provider:'local', messages:rows, terminalRuns:[]
+                    const snapshot = () => ({active_id:sid, projects:[], sessions:[{
+                        id:sid, title:'History', provider:'local', terminalRuns:[]
                     }]});
-                    UiState.apply(snapshot(messages)); renderChat();
+                    const applyHistory = rows => {
+                        UiState.apply(snapshot());
+                        sessions.find(s => s.id === sid).messages = rows;
+                        renderChat();
+                    };
+                    applyHistory(messages);
                     const chat = document.getElementById('chat');
                     const first = chat.querySelector('.process-group');
                     const historical = !first.open && first.querySelector('summary').textContent.startsWith('Worked');
@@ -278,11 +283,11 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     getSelection().removeAllRanges(); getSelection().addRange(originalRange);
                     const originalSelected = getSelection().toString();
                     // Equal backend snapshots preserve message DOM and pointer selection.
-                    UiState.apply(snapshot(JSON.parse(JSON.stringify(messages)))); renderChat();
+                    applyHistory(JSON.parse(JSON.stringify(messages)));
                     const snapshotStable = originalAnswer === chat.querySelector('.msg.asst .body')
                         && getSelection().toString() === originalSelected;
                     // A genuinely changed snapshot rebuilds while keeping disclosure choices.
-                    UiState.apply(snapshot([...messages, {type:'info', text:'Reconciled'}])); renderChat();
+                    applyHistory([...messages, {type:'info', text:'Reconciled'}]);
                     const rebuilt = chat.querySelector('.process-group');
                     const kept = rebuilt.open && rebuilt.querySelector('.thinking').open
                         && !rebuilt.querySelector('.tool-group').classList.contains('collapsed');
@@ -425,11 +430,11 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                             title: 'In-place Test',
                             projectId: null,
                             provider: 'deepseek',
-                            messages: initialMessages,
                             terminalRuns: []
                         }],
                         projects: []
                     });
+                    sessions.find(s => s.id === sid).messages = initialMessages;
 
                     // Initial chat rendering
                     renderChat();
@@ -554,18 +559,11 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                             id: sid,
                             title: 'Stream Capture Test',
                             provider: 'deepseek',
-                            messages: [{
-                                type: 'asst',
-                                runId: 'run-stream',
-                                streamId: 'stream-1',
-                                streamSequence: 1,
-                                streamState: 'partial',
-                                text: 'first'
-                            }],
                             terminalRuns: []
                         }],
                         projects: []
                     });
+                    sessions.find(s => s.id === sid).messages = [{ type: 'asst', runId: 'run-stream', streamId: 'stream-1', streamSequence: 1, streamState: 'partial', text: 'first' }];
                     renderChat();
                     let captures = 0;
                     const originalCapture = ConversationUI.captureView;
@@ -616,12 +614,15 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                             id: sid,
                             title: 'Append Capture Test',
                             provider: 'deepseek',
-                            messages: [{ type: 'asst', text: 'existing' }],
                             terminalRuns: []
                         }],
                         projects: []
                     });
+                    sessions.find(s => s.id === sid).messages = [{ type: 'asst', text: 'existing' }];
                     renderChat();
+                    const existing = document.querySelector('.msg.asst .body');
+                    if (!existing || existing.textContent !== 'existing')
+                        throw new Error('The live history fixture did not mount its existing answer');
                     let captures = 0;
                     const originalCapture = ConversationUI.captureView;
                     ConversationUI.captureView = () => { captures += 1; };
@@ -631,11 +632,14 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     return {
                         appended,
                         captures,
+                        sameAnswer: existing === document.querySelector('.msg.asst .body'),
                         text: document.querySelector('#chat')?.textContent || ''
                     };
                 }""")
                 assert result["appended"] is True
                 assert result["captures"] == 0
+                assert result["sameAnswer"] is True
+                assert "existing" in result["text"]
                 assert "new event" in result["text"]
             finally:
                 browser.close()
@@ -660,10 +664,11 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     }));
                     const state = {
                         active_id: sid,
-                        sessions: [{ id: sid, title: 'Signature Test', provider: 'deepseek', messages, terminalRuns: [] }],
+                        sessions: [{ id: sid, title: 'Signature Test', provider: 'deepseek', terminalRuns: [] }],
                         projects: []
                     };
                     UiState.apply(state);
+                    sessions.find(s => s.id === sid).messages = messages;
                     renderChat();
                     const cloned = structuredClone(state);
                     let stringifyCalls = 0;
@@ -673,6 +678,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                         return originalStringify(...args);
                     };
                     UiState.apply(cloned);
+                    sessions.find(s => s.id === sid).messages = messages;
                     renderChat();
                     JSON.stringify = originalStringify;
                     return { stringifyCalls };

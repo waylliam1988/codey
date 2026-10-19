@@ -147,7 +147,10 @@ export interface UiStateApi {
     } catch {}
   }
   function saveSessions(arr: Session[]): void {
-    safeLocalSet(LS_SESSIONS, JSON.stringify(arr));
+    safeLocalSet(LS_SESSIONS, JSON.stringify(sessionMetadata(arr)));
+  }
+  function sessionMetadata(arr: Session[]) {
+    return arr.map(({ messages: _messages, ...metadata }) => metadata);
   }
   function saveProjects(arr: Project[]): void {
     safeLocalSet(LS_PROJECTS, JSON.stringify(arr));
@@ -293,7 +296,7 @@ export interface UiStateApi {
         draft: normalizeDraft(item.draft),
         title: typeof item.title === 'string' && item.title ? item.title : 'New chat',
         ...(item.titleRenamed === true ? { titleRenamed: true } : {}),
-        messages: Array.isArray(item.messages) ? (item.messages as Message[]) : [],
+        messages: [],
         terminalRuns: Array.isArray(item.terminalRuns)
           ? item.terminalRuns.filter((id): id is string => typeof id === 'string').slice(-32)
           : [],
@@ -356,6 +359,21 @@ export interface UiStateApi {
   }
   function applyUiState(state: Loose): void {
     let nextSessions = normalizeSessions(state && state.sessions);
+    const currentSessions = new Map((deps.getSessions?.() || []).map((session) => [session.id, session]));
+    // UI state is metadata only. Preserve the in-memory durable projection and
+    // runtime facts when a server save races a history load; replacing a
+    // session with the metadata form would erase the conversation just loaded
+    // from durable history.
+    nextSessions = nextSessions.map((session) => {
+      const current = currentSessions.get(session.id);
+      if (!current) return session;
+      return hydrateSessionIndexes({
+        ...session,
+        messages: current.messages,
+        terminalRuns: current.terminalRuns,
+        researchRuns: current.researchRuns,
+      });
+    });
     const nextProjects = normalizeProjects(state && state.projects);
     let nextActiveId = state && state.active_id ? String(state.active_id) : '';
     if (!nextSessions.length) {
@@ -375,7 +393,7 @@ export interface UiStateApi {
   function currentUiState() {
     return {
       active_id: getActiveId(),
-      sessions: getSessions(),
+      sessions: sessionMetadata(getSessions()),
       projects: getProjects(),
       updated_at: getUpdatedAt(),
       revision: getRevision(),

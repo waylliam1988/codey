@@ -19,9 +19,14 @@ def test_packaged_image_preview_and_local_failure_keep_the_answer_readable(tmp_p
     project.mkdir()
     (project / "sample.png").write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jK1sAAAAASUVORK5CYII="))
     ctx = AppContext(tmp_path / "image-state")
+    ctx.durable.create_conversation("images")
+    ctx.durable.append_message(
+        "images",
+        "assistant_message",
+        {"text": "答案仍然可读。\n\n![Sample](sample.png)\n\n![Missing](missing.png)"},
+    )
     ctx.save_ui_state({"active_id": "images", "projects": [{"id": "p", "path": str(project), "name": "Images"}],
-        "sessions": [{"id": "images", "title": "Image preview", "projectId": "p", "messages": [
-            {"type": "asst", "text": "答案仍然可读。\n\n![Sample](sample.png)\n\n![Missing](missing.png)"}]}]}, base_revision=0)
+        "sessions": [{"id": "images", "title": "Image preview", "projectId": "p"}]}, base_revision=0)
     monkeypatch.setattr(server, "STATE", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -68,6 +73,30 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
             session_id="preview",
         )
     )
+    ctx.durable.create_conversation("preview")
+    ctx.durable.append_message(
+        "preview",
+        "assistant_message",
+        {"text": f"产出文件：`{relative}`\n\n" + "Full answer remains visible. " * 30},
+    )
+    ctx.durable.append_message(
+        "preview",
+        "display_message",
+        {
+            "type": "shell_result",
+            "command": "python -c " + "x" * 3000,
+            "output": "参数异常\n" * 1000,
+            "exitCode": 1,
+            "approved": True,
+            "shellStatus": "exit",
+            "outputTruncated": True,
+        },
+    )
+    ctx.durable.append_message(
+        "preview",
+        "display_message",
+        {"type": "research_done", "text": "Research saved", "sessionId": "preview", "runId": "research"},
+    )
     ctx.save_ui_state(
         {
             "active_id": "preview",
@@ -78,19 +107,6 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
                     "title": "Preview test",
                     "projectId": "p",
                     "provider": "local",
-                    "messages": [
-                        {"type": "asst", "text": f"产出文件：`{relative}`\n\n" + "Full answer remains visible. " * 30},
-                        {
-                            "type": "shell_result",
-                            "command": "python -c " + "x" * 3000,
-                            "output": "参数异常\n" * 1000,
-                            "exitCode": 1,
-                            "approved": True,
-                            "shellStatus": "exit",
-                            "outputTruncated": True,
-                        },
-                        {"type": "research_done", "text": "Research saved", "sessionId": "preview", "runId": "research"},
-                    ],
                     "researchRuns": [
                         {"runId": "research", "synthesisId": "preview-research", "notesCreated": ["preview-research"]}
                     ],
@@ -182,7 +198,7 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
         ctx.close()
 
 
-def test_capture_truncation_flag_survives_ui_restart(tmp_path):
+def test_ui_state_does_not_persist_transcript_truncation(tmp_path):
     from codey.storage.ui_state_store import UiStateStore
 
     store = UiStateStore(tmp_path)
@@ -205,4 +221,4 @@ def test_capture_truncation_flag_survives_ui_restart(tmp_path):
         },
         base_revision=0,
     )
-    assert saved["sessions"][0]["messages"][0]["outputTruncated"] is True
+    assert "messages" not in saved["sessions"][0]

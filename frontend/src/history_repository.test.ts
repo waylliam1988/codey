@@ -4,6 +4,99 @@ import { HistoryRepository } from './history_repository';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('HistoryRepository', () => {
+  function reply(id: string, revision = 1, more = false, epoch = 'database') {
+    return {
+      ok: true,
+      json: async () => ({
+        schema_version: 1,
+        session_id: 's1',
+        epoch,
+        snapshot_revision: revision,
+        items: [{ id }],
+        before_cursor: more ? 'cursor' : null,
+        has_more: more,
+      }),
+    };
+  }
+
+  it('does not let an older refresh overwrite a newer same-session refresh', async () => {
+    let release!: (value: ReturnType<typeof reply>) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              release = resolve;
+            }),
+        )
+        .mockResolvedValueOnce(reply('new', 2)),
+    );
+    const repo = new HistoryRepository();
+    const old = repo.loadLatest('s1');
+    expect((await repo.loadLatest('s1'))?.items).toEqual([{ id: 'new' }]);
+    release(reply('old'));
+    expect(await old).toBeNull();
+  });
+
+  it('discards an earlier page racing with a branch refresh', async () => {
+    let release!: (value: ReturnType<typeof reply>) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(reply('old-tail', 1, true))
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              release = resolve;
+            }),
+        )
+        .mockResolvedValueOnce(reply('new-branch', 2)),
+    );
+    const repo = new HistoryRepository();
+    await repo.loadLatest('s1');
+    const earlier = repo.loadEarlier('s1');
+    await repo.loadLatest('s1');
+    release(reply('old-ancestor'));
+    expect(await earlier).toBeNull();
+  });
+
+  it.each(['revision', 'epoch'])('reloads instead of splicing different %s snapshots', async (change) => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(reply('tail', 1, true))
+        .mockResolvedValueOnce(
+          reply('different', change === 'revision' ? 2 : 1, false, change === 'epoch' ? 'other' : 'database'),
+        )
+        .mockResolvedValueOnce(reply('current', 2)),
+    );
+    const repo = new HistoryRepository();
+    await repo.loadLatest('s1');
+    expect((await repo.loadEarlier('s1'))?.items).toEqual([{ id: 'current' }]);
+  });
+
+  it('rejects invalid entry identities and snapshot revisions', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          schema_version: 1,
+          session_id: 's1',
+          epoch: 'db',
+          snapshot_revision: '1',
+          items: [null],
+          has_more: false,
+        }),
+      }),
+    );
+    await expect(new HistoryRepository().loadLatest('s1')).rejects.toThrow('Invalid conversation history');
+  });
+
   it('loads a tail page, prepends earlier rows, and rejects a late old session', async () => {
     const fetcher = vi
       .fn()

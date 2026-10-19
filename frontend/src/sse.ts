@@ -14,6 +14,48 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
   let bufferedGap = false;
   const BUFFER_LIMIT = 100;
   let lastKnownEventId = 0;
+  const COMMIT_CURSOR_KEY = 'codey:durable-cursor';
+  const storedCursor = (() => {
+    try {
+      const value = JSON.parse(localStorage.getItem(COMMIT_CURSOR_KEY) || 'null');
+      if (
+        value &&
+        typeof value.database_id === 'string' &&
+        value.database_id &&
+        Number.isSafeInteger(value.commit_seq) &&
+        value.commit_seq >= 0
+      )
+        return value;
+    } catch {
+      // Browser storage is optional; the in-memory cursor remains usable.
+    }
+    return { database_id: '', commit_seq: 0 };
+  })();
+  let lastKnownDatabaseId: string = storedCursor.database_id;
+  let lastKnownCommitSeq: number = storedCursor.commit_seq;
+  let commitGap = false;
+
+  function saveCommitCursor(): void {
+    try {
+      localStorage.setItem(
+        COMMIT_CURSOR_KEY,
+        JSON.stringify({ database_id: lastKnownDatabaseId, commit_seq: lastKnownCommitSeq }),
+      );
+    } catch {
+      // A page reload can replay entries again; durable entry identity deduplicates them.
+    }
+  }
+
+  function rememberCommitCursor(value: number): void {
+    if (commitGap || !Number.isSafeInteger(value) || value <= lastKnownCommitSeq) return;
+    lastKnownCommitSeq = value;
+    saveCommitCursor();
+  }
+
+  function handleAndAcknowledge(event: ServerEvent): void {
+    deps.handleServerEvent(event);
+    rememberCommitCursor(Number(event.commit_seq || String(event.event_id || '').split(':')[1] || 0));
+  }
 
   function init(nextDeps: SseDeps): void {
     deps = nextDeps;
@@ -59,13 +101,15 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
         reconcilePromise = null;
         let replayFailed = false;
         if (bufferedGap) {
+          commitGap = true;
           bufferedGap = false;
           void reconcileRunState();
         } else {
           for (const event of events) {
             try {
-              deps.handleServerEvent(event);
+              handleAndAcknowledge(event);
             } catch (error) {
+              commitGap = true;
               console.error('SSE event handling failed', error);
               replayFailed = true;
             }
@@ -88,16 +132,25 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
       return;
     }
     try {
-      deps.handleServerEvent(data);
+      handleAndAcknowledge(data);
     } catch (error) {
+      commitGap = true;
       console.error('SSE event handling failed', error);
       void reconcileRunState();
     }
   }
 
   function eventKey(data: ServerEvent, fallback = ''): string {
-    const eventId = Number((data && data.event_id) || 0);
-    return Number.isFinite(eventId) && eventId > 0 ? `sse:${eventId}` : fallback;
+    const raw = String((data && data.event_id) || '0');
+    const parts = raw.split(':');
+    const eventId = Number(parts[0] || 0);
+    const commitSeq = Number(parts[1] || 0);
+    if (Number.isFinite(eventId) && eventId > 0 && Number.isFinite(commitSeq) && commitSeq > 0) {
+      return `sse:${eventId}:${commitSeq}`;
+    }
+    if (Number.isFinite(eventId) && eventId > 0) return `sse:${eventId}`;
+    if (Number.isFinite(commitSeq) && commitSeq > 0) return `durable:${commitSeq}`;
+    return fallback;
   }
 
   async function acceptRunResponse(response: Response, sessionId: string): Promise<void> {
@@ -135,7 +188,12 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
 
   function connect() {
     if (evtSrc) return;
-    const url = lastKnownEventId > 0 ? `/api/events?last_event_id=${lastKnownEventId}` : '/api/events';
+    const params = new URLSearchParams();
+    if (lastKnownEventId > 0) params.set('last_event_id', String(lastKnownEventId));
+    if (lastKnownDatabaseId) params.set('database_id', lastKnownDatabaseId);
+    if (lastKnownCommitSeq > 0) params.set('after_commit_seq', String(lastKnownCommitSeq));
+    const query = params.toString();
+    const url = query ? `/api/events?${query}` : '/api/events';
     evtSrc = new EventSource(url);
     evtSrc.onmessage = (e) => {
       let raw: unknown;
@@ -151,20 +209,33 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
         void reconcileRunState();
         return;
       }
-      const eventId = Number(e.lastEventId || data.event_id || 0);
+      if (data.type === 'hello') {
+        if (lastKnownDatabaseId !== data.database_id) lastKnownEventId = 0;
+        lastKnownDatabaseId = data.database_id!;
+        lastKnownCommitSeq = data.after_commit_seq!;
+        commitGap = false;
+        saveCommitCursor();
+        clearReconnectTimer();
+        void reconcileRunState();
+        deps.refreshProviderStatus(true);
+        return;
+      }
+      const rawEventId = String(e.lastEventId || data.event_id || '0');
+      const eventId = Number(rawEventId.split(':', 1)[0] || 0);
+      const embeddedCommit = Number(rawEventId.split(':', 2)[1] || 0);
+      const duplicate =
+        Number.isSafeInteger(eventId) &&
+        eventId > 0 &&
+        eventId <= lastKnownEventId &&
+        (!Number.isSafeInteger(embeddedCommit) || embeddedCommit <= lastKnownCommitSeq);
       const cursor = typeof data.cursor === 'number' ? data.cursor : Number(data.cursor);
       if (data.type === 'resync_required' && Number.isSafeInteger(cursor) && cursor >= 0) {
         lastKnownEventId = cursor;
-      } else if (Number.isSafeInteger(eventId) && eventId > 0) {
-        if (eventId <= lastKnownEventId) return;
-        lastKnownEventId = eventId;
-        if (data.event_id == null) data.event_id = eventId;
-      }
-      if (data.type === 'hello') {
-        clearReconnectTimer();
-        reconcileRunState();
-        deps.refreshProviderStatus(true);
+      } else if (duplicate) {
         return;
+      } else if (Number.isSafeInteger(eventId) && eventId > 0) {
+        lastKnownEventId = Math.max(lastKnownEventId, eventId);
+        if (data.event_id == null) data.event_id = rawEventId;
       }
       try {
         ingestServerEvent(data);

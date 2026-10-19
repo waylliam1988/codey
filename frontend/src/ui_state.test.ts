@@ -68,4 +68,29 @@ describe('ui state persistence boundary', () => {
     expect(await saved).toBe(true);
     vi.unstubAllGlobals();
   });
+
+  it('persists only UI metadata and loads messages from durable history', () => {
+    const session = {
+      id: 's1',
+      title: 'Chat',
+      messages: [{ type: 'user', text: 'secret transcript' }],
+      draft: { text: 'draft', start: 0, end: 0, direction: 'none', revision: 1 },
+    } as Session;
+    window.UiState.init({
+      getSessions: () => [session],
+      setSessions: (value) => {
+        window.__testSessions = value;
+      },
+    });
+    const current = window.UiState.current();
+    expect((current.sessions as object[])[0]).not.toHaveProperty('messages');
+    window.UiState.cache();
+    expect(localStorage.getItem('codey:sessions')).not.toContain('secret transcript');
+    window.UiState.apply({ sessions: [{ id: 's1', title: 'Chat', draft: session.draft }] });
+    expect(window.__testSessions[0]).toMatchObject({
+      messages: [{ type: 'user', text: 'secret transcript' }],
+      draft: { text: 'draft' },
+    });
+    expect(session.messages).toHaveLength(1);
+  });
 });

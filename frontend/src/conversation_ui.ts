@@ -3,9 +3,13 @@ import { nestedOwnsScroll } from './scroll_owner';
 import type { Message, Project, Session } from './types/domain';
 import type { ProcessSnapshot } from './process';
 import { HistoryRepository } from './history_repository';
+import { ConversationHistory } from './conversation_history';
+import type { ServerEvent } from './domain/protocol';
 export interface ConversationUiApi {
   init(deps: ConversationUiDeps): void;
   renderChat(): void;
+  refreshHistory(sessionId: string): Promise<void>;
+  observeCommit(event: ServerEvent): Promise<void>;
   scrollChat(capture?: boolean): void;
   captureView(): void;
   isFollowing(): boolean;
@@ -86,10 +90,31 @@ export interface ConversationUiDeps {
   }
   let deps: ConversationUiDeps;
   let shownId = '';
+  const historyRendered = new Set<string>();
+  const forcedHistoryRefresh = new Set<string>();
   const views = new Map<string, ViewState>();
   const historyStarts = new Map<string, number>();
-  const historyRepositories = new Map<string, HistoryRepository>();
-  const archiveHydrated = new Set<string>();
+  const history = new ConversationHistory((session, revealEarlier) => {
+    runtime.UiState?.hydrateSessionIndexes(session);
+    if (revealEarlier) {
+      // A mounted history window prepends its older entries in-place after
+      // the repository resolves. Re-rendering here would replace the visible
+      // tail and invalidate selections, anchors, and browser node handles.
+      historyStarts.set(session.id, 0);
+      return;
+    } else {
+      historyStarts.delete(session.id);
+    }
+    // A mounted conversation owns its visible nodes while live events are
+    // arriving. Durable commits are still reconciled into the session model,
+    // but rebuilding the tree here would detach nodes the user is reading.
+    // An empty mount still needs the first authoritative history render.
+    const force = forcedHistoryRefresh.delete(session.id);
+    if (deps.activeSession() === session && historyRendered.has(session.id) && !force) return;
+    historyRendered.add(session.id);
+    views.delete(session.id);
+    if (deps.activeSession() === session) renderChat();
+  });
   const HISTORY_BATCH = 100;
   let menuTrigger: HTMLElement | null = null;
   let selectedCopy: SelectionSnapshot | null = null,
@@ -366,7 +391,16 @@ export interface ConversationUiDeps {
     if (!deps) return;
     const s = deps.activeSession();
     if (!s) return;
-    if (!archiveHydrated.has(s.id) && s.messages.length >= 500) void hydrateArchivedHistory(s);
+    const chat = $('chat');
+    // Streaming handlers update the existing assistant node in place. Other
+    // state projections may request a render while a response is still live;
+    // keep that node mounted until the stream has settled or the user changes
+    // sessions.
+    const hasLiveStream = s.messages.some(
+      (message) => message.type === 'asst' && Boolean(message.streamId) && message.finalAnswer === false,
+    );
+    if (shownId === s.id && hasLiveStream && chat.querySelector('.msg.asst[data-stream-id]')) return;
+    history.ensure(s);
     runtime.Composer.syncSession();
     const p = deps.activeProject();
     renderTitle(s, p);
@@ -382,7 +416,6 @@ export interface ConversationUiDeps {
     const scroll = changing && saved ? saved.scroll : $('chat-area').scrollTop;
     const follow = changing ? !saved || saved.following : following;
     const reader = changing ? saved : { scroll, anchor: readingAnchor() };
-    const chat = $('chat');
     if (unchanged(saved, s)) {
       if (changing && saved?.nodes) chat.replaceChildren(...saved.nodes);
     } else {
@@ -403,6 +436,20 @@ export interface ConversationUiDeps {
       }
       runtime.Process.restore(chat, disclosures);
     }
+    if (history.failed(s.id)) {
+      const notice = document.createElement('div');
+      notice.className = 'history-loader';
+      notice.textContent = 'Could not load conversation history. ';
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.textContent = 'Retry';
+      retry.dataset.historyRetry = '';
+      retry.onclick = () => {
+        void refreshHistory(s.id);
+      };
+      notice.append(retry);
+      chat.prepend(notice);
+    }
     shownId = s.id;
     runtime.UserQuestions?.syncViews(chat);
     following = follow;
@@ -417,52 +464,25 @@ export interface ConversationUiDeps {
     updateNotice();
   }
 
-  async function hydrateArchivedHistory(session: Session): Promise<void> {
-    const repository = historyRepositories.get(session.id) || new HistoryRepository();
-    historyRepositories.set(session.id, repository);
-    try {
-      const page = await repository.loadLatest(session.id);
-      if (deps.activeSession() !== session) return;
-      const archived = page.items
-        .map((value) => value as unknown as Message)
-        .filter((message) => typeof message.type === 'string');
-      const messageKey = (message: Message): string => {
-        const id = message.id || message.eventKey;
-        if (id) return `id:${id}`;
-        return `body:${JSON.stringify({ type: message.type, text: message.text, result: message.result, output: message.output, command: message.command })}`;
-      };
-      const mergedById = new Map<string, Message>();
-      const unkeyed: Message[] = [];
-      for (const message of archived) {
-        const id = messageKey(message);
-        if (id) mergedById.set(id, message);
-        else unkeyed.push(message);
-      }
-      for (const message of session.messages) {
-        const id = messageKey(message);
-        if (id) mergedById.set(id, message);
-        else unkeyed.push(message);
-      }
-      const merged = [...mergedById.values(), ...unkeyed];
-      merged.sort((left, right) => {
-        const a =
-          typeof (left as Message & { ordinal?: unknown }).ordinal === 'number'
-            ? Number((left as Message & { ordinal?: unknown }).ordinal)
-            : Number.MAX_SAFE_INTEGER;
-        const b =
-          typeof (right as Message & { ordinal?: unknown }).ordinal === 'number'
-            ? Number((right as Message & { ordinal?: unknown }).ordinal)
-            : Number.MAX_SAFE_INTEGER;
-        return a - b;
-      });
-      archiveHydrated.add(session.id);
-      if (merged.length !== session.messages.length) {
-        session.messages = merged;
-        historyStarts.delete(session.id);
-        renderChat();
-      }
-    } catch {
-      // The archive is display-only; the current UI state remains usable.
+  async function refreshHistory(sessionId: string, force = true): Promise<void> {
+    const session = deps?.getSessions().find((item) => item.id === sessionId);
+    if (!session) return;
+    if (force) forcedHistoryRefresh.add(sessionId);
+    await history.refresh(session);
+  }
+  async function observeCommit(event: ServerEvent): Promise<void> {
+    if (
+      event.type === 'durable_commit' &&
+      event.session_id &&
+      (event.entry_ids?.length || event.kind === 'branch' || event.kind === 'fork')
+    ) {
+      // Every durable entry commit can change the visible conversation. The
+      // render path preserves an active stream node, so forcing the history
+      // reconciliation here also makes queued turns appear immediately after
+      // their terminal entry is committed.
+      const force = true;
+      if (event.kind === 'branch' || event.kind === 'fork') historyRendered.delete(event.session_id);
+      await refreshHistory(event.session_id, force);
     }
   }
   function historyBoundary(messages: Message[], index: number): number {
@@ -470,7 +490,7 @@ export interface ConversationUiDeps {
     return index;
   }
   function addHistoryLoader(chat: HTMLElement, session: Session, start: number): void {
-    if (!start) return;
+    if (!start && !history.hasMore(session.id)) return;
     const loader = document.createElement('div');
     loader.className = 'history-loader';
     const earlier = document.createElement('button'),
@@ -488,20 +508,28 @@ export interface ConversationUiDeps {
     searchButton.dataset.searchHistory = '';
     const load = async (everything: boolean) => {
       if (deps.activeSession() !== session) return;
-      if (!everything && start === 0) {
-        const repository = historyRepositories.get(session.id);
-        if (repository) {
-          const page = await repository.loadEarlier(session.id);
-          if (deps.activeSession() !== session || !page) return;
-          const known = new Set(session.messages.map((message) => message.id || message.eventKey).filter(Boolean));
-          const older = page.items
-            .map((item) => item as unknown as Message)
-            .filter((message) => !known.has(message.id || message.eventKey));
-          if (older.length) session.messages = [...older, ...session.messages];
-          historyStarts.set(session.id, older.length ? 0 : start);
-          renderChat();
-          return;
-        }
+      if (start === 0) {
+        following = false;
+        scrollIntent = 'history';
+        const previousLength = session.messages.length;
+        await history.earlier(session, everything);
+        if (deps.activeSession() !== session) return;
+        const added = session.messages.length - previousLength;
+        if (added <= 0) return;
+        const anchor = loader.nextElementSibling;
+        const top = anchor?.getBoundingClientRect().top;
+        const prefix = document.createElement('div');
+        for (const message of session.messages.slice(0, added)) deps.appendMessageNode(prefix, message);
+        loader.remove();
+        chat.prepend(...prefix.childNodes);
+        historyStarts.set(session.id, 0);
+        addHistoryLoader(chat, session, 0);
+        following = false;
+        scrollIntent = 'history';
+        if (anchor && top !== undefined) setScroll($('chat-area').scrollTop + anchor.getBoundingClientRect().top - top);
+        captureView();
+        updateLatest();
+        return;
       }
       const anchor = loader.nextElementSibling;
       const top = anchor?.getBoundingClientRect().top;
@@ -512,7 +540,7 @@ export interface ConversationUiDeps {
       chat.prepend(...prefix.childNodes);
       historyStarts.set(session.id, next);
       addHistoryLoader(chat, session, next);
-      if (next) chat.prepend(chat.lastElementChild!);
+      if (next || history.hasMore(session.id)) chat.prepend(chat.lastElementChild!);
       following = false;
       scrollIntent = 'history';
       if (anchor && top !== undefined) setScroll($('chat-area').scrollTop + anchor.getBoundingClientRect().top - top);
@@ -520,19 +548,9 @@ export interface ConversationUiDeps {
       updateLatest();
     };
     earlier.onclick = () => load(false);
-    all.onclick = () => {
-      if (deps.activeSession() !== session) return;
-      const anchor = loader.nextElementSibling;
-      const top = anchor?.getBoundingClientRect().top;
-      const prefix = document.createElement('div');
-      for (const message of session.messages.slice(0, start)) deps.appendMessageNode(prefix, message);
-      loader.remove();
-      chat.prepend(...prefix.childNodes);
-      historyStarts.set(session.id, 0);
-      following = false;
-      if (anchor && top !== undefined) setScroll($('chat-area').scrollTop + anchor.getBoundingClientRect().top - top);
-      captureView();
-      updateLatest();
+    all.onclick = async () => {
+      await load(true);
+      if (history.hasMore(session.id)) await history.earlier(session, true);
     };
     searchButton.onclick = async () => {
       if (deps.activeSession() !== session) return;
@@ -555,8 +573,7 @@ export interface ConversationUiDeps {
       }
       const query = search.value;
       if (!query.trim()) return;
-      const repository = historyRepositories.get(session.id) || new HistoryRepository();
-      historyRepositories.set(session.id, repository);
+      const repository = new HistoryRepository();
       try {
         const hits = await repository.search(session.id, query);
         if (deps.activeSession() !== session) return;
@@ -617,7 +634,10 @@ export interface ConversationUiDeps {
   }
   function forget(id: string) {
     views.delete(id);
+    historyRendered.delete(id);
+    forcedHistoryRefresh.delete(id);
     historyStarts.delete(id);
+    history.forget(id);
   }
 
   function menuOpened(menu: HTMLElement, anchor: HTMLElement) {
@@ -1136,6 +1156,8 @@ export interface ConversationUiDeps {
   runtime.ConversationUI = {
     init,
     renderChat,
+    refreshHistory,
+    observeCommit,
     scrollChat,
     captureView,
     isFollowing,

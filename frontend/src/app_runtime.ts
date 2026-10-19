@@ -669,6 +669,9 @@ function switchSession(id: string) {
   handleLocalContextScopeChanged();
   renderSidebar();
   renderChat();
+  // Session scoped provider/model settings, including effort, must be
+  // reflected immediately when the active conversation changes.
+  syncProviderUI(currentProviderId());
   runtime.Composer.syncSession();
   runtime.Composer.updateSend();
 }
@@ -1026,6 +1029,10 @@ function handleReplyStream(data: ServerEventData) {
 
 function handleServerEvent(raw: unknown) {
   const data = decodeServerEvent(raw) as ServerEventData;
+  if (data.type === 'durable_commit') {
+    void runtime.ConversationUI.observeCommit(decodeServerEvent(raw));
+    return;
+  }
   if (data.type === 'reply_stream') {
     const key = `${data.run_id || ''}:${data.stream_id || ''}`;
     replyStreamFrames.enqueue(key, data);
@@ -1482,12 +1489,48 @@ function connectEvents() {
 }
 
 function addToSession(sid: string, m: Message) {
+  if (m.type === 'user' && (m.queuedInputId || m.id)) {
+    const session = sessions.find((item) => item.id === sid);
+    const duplicate = session?.messages.some(
+      (item) =>
+        item.type === 'user' &&
+        ((m.queuedInputId && item.queuedInputId === m.queuedInputId) ||
+          (m.queuedInputId && item.id === m.queuedInputId)),
+    );
+    if (duplicate) return true;
+  }
   if (m.type === 'shell_result' && m.id) {
     const replaced = replaceSessionMessage(sid, (item) => item.type === 'shell_result' && item.id === m.id, m);
     if (replaced) return true;
   }
   if (m.type === 'asst' && !m.streamId && m.runId && m.text) {
     const session = sessions.find((session) => session.id === sid);
+    const existing = session?.messages
+      .slice()
+      .reverse()
+      .find((item) => item.type === 'asst' && item.runId === m.runId);
+    if (existing) {
+      // A durable history refresh can replace the transient stream record
+      // before the terminal event arrives. Keep one logical answer and retain
+      // the stream identity so the mounted DOM node can be updated in place.
+      const settled = existing.streamId
+        ? { ...existing, ...m, streamId: existing.streamId, streamState: 'complete' as const, finalAnswer: true }
+        : m;
+      return replaceSessionMessage(sid, (item) => item === existing, settled);
+    }
+    if (sid === activeId) {
+      const streamNode = Array.from(document.querySelectorAll<HTMLElement>('.msg.asst[data-stream-id]')).find(
+        (node) => node.dataset.runId === m.runId,
+      );
+      const streamId = streamNode?.dataset.streamId;
+      if (streamId && session) {
+        const settled = { ...m, streamId, streamState: 'complete' as const, finalAnswer: true };
+        session.messages.push(settled);
+        runtime.UiState.trackSessionMessage(session, settled);
+        persistActive();
+        if (runtime.Messages.updateReply($('chat'), settled)) return true;
+      }
+    }
     const final = session && finalStreamMessage(session, m.runId, m.text, m.eventKey || '');
     if (final)
       return replaceSessionMessage(sid, (item) => item.streamId === final.streamId && item.runId === m.runId, final);
@@ -1499,10 +1542,15 @@ function observeQueuedInput(input: QueuedInput): void {
     runId = input.request.run_id;
   const session = sessions.find((session) => session.id === sid);
   if (!session) return;
-  if (
-    ['dispatching', 'submitted', 'completed', 'unconfirmed'].includes(input.state) &&
-    !session.messages.some((message) => message.queuedInputId === input.id)
-  ) {
+  const represented = session.messages.some(
+    (message) =>
+      message.type === 'user' &&
+      (message.queuedInputId === input.id ||
+        message.id === input.id ||
+        message.runId === runId ||
+        message.attempts?.some((attempt) => attempt.runId === runId)),
+  );
+  if (['dispatching', 'submitted', 'completed', 'unconfirmed'].includes(input.state) && !represented) {
     addToSession(sid, {
       type: 'user',
       id: input.id,
@@ -1567,6 +1615,26 @@ function replaceSessionMessage(sid: string, predicate: (message: Message) => boo
       appendMessageNode(temp, message);
       if (temp.firstElementChild) {
         existingNode.replaceWith(temp.firstElementChild);
+        scrollChat(false);
+        return true;
+      }
+    }
+    if (message.type === 'asst' && message.runId) {
+      const existingAssistant = Array.from(document.querySelectorAll<HTMLElement>('.msg.asst')).find(
+        (node) => node.dataset.runId === message.runId,
+      );
+      if (existingAssistant) {
+        const streamId = existingAssistant.dataset.streamId;
+        if (streamId) {
+          runtime.Messages.updateReply($('chat'), {
+            ...message,
+            streamId,
+            streamState: 'complete',
+            finalAnswer: true,
+          });
+        }
+        // The mounted answer already represents this run. Do not rebuild the
+        // entire conversation merely because its durable identity changed.
         scrollChat(false);
         return true;
       }

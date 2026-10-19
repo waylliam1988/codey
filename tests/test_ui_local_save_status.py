@@ -49,6 +49,7 @@ def test_long_folder_truncates_without_hiding_research_or_save_retry(page):
       const state = UiState.current();
       state.projects.push({id:'long',name:'An extremely long project folder name '.repeat(8),path:'E:/project'});
       state.sessions.find(s=>s.id==='a').projectId='long';
+      UiState.apply(state);
       updateComposerContext();
     }""")
     fail_save(page)

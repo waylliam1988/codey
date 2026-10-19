@@ -88,8 +88,7 @@ def test_real_http_state_supports_final_copy_and_shared_rich_blocks(tmp_path, mo
     project = tmp_path / "project"
     project.mkdir()
     ctx = AppContext(tmp_path / "state")
-    ctx.save_ui_state(
-        {
+    payload = {
             "active_id": "rich",
             "projects": [{"id": "p", "name": "Project", "path": str(project)}],
             "sessions": [{
@@ -116,9 +115,12 @@ def test_real_http_state_supports_final_copy_and_shared_rich_blocks(tmp_path, mo
                     },
                 ],
             }],
-        },
-        base_revision=0,
-    )
+        }
+    ctx.save_ui_state(payload, base_revision=0)
+    ctx.durable.create_conversation("rich")
+    for message in payload["sessions"][0]["messages"]:
+        kind = {"user": "user_message", "asst": "assistant_message"}.get(message["type"], "display_message")
+        ctx.durable.append_message("rich", kind, message)
     monkeypatch.setattr(server, "STATE", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -149,11 +151,15 @@ def test_real_http_state_supports_final_copy_and_shared_rich_blocks(tmp_path, mo
 
 def test_real_http_history_search_returns_archived_context(tmp_path, monkeypatch):
     ctx = AppContext(tmp_path / "state")
-    messages = [
-        {"type": "user", "id": f"u{i}", "text": f"request {i}"}
-        for i in range(180)
-    ]
-    messages[23]["text"] = "needle in archived history"
+    ctx.durable.create_conversation("history")
+    messages = []
+    needle_id = ""
+    for i in range(180):
+        text = "needle in archived history" if i == 23 else f"request {i}"
+        entry = ctx.durable.append_message("history", "user_message", {"text": text})
+        messages.append({"type": "user", "id": entry.entry_id, "text": text})
+        if i == 23:
+            needle_id = entry.entry_id
     ctx.save_ui_state({"active_id": "history", "projects": [], "sessions": [{"id": "history", "messages": messages}]}, base_revision=0)
     monkeypatch.setattr(server, "STATE", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
@@ -170,7 +176,7 @@ def test_real_http_history_search_returns_archived_context(tmp_path, monkeypatch
             page.get_by_role("searchbox", name="Search this conversation", exact=True).press("Enter")
             expect(page.locator(".history-search-status")).to_have_text("1 matches")
             page.get_by_role("button", name="Load earlier messages", exact=True).click()
-            expect(page.locator('.msg.user[data-message-id="u23"]')).to_be_attached()
+            expect(page.locator(f'.msg.user[data-message-id="{needle_id}"]')).to_be_attached()
             browser.close()
     finally:
         httpd.shutdown()

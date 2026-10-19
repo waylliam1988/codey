@@ -71,6 +71,7 @@ export interface RequestAttempt {
   runOwner?: string;
 }
 export interface Message extends importToolDisplay {
+  entryId?: string;
   elapsedMs?: number;
   queuedInputId?: string;
   streamId?: string;

@@ -125,6 +125,10 @@ export interface ProviderUiApi {
         ]),
       );
       buildProviderMenu();
+      // Settings changes can invalidate the currently selected model without
+      // changing the session selection. Refresh the visible projection from
+      // the canonical selection so unavailable models are shown immediately.
+      syncProviderUI(currentProviderId());
       runtime.Composer.updateSend();
     });
     buildProviderMenu();

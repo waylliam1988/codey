@@ -81,6 +81,15 @@ describe('render boundaries', () => {
     expect(body.querySelector('p')?.textContent).toBe('Final paragraph');
   });
 
+  it('keeps an already displayed streaming paragraph mounted as text grows', () => {
+    const body = document.createElement('div');
+    window.Render.updateMarkdown(body, '第一段已经到达。');
+    const paragraph = body.querySelector('p')!;
+    window.Render.updateMarkdown(body, '第一段已经到达。\n\n**完整回答**，保留已显示段落。');
+    expect(body.querySelector('p')).toBe(paragraph);
+    expect(paragraph.textContent).toContain('第一段已经到达。');
+  });
+
   it('uses icon-only copy actions and omits redundant result availability text', () => {
     const body = document.createElement('div');
     window.Render.renderMarkdown(body, '```text\nhello\n```');
