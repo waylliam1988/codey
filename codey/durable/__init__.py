@@ -27,7 +27,7 @@ from codey.durable.model import (
     TaskStatus,
 )
 from codey.durable.recovery import RecoveryDecision, decide_recovery
-from codey.durable.scheduler import DurableTaskScheduler
+from codey.durable.scheduler import AbortInvocation, DurableTaskScheduler
 from codey.durable.session import DurableSession
 from codey.durable.sqlite import SQLiteDurableStore
 from codey.durable.store import DurableStore
@@ -38,6 +38,7 @@ __all__ = [
     "SchedulerOwnershipError",
     "ApprovalRecord",
     "ApprovalStatus",
+    "AbortInvocation",
     "ArtifactRecord",
     "ContextSnapshot",
     "CommitResult",

@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from codey.durable import DurableSession, DurableTaskScheduler, SQLiteDurableStore
+from codey.durable import AbortInvocation, DurableSession, DurableTaskScheduler, SQLiteDurableStore
 from codey.durable.errors import SchemaVersionError
 from codey.durable.model import (
     TASK_TERMINAL_STATUSES,
@@ -40,6 +40,7 @@ class DurableAppServices:
         *,
         publish: Callable[[CommitResult, DurableMutation], None] | None,
         dispatch: Callable[[TaskCheckpoint], bool],
+        abort_handler: Callable[[TaskCheckpoint, AbortInvocation], None] | None = None,
         start: bool = True,
     ) -> DurableAppServices:
         database_path = Path(database_path)
@@ -59,7 +60,7 @@ class DurableAppServices:
         except BaseException:
             lease.release()
             raise
-        scheduler = DurableTaskScheduler(session, dispatch)
+        scheduler = DurableTaskScheduler(session, dispatch, abort_handler=abort_handler)
         def observe(result: CommitResult, mutation: DurableMutation) -> None:
             del result
             if mutation.task is None:

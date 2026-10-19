@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from contextlib import suppress
@@ -32,12 +33,24 @@ class TaskInvocation:
     done: threading.Event
 
 
+@dataclass
+class AbortInvocation:
+    """Volatile cleanup invocation started after a durable abort barrier."""
+
+    task_id: str
+    attempt_token: str
+    signal: threading.Event
+    done: threading.Event
+    error: BaseException | None = None
+
+
 class DurableTaskScheduler:
     def __init__(
         self,
         session: DurableSession,
         dispatch: Callable[[TaskCheckpoint], bool],
         *,
+        abort_handler: Callable[[TaskCheckpoint, AbortInvocation], None] | None = None,
         retry_interval: float = 0.25,
         workflows: Mapping[str, WorkflowDefinition] | None = None,
         steering_mode: str = "one-at-a-time",
@@ -45,6 +58,7 @@ class DurableTaskScheduler:
     ) -> None:
         self._session = session
         self._dispatch = dispatch
+        self._abort_handler = abort_handler
         self._retry_interval = max(0.01, float(retry_interval))
         self._workflows = dict(workflows or {})
         if steering_mode not in {"all", "one-at-a-time"}:
@@ -61,6 +75,7 @@ class DurableTaskScheduler:
         self._scheduled: set[str] = set()
         self._blocked: dict[str, str] = {}
         self._invocations: dict[str, TaskInvocation] = {}
+        self._abort_invocations: dict[str, AbortInvocation] = {}
         self._reconcile_requested = False
         self._thread: threading.Thread | None = None
         self._recovered = False
@@ -90,6 +105,10 @@ class DurableTaskScheduler:
         with self._lock:
             return self._invocations.get(task_id)
 
+    def abort_invocation(self, task_id: str) -> AbortInvocation | None:
+        with self._lock:
+            return self._abort_invocations.get(task_id)
+
     def abort_task(self, task_id: str, *, reason: str = "cancelled") -> CommitResult:
         """Durably mark cancellation, then signal the active dispatch invocation."""
         result = self._session.request_cancel(task_id, reason=reason)
@@ -97,7 +116,47 @@ class DurableTaskScheduler:
             invocation = self._invocations.get(task_id)
         if invocation is not None:
             invocation.signal.set()
+            handler = self._abort_handler
+            if handler is not None:
+                with self._lock:
+                    existing = self._abort_invocations.get(task_id)
+                    if existing is None:
+                        abort_invocation = AbortInvocation(
+                            task_id=task_id,
+                            attempt_token=invocation.attempt_token,
+                            signal=threading.Event(),
+                            done=threading.Event(),
+                        )
+                        self._abort_invocations[task_id] = abort_invocation
+                    else:
+                        abort_invocation = existing
+                if existing is None:
+                    thread = threading.Thread(
+                        target=self._run_abort_handler,
+                        args=(abort_invocation, handler),
+                        name=f"codey-abort-{task_id}",
+                        daemon=True,
+                    )
+                    thread.start()
+                abort_invocation.done.wait()
+                if abort_invocation.error is not None:
+                    raise abort_invocation.error
         return result
+
+    def _run_abort_handler(
+        self,
+        invocation: AbortInvocation,
+        handler: Callable[[TaskCheckpoint, AbortInvocation], None],
+    ) -> None:
+        try:
+            handler(self._session.task(invocation.task_id), invocation)
+        except BaseException as exc:
+            invocation.error = exc
+        finally:
+            invocation.done.set()
+            with self._lock:
+                if self._abort_invocations.get(invocation.task_id) is invocation:
+                    self._abort_invocations.pop(invocation.task_id, None)
 
     def start(self) -> None:
         with self._lock:
@@ -189,15 +248,23 @@ class DurableTaskScheduler:
         self._wake.set()
         with self._lock:
             invocations = tuple(self._invocations.values())
+            abort_invocations = tuple(self._abort_invocations.values())
         for invocation in invocations:
             # Closing the scheduler is a lifecycle boundary, not a durable
             # cancellation request. Signal workers so cooperative dispatches
             # can unwind, while the durable attempt remains recoverable.
             invocation.signal.set()
+        for abort_invocation in abort_invocations:
+            abort_invocation.signal.set()
         thread = self._thread
         if thread is not None:
             thread.join(max(0.0, float(timeout)))
         closed = thread is None or not thread.is_alive()
+        if closed:
+            deadline = time.monotonic() + max(0.0, float(timeout))
+            for abort_invocation in abort_invocations:
+                abort_invocation.done.wait(max(0.0, deadline - time.monotonic()))
+            closed = all(abort_invocation.done.is_set() for abort_invocation in abort_invocations)
         if closed:
             with self._lock:
                 owns_scheduler = self._owns_scheduler
@@ -402,4 +469,4 @@ class DurableTaskScheduler:
         return None
 
 
-__all__ = ["DurableTaskScheduler", "TaskInvocation"]
+__all__ = ["AbortInvocation", "DurableTaskScheduler", "TaskInvocation"]

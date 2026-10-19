@@ -1246,4 +1246,41 @@ SCHEMA_VERSION = 1
 
 Codey 现在在后台 scheduler ownership 上具备明确的 durable claim/release/reclaim 边界，补上了此前“只能从 AppServices lease 和 task attempt 间接推断”的缺口，并保留更严格的 task CAS、attempt fencing、未知 effect fail-closed、权限和审批语义。相对 Pi 仍未完全达到的部分是 abort handler 的独立 invocation、完整 background boundary/task graph index，以及真实 provider generation 的 settlement/placement/checkpoint 故障事务证明。
 
+## 36. 第三十二段：abort handler invocation
+
+本段补上 scheduler 取消生命周期中剩余的一个明确边界。此前 `abort_task()` 只写 durable cancellation barrier 并 signal 普通 `TaskInvocation`；host 没有独立的 abort cleanup invocation，无法在普通 work unwind 后执行专门的取消收尾。
+
+### 36.1 已完成
+
+- `DurableTaskScheduler` 接受窄的可选 `abort_handler`，`DurableAppServices.open()` 将该依赖显式传入；
+- `abort_task()` 严格先调用 `DurableSession.request_cancel()`，再 signal 普通 invocation；
+- 只有存在 active 普通 invocation 且配置了 handler 时才创建独立的 `AbortInvocation`，不把取消过程伪造为新的 task 或 entry；
+- handler 收到的 `TaskCheckpoint` 已包含 `cancel_requested` barrier，并且 scheduler 等待 handler 完成后才返回；
+- abort handler 异常不会撤销已经提交的 durable cancellation，异常向调用方传播；
+- scheduler close 会 signal 并等待未完成的 abort invocation，再释放 scheduler owner；
+- `AbortInvocation` 仍是 volatile lifecycle 对象，恢复事实继续只来自 task checkpoint/effect settlement。
+
+### 36.2 验证
+
+```text
+test_scheduler_abort_handler.py：1 passed
+scheduler + abort signal + ownership 回归：15 passed
+mypy：Success
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 36.3 与 Pi 的结果
+
+Codey 现在具备 durable abort mark、普通 invocation signal、独立 abort handler 和 close 等待的完整顺序，并保留 task attempt fencing、取消传播和未知 effect fail-closed。scheduler 生命周期已不再只有“下次扫描才处理取消”的隐式路径。
+
+仍低于 Pi 或尚未完成的部分：
+
+- owner graph 的局部 finalization/fail-fast index 仍主要由 durable task 查询派生；
+- abort handler 尚未在真实 provider/shell host 中接入具体清理动作，当前先锁定 scheduler contract；
+- provider generation 的 tool settlement、boundary placement、下一 checkpoint 仍需故障注入证明；
+- InboxDoc snapshot/history、Runtime JSONL 清理、AppContext/巨型模块结构审查仍待完成。
+
 
