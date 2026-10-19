@@ -1350,8 +1350,16 @@ class DurableSession:
         return conversation_ops.append_message(self, conversation_id, kind, payload)
 
     @_mutation_line
-    def branch(self, conversation_id: str, entry_id: str) -> CommitResult:
-        return conversation_ops.branch(self, conversation_id, entry_id)
+    def branch(
+        self,
+        conversation_id: str,
+        entry_id: str,
+        *,
+        expected_revision: int | None = None,
+    ) -> CommitResult:
+        return conversation_ops.branch(
+            self, conversation_id, entry_id, expected_revision=expected_revision,
+        )
 
     @_mutation_line
     def fork(self, conversation_id: str, entry_id: str, *, child_conversation_id: str | None = None) -> str:

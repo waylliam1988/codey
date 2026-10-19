@@ -164,10 +164,18 @@ def append_tool_results(
     return tuple(entries)
 
 
-def branch(session: Any, conversation_id: str, entry_id: str) -> CommitResult:
+def branch(
+    session: Any,
+    conversation_id: str,
+    entry_id: str,
+    *,
+    expected_revision: int | None = None,
+) -> CommitResult:
     session._ensure_writable()
     try:
-        result = session.store.branch(conversation_id, entry_id)
+        result = session.store.branch(
+            conversation_id, entry_id, expected_revision=expected_revision,
+        )
         _head, revision = session.store.head(conversation_id)
         session._publish_commit(result, DurableMutation(conversation_id, max(0, revision - 1)))
         return cast(CommitResult, result)

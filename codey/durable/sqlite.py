@@ -256,16 +256,21 @@ class SQLiteDurableStore:
                 raise KeyError(f"unknown conversation: {conversation_id}")
             return row["head_entry_id"], int(row["revision"])
 
-    def branch(self, conversation_id: str, entry_id: str) -> CommitResult:
+    def branch(
+        self, conversation_id: str, entry_id: str, *, expected_revision: int | None = None,
+    ) -> CommitResult:
         with closing(self._connect()) as database:
             database.execute("BEGIN IMMEDIATE")
             try:
                 row = database.execute("SELECT revision FROM conversations WHERE id=?", (conversation_id,)).fetchone()
                 if row is None:
                     raise KeyError(f"unknown conversation: {conversation_id}")
+                current_revision = int(row["revision"])
+                if expected_revision is not None and current_revision != expected_revision:
+                    raise CommitConflict("conversation revision changed")
                 if database.execute("SELECT 1 FROM entries WHERE conversation_id=? AND id=?", (conversation_id, entry_id)).fetchone() is None:
                     raise KeyError(f"unknown entry: {entry_id}")
-                revision = int(row["revision"]) + 1
+                revision = current_revision + 1
                 record = _new_commit(database, "branch", {"session_id": conversation_id, "head_entry_id": entry_id})
                 database.execute("UPDATE conversations SET head_entry_id=?, revision=? WHERE id=?", (entry_id, revision, conversation_id))
                 database.execute("COMMIT")

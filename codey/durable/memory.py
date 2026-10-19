@@ -368,12 +368,16 @@ class MemoryDurableStore:
         with self._lock:
             return self._conversation(conversation_id)
 
-    def branch(self, conversation_id: str, entry_id: str) -> CommitResult:
+    def branch(
+        self, conversation_id: str, entry_id: str, *, expected_revision: int | None = None,
+    ) -> CommitResult:
         with self._lock:
             entries = self._entries.get(conversation_id)
             if entries is None or entry_id not in {entry.entry_id for entry in entries}:
                 raise KeyError(f"unknown entry: {entry_id}")
             _head, revision = self._conversation(conversation_id)
+            if expected_revision is not None and revision != expected_revision:
+                raise CommitConflict("conversation revision changed")
             self._heads[conversation_id] = (entry_id, revision + 1)
             self._sequence += 1
             record = CommitRecord(self._sequence, "branch", datetime.now(UTC).isoformat(), {

@@ -499,3 +499,21 @@ ruff     All checks passed
 
 本段结论：Codey 已达到 Pi 的 failure latch、internal/external publication 分层和 close admission 语义；storage underway drain 与跨进程 ownership 仍是 durable 内核差距。
 
+## 11. 第八段：branch head 的 revision CAS
+
+Pi 的历史 head 变更必须在 Session mutation line 上携带调用方捕获的历史位置；两个 writer 对同一旧 head 操作时，后到者得到冲突，不能静默覆盖。
+
+Codey 已为 `DurableSession.branch()`、`MemoryDurableStore.branch()` 和 `SQLiteDurableStore.branch()` 增加 `expected_revision`。CAS 检查在各 backend 的 branch 事务内部执行，成功的 branch 仍发布 durable commit；失败只抛 `CommitConflict`，不会产生新 commit 或改变 head。
+
+红测覆盖 Memory 与 SQLite 两个 backend：两个 Session 使用同一 revision branch 时，一个成功、另一个冲突；同时验证 branch commit 的新 revision、head 和 publication。
+
+本段聚焦结果：
+
+```text
+40 passed
+```
+
+局部检查：mypy、pyrefly、ty、ruff 全部通过。
+
+本段仍未收敛 create/fork/delete 的 canonical mutation：它们还需要进入明确的 commit/publication 语义，后续再处理，避免把 branch CAS 和生命周期变更混成一个不可审查的大 patch。
+
