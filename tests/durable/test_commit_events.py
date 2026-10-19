@@ -27,13 +27,15 @@ def admit(session: DurableSession, *, task_id: str = "task"):
 
 def test_replay_retains_original_conversation_entry_and_task_identity(session: DurableSession) -> None:
     result = admit(session)
-    [record] = session.commits_after(0)
+    record = session.commits_after(0)[-1]
     payload = record.to_payload()
     assert payload["commit_seq"] == result.sequence
     assert payload["session_id"] == "conversation"
     assert payload["task_id"] == "task"
     assert payload["entry_ids"] == [session.entries("conversation")[0].entry_id]
-    assert {event["type"] for event in payload["projections"]} == {"entry_appended", "task_progressed"}
+    assert {event["type"] for event in payload["projections"]} == {
+        "conversation_created", "entry_appended", "task_progressed",
+    }
 
 
 def test_append_returns_the_committed_entry_with_its_real_sequence(session: DurableSession) -> None:
@@ -116,7 +118,7 @@ session.admit_input(conversation_id='conversation', request_id='request', task_i
     result = subprocess.run([sys.executable, "-c", script, str(path)], timeout=20, env={**os.environ})
     assert result.returncode == 73
     reopened = DurableSession(SQLiteDurableStore(path))
-    [record] = reopened.commits_after(0)
+    record = reopened.commits_after(0)[-1]
     assert record.to_payload()["task_id"] == reopened.task("task").task_id
     assert record.to_payload()["entry_ids"] == [reopened.entries("conversation")[0].entry_id]
 
@@ -130,7 +132,7 @@ def test_sse_replays_every_page_and_suppresses_queued_duplicates(monkeypatch: py
         durable.append_message("conversation", "user_message", {"text": str(index)})
     queue = Queue()
     queue.replay_cutoff = 7
-    queue.put(durable.commits_after(519)[0].to_payload())
+    queue.put(durable.commits_after(520)[0].to_payload())
     queue.put({"type": "end"})
     closed = []
     state = SimpleNamespace(durable=durable, run_status=lambda: {}, subscribe=lambda: queue,
@@ -149,6 +151,6 @@ def test_sse_replays_every_page_and_suppresses_queued_duplicates(monkeypatch: py
     )
     server.Handler._sse(handler)
     replayed = [event for event in written if event["type"] == "durable_commit"]
-    assert [event["commit_seq"] for event in replayed] == list(range(2, 521))
+    assert [event["commit_seq"] for event in replayed] == list(range(2, 522))
     assert all(event["session_id"] == "conversation" and event["entry_ids"] for event in replayed)
     assert closed == [queue]

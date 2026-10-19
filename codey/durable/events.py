@@ -4,10 +4,19 @@ from codey.durable.model import DurableMutation, SubmissionStatus
 
 
 def mutation_projection(mutation: DurableMutation) -> dict[str, object]:
-    projections: list[dict[str, object]] = [
+    projections: list[dict[str, object]] = []
+    creation = mutation.create_conversation
+    if creation is not None:
+        projections.append({
+            "type": "conversation_created",
+            "conversation_id": mutation.conversation_id,
+            "parent_conversation_id": creation.parent_conversation_id,
+            "parent_entry_id": creation.parent_entry_id,
+        })
+    projections.extend([
         {"type": "entry_appended", "entry_id": entry.entry_id, "kind": entry.kind}
         for entry in mutation.entries
-    ]
+    ])
     task = mutation.task
     if task is not None:
         projections.append({

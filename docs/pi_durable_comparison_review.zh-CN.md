@@ -549,3 +549,24 @@ Windows 下把 live-owner 文件和 execution 文件放在同一 pytest invocati
 
 Codey 已超过此前“无 owner 识别、无跨 Session recovery fence”的实现，也保留了 Codey 的 fail-closed effect 语义。当前仍有两个边界差距：跨进程数据库 open fencing 尚未实现，Session `close()` 也没有把本 Session 的 running attempts 做显式 graceful handoff；这两项留在 scheduler/storage ownership 段继续处理。本段不能宣布 scheduler 全面超过 Pi。
 
+## 13. 第十段：conversation create/fork 接入 canonical mutation line
+
+对照 Pi 的 mutation line 后，发现 Codey 还有一个容易被忽略的旁路：普通 `create_conversation()` 直接调用 store，`fork()` 通过 backend 专用方法再合成一个不带创建信息的 publication。这样 commit cursor 能看到某些历史 entry，却不能从同一 mutation 重建 conversation ancestry。
+
+本段已完成：
+
+- `DurableSession.create_conversation()` 改为提交 `DurableMutation(create_conversation=...)`，返回真实 `CommitResult`；已存在的相同 root conversation 保持幂等读取；
+- `conversation_ops.fork()` 改为走同一个 `_commit()`，child conversation 的 parent conversation/entry cap 直接成为 mutation 事实；
+- `mutation_projection()` 增加 `conversation_created` 投影，创建、输入 admission 和 fork 都能通过同一个 durable commit/SSE cursor 观察；
+- provider/task admission 原有的“新 conversation + user entry + submission + task”原子提交继续复用同一字段，没有增加第二条写入路径；
+- 原来依赖创建不占 commit 序号的测试已迁移到新的 durable 语义，不能让主代码倒退去迎合旧 cursor 假设。
+
+红测先要求 Memory 与 SQLite 都产生 creation commit，并要求 fork publication 携带 parent cap；随后扩大到 commit replay、fork ancestry、store contract 和 session 测试：
+
+```text
+93 passed
+mypy / pyrefly / ty / ruff 全部通过
+```
+
+本段仍有一个明确未收尾项：`delete_conversation()` 仍直接调用 backend，删除事实没有 durable commit，也没有可补发的 deletion projection。下一段只处理删除事务和 child/dependency 约束，不把 artifact 或 scheduler 语义混进来。
+

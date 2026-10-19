@@ -26,6 +26,7 @@ from codey.durable.model import (
     ApprovalStatus,
     CommitRecord,
     CommitResult,
+    CreateConversation,
     DurableMutation,
     EffectRecord,
     EntryDraft,
@@ -344,16 +345,14 @@ class DurableSession:
                 logger.exception("durable session close listener failed")
 
     @_mutation_line
-    def create_conversation(self, conversation_id: str) -> None:
-        with self._write_lock:
-            self._ensure_writable()
-            try:
-                self.store.create_conversation(conversation_id)
-            except (CommitConflict, KeyError, TypeError, ValueError):
-                raise
-            except Exception as exc:
-                self._fail(exc)
-                raise
+    def create_conversation(self, conversation_id: str) -> CommitResult:
+        if self.store.has_conversation(conversation_id):
+            return CommitResult(self.store.head(conversation_id)[1], self.store.commit_sequence())
+        return self._commit(DurableMutation(
+            conversation_id=conversation_id,
+            expected_revision=0,
+            create_conversation=CreateConversation(),
+        ))
 
     @_mutation_line
     def head(self, conversation_id: str) -> tuple[str | None, int]:
