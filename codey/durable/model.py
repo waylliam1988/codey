@@ -813,6 +813,10 @@ class DurableMutation:
     expected_approval_status: ApprovalStatus | str | None = None
     create_conversation: CreateConversation | None = None
     delete_conversation: DeleteConversation | None = None
+    # Repoint the active conversation head without appending an entry.
+    # Kept as an explicit mutation so branch commits share the same CAS,
+    # commit sequence, and projection path as every other durable change.
+    branch_entry_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.conversation_id or self.expected_revision < 0:
@@ -829,6 +833,16 @@ def _validate_mutation_shape(mutation: DurableMutation) -> None:
         mutation.settlements, mutation.artifacts, mutation.approval,
     )):
         raise ValueError("conversation deletion cannot include other durable changes")
+    if mutation.branch_entry_id is not None:
+        if not isinstance(mutation.branch_entry_id, str) or not mutation.branch_entry_id:
+            raise ValueError("branch_entry_id must be a non-empty string")
+        if mutation.create_conversation is not None or mutation.delete_conversation is not None or any((
+            mutation.entries, mutation.submission, mutation.task, mutation.task_updates,
+            mutation.effect, mutation.effects, mutation.submission_update,
+            mutation.submission_updates, mutation.settlements, mutation.artifacts,
+            mutation.approval,
+        )):
+            raise ValueError("branch cannot include other durable changes")
     if any(entry.conversation_id != mutation.conversation_id for entry in mutation.entries):
         raise ValueError("all mutation entries must belong to its conversation")
     if mutation.submission is not None:

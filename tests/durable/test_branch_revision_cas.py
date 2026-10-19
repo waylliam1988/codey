@@ -34,3 +34,9 @@ def test_branch_commit_is_published_with_the_new_head_and_revision() -> None:
     assert result.revision == revision + 1
     assert session.head("conversation") == (entry.entry_id, revision + 1)
     assert published[-1] == result
+    record = session.commits_after(result.sequence - 1)[0].to_payload()
+    assert record["projections"] == [{
+        "type": "conversation_branched",
+        "conversation_id": "conversation",
+        "head_entry_id": entry.entry_id,
+    }]

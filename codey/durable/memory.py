@@ -114,8 +114,8 @@ class MemoryDurableStore:
             if mutation.submission is not None and mutation.submission.submission_id in self._submission_ids:
                 raise IdempotencyConflict("submission ID was already used")
             self._validate_commit_mutation(mutation, head)
-            new_revision = revision + len(mutation.entries)
-            new_head = mutation.entries[-1].entry_id if mutation.entries else head
+            new_revision = revision + (1 if mutation.branch_entry_id is not None else len(mutation.entries))
+            new_head = mutation.branch_entry_id or (mutation.entries[-1].entry_id if mutation.entries else head)
             if (
                 mutation.task is None
                 and mutation.effect is None
@@ -127,6 +127,7 @@ class MemoryDurableStore:
                 and not mutation.task_updates
                 and not mutation.entries
                 and not mutation.artifacts
+                and mutation.branch_entry_id is None
                 and creation is None
             ):
                 return CommitResult(revision, self._sequence)
@@ -199,6 +200,11 @@ class MemoryDurableStore:
             return result
 
     def _validate_commit_mutation(self, mutation: DurableMutation, head: str | None) -> None:
+        if (
+            mutation.branch_entry_id is not None
+            and mutation.branch_entry_id not in {entry.entry_id for entry in self._entries[mutation.conversation_id]}
+        ):
+            raise CommitConflict("branch entry does not belong to conversation")
         self._validate_entry_chain(mutation.entries, mutation.conversation_id, head)
         self._validate_task(mutation.task, mutation.submission, mutation.expected_attempt_token)
         for task in mutation.task_updates:
@@ -543,20 +549,12 @@ class MemoryDurableStore:
         self, conversation_id: str, entry_id: str, *, expected_revision: int | None = None,
     ) -> CommitResult:
         with self._lock:
-            entries = self._entries.get(conversation_id)
-            if entries is None or entry_id not in {entry.entry_id for entry in entries}:
-                raise KeyError(f"unknown entry: {entry_id}")
             _head, revision = self._conversation(conversation_id)
-            if expected_revision is not None and revision != expected_revision:
-                raise CommitConflict("conversation revision changed")
-            self._heads[conversation_id] = (entry_id, revision + 1)
-            self._sequence += 1
-            record = CommitRecord(self._sequence, "branch", datetime.now(UTC).isoformat(), {
-                "database_id": self.database_id,
-                "session_id": conversation_id, "head_entry_id": entry_id,
-            })
-            self._commits.append(record)
-            return CommitResult(revision + 1, self._sequence, record=record)
+            return self.commit(DurableMutation(
+                conversation_id=conversation_id,
+                expected_revision=revision if expected_revision is None else expected_revision,
+                branch_entry_id=entry_id,
+            ))
 
     def fork(self, conversation_id: str, entry_id: str, child_conversation_id: str) -> CommitResult:
         with self._lock:

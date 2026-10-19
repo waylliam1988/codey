@@ -228,17 +228,17 @@ class SQLiteDurableStore:
                     (mutation.submission.submission_id,),
                 ).fetchone() is not None:
                     raise IdempotencyConflict("submission ID was already used")
-                new_head = mutation.entries[-1].entry_id if mutation.entries else head
+                new_head = mutation.branch_entry_id or (mutation.entries[-1].entry_id if mutation.entries else head)
                 record = _new_commit(database, "durable", {
                     **mutation_projection(mutation), "_workflow": execution_payload(mutation, new_head),
                 })
                 sequence = record.sequence
                 _write_entries(database, mutation, current_revision, sequence)
-                new_revision = current_revision + len(mutation.entries)
-                if mutation.entries:
+                new_revision = current_revision + (1 if mutation.branch_entry_id is not None else len(mutation.entries))
+                if mutation.entries or mutation.branch_entry_id is not None:
                     database.execute(
                         "UPDATE conversations SET head_entry_id=?, revision=?, updated_at=? WHERE id=?",
-                        (mutation.entries[-1].entry_id, new_revision, datetime.now(UTC).isoformat(), mutation.conversation_id),
+                        (new_head, new_revision, datetime.now(UTC).isoformat(), mutation.conversation_id),
                     )
                 elif (
                     mutation.task is not None
@@ -314,26 +314,12 @@ class SQLiteDurableStore:
     def branch(
         self, conversation_id: str, entry_id: str, *, expected_revision: int | None = None,
     ) -> CommitResult:
-        with closing(self._connect()) as database:
-            database.execute("BEGIN IMMEDIATE")
-            try:
-                row = database.execute("SELECT revision FROM conversations WHERE id=?", (conversation_id,)).fetchone()
-                if row is None:
-                    raise KeyError(f"unknown conversation: {conversation_id}")
-                current_revision = int(row["revision"])
-                if expected_revision is not None and current_revision != expected_revision:
-                    raise CommitConflict("conversation revision changed")
-                if database.execute("SELECT 1 FROM entries WHERE conversation_id=? AND id=?", (conversation_id, entry_id)).fetchone() is None:
-                    raise KeyError(f"unknown entry: {entry_id}")
-                revision = current_revision + 1
-                record = _new_commit(database, "branch", {"session_id": conversation_id, "head_entry_id": entry_id})
-                database.execute("UPDATE conversations SET head_entry_id=?, revision=? WHERE id=?", (entry_id, revision, conversation_id))
-                database.execute("COMMIT")
-                return CommitResult(revision, record.sequence, record=record)
-            except BaseException:
-                if database.in_transaction:
-                    database.execute("ROLLBACK")
-                raise
+        _head, revision = self.head(conversation_id)
+        return self.commit(DurableMutation(
+            conversation_id=conversation_id,
+            expected_revision=revision if expected_revision is None else expected_revision,
+            branch_entry_id=entry_id,
+        ))
 
     def fork(self, conversation_id: str, entry_id: str, child_conversation_id: str) -> CommitResult:
         with closing(self._connect()) as database:
@@ -745,6 +731,14 @@ def _validate_mutation(
 ) -> None:
     if revision != mutation.expected_revision:
         raise CommitConflict("conversation revision changed")
+    if (
+        mutation.branch_entry_id is not None
+        and database.execute(
+            "SELECT 1 FROM entries WHERE conversation_id=? AND id=?",
+            (mutation.conversation_id, mutation.branch_entry_id),
+        ).fetchone() is None
+    ):
+        raise CommitConflict("branch entry does not belong to conversation")
     parent = head
     for entry in mutation.entries:
         if entry.parent_id != parent:

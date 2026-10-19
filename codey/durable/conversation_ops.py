@@ -180,12 +180,13 @@ def branch(
 ) -> CommitResult:
     session._ensure_writable()
     try:
-        result = session.store.branch(
-            conversation_id, entry_id, expected_revision=expected_revision,
-        )
         _head, revision = session.store.head(conversation_id)
-        session._publish_commit(result, DurableMutation(conversation_id, max(0, revision - 1)))
-        return cast(CommitResult, result)
+        captured_revision = revision if expected_revision is None else expected_revision
+        return cast(CommitResult, session._commit(DurableMutation(
+            conversation_id=conversation_id,
+            expected_revision=captured_revision,
+            branch_entry_id=entry_id,
+        )))
     except (CommitConflict, KeyError, TypeError, ValueError):
         raise
     except Exception:

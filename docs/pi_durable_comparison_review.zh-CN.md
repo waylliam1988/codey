@@ -1177,4 +1177,40 @@ SCHEMA_VERSION = 1
 
 Codey 已在 waiting dependency 的持久化反向唤醒上接近并达到 Pi scheduler 的核心语义，同时保留 task CAS、attempt fencing、未知 effect fail-closed 和权限边界。仍低于 Pi 的 scheduler 生命周期是完整 live invocation index、background ownership、abort handler 分层传播，以及更完整的 completing/finalization 调度图。
 
+## 34. 第三十段：branch 接入唯一 durable mutation line
+
+本段收敛此前仍绕过统一提交入口的 branch 路径。原先 `conversation_ops.branch()` 直接调用 store 专用写入，再发布一个不包含 branch 事实的合成 mutation；这使 branch 的 head、revision、commit cursor 和 projection 不能由同一个 mutation 描述。现在 branch 是 `DurableMutation.branch_entry_id`，Memory/SQLite 的公开 `store.branch()` 只作为窄适配器委托给 `commit()`。
+
+### 34.1 已完成
+
+- `DurableMutation` 明确表达 branch head 重定位，并拒绝与 entry、task、effect、submission、artifact、create/delete 等其他事实变更混合；
+- `conversation_ops.branch()` 经过 `DurableSession._commit()`，由同一 mutation line 执行 revision CAS、entry 归属验证、head 更新和 commit 发布；
+- Memory/SQLite 都以一次 durable commit 将 branch projection、head 和 revision 原子提交；branch revision 每次递增一次，旧 entries 保留；
+- projection 统一为 `conversation_branched`，SSE/commit cursor 可以从 durable commit 重建 branch 事件；
+- 两个 backend 的 store contract、branch CAS、context/fork 回归均通过；
+- 冷启动约束保持：`SCHEMA_VERSION = 1`，没有旧 branch 写入路径或兼容 fallback。
+
+### 34.2 验证
+
+```text
+test_branch_revision_cas.py：3 passed
+conversation mutation line + commit events + store contract：62 passed
+context + fork ancestry + workflow fork：28 passed
+mypy：Success: no issues found in 6 source files
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 34.3 与 Pi 的结果
+
+Codey 现在在 branch 的 mutation ownership、CAS、commit sequence 和 SSE projection 上达到 Pi durable 的单一提交语义，并保留自己的 session sealing、权限边界和 task/effect fencing。此前“branch 需要从多个日志或合成事件推断”的差距已消除。
+
+仍低于 Pi 或尚未接通的部分：
+
+- 真实 provider 执行中的 tool settlement、boundary placement 和下一 checkpoint 仍需完整故障注入证明；
+- scheduler 的 live invocation index、background ownership、abort handler 分层传播和 completing/finalization 调度图仍未完成；
+- fork-local `InboxDoc` snapshot/history、Runtime JSONL 旧路径清理、AppContext/巨型模块最终结构审查仍待进行。
+
 
