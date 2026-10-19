@@ -3,21 +3,24 @@
 > 文档类型：未来方向；未落地的建议不代表当前能力或发布承诺。
 > 当前行为以[能力说明](codey_capabilities.zh-CN.md)和
 > [Runtime 架构](runtime_architecture.zh-CN.md)为准。
+> 2026-10-19 修订：偏好投递与预算路由实验只支持按 hint family、模型和投递配置有条件晋级；
+> 0.6 的具体交付顺序以 [Roadmap](../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量)为准。
 
 ## 定位
 
-Ghost 的长期价值不是把 Codey 变成另一个大模型，也不是让 runtime 自己替模型思考。Ghost 更适合成为 Codey 的本地自适应层：
+Ghost 是本地、可审计、可删除的经验投影与上下文路由层。它通过经过验证的 hint
+影响模型提示，不拥有事实、权限或执行权；可塑性网络是单独的研究方向。
 
 ```text
 用户显式信号 / 项目经验 / provider 行为 / verification 结果
         ↓
 bounded event log
         ↓
-Hebbian + Affinity projection
+领域投影（Hebbian / Affinity 可提供关联、复现和解释特征）
         ↓
 可审计、可衰减、可回滚的本地经验
         ↓
-Context Epoch admission
+按 family 策略筛选、排位、预算 → Context Epoch admission
         ↓
 模型看到少量可靠提示
 ```
@@ -37,6 +40,85 @@ runtime 边界不能松
 ```
 
 这更接近 “ghost in the shell” 里的 ghost：不是另一个 agent，也不是隐藏权力层，而是附着在 shell/runtime 上的本地连续性。
+
+## 偏好投递与预算路由的实验决策基线（2026-10-19）
+
+本节保存会影响路线的测量与限制，不替代原始实验材料。同 prompt 排序对照与扩槽位
+排序对照各 54 runs，分层路由消融新增 D2 18 runs 和冲突替换离线检查，
+偏好族与预算压力验收为 modelA 232 runs 加离线检查。分层路由消融复用了扩槽位排序
+对照中的新近/生产/空白基线，不能再算作独立重复。实验主要是 harness patch，
+不代表生产已实现同样的 allowlist、排序或 Context Epoch 准入。
+
+| 实验 | 观察 | 支持的决策与限制 |
+|---|---|---|
+| 同 prompt 排序对照 | 生产排序与新近排序的 directive 逐字节相同，580 字节、8 行；有 directive 时部分回答变短 | 此配置下排序没有处理差异；变短不足以证明逐行服从，也没有等长无关前言对照 |
+| 扩槽位排序对照 | 中文任务新近排序 3/3，生产排序/空白各 0/3；只有新近排序送达语言行 | 扩展槽位有价值，候选入选会影响行为；n=3，排序也改变了其他入选内容，不声称完全隔离每行语义 |
+| 分层路由消融 | 分层 decisive 6/15，新近 7/15；cap8 下分层覆盖四族且无自述 | 分层改善覆盖；未证明总行为收益严格胜过新近排序 |
+| 语言投递与当前请求覆盖 | language on 19/20、off 0/20，4 问法；当前请求覆盖长期语言偏好 12/12 | language 是 modelA 受测配置下的有条件生产候选；不等于跨模型默认上线 |
+| 命令偏好投递对照 | command on/off 各 0/20；预算臂另有零星成功 | 保持 SHADOW；不能把全部命令试验写成零成功，也不能据零星成功承诺稳定收益 |
+| 预算压力与路由对照 | 新近排序 cap8 语言 9/10、cap12 2/10；生产 Hebbian cap12 为 6/10；分层 cap4/8/12 为 10/10、10/10、9/10 | 入选不是充分条件；行数、内容、顺序共同变化，位置的独立因果仍待隔离 |
+
+cap 指 directive 的最大条目数。实验材料中生产排序标为 B/B2 或 hebbian，
+新近排序标为 A/A2 或 recency，空白对照标为 C/C2，分层路由标为 D2 或 d2；
+这些标签仅用于对照原始数据，不作为长期产品概念。
+
+### Family 决策
+
+| Family | 当前决策 | 生产条件 |
+|---|---|---|
+| language | 有条件晋级候选 | 先扩类型化语言槽位；优先排位是待验收的策略；真实发送链路复测后仅为通过的模型/配置开启 |
+| test command / verification habit | SHADOW，0.6 不默认投 directive | 把任务意图与工具可用性作为下一次实验变量；intent 层是候选宿主，尚未证明迁移有效 |
+| format / length / answer-first | WEAK-HINT-ONLY | 没有稳定的精确服从增益；列表对照本来就通过，不能计为记忆收益；不能承诺三句以内或永远结论先行 |
+| code notes / stable facts | 未晋级 | 需要代码结果质量或任务正确性指标，不能用语言/格式分数替代 |
+| system self-description | 目标策略：默认排除 | 必须显式过滤；D2 cap8 无自述，但 cap12 仍有三条，零先验只是降权 |
+| Hebbian / Affinity | 关联、复现、排序特征与解释来源 | 重复确认不等于行为收益；没有最终投递决定权，复杂策略需胜过简单基线 |
+
+### 已验证边界与仍有的缺口
+
+偏好生命周期离线 fixture 中删除后重建零复活、过期行归零；`parity/parity.json`
+显示旧生产 builder 与 operation 入口均为 580 字节且文本一致。它也披露
+focus、code_notes、commit_flow、test_command、language 五类行为/内容行在生产不可渲染。
+这验证了旧入口一致性，没有验证扩展 treatment 的生产等价，也没有压测真实
+provider-send 前的 Context Epoch gate。`parity/audit.json` 保存了各臂行清单和权重，
+生产仍需逐节点的入选、拒绝、位置、预算与挤出记录。
+
+历史冲突替换 fixture 的“两节点留存”不能单独证明 supersede 失效：失活节点可以为审计留存。
+当前源码的新证据与重复证据路径都已有显式人工接受时的 supersede 分支，并有对应单测；
+自动确认、人工接受及同槽冲突的语义应分别核对。验收应检查 `status`、`superseded_by`、
+active 集、入选集和 replay 结果，不能仅断言总节点数必须为一。
+
+脚本、运行说明与来源摘要已迁入
+[tests/manual/ghost_memory_routing/](../tests/manual/ghost_memory_routing/README.md)，
+历史报告、合成 directive、parity/audit 与不含回复的测量在该目录的 `reports/`。
+`summarize.py` 可直接复算随目录保存的 `measurements.json`，不需要模型或原始回复。
+数据中 `modelA` 的完整模型身份见运行说明；历史 capture 的 Git revision 未记录。
+完整本地 state、原始 JSONL 和未修改源脚本保存在仓库根目录的
+`artifacts/ghost_memory_routing/`，受 Git 忽略，已不依赖 Temp。
+正式晋级前仍需修正历史 scorer、冻结必测配置与生产版本，不能把归档迁入当成行为验收。
+原始 prompt/reply 不进入版本库，生产不 import harness。
+报告文件的对应关系为：`REPORT.md` 是同 prompt 排序对照，`REPORT2.md` 是扩槽位排序对照，
+`REPORT3.md` 是分层路由消融，`REPORT4.md` 是偏好族、预算压力与生命周期验收。
+
+### 0.6 晋级协议
+
+1. **先冻结评估，再接生产。** 指定必测模型、任务、on/off 对照、最低样本量、预算、
+   scorer 与收益门槛；language 的起始复核规模沿用每模型 on/off 各至少 20 次、4 问法。
+   分母按任务和配置单列，报告不确定性、停滞和审批结果，不用所有 runs 总数充当某 cell 样本量。
+2. **自动判定先检查完整性。** 缺任一必测模型、任务、对照或样本量，结果为 INCOMPLETE，
+   不跳过缺失模型，不把缺失 off 当 0%。修正归档脚本 `PROMOTE-MATCHED` 缺少 rank 映射的问题；
+   达到成功率门槛也必须有预先约定的对照增益。最弱模型规则只对完整的必测矩阵生效。
+3. **分别评估选择、排位和宿主。** 固定行集合只换语言行位置，隔离位置效应；
+   预算曲线继续比较简单新近排序、当前生产排序和最小 family 路由。
+   工具建议与工具执行分开判分，审批拒绝不能直接当成排序失败。
+4. **再验收真实发送。** 扩槽位后的生产 builder、operation 入口、admitted envelope
+   与实际 payload 的文本/digest 对齐；验证禁用、超预算、过期、跨 scope、当前请求覆盖
+   和拒绝 source 不泄漏。旧 renderer parity 不能替代此项。
+5. **按模型与配置启用并可回滚。** 一个模型通过可以支持显式限定范围的试点；
+   全支持模型默认开启须经过完整必测矩阵。第二模型不是阻止控制面开发的前提，
+   也不能在它缺席时声称跨模型通过。任何 family 失败只停止该族晋级。
+
+0.6 不再用“所有槽位都入选”作为最终成功标准；覆盖率必须和行为净收益、
+任务正确性、成本及当前请求覆盖一起看。弱提示不应挤掉已验证偏好，也不需要填满预算。
 
 ## Ghost 与 World Model
 
@@ -233,20 +315,26 @@ Ghost
 
 最后一道动作边界必须仍由用户请求、mode policy、permission profile 和 tool runtime 控制。
 
-### 5. Event Log 是权威，Projection 是派生
+### 5. 领域事件是权威，Projection 是派生
 
 Ghost 的长期状态应该尽量保持：
 
 ```text
-events.jsonl = authoritative audit log
-state.json   = derived projection
+domain events = authoritative audit history
+projection    = derived state
 ```
 
-projection 可以删除、重建、衰减、压缩；event log 要 bounded、可审计、可迁移。
+projection 可以删除、重建、衰减、压缩；事件要 bounded、可审计、可迁移。
+这是逻辑所有权，不要求独立 JSONL/JSON 文件；当前 Ghost 使用隔离 SQLite 存储领域数据、
+图事件和投影，不能为路线图重新引入第二套权威日志。
 
 ### 6. 小上下文，而不是无限记忆
 
 Ghost 给模型的内容必须经过预算、排序、冲突处理和 Context Epoch admission。不要把历史对话、全文笔记、raw transcript、网页正文塞进 prompt。
+
+候选可渲染、有效且不冲突之后，先按 family 的上线状态与当前任务筛选，再确定排位和预算。
+来源多、权重大、重复确认多都不能直接换成投递优先权。自述显式排除，空余名额可以留空；
+最小策略先用已验证 family 优先、稳定新近次序，task trigger 在相关族证明收益前只做 shadow。
 
 ```text
 默认只给：
@@ -450,8 +538,9 @@ Research citation / evidence_refs
 ```text
 更好的 conflict_key / value_key
 更好的 scope 选择：user / project / session
-手动接受时 supersede 冲突偏好
-directive 排序由 affinity hints 辅助
+手动接受时持久化 supersede，旧节点失活但可留审计
+按 family、scope、当前请求、排位与预算选择；affinity 只提供辅助特征
+语言先做生产候选；长度/格式保持弱提示，代码偏好另测正确性
 UI 显示“这次用了哪些本地偏好”
 ```
 
@@ -478,6 +567,10 @@ UI 显示“这次用了哪些本地偏好”
 ```
 
 输出形式应该是 bounded hints，而不是自动执行：
+
+这是后续候选形态。命令偏好投递对照没有证明 command directive 有稳定收益，0.6 不默认投递。
+先对比“只问命令”“授权运行测试”“仅解释且不可执行”等意图与工具场景，
+分别测命令建议、实际工具选择、审批结果和验证正确性；不要用绕过审批修复服从率。
 
 ```text
 Local Context:
@@ -683,6 +776,13 @@ GhostExplainItem
   label
   scope
   reason_code
+  family
+  selected_or_rejected
+  rank_before_admission
+  rank_in_payload
+  budget_cost_and_unit
+  displaced_by_ref
+  promotion_state
   weight
   selection_confidence
   provenance_refs
@@ -1130,7 +1230,7 @@ World Model maintenance 不能执行 provider/search/tool calls
 
 Codey 可以训练自己的东西，但顺序应该很克制。
 
-### 第一阶段：不训练模型，只训练本地权重
+### 第一阶段：冻结评估与最小路由，权重只作待验证特征
 
 ```text
 accepted Ghost signals
@@ -1140,7 +1240,11 @@ completion proof outcomes
 research continuity outcomes
 world model prediction reviews
         ↓
-Hebbian / Affinity weights
+bounded domain projection / Hebbian / Affinity features
+        ↓
+family eligibility + scope/conflict + placement/budget
+        ↓
+shadow evaluation → per-family, per-model promotion
 ```
 
 收益：
@@ -1153,6 +1257,10 @@ Hebbian / Affinity weights
 不需要 GPU
 不改变大模型权重
 ```
+
+以上是成本与控制属性，不代表已经证明行为收益。先保留简单可回放策略；
+只有在相同槽位、预算、位置及模型下胜过基线，才增加学习权重的决策作用。
+不能把 language 的收益归功于 Hebbian，也不能由一次排序失败否定所有长期学习研究。
 
 ### 第二阶段：导出可选数据集
 
@@ -1278,32 +1386,19 @@ effect intent / settlement 与 operation state 的职责分离
 
 ### 0.6+
 
-0.6+ 才开始把 Ghost 变成更强的本地自适应层：
+具体版本以 Roadmap 为单一来源；本节只保留依赖顺序：
 
 ```text
-project verification habit projection
-provider/protocol affinity
-repair context outcome learning
-tool args repair telemetry
-shadow-mode adapter dataset export
-Ghost Explain v0
-codey ghost explain --format json
-directive selected_nodes / affinity hint provenance explanation
-local context drawer “why this hint”
+0.6.0–0.6.4  冻结实验、最小事件契约、真实 admission、控制、冲突/删除与 replay
+0.6.5–0.6.7  类型化语言、最小路由/逐节点遥测、生产 shadow、受测模型有条件启用
+0.6.8–0.6.12 命令/验证习惯 shadow、provider outcome、Explain；World Model 可选 shadow
+0.7.x        扩必测模型与任务；每次只晋级一个已有净收益的 family
+0.8.x        有消费者和数据时再做协议适配；不恢复额外 Ghost 模型调用
+0.9.x+       可塑性研究，独立基准，不自动进入默认 prompt
 ```
 
-World Model 也从 0.6+ 开始做最小闭环：
-
-```text
-World Model Minimal Contract v0
-append-only WorldModelEvent jsonl
-prediction record/review schema
-projection with valid_until / stale_reason
-context_hint_candidates
-bounded World Model ContextSource
-Context Epoch admission tests
-World Model architecture tests
-```
+命令偏好与 World Model 不阻塞语言闭环；未证明收益的族保持 shadow 或不投。
+schema 可表达不等于默认可投，生产扩槽位先兑现语言，其他类型按独立实验推进。
 
 0.6+ 不做：
 

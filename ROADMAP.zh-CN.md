@@ -1,5 +1,10 @@
 # Codey 未来版本规划
 
+> 2026-10-19 Ghost 路线修订：语言偏好在受测模型上有收益，生产投递链路和跨模型复核尚待验收。
+> 当前方向是按 family、模型和投递配置验证的本地经验路由；Hebbian 是辅助特征与研究机制。
+> 实验测量、限制和晋级协议见 [Ghost 决策基线](docs/ghost_future_direction.zh-CN.md#偏好投递与预算路由的实验决策基线2026-10-19)。
+> 下面的 0.3 记录是历史阶段，不表示退役的 extractor、learning loop 或 router 仍在生产。
+
 这份文档记录 Codey 从 `0.3.0` 开始的路线。`0.2.25` 到 `0.2.33`
 已经完成了内部地基：Run Ledger、Ledger Projection、ToolDefinition、
 ContextSource、Provider Capability、Managed Outputs、Permission Profiles、
@@ -18,20 +23,20 @@ Ghost in Codey
 更准确地说：
 
 ```text
-Ghost / Nezha-mini = 主体、长期连续性、偏好、记忆、意图
-Codey = 工具身体、本地执行、安全边界、工作台
-外部模型 = 可替换的推理器官
+Ghost = 本地连续性、确认偏好、经验投影与有界上下文路由
+Codey = 用户任务入口、工具执行、证据、权限、恢复与验证
+外部模型 = 可替换的语言与推理引擎
 ```
 
 这里有一个不可放松的边界：
 
 ```text
-产品核心：Ghost 应该是核心
-安全核心：Codey 仍然必须是核心
+产品目标：跨模型保留用户与项目经验，并证明它能改善具体任务
+运行边界：用户请求、项目约束、权限、Evidence 与 CompletionProof 仍由 Codey 持有
 ```
 
-Ghost 可以决定“我想帮用户聊天、研究、写代码、复盘、记住偏好、整理长期问题”。
-但真正读文件、改文件、跑命令、联网研究、提交 git 的动作，仍然必须经过 Codey 的
+Ghost 提供经过筛选的偏好、经验和继续工作候选，不作为独立主体决定当前任务。
+读文件、改文件、跑命令、联网研究、提交 git 的动作，仍然必须经过 Codey 的
 Permission Profile、Research Controller、ToolRuntime、shell approval、Run Ledger、
 verification、restore 和 Project-local Config。
 
@@ -112,6 +117,10 @@ Source / Evidence / Claim / Assumption / AnalysisRun / Artifact / Review
 
 这些能力共同提供了 0.4 当时需要的研究底座：
 
+这一节保留历史阶段记录。旧 extractor、额外调用的 learning loop 和预路由 router
+已退役；现行路径是经历结算/检索与人工确认偏好，见
+[Ghost 已有基础](docs/ghost_future_direction.zh-CN.md#已有基础)。历史模块完成不表示偏好收益已验收。
+
 - `ghost/schema.py`、`ghost/inbox.py`、`ghost/hebbian.py` 让长期偏好和纠错先进候选区，再被审计接受。
 - `ghost/directive.py` 和 `context_source.py` 让本地连续性以有预算的中性文本进入 prompt，且不能授权工具。
 - `ghost/observations.py`、`ghost/continuity.py`、`ghost/sleep.py` 让 Codey 能记住长期主题、开放问题和用户偏好，但不保存完整聊天正文。
@@ -127,32 +136,21 @@ Source / Evidence / Claim / Assumption / AnalysisRun / Artifact / Review
 所以 0.4 不是推翻 0.3，而是把 Ghost 的连续性、Research 的证据链、Run Trace 的审计和
 ToolRuntime 的本地执行合成一条更可靠的 Evidence Research Runtime。
 
-## 总架构
+## 当前规划的职责架构
 
 ```text
 User
-  -> Ghost Core
-       - long-term continuity
-       - Hebbian preferences
-       - correction ledger
-       - memory inbox
-       - research interests
-       - route intention
-       - Ghost Directive
-  -> Codey Action Layer
-       - TaskRuntime
-       - operation functions
-       - ResearchRunner
-       - ToolRuntime
-       - PermissionProfile
-       - approval / ledger / restore / verification
-  -> External Model
-       - DeepSeek / Qwen / MiMo / StepFun / GLM / local API
+  -> Codey task/runtime
+       ├─ Ghost confirmed preferences / experience projections
+       │    -> family eligibility / scope / conflict / placement / budget
+       │    -> ContextSource / PromptEnvelope / Context Epoch admission
+       ├─ External Model (language / reasoning / proposed actions)
+       └─ tool / research / permission / approval / ledger / verification / completion
 ```
 
-Ghost 负责“我是谁、我记得什么、我为什么做这件事”。
-Codey 负责“我能安全做什么、做完有没有证据、失败后能不能恢复”。
-外部模型负责“语言推理和生成”，可以随时替换。
+Ghost 负责保存并解释“哪些本地经验值得本次参考”；Hebbian 权重不是投递裁决。
+Codey 负责当前任务、执行、证据、完成与恢复；外部模型负责语言推理和生成。
+上图是规划契约，真实发送链路的 admission 补齐仍是 0.6.1 验收项。
 
 ## Nezha-mini 的迁移边界
 
@@ -333,14 +331,14 @@ ChatGPT/Cursor 式交互
 
 ## 规划原则
 
-1. 0.3 已经把 Hebbian / Ghost 长期连续性落地；0.4 已经把它约束进 Evidence Research Runtime，而不是让记忆替代证据。
+1. 0.3 落地了 Hebbian / Ghost 连续性基础设施，未证明全部学习机制的行为收益；0.4 把它约束进 Evidence Research Runtime，记忆不能替代证据。
 2. Hebbian 状态必须是纯 Python / JSON / SQLite 可审计状态，不依赖 torch、HF 或 transformers。
 3. LLM 可以判断学习信号，但不能直接永久写记忆。
 4. 所有学习先进 inbox，经过 gate 才能强化 Hebbian state。
 5. Ghost Directive 只能影响表达、偏好和任务倾向，不能授权工具。
 6. Research 事实仍然来自 Codey Research evidence，不来自 Ghost 关联边。
 7. 关联边表示“相关性”或“值得研究”，不表示“事实为真”。
-8. Ghost Router 只输出意图，不能直接调用 edit/run/shell/git。
+8. 已退役的 Ghost Router 不恢复；任何未来意图 hint 也不能直接调用 edit/run/shell/git。
 9. 所有 Ghost 状态都要有大小上限、衰减、冲突处理、导出和删除路径。
 10. UI 先保持安静，最后再做 Ghost 审计面板。
 11. Ghost 必须从第一版就有 disable、export、reset 和 delete scope 的控制入口；UI 可以晚做，控制权不能晚给。
@@ -1724,11 +1722,18 @@ Safe read/search replay 已实现，unsafe replay count 始终为 0
 全量 pytest 通过
 ```
 
-0.6 的主线不再是 0.5 runtime correctness，而是建立在稳定 runtime 上的本地经验层：
+0.6 的主线是在稳定 runtime 上完成一个可测量、可回滚的偏好投递闭环：
 
 ```text
-0.6 = Ghost / World Model / Protocol Adaptation on Stable Durable Runtime
+0.6 = audited memory routing + production admission + conditional language promotion
 ```
+
+偏好投递实验中，受测模型 modelA 的 language on/off 为 19/20 对 0/20；
+command 为 0/20 对 0/20，继续 SHADOW。生产接线和跨模型复核未完成。
+cap12 语言服从为分层 9/10、生产 Hebbian 6/10、新近 2/10；行数、内容和顺序共同
+变化，不能仅按入选覆盖率判断收益，也不能据此认定位置的独立因果。
+旧入口 580 字节 parity 不包含扩槽位 treatment；真实发送 admission 待验收。
+不把 harness 里的 PROMOTE 当作已经上线，也不等第二模型才开始修控制和投递边界。
 
 ## 0.6 之后的可执行路线：一个版本只推进一个可验证增量
 
@@ -1736,15 +1741,18 @@ Safe read/search replay 已实现，unsafe replay count 始终为 0
 版本号表示可交付的行为增量；`G` 阶段只表示依赖关系，不替代版本号。
 
 ```text
-G0  契约与控制面          0.6.0–0.6.5
-G1  观察经验与投影          0.6.6–0.6.10
-G2  Explain 与 shadow      0.6.11–0.6.12
-G3  选择性晋级              0.7.x
+G0  评估基线、准入与生命周期  0.6.0–0.6.4
+G1  语言投递、遥测与限定晋级  0.6.5–0.6.7
+G2  其他族 shadow 与解释     0.6.8–0.6.12
+G3  扩模型/任务与选择性晋级   0.7.x
 G4  Protocol Adaptation     0.8.x
 R0  研究基准与可塑性实验    0.9.x+
 ```
 
 以下版本都是计划项，完成条件以行为、回放、指标和边界测试为准，不以“模块已存在”为准。
+冻结评估与最小选择遥测在语言晋级前交付；完整 Explain 在 0.6.11 提供。
+验证习惯、provider outcome 和 World Model 在语言闭环之后保持 shadow，
+不要求先做完所有投影模块才验证第一个有收益的 family。
 
 ### 所有版本共同适用的硬门槛
 
@@ -1754,42 +1762,57 @@ R0  研究基准与可塑性实验    0.9.x+
 Ghost 不写 EvidenceLedger、CompletionProof 或 PermissionProfile
 Ghost 不执行 provider、search、tool 或项目工作区 mutation
 所有新增的模型可见 hint 都经过 Context Epoch admission
+当前请求优先；拒绝、禁用、过期、失活与跨 scope 内容不进入发送 payload
 projection 能从领域 event log 重建
 delete 后 rebuild 不会复活已删除数据
 维护任务使用显式 as_of，不读取隐含当前墙上时间
 状态和事件都有大小上限、scope 隔离和 schema version
 失败可以 quarantine、报告并继续使用上一次有效 projection
 新增模型调用、prompt token、延迟和磁盘增长都有可观测记录
+自动晋级缺必测模型/对照/样本时是 INCOMPLETE，不把缺失对照算作零
 ```
 
 每个版本的交付物固定为：实现、行为命名测试、deterministic replay fixture、指标报告、
 回滚说明和 roadmap 状态更新。没有这些交付物，版本保持未完成。
 
+从 0.6.5 的新路由开始，family 可表达、可入选、已实际发送、行为有效必须分别记录；
+自述显式排除，未证明收益的 family 不因预算空余而自动投递。已有弱偏好的行为变更
+单独记录兼容性与 A/B，不借新槽位扩展静默改变默认 prompt。
+
 `0.6.0` 是 admission wiring 的前置契约版本：它只能冻结 envelope、所有权和绕过路径清单，
 不得新增模型可见的 Ghost source；从 `0.6.1` 起，旧路径和新增路径都必须经过真实 admission。
 
-### G0：契约与控制面（0.6.0–0.6.5）
+### G0：评估基线、准入与生命周期（0.6.0–0.6.4）
 
-G0 不建立新的中央事件总线。它统一现有 observation、affinity、work queue 等领域事件的
-envelope、所有权、引用和 replay 规则；各领域仍然拥有自己的事件和 projection。
+G0 沿用现有隔离 SQLite 与领域事件/投影，不建立新的中央事件总线或第二套 JSONL 权威日志。
+先修正评估完整性与真实发送边界，再扩最小契约；不为未来研究先造大型 Experience 系统。
 
-#### 0.6.0 - Event Envelope and Ownership Audit
+#### 0.6.0 - Frozen Evaluation and Ownership Audit
 
-目标：冻结领域事件与 GhostExperience 之间的最小公共 envelope。
+目标：固定偏好投递、排序消融、预算压力与生命周期实验的可复查基线、晋级规则与领域事件所有权。
 
-交付：`event_id`、`event_time`、`observed_at`、`effective_at`、`kind`、`scope`、
-`run_id`、`trace_id`、`producer`、`source`、`action_ref`、`outcome_ref`、
-`parent_event_refs`、`idempotency_key`、`retention_class`、`redaction_class`、
-`provenance_refs`、`schema_version` 和 outcome 引用的规则；标明谁能写入、谁只能读取。
+当前已有：脚本、历史报告、脱敏测量和来源摘要已保存在
+[manual memory-routing 实验目录](tests/manual/ghost_memory_routing/README.md)，
+完整本地产物在被 Git 忽略的 `artifacts/ghost_memory_routing/`，不依赖 Temp。
+它们是评估起点，不表示本版本已完成。
 
-字段语义固定为：`source` 表示事实所属的领域，`producer` 表示实际写入组件，
-`provenance_refs` 表示可追溯来源，`action_ref` 表示导致事件的动作，`outcome_ref` 表示该动作的
-结算结果。它们不能互相替代；Ghost 不得把 `provenance_refs` 改名为 Evidence。
+交付：在已归档的任务/scorer 上补齐冻结配置、采样参数和生产版本身份；
+生产不 import harness，不提交 raw prompt/reply。
+列出必测模型、任务、on/off 对照、每 cell 最低样本量、收益差和回滚条件；language
+以每模型 on/off 各至少 20 次、4 问法作起始复核规模，并报告任务分层与不确定性。
+
+自动判定必须先验证完整性：缺必测模型、任务、off 对照或样本量返回 INCOMPLETE；
+不跳过缺失模型、不把缺失对照当零；修正 `PROMOTE-MATCHED` 的 rank 映射。
+完整矩阵才取最弱必测模型；单模型试点必须明确限定范围。
+
+事件契约只冻结当前消费者需要的 event identity、time、kind、scope、schema version、
+producer/source 与 provenance；涉及 action/outcome 时绑定 refs 和幂等键，不能猜测 outcome。
+列出 admission 绕过路径，标明谁能写、谁只能读；不提前给所有 store 加未消费字段。
 
 禁止：引入第二个全局 authoritative log；把 raw transcript、raw prompt 或 raw reply 作为经验契约。
 
-验收：架构扫描能证明 runtime 写 observation、Ghost 做 projection；跨领域事件不能互相覆盖；
-畸形 envelope fail closed。
+验收：现有数据可复算 family 结论；缺失/部分 suite 不能晋级；各判定枚举有明确映射；
+runtime 写 observation、Ghost 做 projection 的所有权可追溯；本版本不改变默认 prompt。
 
 #### 0.6.1 - Context Epoch Admission Wiring
 
@@ -1813,6 +1836,8 @@ rendered envelope 才能交给 provider。trace 只记录准入结果，不能�
 
 验收：任何 Ghost 文本未经过 admission 都不能进入 provider payload；拒绝或超预算的 source
 不会静默拼接；prompt trace、epoch record 和实际发送字节一致。
+覆盖真实发送路径的禁用、scope、过期与预算拒绝；先用真实 provider-send 接口的捕获/故障注入
+验证 payload，再做最小 live smoke。seed/builder parity 不能替代此 gate。
 
 #### 0.6.2 - Scope Control and Four Learning Switches
 
@@ -1826,6 +1851,7 @@ admit_hints
 ```
 
 交付：user/project/session scope 的 disable、export、reset、delete 控制；每个控制的即时生效语义。
+统一现有控制面和 health/recovery 输出；不为开关新增中央可变 manager。
 
 控制面由一个 Ghost-owned control projection 持有，继承顺序固定为：user 默认、project 覆盖、
 session 覆盖；更窄 scope 只能进一步收紧，不能覆盖上层的 deny。四个开关的语义为：
@@ -1839,9 +1865,15 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 验收：关闭任一开关只影响对应行为；重启和并发请求不会恢复旧开关；已有状态不会被偷偷升级为新 hint。
 
-#### 0.6.3 - Durable Delete Manifest and Tombstones
+#### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
-目标：删除是持久化语义，不只是删除当前 `state.json` 或 projection。
+目标：同槽偏好替换和删除是存储级语义，不能靠 renderer 偶然去重。
+
+先核对当前行为：`hebbian.py` 已在新证据和重复证据路径对人工接受做 supersede，
+已有 `test_manual_accept_new_value_supersedes_old_active_node`。旧实验总节点数为二
+不代表两个节点都 active，也不证明仍占两个 directive 名额。分别验证人工接受与自动确认，
+同 scope/slot 的旧节点状态、`superseded_by`、active 集与发送集；跨 scope 不互相误删。
+历史失活节点可保留审计，旧事件 replay 不得重新激活或挤占名额。
 
 交付：一个由 control-plane deletion event log 持有的 deletion manifest，包含
 `delete_operation_id`、scope、requested_at、retention class、tombstone digest 和每个 store
@@ -1853,12 +1885,14 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 manifest 在所有 store 确认或明确 blocked 前保持未完成。manifest 写入、tombstone 生效和
 store 执行顺序必须可回放；manifest 损坏时 fail closed，不能恢复为“未删除”。
 
-验收：删除后 replay、rebuild、sleep、restart 都不能复活 hint；新增事件不能写入已删除 scope；
+验收：删除后 replay、rebuild、sleep、restart 都不能复活被删记录；新记录不能复用已删身份；
 `delete/rebuild resurrection rate = 0`。
+manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线 fixture 通过不等于全 scope 验收。
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
-目标：定义可比较的 replay determinism，不要求 JSONL 字节完全相同，但要求状态、排序、hint 和健康结论相同。
+目标：定义可比较的 replay determinism，要求状态、筛选、排位、hint 和健康结论相同，
+不要求 SQLite 文件或导出日志字节相同。
 
 交付：固定事件序列、稳定排序键、snapshot 边界和随机 ID 去除规则，并区分：
 
@@ -1875,84 +1909,97 @@ maintenance_as_of   维护、衰减和 review 使用的逻辑时间
 维护任务不得隐式读取 wall clock。随机 `event_id`、snapshot id 和操作 id 不能进入状态排序或
 projection digest；它们必须通过稳定映射或被排除后再比较。
 
-#### 0.6.5 - Control Surface and Recovery Report
+### G1：语言投递、遥测与限定晋级（0.6.5–0.6.7）
 
-目标：把 disable、delete、export、reset、rebuild、quarantine、health check 统一暴露为可审计控制面。
+G1 只闭合已发现收益的语言偏好。schema 扩展、默认投递和 family 晋级是三个不同操作；
+不为追求四族覆盖把 command/code 等一并默认开启，也不把所有确认偏好视为已证明有效。
 
-交付：每个操作的结果、warnings、affected scopes、projection digest 和恢复建议。
+#### 0.6.5 - Typed Language and Minimal Routing Telemetry
 
-验收：操作幂等；损坏 event 不被静默跳过；control surface 不调用 provider、tool 或 network。
+目标：把 harness 中有效的语言表达接到生产类型化契约，并在 shadow 中解释选择全过程。
 
-### G1：观察经验与投影（0.6.6–0.6.10）
+交付：在 `typed_fields.py` 扩明确的语言 kind/slot/value 配对，同步候选校验、冲突键和
+manual UI/API 允许值；不靠任意自由文本绕开 allowlist。language 的生产 treatment 默认不开启。
 
-G1 只把已发生的现实事件规范化为经验，不自动把经验提升为事实或默认 prompt。
+路由顺序固定为：可表达/有效性 → scope/冲突 → family 上线状态 → 排位 → 行数与字符/token 预算
+→ admission。language 优先、稳定新近顺序是最小候选策略；Hebbian/Affinity 只作辅助特征。
+自述显式过滤，弱提示不能挤掉已验证语言，允许留空预算；task trigger 只用于相关族的 shadow。
 
-#### 0.6.6 - Verification Experience Projection v1
+遥测记录每个候选的 id、family、scope、状态、入选/拒绝 reason、候选及实际发送位置、
+预算消耗与单位、挤出引用和 provenance；不记录 raw prompt/reply。
+字符预算、UTF-8 字节、token 估算分别标明，不能将当前 `len(text)` 预算写成 token 上限。
 
-目标：从真实 verification、tool settlement 和 long-term outcome 投影项目验证习惯。
+验收：language 可以生产渲染但未获准时不投；unrenderable、过期、冲突、自述、预算拒绝可区分；
+cap4/8/12 均不能因有空位而回填自述；每个结果可确定性解释，回滚可恢复旧策略。
 
-边界：explicit project config 优先；历史习惯不能生成 fresh verification；短期 pass 与长期稳定分开记录。
+#### 0.6.6 - Production Shadow Parity and Placement Evaluation
 
-验收：每条习惯都有 outcome、scope 和 provenance；无法判断结果时标为 `unjudged`；不增加模型调用。
+目标：用真实生产 builder/operation/admission 测 language treatment，而不是继续只测 harness 替身。
 
-#### 0.6.7 - Provider Outcome Canonical Event v1
+交付：扩槽位 treatment 在 shadow 中的 selected/rejected、预算、渲染文本/digest 与发送捕获对齐；
+live A/B 通过显式实验开关运行，shadow 本身不改变普通用户 prompt、不增后台模型调用。
+在同一任务/行集合/文本长度下只置换语言行位置；另测 4/8/12 预算曲线、新近/生产/最小路由基线。
 
-目标：先由 provider send、protocol repair 和 settlement 产出稳定的 bounded outcome event，
-再允许 Ghost 使用它；Ghost 不得从 prompt、reply 或普通日志反向猜 outcome。
+验收：每模型 on/off、当前请求覆盖、位置、预算与成本分开报告；没有对照增益不晋级。
+保留一次性 live gate 结果与回滚决定；第二模型未完成时只支持 modelA 受测配置结论。
 
-交付：`provider_outcome_observed` 事件、`action_ref`、`outcome_ref`、`parent_event_refs`、
-`idempotency_key`、bounded reason code、settlement status 和 verification refs。
+#### 0.6.7 - Conditional Language Promotion and Rollback
 
-验收：send、repair、settlement 的因果关系可回放；未知 outcome 保持 unknown；缺少 settlement
-的 provider intent 不能生成成功或失败奖励；事件矩阵从 roadmap-only 变为真实 producer/consumer。
+目标：只对通过 0.6.6 的模型、任务范围和投递配置启用语言偏好。
 
-#### 0.6.8 - Provider Outcome Projection v1
+交付：最小 family rollout 配置和 reason code；当前明确请求优先；无效模型配置回退到基线，
+语言失败不自动增加记忆数量或复杂权重。部署范围不能超过评估范围。
 
-目标：记录 provider/protocol failure、repair strategy 和最终 outcome 的 bounded affinity。
+状态最小合同：`observed → shadow_candidate → production_candidate → enabled`，
+可以 `demoted / quarantined / deleted`。人工确认只改变记忆接受状态，不能自动提升整个 family；
+shadow admission 不代表默认 prompt admission。不新增全局 promotion controller。
 
-边界：只保存 counts、reason codes、refs、digest 和时间窗口；不保存 raw prompt/reply；不自动切 provider。
+验收：禁用、降级、隔离、删除、重启与模型切换都不泄漏旧 hint；生产 payload 与已验证配置一致。
+多模型全局默认须完整必测矩阵按最弱模型通过；单模型限定试点不能标成全局完成。
 
-验收：重复事件不会重复奖励；provider affinity 不能改变 Permission、Evidence 或 completion；
-能计算 stale、decay 和 conflict。
+### G2：其他族 shadow 与解释（0.6.8–0.6.12）
 
-#### 0.6.9 - Delayed Outcome and Correction Projection v1
+G2 的独立 family 失败不撤销已通过的语言闭环；没有数据和消费者的投影不建空壳。
+World Model 是可选后续研究，既不是语言晋级条件，也不因版本号自动启动实现。
 
-目标：把用户纠正、后续 regression、长期稳定和失败复盘接回原始 action。
+#### 0.6.8 - Verification Habit and Command Intent Shadow
 
-交付：短期 outcome、长期 outcome、correction、supersede 和 confidence 的最小关系模型。
+目标：区分“建议用什么命令”与“授权执行什么任务”，再决定项目验证习惯的消费者。
 
-验收：没有可追溯的 event、proof 或 user-correction refs 只能是 hypothesis/unjudged；用户明确
-否定能降低旧 projection；旧经验不会覆盖当前观察。
+交付：只从真实 verification、tool settlement 与 outcome 投影习惯，显式项目配置优先。
+在成对任务中比较回答建议、任务意图/工具场景约束等候选宿主；当前任务文本如需传入 builder，
+使用显式有界参数，只供相关族 shadow，不持久化 raw task。
 
-#### 0.6.10 - Projection State Machine v1
+验收：分别记录命令提及、命令正确性、工具选择、审批挂起/拒绝与任务完成；工具不可用不应
+伪装成记忆不服从。intent 宿主尚未被证明，不承诺晋级；不自动执行、不绕审批、不生成 fresh proof。
+冻结 directive treatment 为 SHADOW，不以更多 reps 代替宿主问题分析。
 
-目标：冻结所有自动 projection 的晋级状态：
+#### 0.6.9 - Provider Outcome Canonical Event
 
-```text
-observed
-  → projected
-  → shadow_candidate
-  ├→ manual_accepted
-  → shadow_context_admitted
-  → production_candidate
-  → default_hint
-  → demoted / quarantined / deleted
-```
+目标：由真实 provider send、repair 和 settlement 产出有消费者的 bounded outcome event。
 
-边界：`shadow_context_admitted` 只表示已进入 shadow Context Epoch，不改变默认 prompt；
-`production_candidate` 和 `default_hint` 只能由 G3 promotion controller 产生。用户明确确认的
-偏好可以进入 `manual_accepted` 分支，但不能绕过 scope、delete、explain 和 Context Epoch 检查；
-自动 projection 不能跳级。
+交付：event identity、action/outcome refs、幂等键、时间窗口、reason code 与结算状态；
+复用现有领域事件和 runtime settlement，不从普通文本日志猜成功。
 
-验收：非法跳转 fail closed；降级、隔离、删除可回放；状态变化都有 provenance 和原因。
+验收：未知 outcome 保持 unknown，重复事件不重复奖励，缺 settlement 不产生成功/失败奖励；
+没有消费和评分路径就保持现有 telemetry，不扩大 schema。
 
-### G2：Explain 与 shadow（0.6.11–0.6.12）
+#### 0.6.10 - Outcome, Correction and Repair Projection Shadow
+
+目标：把可追溯 outcome、用户纠正与延迟 regression 接回原始 action，评估 repair hint。
+
+交付：bounded counts/refs/digest、stale/decay 和短期/长期结果；按 0.6.7 生命周期进入 shadow。
+没有 event/proof/user-correction refs 时只能 hypothesis/unjudged；不以 provenance 数量累计多倍 reward。
+
+验收：预测、关联强度、行为收益分别报告；不自动切 provider，不进入 Evidence、Permission 或
+CompletionProof。repair 默认策略不变，确认净收益后才申请 0.7.2 的独立晋级。
 
 #### 0.6.11 - Ghost Explain Contract v1
 
-目标：把 Explain 契约提前固定，任何 shadow hint 都必须可解释。
+目标：把 0.6.5 的最小逐节点记录整理为确定性 CLI/UI Explain，不重新计算选择结果。
 
-解释至少包含：来源、scope、时间、衰减、选择原因、冲突状态、当前等级和删除影响。
+解释包含来源、scope、时间、衰减、family、当前等级、入选/拒绝原因、冲突状态、
+候选/发送位置、预算及单位、挤出引用和删除影响；禁止只展示成功入选节点。
 
 边界：只输出 `provenance_refs`，明确标记 not evidence / not policy；不调用 provider，不自动插话。
 
@@ -1961,6 +2008,7 @@ observed
 #### 0.6.12 - World Model Review and Shadow Context v1
 
 目标：记录 prediction、review、uncertainty 和 re-check hint，并让其进入 shadow ContextSource。
+这是有真实预测复盘任务时才启动的可选切口；不为语言偏好增加 World Model 依赖。
 
 边界：没有 proof、verification 或 user correction 时只能是 `unjudged`；stale projection 只能提示复查。
 
@@ -1969,18 +2017,23 @@ World Model 不产生 evidence_refs。
 
 ### G3：选择性晋级（0.7.x）
 
-0.7 只做一件事：证明某一类 hint 值得进入默认 Context Epoch。每个小版本只晋级一种 hint family。
+0.7 在 0.6 语言闭环上扩模型与任务，再验证其他 family。每个版本最多晋级一种 family；
+版本编号不构成晋级承诺，command/repair/continuity 失败就维持 shadow。
 
-#### 0.7.0 - Frozen Evaluation and Shadow A/B Harness
+#### 0.7.0 - Cross-model and Held-out Task Expansion
 
-建立冻结任务集、paired treatment、结果 JSON、journal、manifest 和回滚开关。
+复用 0.6.0/0.6.6 的冻结评估，加入第二模型与未用于调整策略的任务/问法，
+扩大支持矩阵；不将多次据同一电池调参后的结果视为独立泛化证据。
 
 验收指标固定为：价值、安全、成本、控制权；记录 hint rejection rate、stale hint leakage rate、
 delete/rebuild resurrection rate。
+缺任一必测模型/对照保持 INCOMPLETE；完整后按最弱模型收敛，并保留各模型各配置结果。
 
-#### 0.7.1 - Project Verification Habit Promotion
+#### 0.7.1 - Verification Habit Consumer Trial and Conditional Promotion
 
-仅晋级项目验证习惯。目标是帮助选择验证命令，不自动运行、不产生 completion proof。
+仅当 0.6.8 找到有效消费者后，试点验证命令建议/选择；不预设 directive 或 intent 哪个必胜。
+若仍没有净收益，保留 SHADOW，不因路线图到期而上线。代码、格式和长度偏好也需另行提交
+对应任务正确性/精确服从的验收，不能借语言族晋级。
 
 晋级条件：冻结集和 live A/B 有净收益；false completion、permission bypass、hint-to-evidence 均为零；
 prompt token 和延迟没有不可接受回归。
@@ -1998,6 +2051,7 @@ prompt token 和延迟没有不可接受回归。
 #### 0.7.4 - Promotion Rollback and Quarantine
 
 验证已晋级 hint 出现冲突、陈旧或误报时，可以降级、隔离、删除并从 event log 重建；回滚不能删除未授权范围。
+这里扩展跨 family 故障演练；基本回滚能力必须已在 0.6.7 具备，不能等到本版本再补。
 
 #### 0.7.5 - Optional Single-call Candidate Field
 
@@ -2050,7 +2104,7 @@ offline dataset
 ### R0：研究基准与可塑性实验（0.9.x 以后）
 
 0.9 以后才开始研究 temporal Hebbian、eligibility trace、SDR、inhibition、normalization、recurrent、
-hierarchy 和 neuromodulation。0.7.0 的 product shadow/A-B harness 只回答“某类 hint 是否值得进入
+hierarchy 和 neuromodulation。0.6.0/0.6.6 的产品评估及 0.7.0 扩展只回答“某类 hint 是否值得进入
 Context Epoch”；本节的 research benchmark 还要回答“某种学习机制是否真的改善长期能力”。两者的
 数据集、指标和结论不能混用。每个版本都必须保留同一份 Ghost API，并与生产 projection 隔离。
 
@@ -2236,6 +2290,11 @@ tests/test_ghost_event_action_outcome_refs.py
 tests/test_provider_outcome_canonical_event.py
 tests/test_ghost_projection_state_machine.py
 tests/test_ghost_explain_provenance.py
+tests/test_ghost_typed_language.py
+tests/test_ghost_routing_selection_audit.py
+tests/test_ghost_family_promotion_completeness.py
+tests/test_ghost_current_request_override.py
+tests/test_ghost_production_payload_parity.py
 tests/test_world_model_prediction_review.py
 tests/test_world_model_shadow_context.py
 ```
@@ -2378,6 +2437,11 @@ Protocol dialect prompt 不能混用多套工具语言
 CompletionProof / Evidence / EvidenceLedger 不能成为模型工具
 Ghost protocol affinity 不能进入 EvidenceLedger / CompletionProof
 Project habit 不能产生 fresh verification fact
+人工接受状态不能自动晋级整个 hint family
+未完成的必测模型/任务/对照矩阵不能生成 PROMOTE
+自述在任意预算下都不能因空位回填；弱提示不能挤掉已验证语言
+被 supersede 的历史节点可以保留，但不能进入 active/selected/payload 集
+候选、admitted envelope 与实际 payload 的 refs/digest/排位一致
 Ghost Explain 不得进入默认 PromptEnvelope
 Ghost Explain payload 必须使用 provenance_refs，不得输出 evidence_refs
 codey/world_model 不 import provider/browser/tool_runtime/task_runner
@@ -2613,12 +2677,14 @@ Ghost / World Model / provider-protocol learning 暂不进入 0.5 runtime core
 0.6 的用户可感知收益：
 
 ```text
-Ghost 能学习 provider 协议摩擦和项目验证习惯，但不能当证据或权限
-World Model 能提示复查和校准预测，但不能裁定事实
-Tool protocol 可以按 provider 逐步适配，但 Codey 内部执行 IR 不变
-API/native structured provider 有更少 JSON 摩擦，web provider 稳定性不受影响
-本地适配数据可导出、可删除、可回滚，默认不泄露 raw transcript
+已确认语言偏好在通过评估的模型/配置上生效，当前明确请求仍优先
+每条偏好能解释入选/拒绝、排位、预算与来源，禁用和回滚即时生效
+替换或删除后，旧偏好不会在重建、重启或换模型时重新影响提示
+命令/验证习惯和 provider repair 保持 shadow，只有独立证据支持才晋级
+World Model 可选 shadow，不裁定事实，不阻塞语言闭环
 ```
+
+协议方言与 structured provider 的产品收益属于独立 0.8 轨道，不能算作 0.6 已交付。
 
 用户体验仍然应该是：
 
@@ -2626,7 +2692,7 @@ API/native structured provider 有更少 JSON 摩擦，web provider 稳定性不
 你继续自然聊天、研究、写代码
 Codey 更少误判 done
 Codey 更少重复危险动作
-Codey 更懂项目验证习惯
+Codey 在经过验证的范围内更符合用户语言偏好
 Codey 更能解释本地 hint 从哪里来
 外部模型可以换，工具语义和安全边界仍然留在 Codey
 ```

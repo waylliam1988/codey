@@ -1,0 +1,142 @@
+{
+ "arms": {
+  "A": {
+   "by_task": {
+    "t0_control": {
+     "passes": 3,
+     "runs": 3,
+     "rate": 1.0,
+     "chars_avg": 3.0
+    },
+    "t1_chinese": {
+     "passes": 0,
+     "runs": 3,
+     "rate": 0.0,
+     "chars_avg": 1424.0
+    },
+    "t2_short": {
+     "passes": 0,
+     "runs": 3,
+     "rate": 0.0,
+     "chars_avg": 640.3
+    },
+    "t3_list": {
+     "passes": 3,
+     "runs": 3,
+     "rate": 1.0,
+     "chars_avg": 977.0
+    },
+    "t4_pytest": {
+     "passes": 0,
+     "runs": 3,
+     "rate": 0.0,
+     "chars_avg": 31.0
+    },
+    "t5_answer_first": {
+     "passes": 2,
+     "runs": 3,
+     "rate": 0.667,
+     "chars_avg": 246.7
+    }
+   },
+   "done": 15,
+   "total": 18,
+   "stop_reasons": {
+    "done": 15,
+    "approval": 3
+   }
+  },
+  "B": {
+   "by_task": {
+    "t0_control": {
+     "passes": 3,
+     "runs": 3,
+     "rate": 1.0,
+     "chars_avg": 3.0
+    },
+    "t1_chinese": {
+     "passes": 0,
+     "runs": 3,
+     "rate": 0.0,
+     "chars_avg": 1240.7
+    },
+    "t2_short": {
+     "passes": 0,
+     "runs": 3,
+     "rate": 0.0,
+     "chars_avg": 779.3
+    },
+    "t3_list": {
+     "passes": 3,
+     "runs": 3,
+     "rate": 1.0,
+     "chars_avg": 969.3
+    },
+    "t4_pytest": {
+     "passes": 0,
+     "runs": 3,
+     "rate": 0.0,
+     "chars_avg": 31.0
+    },
+    "t5_answer_first": {
+     "passes": 0,
+     "runs": 3,
+     "rate": 0.0,
+     "chars_avg": 317.0
+    }
+   },
+   "done": 15,
+   "total": 18,
+   "stop_reasons": {
+    "done": 15,
+    "approval": 3
+   }
+  },
+  "C": {
+   "by_task": {
+    "t0_control": {
+     "passes": 3,
+     "runs": 3,
+     "rate": 1.0,
+     "chars_avg": 3.0
+    },
+    "t1_chinese": {
+     "passes": 0,
+     "runs": 3,
+     "rate": 0.0,
+     "chars_avg": 2565.7
+    },
+    "t2_short": {
+     "passes": 0,
+     "runs": 3,
+     "rate": 0.0,
+     "chars_avg": 1072.0
+    },
+    "t3_list": {
+     "passes": 3,
+     "runs": 3,
+     "rate": 1.0,
+     "chars_avg": 1832.0
+    },
+    "t4_pytest": {
+     "passes": 0,
+     "runs": 3,
+     "rate": 0.0,
+     "chars_avg": 31.0
+    },
+    "t5_answer_first": {
+     "passes": 0,
+     "runs": 3,
+     "rate": 0.0,
+     "chars_avg": 110.0
+    }
+   },
+   "done": 15,
+   "total": 18,
+   "stop_reasons": {
+    "done": 15,
+    "approval": 3
+   }
+  }
+ }
+}

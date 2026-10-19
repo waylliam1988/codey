@@ -1,0 +1,14 @@
+{
+  "supersede_keeps_nodes": 2,
+  "removed": {
+    "nodes": 1,
+    "edges": 0
+  },
+  "rebuild_ok": true,
+  "revived_nodes": 0,
+  "removed_value_had_line": true,
+  "line_after": false,
+  "no_revival_ok": true,
+  "expired_lines": 0,
+  "expiry_ok": true
+}

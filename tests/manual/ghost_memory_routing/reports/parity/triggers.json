@@ -1,0 +1,14 @@
+[
+  {
+    "slot": "commit_flow",
+    "text": "我们提交作业务必准时。"
+  },
+  {
+    "slot": "commit_flow",
+    "text": "读书会下次聚会要提交读书笔记吗？"
+  },
+  {
+    "slot": "test_command",
+    "text": "pytest 这个词怎么发音？"
+  }
+]

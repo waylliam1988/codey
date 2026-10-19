@@ -1,0 +1,33 @@
+# Ghost round-3: tiered routing ablation
+
+## D2 (decisive 6/15)
+- t0_control: 3/3 (chars_avg=3.0)
+- t1_chinese: 2/3 (chars_avg=878.0)
+- t2_short: 0/3 (chars_avg=678.0)
+- t3_list: 3/3 (chars_avg=349.7)
+- t4_pytest: 1/3 (chars_avg=199.7)
+- t5_answer_first: 0/3 (chars_avg=308.0)
+
+## A2 (decisive 7/15)
+- t0_control: 3/3 (chars_avg=3.0)
+- t1_chinese: 3/3 (chars_avg=713.7)
+- t2_short: 0/3 (chars_avg=652.3)
+- t3_list: 3/3 (chars_avg=322.0)
+- t4_pytest: 0/3 (chars_avg=257.7)
+- t5_answer_first: 1/3 (chars_avg=254.3)
+
+## B2 (decisive 4/15)
+- t0_control: 3/3 (chars_avg=3.0)
+- t1_chinese: 0/3 (chars_avg=1331.7)
+- t2_short: 0/3 (chars_avg=619.7)
+- t3_list: 3/3 (chars_avg=980.0)
+- t4_pytest: 0/3 (chars_avg=373.7)
+- t5_answer_first: 1/3 (chars_avg=272.7)
+
+## C2 (decisive 3/15)
+- t0_control: 3/3 (chars_avg=3.0)
+- t1_chinese: 0/3 (chars_avg=2508.3)
+- t2_short: 0/3 (chars_avg=1038.0)
+- t3_list: 3/3 (chars_avg=1661.7)
+- t4_pytest: 0/3 (chars_avg=337.7)
+- t5_answer_first: 0/3 (chars_avg=135.0)

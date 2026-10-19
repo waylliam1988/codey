@@ -30,8 +30,9 @@
 实施新工作前先核对现行源码与验收项，不按旧路径恢复已经删除的模块。
 
 - [设计原则与后续建议](codey_from_codex_principles.md)
-- [Ghost 长期学习研究愿景](codey_ghost_long_term_learning_architecture.md)
-- [Ghost 本地自适应方向](ghost_future_direction.zh-CN.md)
+- [Codey Roadmap：0.6 语言闭环、后续按族晋级与独立研究](../ROADMAP.zh-CN.md)
+- [Ghost 本地经验路由：偏好投递与预算路由实验、限制与晋级协议](ghost_future_direction.zh-CN.md)
+- [Ghost 长期学习研究愿景：可停止的研究假设，不作为 0.6 前置条件](codey_ghost_long_term_learning_architecture.md)
 - [Pi 启发的历史重构讨论与后续建议](codey_pi_v2_refactor_direction.zh-CN.md)
 - [跨版本工具协议策略](tool_protocol_portability_plan.zh-CN.md)
 - [传输／协议窗口验收基线，仍需逐项核对完成定义](tdd_api_transport_and_protocol_window_plan.zh-CN.md)
@@ -52,6 +53,9 @@
 以下材料包含仍被 roadmap、测试说明或比较结论引用的证据，
 以及尚未决定移除的已完成实验，暂时保留。
 如果后续清理，先保留必要决策与失败边界，再同步处理引用和关联 JSON。
+
+- [Ghost 偏好投递与预算路由实验：脚本、历史报告与脱敏测量](../tests/manual/ghost_memory_routing/README.md)
+  可独立复算各 cell 的分子/分母；原始回复与隔离 state 仅在被 Git 忽略的本地产物目录保存。
 
 ### 0.4 阶段矩阵与 provider 基线（5）
 

@@ -3,12 +3,38 @@
 > 文档类型：长期研究愿景，不是当前已实现的功能清单或发布验收标准。
 > 与[Ghost 方向](ghost_future_direction.zh-CN.md)一起阅读；当前能力见
 > [能力说明](codey_capabilities.zh-CN.md)。
+> 2026-10-19 校准：本文的可塑性、预测和语言结构都是研究假设，未被偏好投递与预算路由实验验证。
+> 近期工程顺序以 [Roadmap](../ROADMAP.zh-CN.md)为准，实验事实与晋级限制见
+> [Ghost 决策基线](ghost_future_direction.zh-CN.md#偏好投递与预算路由的实验决策基线2026-10-19)。
 
 > 目标：设计一个可以用多年时间持续研究、逐步增强的 Ghost。
 >
 > 核心思想不是“现在就做一个 Hebbian LLM”，而是先让 Codey 给 Ghost 留下稳定、干净、可演化的学习接口，使未来可以逐步实验高维神经元、recurrent connections、temporal Hebbian learning、inhibition、normalization、synaptic decay、eligibility traces、neuromodulation、hierarchical representations、sparse distributed representations、winner-take-all 和 context-dependent connections。
 >
 > **Codey 负责可靠地观察现实；Ghost 负责从经验中形成可塑的内部结构。**
+
+## 研究愿景与产品路线的边界
+
+语言偏好投递对照已经验证：在受测模型 modelA 和投递配置下，语言偏好可以改变输出，
+送达 19/20、未送达 0/20。它没有验证 Hebbian 学习带来的长期能力提升，
+没有证明分层排序整体胜过简单新近排序，也没有证明能脱离 LLM 完成开放任务。
+
+| 轨道 | 当前要回答的问题 | 进入下一步的证据 |
+|---|---|---|
+| 0.6 产品工程 | 有效偏好能否经生产准入、正确排位与预算稳定送达？ | 真实发送 parity、当前请求覆盖、冲突/删除/replay、逐 family 行为收益与成本 |
+| 0.7 泛化与选择性晋级 | 换模型、任务和预算后哪些 family 仍有收益？ | 完整必测矩阵、留出任务、缺失数据不晋级、限定部署范围 |
+| 0.8 协议适配 | 某个有消费者的小适配器是否减少协议摩擦？ | 独立错误/修复数据、shadow 与 live A/B，不自动扩大到通用学习 |
+| 0.9+ 可塑性研究 | 可学习的关系是否优于静态/新近基线？ | 固定语义与输出通道后的长期预测、检索、遗忘、迁移基准 |
+
+每个研究机制都允许失败和终止；产品价值不以实现本文全部阶段为前提。
+现有领域事件与投影是算法替换边界，0.6 不需要先造统一的 GhostExperience 总线、
+高维网络或 World Model。本文的字段和 API 示例是研究草案，按真实消费者逐步收敛。
+
+language 暂为受测配置的生产候选；command directive 维持 SHADOW，intent 层只是待验证宿主。
+format/length/answer-first 没有稳定精确服从增益，稳定事实与代码偏好需独立任务正确性评估。
+投递位置、其他行内容和长度会干扰收益；研究算法比较必须固定这些变量，不能把 prompt
+变化引起的效果算成关系学习收益。Hebbian/Affinity 在产品里只提供复现、关联与解释特征，
+不决定事实、权限或最终投递资格。
 
 ---
 
@@ -1295,6 +1321,11 @@ hierarchy
 
 # 29. 每一种机制都应该有可验证的问题
 
+下列问题属于 0.9+ 独立研究基准。开始前先保留无记忆、静态规则、新近排序与当前生产
+基线；固定经验编码、候选槽位、渲染、排位和预算，每次只改一种机制。
+若候选集合或投递通道也变化，应拆开消融，不能把“能表达中文”算作 Hebbian 改进。
+先预先约定停止条件和最低收益，再运行长期 replay 与留出序列；阴性结果可以结束该分支。
+
 不要：
 
 > “Hebbian 很酷，所以加进去。”
@@ -1659,11 +1690,17 @@ LLM unavailable
 Ghost 能做什么？
 ```
 
-这才是有科学意义的 benchmark。
+这是可选的长期研究 benchmark，不是唯一科学指标，也不是 0.6 的产品验收条件。
+LLM 不可用时，经验检索、确定性解释、删除与重建仍然有价值；不能因此宣称系统已有
+开放语言推理。研究关联结构有无增益，要与静态/新近基线单独比较。
 
 ---
 
 # 38. 一个长期实验路线
+
+本节 Phase 是可独立停止的研究假设，不是顺序开发承诺；不得绕过 Roadmap 的
+生产准入和 family 晋级。新机制只有在独立基准胜过简单方案后才申请 shadow，
+不能因“实现了下一 Phase”自动进入默认 prompt。
 
 ## Phase 0：接口
 
@@ -1756,7 +1793,11 @@ Ghost 能否形成语言结构？
 
 # 39. 最重要的 benchmark
 
-每次 Ghost 升级都应该测试：
+产品与研究使用不同的评分口径。产品先测每 family 的 on/off 净收益、当前请求覆盖、
+模型/任务/排位/预算分层、成本、冲突率及删除复活；只有跨模型矩阵完整时才能做全局判断。
+稳定事实用任务正确性，命令用建议/选择/审批/执行分别判分，不能混成一个 decisive 总分。
+
+研究机制升级再测下面的长期指标；语言服从率不是 temporal prediction 的替代证据。
 
 ### Memory
 
@@ -1917,7 +1958,7 @@ verified reality
 
 ---
 
-# 43. 十年目标
+# 43. 长期目标：按证据推进，不按年份晋级
 
 最理想的研究路径不是：
 
@@ -1928,36 +1969,29 @@ verified reality
 而是：
 
 ```text
-2026
 稳定 Experience API
        ↓
-2027
 Associative Ghost
        ↓
-2028
 Temporal Learning
        ↓
-2029
 Sparse / Recurrent
        ↓
-2030
 Neuromodulation
        ↓
-2031
 Hierarchical representations
        ↓
-2032
 Ghost + World Model
        ↓
-2033
 长期在线学习
        ↓
-2034
 Language experiments
        ↓
-2035+
 ???
 ```
+
+每个箭头都表示“上一项有收益后，才值得考虑的下一个问题”，不是必然进化链。
+研究可跳过、调整或终止；产品不会为维持十年叙事而保留无收益机制。
 
 最后的 `???` 必须保留。
 
@@ -2021,6 +2055,7 @@ recurrent plastic network
 
 **这就是最重要的设计：**
 
-> **Codey 给 Ghost 提供持续、干净、带 provenance 的经验流；Ghost 自己决定如何学习。**
+> **Codey 提供干净、带 provenance 的经验接口；Ghost 内部算法可替换，
+> 每次替换都需独立验证，生产投递仍由显式 family 策略与 Context Epoch admission 决定。**
 
 这样十年以后，Codey 可能仍然是一个很薄的 runtime，而 Ghost 已经完全不是今天的 Ghost 了。

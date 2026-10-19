@@ -1,0 +1,902 @@
+{
+  "d2@cap4": {
+    "bytes": 469,
+    "selected": 4,
+    "lines": [
+      "- Prefer: reply language = Chinese.",
+      "- Prefer: code notes = minimal prose, compact code.",
+      "- Prefer: reply structure = answer first and concise.",
+      "- Research interest: long-term focus = concurrency and durable local memory."
+    ],
+    "weights": [
+      {
+        "id": "3784d0e7",
+        "slot": "ghost",
+        "kind": "long_term_goal",
+        "weight": 0.45
+      },
+      {
+        "id": "1a882bb1",
+        "slot": "state_store",
+        "kind": "correction",
+        "weight": 0.45
+      },
+      {
+        "id": "10e148c6",
+        "slot": "tone",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "b18f4a65",
+        "slot": "reply_structure",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "0259579a",
+        "slot": "format",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "4f8f6934",
+        "slot": "reply_length",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "6fbbb342",
+        "slot": "memory_state",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "a27d4dcc",
+        "slot": "focus",
+        "kind": "research_interest",
+        "weight": 0.225
+      },
+      {
+        "id": "6501eaa1",
+        "slot": "code_notes",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "523e814c",
+        "slot": "commit_flow",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "d7bd8a4a",
+        "slot": "test_command",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "423d7d26",
+        "slot": "language",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "7f1c546b",
+        "slot": "ghost_state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "6cf1f8e8",
+        "slot": "state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      }
+    ]
+  },
+  "recency@cap4": {
+    "bytes": 438,
+    "selected": 4,
+    "lines": [
+      "- Correction: local memory state = JSONL.",
+      "- Correction: local memory state backend = JSON projection + JSONL audit.",
+      "- Correction: state backend = JSONL.",
+      "- Correction: state store = JSONL."
+    ],
+    "weights": [
+      {
+        "id": "3784d0e7",
+        "slot": "ghost",
+        "kind": "long_term_goal",
+        "weight": 0.45
+      },
+      {
+        "id": "1a882bb1",
+        "slot": "state_store",
+        "kind": "correction",
+        "weight": 0.45
+      },
+      {
+        "id": "10e148c6",
+        "slot": "tone",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "b18f4a65",
+        "slot": "reply_structure",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "0259579a",
+        "slot": "format",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "4f8f6934",
+        "slot": "reply_length",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "6fbbb342",
+        "slot": "memory_state",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "a27d4dcc",
+        "slot": "focus",
+        "kind": "research_interest",
+        "weight": 0.225
+      },
+      {
+        "id": "6501eaa1",
+        "slot": "code_notes",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "523e814c",
+        "slot": "commit_flow",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "d7bd8a4a",
+        "slot": "test_command",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "423d7d26",
+        "slot": "language",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "7f1c546b",
+        "slot": "ghost_state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "6cf1f8e8",
+        "slot": "state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      }
+    ]
+  },
+  "hebbian@cap4": {
+    "bytes": 438,
+    "selected": 4,
+    "lines": [
+      "- Correction: state store = JSONL.",
+      "- Correction: local memory state = JSONL.",
+      "- Correction: local memory state backend = JSON projection + JSONL audit.",
+      "- Correction: state backend = JSONL."
+    ],
+    "weights": [
+      {
+        "id": "3784d0e7",
+        "slot": "ghost",
+        "kind": "long_term_goal",
+        "weight": 0.45
+      },
+      {
+        "id": "1a882bb1",
+        "slot": "state_store",
+        "kind": "correction",
+        "weight": 0.45
+      },
+      {
+        "id": "10e148c6",
+        "slot": "tone",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "b18f4a65",
+        "slot": "reply_structure",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "0259579a",
+        "slot": "format",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "4f8f6934",
+        "slot": "reply_length",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "6fbbb342",
+        "slot": "memory_state",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "a27d4dcc",
+        "slot": "focus",
+        "kind": "research_interest",
+        "weight": 0.225
+      },
+      {
+        "id": "6501eaa1",
+        "slot": "code_notes",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "523e814c",
+        "slot": "commit_flow",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "d7bd8a4a",
+        "slot": "test_command",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "423d7d26",
+        "slot": "language",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "7f1c546b",
+        "slot": "ghost_state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "6cf1f8e8",
+        "slot": "state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      }
+    ]
+  },
+  "d2@cap8": {
+    "bytes": 626,
+    "selected": 8,
+    "lines": [
+      "- Prefer: reply language = Chinese.",
+      "- Prefer: code notes = minimal prose, compact code.",
+      "- Prefer: reply structure = answer first and concise.",
+      "- Research interest: long-term focus = concurrency and durable local memory.",
+      "- Prefer: reply length = brief.",
+      "- Task tendency: test command = pytest -q.",
+      "- Prefer: format = bullets.",
+      "- Task tendency: commit workflow = review diff first."
+    ],
+    "weights": [
+      {
+        "id": "3784d0e7",
+        "slot": "ghost",
+        "kind": "long_term_goal",
+        "weight": 0.45
+      },
+      {
+        "id": "1a882bb1",
+        "slot": "state_store",
+        "kind": "correction",
+        "weight": 0.45
+      },
+      {
+        "id": "10e148c6",
+        "slot": "tone",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "b18f4a65",
+        "slot": "reply_structure",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "0259579a",
+        "slot": "format",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "4f8f6934",
+        "slot": "reply_length",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "6fbbb342",
+        "slot": "memory_state",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "a27d4dcc",
+        "slot": "focus",
+        "kind": "research_interest",
+        "weight": 0.225
+      },
+      {
+        "id": "6501eaa1",
+        "slot": "code_notes",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "523e814c",
+        "slot": "commit_flow",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "d7bd8a4a",
+        "slot": "test_command",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "423d7d26",
+        "slot": "language",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "7f1c546b",
+        "slot": "ghost_state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "6cf1f8e8",
+        "slot": "state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      }
+    ]
+  },
+  "recency@cap8": {
+    "bytes": 608,
+    "selected": 8,
+    "lines": [
+      "- Correction: local memory state = JSONL.",
+      "- Correction: local memory state backend = JSON projection + JSONL audit.",
+      "- Correction: state backend = JSONL.",
+      "- Correction: state store = JSONL.",
+      "- Prefer: code notes = minimal prose, compact code.",
+      "- Prefer: reply language = Chinese.",
+      "- Prefer: tone = technical.",
+      "- Prefer: reply structure = answer first and concise."
+    ],
+    "weights": [
+      {
+        "id": "3784d0e7",
+        "slot": "ghost",
+        "kind": "long_term_goal",
+        "weight": 0.45
+      },
+      {
+        "id": "1a882bb1",
+        "slot": "state_store",
+        "kind": "correction",
+        "weight": 0.45
+      },
+      {
+        "id": "10e148c6",
+        "slot": "tone",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "b18f4a65",
+        "slot": "reply_structure",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "0259579a",
+        "slot": "format",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "4f8f6934",
+        "slot": "reply_length",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "6fbbb342",
+        "slot": "memory_state",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "a27d4dcc",
+        "slot": "focus",
+        "kind": "research_interest",
+        "weight": 0.225
+      },
+      {
+        "id": "6501eaa1",
+        "slot": "code_notes",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "523e814c",
+        "slot": "commit_flow",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "d7bd8a4a",
+        "slot": "test_command",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "423d7d26",
+        "slot": "language",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "7f1c546b",
+        "slot": "ghost_state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "6cf1f8e8",
+        "slot": "state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      }
+    ]
+  },
+  "hebbian@cap8": {
+    "bytes": 580,
+    "selected": 8,
+    "lines": [
+      "- Correction: state store = JSONL.",
+      "- Correction: local memory state = JSONL.",
+      "- Correction: local memory state backend = JSON projection + JSONL audit.",
+      "- Correction: state backend = JSONL.",
+      "- Prefer: tone = technical.",
+      "- Prefer: reply structure = answer first and concise.",
+      "- Prefer: format = bullets.",
+      "- Prefer: reply length = brief."
+    ],
+    "weights": [
+      {
+        "id": "3784d0e7",
+        "slot": "ghost",
+        "kind": "long_term_goal",
+        "weight": 0.45
+      },
+      {
+        "id": "1a882bb1",
+        "slot": "state_store",
+        "kind": "correction",
+        "weight": 0.45
+      },
+      {
+        "id": "10e148c6",
+        "slot": "tone",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "b18f4a65",
+        "slot": "reply_structure",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "0259579a",
+        "slot": "format",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "4f8f6934",
+        "slot": "reply_length",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "6fbbb342",
+        "slot": "memory_state",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "a27d4dcc",
+        "slot": "focus",
+        "kind": "research_interest",
+        "weight": 0.225
+      },
+      {
+        "id": "6501eaa1",
+        "slot": "code_notes",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "523e814c",
+        "slot": "commit_flow",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "d7bd8a4a",
+        "slot": "test_command",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "423d7d26",
+        "slot": "language",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "7f1c546b",
+        "slot": "ghost_state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "6cf1f8e8",
+        "slot": "state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      }
+    ]
+  },
+  "d2@cap12": {
+    "bytes": 807,
+    "selected": 12,
+    "lines": [
+      "- Prefer: reply language = Chinese.",
+      "- Prefer: code notes = minimal prose, compact code.",
+      "- Prefer: reply structure = answer first and concise.",
+      "- Research interest: long-term focus = concurrency and durable local memory.",
+      "- Prefer: reply length = brief.",
+      "- Task tendency: test command = pytest -q.",
+      "- Prefer: format = bullets.",
+      "- Task tendency: commit workflow = review diff first.",
+      "- Prefer: tone = technical.",
+      "- Correction: local memory state = JSONL.",
+      "- Correction: local memory state backend = JSON projection + JSONL audit.",
+      "- Correction: state backend = JSONL."
+    ],
+    "weights": [
+      {
+        "id": "3784d0e7",
+        "slot": "ghost",
+        "kind": "long_term_goal",
+        "weight": 0.45
+      },
+      {
+        "id": "1a882bb1",
+        "slot": "state_store",
+        "kind": "correction",
+        "weight": 0.45
+      },
+      {
+        "id": "10e148c6",
+        "slot": "tone",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "b18f4a65",
+        "slot": "reply_structure",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "0259579a",
+        "slot": "format",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "4f8f6934",
+        "slot": "reply_length",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "6fbbb342",
+        "slot": "memory_state",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "a27d4dcc",
+        "slot": "focus",
+        "kind": "research_interest",
+        "weight": 0.225
+      },
+      {
+        "id": "6501eaa1",
+        "slot": "code_notes",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "523e814c",
+        "slot": "commit_flow",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "d7bd8a4a",
+        "slot": "test_command",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "423d7d26",
+        "slot": "language",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "7f1c546b",
+        "slot": "ghost_state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "6cf1f8e8",
+        "slot": "state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      }
+    ]
+  },
+  "recency@cap12": {
+    "bytes": 765,
+    "selected": 12,
+    "lines": [
+      "- Correction: local memory state = JSONL.",
+      "- Correction: local memory state backend = JSON projection + JSONL audit.",
+      "- Correction: state backend = JSONL.",
+      "- Correction: state store = JSONL.",
+      "- Prefer: code notes = minimal prose, compact code.",
+      "- Prefer: reply language = Chinese.",
+      "- Prefer: tone = technical.",
+      "- Prefer: reply structure = answer first and concise.",
+      "- Prefer: format = bullets.",
+      "- Prefer: reply length = brief.",
+      "- Task tendency: commit workflow = review diff first.",
+      "- Task tendency: test command = pytest -q."
+    ],
+    "weights": [
+      {
+        "id": "3784d0e7",
+        "slot": "ghost",
+        "kind": "long_term_goal",
+        "weight": 0.45
+      },
+      {
+        "id": "1a882bb1",
+        "slot": "state_store",
+        "kind": "correction",
+        "weight": 0.45
+      },
+      {
+        "id": "10e148c6",
+        "slot": "tone",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "b18f4a65",
+        "slot": "reply_structure",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "0259579a",
+        "slot": "format",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "4f8f6934",
+        "slot": "reply_length",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "6fbbb342",
+        "slot": "memory_state",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "a27d4dcc",
+        "slot": "focus",
+        "kind": "research_interest",
+        "weight": 0.225
+      },
+      {
+        "id": "6501eaa1",
+        "slot": "code_notes",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "523e814c",
+        "slot": "commit_flow",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "d7bd8a4a",
+        "slot": "test_command",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "423d7d26",
+        "slot": "language",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "7f1c546b",
+        "slot": "ghost_state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "6cf1f8e8",
+        "slot": "state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      }
+    ]
+  },
+  "hebbian@cap12": {
+    "bytes": 765,
+    "selected": 12,
+    "lines": [
+      "- Correction: state store = JSONL.",
+      "- Correction: local memory state = JSONL.",
+      "- Correction: local memory state backend = JSON projection + JSONL audit.",
+      "- Correction: state backend = JSONL.",
+      "- Prefer: tone = technical.",
+      "- Prefer: reply structure = answer first and concise.",
+      "- Prefer: format = bullets.",
+      "- Prefer: reply length = brief.",
+      "- Prefer: code notes = minimal prose, compact code.",
+      "- Prefer: reply language = Chinese.",
+      "- Task tendency: commit workflow = review diff first.",
+      "- Task tendency: test command = pytest -q."
+    ],
+    "weights": [
+      {
+        "id": "3784d0e7",
+        "slot": "ghost",
+        "kind": "long_term_goal",
+        "weight": 0.45
+      },
+      {
+        "id": "1a882bb1",
+        "slot": "state_store",
+        "kind": "correction",
+        "weight": 0.45
+      },
+      {
+        "id": "10e148c6",
+        "slot": "tone",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "b18f4a65",
+        "slot": "reply_structure",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "0259579a",
+        "slot": "format",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "4f8f6934",
+        "slot": "reply_length",
+        "kind": "style_preference",
+        "weight": 0.45
+      },
+      {
+        "id": "6fbbb342",
+        "slot": "memory_state",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "a27d4dcc",
+        "slot": "focus",
+        "kind": "research_interest",
+        "weight": 0.225
+      },
+      {
+        "id": "6501eaa1",
+        "slot": "code_notes",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "523e814c",
+        "slot": "commit_flow",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "d7bd8a4a",
+        "slot": "test_command",
+        "kind": "action_tendency",
+        "weight": 0.225
+      },
+      {
+        "id": "423d7d26",
+        "slot": "language",
+        "kind": "style_preference",
+        "weight": 0.225
+      },
+      {
+        "id": "7f1c546b",
+        "slot": "ghost_state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      },
+      {
+        "id": "6cf1f8e8",
+        "slot": "state_backend",
+        "kind": "correction",
+        "weight": 0.225
+      }
+    ]
+  }
+}

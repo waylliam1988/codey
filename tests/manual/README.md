@@ -1,5 +1,10 @@
 # Manual live benchmarks
 
+The [Ghost preference-delivery and budget-routing experiments](ghost_memory_routing/README.md)
+include archived scripts, reports, and reply-free measurements. Their standard-library
+summary runs without a model; live cells use explicitly selected isolated local state.
+Raw replies and state remain under the ignored `artifacts/ghost_memory_routing/` directory.
+
 The stopped-candidate recovery path remains in the shared runtime. Its
 registered-check, permission, budget and current-review boundaries are tested by
 `test_stopped_candidate_validation_and_repair_fresh_evidence.py` and the shared

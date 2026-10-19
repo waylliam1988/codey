@@ -1,0 +1,15 @@
+{
+  "strict_text_equal": true,
+  "ops_selected": 8,
+  "direct_selected": 8,
+  "ops_bytes": 580,
+  "direct_bytes": 580,
+  "ops_warnings": [
+    "unrenderable_directive_skipped:research_interest:research_interest:focus",
+    "unrenderable_directive_skipped:style_preference:style_preference:code_notes",
+    "unrenderable_directive_skipped:action_tendency:action_tendency:commit_flow",
+    "unrenderable_directive_skipped:action_tendency:action_tendency:test_command",
+    "unrenderable_directive_skipped:style_preference:style_preference:language"
+  ],
+  "note": "expanded families exist only harness-side; ops cannot render them"
+}
