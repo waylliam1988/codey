@@ -1519,10 +1519,15 @@
   .question-card form > .question-state:not(:empty), .question-error:not(:empty) { padding: 8px 16px 0; }
   .message-actions { display: flex; gap: 8px; align-items: center; }
   .message-actions > .msg-copy:is(.copy-pending, .copied, .copy-failed) { opacity: 1; pointer-events: auto; }
-  .msg-recall { width: 26px; height: 26px; margin-top: 8px; border: 0; padding: 0; background: transparent; color: var(--muted); opacity: 0; pointer-events: none; cursor: pointer; display: grid; place-items: center; }
-  .msg-recall::before { content: ''; width: 14px; height: 14px; background: currentColor; mask: url('/assets/new-chat.svg') center / contain no-repeat; }
+  .msg-edit { width: 26px; height: 26px; margin-top: 8px; border: 0; padding: 0; background: transparent; color: var(--muted); opacity: 0; pointer-events: none; cursor: pointer; display: grid; place-items: center; }
+  .msg-edit::before { content: ''; width: 14px; height: 14px; background: currentColor; mask: url('/assets/new-chat.svg') center / contain no-repeat; }
   .msg:hover > .message-actions > button, .msg:has(:focus-visible) > .message-actions > button { opacity: 1; pointer-events: auto; }
-  .msg-recall:hover { color: var(--text); }
+  .msg-edit:hover { color: var(--text); }
+  .msg-edit-editor { max-width: 680px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px 8px; }
+  .msg-edit-input { display: block; width: 100%; min-height: 40px; max-height: 220px; box-sizing: border-box; resize: vertical; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; line-height: 1.6; padding: 2px 1px 8px; }
+  .msg-edit-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+  .msg-edit-send { background: var(--text); border-color: var(--text); color: var(--bg); }
+  .msg-edit-send:hover:not(:disabled) { background: var(--text); border-color: var(--text); color: var(--bg); }
   @media (hover: none) { .message-actions > button { opacity: 1; pointer-events: auto; } }
 
   /* Conversation content shares the existing quiet, monochrome controls. */

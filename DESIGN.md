@@ -756,8 +756,9 @@ commands still require their own approval. Updating another question must preser
 the focused form and composition state. Answered cards become a quiet answer row.
 
 **Editing and long histories.** Hover/focus on a user message reveals Copy and
-`Return message to draft`. Reuse the original text as a new draft; never silently
-rewrite the historical request or rerun an executed command. Initially mount the
+`Edit message`. Open the original request in place with `Cancel` and `Send`; keep
+the historical request unchanged and submit edited text as a new request. Never
+silently rewrite the historical request or rerun an executed command. Initially mount the
 latest 100 saved messages, extending backward to a complete user-request boundary.
 `Load earlier messages` prepends another window while retaining existing nodes and
 the reading anchor; `Search this conversation` queries the server archive and can

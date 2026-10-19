@@ -72,16 +72,16 @@ export interface MessagesApi {
       addMessageCopyButton(div, messageCopyText(m));
       const actions = document.createElement('div');
       actions.className = 'message-actions';
-      const recall = document.createElement('button');
-      recall.type = 'button';
-      recall.className = 'msg-recall';
-      recall.setAttribute('aria-label', 'Return message to draft');
-      recall.title = 'Return message to draft';
-      recall.onclick = () => runtime.Composer.recallMessage(m.sessionId || activeId, String(m.text || ''));
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'msg-edit';
+      edit.setAttribute('aria-label', 'Edit message');
+      edit.title = 'Edit message';
+      edit.onclick = () => beginMessageEdit(div, body, actions, m, activeId);
       const copy = div.querySelector('.msg-copy'),
         feedback = div.querySelector('.copy-feedback');
       if (copy) actions.append(copy);
-      actions.append(recall);
+      actions.append(edit);
       if (feedback) actions.append(feedback);
       div.append(actions);
       chat.appendChild(div);
@@ -363,6 +363,79 @@ export interface MessagesApi {
       div.textContent = m.text || '';
       chat.appendChild(div);
     }
+  }
+
+  function beginMessageEdit(
+    div: HTMLElement,
+    body: HTMLElement | null,
+    actions: HTMLElement,
+    message: Message,
+    activeId: string,
+  ): void {
+    if (!body || div.classList.contains('editing')) return;
+    const editor = document.createElement('div');
+    editor.className = 'msg-edit-editor';
+    const input = document.createElement('textarea');
+    input.className = 'msg-edit-input';
+    input.value = body.textContent || String(message.text || '');
+    input.rows = Math.min(8, Math.max(2, input.value.split(/\r?\n/).length));
+    input.setAttribute('aria-label', 'Edit message');
+    const controls = document.createElement('div');
+    controls.className = 'msg-edit-actions';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'text-btn';
+    cancel.textContent = 'Cancel';
+    const send = document.createElement('button');
+    send.type = 'button';
+    send.className = 'text-btn msg-edit-send';
+    send.textContent = 'Send';
+    controls.append(cancel, send);
+    editor.append(input, controls);
+    div.classList.add('editing');
+    body.replaceWith(editor);
+    actions.hidden = true;
+    const finish = () => {
+      if (!editor.parentElement) return;
+      editor.replaceWith(body);
+      actions.hidden = false;
+      div.classList.remove('editing');
+    };
+    cancel.onclick = finish;
+    input.onkeydown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        finish();
+      } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        send.click();
+      }
+    };
+    send.onclick = async () => {
+      const text = input.value.trim();
+      if (!text) {
+        input.focus();
+        return;
+      }
+      input.disabled = true;
+      cancel.disabled = true;
+      send.disabled = true;
+      send.textContent = 'Sending…';
+      let sent = false;
+      try {
+        sent = await runtime.Composer.editMessage(message.sessionId || activeId, text);
+      } catch {
+        sent = false;
+      }
+      if (sent) return;
+      input.disabled = false;
+      cancel.disabled = false;
+      send.disabled = false;
+      send.textContent = 'Send';
+      input.focus();
+    };
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
   }
 
   function updateReply(chat: HTMLElement, message: Message): boolean {

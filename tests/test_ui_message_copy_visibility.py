@@ -89,7 +89,7 @@ def test_keyboard_tab_reveals_copy_and_enter_copies_without_hover(page, kind):
     expect_opacity(copy, 1)
     page.keyboard.press("Tab")
     if kind == "user":
-        expect(message.get_by_role("button", name="Return message to draft", exact=True)).to_be_focused()
+        expect(message.get_by_role("button", name="Edit message", exact=True)).to_be_focused()
         expect_opacity(copy, 1)
         page.keyboard.press("Tab")
     expect_opacity(copy, 0)

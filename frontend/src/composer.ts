@@ -39,6 +39,7 @@ export interface ComposerApi {
   captureDraft(): void;
   isSending(sessionId?: string): boolean;
   retryTask(sessionId: string, requestId: string): unknown;
+  editMessage(sessionId: string, text: string): Promise<boolean>;
   quoteInReply(sessionId: string, text: string): boolean;
   recoveryActions(message: Message): RunDetailsAction[];
   resizeTask(): void;
@@ -518,6 +519,13 @@ export interface ComposerApi {
     if (!original || typeof original.text !== 'string') return;
     return sendTaskFromSession(sessionId, original.text, s.provider || '', null, requestId);
   }
+
+  async function editMessage(sessionId: string, text: string): Promise<boolean> {
+    const s = deps.findSession(sessionId);
+    if (!s || !String(text || '').trim()) return false;
+    return (await sendTaskFromSession(sessionId, text, s.provider || '')) === true;
+  }
+
   function recallMessage(sessionId: string, text: string): void {
     if (sessionId !== activeId()) deps.switchSession(sessionId);
     syncSession();
@@ -680,6 +688,7 @@ export interface ComposerApi {
     captureDraft,
     isSending: (sessionId?: string) => !!sendingSessionId && (!sessionId || sendingSessionId === sessionId),
     retryTask,
+    editMessage,
     quoteInReply,
     recoveryActions,
     resizeTask,

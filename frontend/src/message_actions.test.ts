@@ -5,17 +5,33 @@ import './messages';
 import './research_runs';
 import type { Session } from './types/domain';
 
-it('returns a user message to the draft without altering the original', () => {
-  const recall = vi.fn();
-  window.Composer = { recallMessage: recall } as unknown as typeof window.Composer;
+it('edits a user message inline and submits the edited text', async () => {
+  const editMessage = vi.fn().mockResolvedValue(true);
+  window.Composer = { editMessage } as unknown as typeof window.Composer;
   window.Messages.init({ getActiveId: () => 'chat', getRunningSessionId: () => null } as Parameters<
     typeof window.Messages.init
   >[0]);
   const host = document.createElement('div');
   window.Messages.append(host, { type: 'user', id: 'u', text: '原始请求' });
-  host.querySelector<HTMLButtonElement>('.msg-recall')!.click();
-  expect(recall).toHaveBeenCalledWith('chat', '原始请求');
+  host.querySelector<HTMLButtonElement>('.msg-edit')!.click();
+  const input = host.querySelector<HTMLTextAreaElement>('.msg-edit-input')!;
+  input.value = '修改后的请求';
+  host.querySelector<HTMLButtonElement>('.msg-edit-send')!.click();
+  await vi.waitFor(() => expect(editMessage).toHaveBeenCalledWith('chat', '修改后的请求'));
+  expect(host.querySelector('.msg-edit-input')).not.toBeNull();
+});
+
+it('cancels inline message editing without changing the original', () => {
+  window.Composer = { editMessage: vi.fn() } as unknown as typeof window.Composer;
+  window.Messages.init({ getActiveId: () => 'chat', getRunningSessionId: () => null } as Parameters<
+    typeof window.Messages.init
+  >[0]);
+  const host = document.createElement('div');
+  window.Messages.append(host, { type: 'user', id: 'u', text: '原始请求' });
+  host.querySelector<HTMLButtonElement>('.msg-edit')!.click();
+  host.querySelector<HTMLButtonElement>('.msg-edit-editor .text-btn')!.click();
   expect(host.querySelector('.body')?.textContent).toBe('原始请求');
+  expect(host.querySelector('.msg-edit-input')).toBeNull();
 });
 
 it('retains an interrupted response locally and removes that notice on final settlement', () => {
