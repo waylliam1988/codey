@@ -160,6 +160,13 @@ def retrieve_relevant_observations(
     )
 
 
+def fit_observation_rows(
+    rows: tuple[dict[str, object], ...], *, budget_chars: int, max_items: int,
+) -> tuple[dict[str, object], ...]:
+    """Fit an already ranked set without reinterpreting semantic scores."""
+    return tuple(row for row, _block in _fit_blocks(rows, budget_chars, max_items))
+
+
 def _render_single_block(row: object, remaining: int) -> str | None:
     """Render one row within the remaining budget; None when nothing fits."""
     if not isinstance(row, dict):

@@ -89,10 +89,8 @@ class ObservationStoreTests(unittest.TestCase):
             self.assertGreater(store.delete_scope("session", session_id="s"), 0)
             self.assertEqual(store.read_committed(session_id="s"), ())
 
-    def test_blocked_read_never_rewrites_the_file(self) -> None:
-        """Regression: good/bad/good rows block reads; append and delete
-        must fail without touching the original bytes. Delete must raise,
-        never report 0-removed success."""
+    def test_sqlite_database_is_not_treated_as_a_jsonl_event_log(self) -> None:
+        """Ghost facts are stored in the independent SQLite owner."""
         with tempfile.TemporaryDirectory() as td:
             store = GhostObservationStore(Path(td))
             for run_id in ("r1", "r2"):
@@ -100,20 +98,9 @@ class ObservationStoreTests(unittest.TestCase):
                     run_id=run_id, session_id="s", mode="chat",
                     user_text="hi", assistant_text="hello",
                     stop_reason="done", provider_id="local"))
-            lines = store.path.read_text(encoding="utf-8").splitlines(keepends=True)
-            self.assertEqual(len(lines), 2)
-            store.path.write_text(lines[0] + "{bad json\n" + lines[1], encoding="utf-8")
-            before = store.path.read_bytes()
-            self.assertFalse(store.append_completed(
-                run_id="r3", session_id="s", mode="chat",
-                user_text="hi", assistant_text="hello",
-                stop_reason="done", provider_id="local"))
-            self.assertEqual(store.path.read_bytes(), before)
-            with self.assertRaises(OSError):
-                store.delete_scope("session", session_id="s")
-            self.assertEqual(store.path.read_bytes(), before)
-            with self.assertRaises(OSError):
-                store.export_state()
+            self.assertTrue(store.database_path.is_file())
+            self.assertFalse((Path(td) / "ghost" / "observations.jsonl").exists())
+            self.assertEqual([row["run_id"] for row in store.read_all()], ["r1", "r2"])
 
     def test_cjk_paraphrase_retrieves_without_shared_word_runs(self) -> None:
         """Regression: Chinese has no spaces, so punctuation-split word runs
@@ -176,24 +163,22 @@ class ObservationStoreTests(unittest.TestCase):
         The store is a bounded sync scan, not a background index."""
         with tempfile.TemporaryDirectory() as td:
             store = GhostObservationStore(Path(td))
-            rows = [
-                {
-                    "schema_version": 1,
-                    "ts": "2026-09-26T00:00:00Z",
-                    "type": "ghost_observation",
-                    "run_id": f"r{i}",
-                    "session_id": "s",
-                    "project": "",
-                    "mode": "chat",
-                    "user_text": f"第{i}条 以后回答短一点",
-                    "assistant_text": "好的",
-                    "stop_reason": "done",
-                    "committed": True,
-                    "provider_id": "local",
-                }
-                for i in range(MAX_OBSERVATIONS)
-            ]
-            store.log.write_atomic(rows)
+            with store.database.connection() as database:
+                database.executemany(
+                    """
+                    INSERT INTO observation_events(
+                        run_id, session_id, project, mode, user_text,
+                        assistant_text, stop_reason, committed, provider_id, ts
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    [
+                        (
+                            f"r{i}", "s", "", "chat", f"第{i}条 以后回答短一点", "好的",
+                            "done", 1, "local", "2026-09-26T00:00:00Z",
+                        )
+                        for i in range(MAX_OBSERVATIONS)
+                    ],
+                )
             started = time.perf_counter()
             self.assertTrue(store.append_completed(
                 run_id="r-new", session_id="s", mode="chat",

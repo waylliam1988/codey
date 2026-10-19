@@ -2,8 +2,8 @@
 
 终态说明（经历记忆 + 下轮检索）：
 
-- Ghost 不再为每轮发起额外的模型调用。普通单轮 chat 只有一次正常主推理；
-  research/agent/consensus 的多轮调用是任务本身需要的，不是 Ghost 的。
+- 默认检索不发起额外模型调用。明确配置 embedding endpoint 后，语义检索会
+  对待索引原话和当前查询调用该端点；向量与原话仍归独立 ghost.sqlite3 所有。
 - 这里只保存已发生的回合事实（用户原话、最终回答、任务结果），读取是
   同步有界扫描（最近 200 条内检索，全文件至多 5000 条），没有后台索引
   线程；下一次正常模型调用前检索少量相关原话并判断。语义判断发生在
@@ -16,13 +16,14 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
-from typing import Any
 
 from codey.ghost import _common
-from codey.ghost.event_log import GhostEventLog
+from codey.ghost.embeddings import Embeddings, configured_embeddings
 from codey.ghost.schema import clip_signal_text
-from codey.storage.file_lock import with_file_lock
+from codey.ghost.sqlite import GhostSQLite
+from codey.ghost.vectors import GhostVectorMemory, observation_digest
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
 OBSERVATIONS_SCHEMA_VERSION = 1
@@ -39,13 +40,6 @@ class GhostObservationCorruptedError(OSError):
     """Observation log is unreadable (mid-file corruption)."""
 
 
-def _blocked_error(read: Any) -> GhostObservationCorruptedError:
-    detail = ";".join(read.warnings) or "observations.jsonl:corrupted"
-    return GhostObservationCorruptedError(
-        f"observations log is blocked, delete/export refused: {detail}"
-    )
-
-
 class GhostObservationStore:
     """Append-by-run_id experience log with committed gating.
 
@@ -54,17 +48,14 @@ class GhostObservationStore:
     不得声称该回合仍可恢复。
     """
 
-    def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
+    def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME, *, embeddings: Embeddings | None = None) -> None:
         self.directory = Path(state_home) / "ghost"
-        self.path = self.directory / "observations.jsonl"
-        self.log = GhostEventLog(
-            self.path,
-            schema_version=OBSERVATIONS_SCHEMA_VERSION,
-            source_name="observations.jsonl",
-            allowed_event_kinds=("ghost_observation",),
-            bad_row_policy="quarantine_tail",
-        )
+        self.database = GhostSQLite(state_home)
+        self.database_path = self.database.path
+        self.path = self.database_path
         self.last_warnings: tuple[str, ...] = ()
+        selected = embeddings if embeddings is not None else configured_embeddings()
+        self.vector_memory = GhostVectorMemory(self.database, selected) if selected is not None else None
 
     def append_completed(
         self,
@@ -98,27 +89,60 @@ class GhostObservationStore:
         }
         if not row["run_id"] or not row["session_id"]:
             return False
-        # run_id 幂等：同 run 重放覆盖，不新增第二条。
-        # 读取被阻断（中间坏行）时绝不写回：空列表写回会丢弃已有记录。
-        # 调用方（结算）把 False 记为 ghost_observation_failed 告警。
-        with with_file_lock(self.path):
-            read = self.log.read_locked()
-            self.last_warnings = read.warnings
-            if read.blocked:
-                return False
-            rows = [r for r in read.rows if str(r.get("run_id") or "") != row["run_id"]]
-            rows.append(row)
-            rows = rows[-MAX_OBSERVATIONS:]
-            try:
-                self.log.write_atomic_locked(rows)
-            except (OSError, TypeError, ValueError):
-                return False
-        return True
+        try:
+            with self.database.connection() as database:
+                database.execute(
+                    """
+                    INSERT INTO observation_events(
+                        run_id, session_id, project, mode, user_text,
+                        assistant_text, stop_reason, committed, provider_id, ts
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(run_id) DO UPDATE SET
+                        session_id=excluded.session_id,
+                        project=excluded.project,
+                        mode=excluded.mode,
+                        user_text=excluded.user_text,
+                        assistant_text=excluded.assistant_text,
+                        stop_reason=excluded.stop_reason,
+                        committed=excluded.committed,
+                        provider_id=excluded.provider_id,
+                        ts=excluded.ts
+                    """,
+                    (
+                        str(row["run_id"]), str(row["session_id"]), str(row["project"]),
+                        str(row["mode"]), str(row["user_text"]), str(row["assistant_text"]),
+                        str(row["stop_reason"]), int(bool(row["committed"])),
+                        str(row["provider_id"]), str(row["ts"]),
+                    ),
+                )
+                database.execute(
+                    "DELETE FROM memory_embeddings WHERE run_id=? AND content_digest<>?",
+                    (row["run_id"], observation_digest(row)),
+                )
+                database.execute(
+                    """
+                    DELETE FROM observation_events
+                    WHERE sequence IN (
+                        SELECT sequence FROM observation_events
+                        ORDER BY sequence DESC LIMIT -1 OFFSET ?
+                    )
+                    """,
+                    (MAX_OBSERVATIONS,),
+                )
+            return True
+        except (OSError, sqlite3.Error, TypeError, ValueError):
+            return False
 
     def read_all(self) -> tuple[dict[str, object], ...]:
-        read = self.log.read()
-        self.last_warnings = read.warnings
-        return tuple(read.rows)
+        with self.database.connection() as database:
+            rows = database.execute(
+                """
+                SELECT run_id, session_id, project, mode, user_text,
+                       assistant_text, stop_reason, committed, provider_id, ts
+                FROM observation_events ORDER BY sequence
+                """
+            ).fetchall()
+        return tuple(_row_payload(row) for row in rows)
 
     def read_committed(
         self,
@@ -139,28 +163,32 @@ class GhostObservationStore:
         normalized_scope = (scope or "session").strip().lower()
         if normalized_scope not in {"session", "project", "user"}:
             raise ValueError("scope must be session, project, or user")
-        rows = list(self.read_all())
         wanted_session = clip_signal_text(session_id, 120)
         wanted_project = _common.normalize_project(project)
         if normalized_scope == "project" and not wanted_project:
             raise ValueError("project is required for project scope retrieval")
-        out: list[dict[str, object]] = []
-        for row in reversed(rows):
-            if row.get("committed") is not True:
-                continue
-            if normalized_scope == "project":
-                if _common.normalize_project(row.get("project")) != wanted_project:
-                    continue
-            elif normalized_scope == "session":
-                if wanted_session and clip_signal_text(row.get("session_id"), 120) != wanted_session:
-                    # 跨会话不召回，避免把别人的经历带入本轮。
-                    continue
-                if wanted_project and _common.normalize_project(row.get("project")) != wanted_project:
-                    continue
-            out.append(row)
-            if len(out) >= max(1, (limit or 1)):
-                break
-        return tuple(out)
+        clauses = ["committed = 1"]
+        values: list[object] = []
+        if normalized_scope == "project":
+            clauses.append("project = ?")
+            values.append(wanted_project)
+        elif normalized_scope == "session":
+            if wanted_session:
+                clauses.append("session_id = ?")
+                values.append(wanted_session)
+            if wanted_project:
+                clauses.append("project = ?")
+                values.append(wanted_project)
+        values.append(max(1, (limit or 1)))
+        with self.database.connection() as database:
+            rows = database.execute(
+                "SELECT run_id, session_id, project, mode, user_text, assistant_text, "
+                "stop_reason, committed, provider_id, ts FROM observation_events WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY sequence DESC LIMIT ?",
+                tuple(values),
+            ).fetchall()
+        return tuple(_row_payload(row) for row in rows)
 
     def delete_scope(
         self,
@@ -178,41 +206,64 @@ class GhostObservationStore:
             raise ValueError("project is required for project scope deletion")
         if normalized_scope == "session" and not normalized_session:
             raise ValueError("session_id is required for session scope deletion")
-        with with_file_lock(self.path):
-            read = self.log.read_locked()
-            self.last_warnings = read.warnings
-            if read.blocked:
-                # 读取被阻断时不写回且绝不报成功：保持原文件并抛出，
-                # 控制面将其转为 500 + 部分完成标记。
-                raise _blocked_error(read)
-            kept: list[dict[str, object]] = []
-            removed = 0
-            for row in read.rows:
-                if _observation_scope_match(
-                    row,
-                    normalized_scope,
-                    project=normalized_project,
-                    session_id=normalized_session,
-                ):
-                    removed += 1
-                else:
-                    kept.append(row)
-            if removed:
-                self.log.write_atomic_locked(kept)
-            return removed
+        clauses: list[str] = []
+        values: list[object] = []
+        if normalized_scope == "user":
+            clauses.append("1 = 1")
+        elif normalized_scope == "project":
+            clauses.append("project = ?")
+            values.append(normalized_project)
+        else:
+            clauses.append("session_id = ?")
+            values.append(normalized_session)
+        with self.database.connection() as database:
+            result = database.execute(
+                "DELETE FROM observation_events WHERE " + " AND ".join(clauses), tuple(values)
+            )
+            return int(result.rowcount)
+
+    def retrieve(
+        self, query: str, *, session_id: str = "", project: str = "", scope: str = "session",
+        exclude_run_id: str = "", max_items: int = 4, budget_chars: int = 2000,
+    ) -> tuple[dict[str, object], ...]:
+        from codey.ghost.observation_index import fit_observation_rows, retrieve_relevant_observations
+
+        rows = tuple(row for row in self.read_committed(session_id=session_id, project=project, scope=scope)
+                     if str(row["run_id"]) != exclude_run_id)
+        if self.vector_memory is not None:
+            ranked = self.vector_memory.rank(query, rows, limit=max_items)
+            return fit_observation_rows(ranked, budget_chars=budget_chars, max_items=max_items)
+        return retrieve_relevant_observations(rows, query, max_items=max_items, budget_chars=budget_chars)
 
     def reset_all(self) -> None:
-        self.log.delete()
+        with self.database.connection() as database:
+            database.execute("DELETE FROM observation_events")
 
     def export_state(self) -> dict[str, object]:
-        read = self.log.read()
-        self.last_warnings = read.warnings
-        if read.blocked:
-            raise _blocked_error(read)
         return {
             "schema_version": OBSERVATIONS_SCHEMA_VERSION,
-            "observations": list(read.rows),
+            "observations": list(self.read_all()),
         }
+
+    def close(self) -> None:
+        """Operations own and close their individual connections."""
+
+
+def _row_payload(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "schema_version": OBSERVATIONS_SCHEMA_VERSION,
+        "ts": str(row["ts"]),
+        "type": "ghost_observation",
+        "run_id": str(row["run_id"]),
+        "session_id": str(row["session_id"]),
+        "project": str(row["project"]),
+        "mode": str(row["mode"]),
+        "user_text": str(row["user_text"]),
+        "assistant_text": str(row["assistant_text"]),
+        "stop_reason": str(row["stop_reason"]),
+        "committed": bool(row["committed"]),
+        "provider_id": str(row["provider_id"]),
+    }
 
 
 def _observation_scope_match(

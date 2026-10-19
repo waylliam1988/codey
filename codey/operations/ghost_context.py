@@ -12,6 +12,7 @@ presented as confirmed long-term traits. These builders make no model calls.
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
 
 from codey.ghost.continuity import build_ghost_continuity
@@ -21,7 +22,6 @@ from codey.ghost.observation_index import (
     MAX_RETRIEVED_ITEMS,
     RETRIEVAL_BUDGET_CHARS,
     render_retrieved_block,
-    retrieve_relevant_observations,
 )
 from codey.ghost.observations import GhostObservationCorruptedError
 
@@ -86,7 +86,8 @@ def ghost_experiences(
 ) -> str:
     """Retrieve committed experience observations for the next normal call.
 
-    Zero model calls. Returns a self-labeled history block or "". Retrieval is
+    Returns a self-labeled history block or "". The explicitly selected
+    semantic mode calls its embedding endpoint; lexical mode is local. Retrieval is
     gated on Ghost updates being enabled; callers prepend/append it to their
     existing prompt alongside directive/continuity. Only ``committed``
     (successfully finished) rounds are returned; the current run is excluded.
@@ -108,18 +109,13 @@ def ghost_experiences(
         store = getattr(state, "ghost_observations", None)
         if store is None:
             return ""
-        rows = store.read_committed(session_id=session_id, project=project or "", scope=scope)
-    except (GhostObservationCorruptedError, OSError):
-        return ""
-    try:
-        picked = retrieve_relevant_observations(
-            rows,
-            (query or ""),
+        picked = store.retrieve(
+            query or "", session_id=session_id, project=project or "", scope=scope,
             exclude_run_id=(exclude_run_id or ""),
             max_items=max_items,
             budget_chars=budget_chars,
         )
-    except (TypeError, ValueError, OverflowError):
+    except (GhostObservationCorruptedError, OSError, TypeError, ValueError, OverflowError, sqlite3.Error, ImportError):
         return ""
     if not picked:
         return ""
