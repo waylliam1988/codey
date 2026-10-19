@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -141,6 +142,10 @@ def test_restart_approval_round_trip_uses_real_http_and_is_single_use(tmp_path: 
         assert status == 202
         status, approval = _http_json(conn, "GET", f"/api/shell_approval?id={approval_id}")
         assert status == 200
+        deadline = time.monotonic() + 2
+        while approval["continuation"] != "started" and time.monotonic() < deadline:
+            time.sleep(0.02)
+            status, approval = _http_json(conn, "GET", f"/api/shell_approval?id={approval_id}")
         assert approval["continuation"] == "started"
         assert approval["execution"] == "settled"
 

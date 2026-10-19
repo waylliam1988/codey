@@ -74,7 +74,6 @@ class ShellApprovalWorkflow:
         self._workers: dict[str, threading.Thread] = {}
         self._executing: set[str] = set()
         self._execution_ids: dict[str, str] = {}
-        self._submit: Submit | None = None
         self._closing = False
 
     def _pending(self, fact: ShellApprovalFact) -> dict[str, Any] | None:
@@ -224,9 +223,8 @@ class ShellApprovalWorkflow:
         except (TypeError, ValueError):
             return False
 
-    def start(self, submit: Submit) -> None:
+    def start(self, _submit: Submit) -> None:
         """Recover committed jobs when the application service starts."""
-        self._submit = submit
         histories = list(_durable_approval_histories(self.ctx).values())
         for facts in histories:
             last = facts[-1]
@@ -251,8 +249,7 @@ class ShellApprovalWorkflow:
             }:
                 self._schedule(facts[0].approval_id)
 
-    def accept(self, approval_id: str, approved: bool, submit: Submit) -> tuple[int, dict[str, Any]]:
-        self._submit = submit
+    def accept(self, approval_id: str, approved: bool, _submit: Submit) -> tuple[int, dict[str, Any]]:
         with self.ctx._shell_spawn_gate:
             facts = self._facts(approval_id)
             if not facts:
@@ -285,8 +282,7 @@ class ShellApprovalWorkflow:
         self.ctx.emit(dict(accepted_state))
         return 202, dict(accepted_state)
 
-    def retry(self, approval_id: str, submit: Submit) -> tuple[int, dict[str, Any]]:
-        self._submit = submit
+    def retry(self, approval_id: str, _submit: Submit) -> tuple[int, dict[str, Any]]:
         state = self.status(approval_id)
         if state is None:
             return 404, {"error": "approval not found"}

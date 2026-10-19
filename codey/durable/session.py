@@ -466,50 +466,6 @@ class DurableSession:
         )
 
     @_mutation_line
-    def settle_approval_effect(
-        self,
-        approval_id: str,
-        *,
-        settlement: Mapping[str, object],
-        status: str = "ok",
-    ) -> CommitResult:
-        """Settle a claimed shell effect without waking its task.
-
-        This low-level operation remains useful for callers that deliberately
-        stop after the shell result. Interactive approval continuation uses
-        :meth:`settle_approval`, which adds the result and wakeup to the same
-        durable commit.
-        """
-        current_approval = self.store.approval(approval_id)
-        if current_approval.status != ApprovalStatus.EXECUTION_CLAIMED:
-            raise CommitConflict("shell approval is not execution-claimed")
-        effect_id = f"shell-{approval_id}"
-        effect = self.store.effect(effect_id)
-        if effect.category != "shell" or effect.settlement is not None:
-            raise CommitConflict("shell approval effect is not pending")
-        settled = replace(effect, status=status, settlement=dict(settlement))
-        current_task = self.store.task(current_approval.task_id)
-        next_task = with_effect_settlement(current_task, settled)
-        approved = replace(
-            current_approval,
-            status=ApprovalStatus.EXECUTION_SETTLED,
-            revision=current_approval.revision + 1,
-            settlement=dict(settlement),
-        )
-        _head, revision = self.store.head(current_task.conversation_id)
-        return self._commit(
-            DurableMutation(
-                conversation_id=current_task.conversation_id,
-                expected_revision=revision,
-                task=next_task,
-                effect=settled,
-                expected_effect_status="pending",
-                approval=approved,
-                expected_approval_status=ApprovalStatus.EXECUTION_CLAIMED,
-            )
-        )
-
-    @_mutation_line
     def settle_approval(
         self,
         approval_id: str,
