@@ -246,7 +246,7 @@ class SQLiteDurableStore:
                     )
                 if mutation.submission is not None:
                     database.execute(
-                        "INSERT INTO submissions(id, conversation_id, request_id, entry_id, revision, fingerprint, status, placement, mode, content, commit_seq) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO submissions(id, conversation_id, request_id, entry_id, revision, fingerprint, status, placement, mode, content, reason, commit_seq) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             mutation.submission.submission_id,
                             mutation.submission.conversation_id,
@@ -258,6 +258,7 @@ class SQLiteDurableStore:
                             SubmissionPlacement(mutation.submission.placement).value,
                             mutation.submission.mode,
                             _encode(mutation.submission.content or {}),
+                            mutation.submission.reason,
                             sequence,
                         ),
                     )

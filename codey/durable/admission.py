@@ -209,8 +209,16 @@ def admit_write(
     else:
         current_head, revision = None, 0
         creation = CreateConversation()
+    stale = False
+    if head_target is not None and head_target != "self":
+        if creation is not None:
+            stale = True
+        else:
+            stale = head_target not in {
+                entry.entry_id for entry in session.context(conversation_id)
+            }
     entry = None
-    if placement is SubmissionPlacement.PLACED:
+    if placement is SubmissionPlacement.PLACED and not stale:
         payload: dict[str, object] = {"data": dict(data), "display_only": display_only}
         if head_target is not None:
             payload.update({"head": head_target, "head_marker": True})
@@ -227,10 +235,17 @@ def admit_write(
         conversation_id=conversation_id,
         entry=entry,
         fingerprint=fingerprint,
-        status=(SubmissionStatus.DONE if placement is SubmissionPlacement.PLACED else SubmissionStatus.QUEUED),
-        placement=placement,
+        status=(
+            SubmissionStatus.UNANSWERED
+            if stale
+            else SubmissionStatus.DONE
+            if placement is SubmissionPlacement.PLACED
+            else SubmissionStatus.QUEUED
+        ),
+        placement=SubmissionPlacement.QUEUED if stale else placement,
         mode="write",
         content=content,
+        reason="stale" if stale else None,
     )
     return session._commit(DurableMutation(
         conversation_id=conversation_id,

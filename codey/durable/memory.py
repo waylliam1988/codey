@@ -174,6 +174,7 @@ class MemoryDurableStore:
                 placement=submission.placement,
                 mode=submission.mode,
                 content=submission.content,
+                reason=submission.reason,
             ),
             submission.entry,
             CommitResult(revision, record.sequence, submission.submission_id, record),

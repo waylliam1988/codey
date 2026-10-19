@@ -371,3 +371,41 @@ def test_head_write_target_in_current_range_places(session: DurableSession) -> N
     session.place_submission(str(result.submission_id))
     assert session.store.submission(str(result.submission_id)).status is SubmissionStatus.DONE
     assert [entry.kind for entry in session.context("chat")] == ["compaction"]
+
+
+def test_direct_stale_head_write_is_settled_without_an_entry(session: DurableSession) -> None:
+    session.create_conversation("chat")
+    old = session.append_message("chat", "user_message", {"text": "old"})
+    session.admit_write(
+        conversation_id="chat",
+        request_id="reset-1",
+        kind="compaction",
+        data={"summary": "new range"},
+        display_only=False,
+        head="self",
+    )
+
+    result = session.admit_write(
+        conversation_id="chat",
+        request_id="stale-direct",
+        kind="compaction",
+        data={"summary": "too old"},
+        display_only=False,
+        head=old.entry_id,
+        placement=SubmissionPlacement.PLACED,
+    )
+
+    submission = session.store.submission(str(result.submission_id))
+    assert submission.status is SubmissionStatus.UNANSWERED
+    assert submission.reason == "stale"
+    assert len(session.entries("chat")) == 2
+    retry = session.admit_write(
+        conversation_id="chat",
+        request_id="stale-direct",
+        kind="compaction",
+        data={"summary": "too old"},
+        display_only=False,
+        head=old.entry_id,
+        placement=SubmissionPlacement.PLACED,
+    )
+    assert retry.sequence == result.sequence

@@ -820,6 +820,7 @@ ruff：All checks passed
 
 - `DurableSession.admit_write(..., head="self")` 创建 head marker；`conversation_ops.context()` 和 `context_at()` 始终应用最新 marker，只暴露 marker 及其后的当前 range；
 - queued head write 在 placement 前重新读取当前 durable context；目标 entry 已不在当前 range 时，不追加 entry，而是原子结算 `SubmissionStatus.UNANSWERED`、`reason="stale"`；
+- direct placed head write 也在 admission commit 内完成同样的 stale settlement，不会先写 entry 再补偿删除；重复 request-id 返回原 stale commit；
 - 当前 range 内的 head write 正常 placement，并与 submission `DONE` 在同一 commit 中完成；
 - head write 禁止标记为 display-only，避免 UI-only entry 意外改变 provider context；
 - Memory/SQLite 都通过相同的 head cutoff、stale settlement 和重启可读性测试；schema 仍严格为 `SCHEMA_VERSION = 1`。
@@ -827,7 +828,7 @@ ruff：All checks passed
 ### 23.2 验证
 
 ```text
-inbox/head/stale + scheduler + context + fork + session 回归：127 passed
+inbox/head/stale + scheduler + context + fork + session 回归：143 passed
 mypy：Success
 pyrefly：0 errors
 ty：All checks passed

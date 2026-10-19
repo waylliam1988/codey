@@ -325,6 +325,7 @@ class SubmissionDraft:
     placement: SubmissionPlacement | str = SubmissionPlacement.PLACED
     mode: str = "follow_up"
     content: Mapping[str, object] | None = None
+    reason: str | None = None
 
     def __post_init__(self) -> None:
         if not self.submission_id or not self.request_id or not self.conversation_id:
@@ -336,11 +337,17 @@ class SubmissionDraft:
         if self.mode not in {"steer", "follow_up", "write"}:
             raise ValueError("unknown submission mode")
         object.__setattr__(self, "status", SubmissionStatus(self.status))
-        if self.status != SubmissionStatus.QUEUED and not (
+        valid_write_terminal = (
             self.mode == "write"
             and self.status is SubmissionStatus.DONE
             and placement is SubmissionPlacement.PLACED
-        ):
+        ) or (
+            self.mode == "write"
+            and self.status is SubmissionStatus.UNANSWERED
+            and placement is SubmissionPlacement.QUEUED
+            and self.reason == "stale"
+        )
+        if self.status != SubmissionStatus.QUEUED and not valid_write_terminal:
             raise ValueError("new input submissions must start queued")
         if placement is SubmissionPlacement.PLACED and self.entry is None:
             raise ValueError("placed submissions require an entry")
@@ -352,6 +359,8 @@ class SubmissionDraft:
             object.__setattr__(self, "content", _freeze_json(content))
         if placement is SubmissionPlacement.QUEUED and self.content is None:
             raise ValueError("queued submissions require content")
+        if self.reason is not None and not self.reason:
+            raise ValueError("submission reason cannot be empty")
 
 
 @dataclass(frozen=True)
@@ -516,7 +525,12 @@ def same_entry_content(first: EntryDraft, second: EntryDraft) -> bool:
 
 
 def same_submission(first: SubmissionDraft, second: SubmissionDraft) -> bool:
-    if first.placement != second.placement or first.mode != second.mode:
+    if (
+        first.placement != second.placement
+        or first.mode != second.mode
+        or first.status != second.status
+        or first.reason != second.reason
+    ):
         return False
     if first.entry is None or second.entry is None:
         if first.entry is not None or second.entry is not None:
