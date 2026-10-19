@@ -73,6 +73,9 @@ MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
                 status TEXT NOT NULL DEFAULT 'pending',
                 schema_version INTEGER NOT NULL DEFAULT 1
             ) STRICT""",
+            """CREATE TABLE finalization_queue (
+                task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE
+            ) STRICT""",
             """CREATE TABLE task_waiters (
                 waited_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
                 waiter_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -118,6 +121,7 @@ MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
             "CREATE INDEX tasks_by_phase ON tasks(phase)",
             "CREATE INDEX tasks_by_status ON tasks(status)",
             "CREATE INDEX tasks_by_checkpoint_schema ON tasks(schema_version)",
+            "CREATE INDEX finalization_queue_by_task ON finalization_queue(task_id)",
             "CREATE INDEX task_waiters_by_waited ON task_waiters(waited_task_id)",
             "CREATE INDEX task_waiters_by_waiter ON task_waiters(waiter_task_id)",
             "CREATE INDEX task_owners_by_owner ON task_owners(owner_task_id)",

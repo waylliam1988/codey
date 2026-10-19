@@ -1391,4 +1391,28 @@ SCHEMA_VERSION = 1
 
 Codey 现在在 schema fail-closed、真实取消信号传播和 generation boundary 的 active checkpoint/placement 原子性上比本段之前更接近 Pi durable，并保留权限、审批、Provider uncertainty、未知 effect fail-closed 和 completion proof。CodeMode 的写沙箱、跨执行状态、完整 Provider settlement + boundary + 下一 checkpoint 单事务，以及巨型模块拆分仍是明确未完成项；这些差距继续按测试和代码 owner 收敛，不用“接口存在”代替实际接线。
 
+## 40. 第三十六段：独立持久化 finalization queue
+
+本段把 finalization 候选从 scheduler 内存集合和 task 全量扫描中收敛为 durable queue。任务进入 `WAITING` 或 `COMPLETING` 时，queue row 与 checkpoint 在同一 commit 中写入；任务离开这两个状态时，同一事务删除 queue row。进程退出或 scheduler 重启不会丢失待收口任务，也不需要从所有任务重新推导。
+
+### 40.1 已完成
+
+- schema 1 新增 `finalization_queue(task_id)`，由 task 外键约束生命周期；
+- SQLite `_write_task()` 与 Memory commit 在写入 checkpoint 的同一事务/临界区维护 queue；提交失败时两者一起回滚；
+- `DurableStore.finalization_queue()` 成为窄读取契约；
+- scheduler 删除 `_finalization` 内存事实，只读取 durable queue 并将其作为局部 reconcile 候选；
+- `DurableSession.reconcile_finalization()` 默认读取 queue，不再扫描全量 tasks；
+- 重启测试确认 `COMPLETING` parent 的 queue row 保留，scheduler 禁止调用 `store.tasks()` 仍能正确等待子任务；
+- 保持 `SCHEMA_VERSION = 1`，没有 migration、fallback 或第二套 finalization 写入路径。
+
+### 40.2 与 Pi 的结果
+
+Codey 现在在 finalization 的恢复事实、事务边界和 scheduler 重启语义上达到并扩展 Pi durable 的核心要求，同时继续保留 owner reverse index、attempt fencing、权限/审批和未知 effect fail-closed。
+
+仍低于 Pi 或尚未完成的部分：
+
+- provider settlement、boundary placement 与下一 TaskCheckpoint 尚未合并为同一个故障可证明的 mutation；
+- shell/provider abort 仍需真实长请求与真实子进程的端到端清理注入；
+- InboxDoc snapshot/history、Runtime JSONL 降级清理、AppContext 与巨型模块拆分仍待完成。
+
 

@@ -560,6 +560,13 @@ class SQLiteDurableStore:
                 for row in rows
             )
 
+    def finalization_queue(self) -> tuple[str, ...]:
+        with closing(self._connect()) as database:
+            rows = database.execute(
+                "SELECT task_id FROM finalization_queue ORDER BY task_id"
+            ).fetchall()
+            return tuple(str(row["task_id"]) for row in rows)
+
     def tasks(self) -> tuple[TaskCheckpoint, ...]:
         with closing(self._connect()) as database:
             rows = database.execute("SELECT * FROM tasks ORDER BY rowid").fetchall()
@@ -1054,6 +1061,13 @@ def _write_task(database: sqlite3.Connection, task: TaskCheckpoint | None) -> No
             "INSERT INTO task_owners(owner_task_id, child_task_id) VALUES(?, ?)",
             (task.owner_task_id, task.task_id),
         )
+    if TaskStatus(str(task.status)) in {TaskStatus.COMPLETING, TaskStatus.WAITING}:
+        database.execute(
+            "INSERT OR IGNORE INTO finalization_queue(task_id) VALUES(?)",
+            (task.task_id,),
+        )
+    else:
+        database.execute("DELETE FROM finalization_queue WHERE task_id=?", (task.task_id,))
 
 
 def _write_tasks(database: sqlite3.Connection, tasks: tuple[TaskCheckpoint, ...]) -> None:

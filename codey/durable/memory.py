@@ -60,6 +60,9 @@ class MemoryDurableStore:
         self._submissions: dict[tuple[str, str], _Submission] = {}
         self._submission_ids: set[str] = set()
         self._tasks: dict[str, TaskCheckpoint] = {}
+        # Durable finalization candidates; task writes update this set in the
+        # same commit as the checkpoint itself.
+        self._finalization: set[str] = set()
         self._waiters: dict[str, set[str]] = {}
         self._owners: dict[str, set[str]] = {}
         self._effects: dict[str, EffectRecord] = {}
@@ -169,6 +172,7 @@ class MemoryDurableStore:
             self._heads[mutation.conversation_id] = (new_head, new_revision)
             if mutation.task is not None:
                 self._tasks[mutation.task.task_id] = mutation.task
+                self._record_finalization(mutation.task)
                 self._replace_waiters(mutation.task)
                 self._replace_owner(mutation.task)
                 self._history.setdefault(mutation.task.task_id, []).append(
@@ -176,6 +180,7 @@ class MemoryDurableStore:
                 )
             for task in mutation.task_updates:
                 self._tasks[task.task_id] = task
+                self._record_finalization(task)
                 self._replace_waiters(task)
                 self._replace_owner(task)
                 self._history.setdefault(task.task_id, []).append(
@@ -296,6 +301,7 @@ class MemoryDurableStore:
             self._submissions.pop(key, None)
         for task_id in task_ids:
             self._tasks.pop(task_id, None)
+            self._finalization.discard(task_id)
             self._history.pop(task_id, None)
             self._waiters.pop(task_id, None)
             self._owners.pop(task_id, None)
@@ -524,6 +530,10 @@ class MemoryDurableStore:
         with self._lock:
             return tuple(task for task in self._tasks.values() if task.status not in TASK_TERMINAL_STATUSES)
 
+    def finalization_queue(self) -> tuple[str, ...]:
+        with self._lock:
+            return tuple(sorted(self._finalization))
+
     def tasks(self) -> tuple[TaskCheckpoint, ...]:
         with self._lock:
             return tuple(self._tasks.values())
@@ -575,6 +585,12 @@ class MemoryDurableStore:
             children.discard(task.task_id)
         if task.owner_task_id is not None:
             self._owners.setdefault(task.owner_task_id, set()).add(task.task_id)
+
+    def _record_finalization(self, task: TaskCheckpoint) -> None:
+        if task.status in {TaskStatus.COMPLETING, TaskStatus.WAITING}:
+            self._finalization.add(task.task_id)
+        else:
+            self._finalization.discard(task.task_id)
 
     def task_history(self, task_id: str, *, through: int | None = None) -> tuple[TaskTransition, ...]:
         with self._lock:
@@ -635,6 +651,7 @@ class MemoryDurableStore:
             for task_id, task in tuple(self._tasks.items()):
                 if task.conversation_id == conversation_id:
                     self._tasks.pop(task_id, None)
+                    self._finalization.discard(task_id)
                     for effect_id, effect in tuple(self._effects.items()):
                         if effect.task_id == task_id:
                             self._effects.pop(effect_id, None)

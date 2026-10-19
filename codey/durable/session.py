@@ -1744,21 +1744,19 @@ class DurableSession:
     def reconcile_finalization(self, task_ids: tuple[str, ...] | None = None) -> None:
         """Finish held outcomes and cancellation intents after owned work drains."""
         if task_ids is None:
-            self.reconcile_waiting_tasks()
-            tasks = self.store.tasks()
-        else:
-            unique_ids = tuple(dict.fromkeys(task_ids))
-            for task_id in unique_ids:
-                self.reconcile_waiting_tasks(task_id)
-            selected: list[TaskCheckpoint] = []
-            for task_id in unique_ids:
-                try:
-                    candidate = self.store.task(task_id)
-                except KeyError:
-                    continue
-                if candidate.status in {TaskStatus.COMPLETING, TaskStatus.WAITING}:
-                    selected.append(candidate)
-            tasks = tuple(selected)
+            task_ids = self.store.finalization_queue()
+        unique_ids = tuple(dict.fromkeys(task_ids))
+        for task_id in unique_ids:
+            self.reconcile_waiting_tasks(task_id)
+        selected: list[TaskCheckpoint] = []
+        for task_id in unique_ids:
+            try:
+                candidate = self.store.task(task_id)
+            except KeyError:
+                continue
+            if candidate.status in {TaskStatus.COMPLETING, TaskStatus.WAITING}:
+                selected.append(candidate)
+        tasks = tuple(selected)
         for task in tasks:
             if task.status not in {TaskStatus.COMPLETING, TaskStatus.WAITING}:
                 continue
