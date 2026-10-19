@@ -13,6 +13,7 @@ from codey.durable import (
     SubmissionStatus,
     TaskStatus,
 )
+from codey.durable.model import thaw_json
 from codey.durable.scheduler import DurableTaskScheduler
 
 
@@ -371,6 +372,99 @@ def test_head_write_target_in_current_range_places(session: DurableSession) -> N
     session.place_submission(str(result.submission_id))
     assert session.store.submission(str(result.submission_id)).status is SubmissionStatus.DONE
     assert [entry.kind for entry in session.context("chat")] == ["compaction"]
+
+
+def test_passive_write_persists_model_and_context_edits(session: DurableSession) -> None:
+    session.create_conversation("chat")
+    original = session.append_message("chat", "user_message", {"text": "original"})
+
+    result = session.admit_write(
+        conversation_id="chat",
+        request_id="edit-1",
+        kind="context_edit",
+        data={"source": "inbox"},
+        model={"provider_id": "local", "model_id": "frozen-model"},
+        edits=[
+            {
+                "target": original.entry_id,
+                "action": "replace",
+                "messages": [{"role": "user", "content": "replacement"}],
+            }
+        ],
+        display_only=False,
+    )
+
+    stored = session.store.submission(str(result.submission_id))
+    entry = session.entries("chat")[-1]
+    assert stored.content is not None
+    assert stored.content["model"] == {"provider_id": "local", "model_id": "frozen-model"}
+    assert entry.model == {"provider_id": "local", "model_id": "frozen-model"}
+    assert entry.head is None
+    assert thaw_json(entry.payload["edits"]) == [
+        {
+            "target": original.entry_id,
+            "action": "replace",
+            "messages": [{"role": "user", "content": "replacement"}],
+        }
+    ]
+    assert len(entry.edits) == 1
+    assert entry.edits[0]["target"] == original.entry_id
+    assert session.context_snapshot("chat", token_budget=100).messages == (
+        {"role": "user", "content": "replacement"},
+    )
+
+
+def test_queued_passive_write_keeps_model_and_edits_through_placement(session: DurableSession) -> None:
+    session.create_conversation("chat")
+    original = session.append_message("chat", "user_message", {"text": "original"})
+    result = session.admit_write(
+        conversation_id="chat",
+        request_id="queued-edit-1",
+        kind="context_edit",
+        data={},
+        model={"provider_id": "local", "model_id": "queued-model"},
+        edits=[{"target": original.entry_id, "action": "omit"}],
+        display_only=False,
+        placement=SubmissionPlacement.QUEUED,
+    )
+
+    assert session.store.submission(str(result.submission_id)).content["model"] == {
+        "provider_id": "local", "model_id": "queued-model",
+    }
+    session.place_submission(str(result.submission_id))
+    entry = session.entries("chat")[-1]
+    assert entry.model == {"provider_id": "local", "model_id": "queued-model"}
+    assert thaw_json(entry.payload["edits"]) == [{"target": original.entry_id, "action": "omit"}]
+
+
+def test_queued_passive_metadata_survives_sqlite_restart(tmp_path: Path) -> None:
+    path = tmp_path / "durable.sqlite3"
+    first = DurableSession(SQLiteDurableStore(path))
+    first.create_conversation("chat")
+    original = first.append_message("chat", "user_message", {"text": "original"})
+    result = first.admit_write(
+        conversation_id="chat",
+        request_id="restart-edit-1",
+        kind="context_edit",
+        data={},
+        model={"provider_id": "local", "model_id": "restart-model"},
+        edits=[{"target": original.entry_id, "action": "omit"}],
+        display_only=False,
+        placement=SubmissionPlacement.QUEUED,
+    )
+    first.close()
+
+    second = DurableSession(SQLiteDurableStore(path))
+    try:
+        queued = second.store.submission(str(result.submission_id))
+        assert queued.content is not None
+        assert queued.content["model"] == {"provider_id": "local", "model_id": "restart-model"}
+        second.place_submission(str(result.submission_id))
+        assert second.entries("chat")[-1].model == {
+            "provider_id": "local", "model_id": "restart-model",
+        }
+    finally:
+        second.close()
 
 
 def test_direct_stale_head_write_is_settled_without_an_entry(session: DurableSession) -> None:

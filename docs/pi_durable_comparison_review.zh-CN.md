@@ -839,4 +839,41 @@ ruff：All checks passed
 
 Codey 现在已经具备 Pi head marker 的核心恢复性质：旧 context 不会在 reset 后重新进入 provider 请求，过期 queued summary 不会制造幽灵 entry，并且 stale 原因属于 durable submission 状态。仍未完成的是完整 `EntryDraft` 的 `model/head/edits` 结构、position-based inbox removal、postTools/final 同事务 boundary，以及 fork-local inbox document。
 
+## 24. 第二十段：完整 passive entry metadata
+
+本段继续收敛 Pi inbox 的 passive write 语义。此前 `admit_write()` 只能把 `data`、`display_only` 和第一层 `head` 保存下来；这会丢失 provider/model 归属和 context edit，queued placement 也无法证明重启后仍是同一条 entry draft。本段保持冷启动 `SCHEMA_VERSION = 1`，不增加迁移、不恢复旧写入路径。
+
+### 24.1 已完成
+
+- `DurableSession.admit_write()` 增加可选的 `model` 与 `edits`，并在 admission fingerprint 中纳入两者，重复 `request_id` 不能以不同 metadata 重写原提交；
+- `SubmissionRecord.content` 和 placed `EntryDraft.payload` 同时保存 `model`、`edits`、`head`，direct placement 与 queued placement 使用同一份规范化字段；
+- queued write 在 scheduler placement 或重启后重新打开 SQLite 时仍保留完整 metadata，placement 仍与 submission、entry 在一个 durable commit 内完成；
+- passive edits 在 admission 时校验 target/action/replacement message 结构；display-only write 不允许携带会改变 provider context 的 edits；
+- `EntryDraft` 提供只读的 `model`、`head`、`edits` 访问器，context builder 继续按 durable edits 应用 omit/replace，避免调用方重复解析 payload；
+- Memory 和 SQLite 共用相同的规范化与恢复契约，没有增加第二个 inbox 或 projection 写入者。
+
+### 24.2 验证
+
+```text
+inbox placement + context + fork：50 passed
+新增 passive metadata 与 SQLite restart：27 passed
+mypy codey/durable：Success
+pyrefly check codey/durable：0 errors
+ty check codey/durable：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 24.3 与 Pi 的结果
+
+在 passive entry 的 `model/head/edits` 持久化和 context edit 重建这一段，Codey 已达到 Pi 语义所需的事实完整性，并额外保留 request-id 幂等、CAS、stale settlement 和双存储 contract。这个结果可以把此前“完整 passive write”从硬差距中移除，但不能据此宣布 inbox 或 durable kernel 全面超过 Pi。
+
+仍未完成：
+
+- inbox queued item 的 position-based removal，以及 fork 后独立的 inbox snapshot；
+- passive placement 与 provider postTools/final boundary 的同一事务衔接；
+- provider-specific system/tool protocol、ContextBounds tail/head 不变量和 context range cache；
+- scheduler 的 background ownership、完整 abort handler、close join 和跨进程 DB open fencing；
+- artifact 一等 durable metadata、旧 projection 清理以及 AppContext/巨型模块的结构审查。
+
 

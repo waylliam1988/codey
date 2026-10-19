@@ -4,7 +4,7 @@ import logging
 import os
 import threading
 import uuid
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import replace
@@ -453,6 +453,8 @@ class DurableSession:
         kind: str,
         data: Mapping[str, object],
         display_only: bool = True,
+        model: Mapping[str, object] | None = None,
+        edits: Sequence[Mapping[str, object]] | None = None,
         head: str | None = None,
         placement: SubmissionPlacement | str = SubmissionPlacement.PLACED,
     ) -> CommitResult:
@@ -463,6 +465,8 @@ class DurableSession:
             kind=kind,
             data=data,
             display_only=display_only,
+            model=model,
+            edits=edits,
             head=head,
             placement=placement,
         )
@@ -531,6 +535,8 @@ class DurableSession:
         kind = content.get("kind")
         data = content.get("data")
         display_only = content.get("display_only")
+        model = content.get("model")
+        edits = content.get("edits")
         head_target = content.get("head")
         if (
             not isinstance(kind, str)
@@ -540,12 +546,29 @@ class DurableSession:
             or (head_target is not None and (not isinstance(head_target, str) or not head_target))
         ):
             raise CommitConflict("queued write content is invalid")
+        try:
+            normalized_model, normalized_edits = admission.normalize_passive_fields(
+                model if isinstance(model, Mapping) else None,
+                edits if isinstance(edits, Sequence) and not isinstance(edits, (str, bytes)) else None,
+            )
+        except ValueError as exc:
+            raise CommitConflict("queued write content is invalid") from exc
+        if model is not None and normalized_model is None:
+            raise CommitConflict("queued write model is invalid")
+        if edits is not None and normalized_edits is None:
+            raise CommitConflict("queued write edits are invalid")
+        if display_only and normalized_edits:
+            raise CommitConflict("display-only writes cannot carry context edits")
         if head_target is not None and head_target != "self":
             visible = {entry.entry_id for entry in self.context(submission.conversation_id)}
             if head_target not in visible:
                 return self._settle_stale_write(submission)
         head, revision = self.store.head(submission.conversation_id)
         payload: dict[str, object] = {"data": dict(data), "display_only": display_only}
+        if normalized_model is not None:
+            payload["model"] = normalized_model
+        if normalized_edits is not None:
+            payload["edits"] = normalized_edits
         if head_target is not None:
             payload.update({"head": head_target, "head_marker": True})
         entry = EntryDraft(

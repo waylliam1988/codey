@@ -313,6 +313,26 @@ class EntryDraft:
         _validate_json(copied)
         object.__setattr__(self, "payload", _freeze_json(copied))
 
+    @property
+    def model(self) -> Mapping[str, object] | None:
+        """Optional provider/model metadata attached to a passive entry."""
+        value = self.payload.get("model")
+        return value if isinstance(value, Mapping) else None
+
+    @property
+    def head(self) -> str | None:
+        """The context head target requested by this passive entry, if any."""
+        value = self.payload.get("head")
+        return value if isinstance(value, str) and value else None
+
+    @property
+    def edits(self) -> tuple[Mapping[str, object], ...]:
+        """Validated context edits carried by this entry."""
+        value = self.payload.get("edits")
+        if not isinstance(value, (list, tuple)):
+            return ()
+        return tuple(item for item in value if isinstance(item, Mapping))
+
 
 @dataclass(frozen=True)
 class SubmissionDraft:

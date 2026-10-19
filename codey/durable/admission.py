@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from codey.durable import conversation_ops
@@ -173,6 +173,8 @@ def admit_input(
 def admit_write(
     session: DurableSession, *, conversation_id: str, request_id: str,
     kind: str, data: Mapping[str, object], display_only: bool = True,
+    model: Mapping[str, object] | None = None,
+    edits: Sequence[Mapping[str, object]] | None = None,
     head: str | None = None,
     placement: SubmissionPlacement | str = SubmissionPlacement.PLACED,
 ) -> CommitResult:
@@ -183,6 +185,9 @@ def admit_write(
         raise ValueError("write data must be an object")
     if type(display_only) is not bool:
         raise ValueError("display_only must be boolean")
+    normalized_model, normalized_edits = normalize_passive_fields(model, edits)
+    if display_only and normalized_edits:
+        raise ValueError("display-only writes cannot carry context edits")
     head_target = head
     if head_target is not None and (not isinstance(head_target, str) or not head_target):
         raise ValueError("head must be 'self' or a non-empty entry ID")
@@ -190,12 +195,18 @@ def admit_write(
         raise ValueError("head writes cannot be display-only")
     placement = SubmissionPlacement(placement)
     content: dict[str, object] = {"kind": kind, "data": dict(data), "display_only": display_only}
+    if normalized_model is not None:
+        content["model"] = normalized_model
+    if normalized_edits is not None:
+        content["edits"] = normalized_edits
     if head_target is not None:
         content["head"] = head_target
     fingerprint = _fingerprint({
         "kind": kind,
         "data": content["data"],
         "display_only": display_only,
+        "model": normalized_model,
+        "edits": normalized_edits,
         "head": head_target,
         "placement": placement,
         "mode": "write",
@@ -220,6 +231,10 @@ def admit_write(
     entry = None
     if placement is SubmissionPlacement.PLACED and not stale:
         payload: dict[str, object] = {"data": dict(data), "display_only": display_only}
+        if normalized_model is not None:
+            payload["model"] = normalized_model
+        if normalized_edits is not None:
+            payload["edits"] = normalized_edits
         if head_target is not None:
             payload.update({"head": head_target, "head_marker": True})
         entry = EntryDraft(
@@ -254,6 +269,41 @@ def admit_write(
         submission=submission,
         create_conversation=creation,
     ))
+
+
+def normalize_passive_fields(
+    model: Mapping[str, object] | None,
+    edits: Sequence[Mapping[str, object]] | None,
+) -> tuple[dict[str, object] | None, list[dict[str, object]] | None]:
+    """Validate and copy the optional Pi-style passive entry metadata."""
+    normalized_model: dict[str, object] | None = None
+    if model is not None:
+        if not isinstance(model, Mapping):
+            raise ValueError("passive entry model must be an object")
+        normalized_model = dict(model)
+
+    normalized_edits: list[dict[str, object]] | None = None
+    if edits is not None:
+        if not isinstance(edits, Sequence):
+            raise ValueError("passive entry edits must be a list")
+        normalized_edits = []
+        for raw_edit in edits:
+            if not isinstance(raw_edit, Mapping):
+                raise ValueError("passive entry edit must be an object")
+            target = raw_edit.get("target")
+            action = raw_edit.get("action")
+            if not isinstance(target, str) or not target:
+                raise ValueError("passive entry edit target is required")
+            if action not in {"omit", "replace"}:
+                raise ValueError(f"unknown passive entry edit action: {action!r}")
+            if action == "replace":
+                messages = raw_edit.get("messages")
+                if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)):
+                    raise ValueError("replacement context messages must be a list")
+                if any(not isinstance(message, Mapping) for message in messages):
+                    raise ValueError("replacement context message must be an object")
+            normalized_edits.append(dict(raw_edit))
+    return normalized_model, normalized_edits
 
 
 
