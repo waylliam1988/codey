@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
-from codey.durable.model import DurableMutation, EffectRecord, EntryDraft, TaskCheckpoint, thaw_json
+from codey.durable.model import ArtifactRecord, DurableMutation, EffectRecord, EntryDraft, TaskCheckpoint, thaw_json
 from codey.durable.reducer import with_effect_intents, with_effect_settlement
 
 if TYPE_CHECKING:
@@ -124,7 +124,8 @@ def delivery_snapshot(batch: DeliveryBatchProjection) -> dict[str, object]:
 
 def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
                       derive_rows: Callable[..., Any], *,
-                      messages: tuple[tuple[str, Mapping[str, object]], ...] = ()) -> None:
+                      messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
+                      artifacts: tuple[ArtifactRecord, ...] = ()) -> None:
     from codey.runtime.core.operation_state import RuntimeOperationTransitionError
     from codey.runtime.log.session_projection import reduce_session
     from codey.runtime.log.session_view import load_session_view
@@ -190,6 +191,6 @@ def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
             appended.append(entry)
             head = entry.entry_id
         return DurableMutation(session_id, revision, task=next_task, entries=tuple(appended),
-                               effects=tuple(intents), settlements=tuple(settlements))
+                               effects=tuple(intents), settlements=tuple(settlements), artifacts=artifacts)
 
     durable.transact_task(run_id, derive)

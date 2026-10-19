@@ -24,6 +24,7 @@ from codey.durable.model import (
     EXECUTION_STATE_KEYS,
     ApprovalRecord,
     ApprovalStatus,
+    ArtifactRecord,
     CommitRecord,
     CommitResult,
     CreateConversation,
@@ -769,6 +770,26 @@ class DurableSession:
     @_mutation_line
     def effects(self, task_id: str) -> tuple[EffectRecord, ...]:
         return tuple(self.store.effects_for_task(task_id))
+
+    @_mutation_line
+    def artifact(self, handle: str) -> ArtifactRecord:
+        return self.store.artifact(handle)
+
+    @_mutation_line
+    def artifacts_for_task(self, task_id: str) -> tuple[ArtifactRecord, ...]:
+        return self.store.artifacts_for_task(task_id)
+
+    @_mutation_line
+    def artifacts_for_effect(self, effect_id: str) -> tuple[ArtifactRecord, ...]:
+        return self.store.artifacts_for_effect(effect_id)
+
+    @_mutation_line
+    def register_artifacts(self, task_id: str, artifacts: tuple[ArtifactRecord, ...]) -> CommitResult:
+        current = self.store.task(task_id)
+        _head, revision = self.store.head(current.conversation_id)
+        if any(artifact.owner_task_id not in {None, task_id} for artifact in artifacts):
+            raise ValueError("registered artifacts must belong to the task or an effect")
+        return self._commit(DurableMutation(current.conversation_id, revision, artifacts=artifacts))
 
     @_mutation_line
     def task_facts(self, task_id: str) -> tuple[TaskCheckpoint, tuple[EffectRecord, ...]]:
@@ -1550,7 +1571,14 @@ class DurableSession:
         )
 
     @_mutation_line
-    def settle_effect(self, task_id: str, effect: EffectRecord, *, expected_status: str = "pending") -> CommitResult:
+    def settle_effect(
+        self,
+        task_id: str,
+        effect: EffectRecord,
+        *,
+        expected_status: str = "pending",
+        artifacts: tuple[ArtifactRecord, ...] = (),
+    ) -> CommitResult:
         self._ensure_writable()
         if effect.task_id != task_id:
             raise ValueError("effect must belong to the task")
@@ -1571,6 +1599,7 @@ class DurableSession:
                 task=next_task,
                 effect=effect,
                 expected_effect_status=expected_status,
+                artifacts=artifacts,
             )
         )
 

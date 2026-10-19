@@ -16,7 +16,7 @@ from codey.agents.tool_execution import (
 )
 from codey.agents.tools import DEFAULT_TOOL_FNS
 from codey.durable import decide_recovery
-from codey.durable.model import EffectRecord, thaw_json
+from codey.durable.model import ArtifactRecord, EffectRecord, thaw_json
 from codey.durable.session import DurableSession
 from codey.policies.permissions import profile_for_task_kind
 from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
@@ -426,9 +426,19 @@ def _settle_durable_tool_observation(
             effect_id=record.effect_id,
         ),
     )
+    artifacts: tuple[ArtifactRecord, ...] = ()
+    managed = result.audit.get("managed_output") if isinstance(result.audit, dict) else None
+    if isinstance(managed, dict) and managed_store is not None:
+        artifacts = (managed_store.durable_record(
+            str(managed.get("handle") or ""),
+            session_id=str(raw_intent.get("session_id") or ""),
+            run_id=str(raw_intent.get("run_id") or record.task_id),
+            owner_task_id=record.task_id,
+            owner_effect_id=record.effect_id,
+        ),)
     if mutations is not None:
         mutations.settle_tool_effect(settlement.session_id, record.task_id, settlement,
-                                    messages=tool_history_messages(settlement))
+                                    messages=tool_history_messages(settlement), artifacts=artifacts)
     else:
         durable.settle_effect(
             record.task_id,
@@ -437,6 +447,7 @@ def _settle_durable_tool_observation(
                 record.replay_class, record.args_digest, status,
                 record.intent, settlement.to_payload(),
             ),
+            artifacts=artifacts,
         )
     return settlement
 

@@ -4,6 +4,7 @@ from typing import Protocol
 
 from codey.durable.model import (
     ApprovalRecord,
+    ArtifactRecord,
     CommitRecord,
     CommitResult,
     DurableMutation,
@@ -71,6 +72,12 @@ class DurableStore(Protocol):
     def approval(self, approval_id: str) -> ApprovalRecord: ...
 
     def effects_for_task(self, task_id: str) -> tuple[EffectRecord, ...]: ...
+
+    def artifact(self, handle: str) -> ArtifactRecord: ...
+
+    def artifacts_for_task(self, task_id: str) -> tuple[ArtifactRecord, ...]: ...
+
+    def artifacts_for_effect(self, effect_id: str) -> tuple[ArtifactRecord, ...]: ...
 
     def close(self) -> None: ...
 

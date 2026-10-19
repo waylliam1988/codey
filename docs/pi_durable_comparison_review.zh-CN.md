@@ -911,4 +911,42 @@ Codey 已在 durable 内核层补上 Pi positional inbox removal 的核心性质
 - postTools/final boundary 仍由 scheduler 分步调用 placement，尚未在同一个 provider generation mutation 中完成；
 - scheduler reverse index、background ownership、close join 和跨进程 open fencing 仍未完成。
 
+## 26. 第二十二段：artifact 一等 durable metadata
+
+本段把 Pi durable 对外部大输出的“引用可恢复”原则接入 Codey 的主 durable commit。正文继续留在 `ManagedOutputStore` 文件中；SQLite 只保存经过校验的元数据和 owner 关系，避免把大正文塞进会话表，也避免恢复时依赖旁边的 JSON metadata。
+
+### 26.1 已完成
+
+- 新增 `ArtifactRecord`，固定保存 `handle`、sha256、字节数、存储路径、创建时间、metadata，以及 `owner_task_id`/`owner_effect_id`；没有 owner 的 artifact 在模型层拒绝；
+- `DurableMutation.artifacts` 接入 Memory/SQLite，同一 mutation 可同时写 task checkpoint、effect settlement 和 artifact 引用；artifact owner 必须已存在或在同一 mutation 中创建，handle 不能重复；
+- 新增 `artifacts` SQLite 表和 task/effect 索引，冷启动 `SCHEMA_VERSION` 仍严格为 `1`，没有迁移或旧数据库 fallback；Memory/SQLite 读取契约一致，重启后可读取；
+- conversation 删除会清理其 task/effect 所拥有的 artifact metadata；事务失败时 metadata 不可见；
+- `ManagedOutputStore.durable_record()` 只在读取并校验文件和 digest 后生成 durable metadata；工具结算和恢复结算都把该引用与 effect settlement 放进同一个 durable commit；大正文仍由文件存储负责原子写入；
+- `DurableSession.settle_effect(..., artifacts=...)`、`RuntimeMutationLine` 和 checkpoint adapter 已贯通这条路径。
+
+### 26.2 验证
+
+```text
+artifact Memory/SQLite contract、owner 校验、settlement 原子性、回滚、重启、删除、ManagedOutputStore 校验：12 passed
+effect identity、commit events、conversation delete 回归：41 passed
+mypy：Success
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+本段还观察到一批旧 runtime JSONL 测试仍按已删除的 `RuntimeMutationLine(log)` 构造方式运行；这些是测试脚本滞后于当前 durable-only API 的架构不适应，不能用兼容参数把旧事实源接回生产代码，后续应迁移测试到 `RuntimeMutationLine(durable=...)`。
+
+### 26.3 与 Pi 的结果
+
+Codey 现在拥有比 Pi 更明确的 artifact 安全边界：外部 bytes 不进入 SQLite payload，引用必须绑定 task/effect，settlement 与引用同一事务提交，未知或失败时不会留下半个 durable artifact 事实，并保留 Codey 的 effect replay、权限和验证语义。
+
+仍未完成：
+
+- `postTools`/`final` provider generation boundary 的同一 mutation placement；
+- fork-local inbox、ContextBounds 的 provider-specific 编码和 range cache；
+- scheduler reverse index、background ownership、abort/close join、跨进程 DB open fencing；
+- Runtime JSONL 旧 projection 的最终清理，以及 AppContext、`operation_state.py` 和 DurableSession 的结构拆分审查。
+
 

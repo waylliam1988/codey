@@ -740,6 +740,45 @@ class EffectRecord:
 
 
 @dataclass(frozen=True)
+class ArtifactRecord:
+    """Durable metadata for bytes stored outside the SQLite payload tables."""
+
+    handle: str
+    sha256: str
+    byte_count: int
+    storage_path: str
+    owner_task_id: str | None = None
+    owner_effect_id: str | None = None
+    created_at: str = ""
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.handle or not self.sha256 or len(self.sha256) != 64 or any(
+            char not in "0123456789abcdef" for char in self.sha256
+        ):
+            raise ValueError("artifact handle and sha256 are required")
+        if type(self.byte_count) is not int or self.byte_count < 0:
+            raise ValueError("artifact byte count must be a non-negative integer")
+        if not self.storage_path:
+            raise ValueError("artifact storage path is required")
+        if self.owner_task_id is None and self.owner_effect_id is None:
+            raise ValueError("artifact must have a task or effect owner")
+        if self.owner_task_id is not None and not self.owner_task_id:
+            raise ValueError("artifact task owner cannot be empty")
+        if self.owner_effect_id is not None and not self.owner_effect_id:
+            raise ValueError("artifact effect owner cannot be empty")
+        metadata = cast(dict[str, object], thaw_json(self.metadata))
+        _validate_json(metadata)
+        object.__setattr__(self, "metadata", _freeze_json(metadata))
+
+
+def _validate_artifact_handles(artifacts: tuple[ArtifactRecord, ...]) -> None:
+    handles = [artifact.handle for artifact in artifacts]
+    if len(handles) != len(set(handles)):
+        raise ValueError("artifact handles must be unique within a mutation")
+
+
+@dataclass(frozen=True)
 class CreateConversation:
     parent_conversation_id: str | None = None
     parent_entry_id: str | None = None
@@ -766,6 +805,7 @@ class DurableMutation:
     expected_effect_status: str | None = None
     submission_update: SubmissionUpdate | None = None
     settlements: tuple[EffectRecord, ...] = ()
+    artifacts: tuple[ArtifactRecord, ...] = ()
     expected_attempt_token: str | None = None
     approval: ApprovalRecord | None = None
     expected_approval_status: ApprovalStatus | str | None = None
@@ -779,7 +819,7 @@ class DurableMutation:
             raise ValueError("a mutation cannot create and delete a conversation")
         if self.delete_conversation is not None and any((
             self.entries, self.submission, self.task, self.effect, self.effects,
-            self.submission_update, self.settlements, self.approval,
+            self.submission_update, self.settlements, self.artifacts, self.approval,
         )):
             raise ValueError("conversation deletion cannot include other durable changes")
         if any(entry.conversation_id != self.conversation_id for entry in self.entries):
@@ -801,6 +841,7 @@ class DurableMutation:
             raise ValueError("effects must belong to one task in this mutation")
         if self.effect is not None and self.effect.effect_id in effect_ids:
             raise ValueError("effect cannot be listed twice in a mutation")
+        _validate_artifact_handles(self.artifacts)
         if self.expected_effect_status is not None and self.effect is None:
             raise ValueError("expected_effect_status requires an effect update")
         if any(effect.settlement is None or effect.status == "pending" for effect in self.settlements):

@@ -10,7 +10,10 @@ from __future__ import annotations
 import importlib
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from codey.durable.model import ArtifactRecord
 
 from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,
@@ -108,9 +111,12 @@ class RuntimeMutationLine:
         self.durable = durable
 
     def _mutate(self, session_id: str, run_id: str, mutation: Callable[..., Any], *,
-                messages: tuple[tuple[str, Mapping[str, object]], ...] = ()) -> None:
+                messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
+                artifacts: tuple[ArtifactRecord, ...] = ()) -> None:
         checkpoint = importlib.import_module("codey.durable.checkpoint")
-        checkpoint.mutate_checkpoint(self.durable, session_id, run_id, mutation, messages=messages)
+        checkpoint.mutate_checkpoint(
+            self.durable, session_id, run_id, mutation, messages=messages, artifacts=artifacts,
+        )
 
     def admit_reviewer_selection(self, session_id: str, run_id: str, payload: dict[str, object]) -> RuntimeOperationState | None:
         from codey.runtime.core.operation_payload import _parse_model_selection
@@ -539,6 +545,7 @@ class RuntimeMutationLine:
         settlement: RuntimeEffectSettlement,
         *,
         messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
+        artifacts: tuple[ArtifactRecord, ...] = (),
     ) -> RuntimeEffectSettlement:
         committed: RuntimeEffectSettlement | None = None
 
@@ -555,7 +562,7 @@ class RuntimeMutationLine:
             committed = prepared
             return rows
 
-        self._mutate(session_id, run_id, mutation, messages=messages)
+        self._mutate(session_id, run_id, mutation, messages=messages, artifacts=tuple(artifacts))
         if committed is None:
             raise RuntimeEffectError("tool effect settlement was not committed")
         return committed

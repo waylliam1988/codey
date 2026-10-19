@@ -12,6 +12,7 @@ from codey.durable.events import mutation_projection
 from codey.durable.model import (
     TASK_TERMINAL_STATUSES,
     ApprovalRecord,
+    ArtifactRecord,
     CommitRecord,
     CommitResult,
     DurableMutation,
@@ -59,6 +60,7 @@ class MemoryDurableStore:
         self._submission_ids: set[str] = set()
         self._tasks: dict[str, TaskCheckpoint] = {}
         self._effects: dict[str, EffectRecord] = {}
+        self._artifacts: dict[str, ArtifactRecord] = {}
         self._sequence = 0
         self._commits: list[CommitRecord] = []
         self._history: dict[str, list[TaskTransition]] = {}
@@ -114,6 +116,7 @@ class MemoryDurableStore:
             self._validate_task(mutation.task, mutation.submission, mutation.expected_attempt_token)
             self._validate_submission_update(mutation.submission_update, mutation.entries)
             self._validate_effects(mutation)
+            self._validate_artifacts(mutation)
             new_revision = revision + len(mutation.entries)
             new_head = mutation.entries[-1].entry_id if mutation.entries else head
             if (
@@ -124,6 +127,7 @@ class MemoryDurableStore:
                 and mutation.submission is None
                 and mutation.submission_update is None
                 and not mutation.entries
+                and not mutation.artifacts
                 and creation is None
             ):
                 return CommitResult(revision, self._sequence)
@@ -152,6 +156,8 @@ class MemoryDurableStore:
                 self._effects[mutation.effect.effect_id] = mutation.effect
             for effect in (*mutation.effects, *mutation.settlements):
                 self._effects[effect.effect_id] = effect
+            for artifact in mutation.artifacts:
+                self._artifacts[artifact.handle] = artifact
             self._write_submission(mutation, new_revision, record)
             if mutation.submission is not None:
                 result = replace(result, submission_id=mutation.submission.submission_id)
@@ -237,9 +243,15 @@ class MemoryDurableStore:
         for task_id in task_ids:
             self._tasks.pop(task_id, None)
             self._history.pop(task_id, None)
+        removed_effect_ids = {
+            effect_id for effect_id, effect in self._effects.items() if effect.task_id in task_ids
+        }
         for effect_id, effect in tuple(self._effects.items()):
             if effect.task_id in task_ids:
                 self._effects.pop(effect_id, None)
+        for handle, artifact in tuple(self._artifacts.items()):
+            if artifact.owner_task_id in task_ids or artifact.owner_effect_id in removed_effect_ids:
+                self._artifacts.pop(handle, None)
         self._entries.pop(mutation.conversation_id, None)
         self._heads.pop(mutation.conversation_id, None)
         self._parents.pop(mutation.conversation_id, None)
@@ -264,6 +276,23 @@ class MemoryDurableStore:
                 raise CommitConflict("effect status changed")
             if _effect_identity(existing_effect) != _effect_identity(effect):
                 raise CommitConflict("effect identity is immutable")
+
+    def _validate_artifacts(self, mutation: DurableMutation) -> None:
+        proposed_effects = {
+            effect.effect_id: effect
+            for effect in ((mutation.effect,) if mutation.effect is not None else ())
+            + mutation.effects + mutation.settlements
+        }
+        task_ids = set(self._tasks)
+        if mutation.task is not None:
+            task_ids.add(mutation.task.task_id)
+        for artifact in mutation.artifacts:
+            if artifact.handle in self._artifacts:
+                raise CommitConflict("artifact handle already exists")
+            if artifact.owner_task_id is not None and artifact.owner_task_id not in task_ids:
+                raise CommitConflict("artifact owner task does not exist")
+            if artifact.owner_effect_id is not None and artifact.owner_effect_id not in self._effects and artifact.owner_effect_id not in proposed_effects:
+                raise CommitConflict("artifact owner effect does not exist")
 
     def _validate_submission_update(
         self,
@@ -381,6 +410,21 @@ class MemoryDurableStore:
     def effects_for_task(self, task_id: str) -> tuple[EffectRecord, ...]:
         with self._lock:
             return tuple(effect for effect in self._effects.values() if effect.task_id == task_id)
+
+    def artifact(self, handle: str) -> ArtifactRecord:
+        with self._lock:
+            try:
+                return self._artifacts[handle]
+            except KeyError as exc:
+                raise KeyError(f"unknown artifact: {handle}") from exc
+
+    def artifacts_for_task(self, task_id: str) -> tuple[ArtifactRecord, ...]:
+        with self._lock:
+            return tuple(item for item in self._artifacts.values() if item.owner_task_id == task_id)
+
+    def artifacts_for_effect(self, effect_id: str) -> tuple[ArtifactRecord, ...]:
+        with self._lock:
+            return tuple(item for item in self._artifacts.values() if item.owner_effect_id == effect_id)
 
     def submission(self, submission_id: str) -> SubmissionRecord:
         with self._lock:

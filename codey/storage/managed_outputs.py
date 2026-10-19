@@ -12,6 +12,10 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from codey.durable.model import ArtifactRecord
 
 from codey.policies.action import (
     DECISION_DENY,
@@ -190,6 +194,35 @@ class ManagedOutputStore:
         if actual_sha != expected_sha:
             raise ValueError(f"managed receipt content mismatch for {safe_handle}")
         return stored_text, {str(k): v for k, v in metadata.items()}
+
+    def durable_record(
+        self,
+        ref: ManagedOutputRef | str,
+        *,
+        session_id: str,
+        run_id: str,
+        owner_task_id: str | None = None,
+        owner_effect_id: str | None = None,
+    ) -> ArtifactRecord:
+        """Build verified durable metadata for a previously written output."""
+        from codey.durable.model import ArtifactRecord
+
+        handle = ref.handle if isinstance(ref, ManagedOutputRef) else str(ref)
+        _text, metadata = self.read_tool_output(session_id, run_id, handle)
+        sha256 = str(metadata.get("sha256") or "")
+        stored_bytes = metadata.get("stored_bytes")
+        if type(stored_bytes) is not int or stored_bytes < 0:
+            raise ValueError("managed output metadata has invalid stored byte count")
+        return ArtifactRecord(
+            handle=handle,
+            sha256=sha256,
+            byte_count=stored_bytes,
+            storage_path=str(self.path_for(session_id, run_id, handle)),
+            owner_task_id=owner_task_id,
+            owner_effect_id=owner_effect_id,
+            created_at=str(metadata.get("created_at") or _now()),
+            metadata=metadata,
+        )
 
     def write_json_artifact(
         self,

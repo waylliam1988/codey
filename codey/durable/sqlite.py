@@ -13,6 +13,7 @@ from codey.durable.errors import CommitConflict, IdempotencyConflict, SchemaVers
 from codey.durable.events import mutation_projection
 from codey.durable.model import (
     ApprovalRecord,
+    ArtifactRecord,
     CommitRecord,
     CommitResult,
     DurableMutation,
@@ -267,6 +268,7 @@ class SQLiteDurableStore:
                 _write_effects(database, mutation.effects)
                 for settlement in mutation.settlements:
                     _write_effect(database, settlement, "pending")
+                _write_artifacts(database, mutation.artifacts)
                 _write_submission_update(database, mutation.submission_update)
                 database.execute("COMMIT")
                 return CommitResult(
@@ -360,6 +362,7 @@ class SQLiteDurableStore:
                 task_ids = [str(row[0]) for row in task_rows]
                 if task_ids:
                     database.executemany("DELETE FROM effects WHERE task_id=?", ((task_id,) for task_id in task_ids))
+                    database.executemany("DELETE FROM artifacts WHERE owner_task_id=?", ((task_id,) for task_id in task_ids))
                 database.execute("DELETE FROM tasks WHERE conversation_id=?", (conversation_id,))
                 database.execute("DELETE FROM submissions WHERE conversation_id=?", (conversation_id,))
                 database.execute("DELETE FROM entries WHERE conversation_id=?", (conversation_id,))
@@ -448,6 +451,23 @@ class SQLiteDurableStore:
                 )
                 for row in rows
             )
+
+    def artifact(self, handle: str) -> ArtifactRecord:
+        with closing(self._connect()) as database:
+            row = database.execute("SELECT * FROM artifacts WHERE handle=?", (handle,)).fetchone()
+            if row is None:
+                raise KeyError(f"unknown artifact: {handle}")
+            return _artifact_from_row(row)
+
+    def artifacts_for_task(self, task_id: str) -> tuple[ArtifactRecord, ...]:
+        with closing(self._connect()) as database:
+            rows = database.execute("SELECT * FROM artifacts WHERE owner_task_id=? ORDER BY handle", (task_id,)).fetchall()
+            return tuple(_artifact_from_row(row) for row in rows)
+
+    def artifacts_for_effect(self, effect_id: str) -> tuple[ArtifactRecord, ...]:
+        with closing(self._connect()) as database:
+            rows = database.execute("SELECT * FROM artifacts WHERE owner_effect_id=? ORDER BY handle", (effect_id,)).fetchall()
+            return tuple(_artifact_from_row(row) for row in rows)
 
     def submission(self, submission_id: str) -> SubmissionRecord:
         with closing(self._connect()) as database:
@@ -684,6 +704,7 @@ def _validate_mutation(
         parent = entry.entry_id
     _validate_task(database, mutation.task, mutation.submission, mutation.expected_attempt_token)
     _validate_effect(database, mutation)
+    _validate_artifacts(database, mutation)
     _validate_submission_update(database, mutation.submission_update, mutation.entries)
 
 
@@ -810,6 +831,25 @@ def _validate_effect(database: sqlite3.Connection, mutation: DurableMutation) ->
             raise CommitConflict("effect identity is immutable")
 
 
+def _validate_artifacts(database: sqlite3.Connection, mutation: DurableMutation) -> None:
+    proposed_effects = {
+        effect.effect_id
+        for effect in ((mutation.effect,) if mutation.effect is not None else ())
+        + mutation.effects + mutation.settlements
+    }
+    for artifact in mutation.artifacts:
+        if database.execute("SELECT 1 FROM artifacts WHERE handle=?", (artifact.handle,)).fetchone() is not None:
+            raise CommitConflict("artifact handle already exists")
+        if artifact.owner_task_id is not None:
+            task_exists = database.execute("SELECT 1 FROM tasks WHERE id=?", (artifact.owner_task_id,)).fetchone() is not None
+            if not task_exists and (mutation.task is None or mutation.task.task_id != artifact.owner_task_id):
+                raise CommitConflict("artifact owner task does not exist")
+        if artifact.owner_effect_id is not None:
+            effect_exists = database.execute("SELECT 1 FROM effects WHERE id=?", (artifact.owner_effect_id,)).fetchone() is not None
+            if not effect_exists and artifact.owner_effect_id not in proposed_effects:
+                raise CommitConflict("artifact owner effect does not exist")
+
+
 def _validate_submission_update(
     database: sqlite3.Connection,
     update: SubmissionUpdate | None,
@@ -888,6 +928,29 @@ def _write_effects(database: sqlite3.Connection, effects: tuple[EffectRecord, ..
             (effect.effect_id, effect.task_id, effect.category, effect.replay_class, effect.args_digest, effect.status, _encode(effect.intent),
              None if effect.settlement is None else _encode(effect.settlement)),
         )
+
+
+def _write_artifacts(database: sqlite3.Connection, artifacts: tuple[ArtifactRecord, ...]) -> None:
+    for artifact in artifacts:
+        database.execute(
+            "INSERT INTO artifacts(handle, sha256, byte_count, storage_path, owner_task_id, owner_effect_id, created_at, metadata) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (artifact.handle, artifact.sha256, artifact.byte_count, artifact.storage_path,
+             artifact.owner_task_id, artifact.owner_effect_id, artifact.created_at, _encode(artifact.metadata)),
+        )
+
+
+def _artifact_from_row(row: sqlite3.Row) -> ArtifactRecord:
+    return ArtifactRecord(
+        handle=str(row["handle"]),
+        sha256=str(row["sha256"]),
+        byte_count=int(row["byte_count"]),
+        storage_path=str(row["storage_path"]),
+        owner_task_id=None if row["owner_task_id"] is None else str(row["owner_task_id"]),
+        owner_effect_id=None if row["owner_effect_id"] is None else str(row["owner_effect_id"]),
+        created_at=str(row["created_at"]),
+        metadata=json.loads(str(row["metadata"])),
+    )
 
 
 def _write_submission_update(database: sqlite3.Connection, update: SubmissionUpdate | None) -> None:

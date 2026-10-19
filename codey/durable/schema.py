@@ -83,6 +83,17 @@ MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
                 intent TEXT NOT NULL CHECK(json_valid(intent)),
                 settlement TEXT CHECK(settlement IS NULL OR json_valid(settlement))
             ) STRICT""",
+            """CREATE TABLE artifacts (
+                handle TEXT PRIMARY KEY,
+                sha256 TEXT NOT NULL,
+                byte_count INTEGER NOT NULL CHECK(byte_count >= 0),
+                storage_path TEXT NOT NULL,
+                owner_task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+                owner_effect_id TEXT REFERENCES effects(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                metadata TEXT NOT NULL CHECK(json_valid(metadata)),
+                CHECK(owner_task_id IS NOT NULL OR owner_effect_id IS NOT NULL)
+            ) STRICT""",
             "CREATE TABLE schema_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT",
             "CREATE INDEX entries_by_conversation_parent ON entries(conversation_id, parent_id)",
             "CREATE INDEX entries_by_task ON entries(by_task_id)",
@@ -90,6 +101,8 @@ MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
             "CREATE INDEX tasks_by_status ON tasks(status)",
             "CREATE INDEX tasks_by_checkpoint_schema ON tasks(schema_version)",
             "CREATE INDEX effects_by_task_digest ON effects(task_id, args_digest)",
+            "CREATE INDEX artifacts_by_task ON artifacts(owner_task_id)",
+            "CREATE INDEX artifacts_by_effect ON artifacts(owner_effect_id)",
         ),
     ),
 )

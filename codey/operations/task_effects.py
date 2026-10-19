@@ -6,6 +6,7 @@ import json
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
+    from codey.durable.model import ArtifactRecord
     from codey.durable.session import DurableSession
 
 from codey.operations.provider_session import ProviderAdapter
@@ -154,10 +155,18 @@ class KernelEffectSink:
             **fields,
             exit_code=resolved_exit,
         )
+        artifacts: tuple[ArtifactRecord, ...] = ()
+        managed = audit.get("managed_output") if isinstance(audit, dict) else None
+        if isinstance(managed, dict) and self.managed_outputs is not None and self.durable is not None:
+            artifacts = (self.managed_outputs.durable_record(
+                str(managed.get("handle") or ""), session_id=self.session_id, run_id=self.run_id,
+                owner_task_id=self.run_id, owner_effect_id=identity,
+            ),)
         self.mutations.settle_tool_effect(
             self.session_id, self.run_id,
             settlement,
             messages=tool_history_messages(settlement) if self.durable is not None else (),
+            artifacts=artifacts,
         )
 
 class KernelRecordedProvider(ProviderAdapter):
