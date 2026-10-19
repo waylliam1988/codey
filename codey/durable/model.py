@@ -130,6 +130,13 @@ class SubmissionStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class SubmissionPlacement(StrEnum):
+    """Whether an admitted submission has entered the conversation history."""
+
+    QUEUED = "queued"
+    PLACED = "placed"
+
+
 class ApprovalStatus(StrEnum):
     """Durable shell permission lifecycle, separate from scheduler status."""
 
@@ -307,18 +314,35 @@ class SubmissionDraft:
     submission_id: str
     request_id: str
     conversation_id: str
-    entry: EntryDraft
+    entry: EntryDraft | None
     fingerprint: str = ""
     status: SubmissionStatus = SubmissionStatus.QUEUED
+    placement: SubmissionPlacement | str = SubmissionPlacement.PLACED
+    mode: str = "follow_up"
+    content: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
         if not self.submission_id or not self.request_id or not self.conversation_id:
             raise ValueError("submission identity and request ID are required")
-        if self.entry.conversation_id != self.conversation_id:
+        placement = SubmissionPlacement(self.placement)
+        object.__setattr__(self, "placement", placement)
+        if self.entry is not None and self.entry.conversation_id != self.conversation_id:
             raise ValueError("submission entry belongs to another conversation")
         object.__setattr__(self, "status", SubmissionStatus(self.status))
         if self.status != SubmissionStatus.QUEUED:
             raise ValueError("new submissions must start queued")
+        if self.mode not in {"steer", "follow_up", "write"}:
+            raise ValueError("unknown submission mode")
+        if placement is SubmissionPlacement.PLACED and self.entry is None:
+            raise ValueError("placed submissions require an entry")
+        if placement is SubmissionPlacement.QUEUED and self.entry is not None:
+            raise ValueError("queued submissions cannot already have an entry")
+        if self.content is not None:
+            content = cast(dict[str, object], thaw_json(self.content))
+            _validate_json(content)
+            object.__setattr__(self, "content", _freeze_json(content))
+        if placement is SubmissionPlacement.QUEUED and self.content is None:
+            raise ValueError("queued submissions require content")
 
 
 @dataclass(frozen=True)
@@ -327,19 +351,33 @@ class SubmissionRecord:
     conversation_id: str
     request_id: str
     status: SubmissionStatus
-    input_entry_id: str
+    input_entry_id: str | None
     answer_entry_id: str | None = None
     reason: str | None = None
     detail: Mapping[str, object] | None = None
+    placement: SubmissionPlacement | str = SubmissionPlacement.PLACED
+    mode: str = "follow_up"
+    content: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
-        if not self.submission_id or not self.conversation_id or not self.request_id or not self.input_entry_id:
+        if not self.submission_id or not self.conversation_id or not self.request_id:
             raise ValueError("submission record identity is required")
         object.__setattr__(self, "status", SubmissionStatus(self.status))
+        object.__setattr__(self, "placement", SubmissionPlacement(self.placement))
+        if self.mode not in {"steer", "follow_up", "write"}:
+            raise ValueError("unknown submission mode")
+        if self.placement is SubmissionPlacement.PLACED and not self.input_entry_id:
+            raise ValueError("placed submissions require an input entry")
+        if self.placement is SubmissionPlacement.QUEUED and self.input_entry_id is not None:
+            raise ValueError("queued submissions cannot reference an input entry")
         if self.detail is not None:
             detail = cast(dict[str, object], thaw_json(self.detail))
             _validate_json(detail)
             object.__setattr__(self, "detail", _freeze_json(detail))
+        if self.content is not None:
+            content = cast(dict[str, object], thaw_json(self.content))
+            _validate_json(content)
+            object.__setattr__(self, "content", _freeze_json(content))
         if self.status == SubmissionStatus.DONE and not self.answer_entry_id:
             raise ValueError("completed submissions require an answer entry")
         if self.status != SubmissionStatus.DONE and self.answer_entry_id is not None:
@@ -355,11 +393,13 @@ class SubmissionUpdate:
     answer_entry_id: str | None = None
     reason: str | None = None
     detail: Mapping[str, object] | None = None
+    input_entry_id: str | None = None
+    placement: SubmissionPlacement | str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "expected_status", SubmissionStatus(self.expected_status))
         object.__setattr__(self, "status", SubmissionStatus(self.status))
-        if not valid_submission_transition(self.expected_status, self.status):
+        if self.expected_status != self.status and not valid_submission_transition(self.expected_status, self.status):
             raise ValueError(
                 f"invalid submission transition: {self.expected_status} -> {self.status}"
             )
@@ -371,6 +411,8 @@ class SubmissionUpdate:
             raise ValueError("completed submissions require an answer entry")
         if self.status != SubmissionStatus.DONE and self.answer_entry_id is not None:
             raise ValueError("only completed submissions may reference an answer entry")
+        if self.placement is not None:
+            object.__setattr__(self, "placement", SubmissionPlacement(self.placement))
 
 
 @dataclass(frozen=True)
@@ -461,11 +503,18 @@ def same_entry_content(first: EntryDraft, second: EntryDraft) -> bool:
 
 
 def same_submission(first: SubmissionDraft, second: SubmissionDraft) -> bool:
-    if (
+    if first.placement != second.placement or first.mode != second.mode:
+        return False
+    if first.entry is None or second.entry is None:
+        if first.entry is not None or second.entry is not None:
+            return False
+    elif (
         first.entry.conversation_id != second.entry.conversation_id
         or first.entry.kind != second.entry.kind
         or dict(first.entry.payload) != dict(second.entry.payload)
     ):
+        return False
+    if dict(first.content or {}) != dict(second.content or {}):
         return False
     # A request id names one exact admission, including the caller's
     # canonical fingerprint.  Treat a missing fingerprint as the empty
@@ -691,7 +740,7 @@ class DurableMutation:
         if self.submission is not None:
             if self.submission.conversation_id != self.conversation_id:
                 raise ValueError("submission belongs to another conversation")
-            if self.submission.entry not in self.entries:
+            if self.submission.entry is not None and self.submission.entry not in self.entries:
                 raise ValueError("submission entry must be part of the same mutation")
         if self.task is not None and self.task.conversation_id != self.conversation_id:
             raise ValueError("task belongs to another conversation")

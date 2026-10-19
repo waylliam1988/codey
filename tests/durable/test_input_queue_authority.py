@@ -22,7 +22,7 @@ def test_app_input_is_a_durable_submission_without_legacy_input_database(tmp_pat
     state = AppContext(root, start_scheduler=False)
     try:
         item = state.input_queue.create("input-one", _request(run_id))
-        assert item["state"] == "queued"
+        assert item["state"] == "submitted"
         assert state.durable.task(run_id).state["input_identity"] == "input-one"
         assert len(state.durable.entries("chat")) == 1
         assert not (root / "conversation_inputs.sqlite3").exists()
@@ -41,7 +41,7 @@ def test_durable_input_projection_survives_app_restart(tmp_path: Path) -> None:
     try:
         item = restarted.input_queue.get("input-one")
         assert item is not None
-        assert item["state"] == "queued"
+        assert item["state"] == "submitted"
         assert item["request"]["task"] == "hello durable input"
         assert len(restarted.durable.entries("chat")) == 1
     finally:
@@ -53,12 +53,20 @@ def test_queued_input_remove_commits_an_abort_without_creating_another_task(tmp_
     run_id = "run_" + "c" * 32
     state = AppContext(root, start_scheduler=False)
     try:
+        state.durable.admit_input(
+            conversation_id="chat",
+            request_id="active-request",
+            task_id="active-task",
+            text="current run",
+            provider_snapshot={"provider_id": "local"},
+        )
+        state.durable.start_task("active-task", state={})
         item = state.input_queue.create("input-one", _request(run_id))
         removed = state.input_queue.remove("input-one", int(item["revision"]))
 
         assert removed["state"] == "cancelled"
         assert state.durable.task(run_id).status.value == "cancelled"
         assert state.durable.store.submission(state.durable.task(run_id).submission_id).reason == "aborted"
-        assert len(state.durable.tasks()) == 1
+        assert {task.task_id for task in state.durable.tasks()} == {"active-task", run_id}
     finally:
         state.close()

@@ -16,6 +16,7 @@ from codey.durable.model import (
     DurableMutation,
     EntryDraft,
     SubmissionDraft,
+    SubmissionPlacement,
     TaskCheckpoint,
     thaw_json,
 )
@@ -37,9 +38,14 @@ def admit_input(
     workflow_checkpoint: Mapping[str, object] | None = None,
     workflow_replay_contract: str = "deterministic-v1",
     creation: CreateConversation | None = None,
+    placement: SubmissionPlacement | str = SubmissionPlacement.PLACED,
+    mode: str = "follow_up",
 ) -> CommitResult:
     if not text.strip():
         raise ValueError("input text is required")
+    placement = SubmissionPlacement(placement)
+    if mode not in {"steer", "follow_up", "write"}:
+        raise ValueError("unknown submission mode")
     if initial_phase not in {"accepted", "dispatching"}:
         raise ValueError("input admission phase must be accepted or dispatching")
     if owner_task_id is not None:
@@ -76,6 +82,8 @@ def admit_input(
         "workflow_input": workflow_input,
         "workflow_checkpoint": workflow_checkpoint,
         "workflow_replay_contract": workflow_replay_contract,
+        "placement": placement,
+        "mode": mode,
     })
     # Check idempotency before deriving any branch entries.  A retry of a
     # continuation must return the original commit without trying to
@@ -98,28 +106,37 @@ def admit_input(
     )
     if entries:
         head = entries[-1].entry_id
-    entry = EntryDraft(
-        entry_id=f"entry-{uuid.uuid4().hex}",
-        conversation_id=conversation_id,
-        parent_id=head,
-        kind="user_message",
-        payload={"text": text},
-        by_task_id=task_id,
-    )
-    entries.append(entry)
+    entry = None
+    if placement is SubmissionPlacement.PLACED:
+        entry = EntryDraft(
+            entry_id=f"entry-{uuid.uuid4().hex}",
+            conversation_id=conversation_id,
+            parent_id=head,
+            kind="user_message",
+            payload={"text": text},
+            by_task_id=task_id,
+        )
+        entries.append(entry)
     submission = SubmissionDraft(
         submission_id=f"submission-{uuid.uuid4().hex}",
         request_id=request_id,
         conversation_id=conversation_id,
         entry=entry,
         fingerprint=fingerprint,
+        placement=placement,
+        mode=mode,
+        content={"text": text},
     )
     state = {
         **dict(task_state or {}),
-        "input_entry_id": entry.entry_id,
+        "input_state": "queued" if placement is SubmissionPlacement.QUEUED else "placed",
+        "input_text": text,
+        "input_mode": mode,
         "owner_task_id": owner_task_id,
         "abandon_on_restart": abandon_on_restart,
     }
+    if entry is not None:
+        state["input_entry_id"] = entry.entry_id
     if workflow_name is not None:
         state.update({
             "workflow_name": workflow_name,

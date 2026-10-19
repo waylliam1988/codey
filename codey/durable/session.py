@@ -30,6 +30,7 @@ from codey.durable.model import (
     DurableMutation,
     EffectRecord,
     EntryDraft,
+    SubmissionPlacement,
     SubmissionStatus,
     SubmissionUpdate,
     TaskCheckpoint,
@@ -424,6 +425,8 @@ class DurableSession:
         workflow_input: Mapping[str, object] | None = None,
         workflow_checkpoint: Mapping[str, object] | None = None,
         workflow_replay_contract: str = "deterministic-v1",
+        placement: SubmissionPlacement | str = SubmissionPlacement.PLACED,
+        mode: str = "follow_up",
     ) -> CommitResult:
         return admission.admit_input(
             self, conversation_id=conversation_id, request_id=request_id, task_id=task_id,
@@ -433,6 +436,62 @@ class DurableSession:
             workflow_name=workflow_name, workflow_version=workflow_version,
             workflow_input=workflow_input, workflow_checkpoint=workflow_checkpoint,
             workflow_replay_contract=workflow_replay_contract,
+            placement=placement, mode=mode,
+        )
+
+    @_mutation_line
+    def place_submission(self, submission_id: str) -> CommitResult:
+        """Place one queued input into history and make its task runnable atomically."""
+        submission = self.store.submission(submission_id)
+        if submission.placement is SubmissionPlacement.PLACED:
+            return CommitResult(0, self.store.commit_sequence(), submission_id)
+        if submission.status is not SubmissionStatus.QUEUED:
+            raise CommitConflict("only queued submissions may be placed")
+        task = next(
+            (candidate for candidate in self.store.tasks() if candidate.submission_id == submission_id),
+            None,
+        )
+        if task is None:
+            raise CommitConflict("queued submission has no task")
+        if task.status in {TaskStatus.CANCELLED, TaskStatus.FAILED, TaskStatus.COMPLETED}:
+            raise CommitConflict("cannot place a terminal task")
+        content = submission.content
+        text = content.get("text") if isinstance(content, Mapping) else None
+        if not isinstance(text, str) or not text.strip():
+            raise CommitConflict("queued submission has no input text")
+        head, conversation_revision = self.store.head(task.conversation_id)
+        entry = EntryDraft(
+            entry_id=f"entry-{uuid.uuid4().hex}",
+            conversation_id=task.conversation_id,
+            parent_id=head,
+            kind="user_message",
+            payload={"text": text},
+            by_task_id=task.task_id,
+        )
+        thawed_state = thaw_json(task.state)
+        if not isinstance(thawed_state, Mapping):
+            raise CommitConflict("task state is corrupt")
+        state = dict(thawed_state)
+        state["input_state"] = "placed"
+        state["input_entry_id"] = entry.entry_id
+        next_task = replace(task, revision=task.revision + 1, state=state)
+        update = SubmissionUpdate(
+            submission_id=submission.submission_id,
+            conversation_id=submission.conversation_id,
+            expected_status=submission.status,
+            status=submission.status,
+            input_entry_id=entry.entry_id,
+            placement=SubmissionPlacement.PLACED,
+        )
+        return self._commit(
+            DurableMutation(
+                conversation_id=task.conversation_id,
+                expected_revision=conversation_revision,
+                entries=(entry,),
+                task=next_task,
+                submission_update=update,
+                expected_attempt_token=task.attempt_token,
+            )
         )
 
     @_mutation_line

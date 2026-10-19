@@ -710,4 +710,41 @@ mypy / pyrefly / ty / ruff 全部通过
 
 当前 Codey 已经可以在 effect fail-closed、权限/审批、provider uncertainty、completion proof、Research 证据、attempt fencing 和取消安全上明确胜过 Pi；它还不能在 durable 内核整体上宣布胜出。下一段应优先审查 inbox/placement，而不是继续堆新的 scheduler 状态字段：先证明“admitted 但未 placed”的语义，再决定是否需要改变 submission schema 和 context 入口。
 
+## 20. 第十六段：inbox placement 第一批实现
+
+本段按 Pi `harness/inbox.ts` 的 admitted/placed 分界收敛 Codey 输入路径，保持冷启动 `SCHEMA_VERSION = 1`。没有增加旧数据库 migration，也没有恢复旧 input SQLite 写路径。
+
+### 20.1 已完成
+
+- `SubmissionDraft`/`SubmissionRecord` 增加明确的 `placement`、`mode` 和 queued content；queued submission 可以没有 `entry_id`。
+- `submissions.entry_id` 允许为空，并保存 placement、mode、content、admission commit sequence；schema 仍是冷启动版本 1。
+- `DurableSession.admit_input(placement="queued")` 只提交 submission + task，不写 conversation entry。
+- `DurableSession.place_submission()` 在一个 durable commit 中追加 user entry、更新 task 的 `input_state/input_entry_id`，并把 submission 置为 placed；重复 placement 不会追加第二个 entry。
+- Memory 和 SQLite 的 idempotency、submission update、placement 校验保持一致。
+- `DurableConversationInputQueue` 在 conversation 有 active task 时 admission 为 queued；空闲 conversation 立即 placed。
+- scheduler 在 active task 结束后才 placement queued input，然后取得普通 task attempt；queued input 不会被直接 dispatch。
+- input projection 改为以 durable `input_state` 和 terminal status 为准，修复了 `MappingProxyType` 被误判为非 mapping 的旧问题。
+
+### 20.2 验证
+
+```text
+inbox/placement + input authority + store contract: 55 passed
+provider/scheduler/recovery 受影响集合（含 placement）：85 passed
+mypy: Success
+pyrefly: 0 errors
+ty: All checks passed
+ruff: All checks passed
+```
+
+### 20.3 与 Pi 仍有差距
+
+当前 placement 是“conversation 空闲后放置”的最小 durable 语义，还没有 Pi 的：
+
+- steer/follow-up 的 first/all boundary 策略；
+- queued passive write 与 display-only write；
+- reset/head placement 和 stale write 规则；
+- placement 与 active generation boundary 的同一事务衔接。
+
+因此本段只完成了事实边界和恢复顺序的基础，不宣布 inbox parity。下一段应把 boundary selection 做成明确 mutation，而不是继续依赖 scheduler 的全量扫描猜测。
+
 

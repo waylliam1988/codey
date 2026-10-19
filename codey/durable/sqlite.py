@@ -19,6 +19,7 @@ from codey.durable.model import (
     EffectRecord,
     EntryDraft,
     SubmissionDraft,
+    SubmissionPlacement,
     SubmissionRecord,
     SubmissionStatus,
     SubmissionUpdate,
@@ -167,7 +168,8 @@ class SQLiteDurableStore:
 
     def submit(self, draft: SubmissionDraft) -> CommitResult:
         _head, revision = self.head(draft.conversation_id)
-        return self.commit(DurableMutation(draft.conversation_id, revision, entries=(draft.entry,), submission=draft))
+        entries = () if draft.entry is None else (draft.entry,)
+        return self.commit(DurableMutation(draft.conversation_id, revision, entries=entries, submission=draft))
 
     def commit(self, mutation: DurableMutation) -> CommitResult:
         with closing(self._connect()) as database:
@@ -244,14 +246,18 @@ class SQLiteDurableStore:
                     )
                 if mutation.submission is not None:
                     database.execute(
-                        "INSERT INTO submissions(id, conversation_id, request_id, entry_id, revision, fingerprint) VALUES(?,?,?,?,?,?)",
+                        "INSERT INTO submissions(id, conversation_id, request_id, entry_id, revision, fingerprint, placement, mode, content, commit_seq) VALUES(?,?,?,?,?,?,?,?,?,?)",
                         (
                             mutation.submission.submission_id,
                             mutation.submission.conversation_id,
                             mutation.submission.request_id,
-                            mutation.submission.entry.entry_id,
+                            None if mutation.submission.entry is None else mutation.submission.entry.entry_id,
                             new_revision,
                             mutation.submission.fingerprint,
+                            SubmissionPlacement(mutation.submission.placement).value,
+                            mutation.submission.mode,
+                            _encode(mutation.submission.content or {}),
+                            sequence,
                         ),
                     )
                 _write_task(database, mutation.task)
@@ -264,7 +270,12 @@ class SQLiteDurableStore:
                 return CommitResult(
                     revision=new_revision,
                     sequence=sequence,
-                    submission_id=None if mutation.submission is None else mutation.submission.submission_id,
+                    submission_id=(
+                        mutation.submission.submission_id
+                        if mutation.submission is not None
+                        else None if mutation.submission_update is None
+                        else mutation.submission_update.submission_id
+                    ),
                     record=record,
                 )
             except BaseException:
@@ -447,10 +458,13 @@ class SQLiteDurableStore:
                 conversation_id=str(row["conversation_id"]),
                 request_id=str(row["request_id"]),
                 status=SubmissionStatus(str(row["status"])),
-                input_entry_id=str(row["entry_id"]),
+                input_entry_id=None if row["entry_id"] is None else str(row["entry_id"]),
                 answer_entry_id=row["answer_entry_id"],
                 reason=row["reason"],
                 detail=None if detail is None else json.loads(detail),
+                placement=SubmissionPlacement(str(row["placement"])),
+                mode=str(row["mode"]),
+                content=json.loads(str(row["content"])),
             )
 
     def submission_result_for_request(
@@ -458,19 +472,14 @@ class SQLiteDurableStore:
     ) -> CommitResult | None:
         with closing(self._connect()) as database:
             row = database.execute(
-                "SELECT id, fingerprint, revision, entry_id FROM submissions WHERE conversation_id=? AND request_id=?",
+                "SELECT id, fingerprint, revision, commit_seq FROM submissions WHERE conversation_id=? AND request_id=?",
                 (conversation_id, request_id),
             ).fetchone()
             if row is None:
                 return None
             if str(row["fingerprint"]) != fingerprint:
                 raise IdempotencyConflict("request_id was already admitted with different durable result content")
-            commit = database.execute(
-                "SELECT commit_seq FROM entries WHERE id=?", (row["entry_id"],)
-            ).fetchone()
-            if commit is None:
-                raise IdempotencyConflict("admitted submission has no entry commit")
-            return CommitResult(int(row["revision"]), int(commit["commit_seq"]), str(row["id"]))
+            return CommitResult(int(row["revision"]), int(row["commit_seq"]), str(row["id"]))
 
     def pending_tasks(self) -> tuple[TaskCheckpoint, ...]:
         with closing(self._connect()) as database:
@@ -583,15 +592,22 @@ def _find_submission(database: sqlite3.Connection, draft: SubmissionDraft | None
     if draft is None:
         return None
     row = database.execute(
-        "SELECT s.id, s.fingerprint, s.revision, e.id AS entry_id, e.parent_id, e.kind, e.payload, e.commit_seq "
-        "FROM submissions s JOIN entries e ON e.id=s.entry_id "
+        "SELECT s.id, s.fingerprint, s.revision, s.commit_seq, s.placement, s.mode, s.content, "
+        "e.id AS entry_id, e.parent_id, e.kind, e.payload "
+        "FROM submissions s LEFT JOIN entries e ON e.id=s.entry_id "
         "WHERE s.conversation_id=? AND s.request_id=?",
         (draft.conversation_id, draft.request_id),
     ).fetchone()
     if row is None:
         return None
-    stored_entry = EntryDraft(str(row["entry_id"]), draft.conversation_id, row["parent_id"], str(row["kind"]), json.loads(row["payload"]))
-    stored = SubmissionDraft(str(row["id"]), draft.request_id, draft.conversation_id, stored_entry, str(row["fingerprint"]))
+    stored_entry = None
+    if row["entry_id"] is not None:
+        stored_entry = EntryDraft(str(row["entry_id"]), draft.conversation_id, row["parent_id"], str(row["kind"]), json.loads(row["payload"]))
+    stored = SubmissionDraft(
+        str(row["id"]), draft.request_id, draft.conversation_id, stored_entry,
+        str(row["fingerprint"]), placement=str(row["placement"]), mode=str(row["mode"]),
+        content=json.loads(str(row["content"])),
+    )
     if not same_submission(stored, draft):
         raise IdempotencyConflict("request_id was already admitted with different input")
     return CommitResult(int(row["revision"]), int(row["commit_seq"]), str(row["id"]))
@@ -770,16 +786,27 @@ def _validate_submission_update(
     if update is None:
         return
     row = database.execute(
-        "SELECT conversation_id, status FROM submissions WHERE id=?",
+        "SELECT conversation_id, status, placement, entry_id AS input_entry_id FROM submissions WHERE id=?",
         (update.submission_id,),
     ).fetchone()
     if row is None or str(row["conversation_id"]) != update.conversation_id:
         raise CommitConflict("unknown submission")
     current = SubmissionStatus(str(row["status"]))
-    if current != update.expected_status or not valid_submission_transition(current, update.status):
+    if current != update.expected_status or (
+        current != update.status and not valid_submission_transition(current, update.status)
+    ):
         raise CommitConflict("submission status changed")
     if update.answer_entry_id is not None and update.answer_entry_id not in {entry.entry_id for entry in entries}:
         raise CommitConflict("answer entry must be part of the same commit")
+    if update.input_entry_id is not None and update.input_entry_id not in {entry.entry_id for entry in entries}:
+        raise CommitConflict("placed input entry must be part of the same commit")
+    if update.placement is not None:
+        placement = SubmissionPlacement(update.placement)
+        current_placement = SubmissionPlacement(str(row["placement"]))
+        if current_placement is SubmissionPlacement.PLACED and placement is not SubmissionPlacement.PLACED:
+            raise CommitConflict("placed submission cannot return to queued")
+        if placement is SubmissionPlacement.PLACED and update.input_entry_id is None and row["input_entry_id"] is None:
+            raise CommitConflict("placing a submission requires an input entry")
 
 
 def _write_entries(database: sqlite3.Connection, mutation: DurableMutation, revision: int, sequence: int) -> None:
@@ -835,13 +862,15 @@ def _write_submission_update(database: sqlite3.Connection, update: SubmissionUpd
     if update is None:
         return
     cursor = database.execute(
-        "UPDATE submissions SET status=?, answer_entry_id=?, reason=?, detail=? "
+        "UPDATE submissions SET status=?, answer_entry_id=?, reason=?, detail=?, entry_id=COALESCE(?, entry_id), placement=COALESCE(?, placement) "
         "WHERE id=? AND conversation_id=? AND status=?",
         (
             update.status.value,
             update.answer_entry_id,
             update.reason,
             None if update.detail is None else _encode(update.detail),
+            update.input_entry_id,
+            None if update.placement is None else SubmissionPlacement(update.placement).value,
             update.submission_id,
             update.conversation_id,
             update.expected_status.value,

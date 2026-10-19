@@ -18,6 +18,7 @@ from codey.durable.model import (
     EffectRecord,
     EntryDraft,
     SubmissionDraft,
+    SubmissionPlacement,
     SubmissionRecord,
     SubmissionUpdate,
     TaskCheckpoint,
@@ -35,7 +36,7 @@ from codey.durable.timeline import TaskTransition, execution_payload, transition
 @dataclass(frozen=True)
 class _Submission:
     record: SubmissionRecord
-    entry: EntryDraft
+    entry: EntryDraft | None
     result: CommitResult
     fingerprint: str
 
@@ -78,7 +79,8 @@ class MemoryDurableStore:
 
     def submit(self, draft: SubmissionDraft) -> CommitResult:
         _head, revision = self._conversation(draft.conversation_id)
-        return self.commit(DurableMutation(draft.conversation_id, revision, entries=(draft.entry,), submission=draft))
+        entries = () if draft.entry is None else (draft.entry,)
+        return self.commit(DurableMutation(draft.conversation_id, revision, entries=entries, submission=draft))
 
     def commit(self, mutation: DurableMutation) -> CommitResult:
         with self._lock:
@@ -102,24 +104,11 @@ class MemoryDurableStore:
                 raise CommitConflict("conversation revision changed")
             if mutation.delete_conversation is not None:
                 return self._commit_delete_conversation(mutation, revision)
-            if mutation.submission is not None:
-                key = (mutation.conversation_id, mutation.submission.request_id)
-                existing = self._submissions.get(key)
-                if existing is not None:
-                    if not same_submission(
-                        SubmissionDraft(
-                            existing.record.submission_id,
-                            mutation.submission.request_id,
-                            mutation.submission.conversation_id,
-                            existing.entry,
-                            existing.fingerprint,
-                        ),
-                        mutation.submission,
-                    ):
-                        raise IdempotencyConflict("request_id was already admitted with different input")
-                    return replace(existing.result, record=None)
-                if mutation.submission.submission_id in self._submission_ids:
-                    raise IdempotencyConflict("submission ID was already used")
+            prior_submission = self._existing_submission(mutation.submission)
+            if prior_submission is not None:
+                return replace(prior_submission, record=None)
+            if mutation.submission is not None and mutation.submission.submission_id in self._submission_ids:
+                raise IdempotencyConflict("submission ID was already used")
             self._validate_entry_chain(mutation.entries, mutation.conversation_id, head)
             self._validate_task(mutation.task, mutation.submission, mutation.expected_attempt_token)
             self._validate_submission_update(mutation.submission_update, mutation.entries)
@@ -162,46 +151,67 @@ class MemoryDurableStore:
                 self._effects[mutation.effect.effect_id] = mutation.effect
             for effect in (*mutation.effects, *mutation.settlements):
                 self._effects[effect.effect_id] = effect
+            self._write_submission(mutation, new_revision, record)
             if mutation.submission is not None:
-                self._submissions[(mutation.conversation_id, mutation.submission.request_id)] = _Submission(
-                    SubmissionRecord(
-                        mutation.submission.submission_id,
-                        mutation.conversation_id,
-                        mutation.submission.request_id,
-                        mutation.submission.status,
-                        mutation.submission.entry.entry_id,
-                    ),
-                    mutation.submission.entry,
-                    CommitResult(new_revision, self._sequence, mutation.submission.submission_id, record),
-                    mutation.submission.fingerprint,
-                )
-                self._submission_ids.add(mutation.submission.submission_id)
-                result = CommitResult(new_revision, self._sequence, mutation.submission.submission_id, record)
+                result = replace(result, submission_id=mutation.submission.submission_id)
             if mutation.submission_update is not None:
-                update = mutation.submission_update
-                update_key: tuple[str, str] | None = next(
-                    (key for key, value in self._submissions.items() if value.record.submission_id == update.submission_id),
-                    None,
-                )
-                if update_key is None:
-                    raise CommitConflict("submission disappeared during commit")
-                current = self._submissions[update_key]
-                self._submissions[update_key] = _Submission(
-                    SubmissionRecord(
-                        current.record.submission_id,
-                        current.record.conversation_id,
-                        current.record.request_id,
-                        update.status,
-                        current.record.input_entry_id,
-                        update.answer_entry_id,
-                        update.reason,
-                        update.detail,
-                    ),
-                    current.entry,
-                    current.result,
-                    current.fingerprint,
-                )
+                self._update_submission(mutation.submission_update, mutation.entries)
+                result = replace(result, submission_id=mutation.submission_update.submission_id)
             return result
+
+    def _write_submission(self, mutation: DurableMutation, revision: int, record: CommitRecord) -> None:
+        submission = mutation.submission
+        if submission is None:
+            return
+        self._submissions[(mutation.conversation_id, submission.request_id)] = _Submission(
+            SubmissionRecord(
+                submission.submission_id,
+                mutation.conversation_id,
+                submission.request_id,
+                submission.status,
+                None if submission.entry is None else submission.entry.entry_id,
+                placement=submission.placement,
+                mode=submission.mode,
+                content=submission.content,
+            ),
+            submission.entry,
+            CommitResult(revision, record.sequence, submission.submission_id, record),
+            submission.fingerprint,
+        )
+        self._submission_ids.add(submission.submission_id)
+
+    def _update_submission(self, update: SubmissionUpdate, entries: tuple[EntryDraft, ...]) -> None:
+        update_key = next(
+            (key for key, value in self._submissions.items() if value.record.submission_id == update.submission_id),
+            None,
+        )
+        if update_key is None:
+            raise CommitConflict("submission disappeared during commit")
+        current = self._submissions[update_key]
+        placed_entry = current.entry
+        if update.input_entry_id is not None:
+            placed_entry = next(
+                (entry for entry in entries if entry.entry_id == update.input_entry_id),
+                placed_entry,
+            )
+        self._submissions[update_key] = _Submission(
+            SubmissionRecord(
+                current.record.submission_id,
+                current.record.conversation_id,
+                current.record.request_id,
+                update.status,
+                current.record.input_entry_id if update.input_entry_id is None else update.input_entry_id,
+                update.answer_entry_id,
+                update.reason,
+                update.detail,
+                current.record.placement if update.placement is None else update.placement,
+                current.record.mode,
+                current.record.content,
+            ),
+            placed_entry,
+            current.result,
+            current.fingerprint,
+        )
 
     def _commit_delete_conversation(self, mutation: DurableMutation, revision: int) -> CommitResult:
         if any(parent == mutation.conversation_id for parent, _entry in self._parents.values()):
@@ -266,10 +276,20 @@ class MemoryDurableStore:
         )
         if current is None or current.conversation_id != update.conversation_id:
             raise CommitConflict("unknown submission")
-        if current.status != update.expected_status or not valid_submission_transition(current.status, update.status):
+        if current.status != update.expected_status or (
+            current.status != update.status and not valid_submission_transition(current.status, update.status)
+        ):
             raise CommitConflict("submission status changed")
         if update.answer_entry_id is not None and update.answer_entry_id not in {entry.entry_id for entry in entries}:
             raise CommitConflict("answer entry must be part of the same commit")
+        if update.input_entry_id is not None and update.input_entry_id not in {entry.entry_id for entry in entries}:
+            raise CommitConflict("placed input entry must be part of the same commit")
+        if update.placement is not None:
+            placement = SubmissionPlacement(update.placement)
+            if current.placement is SubmissionPlacement.PLACED and placement is not SubmissionPlacement.PLACED:
+                raise CommitConflict("placed submission cannot return to queued")
+            if placement is SubmissionPlacement.PLACED and update.input_entry_id is None and current.input_entry_id is None:
+                raise CommitConflict("placing a submission requires an input entry")
 
     def _validate_entry_chain(self, entries: tuple[EntryDraft, ...], conversation_id: str, head: str | None) -> None:
         parent = head
@@ -497,6 +517,9 @@ class MemoryDurableStore:
                 draft.conversation_id,
                 existing.entry,
                 existing.fingerprint,
+                placement=existing.record.placement,
+                mode=existing.record.mode,
+                content=existing.record.content,
             ),
             draft,
         ):

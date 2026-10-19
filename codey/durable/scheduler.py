@@ -185,6 +185,7 @@ class DurableTaskScheduler:
     def _reconcile(self) -> None:
         if self._workflows:
             self._session.reconcile_workflows(self._workflows)
+        self._place_ready_inputs()
         self._session.reconcile_finalization()
         self.notify(start=False)
         with self._lock:
@@ -272,6 +273,25 @@ class DurableTaskScheduler:
             finally:
                 with self._lock:
                     self._inflight.discard(task_id)
+
+    def _place_ready_inputs(self) -> None:
+        """Place queued conversation inputs once their active run has settled."""
+        tasks = self._session.pending_tasks()
+        active_by_conversation = {
+            task.conversation_id
+            for task in tasks
+            if task.state.get("input_state") != "queued"
+            and task.status not in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
+        }
+        for task in tasks:
+            if task.state.get("input_state") != "queued":
+                continue
+            if task.conversation_id in active_by_conversation:
+                continue
+            try:
+                self._session.place_submission(task.submission_id)
+            except (CommitConflict, KeyError, ValueError):
+                continue
 
     def _defer_retry(self, task_id: str) -> None:
         with self._lock:

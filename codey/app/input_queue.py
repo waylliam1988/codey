@@ -44,9 +44,7 @@ class DurableConversationInputQueue:
 
     @staticmethod
     def _state_for_task(task: Any) -> str:
-        raw = task.state.get("input_state") if isinstance(task.state, dict) else None
-        if raw in {"paused", "cancelled"}:
-            return str(raw)
+        raw = task.state.get("input_state") if isinstance(task.state, Mapping) else None
         status = str(task.status)
         if status == "completed" or task.phase == "completed":
             return "completed"
@@ -54,9 +52,13 @@ class DurableConversationInputQueue:
             return "cancelled"
         if status == "failed" or task.phase == "failed":
             return "unconfirmed"
+        if raw in {"paused", "cancelled"}:
+            return str(raw)
+        if raw == "queued":
+            return "queued"
         if status == "running" or task.phase != "accepted":
             return "submitted"
-        return "queued"
+        return "submitted" if raw == "placed" else "queued"
 
     @classmethod
     def _item_for_task(cls, task: Any) -> dict[str, Any] | None:
@@ -133,6 +135,13 @@ class DurableConversationInputQueue:
                     raise ValueError("input identity conflict")
                 return existing
             snapshot = provider_snapshot(provider_id, selection)
+            busy = any(
+                task.conversation_id == str(request["session_id"])
+                and str(task.status) not in {"completed", "failed", "cancelled"}
+                and task.state.get("input_state") != "queued"
+                for task in self.durable.tasks()
+            )
+            placement = "queued" if busy else "placed"
             self.durable.admit_input(
                 conversation_id=str(request["session_id"]),
                 request_id=identity,
@@ -145,6 +154,8 @@ class DurableConversationInputQueue:
                     "input_state": "queued",
                     **admitted_request,
                 },
+                placement=placement,
+                mode=str(request.get("input_mode") or "follow_up"),
             )
             item = self.get(identity)
         if item is None:
