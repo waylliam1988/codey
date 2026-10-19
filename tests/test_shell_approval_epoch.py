@@ -306,6 +306,10 @@ class ShellStopLinearizationTests(unittest.TestCase):
                     self.assertFalse(executor.is_alive())
                     self.assertFalse(closer.is_alive())
                     self.assertTrue(ctx.run_registry.stop_flag.is_set())
+                    # close() may return after requesting stop while a
+                    # background lifecycle owner is still winding down;
+                    # retry is the documented completion handshake.
+                    self.assertTrue(ctx.close())
                     self.assertTrue(ctx.closed)
         finally:
             ctx.close()
