@@ -588,6 +588,31 @@ class SQLiteDurableStore:
                 for row in rows
             )
 
+    def waiting_dependents(self, task_id: str) -> tuple[TaskCheckpoint, ...]:
+        with closing(self._connect()) as database:
+            rows = database.execute(
+                "SELECT tasks.* FROM task_waiters "
+                "JOIN tasks ON tasks.id=task_waiters.waiter_task_id "
+                "WHERE task_waiters.waited_task_id=? ORDER BY tasks.rowid",
+                (task_id,),
+            ).fetchall()
+            return tuple(
+                TaskCheckpoint(
+                    task_id=str(row["id"]),
+                    conversation_id=str(row["conversation_id"]),
+                    submission_id=str(row["submission_id"]),
+                    phase=str(row["phase"]),
+                    revision=int(row["revision"]),
+                    provider_snapshot=json.loads(row["provider_snapshot"]),
+                    state=json.loads(row["state"]),
+                    current_turn_id=row["current_turn_id"],
+                    pending_effect_id=row["pending_effect_id"],
+                    status=str(row["status"]),
+                    schema_version=int(row["schema_version"]),
+                )
+                for row in rows
+            )
+
     def close(self) -> None:
         return None
 
@@ -944,6 +969,11 @@ def _write_task(database: sqlite3.Connection, task: TaskCheckpoint | None) -> No
         "pending_effect_id=excluded.pending_effect_id, status=excluded.status, schema_version=excluded.schema_version",
         (task.task_id, task.conversation_id, task.submission_id, task.phase, task.revision, _encode(task.provider_snapshot), _encode(task.state),
          task.current_turn_id, task.pending_effect_id, TaskStatus(str(task.status)).value, task.schema_version),
+    )
+    database.execute("DELETE FROM task_waiters WHERE waiter_task_id=?", (task.task_id,))
+    database.executemany(
+        "INSERT INTO task_waiters(waited_task_id, waiter_task_id) VALUES(?, ?)",
+        ((dependency, task.task_id) for dependency in task.waiting_on),
     )
 
 

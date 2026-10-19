@@ -126,8 +126,8 @@ class DurableTaskScheduler:
                 requeued = task.status == TaskStatus.PENDING and not task.attempt_token
                 dependents = {
                     candidate.task_id
-                    for candidate in self._session.tasks()
-                    if task_id in candidate.waiting_on and candidate.status == TaskStatus.WAITING
+                    for candidate in self._session.store.waiting_dependents(task_id)
+                    if candidate.status == TaskStatus.WAITING
                 }
             except KeyError:
                 return

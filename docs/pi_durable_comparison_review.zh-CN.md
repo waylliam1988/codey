@@ -1149,4 +1149,32 @@ SCHEMA_VERSION = 1
 
 Codey 现在在 scheduler close 的 cooperative invocation join 上达到 Pi 的关键生命周期语义，并额外保留 durable attempt recovery 与 fail-closed effect 规则。仍低于 Pi 的 scheduler 部分是持久化 live/reverse index、background ownership、abort handler 的分层调用，以及 completing/finalization 的完整 scheduler kernel 语义。
 
+## 33. 第二十九段：持久化 waiting reverse index
+
+本段补上 scheduler 依赖唤醒的 durable index。此前 `notify(child)` 通过 `session.tasks()` 全量扫描找出等待 child 的 waiter；这在小规模测试中可用，但 scheduler 重启或任务图扩大后仍依赖扫描推导。现在 task checkpoint 的 `waiting_on` 在同一 SQLite 事务中维护 `task_waiters` 关系表，Memory 也使用同语义的反向索引。
+
+### 33.1 已完成
+
+- 冷启动 schema 1 新增 `task_waiters(waited_task_id, waiter_task_id)` 及双向索引；没有 migration、旧库修复或兼容写入路径；
+- task 新建和 checkpoint 更新会原子替换该 task 的 waiter edges，task 删除通过外键/内存清理移除边；
+- `DurableStore.waiting_dependents()` 成为明确的 durable 读取契约；SQLite 重启后仍能读取相同 waiter 集合；
+- scheduler `notify(child)` 直接使用 durable reverse index，只唤醒 `WAITING` waiter；
+- Memory/SQLite 的 waiting、settlement、依赖解除和重启行为已由测试覆盖。
+
+### 33.2 验证
+
+```text
+test_waiting_reverse_index.py：3 passed
+schema/store/scheduler 回归集合：62 passed
+mypy：Success
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 33.3 与 Pi 的结果
+
+Codey 已在 waiting dependency 的持久化反向唤醒上接近并达到 Pi scheduler 的核心语义，同时保留 task CAS、attempt fencing、未知 effect fail-closed 和权限边界。仍低于 Pi 的 scheduler 生命周期是完整 live invocation index、background ownership、abort handler 分层传播，以及更完整的 completing/finalization 调度图。
+
 

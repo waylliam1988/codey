@@ -59,6 +59,7 @@ class MemoryDurableStore:
         self._submissions: dict[tuple[str, str], _Submission] = {}
         self._submission_ids: set[str] = set()
         self._tasks: dict[str, TaskCheckpoint] = {}
+        self._waiters: dict[str, set[str]] = {}
         self._effects: dict[str, EffectRecord] = {}
         self._artifacts: dict[str, ArtifactRecord] = {}
         self._sequence = 0
@@ -164,11 +165,13 @@ class MemoryDurableStore:
             self._heads[mutation.conversation_id] = (new_head, new_revision)
             if mutation.task is not None:
                 self._tasks[mutation.task.task_id] = mutation.task
+                self._replace_waiters(mutation.task)
                 self._history.setdefault(mutation.task.task_id, []).append(
                     transition_from_payload(self._sequence, execution_payload(mutation, new_head))
                 )
             for task in mutation.task_updates:
                 self._tasks[task.task_id] = task
+                self._replace_waiters(task)
                 self._history.setdefault(task.task_id, []).append(
                     transition_from_payload(
                         self._sequence,
@@ -283,6 +286,9 @@ class MemoryDurableStore:
         for task_id in task_ids:
             self._tasks.pop(task_id, None)
             self._history.pop(task_id, None)
+            self._waiters.pop(task_id, None)
+        for waiters in self._waiters.values():
+            waiters.difference_update(task_ids)
         removed_effect_ids = {
             effect_id for effect_id, effect in self._effects.items() if effect.task_id in task_ids
         }
@@ -507,6 +513,17 @@ class MemoryDurableStore:
     def tasks(self) -> tuple[TaskCheckpoint, ...]:
         with self._lock:
             return tuple(self._tasks.values())
+
+    def waiting_dependents(self, task_id: str) -> tuple[TaskCheckpoint, ...]:
+        with self._lock:
+            waiter_ids = self._waiters.get(task_id, set())
+            return tuple(task for task in self._tasks.values() if task.task_id in waiter_ids)
+
+    def _replace_waiters(self, task: TaskCheckpoint) -> None:
+        for waiters in self._waiters.values():
+            waiters.discard(task.task_id)
+        for dependency in task.waiting_on:
+            self._waiters.setdefault(dependency, set()).add(task.task_id)
 
     def task_history(self, task_id: str, *, through: int | None = None) -> tuple[TaskTransition, ...]:
         with self._lock:
