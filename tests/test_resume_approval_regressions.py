@@ -217,18 +217,20 @@ def test_rehydrated_approval_can_be_denied_and_resume_source_run(tmp_path) -> No
         state.close()
 
     restarted = AppContext(tmp_path)
-    calls: list[dict[str, object]] = []
+    submit = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("continuation task must not be submitted"))
     try:
         status, payload = app_api.shell_approval_response(
             restarted,
             {"id": "approval-deny-restart", "approved": False},
-            submit_task_after_slot_release=lambda *args, **kwargs: calls.append(kwargs) or "resume-run",
+            submit_task_after_slot_release=submit,
         )
         assert status == 202
         assert restarted.shell_approval_workflow.wait(5)
         assert restarted.shell_approval_workflow.status("approval-deny-restart")["decision"] == "deny"
-        assert calls[0]["previous_run_id"] == "source-run"
-        assert restarted.shell_approval_records.latest("approval-deny-restart").kind == "continuation_started"
+        approval = restarted.durable.approval("approval-deny-restart")
+        assert str(approval.status) == "denied"
+        assert approval.continuation_run_id == "source-run"
+        assert len(restarted.durable.tasks()) == 1
     finally:
         restarted.close()
 
