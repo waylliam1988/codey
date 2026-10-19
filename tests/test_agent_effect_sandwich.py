@@ -18,6 +18,7 @@ from codey.agents.tool_execution import (
 from codey.agents.tools import AgentToolFns
 from codey.app import server
 from codey.app import task_submit as task_submit
+from codey.durable import DurableSession, EffectRecord, MemoryDurableStore
 from codey.operations.recovery import ResumeRecoveryResult, recover_effects_for_resume
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
@@ -37,6 +38,7 @@ from codey.runtime.effects.effect_records import (
     SETTLEMENT_STATUS_OK,
     RuntimeEffectIntent,
     RuntimeEffectStore,
+    compute_args_digest,
     new_effect_id,
 )
 from codey.runtime.effects.replay_policy import ReplayClass
@@ -76,6 +78,34 @@ def _commit_log_entry(
         handle.write(entry.to_json_line().encode("utf-8"))
 
 
+def _admit_durable_tool_recovery(
+    state: Any,
+    *,
+    session_id: str,
+    run_id: str,
+    task: str,
+    task_kind: str,
+    effect_intent: RuntimeEffectIntent,
+    provider_id: str = "mock_provider",
+    already_admitted: bool = False,
+) -> None:
+    if not already_admitted:
+        state.durable.admit_input(
+            conversation_id=session_id,
+            request_id=run_id,
+            task_id=run_id,
+            text=task,
+            provider_snapshot={"provider_id": provider_id},
+            task_state={"task": task, "provider_id": provider_id},
+        )
+    if state.durable.task(run_id).phase == "accepted":
+        state.durable.claim_task(run_id)
+    state.durable.start_task(run_id, state={"task_kind": task_kind})
+    state.durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={"task_kind": task_kind})
+    state.durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={"task_kind": task_kind})
+
+
+
 class MockProvider:
     def __init__(self, reply: str = "mock reply", fail: bool = False) -> None:
         self.reply = reply
@@ -106,6 +136,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.operations = RuntimeOperationStore(self.log)
         self.effects = RuntimeEffectStore(self.log)
         self.delivery = ToolResultDeliveryStore(self.log)
+        self.durable = DurableSession(MemoryDurableStore())
         self.line = RuntimeMutationLine(self.log)
         self.line.accept_operation(
             session_id=self.session_id,
@@ -123,6 +154,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
+        self.durable.close()
         self.temp_dir.cleanup()
 
     def _create_request(self, provider: MockProvider) -> AgentRequest:
@@ -160,7 +192,46 @@ class AgentEffectSandwichTests(unittest.TestCase):
             provider_id="mock_provider",
         )
         sink.begin_turn([(effect_id, call, tool_index)], turn=turn)
+        self._sync_runtime_effect_to_durable(self.run_id, effect_id)
         return effect_id
+
+    def _ensure_durable_task(self, run_id: str, *, task: str = "recover task") -> None:
+        try:
+            self.durable.task(run_id)
+            return
+        except KeyError:
+            pass
+        self.durable.admit_input(
+            conversation_id=self.session_id,
+            request_id=run_id,
+            task_id=run_id,
+            text=task,
+            provider_snapshot={"provider_id": "mock_provider", "model_id": "test"},
+            task_state={"task": task, "provider_id": "mock_provider"},
+        )
+        self.durable.start_task(run_id, state={"task": task})
+        self.durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={"task": task})
+        self.durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={"task": task})
+
+    def _sync_runtime_effect_to_durable(self, run_id: str, effect_id: str) -> None:
+        self._ensure_durable_task(run_id)
+        projection = next(
+            item
+            for item in self.effects.load_effects(self.session_id, run_id)
+            if item.intent.effect_id == effect_id
+        )
+        self.durable.record_effect_intent(
+            run_id,
+            EffectRecord(
+                effect_id=effect_id,
+                task_id=run_id,
+                category=projection.intent.effect_category,
+                replay_class=projection.intent.replay_class,
+                args_digest=projection.intent.args_digest or f"test:{effect_id}",
+                status="pending",
+                intent=projection.intent.to_payload(),
+            ),
+        )
 
     def _deps(self) -> SimpleNamespace:
         return SimpleNamespace(
@@ -168,6 +239,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             runtime_mutations=self.line,
             tool_result_delivery=self.delivery,
             state=SimpleNamespace(
+                durable=self.durable,
                 runtime_effects=self.effects,
                 runtime_mutations=self.line,
                 tool_result_delivery=self.delivery,
@@ -568,6 +640,11 @@ class AgentEffectSandwichTests(unittest.TestCase):
     def test_recovered_tool_outcomes_skip_work_claim(self) -> None:
         state = server.AppContext()
         run_id = "run-recovered-skip-claim-1"
+        state.durable.admit_input(
+            conversation_id=self.session_id, request_id=run_id, task_id=run_id,
+            text="continue task", provider_snapshot={"provider_id": "mock_provider"},
+            task_state={"task": "continue task", "provider_id": "mock_provider", "task_kind": "project"},
+        )
         target = self.project_dir / "target.txt"
         target.write_text("recovered file text", encoding="utf-8")
 
@@ -591,9 +668,31 @@ class AgentEffectSandwichTests(unittest.TestCase):
         from codey.policies.task_policy import TaskPolicy
 
         original_policy = TaskPolicy(grants=frozenset({"control", "project.read"}))
-        record_entry_policy(state.runtime_mutations, session_id=self.session_id,
-                            run_id=run_id, policy=original_policy)
         effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id)
+        intent = RuntimeEffectIntent(
+            effect_id=effect_id,
+            effect_category=EFFECT_CATEGORY_TOOL_CALL,
+            session_id=self.session_id,
+            run_id=run_id,
+            phase="writer",
+            turn=1,
+            tool_index=0,
+            tool_name="read",
+            replay_class=ReplayClass.SAFE,
+            args_digest=compute_args_digest({"path": "target.txt"}),
+            replay_args={"path": "target.txt"},
+        )
+        _admit_durable_tool_recovery(
+            state,
+            session_id=self.session_id,
+            run_id=run_id,
+            task="continue task",
+            task_kind="project",
+            effect_intent=intent,
+            already_admitted=True,
+        )
+        record_entry_policy(state.runtime_mutations, session_id=self.session_id,
+                            run_id=run_id, policy=original_policy, durable=state.durable)
         items = (
             DeliveryBatchItem(
                 tool_index=0,
@@ -607,18 +706,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             self.session_id,
             run_id,
             intents=(
-                RuntimeEffectIntent(
-                    effect_id=effect_id,
-                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
-                    session_id=self.session_id,
-                    run_id=run_id,
-                    phase="writer",
-                    turn=1,
-                    tool_index=0,
-                    tool_name="read",
-                    replay_class=ReplayClass.SAFE,
-                    replay_args={"path": "target.txt"},
-                ),
+                intent,
             ),
             delivery_intent=DeliveryBatchIntent(
                 batch_id=new_batch_id(run_id, 1),
@@ -681,6 +769,15 @@ class AgentEffectSandwichTests(unittest.TestCase):
     def test_recovered_hybrid_keeps_kind_and_delivers_real_kernel_results(self) -> None:
         state = server.AppContext()
         run_id = "run-recovered-hybrid-writer-1"
+        state.durable.admit_input(
+            conversation_id=self.session_id,
+            request_id=run_id,
+            task_id=run_id,
+            text="research then continue writer",
+            provider_snapshot={"provider_id": "mock_provider"},
+            task_state={"task": "research then continue writer", "provider_id": "mock_provider"},
+        )
+        state.durable.claim_task(run_id)
         target = self.project_dir / "target.txt"
         target.write_text("hybrid recovered file text", encoding="utf-8")
 
@@ -701,6 +798,28 @@ class AgentEffectSandwichTests(unittest.TestCase):
             provider_id="mock_provider",
         )
         effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id)
+        intent = RuntimeEffectIntent(
+            effect_id=effect_id,
+            effect_category=EFFECT_CATEGORY_TOOL_CALL,
+            session_id=self.session_id,
+            run_id=run_id,
+            phase="writer",
+            turn=1,
+            tool_index=0,
+            tool_name="read",
+            replay_class=ReplayClass.SAFE,
+            args_digest=compute_args_digest({"path": "target.txt"}),
+            replay_args={"path": "target.txt"},
+        )
+        _admit_durable_tool_recovery(
+            state,
+            session_id=self.session_id,
+            run_id=run_id,
+            task="research then continue writer",
+            task_kind="hybrid",
+            effect_intent=intent,
+            already_admitted=True,
+        )
         items = (
             DeliveryBatchItem(
                 tool_index=0,
@@ -714,18 +833,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             self.session_id,
             run_id,
             intents=(
-                RuntimeEffectIntent(
-                    effect_id=effect_id,
-                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
-                    session_id=self.session_id,
-                    run_id=run_id,
-                    phase="writer",
-                    turn=1,
-                    tool_index=0,
-                    tool_name="read",
-                    replay_class=ReplayClass.SAFE,
-                    replay_args={"path": "target.txt"},
-                ),
+                intent,
             ),
             delivery_intent=DeliveryBatchIntent(
                 batch_id=new_batch_id(run_id, 1),
@@ -741,7 +849,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
         from codey.policies.task_policy import TaskPolicy
 
         record_entry_policy(state.runtime_mutations, session_id=self.session_id, run_id=run_id,
-                            policy=TaskPolicy(grants=frozenset({"control", "project.read"})))
+                            policy=TaskPolicy(grants=frozenset({"control", "project.read"})),
+                            durable=state.durable)
         seen_requests: list[Any] = []
 
         def fake_agent_run(req: Any) -> RunResult:
@@ -789,6 +898,14 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(seen_requests, [])
         self.assertEqual(len(provider.send_history), 1)
         self.assertIn("hybrid recovered file text", provider.send_history[0])
+        durable_effects = state.durable.effects(run_id)
+        # Recovery settles the pre-existing tool intent and the resumed turn
+        # records its provider send in the same durable effect ledger.
+        self.assertEqual({effect.category for effect in durable_effects}, {"tool_call", "provider_send"})
+        provider_effects = tuple(effect for effect in durable_effects if effect.category == "provider_send")
+        self.assertEqual(len(provider_effects), 1)
+        self.assertEqual(provider_effects[0].status, "ok")
+        self.assertIsNotNone(provider_effects[0].settlement)
         done_events = [event for event in emitted_events if event.get("type") == "task_done"]
         self.assertEqual(len(done_events), 1)
         self.assertEqual(done_events[0]["stop_reason"], "done")
@@ -910,13 +1027,13 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertIn("file content to read", rec.outcome.model_text)
 
         # Check effect settlement on disk
-        loaded = self.effects.load_effects(self.session_id, self.run_id)
-        proj = next(p for p in loaded if p.intent.effect_id == eff_read)
-        self.assertFalse(proj.is_pending)
+        loaded = self.durable.effects(self.run_id)
+        proj = next(p for p in loaded if p.effect_id == eff_read)
+        self.assertIsNotNone(proj.settlement)
         assert proj.settlement is not None
-        self.assertEqual(proj.settlement.status, SETTLEMENT_STATUS_OK)
-        self.assertEqual(proj.settlement.replay_count, 1)
-        self.assertEqual(proj.settlement.replayed_from_effect_id, eff_read)
+        self.assertEqual(proj.settlement["status"], SETTLEMENT_STATUS_OK)
+        self.assertEqual(proj.settlement["replay_count"], 1)
+        self.assertEqual(proj.settlement["replayed_from_effect_id"], eff_read)
 
     def test_resume_replay_uses_writer_profile_for_task_kind(self) -> None:
         from codey.runtime.effects.replay_policy import tool_replay_policy
@@ -1008,6 +1125,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 batch_digest=compute_batch_digest(items),
             ),
         )
+        self._sync_runtime_effect_to_durable(run_id, eff_read)
 
         recovery = recover_effects_for_resume(
             self._deps(),
@@ -1019,12 +1137,12 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
         self.assertFalse(recovery.ok)  # Interrupted tool has no trustworthy result receipt.
         self.assertEqual(recovery.recovered_tool_outcomes, ())
-        loaded = self.effects.load_effects(self.session_id, run_id)
-        proj = next(p for p in loaded if p.intent.effect_id == eff_read)
-        self.assertFalse(proj.is_pending)
+        loaded = self.durable.effects(run_id)
+        proj = next(p for p in loaded if p.effect_id == eff_read)
+        self.assertIsNotNone(proj.settlement)
         assert proj.settlement is not None
-        self.assertEqual(proj.settlement.status, "interrupted")
-        self.assertEqual(proj.settlement.replay_count, 0)
+        self.assertEqual(proj.settlement["status"], "interrupted")
+        self.assertEqual(proj.settlement.get("replay_count", 0), 0)
 
     def test_resume_invalid_persisted_replay_args_stops_without_executing(self) -> None:
         eff_id = "eff_bad_replay_args"
@@ -1092,6 +1210,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             kind="operation_state",
             payload=pending.to_payload(),
         )
+        self._sync_runtime_effect_to_durable(self.run_id, eff_id)
 
         recovery = recover_effects_for_resume(
             self._deps(),
@@ -1103,13 +1222,13 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
         self.assertFalse(recovery.ok)  # No original observation can be reconstructed.
         self.assertEqual(recovery.recovered_tool_outcomes, ())
-        loaded = self.effects.load_effects(self.session_id, self.run_id)
-        proj = next(p for p in loaded if p.intent.effect_id == eff_id)
-        self.assertIsNone(proj.intent.replay_args)
-        self.assertFalse(proj.is_pending)
+        loaded = self.durable.effects(self.run_id)
+        proj = next(p for p in loaded if p.effect_id == eff_id)
+        self.assertIsNone(proj.intent.get("replay_args"))
+        self.assertIsNotNone(proj.settlement)
         assert proj.settlement is not None
-        self.assertEqual(proj.settlement.status, "interrupted")
-        self.assertEqual(proj.settlement.replay_count, 0)
+        self.assertEqual(proj.settlement["status"], "interrupted")
+        self.assertEqual(proj.settlement.get("replay_count", 0), 0)
 
     def test_resume_replay_propagates_cancellation(self) -> None:
         test_file = self.project_dir / "target.txt"
@@ -1148,12 +1267,12 @@ class AgentEffectSandwichTests(unittest.TestCase):
         recovered = recovery.recovered_tool_outcomes
         self.assertEqual(len(recovered), 0)  # Unsafe is NEVER replayed
 
-        loaded = self.effects.load_effects(self.session_id, self.run_id)
-        proj = next(p for p in loaded if p.intent.effect_id == eff_edit)
-        self.assertFalse(proj.is_pending)
+        loaded = self.durable.effects(self.run_id)
+        proj = next(p for p in loaded if p.effect_id == eff_edit)
+        self.assertIsNotNone(proj.settlement)
         assert proj.settlement is not None
-        self.assertEqual(proj.settlement.status, "interrupted")
-        self.assertEqual(proj.settlement.replay_count, 0)
+        self.assertEqual(proj.settlement["status"], "interrupted")
+        self.assertEqual(proj.settlement.get("replay_count", 0), 0)
 
     def test_agent_loop_with_recovered_tool_outcomes_resumes_cleanly(self) -> None:
         from codey.agents.request import RecoveredToolOutcome

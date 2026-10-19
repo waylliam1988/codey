@@ -363,6 +363,7 @@ def run_research_pipeline(
             provider_id=frame.provider_id,
             round_index=followup_index,
             runtime_mutations=deps.runtime_mutations,
+            durable=getattr(deps.state, "durable", None),
             on_event=hooks.on_event,
             parent_policy=parent_policy if parent_policy is not None else getattr(frame, "entry_policy", None),
         )

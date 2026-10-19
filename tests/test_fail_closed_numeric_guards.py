@@ -131,14 +131,6 @@ def test_change_set_nonnegative_overflow_does_not_crash() -> None:
     assert _cs_nn("abc") == 0
 
 
-def test_conversation_store_int_overflow_does_not_crash() -> None:
-    from codey.storage.conversation_store import _nonnegative_int as _conv_nn
-    from codey.storage.conversation_store import _positive_int as _conv_pos
-
-    assert _conv_nn(float("inf")) == 0
-    assert _conv_pos(float("inf"), 5) == 5
-
-
 def test_api_max_turns_overflow_is_400_not_500() -> None:
     from codey.app.api import run_submit_response
 

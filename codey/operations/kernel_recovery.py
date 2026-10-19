@@ -80,6 +80,7 @@ def apply_recovery_first(
     pending_native_messages: list[ProviderToolResult] | None,
     *,
     provider_session_changed: bool,
+    replayed_result_ids: frozenset[str] = frozenset(),
     format_results: Any,
     native_tool_messages: Any,
 ) -> tuple[str, list[ProviderToolResult] | None]:
@@ -94,6 +95,16 @@ def apply_recovery_first(
         return prompt, pending_native_messages
     try:
         if native:
+            # A cold native window may already have been seeded from the
+            # canonical durable conversation before the kernel starts.  Those
+            # tool_call/tool_result pairs are provider history, not a pending
+            # delivery to send a second time.  Replaying them as a new
+            # result batch would create duplicate call ids and invalid pairing.
+            if replayed_result_ids:
+                pending_initial = [result for result in pending_initial
+                                   if result.call.call_id not in replayed_result_ids]
+            if not pending_initial:
+                return prompt, pending_native_messages
             recovered_messages = native_tool_messages(pending_initial, session)
             if not recovered_messages:
                 raise RecoveryFailed("native recovery produced no protocol tool results")

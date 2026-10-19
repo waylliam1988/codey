@@ -20,6 +20,12 @@ class ScriptedLocal(ApiProvider):
         self.chats += 1
         self.timeline.append((self.label, "new_chat"))
 
+    def reset_window(self, expected_ref=None):
+        """Record the durable protocol-window activation used by production."""
+        self.chats += 1
+        self.timeline.append((self.label, "new_chat"))
+        return super().reset_window(expected_ref=expected_ref)
+
     def send(self, text, timeout=None):
         self.prompts.append(text)
         self.timeline.append((self.label, "send"))

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass, field
+from typing import Any
 
 from codey.runtime.core.operation import OperationContext, OperationIntent
 from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,
-    RuntimeOperationStore,
     lane_for_run,
     operation_id_for_run,
+    operation_state_from_entries,
 )
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.core.ports import TaskExecutor, TaskPreparer, TaskStartFailureHandler
@@ -50,12 +52,14 @@ class TaskRuntime:
         *,
         prepare: TaskPreparer | None = None,
         on_unstarted_failure: TaskStartFailureHandler | None = None,
+        durable: Any | None = None,
     ) -> None:
         self.session_log = session_log
         self.executor = executor
         self.prepare = prepare
         self.on_unstarted_failure = on_unstarted_failure
-        self.mutations = RuntimeMutationLine(session_log)
+        self.durable = durable
+        self.mutations = RuntimeMutationLine(session_log, durable=durable)
 
     def run(self, request: TaskSubmission) -> None:
         if self.prepare is not None:
@@ -123,13 +127,27 @@ class TaskRuntime:
     ) -> None:
         if not request.run_id:
             return
+        if outcome.status == "suspended":
+            return
         # The inner task flow usually settles the operation first; this is a
         # backstop for executors that return without a terminal. Settle errors
         # propagate -- only an already-terminal operation is a clean no-op.
-        current = RuntimeOperationStore(self.session_log).load(
-            request.session_id,
-            request.run_id,
-        )
+        if self.durable is not None:
+            try:
+                task = self.durable.task(request.run_id)
+            except KeyError as exc:
+                raise RuntimeError("durable task is missing for production submission") from exc
+            if task.phase in {"completed", "failed", "cancelled"}:
+                return
+            checkpoint = importlib.import_module("codey.durable.checkpoint")
+            operation = checkpoint.operation_from_checkpoint(task, request.session_id)
+            if operation is not None and operation.leaf == LEAF_TERMINAL:
+                return
+        current = operation_state_from_entries(
+            self.session_log.entries(request.session_id),
+            session_id=request.session_id,
+            run_id=request.run_id,
+        ) if self.durable is None else None
         if current is not None and current.leaf == LEAF_TERMINAL:
             return
         settled = self.mutations.mark_terminal(

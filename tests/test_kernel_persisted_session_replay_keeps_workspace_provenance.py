@@ -35,6 +35,7 @@ def _dirs(tmp: Path):
 
 
 def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, project: Path):
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.task_effects import KernelEffectSink
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
@@ -44,7 +45,16 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
     from codey.workspace.revision import WorkspaceRevisionStore
 
     log = RuntimeSessionLog(logdir)
-    mutations = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
+    durable.admit_input(
+        conversation_id=session_id, request_id=f"request-{run_id}", task_id=run_id,
+        text="workspace recovery fixture", provider_snapshot={"provider_id": "local"},
+        task_state={"task_kind": "project"},
+    )
+    durable.start_task(run_id, state={"task_kind": "project"})
+    durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={"task_kind": "project"})
+    durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={"task_kind": "project"})
+    mutations = RuntimeMutationLine(log, durable=durable)
     managed = ManagedOutputStore(state)
     rev_store = WorkspaceRevisionStore(state)
     mutations.accept_operation(
@@ -54,12 +64,13 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
     mutations.mark_writer_running(session_id, run_id, provider_id="local")
     sink = KernelEffectSink(
         mutations, session_id=session_id, run_id=run_id, provider_id="local",
-        managed_outputs=managed,
+        managed_outputs=managed, durable=durable,
     )
     deps = SimpleNamespace(
+        state=SimpleNamespace(durable=durable),
         runtime_mutations=mutations,
-        runtime_effects=RuntimeEffectStore(log),
-        tool_result_delivery=ToolResultDeliveryStore(log),
+        runtime_effects=RuntimeEffectStore(log, durable=durable),
+        tool_result_delivery=ToolResultDeliveryStore(log, durable=durable),
         managed_outputs=managed,
         workspace_revisions=rev_store,
     )
@@ -75,6 +86,7 @@ def _new_session(project: Path):
 
 
 def _recover_formal(project, state, logdir, session_id, run_id):
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.kernel_session_recovery import restore_task_session
     from codey.operations.recovery import recover_effects_for_resume
     from codey.runtime.effects.effect_records import RuntimeEffectStore
@@ -85,11 +97,13 @@ def _recover_formal(project, state, logdir, session_id, run_id):
     from codey.workspace.revision import WorkspaceRevisionStore
 
     log = RuntimeSessionLog(logdir)
-    mutations = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
+    mutations = RuntimeMutationLine(log, durable=durable)
     deps = SimpleNamespace(
+        state=SimpleNamespace(durable=durable),
         runtime_mutations=mutations,
-        runtime_effects=RuntimeEffectStore(log),
-        tool_result_delivery=ToolResultDeliveryStore(log),
+        runtime_effects=RuntimeEffectStore(log, durable=durable),
+        tool_result_delivery=ToolResultDeliveryStore(log, durable=durable),
         managed_outputs=ManagedOutputStore(state),
         workspace_revisions=WorkspaceRevisionStore(state),
     )
@@ -103,7 +117,11 @@ def _recover_formal(project, state, logdir, session_id, run_id):
         fresh.set_workspace_state(int(cur.revision or 0), cur.fingerprint)
     except Exception:
         pass
-    frame = SimpleNamespace(run_id=run_id, recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes))
+    frame = SimpleNamespace(
+        run_id=run_id,
+        recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes),
+        settled_tool_outcomes=tuple(recovery.settled_tool_outcomes),
+    )
     delivered, rows, resume_start, initial = restore_task_session(frame, fresh)
     return fresh, recovery, delivered, rows, resume_start, deps
 
@@ -176,9 +194,8 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
                 self.assertEqual(fresh.edited_files, session.edited_files)
 
                 identity = turn_effect_id("r-persist-1:task", 1, 0)
-                self.assertIn(identity, delivered)
-                replayed = delivered[identity]
-                self.assertIsNotNone(replayed, "persisted edit slot must replay")
+                replayed = fresh._memory_results.get(identity)
+                self.assertIsNotNone(replayed, "persisted edit fact must replay")
                 assert replayed is not None
                 # Successful real recovery must restore the same verified
                 # identity (durable store corroboration); never an ERROR.
@@ -209,7 +226,7 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
                     execution_evidence=evidence,
                     workspace_ignored_paths=(),
                     workspace_revision_store=_deps2.workspace_revisions,
-                    delivered=delivered,
+                    delivered={identity: replayed},
                 )
                 self.assertEqual(executed_calls, [])
                 self.assertEqual(len(again), 1)

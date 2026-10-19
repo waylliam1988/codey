@@ -16,7 +16,7 @@ def test_project_fresh_chat_failure_never_reuses_previous_dialogue():
             raise RuntimeError("new chat failed")
 
     with pytest.raises(RuntimeError, match="new chat failed"):
-        _open_fresh_chat(SimpleNamespace(fresh_chat=True, provider=Provider(),
+        _open_fresh_chat(SimpleNamespace(fresh_chat=True, window_action=None, provider=Provider(),
                                         strict_fresh_chat=False, on_event=None))
 
 

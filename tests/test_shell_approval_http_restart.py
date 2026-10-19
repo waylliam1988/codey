@@ -11,9 +11,11 @@ from codey.app import server, shell_service
 from codey.app.context import AppContext
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact
 from tests.operator_http import OperatorHTTPConnection
+from tests.support.shell_approval import admit_shell_task
 
 
 def _seed_requested_approval(state: AppContext, approval_id: str) -> None:
+    admit_shell_task(state, session_id="session", run_id="source-run", task="shell approval source")
     assert state.managed_outputs is not None
     artifact = state.managed_outputs.write_json_artifact(
         session_id="session",
@@ -66,15 +68,13 @@ def test_stop_disk_failure_keeps_approval_queryable_until_durable_retry(tmp_path
     thread.start()
     conn = OperatorHTTPConnection(httpd)
     try:
-        with mock.patch.object(ctx.shell_approval_records, "append", side_effect=OSError("disk full")):
+        with mock.patch.object(ctx.shell_approval_records, "append", side_effect=OSError("audit unavailable")):
             status, _ = _http_json(conn, "POST", "/api/stop", {})
-        assert status == 500
+        assert status == 200
         status, snapshot = _http_json(conn, "GET", "/api/state")
         assert status == 200
-        assert snapshot["pending_event"]["id"] == "stop-disk-failure"
-        assert ctx.shell_approval_records.latest("stop-disk-failure").kind == "requested"
-        assert _http_json(conn, "POST", "/api/stop", {})[0] == 200
-        assert ctx.shell_approval_records.latest("stop-disk-failure").kind == "abandoned"
+        assert snapshot["pending_event"] is None
+        assert ctx.durable.approval("stop-disk-failure").status.value == "cancelled"
         assert _http_json(conn, "GET", "/api/state")[1]["pending_event"] is None
     finally:
         conn.close()
@@ -114,7 +114,22 @@ def test_restart_approval_round_trip_uses_real_http_and_is_single_use(tmp_path: 
                     "truncated": False,
                 },
             ),
-            mock.patch.object(server, "_submit_task_after_slot_release", return_value="resume-run"),
+            mock.patch.object(
+                server,
+                "_submit_task_after_slot_release",
+                side_effect=lambda session_id, project, task, max_turns, continue_task, provider_id, intent="auto", **kwargs: (
+                    restarted.durable.admit_input(
+                        conversation_id=session_id,
+                        request_id=str(kwargs.get("run_id") or "resume-run"),
+                        task_id=str(kwargs.get("run_id") or "resume-run"),
+                        text=task,
+                        provider_snapshot={"provider_id": provider_id},
+                        task_state={"task_kind": "chat", "project": project, "task": task},
+                        initial_phase="dispatching",
+                    ),
+                    str(kwargs.get("run_id") or "resume-run"),
+                )[1],
+            ),
         ):
             status, payload = _http_json(
                 conn,

@@ -79,11 +79,16 @@ class HeadlessAppContext(AppContext):  # type: ignore[misc,unused-ignore]
         super().__init__(
             state_home,
             replay_limit=0,
+            start_scheduler=False,
         )
         self.port = port
         self._emit_jsonl = emit_jsonl
         self._connect_provider = connect_provider
         self.shell_rejected = False
+        # The synchronous CLI entry owns dispatch for its requested task.
+        # Reconcile abandoned attempts without scheduling a second worker
+        # (or invoking overridden methods before subclass initialization).
+        self.durable.recover_scheduler_state()
 
     def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID) -> Any:
         self.set_run_status("connecting")
@@ -305,6 +310,10 @@ def _run_headless_task(
             state, agent_run=agent_run, collect_changes=collect_changes,
             capture_provider_failure=capture_provider_failure,
             connect_reviewer=connect_reviewer, review_policy=review_policy,
+            # Route production execution through the headless context owner.
+            # It applies the admitted provider snapshot and keeps injected
+            # headless connectors from falling through to the global registry.
+            connect_provider=state.get_provider,
         )
         auth = derive_entry_auth({
             "intent": _request_intent(request.intent), "task": request.task,
@@ -313,11 +322,59 @@ def _run_headless_task(
             "project_changes_required": request.project_changes_required,
             "sources_open_required": request.sources_open_required,
         }, project=str(project) if project is not None else None)
-        selection_payload: dict[str, Any] = {}
-        if request.model_selection:
-            from codey.providers.api_connections import capture_selection
+        from codey.providers.snapshot import capture_provider_selection, provider_snapshot
 
-            selection_payload = capture_selection(request.provider_id, request.model_selection).to_payload()
+        admitted_selection = capture_provider_selection(
+            request.provider_id,
+            request.model_selection if request.model_selection else None,
+        )
+        selection_payload: dict[str, Any] = (
+            admitted_selection.to_payload() if admitted_selection is not None else {}
+        )
+        run_id = pre_reserved_run_id
+        if not run_id:
+            reserved = state.reserve_run(
+                session_id=session_id,
+                project=str(project) if project is not None else None,
+                task=request.task,
+                provider_id=request.provider_id,
+            )
+            if reserved is None:
+                raise RuntimeError("headless task is busy")
+            run_id = reserved.run_id
+        from codey.runtime.core.api_selection import ApiRunSelection
+
+        if selection_payload:
+            state.run_registry.bind_api_selection(run_id, ApiRunSelection.from_payload(selection_payload))
+        state.durable.admit_input(
+            conversation_id=session_id,
+            request_id=run_id,
+            task_id=run_id,
+            text=request.task,
+            provider_snapshot=provider_snapshot(
+                request.provider_id,
+                admitted_selection,
+                provider_session_id=state.providers.sessions_snapshot().get(request.provider_id, ""),
+            ),
+            task_state={
+                "project": str(project) if project is not None else None,
+                "task": request.task,
+                "max_turns": request.max_turns,
+                "continue_task": request.continue_task,
+                "provider_id": request.provider_id,
+                "intent": _request_intent(request.intent),
+                "requested_capabilities": list(auth.requested_capabilities),
+                "strict_research": auth.strict_research,
+                "sources_open_required": auth.sources_open_required,
+                "project_changes_required": auth.project_changes_required,
+                "denied_capabilities": list(auth.denied_capabilities),
+                "review_source_run_id": request.review_source_run_id,
+                "model_selection": selection_payload,
+                "input": None,
+            },
+        )
+        state.durable.claim_task(run_id)
+        state.durable.start_task(run_id, state={"next": "run"})
         if request.input is not None:
             submission = TaskSubmission.from_input(
                 session_id=session_id,
@@ -326,7 +383,7 @@ def _run_headless_task(
                 provider_id=request.provider_id,
                 input=request.input,
                 intent=_request_intent(request.intent),
-                run_id=pre_reserved_run_id,
+                run_id=run_id,
                 requested_capabilities=auth.requested_capabilities,
                 strict_research=auth.strict_research,
                 sources_open_required=auth.sources_open_required,
@@ -344,7 +401,7 @@ def _run_headless_task(
                 continue_task=request.continue_task,
                 provider_id=request.provider_id,
                 intent=_request_intent(request.intent),
-                run_id=pre_reserved_run_id,
+                run_id=run_id,
                 requested_capabilities=auth.requested_capabilities,
                 strict_research=auth.strict_research,
                 sources_open_required=auth.sources_open_required,
@@ -384,28 +441,17 @@ def _headless_run_id_exists(
     session_id: str,
     run_id: str,
 ) -> bool:
-    """True when a durable operation or ledger already owns this run_id."""
+    """True when the durable task already owns this run_id."""
     try:
-        ledgers = getattr(state, "run_ledgers", None)
-        if ledgers is not None:
-            try:
-                if ledgers.path_for(session_id, run_id).exists():
-                    return True
-            except Exception:
-                pass
-        runtime_log = getattr(state, "runtime_log", None)
-        if runtime_log is not None:
-            from codey.runtime.core.operation_state import operation_id_for_run
-
-            try:
-                projection = runtime_log.projection(session_id)
-            except Exception:
-                return False
-            operations = getattr(projection, "operations", {}) or {}
-            return operation_id_for_run(run_id) in operations
+        durable = getattr(state, "durable", None)
+        if durable is None:
+            return False
+        task = durable.task(run_id)
+        return bool(task.conversation_id == session_id)
+    except KeyError:
+        return False
     except Exception:
         return False
-    return False
 
 
 def _pre_reserve_run_id(

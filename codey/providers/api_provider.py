@@ -10,7 +10,6 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import asdict, replace
-from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
@@ -305,6 +304,22 @@ class ApiProvider:
     def send(self, text: str, timeout: float | None = None) -> str:
         return self._exchange([{"role": "user", "content": text}], None, timeout=timeout, text_only=True).text
 
+    def load_durable_context(self, messages: list[dict[str, Any]]) -> None:
+        """Seed a fresh local protocol window from the canonical session path."""
+        if not isinstance(messages, list):
+            raise TypeError("durable context must be a list")
+        with self._state_lock:
+            candidate = self._codec.prepare([], self._codec.encode_context(messages),
+                                            system=self.system_prompt, tools=self._declared_tools or None)
+            if self._messages:
+                if self._messages == candidate:
+                    return
+                raise ValueError("durable context activation conflicts with the current protocol window")
+            self._codec.validate_view(candidate)
+            self.context_ledger.commit(candidate)
+            self._messages = candidate
+            self._history_revision += 1
+
     def send_turn(self, prompt: str, tools: list[ProviderToolDefinition] | None = None,
                   timeout: float | None = None) -> AssistantTurn:
         return self._exchange([{"role": "user", "content": prompt}], tools, timeout=timeout)
@@ -594,45 +609,19 @@ class ApiProvider:
                                            f"exceeds limit {self.context_budget.input_limit}")
             candidate = compacted
 
-    def bind_context(self, session_id: str, state_home: Path) -> None:
+    def bind_context(self, session_id: str) -> None:
+        """Bind an in-memory protocol window; durable entries own recovery."""
         with self._state_lock:
             if self._context_session == session_id:
                 return
             if self._context_session:
                 self.abandon_inflight()
-            ledger = ContextLedger.for_protocol_session(Path(state_home), session_id,
-                                                        ProtocolWindowRef.new(session_id, self._binding()))
-            if ledger.window_ref is not None and ledger.window_ref.binding != self._binding():
-                # A model/protocol change creates a new protocol window, but
-                # it may never discard an unanswered native call.  The
-                # protocol view is shared by all model bindings, so inspect
-                # both codecs before recording the empty view for the new
-                # binding.  Accepted events remain in the journal as facts;
-                # only the active protocol view changes after this check.
-                pending: set[str] = set()
-                from codey.providers import api_chat, api_responses
-
-                for codec in (self._codec, api_chat, api_responses):
-                    with contextlib.suppress(Exception):
-                        pending.update(codec.pending_calls(ledger.view))
-                if pending:
-                    raise ValueError(
-                        "cannot switch protocol window while calls are pending: "
-                        + ", ".join(sorted(pending))
-                    )
-                ledger.open_window(
-                    ProtocolWindowRef.new(session_id, self._binding()),
-                    expected_ref=ledger.window_ref,
-                    expected_revision=ledger.revision,
-                    reset_permit=True,
-                    reason="binding_change",
-                )
-            self.context_ledger = ledger
+            ref = ProtocolWindowRef.new(session_id, self._binding())
+            self.context_ledger = ContextLedger(identity=f"protocol:{session_id}", window_ref=ref)
+            self.context_ledger.open_window(ref, reset_permit=True, reason="initial_open")
             self._context_session = session_id
-            self._messages = copy.deepcopy(ledger.view)
-            self._window_ref = ledger.window_ref or ProtocolWindowRef.new(session_id, self._binding())
-            if ledger.sequence == 0:
-                ledger.open_window(self._window_ref, reset_permit=True, reason="initial_open")
+            self._messages = []
+            self._window_ref = ref
 
     def export_work_state(self) -> str:
         return self.context_ledger.portable_state()
@@ -717,6 +706,17 @@ class ApiProvider:
         """Count an empty-window text exchange using the connection's full envelope."""
         items = self._codec.prepare([], [{"role": "user", "content": text}], system=self.system_prompt, tools=tools)
         return self._count_context(items, tools, deadline)
+
+    def count_context_messages(self, messages: tuple[dict[str, Any], ...]) -> int:
+        """Count a reconstructed durable context with this provider's request envelope."""
+        items = self._codec.prepare(
+            [], self._codec.encode_context([dict(message) for message in messages]),
+            system=self.system_prompt, tools=self._declared_tools or None,
+        )
+        count = self._count_context(items, self._declared_tools or None, time.monotonic() + self.timeout)
+        if count.value is None:
+            raise ValueError("provider context token count is unavailable")
+        return count.value
 
     def _settings(self) -> GenerationSettings:
         return GenerationSettings(self.model, self.stream, self.temperature, self.thinking_enabled,

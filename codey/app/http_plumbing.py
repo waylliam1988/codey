@@ -250,20 +250,34 @@ def parse_sse_event_id(value: object) -> int:
 
 
 def sse_replay_cursor(value: object) -> int | None:
-    parsed = parse_sse_event_id(value)
+    parsed, _commit_seq = sse_cursor(value)
     return parsed if value is not None and parsed > 0 else None
+
+
+def sse_cursor(value: object) -> tuple[int, int]:
+    """Decode ``event-sequence:durable-commit-sequence`` SSE cursors.
+
+    Numeric IDs remain readable as event-only cursors for clients from the
+    previous release; they deliberately do not advance durable history.
+    """
+    text = str(value or "").strip()
+    if ":" not in text:
+        return parse_sse_event_id(text), 0
+    event, commit = text.split(":", 1)
+    return parse_sse_event_id(event), parse_sse_event_id(commit)
 
 
 def write_sse_event(
     handler: BaseHTTPRequestHandler,
     event: dict[str, Any],
     *,
-    event_id: int = 0,
+    event_id: int | str = 0,
 ) -> bool:
     try:
         data = json.dumps(dict(event), ensure_ascii=False)
         reset = event.get("type") == "resync_required" and event.get("cursor") == 0
-        prefix = f"id: {event_id}\n" if event_id > 0 or reset else ""
+        cursor = str(event_id)
+        prefix = f"id: {cursor}\n" if cursor not in {"", "0"} or reset else ""
         handler.wfile.write(f"{prefix}data: {data}\n\n".encode())
         handler.wfile.flush()
         return True
@@ -280,5 +294,6 @@ __all__ = [
     "send_index",
     "send_json",
     "sse_replay_cursor",
+    "sse_cursor",
     "write_sse_event",
 ]

@@ -37,7 +37,7 @@ def test_planned_resume_keeps_pending_call_history() -> None:
 
 def test_responses_result_is_sent_in_original_window(monkeypatch, tmp_path) -> None:
     provider = ApiProvider("http://fixture/v1", "fixture", api_protocol="openai-responses")
-    provider.bind_context("session-1", tmp_path)
+    provider.bind_context("session-1")
     provider._messages = [{
         "type": "function_call", "call_id": "call-shell-1", "name": "shell", "arguments": "{}",
     }]

@@ -38,7 +38,7 @@ def test_reset_rejects_open_native_call(tmp_path) -> None:
     from codey.providers.api_provider import ApiProvider
 
     provider = ApiProvider("http://fixture/v1", "model", api_protocol="openai-responses")
-    provider.bind_context("session-1", tmp_path)
+    provider.bind_context("session-1")
     provider._messages = [{"type": "function_call", "call_id": "call-1", "name": "shell", "arguments": "{}"}]
     with pytest.raises(ValueError, match="pending"):
         provider.reset_window()
@@ -48,7 +48,7 @@ def test_failed_reset_keeps_window_reference_and_view(tmp_path, monkeypatch) -> 
     from codey.providers.api_provider import ApiProvider
 
     provider = ApiProvider("http://fixture/v1", "model", api_protocol="openai-responses")
-    provider.bind_context("session-1", tmp_path)
+    provider.bind_context("session-1")
     provider._messages = [{"role": "user", "content": "accepted"}]
     old_ref = provider.window_ref
     old_view = list(provider._messages)
@@ -63,32 +63,28 @@ def test_failed_reset_keeps_window_reference_and_view(tmp_path, monkeypatch) -> 
     assert provider._messages == old_view
 
 
-def test_model_switch_rejects_persisted_pending_call_without_erasing_history(tmp_path) -> None:
-    """A binding change must fail closed while the old window has an open call."""
+def test_model_switch_opens_a_fresh_window_without_importing_old_calls(tmp_path) -> None:
+    """A provider binding never reopens another provider's protocol history."""
     from codey.providers.api_provider import ApiProvider
 
     old = ApiProvider("http://fixture/v1", "model-a", api_protocol="openai-responses")
-    old.bind_context("session-1", tmp_path)
+    old.bind_context("session-1")
     ref = old.window_ref
     assert ref is not None
     pending = [{"type": "function_call", "call_id": "call-1", "name": "shell", "arguments": "{}"}]
     old.context_ledger.commit(pending, window_ref=ref)
 
     switched = ApiProvider("http://fixture/v1", "model-b", api_protocol="openai-responses")
-    with pytest.raises(ValueError, match="calls are pending"):
-        switched.bind_context("session-1", tmp_path)
-
-    # The failed switch leaves the durable protocol view and binding intact.
-    reopened = type(old.context_ledger).for_protocol_session(tmp_path, "session-1", ref)
-    assert reopened.window_ref == ref
-    assert reopened.view == pending
+    switched.bind_context("session-1")
+    assert switched.window_ref != ref
+    assert switched._messages == []
 
 
 def test_abort_does_not_erase_accepted_protocol_history(tmp_path) -> None:
     from codey.providers.api_provider import ApiProvider
 
     provider = ApiProvider("http://fixture/v1", "model", api_protocol="openai-responses")
-    provider.bind_context("session-1", tmp_path)
+    provider.bind_context("session-1")
     provider._messages = [{"role": "user", "content": "accepted"}]
     provider.abandon_inflight()
     assert provider._messages == [{"role": "user", "content": "accepted"}]
@@ -100,7 +96,7 @@ def test_bound_tool_delivery_rejects_wrong_window_before_transport(tmp_path, mon
     from codey.runtime.core.protocol_window import ProtocolWindowRef
 
     provider = ApiProvider("http://fixture/v1", "model", api_protocol="openai-responses")
-    provider.bind_context("session-1", tmp_path)
+    provider.bind_context("session-1")
     current = provider.window_ref
     assert current is not None
     wrong = ProtocolWindowRef.new("session-1", current.binding)

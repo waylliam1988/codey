@@ -19,7 +19,9 @@ from codey.runtime.observe.events import RunEvent, print_run_event
 from codey.toolchain.runtime import ToolOutcome
 
 if TYPE_CHECKING:
+    from codey.durable.session import DurableSession
     from codey.runs.trace import RunTraceRecorder
+    from codey.runtime.core.window_action import WindowAction
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
 
@@ -62,6 +64,7 @@ class AgentRequest:
     on_shell_request: Callable[[ShellApprovalRequest], None] | None = None
     stop_flag: Event | None = None
     fresh_chat: bool = True
+    window_action: WindowAction | None = None
     change_tracker: ChangeTracker | None = None
     conversation: ConversationContext | None = None
     provider_id: str = ""
@@ -90,6 +93,7 @@ class AgentRequest:
     run_id: str = ""
     effect_scope: str = ""
     runtime_mutations: RuntimeMutationLine | None = None
+    durable: DurableSession | None = None
     workspace_revision_store: object | None = None
     workspace_ignored_paths: tuple[str, ...] = ()
     managed_outputs: ManagedOutputStore | None = None

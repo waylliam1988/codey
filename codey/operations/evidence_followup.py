@@ -48,6 +48,7 @@ def run_evidence_followup(
     provider_id: str = "",
     round_index: int = 1,
     runtime_mutations: Any = None,
+    durable: Any = None,
     on_event: Any = None,
 ) -> EvidenceFollowupResult:
     fresh_urls = tuple(getattr(material, "fresh_source_urls", ()) or ())
@@ -90,6 +91,7 @@ def run_evidence_followup(
             sink = KernelEffectSink(
                 runtime_mutations, session_id=session_id, run_id=run_id,
                 provider_id=provider_id, phase="research",
+                durable=durable,
             )
             active_provider = KernelRecordedProvider(provider, sink)
         outcome = run_task_kernel(

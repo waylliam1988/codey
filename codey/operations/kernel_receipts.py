@@ -11,9 +11,21 @@ import json
 from typing import Any
 
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.runtime.effects.effect_records import compute_args_digest
+from codey.runtime.effects.effect_records import RuntimeEffectSettlement, compute_args_digest
 
 INLINE_RECEIPT_CHARS = 8000
+
+
+def tool_history_messages(settlement: RuntimeEffectSettlement) -> tuple[tuple[str, dict[str, object]], ...]:
+    """Persist bounded native history in the same commit as its receipt."""
+    if not settlement.call_id:
+        return ()
+    return (("tool_result", {
+        "call_id": settlement.call_id,
+        "content": settlement.result_text or settlement.result_excerpt,
+        "is_error": settlement.status != "ok",
+        "result_ref": settlement.result_ref,
+    }),)
 
 
 def text_digest(text: str) -> str:

@@ -13,6 +13,31 @@ from codey.toolchain.tool_spec import thaw_schema_value
 endpoint = "responses"
 
 
+def encode_context(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Translate canonical tool pairs into Responses function items."""
+    from codey.providers.api_chat import encode_context as canonical_messages
+
+    result: list[dict[str, Any]] = []
+    for message in canonical_messages(messages):
+        if message.get("role") == "tool":
+            call_id = message.get("tool_call_id")
+            if not isinstance(call_id, str) or not call_id:
+                raise RequestPrepError("durable tool result has no call ID")
+            result.append({"type": "function_call_output", "call_id": call_id, "output": message.get("content", "")})
+        elif message.get("role") == "assistant" and message.get("tool_calls"):
+            if message.get("content"):
+                result.append({"role": "assistant", "content": message["content"]})
+            for call in message["tool_calls"]:
+                function = call.get("function", {})
+                if (not call.get("id") or not function.get("name") or not isinstance(function.get("arguments"), str)):
+                    raise RequestPrepError("durable function call is malformed")
+                result.append({"type": "function_call", "call_id": call["id"], "name": function["name"],
+                               "arguments": function["arguments"]})
+        else:
+            result.append(message)
+    return result
+
+
 def pending_calls(items: list[dict[str, Any]]) -> tuple[str, ...]:
     open_calls: list[str] = []
     for item in items:

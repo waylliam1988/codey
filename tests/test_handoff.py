@@ -6,11 +6,11 @@ import unittest
 from codey.agents.handoff import (
     ConversationContext,
     ConversationSnapshot,
-    estimate_tokens,
     render_continuation_prompt,
     render_handoff,
     render_recovered_handoff,
 )
+from codey.utils.text_budget import estimate_tokens
 
 
 class HandoffTests(unittest.TestCase):

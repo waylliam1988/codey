@@ -1,6 +1,6 @@
 """Runtime tool result delivery tracking, receipts, and projection.
 
-The session log is the durable fact source. This module records bounded receipts
+The durable session owns task/effect recovery facts. This module records bounded receipts
 around the delivery of tool results to model providers:
 1. batch_intent: recorded before tool execution in a turn, capturing all planned results
 2. send_attempt: recorded when a provider send effect starts
@@ -1135,8 +1135,20 @@ def _build_delivery_projections(
 class ToolResultDeliveryStore:
     """Read projection for tool-result delivery receipts."""
 
-    def __init__(self, session_log: RuntimeSessionLog) -> None:
+    def __init__(self, session_log: RuntimeSessionLog, *, durable: Any = None) -> None:
         self._session_log = session_log
+        self.durable = durable
+
+    def _entries(self, session_id: str, run_id: str) -> tuple[RuntimeLogEntry, ...]:
+        if self.durable is not None:
+            from codey.durable.checkpoint import checkpoint_entries
+
+            try:
+                task, effects = self.durable.task_facts(run_id)
+            except KeyError:
+                return ()
+            return checkpoint_entries(task, effects, session_id=session_id)
+        return self._session_log.entries(session_id)
 
     @property
     def session_log(self) -> RuntimeSessionLog:
@@ -1149,7 +1161,7 @@ class ToolResultDeliveryStore:
     ) -> Iterator[tuple[str, dict[str, Any]]]:
         """Iterate and strictly validate all delivery records for this run."""
         yield from iter_delivery_records_from_entries(
-            self._session_log.entries(session_id),
+            self._entries(session_id, run_id),
             session_id=session_id,
             run_id=run_id,
         )
@@ -1160,7 +1172,7 @@ class ToolResultDeliveryStore:
         run_id: str,
     ) -> tuple[DeliveryBatchProjection, ...]:
         return batches_from_entries(
-            self._session_log.entries(session_id),
+            self._entries(session_id, run_id),
             session_id=session_id,
             run_id=run_id,
         )

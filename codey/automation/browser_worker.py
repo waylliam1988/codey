@@ -194,7 +194,6 @@ class BrowserWorker:
             with self._state_lock:
                 self._current_job = job
                 self._current_started_at = time.monotonic()
-
             failed = False
             try:
                 with cancellation.scope(job.cancel_event), cancellation.deadline_scope(job.deadline):

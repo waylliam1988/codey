@@ -135,7 +135,7 @@ def test_late_summary_cannot_commit_to_identical_history_in_a_new_generation():
 
 def test_commit_failure_keeps_original_live_history(tmp_path, monkeypatch):
     provider = ApiProvider("http://localhost:9/v1", "fixture", context_keep_recent_tokens=1000)
-    provider.bind_context("a", tmp_path)
+    provider.bind_context("a")
     provider._messages = long_history()
     original = list(provider._messages)
     provider.summarize_context = lambda *_: "Goal: keep API"

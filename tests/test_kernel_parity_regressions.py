@@ -300,7 +300,10 @@ def test_explicit_provider_normalizer_survives_production_wrappers(wrappers):
     mutations = SimpleNamespace(begin_provider_effect=lambda *_a, **_k: None,
                                 settle_provider_effect=lambda *_a, **_k: None)
     sink = SimpleNamespace(send_index=0, run_id="r", session_id="s", phase="writer", provider_id="local",
-                           delivery_batch_id="", mutations=mutations)
+                           delivery_batch_id="", mutations=mutations,
+                               durable=None,
+                           _record_durable_intent=lambda *_a, **_k: None,
+                           _settle_durable=lambda *_a, **_k: None)
 
     def normalize(reply):
         normalized.append(reply)

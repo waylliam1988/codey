@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from types import SimpleNamespace
 
 from codey.app.context import AppContext
@@ -21,6 +22,27 @@ def _durable_requested_approval(
     source_run_id: str,
     command: str = "python -V",
 ) -> None:
+    try:
+        state.durable.task(source_run_id)
+    except KeyError:
+        state.durable.admit_input(
+            conversation_id="session",
+            request_id=source_run_id,
+            task_id=source_run_id,
+            text="shell approval source",
+            provider_snapshot={"provider_id": "local"},
+        )
+        state.durable.start_task(source_run_id, state={})
+        state.durable.advance_task(
+            task_id=source_run_id, phase="assistant_response_pending", state={}
+        )
+    else:
+        current = state.durable.task(source_run_id)
+        if current.phase in {"accepted", "dispatching"}:
+            state.durable.start_task(source_run_id, state={})
+            state.durable.advance_task(
+                task_id=source_run_id, phase="assistant_response_pending", state={}
+            )
     assert state.managed_outputs is not None
     artifact = state.managed_outputs.write_json_artifact(
         session_id="session",
@@ -59,6 +81,15 @@ def test_durable_approval_claim_is_single_winner_under_concurrency(tmp_path) -> 
             approval_id="approval-race",
             source_run_id="source-run",
         )
+        state.record_shell_approval_fact(ShellApprovalFact(
+            approval_id="approval-race",
+            session_id="session",
+            source_run_id="source-run",
+            kind="approved",
+            command_ref=state.durable.approval("approval-race").command_ref,
+            command_digest=state.durable.approval("approval-race").command_digest,
+            cwd=".",
+        ))
         barrier = threading.Barrier(2)
         results: list[dict | None] = []
 
@@ -109,12 +140,28 @@ def test_cold_start_rebuild_restores_source_run_api_selection(tmp_path) -> None:
             run_id="source-run",
             model_selection=selection.to_payload(),
         )
+        from codey.providers.snapshot import provider_snapshot
+
+        state.durable.admit_input(
+            conversation_id="session",
+            request_id="source-run",
+            task_id="source-run",
+            text="source task",
+            provider_snapshot=provider_snapshot("local", selection),
+            task_state={"task": "source task", "provider_id": "local"},
+            initial_phase="dispatching",
+        )
         TaskRuntime(state.runtime_log, lambda _: OperationOutcome.suspended(reason="approval")).run(request)
         _durable_requested_approval(
             state,
             approval_id="approval-cold-start",
             source_run_id="source-run",
         )
+        requested = state.shell_approval_records.latest("approval-cold-start")
+        assert requested is not None
+        # A durable task must record the explicit user decision before the
+        # execution claim; requested -> execution_claimed is not legal.
+        state.record_shell_approval_fact(replace(requested, kind="approved"))
     finally:
         state.close()
 
@@ -214,9 +261,10 @@ def test_structured_resume_recovery_reads_the_declared_source_run(monkeypatch) -
         )
 
     monkeypatch.setattr(task_run, "recover_effects_for_resume", recover)
+    durable = SimpleNamespace(task=lambda _run_id: SimpleNamespace(state={"task_kind": "chat"}))
     setup = SimpleNamespace(
         request=request,
-        state=SimpleNamespace(),
+        state=SimpleNamespace(durable=durable),
         session_id="session",
         run_id="new-run",
         project=None,
@@ -252,8 +300,9 @@ def test_source_delivery_batch_is_not_reused_by_new_resume_run(monkeypatch) -> N
             recovered_tool_result_batch_id="deliv-source-1",
         ),
     )
+    durable = SimpleNamespace(task=lambda _run_id: SimpleNamespace(state={"task_kind": "chat"}))
     setup = SimpleNamespace(
-        request=request, state=SimpleNamespace(), session_id="session", run_id="new-run",
+        request=request, state=SimpleNamespace(durable=durable), session_id="session", run_id="new-run",
         project=None, provider_id="local", max_turns=4, task_kind="chat", task=request.task,
         continue_task=True, recovered_resume=False, trace=None,
         project_config_result=SimpleNamespace(config=SimpleNamespace(ignored_paths=())),

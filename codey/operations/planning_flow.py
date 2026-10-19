@@ -148,6 +148,7 @@ def run_planning_readonly_mode(
             run_id=frame.run_id,
             effect_scope="planning:1",
             runtime_mutations=getattr(state, "runtime_mutations", None),
+            durable=getattr(state, "durable", None),
             workspace_revision_store=getattr(state, "workspace_revisions", None),
             managed_outputs=getattr(state, "managed_outputs", None),
             recovered_tool_outcomes=tuple(getattr(frame, "recovered_tool_outcomes", ()) or ()),

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from codey.runtime.core import cancellation
-from codey.utils.text_budget import clip_tail
+from codey.utils.text_budget import clip_tail, estimate_tokens
 
 DEFAULT_HARD_CONTEXT_TOKENS = 200_000
 SOFT_CONTEXT_NUMERATOR = 3
@@ -30,15 +30,6 @@ SUMMARY_KEYS = (
 
 def compact_text(value: str, limit: int = MAX_HANDOFF_TEXT_CHARS) -> str:
     return clip_tail(value, limit)
-
-
-def estimate_tokens(text: str) -> int:
-    """Estimate tokens without provider-specific tokenizers."""
-
-    value = (text or "")
-    ascii_chars = sum(1 for char in value if ord(char) < 128)
-    non_ascii_chars = len(value) - ascii_chars
-    return (ascii_chars + 3) // 4 + non_ascii_chars
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
@@ -124,6 +115,47 @@ class ConversationSnapshot:
                     MAX_MODEL_SUMMARY_CHARS,
                 )
         return {key: value for key, value in payload.items() if value not in ("", [], None)}
+
+    @classmethod
+    def from_payload(cls, payload: object) -> ConversationSnapshot:
+        if not isinstance(payload, dict):
+            raise ValueError("conversation snapshot must be an object")
+        mode = payload.get("mode", "chat")
+        if not isinstance(mode, str) or not mode:
+            raise ValueError("conversation snapshot mode must be a non-empty string")
+        string_fields = {
+            "goal": "goal",
+            "project": "project",
+            "previous_model": "provider_id",
+            "latest_result": "summary",
+            "current_blocker": "blocker",
+            "latest_user_message": "latest_user",
+            "latest_model_reply": "latest_reply",
+        }
+        values: dict[str, Any] = {"mode": mode}
+        for source, target in string_fields.items():
+            value = payload.get(source, "")
+            if not isinstance(value, str):
+                raise ValueError(f"conversation snapshot {source} must be a string")
+            values[target] = value
+        files = payload.get("changed_files", [])
+        if not isinstance(files, (list, tuple)) or any(not isinstance(item, str) for item in files):
+            raise ValueError("conversation snapshot changed_files must be a string list")
+        values["changed_files"] = tuple(files)
+        checks = payload.get("checks")
+        if checks not in (None, "passed", "not passed"):
+            raise ValueError("conversation snapshot checks must be passed or not passed")
+        values["checks_passed"] = None if checks is None else checks == "passed"
+        summary = payload.get("conversation_summary", "")
+        if isinstance(summary, (dict, list, tuple)):
+            if isinstance(summary, tuple):
+                summary = list(summary)
+            values["conversation_summary"] = json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
+        elif isinstance(summary, str):
+            values["conversation_summary"] = summary
+        else:
+            raise ValueError("conversation snapshot summary must be JSON data")
+        return cls(**values)
 
 
 def render_handoff(snapshot: ConversationSnapshot) -> str:
@@ -286,6 +318,12 @@ class ConversationContext:
         next_prompt: str = "",
     ) -> tuple[bool, str]:
         if not self.initialized:
+            if resume:
+                # A resumed task owns the persisted provider window even when
+                # the in-memory projection was rebuilt cold. Opening a fresh
+                # window here can strand pending native calls and lose the
+                # result that recovery is about to redeliver.
+                return False, ""
             return True, ""
         if self.mode != mode or self.project != project:
             if self.mode == "chat" and (

@@ -105,6 +105,7 @@ class TaskRunDeps:
         is_git_repository: Callable[[str | Path], bool] | None = None,
         review_fix_turns: int = 12,
         review_log_lines: int = 80,
+        connect_provider: Callable[[str], Any] | None = None,
     ) -> TaskRunDeps:
         """Assemble task dependencies from one explicit resource bundle."""
         return cls(
@@ -131,6 +132,7 @@ class TaskRunDeps:
             review_log_lines=review_log_lines,
             runtime_mutations=stores.runtime_mutations,
             runtime_effects=stores.runtime_effects,
+            connect_provider=connect_provider,
         )
 
 
@@ -464,6 +466,17 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
 
 def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | None, OperationOutcome | None]:
     """Phase 2 -- workload: workspace state plus resume recovery."""
+    durable = setup.state.durable
+    source_run_id = setup.request.previous_run_id or setup.run_id
+    if durable is not None:
+        try:
+            checkpoint = durable.task(source_run_id)
+            stored_kind = checkpoint.state.get("task_kind")
+            if isinstance(stored_kind, str) and stored_kind:
+                setup.task_kind = stored_kind
+        except (KeyError, AttributeError, TypeError, ValueError):
+            if setup.request.previous_run_id:
+                raise RuntimeError("durable recovery task kind is unavailable") from None
     work, _workspace_state = build_run_work(
         deps,
         session_id=setup.session_id,
@@ -491,12 +504,7 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
             deps, setup, "ERROR: Runtime operation state unavailable.", current_work=empty_work
         )
 
-    if work.operation is not None and (work.operation.task_policy or work.operation.leaf != "accepted"):
-        original_kind = work.operation.task_kind
-        if original_kind not in {"chat", "project", "research", "hybrid", "planning", "planning_readonly", "readonly", "review"}:
-            return None, _fail_early_run(deps, setup, "ERROR: Unknown recovered task kind.", current_work=work)
-        setup.task_kind = original_kind
-    recovery_run_id = setup.request.previous_run_id or setup.run_id
+    recovery_run_id = source_run_id
     recovery = recover_effects_for_resume(
         deps,
         session_id=setup.session_id,
@@ -554,7 +562,11 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
         setup.recovered_resume = True
     return _PhaseWork(
         work=work,
-        recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes) + shell_rows,
+        # The approval result is committed into the durable conversation
+        # before this continuation is admitted.  It therefore restores task
+        # facts but is already present in the provider's replay context; only
+        # crash-recovered task effects remain pending provider delivery.
+        recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes),
         # Delivery batches belong to the run whose ledger owns the intent.
         # A resumed run receives the recovered rows, then creates its own
         # delivery intent; carrying the source id into its sink is invalid.
@@ -562,7 +574,7 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
             recovery.recovered_tool_result_batch_id
             if recovery_run_id == setup.run_id else ""
         ),
-        settled_tool_outcomes=recovery.settled_tool_outcomes,
+        settled_tool_outcomes=tuple(recovery.settled_tool_outcomes) + shell_rows,
     ), None
 
 

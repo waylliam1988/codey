@@ -4,9 +4,9 @@ from unittest.mock import patch
 from codey.providers.api_provider import ApiProvider
 
 
-def test_new_model_reads_saved_work_state_without_importing_old_protocol_history(tmp_path):
+def test_new_model_does_not_import_old_provider_protocol_history(tmp_path):
     original = ApiProvider("http://localhost:9/v1", "model-a", context_keep_recent_tokens=1000)
-    original.bind_context("session-a", tmp_path)
+    original.bind_context("session-a")
     original._messages = [{"role": "user", "content": "Keep API"},
                           {"role": "assistant", "content": "details " * 4000},
                           {"role": "user", "content": "Latest correction: edit corrected.py only"}]
@@ -15,11 +15,9 @@ def test_new_model_reads_saved_work_state_without_importing_old_protocol_history
     original.wait_for_maintenance(3)
     original.close()
     switched = ApiProvider("http://localhost:9/v1", "model-b", api_protocol="openai-responses")
-    switched.bind_context("session-a", tmp_path)
+    switched.bind_context("session-a")
     assert switched._messages == []
-    assert "Keep API" in switched.export_work_state()
-    assert "exec-17" in switched.export_work_state()
-    assert "corrected.py" in switched.export_work_state()
+    assert switched.export_work_state() == ""
     assert "encrypted_content" not in switched.export_work_state()
     with patch("codey.providers.api_transport.generate", return_value={"status": "completed", "output": []}):
         switched.send("continue")

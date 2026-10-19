@@ -114,6 +114,7 @@ def test_thinking_configuration_roundtrip_and_target_isolation() -> None:
 
 
 def test_process_state_and_reasoning_survive_ui_store_roundtrip(tmp_path) -> None:
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.storage.ui_state_store import UiStateStore
 
     store = UiStateStore(tmp_path)
@@ -121,9 +122,14 @@ def test_process_state_and_reasoning_survive_ui_store_roundtrip(tmp_path) -> Non
     rows = [{"type": "turn", "runId": "r", "n": 1, "reasoning": reasoning},
             {"type": "tool", "runId": "r", "toolName": "read_file", "turn": 1},
             {"type": "run_state", "runId": "r", "state": "done"}]
-    store.save({"active_id": "s", "sessions": [{"id": "s", "title": "Chat", "provider": "local",
-                 "messages": rows}], "projects": []}, base_revision=0)
-    restored = store.load()["sessions"][0]["messages"]
+    # UI state is only session metadata; canonical messages belong to the
+    # durable session store and must survive independently of that projection.
+    store.save({"active_id": "s", "sessions": [{"id": "s", "title": "Chat", "provider": "local"}], "projects": []}, base_revision=0)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    durable.create_conversation("s")
+    for row in rows:
+        durable.append_message("s", "display_message", row)
+    restored = [item for item in durable.history_page("s")["items"]]
     assert restored[0]["reasoning"] == reasoning
     assert restored[1]["toolName"] == "read_file" and restored[1]["turn"] == 1
     assert restored[2]["state"] == "done"

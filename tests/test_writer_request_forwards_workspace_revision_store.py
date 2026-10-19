@@ -9,6 +9,7 @@ from unittest import mock
 class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
     def test_writer_attempt_forwards_workspace_revision_store(self) -> None:
         from codey.agents.writer_failover import CheckpointView, WriterAttempt
+        from codey.durable import DurableSession, MemoryDurableStore
         from codey.operations import project_writer_phase
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.run_result import RunResult
@@ -27,16 +28,21 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
             settled_tool_outcomes=(),
             recovered_tool_result_batch_id="",
             conversation=None,
+            provider=None,
+            window_action=None,
             provider_session_changed=False,
             run_id="run-1",
             trace=None,
             project_text="project",
             entry_policy=TaskPolicy(grants=frozenset({"control", "project.write", "project.verify"})),
         )
+        durable = DurableSession(MemoryDurableStore())
+        durable.admit_input(conversation_id="session-1", request_id="run-1", task_id="run-1",
+                            text="write", provider_snapshot={"provider_id": "local"})
         ctx = SimpleNamespace(
             writer_attempt_index=0,
             frame=frame,
-            state=SimpleNamespace(run_registry=SimpleNamespace(stop_flag=None)),
+            state=SimpleNamespace(durable=durable, run_registry=SimpleNamespace(stop_flag=None)),
             request=SimpleNamespace(session_id="session-1", requested_capabilities=()),
             project="project",
             deps=deps,

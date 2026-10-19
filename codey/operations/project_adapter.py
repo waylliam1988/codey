@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from codey.agents.request import AgentRequest
+from codey.operations.conversation_window import replayed_result_ids
 from codey.operations.provider_session import ConversationProvider
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
@@ -74,6 +75,12 @@ def _project_context(request: AgentRequest) -> str:
 
 
 def _open_fresh_chat(request: AgentRequest) -> bool:
+    window_action = request.window_action
+    if window_action is not None:
+        from codey.operations.conversation_window import OpenWindow, activate_window
+
+        activate_window(request.provider, window_action)
+        return isinstance(window_action, OpenWindow)
     if not request.fresh_chat:
         return False
     request.provider.new_chat()
@@ -148,6 +155,7 @@ def _wrap_provider_with_sink(request: AgentRequest, provider: Any) -> tuple[Any,
             run_id=request.run_id, provider_id=request.provider_id,
             recovered_batch_id=request.recovered_tool_result_batch_id,
             managed_outputs=request.managed_outputs,
+            durable=request.durable,
         )
         provider = KernelRecordedProvider(provider, intent_sink)
     if request.conversation is not None:
@@ -164,10 +172,11 @@ def run(request: AgentRequest) -> RunResult:
     if request.task_session is not None and request.task_session.policy != policy:
         raise ValueError("project continuation cannot replace task authorization")
     if request.runtime_mutations is not None and request.session_id and request.run_id:
-        from codey.operations.recovery import record_entry_policy
+        from codey.operations.recovery import durable_task_for, record_entry_policy
 
         record_entry_policy(request.runtime_mutations, session_id=request.session_id,
-                            run_id=request.run_id, policy=policy)
+                            run_id=request.run_id, policy=policy,
+                            durable=durable_task_for(request.durable, request.run_id))
     provider, intent_sink = _wrap_provider_with_sink(request, request.provider)
     if policy.allows("project.write"):
         request.project.mkdir(parents=True, exist_ok=True)
@@ -220,6 +229,7 @@ def run(request: AgentRequest) -> RunResult:
             run_id=request.run_id or "adhoc",
             recovered_tool_outcomes=request.recovered_tool_outcomes,
             settled_tool_outcomes=request.settled_tool_outcomes,
+            recovered_tool_result_batch_id=request.recovered_tool_result_batch_id,
         ),
         session, effect_scope=effect_scope, research_ledger=getattr(request.research_tools, "ledger", None),
     )
@@ -240,6 +250,7 @@ def run(request: AgentRequest) -> RunResult:
                 start_turn=resume_start,
                 initial_results=initial_results or None,
                 provider_session_changed=opened_fresh_chat,
+                replayed_result_ids=replayed_result_ids(request.window_action),
             ),
             execution=KernelExecutionDeps(
                 project_path=request.project,

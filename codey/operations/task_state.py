@@ -29,6 +29,8 @@ if TYPE_CHECKING:
     from codey.app.approval_registry import ApprovalRegistry
     from codey.app.provider_registry import ProviderRegistry
     from codey.app.run_registry import RunRegistry, RunSnapshot
+    from codey.durable.scheduler import DurableTaskScheduler
+    from codey.durable.session import DurableSession
     from codey.knowledge.store import KnowledgeStore
     from codey.repairs.self_repair import SelfRepairSupervisor
     from codey.research.evidence_ledger import EvidenceLedgerStore
@@ -36,7 +38,6 @@ if TYPE_CHECKING:
     from codey.runs.trace import RunTraceStore
     from codey.runs.work_checkpoint import WorkCheckpointStore
     from codey.runtime.effects.effect_records import RuntimeEffectStore
-    from codey.runtime.effects.shell_approval_records import ShellApprovalRecordStore
     from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.execution_output_store import ExecutionOutputStore
@@ -66,6 +67,9 @@ class TaskSubmissionStores:
 class TaskState(Protocol):
     """Run coordination surface (locks, registries, emit)."""
 
+    # Every executable task is durably admitted before entering the task
+    # spine; recovery must therefore read the canonical checkpoint directly.
+    durable: DurableSession
     lock: threading.Lock
     _shell_spawn_gate: threading.Lock
     run_registry: RunRegistry
@@ -98,8 +102,8 @@ class TaskState(Protocol):
     def provider_failover_order(self) -> tuple[str, ...]: ...
     def set_provider_session(self, provider_id: str, session_id: str | None) -> None: ...
     def provider_session_changed(self, provider_id: str, session_id: str) -> bool: ...
-    def visible_session_excerpt(self, session_id: str, current_request: str = "") -> str: ...
     def add_pending_shell_approval(self, approval_id: str, pending: dict[str, Any]) -> None: ...
+    def resolve_shell_approval(self, approval_id: str) -> dict[str, Any] | None: ...
     def expire_stale_shell_approvals(self, active_run_id: str) -> None: ...
     def approval_generation(self) -> int: ...
     def pop_pending_teach(self, teach_id: str) -> dict[str, Any] | None: ...
@@ -115,7 +119,8 @@ class TaskState(Protocol):
 class TaskSubmissionState(TaskState, Protocol):
     """State plus resources needed to assemble a task run."""
 
-    shell_approval_records: ShellApprovalRecordStore
+    durable: DurableSession
+    durable_scheduler: DurableTaskScheduler
 
     @property
     def task_submission_stores(self) -> TaskSubmissionStores: ...

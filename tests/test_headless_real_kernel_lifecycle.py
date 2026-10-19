@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.log.session_log import RuntimeSessionLog
@@ -54,9 +55,17 @@ def test_explicit_planning_enters_running_before_durable_provider_send(tmp_path,
     assert result.stop_reason == "done", rows
     assert len(provider.prompts) == 2
     assert any(row.get("tool_name") == "read_file" and row.get("ok") is True for row in rows)
-    entries = RuntimeSessionLog(state).entries(result.session_id)
-    leaves = [entry.payload.get("leaf") for entry in entries if entry.kind == "operation_state"]
-    assert leaves.index("writer_running") < leaves.index("provider_effect_pending")
+    durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
+    try:
+        operation = RuntimeOperationStore(RuntimeSessionLog(state), durable=durable).load(
+            result.session_id, result.run_id
+        )
+        assert operation is not None
+        assert operation.leaf == "terminal"
+        assert durable.task(result.run_id).phase == "completed"
+    finally:
+        durable.close()
+    assert not list((state / "runtime" / "sessions").glob("*.jsonl"))
     assert (project / "pricing.py").read_text() == "READONLY_MARKER = 42\n"
 
 
@@ -83,6 +92,16 @@ def test_headless_shell_denial_cancels_without_transition_error(tmp_path, monkey
     assert result.exit_code == 1
     assert any(row.get("type") == "shell_rejected" for row in rows)
     assert not (project / "unapproved").exists()
-    operation = RuntimeOperationStore(RuntimeSessionLog(state)).load(result.session_id, result.run_id)
-    assert operation.leaf == "terminal"
-    assert operation.terminal.stop_reason == "stopped"
+    durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
+    try:
+        operation = RuntimeOperationStore(RuntimeSessionLog(state), durable=durable).load(
+            result.session_id, result.run_id
+        )
+        assert operation is not None
+        assert operation.leaf == "terminal"
+        assert operation.terminal.stop_reason == "stopped"
+        # Cancellation is a first-class durable terminal state; the
+        # user-facing stop_reason remains ``stopped``.
+        assert durable.task(result.run_id).phase == "cancelled"
+    finally:
+        durable.close()

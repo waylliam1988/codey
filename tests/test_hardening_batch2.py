@@ -19,7 +19,6 @@ from unittest import mock
 
 from codey.app import api as app_api
 from codey.app import shell_service
-from codey.app.provider_registry import ProviderRegistry
 from codey.runtime.core import cancellation
 
 
@@ -539,26 +538,29 @@ class WorkerBusyMappingTests(unittest.TestCase):
         )
         self.assertEqual(status, 500)
 
-    def test_submit_task_raises_typed_busy_on_full_queue(self) -> None:
+    def test_submit_task_keeps_durable_admission_when_worker_queue_is_full(self) -> None:
         from codey.app import server as server_module
         from codey.app import task_submit as task_submit_module
-        from codey.automation.browser_worker import BrowserWorkerBusy
+        from codey.app.context import AppContext
 
-        reserved = SimpleNamespace(run_id="run-1")
-        state = SimpleNamespace(
-            lock=threading.Lock(), providers=ProviderRegistry(),
-            reserve_run=mock.Mock(return_value=reserved),
-            release_run=mock.Mock(),
-            expire_stale_shell_approvals=mock.Mock(),
-        )
-        with (
-            mock.patch.object(server_module, "STATE", state),
-            mock.patch.object(
-                task_submit_module, "submit_browser_task", return_value=False
-            ),self.assertRaises(BrowserWorkerBusy)
-        ):
-            server_module._submit_task("s", None, "do it", 3, False, "qwen", "auto")
-        state.release_run.assert_called_once_with("run-1")
+        with tempfile.TemporaryDirectory() as td:
+            state = AppContext(Path(td))
+            try:
+                with (
+                    mock.patch.object(server_module, "STATE", state),
+                    mock.patch.object(task_submit_module, "submit_browser_task", return_value=False),
+                ):
+                    run_id = server_module._submit_task("s", None, "do it", 3, False, "qwen", "auto")
+                self.assertIsNotNone(run_id)
+                # Admission claims the durable scheduler slot before handing
+                # off to the worker queue.  A full queue leaves the task in
+                # dispatching/pending for the scheduler retry; it must not
+                # roll back the canonical admission.
+                checkpoint = state.durable.task(str(run_id))
+                self.assertIn(checkpoint.phase, {"accepted", "dispatching"})
+                self.assertEqual(str(checkpoint.status), "pending")
+            finally:
+                state.close()
 
 
 class BrowserFetchAbandonTests(unittest.TestCase):

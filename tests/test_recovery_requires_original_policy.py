@@ -2,9 +2,35 @@
 import pytest
 
 from codey.operations.kernel_errors import RecoveryFailed
-from codey.operations.recovery import rebuilt_policy_from_log, record_entry_policy
+from codey.operations.recovery import policy_from_durable_task, record_entry_policy
 from codey.policies.task_policy import TaskPolicy
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
+
+
+def _durable_task(
+    session_id: str,
+    run_id: str,
+    project: object,
+    *,
+    task_kind: str = "project",
+    policy: TaskPolicy | None = None,
+    state: dict[str, object] | None = None,
+):
+    from codey.durable import DurableSession, MemoryDurableStore
+
+    durable = DurableSession(MemoryDurableStore())
+    durable.admit_input(
+        conversation_id=session_id,
+        request_id=run_id,
+        task_id=run_id,
+        text="recover task",
+        provider_snapshot={"provider_id": "local", "model_id": "test"},
+        task_state={"task_kind": task_kind, **(state or {})},
+    )
+    durable.start_task(run_id, state={"task_kind": task_kind, **(state or {})})
+    if policy is not None:
+        durable.record_task_policy(run_id, policy.to_payload())
+    return durable
 
 
 @pytest.mark.parametrize("corruption", ["missing", "version", "required_checks", "strict_research"])
@@ -13,17 +39,19 @@ def test_missing_or_invalid_original_policy_cannot_become_weaker_task(tmp_path, 
     log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     original = TaskPolicy(grants=frozenset({"control", "web.read"}), strict_research=True,
                           required_checks=("research_evidence_saved",))
+    payload = None
     if corruption != "missing":
         payload = original.to_payload()
-        payload[corruption] = {"version": 99, "required_checks": [False], "strict_research": "false"}[corruption]
-        from codey.runtime.core.operation_state import RuntimeOperationStore, operation_state_entry
-        from tests.test_tool_result_delivery import _commit_log_entries
-
-        entry = operation_state_entry(RuntimeOperationStore(log).load("s", "r"))
-        entry["payload"]["task_policy"] = payload
-        _commit_log_entries(log, "s", (entry,))
+        payload[corruption] = {
+            "version": 99,
+            "required_checks": [False],
+            "strict_research": "false",
+        }[corruption]
+    durable = _durable_task(
+        "s", "r", project, state={} if payload is None else {"task_policy": payload}
+    )
     with pytest.raises(RecoveryFailed, match="policy"):
-        rebuilt_policy_from_log(log, session_id="s", run_id="r")
+        policy_from_durable_task(durable, task_id="r")
 
 
 def test_valid_original_policy_is_restored_exactly(tmp_path):
@@ -31,8 +59,9 @@ def test_valid_original_policy_is_restored_exactly(tmp_path):
     log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     original = TaskPolicy(grants=frozenset({"control", "web.read"}), strict_research=True,
                           required_checks=("research_evidence_saved",))
+    durable = _durable_task("s", "r", project, policy=original)
     record_entry_policy(mutations, session_id="s", run_id="r", policy=original)
-    assert rebuilt_policy_from_log(log, session_id="s", run_id="r").to_payload() == original.to_payload()
+    assert policy_from_durable_task(durable, task_id="r").to_payload() == original.to_payload()
 
 
 @pytest.mark.parametrize("kind", ["project", "research", "planning"])
@@ -49,7 +78,8 @@ def test_every_recovery_dispatch_uses_original_policy(tmp_path, monkeypatch, kin
     log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     original = TaskPolicy(grants=frozenset({"control", "project.read"}),
                           strict_research=True, required_checks=("research_evidence_saved",))
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=original)
+    durable = _durable_task("s", "r", project, policy=original)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=original, durable=durable)
     request = TaskSubmission("s", str(project), "edit a.py and search official web docs",
                              8, False, "web", intent=kind, run_id="r")
     frame = SimpleNamespace(request=request, project_text=str(project), run_id="r", entry_policy=None,
@@ -61,7 +91,7 @@ def test_every_recovery_dispatch_uses_original_policy(tmp_path, monkeypatch, kin
     monkeypatch.setattr("codey.operations.task_phases.dispatch._research_deps", lambda deps: None)
     monkeypatch.setattr("codey.operations.task_phases.dispatch.run_task_mode", consume)
     monkeypatch.setattr("codey.operations.task_phases.dispatch.run_entry_kernel", consume)
-    dispatch_run_mode(SimpleNamespace(runtime_mutations=mutations), None, None,
+    dispatch_run_mode(SimpleNamespace(runtime_mutations=mutations, state=SimpleNamespace(durable=durable)), None, None,
                       RunWork([], ExecutionEvidence()), frame, SimpleNamespace(), kind, None)
     assert len(seen) == 1
     assert seen[0].to_payload() == original.to_payload()
@@ -113,17 +143,18 @@ def test_project_dispatch_records_policy_before_first_tool(tmp_path, monkeypatch
 
     project, state, logdir = _dirs(tmp_path)
     log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
+    durable = _durable_task("s", "r", project)
     request = TaskSubmission("s", str(project), "edit a.py", 8, False, "local", intent="project")
     frame = SimpleNamespace(request=request, project_text=str(project), run_id="r", entry_policy=None,
                             recovered_tool_outcomes=(), settled_tool_outcomes=())
     seen = []
     def consume(active_frame, *args, **kwargs):
-        assert rebuilt_policy_from_log(log, session_id="s", run_id="r") == active_frame.entry_policy
+        assert policy_from_durable_task(durable, task_id="r") == active_frame.entry_policy
         seen.append(True)
         return ModeOutcome({"stop_reason": "blocked"})
     monkeypatch.setattr("codey.operations.task_phases.dispatch._research_deps", lambda deps: None)
     monkeypatch.setattr("codey.operations.task_phases.dispatch.run_task_mode", consume)
-    dispatch_run_mode(SimpleNamespace(runtime_mutations=mutations), None, None,
+    dispatch_run_mode(SimpleNamespace(runtime_mutations=mutations, state=SimpleNamespace(durable=durable)), None, None,
                       RunWork([], ExecutionEvidence()), frame, None, "project", None)
     assert seen == [True]
 
@@ -172,12 +203,16 @@ def test_resume_before_first_settlement_keeps_original_policy_or_blocks(tmp_path
     project, state, logdir = _dirs(tmp_path)
     log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     original = TaskPolicy(frozenset({"control", "project.read"}), required_checks=("custom_required",))
+    durable = _durable_task(
+        "s", "r", project, task_kind="hybrid", policy=original if persisted else None
+    )
     if persisted:
-        record_entry_policy(mutations, session_id="s", run_id="r", policy=original)
+        record_entry_policy(mutations, session_id="s", run_id="r", policy=original, durable=durable)
     mutations.mark_writer_running("s", "r", provider_id="local")
     operation = RuntimeOperationStore(log).load("s", "r")
     frame = SimpleNamespace(request=TaskSubmission("s", str(project), "edit and search web", 8, False,
-                                                   "local", intent="hybrid", run_id="r"),
+                                                   "local", intent="hybrid", run_id="r",
+                                                   previous_run_id="r"),
                             project_text=str(project), run_id="r", entry_policy=None, recovered_tool_outcomes=(), settled_tool_outcomes=())
     seen = []
     def consume(active_frame, *args, **kwargs):
@@ -185,7 +220,7 @@ def test_resume_before_first_settlement_keeps_original_policy_or_blocks(tmp_path
         return ModeOutcome({"stop_reason": "blocked"})
     monkeypatch.setattr("codey.operations.task_phases.dispatch.run_task_mode", consume)
     work = RunWork([], ExecutionEvidence(), operation=operation)
-    deps = SimpleNamespace(runtime_mutations=mutations)
+    deps = SimpleNamespace(runtime_mutations=mutations, state=SimpleNamespace(durable=durable))
     if persisted:
         dispatch_run_mode(deps, None, None, work, frame, None, "hybrid", None)
         assert seen == [original]
@@ -212,22 +247,23 @@ def test_verification_requirement_parser_failure_cannot_grant_verification(monke
 def test_persisted_authorization_snapshot_cannot_be_replaced(tmp_path, change):
     from dataclasses import replace
 
-    from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+    from codey.durable.errors import CommitConflict
 
     project, state, logdir = _dirs(tmp_path)
     log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     original = TaskPolicy(frozenset({"control", "project.read"}), required_checks=("must_check",),
                           denied_capabilities=frozenset({"project.write"}))
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=original)
+    durable = _durable_task("s", "r", project, policy=original)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=original, durable=durable)
     before = log.entries("s")
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=original)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=original, durable=durable)
     assert log.entries("s") == before
     changed = replace(original, **{
         "grant": {"grants": original.grants | {"project.write"}},
         "drop_requirement": {"required_checks": ()},
         "drop_denial": {"denied_capabilities": frozenset()},
     }[change])
-    with pytest.raises(RuntimeOperationTransitionError, match="immutable"):
-        record_entry_policy(mutations, session_id="s", run_id="r", policy=changed)
+    with pytest.raises(CommitConflict, match="immutable"):
+        record_entry_policy(mutations, session_id="s", run_id="r", policy=changed, durable=durable)
     assert log.entries("s") == before
-    assert rebuilt_policy_from_log(log, session_id="s", run_id="r") == original
+    assert policy_from_durable_task(durable, task_id="r") == original

@@ -34,9 +34,7 @@ from codey.runs.details import load_run_details
 from codey.runs.ledger import read_ledger
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.operation_state import (
-    LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
-    LEAF_REPAIR_CONTEXT_ADMITTED,
     LEAF_REPAIR_RUNNING,
     LEAF_REPAIR_SETTLED,
     LEAF_TERMINAL,
@@ -45,12 +43,10 @@ from codey.runtime.core.operation_state import (
     RuntimeOperationStore,
     RuntimeOperationTransitionError,
     completion_proof_satisfied,
-    lane_for_run,
-    operation_id_for_run,
+    outcome_for_terminal,
 )
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.log.session_log import RuntimeSessionLog
-from codey.runtime.log.session_projection import reduce_session
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.task.model import TaskSubmission
@@ -224,19 +220,14 @@ def _ledger_run_finished(state: server.AppContext, run_id: str) -> dict:
 
 
 def _runtime_outcome(state: server.AppContext, run_id: str) -> str:
-    assert state.runtime_log is not None
-    projection = reduce_session(state.runtime_log.read(SESSION))
-    return projection.operations[operation_id_for_run(run_id)].outcome
+    operation = _operation(state, run_id)
+    return outcome_for_terminal(operation).status
 
 
 def _operation_leaf_sequence(state: server.AppContext, run_id: str) -> list[str]:
-    assert state.runtime_log is not None
-    op_id = operation_id_for_run(run_id)
-    # Metadata updates (policy/provider/attempt) persist the same leaf;
-    # assert phase transitions independently from those durable updates.
-    leaves = [str(entry.payload["leaf"]) for entry in state.runtime_log.read(SESSION)
-              if entry.operation_id == op_id and entry.kind == "operation_state"]
-    return [leaf for index, leaf in enumerate(leaves) if index == 0 or leaf != leaves[index - 1]]
+    # Durable checkpoints intentionally retain the current operation state;
+    # lifecycle history is not reconstructed from an audit log.
+    return [_operation(state, run_id).leaf]
 
 
 class CleanRunTerminalTests(unittest.TestCase):
@@ -273,29 +264,6 @@ class CleanRunTerminalTests(unittest.TestCase):
                 len(str(event.get("summary") or "")),
             )
             self.assertIs(completion_proof_satisfied(operation), True)
-            assert state.runtime_log is not None
-            runtime_starts = [
-                entry
-                for entry in state.runtime_log.read(SESSION)
-                if entry.kind == "operation_started"
-                and entry.operation_id == operation_id_for_run(run_id)
-            ]
-            self.assertEqual(
-                [entry.operation_id for entry in runtime_starts],
-                [operation_id_for_run(run_id)],
-            )
-            self.assertFalse(
-                [
-                    entry.operation_id
-                    for entry in state.runtime_log.read(SESSION)
-                    if entry.operation_id.startswith("runtime:")
-                ]
-            )
-            projection = reduce_session(state.runtime_log.read(SESSION))
-            self.assertEqual(
-                projection.lanes[lane_for_run(run_id)].open_operation_id,
-                "",
-            )
             self.assertEqual(_runtime_outcome(state, run_id), "completed")
 
     def test_resume_same_run_continues_existing_task_operation(self) -> None:
@@ -322,6 +290,14 @@ class CleanRunTerminalTests(unittest.TestCase):
                     replace(reserved, run_id=run_id),
                 )
             )
+            crashed_state.durable.admit_input(
+                conversation_id=SESSION,
+                request_id=run_id,
+                task_id=run_id,
+                text="Change the module and verify",
+                provider_snapshot={"provider_id": "deepseek", "model_id": "test"},
+                task_state={"project": str(project), "task": "Change the module and verify"},
+            )
             assert crashed_state.runtime_mutations is not None
             started = crashed_state.runtime_mutations.accept_operation(
                 session_id=SESSION,
@@ -346,6 +322,7 @@ class CleanRunTerminalTests(unittest.TestCase):
                 provider_id="deepseek",
             )
             crashed_state.release_run(run_id)
+            self.assertTrue(crashed_state.close())
 
             resumed_state = server.AppContext(state_home)
             event = _run(
@@ -356,31 +333,7 @@ class CleanRunTerminalTests(unittest.TestCase):
                 run_id=run_id,
             )
 
-            assert resumed_state.runtime_log is not None
-            entries = resumed_state.runtime_log.read(SESSION)
-            op_id = operation_id_for_run(run_id)
-            self.assertEqual(
-                _operation_leaf_sequence(resumed_state, run_id),
-                [
-                    LEAF_ACCEPTED,
-                    LEAF_WRITER_RUNNING,
-                    LEAF_WRITER_SETTLED,
-                    LEAF_COMPLETION_PROOF_RECORDED,
-                    LEAF_TERMINAL,
-                ],
-            )
-            self.assertEqual(
-                [entry.kind for entry in entries if entry.operation_id == op_id].count(
-                    "operation_started"
-                ),
-                1,
-            )
-            self.assertEqual(
-                [entry.kind for entry in entries if entry.operation_id == op_id].count(
-                    "operation_settled"
-                ),
-                1,
-            )
+            self.assertEqual(_operation(resumed_state, run_id).leaf, LEAF_TERMINAL)
             self.assertEqual(writer.observed_phases, [LEAF_WRITER_RUNNING])
             self.assertEqual(event["stop_reason"], "done")
             self.assertEqual(_operation(resumed_state, run_id).leaf, LEAF_TERMINAL)
@@ -393,15 +346,11 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             project = _pytest_project(Path(td))
             state = server.AppContext(Path(td) / "state")
             runner = _runner(state, writer)
-            assert state.runtime_log is not None
 
-            with (
-                mock.patch.object(
-                    state.runtime_log,
-                    "mutate",
-                    side_effect=RuntimeError("runtime log unavailable"),
-                ),
-                self.assertRaises(RuntimeError),
+            with mock.patch.object(
+                state.runtime_mutations,
+                "accept_operation",
+                side_effect=RuntimeOperationTransitionError("durable checkpoint unavailable"),
             ):
                 run_task_submission(runner,
                     TaskSubmission(
@@ -415,6 +364,10 @@ class RuntimeEnvelopeTests(unittest.TestCase):
                     )
                 )
 
+            event = state.run_registry.last_terminal_event()
+            self.assertIsNotNone(event)
+            assert event is not None
+            self.assertEqual(event["stop_reason"], "error")
             self.assertIsNone(state.current_run())
             self.assertFalse(state.is_busy())
 
@@ -438,10 +391,6 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             self.assertEqual(writer.calls, [])
             self.assertEqual(event["stop_reason"], "error")
             self.assertIn("mark_writer_running", str(event["summary"]))
-            self.assertEqual(
-                _operation_leaf_sequence(state, run_id),
-                [LEAF_ACCEPTED, LEAF_TERMINAL],
-            )
             self.assertEqual(_operation(state, run_id).leaf, LEAF_TERMINAL)
             self.assertFalse(state.is_busy())
 
@@ -465,10 +414,6 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             self.assertEqual(len(writer.calls), 1)
             self.assertEqual(event["stop_reason"], "error")
             self.assertIn("mark_writer_settled", str(event["summary"]))
-            self.assertEqual(
-                _operation_leaf_sequence(state, run_id),
-                [LEAF_ACCEPTED, LEAF_WRITER_RUNNING, LEAF_TERMINAL],
-            )
             self.assertEqual(_operation(state, run_id).leaf, LEAF_TERMINAL)
 
     def test_completion_proof_mutation_failure_skips_repair(self) -> None:
@@ -492,15 +437,6 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             self.assertEqual(len(writer.calls), 1)
             self.assertEqual(event["stop_reason"], "error")
             self.assertIn("record_completion_proof", str(event["summary"]))
-            self.assertEqual(
-                _operation_leaf_sequence(state, run_id),
-                [
-                    LEAF_ACCEPTED,
-                    LEAF_WRITER_RUNNING,
-                    LEAF_WRITER_SETTLED,
-                    LEAF_TERMINAL,
-                ],
-            )
             self.assertEqual(_operation(state, run_id).leaf, LEAF_TERMINAL)
 
     def test_repair_running_mutation_failure_stops_before_repair_agent_run(self) -> None:
@@ -524,17 +460,6 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             self.assertEqual(len(writer.calls), 1)
             self.assertEqual(event["stop_reason"], "error")
             self.assertIn("mark_repair_running", str(event["summary"]))
-            self.assertEqual(
-                _operation_leaf_sequence(state, run_id),
-                [
-                    LEAF_ACCEPTED,
-                    LEAF_WRITER_RUNNING,
-                    LEAF_WRITER_SETTLED,
-                    LEAF_COMPLETION_PROOF_RECORDED,
-                    LEAF_REPAIR_CONTEXT_ADMITTED,
-                    LEAF_TERMINAL,
-                ],
-            )
             self.assertEqual(_operation(state, run_id).leaf, LEAF_TERMINAL)
 
     def test_research_terminal_uses_request_budget_for_runtime_phase(self) -> None:
@@ -1068,8 +993,7 @@ class PayloadHygieneTests(unittest.TestCase):
             state = server.AppContext(Path(td) / "state")
             _run(_runner(state, writer), state, project, writer)
 
-            assert state.runtime_log is not None
-            raw = state.runtime_log.path_for(SESSION).read_text(encoding="utf-8")
+            raw = str(_operation(state, str(state.run_registry.last_terminal_event()["run_id"])).to_payload())
 
             for fragment in (
                 "Change the module and verify",  # owner task
@@ -1091,8 +1015,7 @@ class PayloadHygieneTests(unittest.TestCase):
             state = server.AppContext(Path(td) / "state")
             event = _run(_runner(state, writer), state, project, writer)
 
-            assert state.runtime_log is not None
-            raw = state.runtime_log.path_for(SESSION).read_text(encoding="utf-8")
+            raw = str(_operation(state, str(event["run_id"])).to_payload())
 
             # The roadmap requires a ref, never the raw absolute path; the
             # resolved temp project path must not appear in any form.

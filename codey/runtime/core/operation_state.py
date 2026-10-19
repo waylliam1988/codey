@@ -8,10 +8,12 @@ ledger; UI events and run traces are observation only.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from typing import Any, Protocol, cast
 
 from codey.runtime.core.operation_payload import (
     RuntimeOperationTransitionError,
@@ -573,10 +575,18 @@ def _parse_operation_terminal(
 class RuntimeOperationStore:
     """Read projection for one run's durable operation state."""
 
-    def __init__(self, session_log: RuntimeSessionLog) -> None:
+    def __init__(self, session_log: RuntimeSessionLog, *, durable: Any | None = None) -> None:
         self.session_log = session_log
+        self.durable = durable
 
     def load(self, session_id: str, run_id: str) -> RuntimeOperationState | None:
+        if self.durable is not None:
+            try:
+                task = self.durable.task(run_id)
+            except KeyError:
+                return None
+            checkpoint = cast(_CheckpointAdapter, importlib.import_module("codey.durable.checkpoint"))
+            return checkpoint.operation_from_checkpoint(task, session_id)
         # Missing log -> None (entries() is empty). Corrupt log must raise
         # RuntimeOperationTransitionError so callers fail closed instead of
         # silently starting a fresh operation and replaying settled effects.
@@ -585,6 +595,12 @@ class RuntimeOperationStore:
             session_id=session_id,
             run_id=run_id,
         )
+
+
+class _CheckpointAdapter(Protocol):
+    def operation_from_checkpoint(
+        self, task: object, session_id: str,
+    ) -> RuntimeOperationState | None: ...
 
 
 def operation_id_for_run(run_id: str) -> str:
@@ -684,11 +700,14 @@ def mark_writer_running(
     state: RuntimeOperationState,
     *,
     provider_id: str,
-    writer_attempt: int = 1,
+    writer_attempt: int | None = None,
 ) -> RuntimeOperationState:
     provider = _text(provider_id, "provider_id")
-    attempt = _count(writer_attempt, "writer_attempt", minimum=1)
+    attempt = state.writer_attempt if writer_attempt is None else _count(writer_attempt, "writer_attempt", minimum=1)
     if state.leaf == LEAF_WRITER_SETTLED:
+        if state.stop_reason in {"question", "approval"} and attempt == state.writer_attempt:
+            return _transition(state, LEAF_WRITER_RUNNING, provider_id=provider,
+                               writer_attempt=attempt + 1, stop_reason="")
         # Review may request another writer attempt before the final proof.
         # The caller must advance the attempt; failed/finalized work cannot
         # be reopened and settled verdict fields never survive into writing.

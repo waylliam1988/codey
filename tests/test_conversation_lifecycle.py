@@ -87,6 +87,7 @@ def _entry_frame(*, fresh_chat: bool, conversation, provider) -> object:
         conversation=conversation, fresh_chat=fresh_chat,
         handoff="", recovered_tool_outcomes=(),
         recovered_tool_result_batch_id="", provider_session_changed=False,
+        window_action=None,
         trace=None, entry_policy=TaskPolicy(grants=frozenset({"control"})), entry_initial_turn=None,
     )
 

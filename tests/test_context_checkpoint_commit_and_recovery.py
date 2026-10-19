@@ -6,16 +6,16 @@ import pytest
 from codey.providers.api_provider import ApiProvider
 
 
-def test_original_events_survive_view_changes_and_reopen(tmp_path):
+def test_provider_context_is_bound_to_the_durable_runtime_window():
     provider = ApiProvider("http://localhost:9/v1", "fixture")
-    provider.bind_context("chat-a", tmp_path)
+    provider.bind_context("chat-a")
     with patch("codey.providers.api_transport.generate", return_value={"choices": [{"message": {"content": "answer"}}]}):
         provider.send("remember this exact original")
     assert provider.context_ledger.events()[0]["content"] == "remember this exact original"
     other = ApiProvider("http://localhost:9/v1", "fixture")
-    other.bind_context("chat-a", tmp_path)
-    assert other.context_ledger.events() == provider.context_ledger.events()
-    assert other._messages == provider._messages
+    other.bind_context("chat-a")
+    assert other.context_ledger.events() == []
+    assert other._messages == []
 
 
 def test_session_and_protocol_ledger_factories_share_identity(tmp_path):
@@ -30,9 +30,9 @@ def test_session_and_protocol_ledger_factories_share_identity(tmp_path):
     assert reopened.identity == f"protocol:{session_id}"
 
 
-def test_new_chat_retains_archive_but_starts_an_empty_view(tmp_path):
+def test_new_chat_starts_an_empty_provider_window():
     provider = ApiProvider("http://localhost:9/v1", "fixture")
-    provider.bind_context("chat-a", tmp_path)
+    provider.bind_context("chat-a")
     with patch("codey.providers.api_transport.generate", return_value={"choices": [{"message": {"content": "answer"}}]}):
         provider.send("original")
     provider.new_chat()
@@ -40,9 +40,9 @@ def test_new_chat_retains_archive_but_starts_an_empty_view(tmp_path):
     assert provider._messages == []
 
 
-def test_failed_generation_does_not_archive_unconfirmed_user_input(tmp_path):
+def test_failed_generation_does_not_archive_unconfirmed_user_input():
     provider = ApiProvider("http://localhost:9/v1", "fixture")
-    provider.bind_context("chat-a", tmp_path)
+    provider.bind_context("chat-a")
     with patch("codey.providers.api_transport.generate", side_effect=RuntimeError("offline")), pytest.raises(RuntimeError):
         provider.send("not accepted")
     assert provider.context_ledger.events() == []
@@ -71,21 +71,22 @@ def test_corrupted_archive_fails_closed(tmp_path):
         ContextLedger.for_session(tmp_path, "a", "model")
 
 
-def test_close_preserves_last_committed_view_for_reopen(tmp_path):
+def test_close_does_not_create_an_independent_recovery_archive(tmp_path):
     provider = ApiProvider("http://localhost:9/v1", "fixture")
-    provider.bind_context("a", tmp_path)
+    provider.bind_context("a")
     with patch("codey.providers.api_transport.generate", return_value={"choices": [{"message": {"content": "answer"}}]}):
         provider.send("original")
     expected = list(provider._messages)
     provider.close()
     other = ApiProvider("http://localhost:9/v1", "fixture")
-    other.bind_context("a", tmp_path)
-    assert other._messages == expected
+    other.bind_context("a")
+    assert other._messages == []
+    assert expected
 
 
 def test_malformed_native_reply_preserves_valid_input_durably_without_archiving_bad_calls(tmp_path):
     provider = ApiProvider("http://localhost:9/v1", "fixture")
-    provider.bind_context("a", tmp_path)
+    provider.bind_context("a")
     original = [{"role": "user", "content": "accepted work"}]
     provider.context_ledger.commit(original, events=original)
     provider._messages = original
@@ -96,9 +97,9 @@ def test_malformed_native_reply_preserves_valid_input_durably_without_archiving_
     expected = [*original, {"role": "user", "content": "continue"}]
     assert provider._messages == expected
     other = ApiProvider("http://localhost:9/v1", "fixture")
-    other.bind_context("a", tmp_path)
-    assert other._messages == expected
-    assert other.context_ledger.events() == expected
+    other.bind_context("a")
+    assert other._messages == []
+    assert other.context_ledger.events() == []
 
 
 def test_emergency_multi_segment_compaction_commits_all_lineage_with_the_answer():

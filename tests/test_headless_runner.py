@@ -12,6 +12,7 @@ from codey.agents.request import AgentRequest, ShellApprovalRequest
 from codey.agents.shell_approval import MAX_APPROVAL_COMMAND_CHARS
 from codey.app.event_payloads import machine_event_payload
 from codey.app.headless_runner import HeadlessAppContext, HeadlessRequest, run_headless
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.core.run_result import RunResult
@@ -136,10 +137,14 @@ class HeadlessRunnerTests(unittest.TestCase):
                 collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
             )
-            operation = RuntimeOperationStore(RuntimeSessionLog(state_home)).load(
-                "session-op",
-                result.run_id,
-            )
+            durable = DurableSession(SQLiteDurableStore(state_home / "durable.sqlite3"))
+            try:
+                operation = RuntimeOperationStore(RuntimeSessionLog(state_home), durable=durable).load(
+                    "session-op", result.run_id,
+                )
+                task = durable.task(result.run_id)
+            finally:
+                durable.close()
 
         self.assertEqual(result.stop_reason, "done")
         self.assertIsNotNone(operation)
@@ -148,6 +153,7 @@ class HeadlessRunnerTests(unittest.TestCase):
         assert operation.terminal is not None
         self.assertEqual(operation.terminal.stop_reason, "done")
         self.assertEqual(operation.terminal.provider, "qwen")
+        self.assertEqual(task.phase, "completed")
 
     def test_custom_run_id_is_pre_reserved_instead_of_noop(self) -> None:
         rows: list[dict[str, object]] = []

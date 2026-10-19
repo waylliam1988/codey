@@ -88,6 +88,10 @@ def build_provider_begin_rows(
 ) -> tuple[tuple[dict[str, object], ...], RuntimeEffectIntent]:
     state = require_open_view(projection, view)
     prepared = prepare_intent(session_id, run_id, intent)
+    if delivery_batch_id and prepared.delivery_batch_id != delivery_batch_id:
+        from dataclasses import replace as _replace
+
+        prepared = _replace(prepared, delivery_batch_id=delivery_batch_id)
     require_new_effect_id(view.effects, prepared.effect_id)
     effect_driver = driver_for_state(state, explicit=driver)
     batches = view.batches

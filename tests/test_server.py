@@ -22,7 +22,16 @@ from codey.agents.handoff import ConversationSnapshot
 from codey.agents.request import AgentRequest
 from codey.agents.shell_approval import MAX_APPROVAL_COMMAND_CHARS, shell_command_payload
 from codey.app import api as app_api
-from codey.app import consensus_service, event_bus, http_plumbing, review_service, server, shell_service, sibling_probe
+from codey.app import (
+    consensus_service,
+    event_bus,
+    ghost_services,
+    http_plumbing,
+    review_service,
+    server,
+    shell_service,
+    sibling_probe,
+)
 from codey.app import context as app_context
 from codey.app import provider_services as provider_services
 from codey.app import task_submit as task_submit
@@ -50,6 +59,7 @@ from codey.workspace import changes
 from codey.workspace.changes import ChangeTracker
 from tests.app_state import make_app_state
 from tests.operator_http import OperatorHTTPConnection
+from tests.support.shell_approval import add_pending_approval
 
 VALID_SHA256 = "a" * 64
 
@@ -73,6 +83,18 @@ def _persist_approval(state, pending):
     pending = dict(pending)
     pending.setdefault("provider", DEFAULT_PROVIDER_ID)
     pending.setdefault("max_turns", app_api.DEFAULT_MAX_TURNS)
+    # Approval facts belong to an admitted durable task.  ``reserve_run``
+    # only owns the in-memory execution lane; seed the canonical durable
+    # admission explicitly for fixtures that start at the approval boundary.
+    from tests.support.shell_approval import admit_shell_task
+    admit_shell_task(
+        state,
+        session_id=str(pending["session_id"]),
+        run_id=str(pending["run_id"]),
+        task=str(pending.get("task") or "shell approval"),
+        provider_id=str(pending.get("provider") or DEFAULT_PROVIDER_ID),
+        project=str(pending.get("project")) if pending.get("project") else None,
+    )
     artifact = state.managed_outputs.write_json_artifact(
         session_id=pending["session_id"], run_id=pending["run_id"], payload=pending,
     )
@@ -95,6 +117,17 @@ def _run_task_with_ghost_wait(*args, **kwargs):
                 wait(timeout=30)
         except Exception:
             pass
+
+
+def _declare_protocol_window(provider):
+    """Make a scripted provider's window capability explicit.
+
+    Production activation intentionally rejects dynamically fabricated
+    ``Mock`` attributes.  Tests that exercise task execution must declare the
+    provider capability they model instead of relying on ``Mock.__getattr__``.
+    """
+    provider.new_chat = mock.Mock()
+    return provider
 
 
 def _clean_diff(path: str, *, old: str = "old", new: str = "new") -> str:
@@ -172,6 +205,29 @@ def _verified_writer_agent_run(summary: str, *, turns: int = 3):
 
 
 _PROVIDER_TAB_GUARDS: list[mock.Mock] = []
+
+
+class _DeclaredChatProvider:
+    name = "DeepSeek Web"
+    location = "https://chat.deepseek.com/"
+
+    def __init__(self) -> None:
+        from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+        self.send = mock.Mock()
+        self.new_chat = mock.Mock()
+        self._binding = ProviderBinding("deepseek", "fixture", "fixture", "chat", "fixture")
+        self.window_ref = ProtocolWindowRef.new("fixture", self._binding)
+
+    def reset_window(self, expected_ref=None):
+        from codey.runtime.core.protocol_window import ProtocolWindowRef
+        self.window_ref = ProtocolWindowRef.new(self.window_ref.session_id, self._binding)
+        return self.window_ref
+
+    def load_durable_context(self, _messages):
+        return None
+
+    def close(self):
+        return None
 
 
 def setUpModule() -> None:
@@ -1370,6 +1426,7 @@ class ResearchGraphApiTests(unittest.TestCase):
     def test_ghost_store_race_closes_discarded_loser(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             ctx = server.AppContext(state_home=td)
+            stores = ctx._ghost_stores
             gate = threading.Barrier(2)
             made: list[object] = []
 
@@ -1391,7 +1448,7 @@ class ResearchGraphApiTests(unittest.TestCase):
             results: list[object] = []
             threads = [
                 threading.Thread(
-                    target=lambda: results.append(ctx._ghost_store("_ghost_inbox", _factory)),
+                    target=lambda: results.append(stores._get("inbox", _factory)),
                     daemon=True,
                 )
                 for _ in range(2)
@@ -1405,7 +1462,7 @@ class ResearchGraphApiTests(unittest.TestCase):
         self.assertEqual(len(made), 2)
         self.assertEqual(len(results), 2)
         self.assertIs(results[0], results[1])
-        self.assertIs(ctx._ghost_inbox, results[0])
+        self.assertIs(stores._values["inbox"], results[0])
         losers = [fake for fake in made if fake is not results[0]]
         self.assertEqual(len(losers), 1)
         self.assertTrue(losers[0].closed)
@@ -2351,7 +2408,7 @@ class RunSnapshotTests(unittest.TestCase):
     def test_stop_expires_pending_shell_approvals_so_allow_cannot_execute(self) -> None:
         state = server.AppContext()
         events = state.subscribe()
-        state.add_pending_shell_approval("shell-9", _complete_shell_pending({
+        add_pending_approval(state, "shell-9", _complete_shell_pending({
             "id": "shell-9",
             "session_id": "session-stop",
             "run_id": "run-stop",
@@ -2371,7 +2428,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertFalse(results[0]["approved"])
         self.assertEqual(results[0]["command"], "rm -rf /")
         # A later Allow POST finds nothing to execute: the id is gone.
-        self.assertIsNone(state.pop_pending_shell_approval("shell-9"))
+        self.assertIsNone(state.claim_pending_shell_approval("shell-9"))
 
     def test_error_expires_pending_shell_approvals_so_allow_cannot_execute(self) -> None:
         state = server.AppContext()
@@ -2384,7 +2441,7 @@ class RunSnapshotTests(unittest.TestCase):
         )
         assert run is not None
         self.assertTrue(state.start_run(run.run_id))
-        state.add_pending_shell_approval("shell-err", _complete_shell_pending({
+        add_pending_approval(state, "shell-err", _complete_shell_pending({
             "id": "shell-err",
             "session_id": run.session_id,
             "run_id": run.run_id,
@@ -2429,7 +2486,7 @@ class RunSnapshotTests(unittest.TestCase):
             "command": "pytest",
             "cwd": ".",
         }
-        state.add_pending_shell_approval("shell-1", {"ui_event": pending})
+        add_pending_approval(state, "shell-1", {"ui_event": pending})
         terminal = {
             "type": "task_done",
             "session_id": run.session_id,
@@ -2456,7 +2513,7 @@ class RunSnapshotTests(unittest.TestCase):
         )
         assert run is not None
         self.assertTrue(state.start_run(run.run_id))
-        state.add_pending_shell_approval("shell-1", _complete_shell_pending({
+        add_pending_approval(state, "shell-1", _complete_shell_pending({
             "id": "shell-1",
             "session_id": run.session_id,
             "run_id": run.run_id,
@@ -2490,7 +2547,7 @@ class RunSnapshotTests(unittest.TestCase):
     def test_new_task_expires_stale_shell_approval(self) -> None:
         state = server.AppContext()
         events = state.subscribe()
-        state.add_pending_shell_approval("shell-old", _complete_shell_pending({
+        add_pending_approval(state, "shell-old", _complete_shell_pending({
             "id": "shell-old",
             "session_id": "session-old",
             "run_id": "run-old",
@@ -2613,6 +2670,19 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual([(event_id, item["seq"]) for event_id, item in replay], [(2, 2)])
         self.assertEqual(live["seq"], 3)
 
+    def test_event_bus_durable_projection_is_not_replayed_after_sqlite_commit(self) -> None:
+        self.assertTrue(
+            server._is_replayed_durable_commit(
+                {"type": "durable_commit", "commit_seq": 11}, 11
+            )
+        )
+        self.assertFalse(
+            server._is_replayed_durable_commit(
+                {"type": "durable_commit", "commit_seq": 12}, 11
+            )
+        )
+        self.assertFalse(server._is_replayed_durable_commit({"type": "tool", "commit_seq": 11}, 11))
+
     def test_replay_events_after_expired_cursor_requests_resync(self) -> None:
         with mock.patch.object(app_context, "SSE_REPLAY_LIMIT", 2):
             state = server.AppContext()
@@ -2639,6 +2709,8 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNone(http_plumbing.sse_replay_cursor("-1"))
         self.assertIsNone(http_plumbing.sse_replay_cursor("not-an-id"))
         self.assertEqual(http_plumbing.sse_replay_cursor("7"), 7)
+        self.assertEqual(http_plumbing.sse_cursor("7:11"), (7, 11))
+        self.assertEqual(http_plumbing.sse_cursor("7"), (7, 0))
 
     def test_sse_initial_connect_does_not_replay_history(self) -> None:
         state = server.AppContext()
@@ -2687,7 +2759,7 @@ class RunSnapshotTests(unittest.TestCase):
                 mock.patch.object(state, "replay_events_after", wraps=original_replay) as replay,
             ):
                 conn = OperatorHTTPConnection(httpd, timeout=5)
-                conn.request("GET", "/api/events?last_event_id=1")
+                conn.request("GET", "/api/events?last_event_id=1:0")
                 response = conn.getresponse()
                 lines: list[str] = []
                 for _ in range(10):
@@ -2695,7 +2767,7 @@ class RunSnapshotTests(unittest.TestCase):
                     if not line:
                         break
                     lines.append(line)
-                    if "seq" in line and "2" in line:
+                    if line.startswith("data:") and json.loads(line[5:]).get("seq") == 2:
                         break
                 conn.close()
         finally:
@@ -2888,7 +2960,7 @@ class RunSnapshotTests(unittest.TestCase):
 
     def test_active_run_does_not_restore_an_unrelated_old_card(self) -> None:
         state = server.AppContext()
-        state.add_pending_shell_approval("old", {
+        add_pending_approval(state, "old", {
             "ui_event": {
                 "type": "shell_request",
                 "run_id": "run_old",
@@ -3081,6 +3153,14 @@ class RunSnapshotTests(unittest.TestCase):
             state = server.AppContext(td)
             self.assertIsInstance(state.runtime_operations, RuntimeOperationStore)
             assert state.runtime_operations is not None
+            state.durable.admit_input(
+                conversation_id="session-forget",
+                request_id="run-forget",
+                task_id="run-forget",
+                text="forget runtime operation",
+                provider_snapshot={"provider_id": "deepseek"},
+                task_state={"task": "forget runtime operation"},
+            )
             started = state.runtime_mutations.accept_operation(
                 session_id="session-forget",
                 run_id="run-forget",
@@ -3107,8 +3187,8 @@ class RunSnapshotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             state_home = Path(td)
             with (
-                mock.patch.object(app_context, "GhostInboxStore") as inbox_cls,
-                mock.patch.object(app_context, "GhostHebbianStore") as hebbian_cls,
+                mock.patch.object(ghost_services, "GhostInboxStore") as inbox_cls,
+                mock.patch.object(ghost_services, "GhostHebbianStore") as hebbian_cls,
             ):
                 state = server.AppContext(state_home)
 
@@ -3744,6 +3824,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.return_value = "direct reply"
+            _declare_protocol_window(provider)
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -3795,6 +3876,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.return_value = "direct reply"
+            _declare_protocol_window(provider)
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -3817,6 +3899,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.return_value = "normal reply"
+            _declare_protocol_window(provider)
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -3856,6 +3939,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.return_value = "normal reply"
+            _declare_protocol_window(provider)
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -3991,6 +4075,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.return_value = "normal reply"
+            _declare_protocol_window(provider)
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -4792,20 +4877,29 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(unified_task.call_args.kwargs.get("task_kind"), "hybrid")
 
     def test_shell_request_includes_risk_explanation(self) -> None:
-        state = server.AppContext()
-        events = state.subscribe()
-        provider = mock.Mock()
-        provider.name = "DeepSeek Web"
-        provider.location = "https://chat.deepseek.com/"
-        provider.send.return_value = '{"tool":"shell","args":{"path":".","command":"npm install"}}'
+        class ShellProvider:
+            name = "DeepSeek Web"
+            location = "https://chat.deepseek.com/"
+            send_result = '{"tool":"shell","args":{"path":".","command":"npm install"}}'
 
-        with (
-            tempfile.TemporaryDirectory() as td,
+            def new_chat(self) -> None:
+                return None
+
+            def send(self, *_args, **_kwargs):
+                return self.send_result
+
+        provider = ShellProvider()
+
+        with tempfile.TemporaryDirectory() as td:
+            state = server.AppContext(Path(td) / "state")
+            events = state.subscribe()
+            with (
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
-        ):
-            _run_task_with_ghost_wait("session-1", td, "Set up the project", 8, False, "deepseek", "project")
+            ):
+                _run_task_with_ghost_wait("session-1", td, "Set up the project", 8, False, "deepseek", "project")
+            state.close()
 
         emitted = []
         while not events.empty():
@@ -4816,24 +4910,32 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("install scripts", shell_event["risk_detail"])
 
     def test_shell_request_bounds_command_preview_and_carries_full_hash(self) -> None:
-        state = server.AppContext()
-        events = state.subscribe()
-        provider = mock.Mock()
-        provider.name = "DeepSeek Web"
-        provider.location = "https://chat.deepseek.com/"
         command = "python -c \"print('" + ("x" * 1600) + "')\""
-        provider.send.return_value = json.dumps({
-            "tool": "shell",
-            "args": {"path": ".", "command": command},
-        })
+        class ShellProvider:
+            name = "DeepSeek Web"
+            location = "https://chat.deepseek.com/"
 
-        with (
-            tempfile.TemporaryDirectory() as td,
+            def new_chat(self) -> None:
+                return None
+
+            def send(self, *_args, **_kwargs):
+                return json.dumps({
+                    "tool": "shell",
+                    "args": {"path": ".", "command": command},
+                })
+
+        provider = ShellProvider()
+
+        with tempfile.TemporaryDirectory() as td:
+            state = server.AppContext(Path(td) / "state")
+            events = state.subscribe()
+            with (
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
-        ):
-            _run_task_with_ghost_wait("session-1", td, "Run long command", 8, False, "deepseek", "project")
+            ):
+                _run_task_with_ghost_wait("session-1", td, "Run long command", 8, False, "deepseek", "project")
+            state.close()
 
         emitted = []
         while not events.empty():
@@ -4854,6 +4956,7 @@ class SessionThreadingTests(unittest.TestCase):
             '{"tool":"read_file","args":{"path":"empty.txt"}}',
             '{"tool":"done","args":{"summary":"empty file read"}}',
         ]
+        _declare_protocol_window(provider)
 
         with (
             tempfile.TemporaryDirectory() as td,
@@ -5403,10 +5506,12 @@ class SessionThreadingTests(unittest.TestCase):
         first.name = "DeepSeek Web"
         first.location = "https://chat.deepseek.com/"
         first.send.return_value = "First answer"
+        _declare_protocol_window(first)
         second = mock.Mock()
         second.name = "DeepSeek Web"
         second.location = "https://chat.deepseek.com/"
         second.send.return_value = "Second answer"
+        _declare_protocol_window(second)
 
         with (
             mock.patch.object(server, "STATE", state),
@@ -5425,9 +5530,7 @@ class SessionThreadingTests(unittest.TestCase):
     def test_plain_chat_uses_one_selected_model_when_advisors_are_available(self) -> None:
         with tempfile.TemporaryDirectory() as state_home:
             state = server.AppContext(state_home)
-            provider = mock.Mock()
-            provider.name = "DeepSeek Web"
-            provider.location = "https://chat.deepseek.com/"
+            provider = _DeclaredChatProvider()
             provider.send.return_value = "Selected model answer"
             with (
                 mock.patch.object(server, "STATE", state),
@@ -5452,6 +5555,8 @@ class SessionThreadingTests(unittest.TestCase):
                     latest_reply="SQLite is enough.",
                 )
             )
+            state.durable.append_message("session-1", "user_message", {"text": "Earlier durable detail"})
+            state.durable.append_message("session-1", "assistant_message", {"text": "Keep DURABLE-HISTORY-MARKER"})
             state.save_ui_state(
                 {
                     "active_id": "session-1",
@@ -5479,6 +5584,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.return_value = "Recovered answer"
+            _declare_protocol_window(provider)
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -5492,7 +5598,8 @@ class SessionThreadingTests(unittest.TestCase):
         provider.send.assert_called_once()
         prompt = provider.send.call_args.args[0]
         self.assertIn("recent_visible_conversation", prompt)
-        self.assertIn("UI-HISTORY-MARKER", prompt)
+        self.assertIn("DURABLE-HISTORY-MARKER", prompt)
+        self.assertNotIn("UI-HISTORY-MARKER", prompt)
 
     def test_chat_to_project_handoff_reaches_writer(self) -> None:
         with tempfile.TemporaryDirectory() as state_home, tempfile.TemporaryDirectory() as td:
@@ -5510,6 +5617,8 @@ class SessionThreadingTests(unittest.TestCase):
                     latest_reply="Use SQLite for simple local persistence.",
                 )
             )
+            state.durable.append_message("session-1", "user_message", {"text": "Pick storage"})
+            state.durable.append_message("session-1", "assistant_message", {"text": "Keep WRITER-HANDOFF-MARKER with SQLite."})
             state.save_ui_state(
                 {
                     "active_id": "session-1",
@@ -5599,6 +5708,8 @@ class SessionThreadingTests(unittest.TestCase):
                     latest_reply="Use SQLite for simple local persistence.",
                 ),
             )
+            first.durable.append_message("session-1", "user_message", {"text": "Pick storage"})
+            first.durable.append_message("session-1", "assistant_message", {"text": "Keep RESTART-ATTACH-MARKER with SQLite."})
             first.save_ui_state(
                 {
                     "active_id": "session-1",
@@ -5689,10 +5800,12 @@ class SessionThreadingTests(unittest.TestCase):
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
         writer.send.return_value = "The chosen database is SQLite."
+        _declare_protocol_window(writer)
         next_model = mock.Mock()
         next_model.name = "Qwen Studio"
         next_model.location = "https://chat.qwen.ai/"
         next_model.send.return_value = "We can continue with SQLite."
+        _declare_protocol_window(next_model)
 
         with (
             mock.patch.object(server, "STATE", state),
@@ -5714,14 +5827,17 @@ class SessionThreadingTests(unittest.TestCase):
         first_a.name = "DeepSeek Web"
         first_a.location = "https://chat.deepseek.com/"
         first_a.send.return_value = "Session A chose SQLite."
+        _declare_protocol_window(first_a)
         session_b = mock.Mock()
         session_b.name = "DeepSeek Web"
         session_b.location = "https://chat.deepseek.com/"
         session_b.send.return_value = "Session B answer."
+        _declare_protocol_window(session_b)
         second_a = mock.Mock()
         second_a.name = "DeepSeek Web"
         second_a.location = "https://chat.deepseek.com/"
         second_a.send.return_value = "Session A continued."
+        _declare_protocol_window(second_a)
 
         with (
             mock.patch.object(server, "STATE", state),
@@ -5749,10 +5865,12 @@ class SessionThreadingTests(unittest.TestCase):
         first.name = "DeepSeek Web"
         first.location = "https://chat.deepseek.com/"
         first.send.return_value = '{"tool":"done","args":{"summary":"first pass"}}'
+        _declare_protocol_window(first)
         second = mock.Mock()
         second.name = "DeepSeek Web"
         second.location = "https://chat.deepseek.com/"
         second.send.return_value = '{"tool":"done","args":{"summary":"continued"}}'
+        _declare_protocol_window(second)
 
         with (
             tempfile.TemporaryDirectory() as td,

@@ -126,6 +126,7 @@ def test_autodiscovered_model_can_be_selected_without_saving_a_new_connection():
 
 def test_approval_keeps_admitted_model_and_never_exposes_key_in_status(tmp_path):
     from codey.app.context import AppContext
+    from tests.support.shell_approval import add_pending_approval, admit_shell_task
 
     state = AppContext(tmp_path)
     try:
@@ -133,11 +134,12 @@ def test_approval_keeps_admitted_model_and_never_exposes_key_in_status(tmp_path)
         from codey.runtime.core.api_selection import ApiRunSelection
         config = ApiRunSelection("local", "revision", "chosen", "openai-completions", True, thinking_enabled=False)
         state.run_registry.bind_api_selection(run.run_id, config)
-        state.add_pending_shell_approval("approval", {"run_id":run.run_id, "provider":"local", "session_id":"a"})
+        admit_shell_task(state, session_id="a", run_id=run.run_id, task="read")
+        add_pending_approval(state, "approval", {"run_id":run.run_id, "provider":"local", "session_id":"a", "command":"echo approval", "cwd":"."})
         assert "secret" not in str(state.run_state_payload())
         state.release_run(run.run_id)
         assert state.run_registry.api_selection_for(run.run_id) is None
-        assert state.pop_pending_shell_approval("approval")["_api_selection"] is config
+        assert state.pending_shell_approvals()["approval"]["_api_selection"] is config
     finally:
         state.close()
 

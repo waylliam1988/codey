@@ -6,15 +6,21 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from codey.app.input_queue import ConversationInputQueue
+from codey.app.input_queue import ConversationInputQueue, DurableConversationInputQueue
 from codey.app.run_registry import RunSnapshot
-from codey.app.user_questions import UserQuestionStore
+from codey.app.user_questions import DurableUserQuestionStore
 
 
 class ConversationRuntime:
-    def __init__(self, root: Path, emit: Callable[[dict[str, Any]], None]) -> None:
-        self.inputs = ConversationInputQueue(root, emit=emit)
-        self.questions = UserQuestionStore(root)
+    def __init__(self, root: Path, emit: Callable[[dict[str, Any]], None], *, durable: Any = None) -> None:
+        self.inputs = (
+            DurableConversationInputQueue(durable, emit=emit)
+            if durable is not None
+            else ConversationInputQueue(root, emit=emit)
+        )
+        if durable is None:
+            raise ValueError("ConversationRuntime requires a durable session")
+        self.questions = DurableUserQuestionStore(durable)
         self.starts: dict[str, float] = {}
         self.admissions: dict[str, dict[str, Any]] = {}
 

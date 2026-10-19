@@ -23,9 +23,8 @@ def test_desktop_exit_closes_listener_and_releases_lease(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "CodeyHTTPServer", create_server)
     state = object()
     monkeypatch.setattr(server, "get_state", lambda: state)
-    queue_binding, question_recovery = mock.Mock(), mock.Mock()
+    queue_binding = mock.Mock()
     monkeypatch.setattr(server, "bind_input_queue", queue_binding)
-    monkeypatch.setattr(server, "recover_answers", question_recovery)
     fake_webview = mock.Mock()
     monkeypatch.setitem(sys.modules, "webview", fake_webview)
     warmup = mock.Mock(side_effect=AssertionError("Startup must never open model websites"))
@@ -34,7 +33,6 @@ def test_desktop_exit_closes_listener_and_releases_lease(tmp_path, monkeypatch):
         server.serve(port=0)
         warmup.assert_not_called()
         queue_binding.assert_called_once_with(state)
-        question_recovery.assert_called_once_with(state)
         fake_webview.start.assert_called_once()
         assert fake_webview.create_window.call_args.kwargs.get("text_select") is True
         assert len(instances) == 1

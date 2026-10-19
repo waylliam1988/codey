@@ -19,6 +19,7 @@ def build_task_deps(
     capture_provider_failure: Callable[..., Any] | None = None,
     review_policy: str | None = None,
     connect_reviewer: Callable[..., Any] | None = None,
+    connect_provider: Callable[..., Any] | None = None,
 ) -> TaskRunDeps:
     # Resolve services only when a task starts; importing the app must not
     # initialize browser connections or load the research runtime.
@@ -45,4 +46,5 @@ def build_task_deps(
         is_git_repository=changes.is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
+        connect_provider=connect_provider,
     )

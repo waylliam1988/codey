@@ -13,13 +13,19 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 if TYPE_CHECKING:
     from codey.app.context import AppContext
 
 from codey.agents.shell_approval import shell_command_event_fields
-from codey.app.shell_approval_state import _rebuild_pending_from_fact
+from codey.app.shell_approval_state import (
+    _claim_decision_fact,
+    _durable_approval_histories,
+    _rebuild_pending_from_fact,
+    approval_record_facts,
+)
+from codey.durable.model import TASK_TERMINAL_STATUSES, TaskCheckpoint, TaskStatus
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact
 from codey.task.model import ResolveShellApproval
 
@@ -74,10 +80,28 @@ class ShellApprovalWorkflow:
         self._closing = False
 
     def _pending(self, fact: ShellApprovalFact) -> dict[str, Any] | None:
-        return _rebuild_pending_from_fact(self.ctx, fact)
+        pending = _rebuild_pending_from_fact(self.ctx, fact)
+        return pending if pending is None or isinstance(pending, dict) else None
+
+    def _facts(self, approval_id: str) -> tuple[ShellApprovalFact, ...]:
+        """Read the canonical durable approval state.
+
+        The JSONL record is an optional audit export.  It is deliberately not
+        consulted here, so a missing, delayed, or corrupt audit file cannot
+        change permission or recovery behavior.
+        """
+        durable = getattr(self.ctx, "durable", None)
+        lookup = getattr(durable, "approval", None)
+        if not callable(lookup):
+            return ()
+        try:
+            record = lookup(approval_id)
+        except (AttributeError, KeyError, OSError, TypeError, ValueError):
+            return ()
+        return cast(tuple[ShellApprovalFact, ...], approval_record_facts(record))
 
     def status(self, approval_id: str) -> ApprovalStatus | None:
-        facts = self.ctx.shell_approval_records.read(approval_id)
+        facts = self._facts(approval_id)
         return self._status(facts) if facts else None
 
     def _read_result(self, fact: ShellApprovalFact) -> dict[str, Any]:
@@ -163,31 +187,62 @@ class ShellApprovalWorkflow:
         return None
 
     def for_source(self, session_id: str, source_run_id: str = '') -> ApprovalStatus | None:
-        rows = [
-            facts
-            for facts in self.ctx.shell_approval_records.histories().values()
-            if facts[0].session_id == session_id and (not source_run_id or facts[0].source_run_id == source_run_id)
-        ]
+        rows = [facts for facts in _durable_approval_histories(self.ctx).values()
+                if facts[0].session_id == session_id
+                and (not source_run_id or facts[0].source_run_id == source_run_id)]
         return self._status(rows[-1]) if rows else None
 
     def list_statuses(self, *, session_id: str = '') -> list[ApprovalStatus]:
-        histories = self.ctx.shell_approval_records.histories()
+        histories = _durable_approval_histories(self.ctx)
         rows = [facts for facts in histories.values() if not session_id or facts[0].session_id == session_id]
         return [self._status(facts) for facts in rows[-100:]]
+
+    def _durable_continuation(self, session_id: str, run_id: str) -> TaskCheckpoint | None:
+        """Read continuation ownership from the canonical task checkpoint.
+
+        Runtime JSONL is an audit projection.  It may be compacted, delayed,
+        or absent after a restart, so it cannot decide whether a continuation
+        is already running.  A missing durable task is an explicit unknown;
+        callers must not infer that the task should be executed again.
+        """
+        durable = getattr(self.ctx, "durable", None)
+        task = getattr(durable, "task", None)
+        if durable is None or not callable(task) or not session_id or not run_id:
+            return None
+        try:
+            checkpoint = task(run_id)
+        except (KeyError, ValueError, TypeError):
+            return None
+        if str(getattr(checkpoint, "conversation_id", "")) != session_id:
+            return None
+        return cast(TaskCheckpoint, checkpoint)
+
+    def _continuation_is_settled(self, session_id: str, run_id: str) -> bool:
+        checkpoint = self._durable_continuation(session_id, run_id)
+        if checkpoint is None:
+            return False
+        try:
+            return TaskStatus(str(checkpoint.status)) in TASK_TERMINAL_STATUSES
+        except (TypeError, ValueError):
+            return False
 
     def start(self, submit: Submit) -> None:
         """Recover committed jobs when the application service starts."""
         self._submit = submit
-        for facts in self.ctx.shell_approval_records.histories().values():
+        histories = list(_durable_approval_histories(self.ctx).values())
+        for facts in histories:
             last = facts[-1]
-            if (
-                last.kind == "continuation_started"
-                and self.ctx.runtime_operations.load(
-                    last.session_id,
-                    last.continuation_run_id,
+            if last.kind == "continuation_started":
+                # A started continuation is already owned by its durable task.
+                # Missing or malformed ownership is unknown and must not be
+                # converted into a second submission.
+                checkpoint = self._durable_continuation(
+                    last.session_id, last.continuation_run_id
                 )
-                is not None
-            ):
+                if checkpoint is None or self._continuation_is_settled(
+                    last.session_id, last.continuation_run_id
+                ):
+                    continue
                 continue
             if last.kind in {
                 "approved",
@@ -200,8 +255,8 @@ class ShellApprovalWorkflow:
 
     def accept(self, approval_id: str, approved: bool, submit: Submit) -> tuple[int, dict[str, Any]]:
         self._submit = submit
-        with self.ctx._shell_spawn_gate, self.ctx.lock:
-            facts = self.ctx.shell_approval_records.read(approval_id)
+        with self.ctx._shell_spawn_gate:
+            facts = self._facts(approval_id)
             if not facts:
                 return 404, {"error": "approval not found"}
             state = self._status(facts)
@@ -217,14 +272,15 @@ class ShellApprovalWorkflow:
                 if pending is None:
                     return 409, {**state, "code": "command_unavailable", "error": "approval command unavailable"}
                 # Keep the UI projection intact until the verdict is durable.
-                if not self.ctx.shell_approval_records.claim_decision(
-                    replace(
-                        facts[0],
-                        kind="approved" if approved else "denied",
-                    )
+                if not _claim_decision_fact(
+                    self.ctx,
+                    pending,
+                    approval_id,
+                    "approved" if approved else "denied",
                 ):
                     return 409, {"code": "decision_conflict", "error": "approval already decided"}
-                self.ctx.approvals.pop_shell(approval_id)
+                with self.ctx.lock:
+                    self.ctx.approvals.pop_shell(approval_id)
         self._schedule(approval_id)
         accepted_state = self.status(approval_id)
         assert accepted_state is not None
@@ -269,7 +325,7 @@ class ShellApprovalWorkflow:
 
     def cancel_queued(self, session_id: str = "") -> None:
         """Called under the Stop spawn gate and context lock."""
-        for facts in self.ctx.shell_approval_records.histories().values():
+        for facts in _durable_approval_histories(self.ctx).values():
             first, last = facts[0], facts[-1]
             if session_id and first.session_id != session_id:
                 continue
@@ -297,14 +353,30 @@ class ShellApprovalWorkflow:
             run_id=fact.source_run_id,
             payload=result,
         )
-        self.ctx.record_shell_approval_fact(
-            replace(
-                fact,
-                kind=kind,
-                result_ref=artifact.handle,
-                result_digest=artifact.sha256,
-            )
+        settled = replace(
+            fact,
+            kind=kind,
+            result_ref=artifact.handle,
+            result_digest=artifact.sha256,
         )
+        if kind == "execution_settled":
+            # The receipt is written before this call, while the durable
+            # approval/effect settlement is the authoritative admission. The
+            # audit JSONL is appended only after the single durable commit.
+            self.ctx.durable.settle_approval_effect(
+                fact.approval_id,
+                settlement={
+                    "result_ref": artifact.handle,
+                    "result_digest": artifact.sha256,
+                    "status": str(result.get("status") or "exit"),
+                },
+            )
+            try:
+                self.ctx.shell_approval_records.append(settled)
+            except OSError:
+                logger.warning("shell approval audit projection unavailable: %s", fact.approval_id)
+            return
+        self.ctx.record_shell_approval_fact(settled)
 
     def _work(self, approval_id: str) -> None:
         try:
@@ -328,7 +400,7 @@ class ShellApprovalWorkflow:
         from codey.app import shell_service
         from codey.policies.limits import SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
 
-        facts = self.ctx.shell_approval_records.read(approval_id)
+        facts = self._facts(approval_id)
         first, last = facts[0], facts[-1]
         pending = self._pending(first)
         if pending is None:
@@ -407,7 +479,7 @@ class ShellApprovalWorkflow:
             if settlement is None:
                 return
             result = self._read_result(settlement)
-        approved = any(f.kind == "approved" for f in self.ctx.shell_approval_records.read(approval_id))
+        approved = any(f.kind == "approved" for f in self._facts(approval_id))
         self.ctx.record_shell_result(
             {
                 "type": "shell_result",
@@ -431,7 +503,7 @@ class ShellApprovalWorkflow:
     def _continue(self, first: ShellApprovalFact, pending: dict[str, Any], result: dict[str, Any]) -> None:
         from codey.app import shell_service
 
-        facts = self.ctx.shell_approval_records.read(first.approval_id)
+        facts = self._facts(first.approval_id)
         last = facts[-1]
         if any(f.kind == "continuation_cancelled" for f in facts):
             return
@@ -443,10 +515,21 @@ class ShellApprovalWorkflow:
             self.ctx.record_shell_approval_fact(replace(first, kind="continuation_cancelled"))
             return
         if last.kind in {"continuation_claimed", "continuation_started", "continuation_failed"}:
-            operation = self.ctx.runtime_operations.load(first.session_id, last.continuation_run_id)
-            if operation is not None:
+            checkpoint = self._durable_continuation(
+                first.session_id, last.continuation_run_id
+            )
+            if checkpoint is not None:
+                if self._continuation_is_settled(
+                    first.session_id, last.continuation_run_id
+                ):
+                    return
                 if last.kind != "continuation_started":
                     self.ctx.record_shell_approval_fact(replace(last, kind="continuation_started"))
+                return
+            if last.kind == "continuation_started":
+                # The durable task is the only execution identity.  A
+                # missing task is corruption/unknown state, never permission
+                # to submit the continuation again.
                 return
             continuation_id = last.continuation_run_id
         else:
@@ -477,7 +560,13 @@ class ShellApprovalWorkflow:
                 **({"model_selection": pending["_api_selection"]} if pending.get("_api_selection") is not None else {}),
             )
         except Exception:
-            if not self.ctx.shutdown_requested():
+            # Stop may have committed continuation_cancelled while the
+            # submission/admission call was in flight.  Re-read durable
+            # approval state before recording a failure so a late exception
+            # cannot overwrite the cancellation winner.
+            latest = self._facts(first.approval_id)
+            cancelled = latest and latest[-1].kind == "continuation_cancelled"
+            if not self.ctx.shutdown_requested() and not cancelled and not self.ctx.stop_flag_for(first.source_run_id).is_set():
                 self.ctx.record_shell_approval_fact(
                     replace(first, kind="continuation_failed", continuation_run_id=continuation_id)
                 )

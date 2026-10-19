@@ -272,4 +272,4 @@ def test_real_receipt_restart_preserves_long_command_identity(tmp_path):
     assert recovery.ok
     assert session.verifications[-1]["command"] == command
     assert restored.verifications[-1]["command"] == command
-    assert rows[0].call.args["command"] == command
+    assert recovery.settled_tool_outcomes[0].call.args["command"] == command

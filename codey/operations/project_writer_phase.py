@@ -96,6 +96,11 @@ def _run_one_writer_attempt(
         )
     except Exception:
         writer_experiences = ""
+    from codey.operations.task_effects import admitted_durable
+
+    window_action = ctx.frame.window_action if spec.provider is ctx.frame.provider else None
+    ctx.frame.window_action = None
+
     return cast(RunResult, ctx.deps.agent.run(AgentRequest(
         provider=spec.provider,
         project=Path(ctx.project),
@@ -105,6 +110,7 @@ def _run_one_writer_attempt(
         on_shell_request=ctx.hooks.on_shell_request,
         stop_flag=stop_flag_for(ctx.state, ctx.frame.run_id),
         fresh_chat=spec.fresh_chat,
+        window_action=window_action,
         change_tracker=ctx.tracker,
         conversation=ctx.frame.conversation,
         provider_id=spec.provider_id,
@@ -142,6 +148,7 @@ def _run_one_writer_attempt(
         run_id=ctx.frame.run_id,
         effect_scope=f"writer:{ctx.writer_attempt_index}",
         runtime_mutations=ctx.deps.runtime.mutations,
+        durable=cast(Any, admitted_durable(ctx.state, ctx.frame.run_id)),
         workspace_revision_store=workspace_revision_store,
         workspace_ignored_paths=ctx.configured_ignored_paths,
         managed_outputs=ctx.deps.persistence.managed_outputs,

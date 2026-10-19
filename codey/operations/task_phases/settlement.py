@@ -167,6 +167,91 @@ def _publish_display_after_commit(deps: Any, outcome: ModeOutcome) -> None:
             continue
 
 
+def _commit_durable_terminal(deps: Any, frame: RunFrame, event: dict[str, object], outcome: ModeOutcome) -> None:
+    durable = getattr(deps.state, "durable", None)
+    if durable is None:
+        return
+    run_id = str(event.get("run_id") or frame.run_id)
+    try:
+        task = durable.task(run_id)
+    except KeyError:
+        return
+    # A headless/user stop may have already won the canonical cancellation
+    # race.  The runtime operation still records the provider's terminal
+    # outcome, but it must not try to park or complete an already-cancelled
+    # durable task.
+    if task.phase in {"failed", "cancelled", "completed"}:
+        return
+    state: dict[str, object] = {
+        "stop_reason": str(event.get("stop_reason") or ""),
+        "summary": str(event.get("summary") or ""),
+        "provider": str(event.get("provider") or ""),
+        "turns": event.get("turns") if isinstance(event.get("turns"), int) else 0,
+    }
+    receipt = event.get("receipt")
+    if isinstance(receipt, dict):
+        proof = receipt.get("completion_proof")
+        if isinstance(proof, dict):
+            state["completion_proof"] = {
+                "proof_id": str(proof.get("proof_id") or ""),
+                "status": str(proof.get("status") or ""),
+            }
+    stop_reason = str(event.get("stop_reason") or "")
+    if stop_reason in {"done", "max_turns"}:
+        answer = _display_reply_text(outcome) or str(event.get("summary") or "")
+        durable.complete_task(run_id, answer, state=state)
+    elif stop_reason in {"approval", "question"}:
+        # The provider turn yielded to an external decision.  Preserve the
+        # exact logical checkpoint and park scheduler ownership; the decision
+        # worker or answer admission owns the explicit wake-up/continuation.
+        durable.wait_task(run_id, state=state)
+    elif task.phase not in {"failed", "cancelled", "completed"}:
+        durable.fail_task(run_id, str(event.get("summary") or event.get("stop_reason") or "task failed"), state=state)
+
+
+def _fail_durable_task(deps: Any, run_id: str, event: dict[str, object]) -> None:
+    durable = getattr(deps.state, "durable", None)
+    if durable is None:
+        return
+    try:
+        task = durable.task(run_id)
+    except KeyError:
+        return
+    if task.phase in {"failed", "cancelled", "completed"}:
+        return
+    state = {
+        "stop_reason": str(event.get("stop_reason") or ""),
+        "summary": str(event.get("summary") or ""),
+        "provider": str(event.get("provider") or ""),
+    }
+    if task.state.get("cancel_requested"):
+        durable.cancel_task(
+            run_id,
+            reason=str(task.state.get("cancel_reason") or "user stopped"),
+        )
+    else:
+        durable.fail_task(
+            run_id,
+            str(event.get("summary") or event.get("stop_reason") or "task failed"),
+            state=state,
+        )
+
+
+def _seal_cancel_before_runtime(deps: Any, run_id: str, event: dict[str, object]) -> bool:
+    """Close a durable cancellation barrier before runtime projection writes."""
+    durable = getattr(getattr(deps, "state", None), "durable", None)
+    if durable is None:
+        return False
+    try:
+        task = durable.task(run_id)
+    except KeyError:
+        return False
+    if not task.state.get("cancel_requested"):
+        return False
+    _fail_durable_task(deps, run_id, event)
+    return True
+
+
 def settle_cancelled_run(
     deps: Any,
     state: TaskState,
@@ -210,8 +295,16 @@ def settle_cancelled_run(
     stopped_event = event_with_projected_receipt(
         deps.run_ledgers, stopped_event, session_id=session_id, run_id=run_id
     )
+    cancelled = _seal_cancel_before_runtime(deps, run_id, stopped_event)
     if work is not None:
         finish_run_operation(deps, work, stopped_event)
+    # A provider can observe the stop barrier without a separate durable
+    # ``request_cancel`` transition (for example headless cancellation during
+    # a native send).  The terminal event still owns the task outcome, so
+    # close the canonical checkpoint here instead of leaving it runnable at
+    # ``assistant_response_pending``.
+    if not cancelled:
+        _fail_durable_task(deps, run_id, stopped_event)
     finish_trace(stopped_event)
     # Cancelled rounds leave an unretrievable experience row so the attempt
     # stays visible in export instead of vanishing silently.
@@ -305,9 +398,12 @@ def settle_error_run(
     error_event = event_with_projected_receipt(
         deps.run_ledgers, error_event, session_id=session_id, run_id=run_id
     )
+    cancelled = _seal_cancel_before_runtime(deps, run_id, error_event)
     if work is not None:
         finish_run_operation(deps, work, error_event)
     finish_trace(error_event)
+    if not cancelled:
+        _fail_durable_task(deps, run_id, error_event)
     # Failed rounds leave an unretrievable experience row for the same reason.
     request_task = str(getattr(getattr(frame, "request", None), "task", "") or "")
     persisted, obs_status = _persist_observation_row(
@@ -369,13 +465,12 @@ def _finish_mode_outcome(
         session_id=frame.request.session_id,
         run_id=frame.run_id,
     )
+    _seal_cancel_before_runtime(deps, frame.run_id, event)
     finish_run_operation(deps, work, event)
     finish_trace(event)
-    # Commit order (crash semantics): the ledger finish above is the durable
-    # commit point — a crash after it leaves a done ledger without an
-    # observation, which export still shows. The observation follows
-    # best-effort, then display, then the observation warning (when the row is
-    # missing or uncommitted), and task_done is always the last task event.
+    _commit_durable_terminal(deps, frame, event, outcome)
+    # SQLite owns the checkpoint/answer commit above. The run report and
+    # Ghost observation are independent consumers, never recovery inputs.
     persisted, obs_status = _persist_experience_observation(deps, frame, event, outcome)
     _publish_display_after_commit(deps, outcome)
     if not persisted or obs_status != "committed":

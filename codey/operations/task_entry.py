@@ -9,6 +9,7 @@ kernel. All production tool calls converge in
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from functools import partial
@@ -16,7 +17,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from codey.operations.context import RunFrame, RunHooks, RunWork
-from codey.operations.conversation_window import WindowActivationError, activate_window
+from codey.operations.conversation_window import WindowActivationError, activate_window, replayed_result_ids
 from codey.operations.kernel_session_recovery import restore_task_session
 from codey.operations.result import ModeOutcome
 from codey.operations.task_guidance import task_guidance_for_policy
@@ -115,10 +116,9 @@ def start_task_session(frame: RunFrame, work: RunWork, policy: Any, kind: str) -
 
 def _entry_policy_with_recovery(frame: RunFrame, deps: Any, kind: str) -> Any:
     request = frame.request
-    from codey.operations.recovery import rebuilt_policy_from_log
+    from codey.operations.recovery import durable_task_for, policy_from_durable_task
 
-    mutations = getattr(deps, "runtime_mutations", None)
-    session_log = getattr(mutations, "session_log", None) if mutations is not None else None
+    durable = durable_task_for(getattr(getattr(deps, "state", None), "durable", None), frame.run_id)
     incoming = getattr(frame, "entry_policy", None)
     if incoming is None:
         incoming = build_task_policy_for_entry(replace(request, project=frame.project_text or None), kind)
@@ -129,16 +129,10 @@ def _entry_policy_with_recovery(frame: RunFrame, deps: Any, kind: str) -> Any:
     recovered = bool(getattr(frame, "recovered_tool_outcomes", ()) or getattr(frame, "settled_tool_outcomes", ()))
     if not recovered:
         return incoming
-    if session_log is None:
-        raise RuntimeError("recovery policy log unavailable")
     # A resumed run must use the policy recorded at its original entry. Never
     # replace a missing or malformed persisted policy with the new request's
     # capabilities; missing grants or requirements stop recovery.
-    return rebuilt_policy_from_log(
-        session_log,
-        session_id=request.session_id,
-        run_id=frame.run_id,
-    )
+    return policy_from_durable_task(durable, task_id=frame.run_id)
 
 
 def _entry_check_conflict(policy: Any, request: Any, kind: str) -> None:
@@ -192,12 +186,15 @@ def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, An
 
         mutations.mark_writer_running(request.session_id, frame.run_id,
                                       provider_id=frame.provider_id)
+        from codey.operations.task_effects import admitted_durable
+
         intent_sink = KernelEffectSink(
             mutations, session_id=request.session_id, run_id=frame.run_id,
             provider_id=frame.provider_id,
             phase="research" if kind == "research" else "writer",
             recovered_batch_id=str(getattr(frame, "recovered_tool_result_batch_id", "") or ""),
             managed_outputs=getattr(deps, "managed_outputs", None),
+            durable=admitted_durable(deps.state, frame.run_id),
         )
         active_provider = KernelRecordedProvider(active_provider, intent_sink)
     if getattr(frame, "conversation", None) is not None:
@@ -261,13 +258,13 @@ def _entry_context(frame: RunFrame, deps: Any, policy: Any) -> str:
                                      query=request.task, exclude_run_id=frame.run_id)
     record_local_context_trace(getattr(frame, "trace", None), directive, continuity)
     if not policy.allows("project.read"):
-        return join_local_contexts(directive.text, continuity.text, experiences)
+        return str(join_local_contexts(directive.text, continuity.text, experiences))
     workspace_context = _project_context(AgentRequest(
         provider=frame.provider, project=Path(frame.project_text), task=request.task,
         permission_profile="coding_writer" if policy.allows("project.write") else "planning_readonly",
         trace_recorder=getattr(frame, "trace", None),
     ))
-    return join_local_contexts(directive.text, continuity.text, experiences, workspace_context)
+    return str(join_local_contexts(directive.text, continuity.text, experiences, workspace_context))
 
 
 def _workspace_writer(frame: RunFrame, state: Any, stack: ExitStack) -> Any:
@@ -328,11 +325,12 @@ def _run_entry_kernel(  # noqa: PLR0915
         raise RuntimeError("task policy unavailable during recovery")
     _entry_check_conflict(policy, request, kind)
     session = start_task_session(frame, work, policy, kind)
-    from codey.operations.recovery import record_entry_policy
+    from codey.operations.recovery import durable_task_for, record_entry_policy
 
     record_entry_policy(
         getattr(deps, "runtime_mutations", None),
         session_id=request.session_id, run_id=frame.run_id, policy=policy,
+        durable=durable_task_for(getattr(getattr(deps, "state", None), "durable", None), frame.run_id),
     )
     project_path, tool_fns, research_tools = _entry_executors(frame, deps, policy)
     previous_tools = getattr(frame, "entry_research_tools", None)
@@ -375,7 +373,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                 "receipt": {"display": {"summary": "provider is not connected"}},
             })
         try:
-            action = getattr(frame, "window_action", None)
+            action = frame.window_action
             if action is not None:
                 activate_window(frame.provider, action)
                 frame.conversation.begin_window(frame.provider_id, kind, frame.project_text)
@@ -428,6 +426,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                     initial_turn=initial_turn,
                     window_ref=getattr(active_provider, "window_ref", None),
                     provider_session_changed=bool(getattr(frame, "provider_session_changed", False)),
+                    replayed_result_ids=replayed_result_ids(frame.window_action),
                 ),
                 execution=KernelExecutionDeps(
                     executors={},
@@ -646,7 +645,13 @@ def run_task_submission(deps: Any, request: TaskSubmission) -> None:
         if prepared is None:
             return None
         try:
-            return _admit_api_selection(deps.state, prepared)
+            prepared = _admit_api_selection(deps.state, prepared)
+            from codey.operations.task_phases.lifecycle import _ensure_durable_task
+
+            if _ensure_durable_task(deps.state, prepared):
+                checkpoint = deps.state.durable.task(prepared.run_id)
+                deps.state.durable.start_task(prepared.run_id, state=dict(checkpoint.state))
+            return prepared
         except Exception:
             release_unstarted_submission(deps.state, prepared)
             raise
@@ -670,6 +675,7 @@ def run_task_submission(deps: Any, request: TaskSubmission) -> None:
         execute,
         prepare=prepare,
         on_unstarted_failure=partial(release_unstarted_submission, deps.state),
+        durable=deps.state.durable,
     )
     runtime.run(request)
 
@@ -678,10 +684,20 @@ def _admit_api_selection(state: Any, request: TaskSubmission) -> TaskSubmission:
     from codey.providers.api_connections import capture_selection, connection_for
     from codey.providers.catalog import API_CONNECTIONS
     from codey.runtime.core.api_selection import ApiRunSelection
-    from codey.runtime.core.operation_state import RuntimeOperationStore
-
-    existing = RuntimeOperationStore(state.runtime_log).load(request.session_id, request.previous_run_id or request.run_id)
-    payload = existing.model_selection if existing is not None else request.model_selection
+    durable_payload: dict[str, object] = {}
+    for candidate_id in (request.previous_run_id, request.run_id):
+        if not candidate_id:
+            continue
+        try:
+            checkpoint = state.durable.task(candidate_id)
+        except (KeyError, AttributeError):
+            continue
+        snapshot = checkpoint.provider_snapshot
+        candidate = snapshot.get("model_selection") if isinstance(snapshot, Mapping) else None
+        if isinstance(candidate, Mapping):
+            durable_payload = dict(candidate)
+            break
+    payload = durable_payload or request.model_selection
     if payload:
         selection = ApiRunSelection.from_payload(payload)
         if request.provider_id != selection.connection_id:
@@ -689,7 +705,7 @@ def _admit_api_selection(state: Any, request: TaskSubmission) -> TaskSubmission:
         # Validate availability and credential scope before starting any request.
         connection_for(selection.connection_id).validate_selection(selection)
     elif request.provider_id in API_CONNECTIONS:
-        if existing is not None:
+        if request.previous_run_id and not durable_payload:
             raise ValueError("original API selection is unavailable; cannot guess a recovery model")
         selection = capture_selection(request.provider_id)
     else:

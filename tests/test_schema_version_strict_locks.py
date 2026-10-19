@@ -57,16 +57,6 @@ def test_facts_rejects_bool_schema(tmp_path: Path) -> None:
     assert len(loaded.commands) == 0, "True schema must not load commands"
 
 
-def test_conversation_rejects_bool_schema(tmp_path: Path) -> None:
-    from codey.storage.conversation_store import ConversationStore
-
-    store = ConversationStore(tmp_path)
-    path = store.path_for("sess-1")
-    _write(path, {"schema_version": True, "estimated_context_tokens": 123})
-    loaded = store.load("sess-1")
-    assert loaded.estimated_context_tokens == 0, "True schema must fail closed to default"
-
-
 def test_ui_state_rejects_bool_schema(tmp_path: Path) -> None:
     from codey.storage.ui_state_store import UiStateStore
 
@@ -85,7 +75,6 @@ def test_strict_source_present_in_all_readers() -> None:
         "workspace/facts.py",
         "workspace/changes.py",
         "workspace/config.py",
-        "storage/conversation_store.py",
         "storage/ui_state_store.py",
         "runs/ledger.py",
         "runs/ledger_projection.py",

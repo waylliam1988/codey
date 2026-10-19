@@ -248,8 +248,28 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("self._pending_shell: dict", approval_source)
         self.assertIn("self._pending_teach: dict", approval_source)
         self.assertIn("def add_pending_shell_approval", server_source)
-        self.assertIn("def pop_pending_shell_approval", server_source)
+        self.assertNotIn("def pop_pending_shell_approval", server_source)
         self.assertIn("def resume_pending_teach", server_source)
+
+    def test_shell_approval_audit_is_not_a_runtime_fact_source(self) -> None:
+        """Approval recovery and admission must never read the JSONL export."""
+        paths = (
+            ROOT / "codey" / "app" / "context.py",
+            ROOT / "codey" / "app" / "shell_approval_state.py",
+            ROOT / "codey" / "app" / "shell_approval_workflow.py",
+            ROOT / "codey" / "app" / "task_submit.py",
+        )
+        forbidden = (
+            "shell_approval_records.read(",
+            "shell_approval_records.latest(",
+            "shell_approval_records.histories(",
+            "shell_approval_records.claim_",
+        )
+        for path in paths:
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                for token in forbidden:
+                    self.assertNotIn(token, source)
 
     def test_provider_registry_owns_provider_sessions_and_health(self) -> None:
         server_source = APP_CONTEXT_PATH.read_text(encoding="utf-8")
@@ -266,20 +286,15 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("def provider_supervisor", server_source)
         self.assertIn("self.supervisor =", registry_source)
 
-    def test_conversation_registry_owns_conversation_cache_and_store(self) -> None:
+    def test_conversation_registry_is_only_a_provider_window_cache(self) -> None:
         server_source = APP_CONTEXT_PATH.read_text(encoding="utf-8")
         registry_source = (ROOT / "codey" / "app" / "conversation_registry.py").read_text(encoding="utf-8")
 
         self.assertIn("codey.app.conversation_registry", imported_modules(APP_CONTEXT_PATH))
         self.assertIn("class ConversationRegistry", registry_source)
-        for token in (
-            "self.conversations: dict",
-            "self.conversation_tokens: dict",
-            "self.conversation_store =",
-            "def _save_conversation",
-        ):
-            with self.subTest(token=token):
-                self.assertNotIn(token, server_source)
+        self.assertIn("self.contexts: dict", registry_source)
+        self.assertNotIn("ConversationStore", registry_source)
+        self.assertNotIn("conversation_store", server_source)
 
     def test_background_workers_own_single_flight_state(self) -> None:
         server_source = APP_CONTEXT_PATH.read_text(encoding="utf-8")
@@ -1943,6 +1958,46 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(session_log, name))
 
+    def test_shell_approval_recovery_uses_durable_task_not_runtime_projection(self) -> None:
+        source = (ROOT / "codey" / "app" / "shell_approval_workflow.py").read_text(
+            encoding="utf-8"
+        )
+        # Runtime JSONL is an audit/read model.  A continuation that survives
+        # restart must be found through the canonical durable task checkpoint;
+        # otherwise deleting or compacting the projection changes recovery.
+        self.assertNotIn("runtime_operations.load", source)
+        state_source = (ROOT / "codey" / "app" / "shell_approval_state.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("RuntimeOperationStore", state_source)
+        task_runtime_source = (ROOT / "codey" / "runtime" / "write" / "task_runtime.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("RuntimeOperationStore", task_runtime_source)
+        review_source = (ROOT / "codey" / "app" / "review_service.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("RuntimeOperationStore", review_source)
+
+    def test_production_code_cannot_bypass_durable_session_store(self) -> None:
+        """The SQLite/Memory backend is an implementation detail of durable."""
+        allowed = {
+            "codey/durable/session.py",
+            "codey/durable/__init__.py",
+            "codey/durable/memory.py",
+            "codey/durable/sqlite.py",
+            "codey/durable/store.py",
+        }
+        offenders: list[str] = []
+        for path in (ROOT / "codey").rglob("*.py"):
+            relative = path.relative_to(ROOT).as_posix()
+            if relative in allowed or "/web/" in relative:
+                continue
+            source = path.read_text(encoding="utf-8")
+            if ".durable.store" in source or ".session.store" in source:
+                offenders.append(relative)
+        self.assertEqual(offenders, [])
+
     def test_api_provider_runtime_has_no_config_or_discovery_facades(self) -> None:
         # Local model has one owner per concern: api_provider is the provider
         # runtime, local_config owns persistence, local_discovery owns probes.
@@ -2248,6 +2303,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "runtime/core/operation_state.py",
             # PLR split 2026-09-26: batch intent/orphan/link helpers stay in-module.
             "runtime/effects/tool_result_delivery.py",
+            # DurableSession is the single mutation-line facade for
+            # conversation, task, approval, and effect commits.  Keeping
+            # these entry points together makes the owner visible; extracting
+            # them into generic repositories would increase call-chain size.
+            "durable/session.py",
             "toolchain/runtime.py",
             "workspace/changes.py",
         }
@@ -2259,7 +2319,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         ceiling = {
             # Session-scoped run lanes and per-run cancellation/output
             # lifecycle add a small amount of cohesive context state.
-            "app/context.py": 1160,
+            # DurableSession, scheduler and durable projection wiring now
+            # live at the application boundary; this is the single assembly
+            # point and stays below the next structural split threshold.
+            "app/context.py": 1170,
             "ghost/affinity.py": 2750,
             "ghost/continuity.py": 1350,
             "ghost/hebbian.py": 1300,
@@ -2281,11 +2344,18 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "research/source_connectors.py": 1420,
             "runs/trace.py": 2450,
             # PLR split 2026-09-26: 1188 lines after from_payload field split.
-            "runtime/core/operation_state.py": 1250,
+            # Durable checkpoint projection keeps the explicit adapter in this
+            # module while the mutation owner remains in codey.durable.
+            "runtime/core/operation_state.py": 1270,
             # PLR split 2026-09-26: 1046 lines after batch-helper split.
             # Abandoned terminal 2026-09-27: 1194 lines (abandoned receipt +
             # terminal exclusivity, no new file; ceiling raised, not split).
-            "runtime/effects/tool_result_delivery.py": 1250,
+            # Durable-backed delivery reconstruction and bounded projection
+            # validation add a small amount of owned code here.
+            "runtime/effects/tool_result_delivery.py": 1270,
+            # Cancellation barrier and durable recovery settlement are kept
+            # beside the session mutation owner; no generic repository split.
+            "durable/session.py": 1080,
             # LF/CRLF line-boundary note (was a one-line overclaim).
             # PLR split 2026-09-26: 1381 lines after search_files scan split.
             "toolchain/runtime.py": 1440,

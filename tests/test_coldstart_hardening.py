@@ -41,7 +41,6 @@ from codey.runtime.core.operation_state import (
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.runtime.write.task_runtime import TaskRuntime, _turn_budget
-from codey.storage.conversation_store import ConversationStore
 from codey.task.model import TaskSubmission
 from tests.support.research_controller import ResearchController
 
@@ -1908,36 +1907,6 @@ class ProviderProbeErrorTests(unittest.TestCase):
         self.assertTrue(all("available" not in item for item in payload["providers"]))
 
 
-class ConversationPruneTests(unittest.TestCase):
-    def test_prune_skips_unstatable_files_instead_of_abandoning(self) -> None:
-        from codey.storage.file_lock import with_file_lock
-
-        with tempfile.TemporaryDirectory() as td:
-            store = ConversationStore(Path(td))
-            store.directory.mkdir(parents=True, exist_ok=True)
-            keep = store.directory / "keep.json"
-            keep.write_text("{}", encoding="utf-8")
-            victims: list[Path] = []
-            for index in range(70):
-                path = store.directory / f"c{index:03d}.json"
-                path.write_text("{}", encoding="utf-8")
-                victims.append(path)
-            victim = store.directory / "c000.json"
-            real_stat = Path.stat
-
-            def flaky_stat(self: Path, *args: object, **kwargs: object):
-                if self.name == victim.name:
-                    raise OSError("disk hiccup")
-                return real_stat(self, *args, **kwargs)  # type: ignore[arg-type]
-
-            with mock.patch.object(Path, "stat", flaky_stat), with_file_lock(store.directory):
-                store._prune_locked(keep)  # must not raise
-            remaining = list(store.directory.glob("*.json"))
-            # 63 newest stat-able + keep + the un-statable survivor.
-            self.assertEqual(len(remaining), 65)
-            self.assertTrue(victim.exists())
-
-
 class ResearchUrlKeyTests(unittest.TestCase):
     def test_result_ids_use_normalized_url_keys(self) -> None:
         controller = ResearchController()
@@ -1964,8 +1933,10 @@ class HeadlessShellExpiryTests(unittest.TestCase):
                 port=19222,
                 emit_jsonl=rows.append,
             )
+            from tests.support.shell_approval import add_pending_approval, admit_shell_task
+            admit_shell_task(ctx, session_id="s1", run_id="r1", task="pytest -q")
             fields = shell_command_payload("pytest -q")
-            ctx.add_pending_shell_approval("appr-1", {
+            add_pending_approval(ctx, "appr-1", {
                 "id": "appr-1",
                 "run_id": "r1",
                 "session_id": "s1",

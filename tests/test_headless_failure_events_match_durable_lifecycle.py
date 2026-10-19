@@ -5,6 +5,7 @@ import json
 import pytest
 
 from codey.app.headless_runner import HeadlessAppContext, HeadlessRequest, run_headless
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core import cancellation
@@ -77,17 +78,27 @@ def test_failure_boundary_publishes_one_truthful_terminal_and_closes_provider(tm
     assert result.exit_code == 1
     assert result.stop_reason != "done"
     assert terminal[0]["stop_reason"] == result.stop_reason
-    log = RuntimeSessionLog(state)
-    operation = RuntimeOperationStore(log).load(result.session_id, result.run_id)
-    assert operation.leaf == "terminal"
-    assert operation.terminal.stop_reason == result.stop_reason
-    if failure != "connect":
-        assert provider.closed is True
-    if failure in {"connect", "cancel"}:
-        assert not (project / "made.py").exists()
-    else:
-        assert (project / "made.py").read_text() == "x = 1\n"
-        assert provider.calls == 1
-        assert provider.receipts[0].call_id == "c1"
-        effects = RuntimeEffectStore(log).load_effects(result.session_id, result.run_id)
-        assert len([effect for effect in effects if effect.intent.effect_category == "tool_call" and effect.is_settled]) == 1
+    durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
+    try:
+        task = durable.task(result.run_id)
+        operation = RuntimeOperationStore(RuntimeSessionLog(state), durable=durable).load(
+            result.session_id, result.run_id
+        )
+        assert task.phase == "failed"
+        assert operation is not None
+        assert operation.leaf == "terminal"
+        assert operation.terminal.stop_reason == result.stop_reason
+        if failure != "connect":
+            assert provider.closed is True
+        if failure in {"connect", "cancel"}:
+            assert not (project / "made.py").exists()
+        else:
+            assert (project / "made.py").read_text() == "x = 1\n"
+            assert provider.calls == 1
+            assert provider.receipts[0].call_id == "c1"
+            effects = RuntimeEffectStore(RuntimeSessionLog(state), durable=durable).load_effects(
+                result.session_id, result.run_id
+            )
+            assert len([effect for effect in effects if effect.intent.effect_category == "tool_call" and effect.is_settled]) == 1
+    finally:
+        durable.close()

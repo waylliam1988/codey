@@ -9,6 +9,7 @@ the headless runner never builds global UI state as a side effect.
 from __future__ import annotations
 
 import contextlib
+import logging
 import tempfile
 import threading
 import time
@@ -20,24 +21,24 @@ from typing import TYPE_CHECKING, Any, cast
 if TYPE_CHECKING:
     from codey.repairs.self_repair import SelfRepairSupervisor
 
-from codey.agents.handoff import ConversationContext
+from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.app import event_bus
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.conversation_registry import ConversationRegistry
 from codey.app.conversation_runtime import ConversationRuntime
+from codey.app.durable_services import DurableAppServices
 from codey.app.event_bus import EventBus, EventSubscriber
 from codey.app.event_payloads import SCHEMA_VERSION
 from codey.app.ghost_daemon import GhostSleepDaemon
+from codey.app.ghost_services import GhostStoreAccessors, GhostStores
 from codey.app.knowledge_indexer import KnowledgeIndexer
 from codey.app.provider_registry import ProviderRegistry
 from codey.app.run_registry import RunRegistry, RunSnapshot
-from codey.ghost.affinity import GhostAffinityStore
-from codey.ghost.continuity import GhostContinuityStore
-from codey.ghost.hebbian import GhostHebbianStore
-from codey.ghost.inbox import GhostInboxStore
-from codey.ghost.observations import GhostObservationStore
-from codey.ghost.sleep import GhostSleepStore
-from codey.ghost.work_queue import GhostWorkQueueStore
+from codey.durable.model import (
+    CommitResult,
+    DurableMutation,
+    thaw_json,
+)
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.task_state import TaskSubmissionStores
 from codey.research.evidence_ledger import EvidenceLedgerStore
@@ -53,7 +54,6 @@ from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.storage.managed_outputs import ManagedOutputStore
-from codey.storage.transcript_store import TranscriptStore
 from codey.storage.ui_state_store import UiStateStore
 from codey.utils.refs import strict_exit_code
 from codey.workspace.changes import ChangeTracker, SnapshotStore
@@ -75,13 +75,16 @@ def _close_if_discarded(store: object) -> None:
 MAX_CONVERSATION_STATES = 32
 MAX_CHANGE_TRACKERS = 32
 
-class AppContext:
+logger = logging.getLogger(__name__)
+
+class AppContext(GhostStoreAccessors):
 
     def __init__(
         self,
         state_home: str | Path | None = None,
         *,
         replay_limit: int | None = None,
+        start_scheduler: bool = True,
     ) -> None:
         self._ephemeral_runtime_home = tempfile.TemporaryDirectory() if state_home is None else None
         self.state_home = Path(state_home) if state_home else None
@@ -113,6 +116,8 @@ class AppContext:
         self.conversation_registry = ConversationRegistry(
             state_home,
             max_states=MAX_CONVERSATION_STATES,
+            load_snapshot=self._load_durable_conversation_snapshot,
+            save_snapshot=self._save_durable_conversation_snapshot,
         )
         self.ui_state_store_lock = threading.Lock()
         self.providers = ProviderRegistry(state_home, emit=self.emit)
@@ -134,15 +139,25 @@ class AppContext:
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
         self.run_traces = RunTraceStore(state_home) if state_home else None
         self.runtime_log = RuntimeSessionLog(runtime_state_home)
-        self.runtime_mutations = RuntimeMutationLine(self.runtime_log)
-        self.conversation_runtime = ConversationRuntime(runtime_state_home, self.emit)
+        self._durable_services = DurableAppServices.open(
+            runtime_state_home / "durable.sqlite3",
+            publish=self._publish_durable_commit,
+            dispatch=lambda checkpoint: self._dispatch_durable_task(checkpoint),
+            start=False,
+        )
+        # Keep these aliases as the application facade.  Ownership and
+        # lifecycle stay in DurableAppServices; callers do not construct or
+        self.durable = self._durable_services.session
+        self.conversation_runtime = ConversationRuntime(
+            runtime_state_home, self.emit, durable=self.durable
+        )
+        self.runtime_mutations = RuntimeMutationLine(self.runtime_log, durable=self.durable)
         self.input_queue = self.conversation_runtime.inputs
         self.user_questions = self.conversation_runtime.questions
-        self.transcript_store = TranscriptStore(runtime_state_home)
         self.execution_outputs = ExecutionOutputStore(runtime_state_home)
-        self.runtime_operations = RuntimeOperationStore(self.runtime_log)
-        self.runtime_effects = RuntimeEffectStore(self.runtime_log)
-        self.tool_result_delivery = ToolResultDeliveryStore(self.runtime_log)
+        self.runtime_operations = RuntimeOperationStore(self.runtime_log, durable=self.durable)
+        self.runtime_effects = RuntimeEffectStore(self.runtime_log, durable=self.durable)
+        self.tool_result_delivery = ToolResultDeliveryStore(self.runtime_log, durable=self.durable)
         self.shell_approval_records = ShellApprovalRecordStore(runtime_state_home)
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
@@ -155,13 +170,7 @@ class AppContext:
         from codey.app.shell_approval_workflow import ShellApprovalWorkflow
 
         self.shell_approval_workflow = ShellApprovalWorkflow(self)
-        self._ghost_inbox: GhostInboxStore | None = None
-        self._ghost_hebbian: GhostHebbianStore | None = None
-        self._ghost_continuity: GhostContinuityStore | None = None
-        self._ghost_sleep: GhostSleepStore | None = None
-        self._ghost_work_queue: GhostWorkQueueStore | None = None
-        self._ghost_affinity: GhostAffinityStore | None = None
-        self._ghost_observations: GhostObservationStore | None = None
+        self._ghost_stores = GhostStores(state_home, self.lock)
         self.ghost_sleep_daemon = GhostSleepDaemon(
             lock=self.lock,
             is_busy=self.is_busy,
@@ -178,6 +187,62 @@ class AppContext:
         self._project_writer_leases: dict[str, object] = {}
         self._close_requested = False
         self._resources_closed = False
+        self._deferred_durable_events: list[dict[str, Any]] = []
+        self.durable_scheduler = self._durable_services.scheduler
+        if start_scheduler:
+            self.durable_scheduler.start()
+
+    def _dispatch_durable_task(self, checkpoint: object) -> bool:
+        from codey.app.task_submit import dispatch_durable_task
+
+        return dispatch_durable_task(checkpoint, state=self)
+
+    def _publish_durable_commit(self, result: CommitResult, mutation: DurableMutation) -> None:
+        if result.record is not None:
+            payload = result.record.to_payload()
+            # Stop/expiry may commit approval state while holding the
+            # coordination lock. Queue the projection until that lock is
+            # released instead of re-entering ``emit`` and deadlocking.
+            if self.lock.locked():
+                self._deferred_durable_events.append(payload)
+            else:
+                self.emit(payload)
+        scheduler = getattr(self, "durable_scheduler", None)
+        if (
+            scheduler is not None
+            and mutation.task is not None
+            and any(key in mutation.task.state for key in ("input_identity", "resume_input", "workflow_origin"))
+        ):
+            scheduler.notify(mutation.task.task_id)
+
+    def _flush_deferred_durable_events(self) -> None:
+        while True:
+            with self.lock:
+                if not self._deferred_durable_events:
+                    return
+                events = tuple(self._deferred_durable_events)
+                self._deferred_durable_events.clear()
+            for payload in events:
+                self.emit(payload)
+
+    def _load_durable_conversation_snapshot(
+        self, session_id: str
+    ) -> ConversationSnapshot | None:
+        durable = getattr(self, "durable", None)
+        if durable is None or not durable.has_conversation(session_id):
+            return None
+        entry = durable.latest_context_snapshot(session_id)
+        return None if entry is None else ConversationSnapshot.from_payload(thaw_json(entry.payload))
+
+    def _save_durable_conversation_snapshot(
+        self, session_id: str, snapshot: ConversationSnapshot
+    ) -> None:
+        durable = getattr(self, "durable", None)
+        if durable is None:
+            return
+        if not durable.has_conversation(session_id):
+            durable.create_conversation(session_id)
+        durable.save_context_snapshot(session_id, snapshot.to_payload())
 
     def acquire_project_writer(self, project: str | Path) -> bool:
         """Claim the single persistent writer for ``project`` (non-blocking).
@@ -217,110 +282,6 @@ class AppContext:
         if lease is not None:
             with contextlib.suppress(Exception):
                 cast(Any, lease).release()
-
-    def _ghost_store(
-        self,
-        attr_name: str,
-        factory: Callable[[Path], object],
-    ) -> object | None:
-        with self.lock:
-            store = getattr(self, attr_name)
-            if store is not None:
-                return cast(object | None, store)
-            if self.state_home is None:
-                return None
-            state_home = self.state_home
-        # Build outside the lock: store constructors do file IO and must
-        # not stall event emit/subscribe on AppContext.lock.
-        fresh = factory(state_home)
-        with self.lock:
-            existing = getattr(self, attr_name)
-            if existing is not None:
-                winner = existing
-            else:
-                setattr(self, attr_name, fresh)
-                return fresh
-        _close_if_discarded(fresh)
-        return cast(object | None, winner)
-
-    @property
-    def ghost_inbox(self) -> GhostInboxStore | None:
-        return cast(
-            GhostInboxStore | None,
-            self._ghost_store("_ghost_inbox", GhostInboxStore),
-        )
-
-    @ghost_inbox.setter
-    def ghost_inbox(self, value: GhostInboxStore | None) -> None:
-        self._ghost_inbox = value
-
-    @property
-    def ghost_hebbian(self) -> GhostHebbianStore | None:
-        return cast(
-            GhostHebbianStore | None,
-            self._ghost_store("_ghost_hebbian", GhostHebbianStore),
-        )
-
-    @ghost_hebbian.setter
-    def ghost_hebbian(self, value: GhostHebbianStore | None) -> None:
-        self._ghost_hebbian = value
-
-    @property
-    def ghost_continuity(self) -> GhostContinuityStore | None:
-        return cast(
-            GhostContinuityStore | None,
-            self._ghost_store("_ghost_continuity", GhostContinuityStore),
-        )
-
-    @ghost_continuity.setter
-    def ghost_continuity(self, value: GhostContinuityStore | None) -> None:
-        self._ghost_continuity = value
-
-    @property
-    def ghost_sleep(self) -> GhostSleepStore | None:
-        return cast(
-            GhostSleepStore | None,
-            self._ghost_store("_ghost_sleep", GhostSleepStore),
-        )
-
-    @ghost_sleep.setter
-    def ghost_sleep(self, value: GhostSleepStore | None) -> None:
-        self._ghost_sleep = value
-
-    @property
-    def ghost_work_queue(self) -> GhostWorkQueueStore | None:
-        return cast(
-            GhostWorkQueueStore | None,
-            self._ghost_store("_ghost_work_queue", GhostWorkQueueStore),
-        )
-
-    @ghost_work_queue.setter
-    def ghost_work_queue(self, value: GhostWorkQueueStore | None) -> None:
-        self._ghost_work_queue = value
-
-    @property
-    def ghost_affinity(self) -> GhostAffinityStore | None:
-        return cast(
-            GhostAffinityStore | None,
-            self._ghost_store("_ghost_affinity", GhostAffinityStore),
-        )
-
-    @ghost_affinity.setter
-    def ghost_affinity(self, value: GhostAffinityStore | None) -> None:
-        self._ghost_affinity = value
-
-    @property
-
-    def ghost_observations(self) -> GhostObservationStore | None:
-        return cast(
-            GhostObservationStore | None,
-            self._ghost_store("_ghost_observations", GhostObservationStore),
-        )
-
-    @ghost_observations.setter
-
-    def ghost_observations(self, value: GhostObservationStore | None) -> None:
-        self._ghost_observations = value
 
     @property
 
@@ -403,56 +364,9 @@ class AppContext:
             return self.ui_state_store.load()
 
     def save_ui_state(self, state: object, *, base_revision: int) -> dict[str, Any]:
-        # Import the complete incoming list before UiStateStore applies its
-        # bounded visible projection. This is the baseline path for older
-        # installations whose first 500-message window was clipped.
-        if isinstance(state, dict):
-            for session in state.get("sessions", []):
-                if not isinstance(session, dict):
-                    continue
-                session_id = str(session.get("id") or "")
-                messages = session.get("messages")
-                if not session_id or not isinstance(messages, list):
-                    continue
-                if not self.transcript_store.ui_save_allowed(session_id, base_revision):
-                    continue
-                epoch = self.transcript_store.epoch(session_id)
-                for message in messages:
-                    if not isinstance(message, dict):
-                        continue
-                    stream_id = str(message.get("streamId") or "")
-                    identity = f"stream:{stream_id}" if stream_id else str(message.get("id") or "")
-                    if not identity:
-                        continue
-                    with contextlib.suppress(Exception):
-                        self.transcript_store.append(session_id, message, message_id=identity, event_id=str(message.get("eventKey") or ""), epoch=epoch, turn_id=str(message.get("turnId") or ""))
         with self.ui_state_store_lock:
             saved = self.ui_state_store.save(state, base_revision=base_revision)
-        for session in saved.get("sessions", []):
-            if not isinstance(session, dict):
-                continue
-            session_id = str(session.get("id") or "")
-            for message in session.get("messages", []):
-                if not isinstance(message, dict):
-                    continue
-                stream_id = str(message.get("streamId") or "")
-                identity = f"stream:{stream_id}" if stream_id else str(message.get("id") or "")
-                if not identity:
-                    continue
-                with contextlib.suppress(Exception):
-                    if not self.transcript_store.ui_save_allowed(session_id, base_revision):
-                        continue
-                    self.transcript_store.append(session_id, message, message_id=identity, event_id=str(message.get("eventKey") or ""), epoch=self.transcript_store.epoch(session_id), turn_id=str(message.get("turnId") or ""))
-                    # The display archive is observational; UI state remains
-                    # authoritative for the current visible window.
         return saved
-
-    def visible_session_excerpt(self, session_id: str, current_request: str = "") -> str:
-        with self.ui_state_store_lock:
-            return self.ui_state_store.visible_session_excerpt(
-                session_id,
-                current_request=current_request,
-            )
 
     def change_tracker_for(
         self,
@@ -576,6 +490,7 @@ class AppContext:
         self.emit(payload)
         for expired_event in expired:
             self.record_shell_result(expired_event)
+        self._flush_deferred_durable_events()
         return True
 
     def record_shell_result(self, event: dict[str, Any]) -> None:
@@ -620,6 +535,20 @@ class AppContext:
         with self._shell_spawn_gate:
             self.run_registry.request_stop(run_id)
             with self.lock:
+                # Durable cancellation is the barrier for the worker and
+                # scheduler.  The in-memory stop flag only interrupts code;
+                # it must never be the authority that decides whether a
+                # restart may dispatch the task again.
+                durable = getattr(self, "durable", None)
+                if durable is not None and not self._close_requested:
+                    targets = (
+                        (str(run_id),)
+                        if run_id
+                        else tuple(run.run_id for run in self.run_registry.active_runs())
+                    )
+                    for target in targets:
+                        with contextlib.suppress(KeyError):
+                            durable.request_cancel(target, reason="user stopped")
                 self.approvals.cancel_teach()
                 if self._close_requested:
                     # Shutdown interrupts live execution but preserves durable
@@ -638,6 +567,7 @@ class AppContext:
                 owner = self.run_registry.current()
                 target_session = owner.session_id if owner is not None else ""
             self.input_queue.pause(target_session)
+        self._flush_deferred_durable_events()
 
     def expire_pending_shell_approvals(self) -> None:
         """Expire every pending shell approval (task stop path).
@@ -651,6 +581,7 @@ class AppContext:
             events = self._expire_shell_results_locked()
         for event in events:
             self.record_shell_result(event)
+        self._flush_deferred_durable_events()
 
     def expire_stale_shell_approvals(self, active_run_id: str) -> None:
         """Clear approval cards left behind when the user starts new work."""
@@ -662,6 +593,7 @@ class AppContext:
             )
         for event in events:
             self.record_shell_result(event)
+        self._flush_deferred_durable_events()
 
     def _expire_shell_results_locked(self, **kwargs: Any) -> tuple[dict[str, Any], ...]:
         from codey.app.shell_approval_state import expire_shell_results_locked
@@ -669,18 +601,21 @@ class AppContext:
         return expire_shell_results_locked(self, **kwargs)
 
     def add_pending_shell_approval(self, approval_id: str, pending: dict[str, Any]) -> None:
+        fact: ShellApprovalFact | None = None
         with self.lock:
             config = self.run_registry.api_selection_for(str(pending.get("run_id") or ""))
             if config is not None and pending.get("provider") == config.connection_id:
                 pending = {**pending, "_api_selection": config}
             session_id = str(pending.get("session_id") or "")
             source_run_id = str(pending.get("run_id") or "")
-            if (
-                session_id
-                and source_run_id
-                and self.shell_approval_records.latest(approval_id) is None
-            ):
-                self.shell_approval_records.append(ShellApprovalFact(
+            existing_approval = None
+            if session_id and source_run_id:
+                try:
+                    existing_approval = self.durable.approval(approval_id)
+                except (KeyError, OSError, TypeError, ValueError):
+                    existing_approval = None
+            if session_id and source_run_id and existing_approval is None:
+                fact = ShellApprovalFact(
                     approval_id=approval_id,
                     session_id=session_id,
                     source_run_id=source_run_id,
@@ -689,12 +624,23 @@ class AppContext:
                     command_ref=str(pending.get("command_ref") or ""),
                     command_digest=str(pending.get("command_digest") or ""),
                     cwd=str(pending.get("cwd") or "."),
-                ))
+                )
+        # Durable commit publication can emit synchronously, so keep it
+        # outside the application coordination lock.
+        if fact is not None:
+            self.record_shell_approval_fact(fact)
+        with self.lock:
             self.approvals.add_shell(approval_id, pending)
 
-    def record_shell_approval_fact(self, fact: ShellApprovalFact) -> None:
-        """Append the durable approval fact before publishing its projection."""
-        self.shell_approval_records.append(fact)
+    def record_shell_approval_fact(self, fact: ShellApprovalFact) -> bool:
+        from codey.app.shell_approval_durable import record_fact
+
+        return record_fact(self, fact)
+
+    def _commit_durable_shell_approval(self, fact: ShellApprovalFact) -> bool:
+        from codey.app.shell_approval_durable import commit_fact
+
+        return commit_fact(self, fact)
 
     def _claim_pending_shell_approval_locked(
         self, approval_id: str, *, claim_execution: bool = True,
@@ -706,17 +652,47 @@ class AppContext:
     def claim_pending_shell_approval(
         self, approval_id: str, *, claim_execution: bool = True,
     ) -> dict[str, Any] | None:
+        # Durable approval CAS must not run while the application lock is held:
+        # commit publication may be waiting for this lock on another worker.
+        # The shell spawn gate, owned by ``shell_service``, still fences the
+        # stop-versus-execution boundary.
+        from codey.app.shell_approval_state import (
+            _claim_decision_fact,
+            _claim_execution_fact,
+            _rebuild_pending_from_fact,
+        )
+
         with self.lock:
-            return self._claim_pending_shell_approval_locked(approval_id, claim_execution=claim_execution)
+            pending = self.approvals.shell_snapshot().get(approval_id)
+        fact = None
+        if pending is None:
+            try:
+                record = self.durable.approval(approval_id)
+            except (KeyError, OSError, TypeError, ValueError):
+                record = None
+            if record is not None:
+                from codey.app.shell_approval_state import approval_record_facts
+                facts = approval_record_facts(record)
+                fact = facts[-1] if facts else None
+        if pending is None and fact is not None and fact.kind in {"requested", "approved"}:
+            pending = _rebuild_pending_from_fact(self, fact)
+        if pending is None:
+            return None
+        claimed = (
+            _claim_execution_fact(self, pending, approval_id)
+            if claim_execution
+            else _claim_decision_fact(self, pending, approval_id, "denied")
+        )
+        if not claimed:
+            return None
+        with self.lock:
+            self.approvals.pop_shell(approval_id)
+        return pending
 
     def resolve_shell_approval(self, approval_id: str) -> dict[str, Any] | None:
         from codey.app.shell_approval_state import resolve_shell_approval
 
         return resolve_shell_approval(self, approval_id)
-
-    def pop_pending_shell_approval(self, approval_id: str) -> dict[str, Any] | None:
-        """Compatibility alias; production approval code uses ``claim_*``."""
-        return self.claim_pending_shell_approval(approval_id)
 
     def approval_generation(self) -> int:
         with self.lock:
@@ -956,11 +932,10 @@ class AppContext:
     def forget_conversation(self, session_id: str, *, preserve_ui: bool = False) -> dict[str, str]:
         failures: dict[str, str] = {}
         try:
-            with self.ui_state_store_lock:
-                ui_revision = int(self.ui_state_store.load().get("revision") or 0)
-            self.transcript_store.clear(session_id, ui_revision=ui_revision)
+            if self.durable.has_conversation(session_id):
+                self.durable.delete_conversation(session_id)
         except Exception as exc:
-            failures["transcript"] = str(exc)
+            failures["durable"] = str(exc)
         if not preserve_ui:
             try:
                 with self.ui_state_store_lock:
@@ -1001,6 +976,7 @@ class AppContext:
             except Exception as exc:
                 failures["approvals"] = str(exc)
                 break
+        self._flush_deferred_durable_events()
         operations: tuple[tuple[str, str, Callable[[Any], Any]], ...] = (
             ("ghost_continuity", "ghost_continuity", lambda s: s.delete_scope("session", session_id=session_id)),
             ("ghost_sleep", "ghost_sleep", lambda s: s.delete_scope("session", session_id=session_id)),
@@ -1089,6 +1065,9 @@ class AppContext:
         if not self.conversation_runtime.close(self.current_run()):
             return False
 
+        if not self._durable_services.stop_scheduler():
+            return False
+
         if not self._wait_background_workers():
             return False
 
@@ -1141,8 +1120,7 @@ class AppContext:
         execution_outputs = getattr(self, "execution_outputs", None)
         if execution_outputs is not None and not close_store(execution_outputs):
             resources_closed = False
-        transcript_store = getattr(self, "transcript_store", None)
-        if transcript_store is not None and not close_store(transcript_store):
+        if not close_store(self._durable_services):
             resources_closed = False
         if self._ephemeral_runtime_home is not None:
             try:

@@ -3,7 +3,9 @@ from codey.app.context import AppContext
 
 
 def test_status_query_returns_the_durable_record_without_resubmitting(tmp_path, monkeypatch):
-    ctx = AppContext(tmp_path)
+    # Admission is durable before the volatile scheduler claims the task;
+    # keep the scheduler stopped so this route test observes that boundary.
+    ctx = AppContext(tmp_path, start_scheduler=False)
     monkeypatch.setattr(routes, "bind_input_queue", lambda ctx: None)
     try:
         ctx.input_queue.create("one", {"session_id": "chat", "run_id": "run_one", "task": "hello", "provider": "local"})
@@ -15,7 +17,7 @@ def test_status_query_returns_the_durable_record_without_resubmitting(tmp_path, 
 
 
 def test_rejected_stale_resume_never_clears_stop(tmp_path, monkeypatch):
-    ctx = AppContext(tmp_path)
+    ctx = AppContext(tmp_path, start_scheduler=False)
     monkeypatch.setattr(routes, "bind_input_queue", lambda ctx: None)
     try:
         item = ctx.input_queue.create("one", {"session_id": "chat", "run_id": "run_one", "task": "hello", "provider": "local"})

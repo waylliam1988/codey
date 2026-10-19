@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from codey.agents.request import AgentRequest
+from codey.durable.errors import CommitConflict
 from codey.operations.recovery import recover_effects_for_resume
 from codey.runs.details import load_run_details
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -45,7 +48,6 @@ from codey.runtime.effects.tool_result_delivery import (
 )
 from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_log import RuntimeSessionLog
-from codey.runtime.log.session_view import load_session_view, pending_for
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 
@@ -949,10 +951,26 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.session_id = "sess-recovery-deliv-1"
         self.run_id = "run-recovery-deliv-1"
         self.log = RuntimeSessionLog(self.project_dir / "state")
-        self.operations = RuntimeOperationStore(self.log)
-        self.effects = RuntimeEffectStore(self.log)
-        self.delivery = ToolResultDeliveryStore(self.log)
-        self.line = RuntimeMutationLine(self.log)
+        from codey.durable import DurableSession, MemoryDurableStore
+
+        self.durable = DurableSession(MemoryDurableStore())
+        # Production recovery owns durable facts.  The JSONL log remains only
+        # an observable projection in these integration tests.
+        self.operations = RuntimeOperationStore(self.log, durable=self.durable)
+        self.effects = RuntimeEffectStore(self.log, durable=self.durable)
+        self.delivery = ToolResultDeliveryStore(self.log, durable=self.durable)
+        self.line = RuntimeMutationLine(self.log, durable=self.durable)
+        self.durable.admit_input(
+            conversation_id=self.session_id,
+            request_id=self.run_id,
+            task_id=self.run_id,
+            text="recover task",
+            provider_snapshot={"provider_id": "mock_provider", "model_id": "test"},
+            task_state={"task": "recover task", "provider_id": "mock_provider"},
+        )
+        self.durable.start_task(self.run_id, state={})
+        self.durable.advance_task(task_id=self.run_id, phase="assistant_intent_committed", state={})
+        self.durable.advance_task(task_id=self.run_id, phase="assistant_response_pending", state={})
         self.line.accept_operation(
             session_id=self.session_id,
             run_id=self.run_id,
@@ -971,7 +989,106 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         (self.project_dir / "target.py").write_text("print('hello')\n", encoding="utf-8")
 
     def tearDown(self) -> None:
+        self.durable.close()
         self.temp_dir.cleanup()
+
+    def _ensure_durable_task(self) -> None:
+        try:
+            self.durable.task(self.run_id)
+            return
+        except KeyError:
+            pass
+        self.durable.admit_input(
+            conversation_id=self.session_id,
+            request_id=self.run_id,
+            task_id=self.run_id,
+            text="recover task",
+            provider_snapshot={"provider_id": "mock_provider", "model_id": "test"},
+            task_state={"task": "recover task", "provider_id": "mock_provider"},
+        )
+        self.durable.start_task(self.run_id, state={})
+        self.durable.advance_task(task_id=self.run_id, phase="assistant_intent_committed", state={})
+        self.durable.advance_task(task_id=self.run_id, phase="assistant_response_pending", state={})
+
+    def _sync_runtime_to_durable(self) -> None:
+        from codey.durable import EffectRecord
+
+        self._ensure_durable_task()
+        # Replay the runtime projection in commit order.  RuntimeEffectStore
+        # intentionally exposes a folded view, but folding loses the ordering
+        # between a multi-tool intent batch and its individual settlements.
+        # The durable fixture must model the production order instead of
+        # grouping all intents by category.
+        rows = list(self.log.entries(self.session_id))
+        batches: dict[str, list[object]] = {}
+        for row in rows:
+            batches.setdefault(row.batch_id, []).append(row)
+        complete_batch_ids = {
+            batch_id
+            for batch_id, batch_rows in batches.items()
+            if len(batch_rows) == batch_rows[0].batch_count
+            and {row.batch_index for row in batch_rows} == set(range(batch_rows[0].batch_count))
+        }
+        for row in rows:
+            if row.kind != "operation_effect":
+                continue
+            if row.batch_id not in complete_batch_ids:
+                continue
+            payload = row.payload
+            if not isinstance(payload, dict) or str(payload.get("run_id") or "") != self.run_id:
+                continue
+            record_kind = payload.get("record_kind")
+            if record_kind == "intent":
+                intent = RuntimeEffectIntent.from_payload(payload)
+                try:
+                    self.durable.store.effect(intent.effect_id)
+                    continue
+                except KeyError:
+                    pass
+                self.durable.record_effect_intent(
+                    self.run_id,
+                    EffectRecord(
+                        effect_id=intent.effect_id,
+                        task_id=self.run_id,
+                        category=intent.effect_category,
+                        replay_class=intent.replay_class,
+                        args_digest=intent.args_digest or f"test:{intent.effect_id}",
+                        status="pending",
+                        intent=intent.to_payload(),
+                    ),
+                )
+            elif record_kind == "settlement":
+                settlement = RuntimeEffectSettlement.from_payload(payload)
+                try:
+                    current = self.durable.store.effect(settlement.effect_id)
+                except KeyError:
+                    continue
+                if current.settlement is not None:
+                    continue
+                self.durable.settle_effect(
+                    self.run_id,
+                    EffectRecord(
+                        effect_id=current.effect_id,
+                        task_id=current.task_id,
+                        category=current.category,
+                        replay_class=current.replay_class,
+                        args_digest=current.args_digest,
+                        status=settlement.status,
+                        intent=current.intent,
+                        settlement=settlement.to_payload(),
+                    ),
+                )
+        # Validate that every runtime effect which is visible to the folded
+        # projection has a canonical durable counterpart.  This catches a
+        # malformed fixture without making the projection authoritative.
+        projections = self.effects.load_effects(self.session_id, self.run_id)
+        for projection in projections:
+            try:
+                self.durable.store.effect(projection.intent.effect_id)
+            except KeyError:
+                raise AssertionError(
+                    f"runtime effect has no durable intent: {projection.intent.effect_id}"
+                ) from None
 
     def _tool_intent(
         self,
@@ -1008,7 +1125,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         from codey.operations.kernel_receipts import result_receipt_fields
         from codey.runtime.core.models import ToolCall, ToolResult
 
-        intent = next(p.intent for p in RuntimeEffectStore(self.log).load_effects(
+        intent = next(p.intent for p in RuntimeEffectStore(self.log, durable=self.durable).load_effects(
             self.session_id, self.run_id) if p.intent.effect_id == effect_id)
         result = ToolResult(ToolCall(intent.tool_name, dict(intent.replay_args or {}), call_id=intent.call_id),
                             result_text, ok=True)
@@ -1035,6 +1152,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             provider_id="mock_provider",
             turn=turn,
             replay_class=ReplayClass.UNSAFE,
+            args_digest=compute_args_digest({"effect_id": effect_id, "turn": turn}),
         )
 
     def _batch_intent(
@@ -1061,28 +1179,35 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         items: tuple[DeliveryBatchItem, ...],
         turn: int = 1,
     ) -> str:
+        durable_intents = tuple(
+            replace(intent, delivery_batch_id=batch_id) for intent in intents
+        )
         self.line.begin_tool_batch(
             self.session_id,
             self.run_id,
-            intents=intents,
+            intents=durable_intents,
             delivery_intent=self._batch_intent(batch_id, items, turn=turn),
         )
         return batch_id
 
     def _deps(self) -> Mock:
+        self._sync_runtime_to_durable()
         deps = Mock()
         deps.runtime_effects = self.effects
         deps.tool_result_delivery = self.delivery
         deps.runtime_mutations = self.line
+        deps.state = SimpleNamespace(durable=self.durable)
         return deps
 
     def _fresh_restart_deps(self) -> tuple[Mock, RuntimeSessionLog, RuntimeOperationStore]:
+        self._sync_runtime_to_durable()
         log = RuntimeSessionLog(self.project_dir / "state")
         deps = Mock()
-        deps.runtime_effects = RuntimeEffectStore(log)
-        deps.tool_result_delivery = ToolResultDeliveryStore(log)
-        deps.runtime_mutations = RuntimeMutationLine(log)
-        return deps, log, RuntimeOperationStore(log)
+        deps.runtime_effects = RuntimeEffectStore(log, durable=self.durable)
+        deps.tool_result_delivery = ToolResultDeliveryStore(log, durable=self.durable)
+        deps.runtime_mutations = RuntimeMutationLine(log, durable=self.durable)
+        deps.state = SimpleNamespace(durable=self.durable)
+        return deps, log, RuntimeOperationStore(log, durable=self.durable)
 
     def _durable_snapshot(
         self,
@@ -1136,7 +1261,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             task_kind="project",
         )
 
-        self.assertTrue(recovery.ok)
+        self.assertFalse(recovery.ok)
         self.assertEqual(recovery.recovered_tool_outcomes, ())
         projection = next(
             item
@@ -1232,7 +1357,12 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
 
                 self.assertTrue(recovery.ok)
                 self.assertEqual(
-                    tuple(item.effect_id for item in recovery.recovered_tool_outcomes),
+                    tuple(item.effect_id for item in {
+                        row.effect_id: row for row in (
+                            *recovery.settled_tool_outcomes,
+                            *recovery.recovered_tool_outcomes,
+                        )
+                    }.values()),
                     (eff_read, eff_search),
                 )
                 state = restart_operations.load(self.session_id, self.run_id)
@@ -1241,7 +1371,10 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
                 if expected_snapshot is None:
                     expected_snapshot = snapshot
                     expected_count = len(restart_log.entries(self.session_id))
-                    self.assertGreater(expected_count, 0)
+                    # The durable store owns recovery facts.  Runtime JSONL
+                    # is an optional projection and is intentionally empty
+                    # in this in-memory durable fixture.
+                    self.assertEqual(expected_count, 0)
                 else:
                     self.assertEqual(snapshot, expected_snapshot)
                     self.assertEqual(len(restart_log.entries(self.session_id)), expected_count)
@@ -1302,12 +1435,17 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             task_kind="project",
         )
         self.assertTrue(recovery.ok)
-        self.assertEqual(len(recovery.recovered_tool_outcomes), 2)
+        outcomes = tuple(sorted(
+            {row.effect_id: row for row in (
+                *recovery.settled_tool_outcomes, *recovery.recovered_tool_outcomes,
+            )}.values(),
+            key=lambda row: row.tool_index,
+        ))
+        self.assertEqual(len(outcomes), 2)
         self.assertEqual(recovery.recovered_tool_result_batch_id, batch_id)
 
         # Verify outcomes
-        r0 = recovery.recovered_tool_outcomes[0]
-        r1 = recovery.recovered_tool_outcomes[1]
+        r0, r1 = outcomes
         self.assertEqual(r0.call.name, "read")
         self.assertEqual(r0.tool_index, 0)
         self.assertEqual(r0.effect_id, eff_read)
@@ -1325,7 +1463,9 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         batches = self.delivery.load_batches(self.session_id, self.run_id)
         self.assertEqual(len(batches), 1)
         self.assertTrue(batches[0].is_recovered)
-        self.assertEqual(batches[0].recovered_reads, 1)
+        # The durable replay count includes only the pending safe effect;
+        # the already-settled read is reported as a settled fact.
+        self.assertEqual(batches[0].recovered_reads, 0)
         self.assertEqual(batches[0].recovered_lookups, 1)
         state = self.operations.load(self.session_id, self.run_id)
         assert state is not None
@@ -1349,8 +1489,14 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             )
 
             self.assertTrue(repeated.ok)
+            repeated_outcomes = tuple(sorted(
+                {row.effect_id: row for row in (
+                    *repeated.settled_tool_outcomes, *repeated.recovered_tool_outcomes,
+                )}.values(),
+                key=lambda row: row.tool_index,
+            ))
             self.assertEqual(
-                tuple(row.effect_id for row in repeated.recovered_tool_outcomes), (eff_read, eff_search),
+                tuple(row.effect_id for row in repeated_outcomes), (eff_read, eff_search),
             )
             self.assertEqual(len(restart_log.entries(self.session_id)), committed_count)
             state = restart_operations.load(self.session_id, self.run_id)
@@ -1641,6 +1787,12 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
                     tool_name="read",
                     replay_args={"path": "target.py"},
                 ),
+                self._tool_intent(
+                    "denied:shell:1",
+                    tool_index=1,
+                    tool_name="shell",
+                    replay_class=ReplayClass.UNSAFE,
+                ),
             ),
             items=items,
         )
@@ -1700,7 +1852,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             project=str(self.project_dir),
             task_kind="project",
         )
-        self.assertTrue(recovery.ok)
+        self.assertFalse(recovery.ok)
         self.assertEqual(len(recovery.recovered_tool_outcomes), 0)
         pending = self.effects.pending_effects(self.session_id, self.run_id)
         self.assertEqual(len(pending), 0)
@@ -1729,10 +1881,9 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertEqual(repeated.recovered_tool_outcomes, ())
         self.assertEqual(len(self.log.entries(self.session_id)), committed_count)
 
-    def test_stale_attempted_batch_does_not_shadow_current_turn_replay(self) -> None:
-        # Turn 1: safe batch settles, provider send is attempted but the
-        # provider call errors, so no delivered receipt exists and the run
-        # returns to writer. Turn 2 then opens a new safe batch.
+    def test_unknown_provider_seals_task_before_current_turn_replay(self) -> None:
+        # Once a provider request is maybe-sent, recovery must seal the task.
+        # A later turn cannot be opened from a guessed projection state.
         eff_old = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
         old_items = (
             DeliveryBatchItem(
@@ -1782,42 +1933,23 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         )
         eff_new = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
         new_items = (
-            DeliveryBatchItem(
-                tool_index=0,
-                tool_name="read",
-                ref=eff_new,
-                replay_class="safe",
-                is_denied=False,
-            ),
+            DeliveryBatchItem(0, "read", eff_new, "safe", False),
         )
-        self._begin_tool_batch(
-            batch_id="batch-new-turn",
-            intents=(
-                self._tool_intent(
-                    eff_new,
-                    tool_index=0,
-                    tool_name="read",
-                    replay_args={"path": "target.py"},
-                    turn=2,
+        with self.assertRaises(CommitConflict):
+            self._begin_tool_batch(
+                batch_id="batch-new-turn",
+                intents=(
+                    self._tool_intent(
+                        eff_new,
+                        tool_index=0,
+                        tool_name="read",
+                        replay_args={"path": "target.py"},
+                        turn=2,
+                    ),
                 ),
-            ),
-            items=new_items,
-            turn=2,
-        )
-        self.line.settle_tool_effect(
-            self.session_id,
-            self.run_id,
-            self._tool_settlement(eff_new, result_text="new turn observation"),
-        )
-
-        # The derived pending batch must be the current turn's batch, not
-        # the stale attempted one.
-        view = load_session_view(
-            self.log.entries(self.session_id),
-            session_id=self.session_id,
-            run_id=self.run_id,
-        )
-        self.assertEqual(pending_for(view).delivery_batch_id, "batch-new-turn")
+                items=new_items,
+                turn=2,
+            )
 
         recovery = recover_effects_for_resume(
             self._deps(),
@@ -1826,21 +1958,13 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             project=str(self.project_dir),
             task_kind="project",
         )
-        self.assertTrue(recovery.ok)
-        self.assertEqual(recovery.recovered_tool_result_batch_id, "batch-new-turn")
-        self.assertEqual(
-            [outcome.effect_id for outcome in recovery.recovered_tool_outcomes],
-            [eff_new],
-        )
-        self.assertEqual(
-            recovery.recovered_tool_outcomes[0].outcome.model_text,
-            "new turn observation",
-        )
-        self.assertTrue(recovery.recovered_tool_outcomes[0].redelivered)
+        self.assertFalse(recovery.ok)
+        self.assertEqual(recovery.recovered_tool_outcomes, ())
+        self.assertEqual(self.durable.task(self.run_id).status.value, "failed")
 
-    def test_same_turn_failover_fresh_batch_replays_in_recovery(self) -> None:
-        # Same turn: the first batch gets a provider send attempt that
-        # errors, then the failover records a fresh batch for the same turn.
+    def test_same_turn_failover_is_rejected_after_unknown_provider(self) -> None:
+        # A maybe-sent provider request cannot be followed by a guessed
+        # failover batch.  The durable checkpoint is the authority.
         eff = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
         items = (
             DeliveryBatchItem(
@@ -1888,18 +2012,20 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
                 replay_class=ReplayClass.UNSAFE,
             ),
         )
-        self._begin_tool_batch(
-            batch_id="batch-fresh-turn",
-            intents=(),
-            items=items,
-        )
-
-        view = load_session_view(
-            self.log.entries(self.session_id),
-            session_id=self.session_id,
-            run_id=self.run_id,
-        )
-        self.assertEqual(pending_for(view).delivery_batch_id, "batch-fresh-turn")
+        eff_new = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        with self.assertRaises(CommitConflict):
+            self._begin_tool_batch(
+                batch_id="batch-fresh-turn",
+                intents=(
+                    self._tool_intent(
+                        eff_new,
+                        tool_index=0,
+                        tool_name="read",
+                        replay_args={"path": "target.py"},
+                    ),
+                ),
+                items=items,
+            )
 
         recovery = recover_effects_for_resume(
             self._deps(),
@@ -1908,24 +2034,9 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             project=str(self.project_dir),
             task_kind="project",
         )
-        self.assertTrue(recovery.ok)
-        self.assertEqual(recovery.recovered_tool_result_batch_id, "batch-fresh-turn")
-        self.assertEqual(
-            [outcome.effect_id for outcome in recovery.recovered_tool_outcomes],
-            [eff],
-        )
-        # 同轮 failover 重发原结算结果，不重新执行
-        self.assertEqual(
-            recovery.recovered_tool_outcomes[0].outcome.model_text,
-            "settled failover observation",
-        )
-        self.assertTrue(recovery.recovered_tool_outcomes[0].redelivered)
-        fresh = next(
-            batch
-            for batch in self.delivery.load_batches(self.session_id, self.run_id)
-            if batch.intent.batch_id == "batch-fresh-turn"
-        )
-        self.assertTrue(fresh.is_recovered)
+        self.assertFalse(recovery.ok)
+        self.assertEqual(recovery.recovered_tool_outcomes, ())
+        self.assertEqual(self.durable.task(self.run_id).status.value, "failed")
 
     def test_torn_provider_settlement_batch_recovers_as_unknown_outcome(self) -> None:
         eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
@@ -1996,9 +2107,13 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             task_kind="project",
         )
 
-        self.assertTrue(recovery.ok)
+        # The torn runtime settlement is only a projection.  The durable
+        # provider intent remains unknown and recovery must fail closed.
+        self.assertFalse(recovery.ok)
         self.assertEqual(recovery.recovered_tool_outcomes, ())
-        self.assertGreater(len(self.log.entries(self.session_id)), before_torn)
+        # The torn JSONL row is only an untrusted projection.  Durable
+        # recovery may settle without appending another runtime row.
+        self.assertGreaterEqual(len(self.log.entries(self.session_id)), before_torn)
         provider_projection = next(
             item
             for item in self.effects.load_effects(self.session_id, self.run_id)

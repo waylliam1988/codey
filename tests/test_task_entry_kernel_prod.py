@@ -13,7 +13,7 @@ from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, Ke
 
 
 class EntryAuthTests(unittest.TestCase):
-    def test_recovery_without_policy_log_blocks_instead_of_using_new_grants(self) -> None:
+    def test_recovery_without_durable_policy_blocks_instead_of_using_new_grants(self) -> None:
         from types import SimpleNamespace
 
         from codey.operations.task_entry import _entry_policy_with_recovery
@@ -24,7 +24,7 @@ class EntryAuthTests(unittest.TestCase):
                                  project_changes_required=True)
         frame = SimpleNamespace(request=request, run_id="r", project_text="E:/tmp", recovered_tool_outcomes=(object(),))
         deps = SimpleNamespace(runtime_mutations=None)
-        with self.assertRaisesRegex(RuntimeError, "recovery policy log unavailable"):
+        with self.assertRaisesRegex(RuntimeError, "durable task policy recovery"):
             _entry_policy_with_recovery(frame, deps, "project")
 
     def test_http_research_entry_sets_strict_without_default_write(self) -> None:
@@ -107,7 +107,7 @@ class EntryAuthTests(unittest.TestCase):
         self.assertNotIn("web.read", auth.requested_capabilities)
 
     def test_resume_keeps_stored_policy(self) -> None:
-        from codey.operations.recovery import rebuilt_policy_from_log
+        from codey.operations.recovery import policy_from_durable_task
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
@@ -119,7 +119,7 @@ class EntryAuthTests(unittest.TestCase):
         from codey.operations.kernel_errors import RecoveryFailed
 
         with self.assertRaises(RecoveryFailed):
-            rebuilt_policy_from_log(None, session_id="s", run_id="r")
+            policy_from_durable_task(None, task_id="r")
         # Stored payload round-trips via from_payload (session log source).
         from codey.policies.task_policy import TaskPolicy
 
@@ -453,7 +453,8 @@ class DispatchSwitchTests(unittest.TestCase):
     def test_entry_policy_is_persisted_and_reused_for_recovery(self) -> None:
         import tempfile
 
-        from codey.operations.recovery import rebuilt_policy_from_log, record_entry_policy
+        from codey.durable import DurableSession, MemoryDurableStore
+        from codey.operations.recovery import policy_from_durable_task, record_entry_policy
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.log.session_log import RuntimeSessionLog
         from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -461,6 +462,16 @@ class DispatchSwitchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(td)
             mutations = RuntimeMutationLine(log)
+            durable = DurableSession(MemoryDurableStore())
+            durable.admit_input(
+                conversation_id="s-policy",
+                request_id="r-policy",
+                task_id="r-policy",
+                text="research task",
+                provider_snapshot={"provider_id": "local", "model_id": "test"},
+                task_state={"task_kind": "research"},
+            )
+            durable.start_task("r-policy", state={"task_kind": "research"})
             mutations.accept_operation(
                 session_id="s-policy", run_id="r-policy", project="",
                 provider_id="local", turn_budget=2, max_repair_rounds=1,
@@ -473,11 +484,11 @@ class DispatchSwitchTests(unittest.TestCase):
             )
             record_entry_policy(
                 mutations, session_id="s-policy", run_id="r-policy", policy=original,
+                durable=durable,
             )
-            revived = rebuilt_policy_from_log(
-                log, session_id="s-policy", run_id="r-policy",
-            )
+            revived = policy_from_durable_task(durable, task_id="r-policy")
             self.assertEqual(revived.to_payload(), original.to_payload())
+            durable.close()
 
     def test_dispatch_uses_unified_mode(self) -> None:
         import pathlib

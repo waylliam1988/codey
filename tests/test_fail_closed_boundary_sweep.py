@@ -161,11 +161,7 @@ class BoolUnicodeFiniteTests(unittest.TestCase):
         from codey.completion.repair_context import _nonnegative_int as cr
         from codey.ghost.sleep import _int as sl
         from codey.research.source_search import bounded_limit as bl
-        from codey.storage.conversation_store import _nonnegative_int as cs_ni
-        from codey.storage.conversation_store import _positive_int as cs_pi
         self.assertEqual(cr(True), 0)
-        self.assertEqual(cs_ni(True), 0)
-        self.assertEqual(cs_pi(True, 7), 7)
         self.assertEqual(sl(True), 0)
         self.assertEqual(bl(True), 6)
 

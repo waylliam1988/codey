@@ -1,9 +1,9 @@
-"""Runtime external effect intent, settlement, and recovery projection.
+"""Runtime external effect intent, settlement, and audit projection.
 
-The session log is the durable fact source. This module owns bounded effect
-record schemas and projections. Production writes go through
-``runtime.mutation_line`` so effect records and operation-state leaves commit
-together.
+This module owns the bounded JSONL projection used by the UI and diagnostics.
+Production recovery facts are written to ``codey.durable`` first; the runtime
+projection is useful for redelivery receipts and inspection but cannot decide
+whether an external effect should run.
 """
 
 from __future__ import annotations
@@ -90,6 +90,7 @@ _INTENT_PAYLOAD_KEYS = frozenset({
     "call_id",
     "args_digest",
     "display_ref",
+    "delivery_batch_id",
     "replay_class",
     "replay_args",
     "created_at",
@@ -236,6 +237,9 @@ class RuntimeEffectIntent:
     call_id: str = ""
     args_digest: str = ""
     display_ref: str = ""
+    # Durable recovery uses the batch identity to avoid replaying one safe
+    # effect from a mixed batch that also contains an unsafe effect.
+    delivery_batch_id: str = ""
     replay_class: str = ReplayClass.UNSAFE
     replay_args: dict[str, object] | None = None
     created_at: str = ""
@@ -257,6 +261,7 @@ class RuntimeEffectIntent:
         _require_bounded_str(self.call_id, "call_id", MAX_CALL_ID_CHARS, allow_empty=True)
         _require_bounded_str(self.args_digest, "args_digest", MAX_ARGS_DIGEST_CHARS, allow_empty=True)
         _require_bounded_str(self.display_ref, "display_ref", MAX_TEXT_CHARS, allow_empty=True)
+        _require_bounded_str(self.delivery_batch_id, "delivery_batch_id", MAX_REF_CHARS, allow_empty=True)
         _require_bounded_str(self.created_at, "created_at", MAX_TEXT_CHARS, allow_empty=True)
         _require_nonnegative_int(self.turn, "turn")
         _require_nonnegative_int(self.tool_index, "tool_index")
@@ -303,6 +308,8 @@ class RuntimeEffectIntent:
         }
         if self.call_id:
             payload["call_id"] = self.call_id
+        if self.delivery_batch_id:
+            payload["delivery_batch_id"] = self.delivery_batch_id
         if self.replay_args is not None:
             payload["replay_args"] = dict(self.replay_args)
         return payload
@@ -345,6 +352,7 @@ class RuntimeEffectIntent:
             call_id=_require_bounded_str(payload.get("call_id") or "", "call_id", MAX_CALL_ID_CHARS, allow_empty=True),
             args_digest=_require_bounded_str(payload.get("args_digest") or "", "args_digest", MAX_ARGS_DIGEST_CHARS, allow_empty=True),
             display_ref=_require_bounded_str(payload.get("display_ref") or "", "display_ref", MAX_TEXT_CHARS, allow_empty=True),
+            delivery_batch_id=_require_bounded_str(payload.get("delivery_batch_id") or "", "delivery_batch_id", MAX_REF_CHARS, allow_empty=True),
             replay_class=replay_class,
             replay_args=replay_args,
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
@@ -602,6 +610,7 @@ def prepare_intent(
         call_id=intent.call_id,
         args_digest=intent.args_digest,
         display_ref=intent.display_ref,
+        delivery_batch_id=intent.delivery_batch_id,
         replay_class=intent.replay_class,
         replay_args=intent.replay_args,
         created_at=intent.created_at or _now(),
@@ -843,8 +852,9 @@ def find_effect(
 class RuntimeEffectStore:
     """Projection store for external effect intents and settlements."""
 
-    def __init__(self, session_log: RuntimeSessionLog) -> None:
+    def __init__(self, session_log: RuntimeSessionLog | None = None, *, durable: Any | None = None) -> None:
         self.session_log = session_log
+        self.durable = durable
 
     def load_effects(
         self,
@@ -852,6 +862,10 @@ class RuntimeEffectStore:
         run_id: str,
     ) -> tuple[RuntimeEffectProjection, ...]:
         """Load and aggregate all effect intent/settlement pairs for a run in strict chronological order."""
+        if self.durable is not None:
+            return _durable_effects(self.durable, run_id=run_id)
+        if self.session_log is None:
+            return ()
         return effects_from_entries(
             self.session_log.entries(session_id),
             session_id=session_id,
@@ -925,6 +939,30 @@ class RuntimeEffectStore:
             replayed_lookups=replayed_lookups,
             explanation_lines=tuple(lines),
         )
+
+
+def _durable_effects(durable: Any, *, run_id: str) -> tuple[RuntimeEffectProjection, ...]:
+    """Adapt canonical durable effect records to the pure recovery model."""
+    from codey.durable.model import thaw_json
+
+    rows: list[RuntimeEffectProjection] = []
+    try:
+        records = durable.effects(run_id)
+    except KeyError:
+        return ()
+    for record in records:
+        raw_intent = thaw_json(record.intent)
+        if not isinstance(raw_intent, dict):
+            raise RuntimeEffectError("durable effect intent must be an object")
+        intent = RuntimeEffectIntent.from_payload(raw_intent)
+        settlement = None
+        if record.settlement is not None:
+            raw_settlement = thaw_json(record.settlement)
+            if not isinstance(raw_settlement, dict):
+                raise RuntimeEffectError("durable effect settlement must be an object")
+            settlement = RuntimeEffectSettlement.from_payload(raw_settlement)
+        rows.append(RuntimeEffectProjection(intent=intent, settlement=settlement))
+    return tuple(rows)
 
 
 __all__ = [

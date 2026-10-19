@@ -9,7 +9,7 @@ research, or concepts at import time.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any, cast
 
@@ -416,14 +416,23 @@ def _selected_api_reviewer(
 ) -> tuple[str, Any] | None:
     from codey.providers.api_connections import capture_reviewer_selection, open_selection
     from codey.runtime.core.api_selection import ApiRunSelection
-    from codey.runtime.core.operation_state import RuntimeOperationStore
 
     writer = ctx.run_registry.api_selection_for(run_id)
     if not isinstance(writer, ApiRunSelection) or writer.connection_id != writer_id:
         return None
-    operation = RuntimeOperationStore(ctx.runtime_log).load(session_id, run_id) if getattr(ctx, "runtime_log", None) is not None else None
-    if operation is not None and operation.reviewer_selection:
-        selection = ApiRunSelection.from_payload(operation.reviewer_selection)
+    durable = getattr(ctx, "durable", None)
+    checkpoint = None
+    if durable is not None:
+        try:
+            checkpoint = durable.task(run_id)
+        except (KeyError, ValueError, TypeError):
+            checkpoint = None
+    state: Mapping[str, object] = (
+        getattr(checkpoint, "state", {}) if checkpoint is not None else {}
+    )
+    stored = state.get("reviewer_selection") if isinstance(state, Mapping) else None
+    if isinstance(stored, Mapping) and stored:
+        selection = ApiRunSelection.from_payload(dict(stored))
     else:
         try:
             preferences = ctx.providers.model_preferences.snapshot()["sources"].get(writer_id, {})
@@ -431,8 +440,8 @@ def _selected_api_reviewer(
             selection = writer if standalone else capture_reviewer_selection(writer, allowed_models=selected_models)
         except ValueError:
             return None
-        if operation is not None:
-            ctx.runtime_mutations.admit_reviewer_selection(session_id, run_id, selection.to_payload())
+        if checkpoint is not None and durable is not None:
+            durable.record_reviewer_selection(run_id, selection.to_payload())
     if not ctx.providers.model_preferences.allows(selection.connection_id, selection.model_id):
         return None
     if leases is not None:

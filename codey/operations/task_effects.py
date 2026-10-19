@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from codey.durable.session import DurableSession
 
 from codey.operations.provider_session import ProviderAdapter
+from codey.providers.base import AssistantTurn
 from codey.runtime.core.models import ToolCall
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
@@ -38,13 +41,38 @@ def _runtime_name(name: str) -> str:
             "find_references": "references"}.get(name, name)
 
 
+def admitted_durable(state: Any, task_id: str) -> DurableSession | None:
+    """Return durable state only for an actually admitted task.
+
+    Some kernel entry points are exercised as projection-only operations (for
+    example a recovery delivery test) and intentionally have no durable task.
+    They may still share an ``AppContext`` with a durable session, so checking
+    task admission keeps those paths from manufacturing an effect against a
+    nonexistent task while preserving the durable boundary for real runs.
+    """
+    if state is None:
+        return None
+    durable = getattr(state, "durable", None)
+    if durable is None:
+        return None
+    lookup = durable.task
+    if durable is None or not callable(lookup) or not task_id:
+        return None
+    try:
+        lookup(task_id)
+    except KeyError:
+        return None
+    return cast("DurableSession", durable)
+
+
 class KernelEffectSink:
     """Commit one turn's tool intents before any tool can run."""
 
     def __init__(self, mutations: Any, *, session_id: str, run_id: str,
                  provider_id: str, phase: str = "writer",
                  recovered_batch_id: str = "",
-                 managed_outputs: Any = None) -> None:
+                 managed_outputs: Any = None,
+                 durable: Any = None) -> None:
         self.mutations = mutations
         self.session_id = session_id
         self.run_id = run_id
@@ -53,7 +81,8 @@ class KernelEffectSink:
         self.delivery_batch_id = recovered_batch_id
         self.send_index = 0
         self.managed_outputs = managed_outputs
-        store = RuntimeEffectStore(mutations.session_log)
+        self.durable = durable
+        store = RuntimeEffectStore(mutations.session_log, durable=durable)
         previous = store.load_effects(session_id, run_id)
         self._replay_classes = {row.intent.effect_id: row.intent.replay_class for row in previous}
         self._old_pending = {row.intent.effect_id for row in previous if row.is_pending}
@@ -61,6 +90,7 @@ class KernelEffectSink:
     def begin_turn(self, items: list[tuple[str, ToolCall, int]], *, turn: int, specs: Any = None) -> None:
         intents: list[RuntimeEffectIntent] = []
         batch_items: list[DeliveryBatchItem] = []
+        batch_id = new_batch_id(self.run_id, turn)
         for identity, call, index in items:
             if identity in self._old_pending:
                 continue
@@ -77,6 +107,7 @@ class KernelEffectSink:
                 tool_name=name, tool_id=f"{turn}:{index}",
                 call_id=str(getattr(call, "call_id", "") or ""),
                 args_digest=compute_args_digest(call.args), replay_class=replay_class,
+                delivery_batch_id=batch_id,
                 replay_args=replay_args,
             ))
             batch_items.append(DeliveryBatchItem(
@@ -86,7 +117,6 @@ class KernelEffectSink:
         if not batch_items:
             return
         batch_tuple = tuple(batch_items)
-        batch_id = new_batch_id(self.run_id, turn)
         self.mutations.begin_tool_batch(
             self.session_id, self.run_id, intents=tuple(intents),
             delivery_intent=DeliveryBatchIntent(
@@ -101,7 +131,7 @@ class KernelEffectSink:
         return identity in self._old_pending
 
     def settle(self, identity: str, ok: bool, *, result: Any = None, exit_code: int | None = None) -> None:
-        from codey.operations.kernel_receipts import result_receipt_fields
+        from codey.operations.kernel_receipts import result_receipt_fields, tool_history_messages
 
         if result is None:
             raise ValueError("tool settlement requires the original result receipt")
@@ -115,17 +145,19 @@ class KernelEffectSink:
             resolved_exit = exit_code
         elif isinstance(audit, dict) and type(audit.get("exit_code")) is int:
             resolved_exit = audit.get("exit_code")
+        settlement = RuntimeEffectSettlement(
+            effect_id=identity, effect_category=EFFECT_CATEGORY_TOOL_CALL,
+            session_id=self.session_id, run_id=self.run_id,
+            status=SETTLEMENT_STATUS_OK if ok else SETTLEMENT_STATUS_ERROR,
+            error_code="" if ok else "tool_error",
+            replay_class=self._replay_classes.get(identity, ReplayClass.UNSAFE),
+            **fields,
+            exit_code=resolved_exit,
+        )
         self.mutations.settle_tool_effect(
             self.session_id, self.run_id,
-            RuntimeEffectSettlement(
-                effect_id=identity, effect_category=EFFECT_CATEGORY_TOOL_CALL,
-                session_id=self.session_id, run_id=self.run_id,
-                status=SETTLEMENT_STATUS_OK if ok else SETTLEMENT_STATUS_ERROR,
-                error_code="" if ok else "tool_error",
-                replay_class=self._replay_classes.get(identity, ReplayClass.UNSAFE),
-                **fields,
-                exit_code=resolved_exit,
-            ),
+            settlement,
+            messages=tool_history_messages(settlement) if self.durable is not None else (),
         )
 
 class KernelRecordedProvider(ProviderAdapter):
@@ -145,19 +177,12 @@ class KernelRecordedProvider(ProviderAdapter):
             session_id=sink.session_id, run_id=sink.run_id, phase=sink.phase,
             provider_id=sink.provider_id, turn=sink.send_index, display_ref=name,
             args_digest=compute_args_digest(surface), replay_class=ReplayClass.UNSAFE,
+            delivery_batch_id=sink.delivery_batch_id,
         )
         sink.mutations.begin_provider_effect(
             sink.session_id, sink.run_id, intent,
             delivery_batch_id=sink.delivery_batch_id,
         )
-        # The provider ledger commit and the runtime delivery receipt are
-        # separate durable records.  Carry a deterministic witness into the
-        # window transaction so recovery can reconcile a committed result
-        # batch without issuing another HTTP request.
-        if name == "send_tool_results_bound" and sink.delivery_batch_id and "delivery_commit" not in kwargs:
-            witness = _delivery_commit_for_send(sink, args, effect_id)
-            if witness is not None:
-                kwargs["delivery_commit"] = witness
         try:
             reply = getattr(self.provider, name)(*args, **kwargs)
         except Exception as exc:
@@ -172,56 +197,50 @@ class KernelRecordedProvider(ProviderAdapter):
             # Overflow deterministically produced no usable reply and prep
             # failures sent nothing: settle NOT_SENT so the same batch can
             # safely retry/supersede. All other faults stay MAYBE_SENT.
-            not_sent = overflow_or_prep or getattr(exc, "provider_failure_kind", "") == "not_submitted"
+            not_sent = (
+                overflow_or_prep
+                or isinstance(exc, StopIteration)
+                or getattr(exc, "provider_failure_kind", "") == "not_submitted"
+            )
             sent_state = SENT_STATE_NOT_SENT if not_sent else SENT_STATE_MAYBE_SENT
-            sink.mutations.settle_provider_effect(
-                sink.session_id, sink.run_id,
-                RuntimeEffectSettlement(
+            settlement = RuntimeEffectSettlement(
                     effect_id=effect_id, effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
                     session_id=sink.session_id, run_id=sink.run_id,
                     status=SETTLEMENT_STATUS_ERROR, error_code=type(exc).__name__[:80],
                     sent_state=sent_state,
-                ),
+                )
+            sink.mutations.settle_provider_effect(
+                sink.session_id, sink.run_id,
+                settlement,
             )
             raise
-        sink.mutations.settle_provider_effect(
-            sink.session_id, sink.run_id,
-            RuntimeEffectSettlement(
+        settlement = RuntimeEffectSettlement(
                 effect_id=effect_id, effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
                 session_id=sink.session_id, run_id=sink.run_id,
                 status=SETTLEMENT_STATUS_OK, sent_state=SENT_STATE_SETTLED,
-            ),
+            )
+        sink.mutations.settle_provider_effect(
+            sink.session_id, sink.run_id,
+            settlement,
+            messages=_reply_messages(reply) if sink.durable is not None else (),
         )
         sink.delivery_batch_id = ""
         return reply
 
 
-def _delivery_commit_for_send(sink: KernelEffectSink, args: tuple[Any, ...], effect_id: str) -> dict[str, Any] | None:
-    if len(args) < 2:
-        return None
-    raw_results, raw_window = args[0], args[1]
-    window_payload = raw_window.to_payload() if hasattr(raw_window, "to_payload") else raw_window
-    if not isinstance(window_payload, dict) or not window_payload:
-        return None
-    result_rows = []
-    for result in raw_results or ():
-        result_rows.append({
-            "call_id": str(getattr(result, "call_id", "") or ""),
-            "content": str(getattr(result, "content", "") or ""),
-        })
-    digest = hashlib.sha256(json.dumps(
-        result_rows, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-    ).encode("utf-8")).hexdigest()[:32]
-    from codey.runtime.effects.tool_result_delivery import DeliveryCommit
-
-    return DeliveryCommit(
-        window_ref=window_payload,
-        batch_id=sink.delivery_batch_id,
-        provider_effect_id=effect_id,
-        results_digest=digest,
-        invocation_kind="native_tool_results",
-        reply_status="accepted",
-    ).to_payload()
+def _reply_messages(reply: Any) -> tuple[tuple[str, dict[str, object]], ...]:
+    if isinstance(reply, AssistantTurn) and reply.tool_calls:
+        return (("tool_call", {"content": reply.text, "tool_calls": [
+            {"id": call.id, "type": "function", "function": {
+                "name": call.name, "arguments": json.dumps(call.arguments, ensure_ascii=False),
+            }} for call in reply.tool_calls
+        ]}),)
+    # Plain assistant text is committed by terminal task settlement. Keeping
+    # it out of the provider effect settlement gives each logical answer one
+    # durable owner and prevents a provider receipt plus completion commit
+    # from producing duplicate history entries. Tool calls remain here because
+    # they are context facts needed before the next provider turn.
+    return ()
 
 
-__all__ = ["KernelEffectSink", "KernelRecordedProvider"]
+__all__ = ["KernelEffectSink", "KernelRecordedProvider", "admitted_durable"]

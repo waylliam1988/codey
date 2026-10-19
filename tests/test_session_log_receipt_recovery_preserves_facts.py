@@ -47,7 +47,9 @@ def _policy():
     return TaskPolicy(grants=frozenset({"control", "project.read", "project.write", "project.verify"}))
 
 
-def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, project: Path):
+def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, project: Path,
+                  *, task_kind: str = "project"):
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.task_effects import KernelEffectSink
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
@@ -57,7 +59,24 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
     from codey.workspace.revision import WorkspaceRevisionStore
 
     log = RuntimeSessionLog(logdir)
-    mutations = RuntimeMutationLine(log)
+    state.mkdir(parents=True, exist_ok=True)
+    durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
+    mutations = RuntimeMutationLine(log, durable=durable)
+    durable.admit_input(
+        conversation_id=session_id,
+        request_id=f"request-{run_id}",
+        task_id=run_id,
+        text="recovery fixture",
+        provider_snapshot={"provider_id": "local", "model_id": "fixture"},
+        task_state={"task_kind": task_kind},
+    )
+    durable.start_task(run_id, state={"task_kind": "project"})
+    durable.advance_task(
+        task_id=run_id, phase="assistant_intent_committed", state={"task_kind": task_kind},
+    )
+    durable.advance_task(
+        task_id=run_id, phase="assistant_response_pending", state={"task_kind": task_kind},
+    )
     managed = ManagedOutputStore(state)
     rev_store = WorkspaceRevisionStore(state)
     mutations.accept_operation(
@@ -67,12 +86,13 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
     mutations.mark_writer_running(session_id, run_id, provider_id="local")
     sink = KernelEffectSink(
         mutations, session_id=session_id, run_id=run_id, provider_id="local",
-        managed_outputs=managed,
+        managed_outputs=managed, durable=durable,
     )
     deps = SimpleNamespace(
+        state=SimpleNamespace(durable=durable),
         runtime_mutations=mutations,
-        runtime_effects=RuntimeEffectStore(log),
-        tool_result_delivery=ToolResultDeliveryStore(log),
+        runtime_effects=RuntimeEffectStore(log, durable=durable),
+        tool_result_delivery=ToolResultDeliveryStore(log, durable=durable),
         managed_outputs=managed,
         workspace_revisions=rev_store,
     )
@@ -140,11 +160,16 @@ def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audit
         execution_evidence=evidence, workspace_revision_store=rev_store,
     )
     assert results and len(results) == len(calls)
+    # The durable session is the fact owner in these fixtures.  Close it at
+    # the process boundary so Windows can remove the temporary state directory
+    # and each restart really opens a fresh connection.
+    sink.durable.close()
     return session, evidence, counts, rev_store
 
 
 def _recover_formal(project, state, logdir, session_id, run_id):
     """Reopen stores (restart) then recover via the formal entry path."""
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.kernel_session_recovery import restore_task_session
     from codey.operations.recovery import recover_effects_for_resume
     from codey.runtime.effects.effect_records import RuntimeEffectStore
@@ -155,11 +180,13 @@ def _recover_formal(project, state, logdir, session_id, run_id):
     from codey.workspace.revision import WorkspaceRevisionStore
 
     log = RuntimeSessionLog(logdir)
-    mutations = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
+    mutations = RuntimeMutationLine(log, durable=durable)
     deps = SimpleNamespace(
+        state=SimpleNamespace(durable=durable),
         runtime_mutations=mutations,
-        runtime_effects=RuntimeEffectStore(log),
-        tool_result_delivery=ToolResultDeliveryStore(log),
+        runtime_effects=RuntimeEffectStore(log, durable=durable),
+        tool_result_delivery=ToolResultDeliveryStore(log, durable=durable),
         managed_outputs=ManagedOutputStore(state),
         workspace_revisions=WorkspaceRevisionStore(state),
     )
@@ -175,6 +202,7 @@ def _recover_formal(project, state, logdir, session_id, run_id):
     frame = SimpleNamespace(run_id=run_id, recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes),
                             settled_tool_outcomes=recovery.settled_tool_outcomes)
     delivered, rows, resume_start, initial = restore_task_session(frame, fresh)
+    durable.close()
     return fresh, recovery, delivered, rows, resume_start
 
 
@@ -220,8 +248,10 @@ def test_legal_success_recovers_and_completes_via_formal_entry():
         assert type(row.get("workspace_fingerprint")) is str
         assert fresh.workspace_revision == orig_rev
         assert fresh.workspace_fingerprint == orig_fp
-        assert recovery.recovered_tool_outcomes[1].call.call_id == orig_call
-        assert resume == max(int(r.turn) for r in rows) + 1
+        assert recovery.recovered_tool_outcomes == ()
+        facts = recovery.settled_tool_outcomes
+        assert facts[1].call.call_id == orig_call
+        assert resume == max(int(r.turn) for r in facts) + 1
         # Formal gate must complete on the recovered facts.
         assert evaluate(fresh, "done", context=_gate_context(fresh, "r-legal")).complete is True
 
@@ -293,13 +323,15 @@ def test_native_call_id_survives_and_no_reexecution_on_second_restart():
             project, state, logdir, "s-native", "r-native", [{"exit_code": 0}],
         )
         fresh1, rec1, _, rows1, resume1 = _recover_formal(project, state, logdir, "s-native", "r-native")
-        assert rec1.recovered_tool_outcomes[1].call.call_id == "native-r-native-0"
+        assert rec1.recovered_tool_outcomes == ()
+        assert rec1.settled_tool_outcomes[1].call.call_id == "native-r-native-0"
         n1 = len(fresh1.verifications)
         assert n1 == 1
         # Second restart is idempotent: no duplicate replay, no re-execution.
         fresh2, rec2, _, rows2, _ = _recover_formal(project, state, logdir, "s-native", "r-native")
         assert counts["edit"] == 1 and counts["run"] == 1
         assert len(rec2.recovered_tool_outcomes) == len(rec1.recovered_tool_outcomes)
+        assert len(rec2.settled_tool_outcomes) == len(rec1.settled_tool_outcomes)
         assert fresh2.verifications == fresh1.verifications
         from codey.operations.completion_gate import evaluate
 

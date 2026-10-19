@@ -61,6 +61,7 @@ def test_ignored_generated_files_do_not_invalidate_verification(tmp_path):
 def test_production_recovery_restores_version_proof_only_for_same_workspace(tmp_path, changed):
     from types import SimpleNamespace
 
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.kernel_provenance import _with_trusted_workspace_state
     from codey.operations.recovery import delivered_from_frame, recover_effects_for_resume
     from codey.operations.task_effects import KernelEffectSink
@@ -78,23 +79,34 @@ def test_production_recovery_restores_version_proof_only_for_same_workspace(tmp_
     version = revisions.current_state(project)
     log, mutations = _new_log(tmp_path)
     _accept_and_mark(mutations, "s", "r", str(project))
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    durable.admit_input(
+        conversation_id="s", request_id="request-r", task_id="r", text="recovery fixture",
+        provider_snapshot={"provider_id": "local", "model_id": "fixture"},
+        task_state={"task_kind": "project"},
+    )
+    durable.claim_task("r")
+    durable.start_task("r", state={"task_kind": "project"})
+    durable.advance_task(task_id="r", phase="assistant_intent_committed", state={"task_kind": "project"})
+    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "project"})
     outputs = ManagedOutputStore(tmp_path / "outputs")
     call = ToolCall("run", {"command":"python -m pytest", "path":"."}, "original-call")
     result = _with_trusted_workspace_state(ToolResult(call, "original pass", ok=True, audit={"exit_code":0}),
                                            revision=version.revision, fingerprint=version.fingerprint)
-    sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local", managed_outputs=outputs)
+    sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local", managed_outputs=outputs, durable=durable)
     sink.begin_turn([("run-effect", call, 0)], turn=1)
     sink.settle("run-effect", True, result=result, exit_code=0)
     if changed:
         file.write_text("changed after verification\n")
     log, mutations = _new_log(tmp_path)
     recovery = recover_effects_for_resume(SimpleNamespace(
+        state=SimpleNamespace(durable=durable),
         runtime_mutations=mutations, runtime_effects=RuntimeEffectStore(log),
         tool_result_delivery=ToolResultDeliveryStore(log), managed_outputs=outputs,
         workspace_revisions=revisions,
     ), session_id="s", run_id="r", project=str(project), task_kind="project")
     assert recovery.ok
-    restored = list(delivered_from_frame(SimpleNamespace(run_id="r", recovered_tool_outcomes=recovery.recovered_tool_outcomes),
+    restored = list(delivered_from_frame(SimpleNamespace(run_id="r", recovered_tool_outcomes=(recovery.recovered_tool_outcomes + recovery.settled_tool_outcomes)),
                                          effect_scope="task").values())[0]
     assert restored.model_text == "original pass"
     assert restored.call.call_id == "original-call"

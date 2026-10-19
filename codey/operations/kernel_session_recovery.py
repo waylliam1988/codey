@@ -45,6 +45,21 @@ def _sort_recovered_rows(raw_rows: list[Any]) -> list[Any]:
         raise RecoveryFailed(f"recovered row ordering failed: {exc}") from exc
 
 
+def _delivery_identity(frame: Any, effect_scope: str, row: Any) -> str:
+    """Return the stable turn-slot key used by ``delivered_from_frame``.
+
+    Effect ids identify durable external effects.  Delivery maps identify the
+    provider turn slot that must receive a result after recovery.  They are
+    deliberately different namespaces; using an effect id here silently
+    drops a valid recovered result from the continuation prompt.
+    """
+    return turn_effect_id(
+        f"{frame.run_id}:{effect_scope}" if effect_scope else frame.run_id,
+        int(row.turn),
+        int(row.tool_index),
+    )
+
+
 def _replay_recovered_facts(session: Any, recovered_rows: list[Any], recovered_results: list[Any]) -> None:
     """Replay facts from the single-built recovered results (no rebuild)."""
     for row, prior in zip(recovered_rows, recovered_results, strict=True):
@@ -80,15 +95,13 @@ def restore_task_session(frame: Any, session: Any, *, effect_scope: str = "task"
         raise RecoveryFailed(f"recovery delivery failed: {exc}") from exc
     # Reuse the single-built objects in sorted order for facts + initial.
     try:
-        identities = [
-            turn_effect_id(f"{frame.run_id}:{effect_scope}", int(r.turn), int(r.tool_index))
-            for r in recovered_rows
-        ]
+        identities = [_delivery_identity(frame, effect_scope, row) for row in recovered_rows]
         recovered_results = [delivered[ident] for ident in identities]
     except Exception as exc:
         raise RecoveryFailed(f"recovered delivery map incomplete: {exc}") from exc
-    # Facts outlive delivery. Reuse pending result objects, but do not send
-    # already-delivered history back as native call results.
+    # Facts outlive delivery. Reuse pending result objects. A settled row is
+    # also a delivery input only when its batch is still awaiting provider
+    # acknowledgement; once the batch is delivered it remains a fact only.
     fact_rows = list(getattr(frame, "settled_tool_outcomes", ()) or ())
     pending_by_effect = {r.effect_id: result for r, result in zip(recovered_rows, recovered_results, strict=True)
                          if getattr(r, "effect_id", "")}
@@ -114,6 +127,26 @@ def restore_task_session(frame: Any, session: Any, *, effect_scope: str = "task"
         _replay_recovered_facts(session, [row], [prior])
         session._memory_results[identity] = prior
         session.restored_effect_ids.add(identity)
+    pending_batch = bool(getattr(frame, "recovered_tool_result_batch_id", "") or "")
+    if pending_batch:
+        for row in fact_rows:
+            identity = _delivery_identity(frame, effect_scope, row)
+            if identity in delivered:
+                continue
+            try:
+                delivered[identity] = build_recovered_result(spec_for_recovered_row(row))
+            except Exception as exc:
+                raise RecoveryFailed(f"settled delivery rebuild failed: {exc}") from exc
+    initial_rows = [
+        row for row in fact_rows
+        if pending_batch or row in recovered_rows
+    ]
+    initial_results: list[Any] = []
+    for row in initial_rows:
+        identity = _delivery_identity(frame, effect_scope, row)
+        result = delivered.get(identity)
+        if result is not None:
+            initial_results.append(result)
     try:
         resume_start = max(int(getattr(r, "turn", 0) or 0) for r in fact_rows) + 1 if fact_rows else 1
         resume_start = max(1, resume_start)
@@ -123,4 +156,4 @@ def restore_task_session(frame: Any, session: Any, *, effect_scope: str = "task"
         research_ledger.commit_projection(staged_ledger)
     for item in fields(session):
         setattr(original_session, item.name, getattr(session, item.name))
-    return delivered, recovered_rows, resume_start, list(recovered_results)
+    return delivered, recovered_rows, resume_start, initial_results

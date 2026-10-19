@@ -78,6 +78,7 @@ class KernelTransportDeps:
     provider_session_changed: bool = False
     initial_turn: InitialNativeTurn | None = None
     window_ref: Any = None
+    replayed_result_ids: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -464,6 +465,7 @@ def _kernel_startup(
     provider_session_changed: bool,
     delivered: Mapping[str, ToolResult] | None,
     initial_turn: InitialNativeTurn | None = None,
+    replayed_result_ids: frozenset[str] = frozenset(),
 ) -> _KernelStartup:
     runnable = dict(executors or {})
     delivered_map = dict(delivered or {})
@@ -506,6 +508,7 @@ def _kernel_startup(
         provider_session_changed=provider_session_changed,
         format_results=_prompt._format_results,
         native_tool_messages=_transport._native_tool_results,
+        replayed_result_ids=replayed_result_ids,
     )
     return _KernelStartup(
         executors=runnable, delivered=delivered_map, max_turns=max_turns,
@@ -585,6 +588,7 @@ def run_task_kernel(
             provider_session_changed=provider_session_changed,
             delivered=delivered,
             initial_turn=request.transport.initial_turn,
+            replayed_result_ids=request.transport.replayed_result_ids,
         )
     except RecoveryFailed as exc:
         # Recovery delivery failures must never fall through to the initial

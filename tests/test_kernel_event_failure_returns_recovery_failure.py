@@ -88,6 +88,7 @@ class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
             recovered_tool_outcomes=(),
             recovered_tool_result_batch_id="",
             entry_initial_turn=None,
+            window_action=None,
         )
         hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
         deps = SimpleNamespace(knowledge_store=None, search_factory=None, runtime_mutations=None, state=None)

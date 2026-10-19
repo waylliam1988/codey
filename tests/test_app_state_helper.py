@@ -23,7 +23,8 @@ class AppStateHelperTests(unittest.TestCase):
             DEFAULT_STATE_HOME / "conversations" / f"{session_key(session_id)}.json"
         )
         self.assertFalse(home_path.exists())
-        self.assertTrue(state.conversation_registry.store.path_for(session_id).exists())
+        self.assertTrue(state.durable.store.has_conversation(session_id))
+        self.assertIsNotNone(state.durable.latest_context_snapshot(session_id))
 
 
 if __name__ == "__main__":

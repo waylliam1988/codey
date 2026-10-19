@@ -41,14 +41,16 @@ def test_changed_connection_blocks_restore_but_changed_model_keeps_original(tmp_
 
 def test_shell_approval_keeps_zen_selection_without_local_specific_branch(tmp_path):
     from codey.app.context import AppContext
+    from tests.support.shell_approval import add_pending_approval, admit_shell_task
 
     state = AppContext(tmp_path)
     try:
         run = state.reserve_run(session_id="session", project=None, task="test", provider_id="zen")
         selection = ApiRunSelection("zen", "revision", "model", "openai-responses", True)
         state.run_registry.bind_api_selection(run.run_id, selection)
-        state.add_pending_shell_approval("approval", {"run_id": run.run_id, "provider": "zen", "session_id": "session"})
-        assert state.pop_pending_shell_approval("approval")["_api_selection"] == selection
+        admit_shell_task(state, session_id="session", run_id=run.run_id, task="test", provider_id="zen")
+        add_pending_approval(state, "approval", {"run_id": run.run_id, "provider": "zen", "session_id": "session", "command": "echo approval", "cwd": "."})
+        assert state.pending_shell_approvals()["approval"]["_api_selection"] == selection
     finally:
         state.close()
 
@@ -64,6 +66,19 @@ def test_production_admission_restores_original_selection_after_settings_and_res
     state = AppContext(state_home)
     try:
         admitted = _admit_api_selection(state, TaskSubmission("s", None, "task", 4, False, "local", run_id="first-run"))
+        from codey.providers.snapshot import provider_snapshot
+
+        state.durable.admit_input(
+            conversation_id="s",
+            request_id="first-run",
+            task_id="first-run",
+            text="task",
+            provider_snapshot=provider_snapshot(
+                "local",
+                ApiRunSelection.from_payload(admitted.model_selection),
+            ),
+            task_state={"task": "task", "provider_id": "local", "model_selection": admitted.model_selection},
+        )
         TaskRuntime(state.runtime_log, lambda _: OperationOutcome.suspended(reason="approval")).run(admitted)
     finally:
         state.close()

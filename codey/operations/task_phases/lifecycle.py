@@ -16,7 +16,7 @@ from codey.runtime.core.operation_state import RuntimeOperationTransitionError
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.runtime.observe.terminalizer import terminal_turns
-from codey.task.kind import trace_mode, ui_mode
+from codey.task.kind import resolve_task_kind_values, trace_mode, ui_mode
 from codey.task.model import TaskSubmission
 from codey.utils.refs import coerce_int
 from codey.workspace.revision import INITIAL_WORKSPACE_REVISION, WorkspaceState
@@ -47,9 +47,77 @@ def ensure_run_reserved_and_started(
             return None, None
         run_id = reserved.run_id
         request = replace(request, run_id=run_id)
+    admitted_durable = _ensure_durable_task(state, request)
     if not state.start_run(run_id):
         return None, OperationOutcome.aborted(reason="run_not_started")
+    if admitted_durable:
+        durable = getattr(state, "durable", None)
+        if durable is not None:
+            checkpoint = durable.task(run_id)
+            durable.start_task(run_id, state=dict(checkpoint.state))
     return _Reservation(request=request, run_id=run_id), None
+
+
+def _ensure_durable_task(state: TaskState, request: TaskSubmission) -> bool:
+    """Admit direct operation callers into the canonical durable lifecycle.
+
+    HTTP/browser submission admits the input before dispatch and therefore
+    already owns a checkpoint. Operation-level callers are also supported by
+    the public runner API; they reserve their run ID here, then create the
+    same durable input/task record before recovery or provider effects can
+    observe the task.
+    """
+    durable = getattr(state, "durable", None)
+    if durable is None or not request.run_id:
+        return False
+    try:
+        existing = durable.task(request.run_id)
+        if existing.status == "pending":
+            durable.claim_task(request.run_id)
+        return False
+    except KeyError:
+        pass
+    from codey.providers.snapshot import provider_snapshot
+
+    model_selection = getattr(request, "model_selection", None)
+    selection = None
+    if isinstance(model_selection, dict) and model_selection:
+        from codey.runtime.core.api_selection import ApiRunSelection
+
+        selection = ApiRunSelection.from_payload(model_selection)
+    snapshot = provider_snapshot(
+        request.provider_id,
+        selection,
+        provider_session_id="",
+    )
+    durable.admit_input(
+        conversation_id=request.session_id,
+        request_id=request.run_id,
+        task_id=request.run_id,
+        text=request.task,
+        provider_snapshot=snapshot,
+        task_state={
+            "project": request.project,
+            "task": request.task,
+            "max_turns": request.max_turns,
+            "continue_task": request.continue_task,
+            "provider_id": request.provider_id,
+            "intent": request.intent,
+            "task_kind": resolve_task_kind_values(request.project, request.intent),
+            "requested_capabilities": list(request.requested_capabilities),
+            "strict_research": request.strict_research,
+            "sources_open_required": request.sources_open_required,
+            "project_changes_required": request.project_changes_required,
+            "denied_capabilities": list(request.denied_capabilities),
+            "previous_run_id": request.previous_run_id,
+            "initial_shell_results": list(request.initial_shell_results),
+            "review_source_run_id": request.review_source_run_id,
+            "model_selection": dict(model_selection or {}),
+        },
+        initial_phase="accepted",
+    )
+    durable.claim_task(request.run_id)
+    return True
 
 
 def build_run_work(
@@ -185,6 +253,8 @@ def start_run_operation(
 
 def finish_run_operation(deps: Any, work: RunWork, event: dict[str, object]) -> None:
     if work.operation is None:
+        return
+    if event.get("stop_reason") in {"approval", "question"}:
         return
     max_turns = coerce_int(event.get("max_turns") or 0)
     try:

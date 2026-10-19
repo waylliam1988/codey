@@ -299,6 +299,7 @@ def test_application_api_reviewer_excludes_disabled_catalog_model(tmp_path, monk
     from codey.app.context import AppContext
     from codey.app.review_service import _selected_api_reviewer
     from codey.runtime.core.api_selection import ApiRunSelection
+    from tests.support.shell_approval import admit_shell_task
 
     ctx = AppContext(tmp_path)
     try:
@@ -308,6 +309,7 @@ def test_application_api_reviewer_excludes_disabled_catalog_model(tmp_path, monk
         run = ctx.reserve_run(session_id="s", project=None, task="review", provider_id="local")
         writer = ApiRunSelection("local", "fixture", "writer", "openai-completions", True)
         ctx.run_registry.bind_api_selection(run.run_id, writer)
+        admit_shell_task(ctx, session_id="s", run_id=run.run_id, task="review")
         connector = Mock()
         connector.model_payload.return_value = {
             "models": [{"id": "disabled", "review_eligible": True}, {"id": "chosen"}]

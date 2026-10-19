@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 from codey.app.headless_runner import HeadlessAppContext
 from codey.operations.project_adapter import run as agent_run
-from codey.operations.recovery import rebuilt_policy_from_log
+from codey.operations.recovery import policy_from_durable_task
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_execution import ExecutionDelegate
@@ -28,7 +28,6 @@ from codey.providers.api_chat import encode_tools
 from codey.providers.api_provider import ApiProvider
 from codey.runtime.core.cancellation import start_process, wait_process
 from codey.runtime.effects.effect_records import RuntimeEffectStore
-from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes, is_git_repository
 from tools.local_model_gate_attempts import REPO_ROOT, GateTarget, make_provider, record_api_generations, write_json
@@ -117,7 +116,7 @@ def _stage(directory: Path, stage: str, *, scripted: bool) -> int:
     def interrupted_settle(self, identity, ok, *, result=None, exit_code=None):
         settle(self, identity, ok, result=result, exit_code=exit_code)
         if stage == "prepare" and result is not None and result.call.name == "edit" and ok is True:
-            policy = rebuilt_policy_from_log(context.runtime_mutations.session_log, session_id=SESSION_ID, run_id=RUN_ID)
+            policy = policy_from_durable_task(context.durable, task_id=RUN_ID)
             write_json(directory / "interruption.json", {
                 "pid": os.getpid(), "effect_id": identity, "call_id": result.call.call_id,
                 "result_text": result.model_text, "policy": policy.to_payload(),
@@ -137,11 +136,11 @@ def _stage(directory: Path, stage: str, *, scripted: bool) -> int:
                 project_changes_required=True,
             ))
         terminal = context.run_registry.last_terminal_event() or {}
-        policy = rebuilt_policy_from_log(context.runtime_mutations.session_log, session_id=SESSION_ID, run_id=RUN_ID)
-        effects = RuntimeEffectStore(context.runtime_mutations.session_log).load_effects(SESSION_ID, RUN_ID)
+        policy = policy_from_durable_task(context.durable, task_id=RUN_ID)
+        effects = RuntimeEffectStore(context.runtime_mutations.session_log, durable=context.durable).load_effects(SESSION_ID, RUN_ID)
         original = json.loads((directory / "interruption.json").read_text(encoding="utf-8")) if stage == "resume" else {}
         recovered = next((effect for effect in effects if effect.intent.effect_id == original.get("effect_id")), None)
-        batches = ToolResultDeliveryStore(context.runtime_mutations.session_log).load_batches(SESSION_ID, RUN_ID)
+        batches = context.tool_result_delivery.load_batches(SESSION_ID, RUN_ID)
         original_delivered = any(batch.is_delivered and original.get("effect_id") in batch.intent.tool_refs
                                  for batch in batches)
         write_json(directory / f"{stage}-result.json", {

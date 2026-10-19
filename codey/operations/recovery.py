@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -14,34 +15,23 @@ from codey.agents.tool_execution import (
     policy_denied,
 )
 from codey.agents.tools import DEFAULT_TOOL_FNS
+from codey.durable import decide_recovery
+from codey.durable.model import EffectRecord, thaw_json
+from codey.durable.session import DurableSession
 from codey.policies.permissions import profile_for_task_kind
-from codey.runtime.core import cancellation
-from codey.runtime.core.operation_reducer import (
-    ACTION_CONTINUE,
-    ACTION_FAIL_INVARIANT,
-    ACTION_REDELIVER_SETTLED_BATCH,
-    ACTION_REPLAY_SAFE_TOOL_BATCH,
-    ACTION_SETTLE_PROVIDER_UNKNOWN,
-    ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS,
-    ACTION_TERMINAL,
-    RuntimeAction,
-)
+from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.effects.effect_records import (
-    EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
-    SENT_STATE_MAYBE_SENT,
-    SENT_STATE_SETTLED,
     SETTLEMENT_STATUS_ERROR,
     SETTLEMENT_STATUS_OK,
+    RuntimeEffectIntent,
     RuntimeEffectProjection,
     RuntimeEffectSettlement,
+    RuntimeEffectStore,
 )
 from codey.runtime.effects.replay_policy import ReplayClass
-from codey.runtime.effects.safe_tool_replay import (
-    SafeToolReplayCandidate,
-    candidate_from_intent,
-)
-from codey.runtime.write.drive import peek_next_action
+from codey.runtime.effects.safe_tool_replay import candidate_from_intent
+from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 logger = logging.getLogger(__name__)
@@ -70,87 +60,40 @@ def recover_effects_for_resume(
     remain part of the task on every restart. No executor runs while loading
     settled facts, and an unavailable receipt never becomes an empty task.
     """
-    _reconcile_delivery_witnesses(
-        deps, session_id=session_id, run_id=run_id,
+    durable = durable_task_for(
+        getattr(getattr(deps, "state", None), "durable", None), run_id
     )
+    if durable is None:
+        return ResumeRecoveryResult(ok=False)
     pending = _recover_pending_effects(
         deps, session_id=session_id, run_id=run_id, project=project,
         task_kind=task_kind, ignored_paths=ignored_paths,
+        durable=durable,
     )
     if not pending.ok:
         return pending
+    # Durable effect records are sufficient to reconstruct settled receipts.
+    # A runtime JSONL projection may be absent after a clean cold start or
+    # deliberately disabled in recovery tests; that must not erase facts.
     store = _runtime_effect_store(deps)
     if store is None:
-        return pending
+        store = RuntimeEffectStore(None, durable=durable)
     try:
         facts = _settled_facts(
             store.load_effects(session_id, run_id), pending.recovered_tool_outcomes,
             deps=deps, session_id=session_id, run_id=run_id, project=project,
             ignored_paths=ignored_paths,
+            active_batch_id=pending.recovered_tool_result_batch_id,
         )
     except (OSError, ValueError, TypeError, AttributeError):
         return ResumeRecoveryResult(ok=False)
     return replace(pending, settled_tool_outcomes=facts)
 
 
-def _reconcile_delivery_witnesses(deps: Any, *, session_id: str, run_id: str) -> None:
-    """Turn a committed provider witness into a local delivered receipt."""
-    ledger = getattr(deps, "context_ledger", None)
-    if ledger is None:
-        state = getattr(deps, "state", None)
-        ledger = getattr(state, "context_ledger", None)
-        if ledger is None:
-            state_home = getattr(state, "state_home", None)
-            if state_home is not None:
-                from codey.providers.context_ledger import ContextLedger
-
-                try:
-                    ledger = ContextLedger.for_session(state_home, session_id, f"protocol:{session_id}")
-                except (OSError, ValueError, TypeError):
-                    ledger = None
-    mutations = _runtime_mutations(deps)
-    delivery_store = _tool_result_delivery_store(deps)
-    if ledger is None or mutations is None or delivery_store is None:
-        return
-    try:
-        batches = delivery_store.load_batches(session_id, run_id)
-        delivered_ids = {batch.intent.batch_id for batch in batches if batch.is_delivered}
-        witnesses = ledger.unreconciled_delivery_commits(delivered_ids)
-        if not isinstance(witnesses, (tuple, list)):
-            return
-        from codey.runtime.effects.tool_result_delivery import DeliveryCommit
-
-        batches_by_id = {item.intent.batch_id: item for item in batches}
-        for payload in witnesses:
-            witness = DeliveryCommit.from_payload(payload)
-            batch = batches_by_id.get(witness.batch_id)
-            if batch is None:
-                # The context ledger is session-scoped, while delivery
-                # batches are run-scoped.  A witness from another run must
-                # remain available for that run's recovery and must not make
-                # this run fail closed merely because its batch is absent.
-                logger.debug(
-                    "skipping delivery witness for another run: batch_id=%s run_id=%s",
-                    witness.batch_id,
-                    run_id,
-                )
-                continue
-            if witness.provider_effect_id not in batch.send_attempts:
-                raise ValueError("delivery witness does not match a source batch")
-            expected_window = getattr(ledger, "window_ref", None)
-            if expected_window is not None and witness.window_ref != expected_window.to_payload():
-                raise ValueError("delivery witness window does not match the active ledger")
-            mutations.record_delivery_delivered(
-                session_id, run_id, batch_id=witness.batch_id,
-                provider_effect_id=witness.provider_effect_id,
-            )
-    except (OSError, ValueError, TypeError, AttributeError) as exc:
-        raise RuntimeError(f"delivery witness reconciliation failed: {exc}") from exc
-
-
 def _settled_facts(
     projections: tuple[RuntimeEffectProjection, ...], pending_rows: tuple[RecoveredToolOutcome, ...], *,
     deps: Any, session_id: str, run_id: str, project: str, ignored_paths: tuple[str, ...],
+    active_batch_id: str = "",
 ) -> tuple[RecoveredToolOutcome, ...]:
     pending_by_id = {row.effect_id: row for row in pending_rows}
     rows: list[RecoveredToolOutcome] = []
@@ -187,103 +130,442 @@ def _recover_pending_effects(
     project: str,
     task_kind: str,
     ignored_paths: tuple[str, ...] = (),
+    durable: DurableSession,
 ) -> ResumeRecoveryResult:
-    effects_store = _runtime_effect_store(deps)
-    delivery_store = _tool_result_delivery_store(deps)
     mutations = _runtime_mutations(deps)
-    if mutations is None:
-        return ResumeRecoveryResult(ok=True)
-    try:
-        action = peek_next_action(
-            mutations.session_log,
-            session_id=session_id,
-            run_id=run_id,
+    durable_decision, terminal = _apply_durable_recovery(
+        durable, run_id, mutations=mutations, session_id=session_id,
+    )
+    if terminal is not None:
+        return terminal
+    if durable_decision.action == "recover_tool_effects":
+        return _recover_durable_tool_effects(
+            durable, run_id=run_id, project=project,
+            task_kind=task_kind, deps=deps, mutations=mutations,
         )
-    except Exception:
-        return ResumeRecoveryResult(ok=False)
-    if action.kind == ACTION_FAIL_INVARIANT:
-        return ResumeRecoveryResult(ok=False)
-    if action.kind in {ACTION_CONTINUE, ACTION_TERMINAL}:
-        return ResumeRecoveryResult(ok=True)
-    if effects_store is None:
-        return ResumeRecoveryResult(ok=False)
-    try:
-        all_projections = effects_store.load_effects(session_id, run_id)
-    except Exception:
-        return ResumeRecoveryResult(ok=False)
-
-    project_path = _writer_project_path(project, task_kind)
-    profile_name = profile_for_task_kind(task_kind, phase="writer").name if project_path is not None else ""
-
-    if action.kind == ACTION_SETTLE_PROVIDER_UNKNOWN:
-        projection = _projection_for_effect(all_projections, action.effect_id)
-        if projection is None:
-            return ResumeRecoveryResult(ok=False)
-        if not _settle_interrupted(
-            mutations,
-            session_id=session_id,
-            run_id=run_id,
-            effect_id=projection.intent.effect_id,
-            effect_category=projection.intent.effect_category,
-            replay_class=projection.intent.replay_class,
-        ):
-            return ResumeRecoveryResult(ok=False)
-        return ResumeRecoveryResult(ok=True)
-
-    if action.kind == ACTION_REPLAY_SAFE_TOOL_BATCH:
-        return _replay_safe_tools_for_action(
-            mutations,
-            action,
-            all_projections,
-            delivery_store=delivery_store,
-            session_id=session_id,
-            run_id=run_id,
-            project_path=project_path,
-            profile_name=profile_name,
-            managed_store=_managed_output_store(deps),
-            workspace_store=getattr(deps, "workspace_revisions", None),
-            ignored_paths=ignored_paths,
+    if durable_decision.action in {"continue", "settle_provider_unknown", "settle_tool_unknown"}:
+        recovered_batch_id = ""
+        if durable_decision.action == "continue":
+            recovered_batch_id = _recover_settled_delivery(
+                durable, mutations=mutations, session_id=session_id, run_id=run_id,
+            )
+        return ResumeRecoveryResult(
+            ok=True,
+            recovered_tool_result_batch_id=recovered_batch_id,
         )
-
-    if action.kind == ACTION_REDELIVER_SETTLED_BATCH:
-        # 已结算重发：重建原结果交付，不调用执行器，不依赖 ReplayClass.SAFE。
-        return _redeliver_settled_batch_for_action(
-            action,
-            all_projections,
-            delivery_store=delivery_store,
-            mutations=mutations,
-            session_id=session_id,
-            run_id=run_id,
-            project_path=Path(project) if project else None,
-            managed_store=_managed_output_store(deps),
-            workspace_store=getattr(deps, "workspace_revisions", None),
-            ignored_paths=ignored_paths,
-        )
-
-    if action.kind == ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS:
-        for effect_id in action.effect_ids:
-            projection = _projection_for_effect(all_projections, effect_id)
-            if projection is None:
-                return ResumeRecoveryResult(ok=False)
-            if not _settle_interrupted(
-                mutations,
-                session_id=session_id,
-                run_id=run_id,
-                effect_id=projection.intent.effect_id,
-                effect_category=projection.intent.effect_category,
-                replay_class=projection.intent.replay_class,
-            ):
-                return ResumeRecoveryResult(ok=False)
-        return ResumeRecoveryResult(ok=True)
-
     return ResumeRecoveryResult(ok=False)
 
 
+def _settled_delivery_batch_id(
+    mutations: RuntimeMutationLine | None,
+    *,
+    session_id: str,
+    run_id: str,
+) -> str:
+    """Return a projection batch only after durable recovery says continue."""
+    if mutations is None:
+        return ""
+    delivery_store = ToolResultDeliveryStore(mutations.session_log, durable=mutations.durable)
+    try:
+        batches = delivery_store.load_batches(session_id, run_id)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return ""
+    for batch in reversed(batches):
+        if batch.is_delivered:
+            continue
+        if any(item.ref and not item.is_denied for item in batch.intent.items):
+            return batch.intent.batch_id
+    return ""
+
+
+def _recover_settled_delivery(
+    durable: DurableSession,
+    *,
+    mutations: RuntimeMutationLine | None,
+    session_id: str,
+    run_id: str,
+) -> str:
+    """Mark a committed tool receipt as recoverable for the next provider send.
+
+    The receipt and task checkpoint are canonical durable facts.  The
+    recovered marker is only a derived delivery projection, so it is written
+    after reading those facts and is safe to repeat across restarts.
+    """
+    if mutations is None:
+        return ""
+    try:
+        records = durable.effects(run_id)
+        settled = tuple(
+            record for record in records
+            if record.category == EFFECT_CATEGORY_TOOL_CALL
+            and record.settlement is not None
+        )
+        by_batch: dict[str, list[EffectRecord]] = {}
+        for record in settled:
+            batch_id = _effect_batch_id(record)
+            if batch_id:
+                by_batch.setdefault(batch_id, []).append(record)
+        for batch_id, rows in by_batch.items():
+            mutations.record_delivery_recovered(
+                session_id,
+                run_id,
+                batch_id=batch_id,
+                recovered_effect_ids=tuple(row.effect_id for row in rows),
+                recovered_reads=sum(
+                    str(_intent_object(row).get("tool_name") or "") == "read" for row in rows
+                ),
+                recovered_lookups=sum(
+                    str(_intent_object(row).get("tool_name") or "") != "read" for row in rows
+                ),
+            )
+            return batch_id
+    except (OSError, ValueError, TypeError, AttributeError, KeyError, RuntimeOperationTransitionError):
+        return ""
+    return ""
+
+
+def _recover_durable_tool_effects(
+    durable: DurableSession,
+    *,
+    run_id: str,
+    project: str,
+    task_kind: str,
+    deps: Any,
+    mutations: RuntimeMutationLine | None = None,
+) -> ResumeRecoveryResult:
+    """Recover safe information tools from canonical durable intents alone."""
+    outcomes: list[RecoveredToolOutcome] = []
+    try:
+        records = durable.effects(run_id)
+        pending_records = tuple(
+            record for record in records
+            if record.status == "pending" and record.category == EFFECT_CATEGORY_TOOL_CALL
+        )
+        if not pending_records:
+            return ResumeRecoveryResult(ok=True)
+        # A safe effect is not independently replayable when it belonged to a
+        # batch that also contained an unsafe/provider effect. The batch ID is
+        # part of the durable intent, so this decision does not depend on the
+        # JSONL projection being complete.
+        all_effects = tuple(records)
+        for record in pending_records:
+            batch_id = _effect_batch_id(record)
+            if not isinstance(batch_id, str) or not batch_id:
+                continue
+            siblings = tuple(sibling for sibling in all_effects if _effect_batch_id(sibling) == batch_id)
+            if any(
+                sibling.category != EFFECT_CATEGORY_TOOL_CALL
+                or sibling.replay_class != ReplayClass.SAFE
+                for sibling in siblings
+            ):
+                return _fail_mixed_tool_batch(
+                    durable, pending_records, batch_id, mutations=mutations,
+                )
+        project_path = _writer_project_path(project, task_kind)
+        if project_path is None:
+            for record in pending_records:
+                effect_session = str(_intent_object(record).get("session_id") or "")
+                _settle_unknown_and_fail(
+                    durable, run_id, record.effect_id, mutations=mutations,
+                    session_id=effect_session,
+                    reason="tool effect cannot be replayed for this task kind",
+                )
+            return ResumeRecoveryResult(ok=False)
+        profile_name = profile_for_task_kind(task_kind, phase="writer").name
+        intents: list[RuntimeEffectIntent] = []
+        for record in pending_records:
+            intents.append(RuntimeEffectIntent.from_payload(_intent_object(record)))
+        batch_id = ""
+        if mutations is not None:
+            batch_id = _pending_delivery_batch(
+                mutations, run_id=run_id, intents=tuple(intents),
+            )
+        for record, intent in zip(pending_records, intents, strict=True):
+            candidate = candidate_from_intent(intent)
+            if candidate is None:
+                _settle_unknown_and_fail(
+                    durable, run_id, record.effect_id, mutations=mutations,
+                    session_id=str(intent.session_id),
+                    reason="tool effect replay arguments were invalid",
+                )
+                return ResumeRecoveryResult(ok=False)
+            decision, replay = evaluate_tool_call_policy_for(
+                candidate.call,
+                project=project_path,
+                permission_profile=profile_name,
+                approval_available=False,
+                phase="writer",
+            )
+            if policy_denied(decision) or replay.replay_class != ReplayClass.SAFE:
+                _settle_unknown_and_fail(
+                    durable, run_id, record.effect_id, mutations=mutations,
+                    session_id=str(intent.session_id),
+                    reason="tool effect was not safe to replay",
+                )
+                return ResumeRecoveryResult(ok=False)
+            outcome = execute_information_tool_call(project_path, DEFAULT_TOOL_FNS, candidate.call)
+            _settle_durable_tool_observation(
+                durable, record, outcome, candidate.call,
+                managed_store=_managed_output_store(deps), mutations=mutations,
+            )
+            outcomes.append(RecoveredToolOutcome(
+                call=candidate.call,
+                outcome=outcome,
+                turn=candidate.turn,
+                tool_index=candidate.tool_index,
+                effect_id=candidate.effect_id,
+            ))
+        if mutations is not None and outcomes:
+            mutations.record_delivery_recovered(
+                str(intents[0].session_id), run_id,
+                batch_id=batch_id,
+                recovered_effect_ids=tuple(row.effect_id for row in outcomes),
+                recovered_reads=sum(row.call.name == "read" for row in outcomes),
+                recovered_lookups=sum(row.call.name != "read" for row in outcomes),
+            )
+    except (OSError, ValueError, TypeError, AttributeError, KeyError):
+        return ResumeRecoveryResult(ok=False)
+    return ResumeRecoveryResult(
+        ok=True,
+        recovered_tool_outcomes=tuple(outcomes),
+        recovered_tool_result_batch_id=batch_id,
+    )
+
+
+def _intent_object(record: EffectRecord) -> dict[str, object]:
+    raw = thaw_json(record.intent)
+    if not isinstance(raw, dict):
+        raise ValueError("durable effect intent must be an object")
+    return raw
+
+
+def _effect_batch_id(record: EffectRecord) -> str | None:
+    value = _intent_object(record).get("delivery_batch_id")
+    return value if isinstance(value, str) and value else None
+
+
+def _fail_mixed_tool_batch(
+    durable: DurableSession,
+    records: tuple[EffectRecord, ...],
+    batch_id: str,
+    *,
+    mutations: RuntimeMutationLine | None,
+) -> ResumeRecoveryResult:
+    for record in records:
+        if _effect_batch_id(record) != batch_id:
+            continue
+        intent = _intent_object(record)
+        _settle_unknown_and_fail(
+            durable, record.task_id, record.effect_id, mutations=mutations,
+            session_id=str(intent.get("session_id") or ""),
+            reason="mixed effect batch cannot be replayed safely",
+        )
+    return ResumeRecoveryResult(ok=False)
+
+
+def _pending_delivery_batch(
+    mutations: RuntimeMutationLine,
+    *,
+    run_id: str,
+    intents: tuple[RuntimeEffectIntent, ...],
+) -> str:
+    """Load the committed batch; recovery never repairs a second fact source."""
+    if mutations.durable is None:
+        raise ValueError("production recovery requires durable runtime mutations")
+    session_id = str(intents[0].session_id)
+    pending_ids = {intent.effect_id for intent in intents}
+    batches = ToolResultDeliveryStore(mutations.session_log, durable=mutations.durable).load_batches(session_id, run_id)
+    matching = [batch for batch in batches
+                if not batch.is_terminal and pending_ids.issubset(set(batch.intent.tool_refs))]
+    if len(matching) != 1:
+        raise ValueError("durable checkpoint has no unique pending delivery batch")
+    return matching[0].intent.batch_id
+
+
+def _settle_durable_tool_observation(
+    durable: DurableSession,
+    record: EffectRecord,
+    outcome: Any,
+    call: Any,
+    *,
+    managed_store: Any,
+    mutations: RuntimeMutationLine | None,
+) -> RuntimeEffectSettlement:
+    from codey.operations.kernel_receipts import result_receipt_fields, tool_history_messages
+    from codey.runtime.core.models import ToolResult
+
+    result = ToolResult(
+        ok=bool(outcome.ok),
+        call=call,
+        model_text=str(outcome.model_text or ""),
+        audit=dict(outcome.audit or {}),
+        canonical=dict(outcome.canonical) if isinstance(outcome.canonical, Mapping) else {},
+        presentation=dict(outcome.presentation) if isinstance(outcome.presentation, Mapping) else {},
+        truncated=bool(outcome.truncated),
+    )
+    status = SETTLEMENT_STATUS_OK if result.ok else SETTLEMENT_STATUS_ERROR
+    raw_intent = thaw_json(record.intent)
+    if not isinstance(raw_intent, dict):
+        raise ValueError("durable tool intent must be an object")
+    settlement = RuntimeEffectSettlement(
+        effect_id=record.effect_id,
+        effect_category=record.category,
+        session_id=str(raw_intent.get("session_id") or ""),
+        run_id=str(raw_intent.get("run_id") or record.task_id),
+        status=status,
+        lane=str(raw_intent.get("lane") or ""),
+        operation_id=str(raw_intent.get("operation_id") or ""),
+        error_code="" if result.ok else str(outcome.error_code or "tool_error"),
+        replay_class=record.replay_class,
+        replay_count=1,
+        replayed_from_effect_id=record.effect_id,
+        **result_receipt_fields(
+            result, store=managed_store,
+            session_id=str(raw_intent.get("session_id") or ""),
+            run_id=str(raw_intent.get("run_id") or record.task_id),
+            effect_id=record.effect_id,
+        ),
+    )
+    if mutations is not None:
+        mutations.settle_tool_effect(settlement.session_id, record.task_id, settlement,
+                                    messages=tool_history_messages(settlement))
+    else:
+        durable.settle_effect(
+            record.task_id,
+            EffectRecord(
+                record.effect_id, record.task_id, record.category,
+                record.replay_class, record.args_digest, status,
+                record.intent, settlement.to_payload(),
+            ),
+        )
+    return settlement
+
+
+def _apply_durable_recovery(
+    durable: Any,
+    task_id: str,
+    *,
+    mutations: RuntimeMutationLine | None,
+    session_id: str,
+) -> tuple[Any, ResumeRecoveryResult | None]:
+    """Apply recovery decisions that need no runtime projection.
+
+    This boundary is intentionally small: durable facts decide whether a
+    task may continue, while the legacy runtime projection can only provide
+    receipts for replay/redelivery after that decision.
+    """
+    try:
+        decision = decide_recovery(durable.task(task_id), durable.effects(task_id))
+    except (KeyError, ValueError, TypeError):
+        return None, ResumeRecoveryResult(ok=False)
+    if decision.action == "fail_invariant":
+        try:
+            task = durable.task(task_id)
+            pending = tuple(effect for effect in durable.effects(task_id) if effect.settlement is None)
+            for effect in pending:
+                raw_intent = thaw_json(effect.intent)
+                _settle_unknown_effect(
+                    durable, task_id, effect.effect_id, mutations=mutations,
+                    session_id=(
+                        str(raw_intent.get("session_id") or session_id)
+                        if isinstance(raw_intent, dict)
+                        else session_id
+                    ),
+                )
+            # A provider can already have a durable ``maybe_sent`` settlement;
+            # there is then nothing left to settle, but the unknown checkpoint
+            # still has to be sealed so restart cannot quietly continue it.
+            if task.phase not in {"completed", "failed", "cancelled"}:
+                checkpoint = durable.task(task_id)
+                durable.fail_task(
+                    task_id,
+                    f"durable recovery invariant failed: {decision.reason}",
+                    state=dict(checkpoint.state),
+                )
+        except Exception:
+            return decision, ResumeRecoveryResult(ok=False)
+        return decision, ResumeRecoveryResult(ok=False)
+    if decision.action not in {"settle_provider_unknown", "settle_tool_unknown"}:
+        return decision, None
+    try:
+        for effect_id in decision.effect_ids:
+            _settle_unknown_effect(
+                durable, task_id, effect_id,
+                mutations=mutations, session_id=session_id,
+            )
+        checkpoint = durable.task(task_id)
+        durable.fail_task(
+            task_id,
+            (
+                "provider response was unknown after process restart; request was not replayed"
+                if decision.action == "settle_provider_unknown"
+                else "tool effect outcome was unknown after process restart; effect was not replayed"
+            ),
+            state=dict(checkpoint.state),
+        )
+    except Exception:
+        return decision, ResumeRecoveryResult(ok=False)
+    return decision, ResumeRecoveryResult(ok=False)
+
+
+def _settle_unknown_and_fail(
+    durable: DurableSession,
+    task_id: str,
+    effect_id: str,
+    *,
+    mutations: RuntimeMutationLine | None,
+    session_id: str,
+    reason: str,
+) -> None:
+    _settle_unknown_effect(
+        durable, task_id, effect_id, mutations=mutations, session_id=session_id,
+    )
+    checkpoint = durable.task(task_id)
+    durable.fail_task(task_id, reason, state=dict(checkpoint.state))
+
+
+def _settle_unknown_effect(
+    durable: DurableSession,
+    task_id: str,
+    effect_id: str,
+    *,
+    mutations: RuntimeMutationLine | None,
+    session_id: str,
+) -> None:
+    task, effects = durable.task_facts(task_id)
+    effect = next(item for item in effects if item.effect_id == effect_id)
+    # Shell approval claims are durable external effects, but they are not a
+    # runtime provider/tool projection. Their unknown outcome must still be
+    # sealed in the canonical effect table without asking the JSONL reducer to
+    # interpret a category it does not own.
+    if mutations is None or effect.category == "shell":
+        durable.settle_unknown_effect(task_id, effect_id)
+        return
+    from codey.durable.effects import interrupted_effect
+    settlement = interrupted_effect(task, effect).settlement
+    raw = thaw_json(settlement)
+    if not isinstance(raw, dict):
+        raise ValueError("interrupted effect settlement must be an object")
+    mutations.settle_effect(session_id, task_id, RuntimeEffectSettlement.from_payload(raw))
+
+
 def _runtime_mutations(deps: Any) -> RuntimeMutationLine | None:
-    # None means "no durable runtime attached (e.g. chat-only), nothing to
-    # recover", not "recovery succeeded despite failure". Callers distinguish
-    # via ResumeRecoveryResult.ok.
-    return getattr(deps, "runtime_mutations", None)
+    mutations = getattr(deps, "runtime_mutations", None)
+    durable = getattr(getattr(deps, "state", None), "durable", None)
+    if isinstance(mutations, RuntimeMutationLine) and mutations.durable is durable and durable is not None:
+        return mutations
+    return None
+
+
+def durable_task_for(value: Any, task_id: str) -> DurableSession | None:
+    """Return durable authority only when this run was actually admitted."""
+    if not isinstance(value, DurableSession) or not task_id:
+        return None
+    try:
+        value.task(task_id)
+    except (KeyError, ValueError, TypeError):
+        return None
+    return value
 
 
 def _runtime_effect_store(deps: Any) -> Any:
@@ -311,101 +593,6 @@ def _writer_project_path(project: str, task_kind: str) -> Path | None:
         return None
     path = Path(project).expanduser().resolve()
     return path if path.is_dir() else None
-
-
-def _try_replay_safe_tool(
-    mutations: RuntimeMutationLine,
-    candidate: SafeToolReplayCandidate | None,
-    *,
-    session_id: str,
-    run_id: str,
-    project_path: Path | None,
-    profile_name: str,
-    tool_fns: Any,
-    settle: bool = True,
-    managed_store: Any = None,
-) -> RecoveredToolOutcome | None:
-    if candidate is None or project_path is None:
-        logger.warning(
-            "safe replay skipped: run=%s effect=%s tool=%s reason=%s",
-            run_id,
-            getattr(candidate, "effect_id", ""),
-            getattr(getattr(candidate, "call", None), "name", ""),
-            "no_candidate_or_project",
-        )
-        return None
-    try:
-        policy_decision, replay_decision = evaluate_tool_call_policy_for(
-            candidate.call,
-            project=project_path,
-            permission_profile=profile_name,
-            approval_available=False,
-            phase="writer",
-        )
-        if policy_denied(policy_decision) or replay_decision.replay_class != ReplayClass.SAFE:
-            logger.warning(
-                "safe replay denied: run=%s effect=%s tool=%s reason=%s",
-                run_id,
-                candidate.effect_id,
-                candidate.call.name,
-                "policy_or_replay_class",
-            )
-            return None
-        outcome = execute_information_tool_call(project_path, tool_fns, candidate.call)
-        status = SETTLEMENT_STATUS_OK if outcome.ok else SETTLEMENT_STATUS_ERROR
-        error_code = (outcome.error_code or ("" if outcome.ok else "error"))[:80]
-        if settle:
-            # 新读取作为新的观察结算（含完整有界结果与退出码），不冒充旧结果
-            from codey.operations.kernel_receipts import result_receipt_fields
-            from codey.runtime.core.models import ToolResult
-
-            exit_code = outcome.exit_code if type(outcome.exit_code) is int else None
-            result = ToolResult(
-                ok=outcome.ok, call=candidate.call, model_text=outcome.model_text,
-                audit=outcome.audit, canonical=outcome.canonical,
-                presentation=outcome.presentation, truncated=outcome.truncated,
-            )
-            fields = result_receipt_fields(
-                result, store=managed_store, session_id=session_id,
-                run_id=run_id, effect_id=candidate.effect_id,
-            )
-            mutations.settle_tool_effect(
-                session_id,
-                run_id,
-                RuntimeEffectSettlement(
-                    effect_id=candidate.effect_id,
-                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
-                    session_id=session_id,
-                    run_id=run_id,
-                    status=status,
-                    error_code=error_code,
-                    sent_state=SENT_STATE_SETTLED,
-                    replay_class=ReplayClass.SAFE,
-                    replay_count=1,
-                    replayed_from_effect_id=candidate.effect_id,
-                    **fields,
-                    exit_code=exit_code,
-                ),
-            )
-        return RecoveredToolOutcome(
-            call=candidate.call,
-            outcome=outcome,
-            turn=candidate.turn,
-            tool_index=candidate.tool_index,
-            effect_id=candidate.effect_id,
-        )
-    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-        raise
-    except Exception as exc:
-        # One bounded diagnostic with IDs only; never log arg bodies.
-        logger.warning(
-            "safe replay failed: run=%s effect=%s tool=%s reason=%s",
-            run_id,
-            getattr(candidate, "effect_id", ""),
-            getattr(getattr(candidate, "call", None), "name", ""),
-            type(exc).__name__[:40],
-        )
-        return None
 
 
 def rebuild_settled_tool_result(
@@ -472,233 +659,6 @@ def _redelivered_outcome(
         return None
 
 
-def _redeliver_settled_batch_for_action(
-    action: RuntimeAction,
-    projections: tuple[RuntimeEffectProjection, ...],
-    *,
-    delivery_store: Any,
-    mutations: RuntimeMutationLine,
-    session_id: str,
-    run_id: str,
-    project_path: Any = None,
-    managed_store: Any = None,
-    workspace_store: Any = None,
-    ignored_paths: tuple[str, ...] = (),
-) -> ResumeRecoveryResult:
-    """重发整批已结算结果：逐个重建原结果，不调用执行器。
-
-    任一收据不可重建（缺失/损坏/无 store 可验）即整体 fail-closed，
-    绝不回退到重新执行危险工具。
-    """
-    if action.kind != ACTION_REDELIVER_SETTLED_BATCH or delivery_store is None:
-        return ResumeRecoveryResult(ok=False)
-    try:
-        batches = delivery_store.load_batches(session_id, run_id)
-    except Exception:
-        return ResumeRecoveryResult(ok=False)
-    batch = next(
-        (item for item in batches if item.intent.batch_id == action.delivery_batch_id),
-        None,
-    )
-    if batch is None or batch.is_delivered or batch.is_abandoned:
-        return ResumeRecoveryResult(ok=False)
-    if batch.active_attempts:
-        return ResumeRecoveryResult(ok=False)
-    recovered_outcomes: list[RecoveredToolOutcome] = []
-    recovered_effect_ids: list[str] = []
-    read_count = 0
-    lookup_count = 0
-    for effect_id in tuple(batch.intent.tool_refs):
-        projection = _projection_for_effect(projections, effect_id)
-        if projection is None or not projection.is_settled:
-            return ResumeRecoveryResult(ok=False)
-        rebuilt = rebuild_settled_tool_result(
-            projection, managed_store=managed_store,
-            session_id=session_id, run_id=run_id,
-            project_path=project_path, workspace_store=workspace_store, ignored_paths=ignored_paths,
-        )
-        if rebuilt is None:
-            return ResumeRecoveryResult(ok=False)
-        row = _redelivered_outcome(
-            projection, rebuilt,
-            turn=projection.intent.turn,
-            tool_index=projection.intent.tool_index,
-            effect_id=effect_id,
-        )
-        if row is None:
-            return ResumeRecoveryResult(ok=False)
-        recovered_outcomes.append(row)
-        recovered_effect_ids.append(effect_id)
-        if row.call.name == "read":
-            read_count += 1
-        else:
-            lookup_count += 1
-    recovered_outcomes.sort(key=lambda rec: (rec.turn, rec.tool_index))
-    try:
-        mutations.record_delivery_recovered(
-            session_id,
-            run_id,
-            batch_id=action.delivery_batch_id,
-            recovered_effect_ids=tuple(recovered_effect_ids),
-            recovered_reads=read_count,
-            recovered_lookups=lookup_count,
-        )
-    except Exception:
-        return ResumeRecoveryResult(ok=False)
-    return ResumeRecoveryResult(
-        ok=True,
-        recovered_tool_outcomes=tuple(recovered_outcomes),
-        recovered_tool_result_batch_id=action.delivery_batch_id,
-    )
-
-
-def _replay_safe_tools_for_action(
-    mutations: RuntimeMutationLine,
-    action: RuntimeAction,
-    projections: tuple[RuntimeEffectProjection, ...],
-    *,
-    delivery_store: Any,
-    session_id: str,
-    run_id: str,
-    project_path: Path | None,
-    profile_name: str,
-    managed_store: Any = None,
-    workspace_store: Any = None,
-    ignored_paths: tuple[str, ...] = (),
-) -> ResumeRecoveryResult:
-    recovered_outcomes: list[RecoveredToolOutcome] = []
-    recovered_effect_ids: list[str] = []
-    read_count = 0
-    lookup_count = 0
-
-    if action.kind == ACTION_REPLAY_SAFE_TOOL_BATCH and delivery_store is not None:
-        try:
-            batches = delivery_store.load_batches(session_id, run_id)
-        except Exception:
-            return ResumeRecoveryResult(ok=False)
-        batch = next(
-            (item for item in batches if item.intent.batch_id == action.delivery_batch_id),
-            None,
-        )
-        if batch is None or not batch.can_recover_before_provider_send:
-            return ResumeRecoveryResult(ok=False)
-        ordered_effect_ids = tuple(batch.intent.tool_refs)
-    else:
-        return ResumeRecoveryResult(ok=False)
-
-    for effect_id in ordered_effect_ids:
-        projection = _projection_for_effect(projections, effect_id)
-        if projection is None:
-            return ResumeRecoveryResult(ok=False)
-        candidate = candidate_from_intent(projection.intent)
-        was_settled = projection.is_settled
-        if was_settled:
-            # 已结算原结果优先：直接交付，不重新执行（新读取不得冒充旧结果）。
-            # 不再用安全重放候选重建；不可重建则整体失败，不回退重读。
-            rebuilt = rebuild_settled_tool_result(
-                projection, managed_store=managed_store,
-                session_id=session_id, run_id=run_id,
-                project_path=project_path, workspace_store=workspace_store, ignored_paths=ignored_paths,
-            )
-            if rebuilt is None:
-                return ResumeRecoveryResult(ok=False)
-            # 已结算不再重复 settle（幂等），仅记录交付恢复
-            recovered = _redelivered_outcome(
-                projection, rebuilt,
-                turn=projection.intent.turn,
-                tool_index=projection.intent.tool_index,
-                effect_id=effect_id,
-            )
-            if recovered is None:
-                return ResumeRecoveryResult(ok=False)
-            recovered_outcomes.append(recovered)
-            recovered_effect_ids.append(effect_id)
-            if recovered.call.name == "read":
-                read_count += 1
-            else:
-                lookup_count += 1
-            continue
-        recovered = _try_replay_safe_tool(
-            mutations,
-            candidate,
-            session_id=session_id,
-            run_id=run_id,
-            project_path=project_path,
-            profile_name=profile_name,
-            tool_fns=DEFAULT_TOOL_FNS,
-            settle=not was_settled,
-            managed_store=managed_store,
-        )
-        if recovered is None:
-            return ResumeRecoveryResult(ok=False)
-        recovered_outcomes.append(recovered)
-        recovered_effect_ids.append(effect_id)
-        if recovered.call.name == "read":
-            read_count += 1
-        else:
-            lookup_count += 1
-
-    recovered_outcomes.sort(key=lambda rec: (rec.turn, rec.tool_index))
-    if action.delivery_batch_id and recovered_effect_ids:
-        try:
-            mutations.record_delivery_recovered(
-                session_id,
-                run_id,
-                batch_id=action.delivery_batch_id,
-                recovered_effect_ids=tuple(recovered_effect_ids),
-                recovered_reads=read_count,
-                recovered_lookups=lookup_count,
-            )
-        except Exception:
-            return ResumeRecoveryResult(ok=False)
-    return ResumeRecoveryResult(
-        ok=True,
-        recovered_tool_outcomes=tuple(recovered_outcomes),
-        recovered_tool_result_batch_id=action.delivery_batch_id,
-    )
-
-
-def _projection_for_effect(
-    projections: tuple[RuntimeEffectProjection, ...],
-    effect_id: str,
-) -> RuntimeEffectProjection | None:
-    return next((item for item in projections if item.intent.effect_id == effect_id), None)
-
-
-def _settle_interrupted(
-    mutations: RuntimeMutationLine,
-    *,
-    session_id: str,
-    run_id: str,
-    effect_id: str,
-    effect_category: str,
-    replay_class: str,
-) -> bool:
-    sent_state = (
-        SENT_STATE_MAYBE_SENT
-        if effect_category == EFFECT_CATEGORY_PROVIDER_SEND
-        else SENT_STATE_SETTLED
-    )
-    try:
-        mutations.settle_effect(
-            session_id,
-            run_id,
-            RuntimeEffectSettlement(
-                effect_id=effect_id,
-                effect_category=effect_category,
-                session_id=session_id,
-                run_id=run_id,
-                status="interrupted",
-                error_code="interrupted_by_crash",
-                sent_state=sent_state,
-                replay_class=replay_class,
-            ),
-        )
-    except Exception:
-        return False
-    return True
-
-
 def delivered_from_frame(frame: Any, *, effect_scope: str = "") -> dict[str, Any]:
     """Rebuild durable delivery map from recovered frame rows.
 
@@ -758,18 +718,22 @@ def record_entry_policy(
     session_id: str,
     run_id: str,
     policy: Any,
+    durable: DurableSession | None = None,
 ) -> None:
-    """Record the entry authorization snapshot in the existing session log.
-
-    The session log stays the single durable fact source; no competing
-    persistent log is created. Persistence failures stop durable tasks.
-    """
-    if mutations is None or policy is None:
+    """Record immutable authorization with the operation checkpoint."""
+    if policy is None:
         return
     try:
         payload = policy.to_payload() if hasattr(policy, "to_payload") else dict[str, object]()
     except Exception as exc:
         raise RuntimeError(f"task policy serialization failed: {exc}") from exc
+    if isinstance(mutations, RuntimeMutationLine) and durable is not None and mutations.durable is durable:
+        mutations.set_task_policy(session_id, run_id, policy=payload)
+        return
+    if durable is not None:
+        durable.record_task_policy(run_id, payload)
+    if mutations is None:
+        return
     setter = getattr(mutations, "set_task_policy", None)
     if not callable(setter):
         # Lightweight callers without the durable runtime are not a recovery
@@ -781,33 +745,32 @@ def record_entry_policy(
     setter(session_id, run_id, policy=payload)
 
 
-def rebuilt_policy_from_log(
-    session_log: Any, *, session_id: str, run_id: str,
+def policy_from_durable_task(
+    durable: DurableSession | None, *, task_id: str,
 ) -> Any:
-    """Restore original grants AND completion requirements, or stop recovery."""
+    """Restore the immutable authorization snapshot from one durable task."""
     from codey.operations.kernel_errors import RecoveryFailed
     from codey.policies.task_policy import TaskPolicy
-    from codey.runtime.core.operation_state import operation_state_from_entries
 
+    if durable is None or not task_id:
+        raise RecoveryFailed("durable task policy recovery requires an admitted task")
     try:
-        if session_log is None:
-            raise ValueError("policy log is unavailable")
-        state = operation_state_from_entries(
-            session_log.entries(session_id), session_id=session_id, run_id=run_id,
-        )
-        payload = state.task_policy if state is not None else None
+        task = durable.task(task_id)
+        state = thaw_json(task.state)
+        payload = state.get("task_policy") if isinstance(state, dict) else None
         if not isinstance(payload, dict) or not payload:
-            raise ValueError("original task policy is missing")
+            raise ValueError("durable task authorization snapshot is missing")
         return TaskPolicy.from_payload(payload)
     except Exception as exc:
-        raise RecoveryFailed(f"task policy recovery failed: {exc}") from exc
+        raise RecoveryFailed(f"durable task policy recovery failed: {exc}") from exc
 
 
 __all__ = [
     "ResumeRecoveryResult",
     "delivered_from_frame",
     "rebuild_settled_tool_result",
-    "rebuilt_policy_from_log",
+    "policy_from_durable_task",
     "record_entry_policy",
     "recover_effects_for_resume",
+    "durable_task_for",
 ]

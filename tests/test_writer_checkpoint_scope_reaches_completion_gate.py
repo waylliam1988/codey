@@ -27,6 +27,7 @@ def test_checkpoint_scope_is_combined_with_new_attempt_edits():
 
 @pytest.mark.parametrize("verify,expected", [(True, "done"), (False, "max_turns")])
 def test_checkpoint_edit_scope_reaches_real_writer_gate_without_reediting(tmp_path, monkeypatch, verify, expected):
+    from codey.durable import DurableSession, MemoryDurableStore
     project = tmp_path / "project"
     project.mkdir()
     (project / "app.py").write_text("value = 2\n", encoding="utf-8")
@@ -44,15 +45,19 @@ def test_checkpoint_edit_scope_reaches_real_writer_gate_without_reediting(tmp_pa
     monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", lambda *a, **k: True)
     monkeypatch.setattr("codey.operations.project_writer_phase._ghost_experiences", lambda *a, **k: "")
     policy = TaskPolicy(grants=frozenset({"control", "project.read", "project.write", "project.verify"}))
+    durable = DurableSession(MemoryDurableStore())
+    durable.admit_input(conversation_id="s", request_id="resume", task_id="resume",
+                        text="Finish the interrupted value fix", provider_snapshot={"provider_id": "local"})
     ctx = ProjectRun(
         deps=SimpleNamespace(verification=SimpleNamespace(workspace_revisions=revisions),
             agent=SimpleNamespace(run=run), persistence=SimpleNamespace(managed_outputs=None),
             runtime=SimpleNamespace(mutations=None)),
         frame=SimpleNamespace(recovered_tool_outcomes=(), settled_tool_outcomes=(), recovered_tool_result_batch_id="",
-            run_id="resume", conversation=None, provider_id="local", trace=None, project_text=str(project), entry_policy=policy),
+                run_id="resume", conversation=None, provider_id="local", provider=provider,
+                window_action=None, trace=None, project_text=str(project), entry_policy=policy),
         work=RunWork([], ExecutionEvidence(workspace_revision=current.revision, workspace_fingerprint=current.fingerprint)),
         hooks=SimpleNamespace(on_event=lambda event: None, on_shell_request=None),
-        project=str(project), state=SimpleNamespace(run_registry=SimpleNamespace(stop_flag=threading.Event())),
+                project=str(project), state=SimpleNamespace(durable=durable, run_registry=SimpleNamespace(stop_flag=threading.Event())),
         request=SimpleNamespace(session_id="s", max_turns=2, requested_capabilities=(), strict_research=False,
             project_changes_required=True), project_context=SimpleNamespace(research_context="", project_config_warnings=""))
     attempt = WriterAttempt("Finish the interrupted value fix", "local", provider, 2, False, "",

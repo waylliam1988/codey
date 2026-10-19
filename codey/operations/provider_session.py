@@ -37,15 +37,30 @@ def reply_text_for_accounting(reply: Any) -> str:
 
 def _explicit_reply_normalizer(provider: Any) -> Any:
     """Find an explicitly declared provider hook without triggering ``__getattr__``."""
-    try:
-        instance_attributes = vars(provider)
-    except TypeError:
-        instance_attributes = dict[str, object]()
-    if "normalize_reply" in instance_attributes:
-        return instance_attributes["normalize_reply"]
-    for provider_type in type(provider).__mro__:
-        if "normalize_reply" in provider_type.__dict__:
-            return getattr(provider, "normalize_reply", None)
+    seen: set[int] = set()
+    current = provider
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        instance_attributes: dict[str, object]
+        try:
+            instance_attributes = vars(current)
+        except TypeError:
+            instance_attributes = {}
+        # An instance hook is the most specific declaration and is common for
+        # lightweight test/local providers.
+        if "normalize_reply" in instance_attributes:
+            return instance_attributes["normalize_reply"]
+        for provider_type in type(current).__mro__:
+            if "normalize_reply" in provider_type.__dict__:
+                # ProviderAdapter's method is only a forwarding shell. Keep
+                # walking to the wrapped concrete provider in that case.
+                if provider_type.__name__ != "ProviderAdapter":
+                    return getattr(current, "normalize_reply", None)
+                break
+        # Wrapper traversal is explicit as well.  Reading ``provider`` via
+        # getattr would activate dynamic adapter/test-double ``__getattr__``
+        # and can manufacture an unbounded chain of child mocks.
+        current = instance_attributes.get("provider")
     return None
 
 

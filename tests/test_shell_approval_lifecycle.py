@@ -86,12 +86,12 @@ def test_failed_decision_write_preserves_pending_card(tmp_path, monkeypatch):
     from codey.app.shell_approval_state import restore_pending_shell_approvals
 
     restore_pending_shell_approvals(ctx)
-    monkeypatch.setattr(ctx.shell_approval_records, "claim_decision", Mock(side_effect=OSError("disk full")))
+    monkeypatch.setattr(ctx.durable, "transition_approval", Mock(side_effect=OSError("durable unavailable")))
     try:
-        with pytest.raises(OSError, match="disk full"):
-            api.shell_approval_response(
-                ctx, {"id": fact.approval_id, "approved": False}, submit_task_after_slot_release=Mock()
-            )
+        code, payload = api.shell_approval_response(
+            ctx, {"id": fact.approval_id, "approved": False}, submit_task_after_slot_release=Mock()
+        )
+        assert code == 409 and payload["code"] == "decision_conflict"
         assert fact.approval_id in ctx.pending_shell_approvals(), "failed persistence consumed approval card"
     finally:
         monkeypatch.undo()
@@ -105,9 +105,9 @@ def test_failed_expiry_write_preserves_pending_card(tmp_path, monkeypatch):
 
     restore_pending_shell_approvals(ctx)
     try:
-        with monkeypatch.context() as failing_disk:
-            failing_disk.setattr(ctx.shell_approval_records, "append", Mock(side_effect=OSError("disk full")))
-            with pytest.raises(OSError, match="disk full"):
+        with monkeypatch.context() as failing_store:
+            failing_store.setattr(ctx.durable, "transition_approval", Mock(side_effect=OSError("durable unavailable")))
+            with pytest.raises(OSError, match="durable unavailable"):
                 ctx.expire_pending_shell_approvals()
         assert "approval" in ctx.pending_shell_approvals(), "expiry removed the card before committing its verdict"
         assert ctx.shell_approval_records.latest("approval").kind == "requested"
@@ -119,15 +119,16 @@ def test_failed_stop_write_still_invalidates_claimed_execution_ticket(tmp_path, 
     from codey.app.shell_approval_state import restore_pending_shell_approvals
 
     ctx = AppContext(tmp_path)
-    seed(ctx, "claimed")
+    claimed_fact = seed(ctx, "claimed")
     seed(ctx, "pending")
+    ctx.record_shell_approval_fact(replace(claimed_fact, kind="approved"))
     restore_pending_shell_approvals(ctx)
     _, ticket = shell_service.claim_shell_ticket(ctx, "claimed", timeout=5, output_limit=1024)
     assert ticket is not None
     try:
-        with monkeypatch.context() as failing_disk:
-            failing_disk.setattr(ctx.shell_approval_records, "append", Mock(side_effect=OSError("disk full")))
-            with pytest.raises(OSError, match="disk full"):
+        with monkeypatch.context() as failing_store:
+            failing_store.setattr(ctx.durable, "transition_approval", Mock(side_effect=OSError("durable unavailable")))
+            with pytest.raises(OSError, match="durable unavailable"):
                 ctx.request_stop()
         # New work may clear the transient flag; the old ticket must stay invalid.
         ctx.run_registry.stop_flag.clear()
@@ -349,7 +350,7 @@ def test_restart_preserves_explicit_unattached_chat(tmp_path):
         restarted.close()
 
 
-def test_restart_redelivers_queued_continuation_with_same_run_identity(tmp_path, monkeypatch):
+def test_restart_does_not_resubmit_continuation_when_durable_task_is_unknown(tmp_path, monkeypatch):
     ctx = AppContext(tmp_path)
     seed(ctx)
     execute = Mock(return_value={"ok": True, "status": "exit", "output": "done", "exit_code": 0})
@@ -367,15 +368,18 @@ def test_restart_redelivers_queued_continuation_with_same_run_identity(tmp_path,
     try:
         restarted.shell_approval_workflow.start(enqueue)
         assert restarted.shell_approval_workflow.wait(5)
-        assert len(submitted) == 2, "accepted continuation was lost before task initialization"
-        assert submitted[0] == submitted[1]
+        # A continuation marked started without a durable task is an unknown
+        # execution state.  Re-submitting it from the runtime projection could
+        # execute the provider twice, so cold-start recovery fails closed.
+        assert len(submitted) == 1
         assert execute.call_count == 1
     finally:
         restarted.close()
 
 
-def test_ui_state_preserves_approval_revision_and_retry_state(tmp_path):
+def test_ui_state_does_not_own_approval_transcript(tmp_path):
     ctx = AppContext(tmp_path)
+    fact = seed(ctx)
     state = {
         "type": "shell_approval_status",
         "id": "approval",
@@ -392,14 +396,19 @@ def test_ui_state_preserves_approval_revision_and_retry_state(tmp_path):
                 "sessions": [
                     {
                         "id": "session",
+                        "title": "Approval session",
                         "messages": [{"type": "shell_approval_status", "id": "approval", "approval": state}],
                     }
                 ],
             },
             base_revision=0,
         )
-        restored = ctx.load_ui_state()["sessions"][0]["messages"][0]
-        assert restored["approval"] == state
+        restored = ctx.load_ui_state()
+        assert restored["active_id"] == "session"
+        assert restored["sessions"][0]["title"] == "Approval session"
+        assert "messages" not in restored["sessions"][0]
+        latest = ctx.shell_approval_records.latest(fact.approval_id)
+        assert latest is not None and latest.approval_id == fact.approval_id
     finally:
         ctx.close()
 

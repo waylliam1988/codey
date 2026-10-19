@@ -337,24 +337,6 @@ class TerminalAndLedgerBoundaryTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             hooks.append_ledger(lambda ledger: ledger.append("info", text="x"))
 
-    def test_conversation_delete_serializes_with_save(self) -> None:
-        from codey.storage.conversation_store import ConversationStore
-
-        with tempfile.TemporaryDirectory() as td:
-            store = ConversationStore(td)
-            import codey.storage.conversation_store as _mod
-
-            with mock.patch.object(_mod, "with_file_lock", wraps=_mod.with_file_lock) as lock_spy:
-                from codey.agents.handoff import ConversationContext
-
-                store.save("s1", ConversationContext())
-                store.delete("s1")
-            # Both paths hold the same directory lock; delete never bypasses it.
-            targets = [call.args[0] if call.args else call.kwargs.get("path") for call in lock_spy.call_args_list]
-            self.assertGreaterEqual(len(targets), 2)
-            self.assertTrue(all(str(t) == str(store.directory) for t in targets if t is not None))
-
-
 class ReadFileLineBoundaryTests(unittest.TestCase):
     def test_vertical_tab_is_not_a_line_break(self) -> None:
         from codey.toolchain.runtime import read_file

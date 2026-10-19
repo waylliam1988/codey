@@ -50,7 +50,7 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             self.assertEqual(names, ["app.py", "main.py"])
             self.assertFalse(truncated)
 
-    def test_visible_session_excerpt_uses_cache_not_disk(self) -> None:
+    def test_ui_metadata_comparison_uses_cache_not_disk(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = UiStateStore(td)
             store.save({
@@ -74,9 +74,10 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             with mock.patch.object(
                 ui_mod, "read_json_strict", side_effect=OSError("disk gone")
             ):
-                excerpt = store.visible_session_excerpt("chat-1")
-            self.assertIn("Cached title", excerpt)
-            self.assertIn("User: hello", excerpt)
+                current = store._current()
+                saved = store.save(current, base_revision=current["revision"])
+            self.assertEqual(saved["sessions"][0]["title"], "Cached title")
+            self.assertNotIn("messages", saved["sessions"][0])
 
     def test_change_trackers_evict_oldest_only(self) -> None:
         with tempfile.TemporaryDirectory() as td:

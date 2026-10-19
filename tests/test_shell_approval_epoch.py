@@ -172,7 +172,20 @@ class ShellStopLinearizationTests(unittest.TestCase):
     def _ticket(self, ctx: object, project: str):
         pending = _pending()
         pending["project"] = project
-        ctx.add_pending_shell_approval("shell-1", pending)
+        from tests.support.shell_approval import admit_shell_task
+        admit_shell_task(ctx, session_id="session-1", run_id="run-1", task="shell approval", project=project)
+        from tests.support.shell_approval import add_pending_approval
+        add_pending_approval(ctx, "shell-1", pending)
+        from codey.runtime.effects.shell_approval_records import ShellApprovalFact
+        ctx.record_shell_approval_fact(ShellApprovalFact(
+            approval_id="shell-1",
+            session_id="session-1",
+            source_run_id="run-1",
+            kind="approved",
+            command_ref=str(ctx.approvals.shell_snapshot()["shell-1"]["command_ref"]),
+            command_digest=str(ctx.approvals.shell_snapshot()["shell-1"]["command_digest"]),
+            cwd=".",
+        ))
         claimed, ticket = shell_service.claim_shell_ticket(
             ctx, "shell-1", timeout=30, output_limit=4000
         )

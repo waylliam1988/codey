@@ -197,6 +197,7 @@ def mint_shell_ticket(
     timeout: int,
     output_limit: int,
     claim_pending: Any = None,
+    claim_pending_locked: bool = True,
 ) -> tuple[dict[str, Any] | None, ShellExecutionTicket | None]:
     """Atomically consume an approval and mint a spawn ticket.
 
@@ -207,8 +208,14 @@ def mint_shell_ticket(
     for stopped-denial event recording.
     """
 
+    # The callback owns its own durable CAS and deliberately runs outside the
+    # coordination lock; the caller still holds the spawn gate.
+    pending = claim_pending(approval_id) if callable(claim_pending) and not claim_pending_locked else None
     with lock:
-        pending = claim_pending(approval_id) if callable(claim_pending) else approvals.pop_shell(approval_id)
+        if pending is None and callable(claim_pending) and claim_pending_locked:
+            pending = claim_pending(approval_id)
+        elif pending is None and not callable(claim_pending):
+            pending = approvals.pop_shell(approval_id)
         if pending is None:
             return None, None
         raw_generation = pending.pop("_approval_generation", 0)
@@ -267,7 +274,8 @@ def claim_shell_ticket(
             approval_id=approval_id,
             timeout=timeout,
             output_limit=output_limit,
-            claim_pending=getattr(ctx, "_claim_pending_shell_approval_locked", None),
+            claim_pending=getattr(ctx, "claim_pending_shell_approval", None),
+            claim_pending_locked=False,
         )
 
 

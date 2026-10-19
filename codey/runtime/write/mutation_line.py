@@ -8,13 +8,15 @@ entries, decides the next bounded records, and commits them as one batch.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+import importlib
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from typing import Any
 
 from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,
     LEAF_TOOL_DELIVERY_PENDING,
+    LEAF_TOOL_EFFECT_PENDING,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
     new_operation_state,
@@ -47,6 +49,9 @@ from codey.runtime.core.operation_state import (
 )
 from codey.runtime.core.operation_state import (
     mark_tool_delivery_settled as state_mark_tool_delivery_settled,
+)
+from codey.runtime.core.operation_state import (
+    mark_tool_effect_settled as state_mark_tool_effect_settled,
 )
 from codey.runtime.core.operation_state import (
     mark_writer_running as state_mark_writer_running,
@@ -90,6 +95,8 @@ def _resolve_abandoned_delivery(
     honest settle. The pure machine stays strict: this composition lives only
     in the two settle entries that own a driver lifecycle end.
     """
+    if state.leaf == LEAF_TOOL_EFFECT_PENDING:
+        state = state_mark_tool_effect_settled(state, has_remaining=False)
     if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
         return state_mark_tool_delivery_settled(state)
     return state
@@ -97,8 +104,17 @@ def _resolve_abandoned_delivery(
 
 class RuntimeMutationLine:
     """Single writer-facing API for runtime durable mutations."""
-    def __init__(self, session_log: RuntimeSessionLog) -> None:
+    def __init__(self, session_log: RuntimeSessionLog, *, durable: Any | None = None) -> None:
         self.session_log = session_log
+        self.durable = durable
+
+    def _mutate(self, session_id: str, run_id: str, mutation: Callable[..., Any], *,
+                messages: tuple[tuple[str, Mapping[str, object]], ...] = ()) -> None:
+        if self.durable is None:
+            self.session_log.mutate(session_id, mutation)
+            return
+        checkpoint = importlib.import_module("codey.durable.checkpoint")
+        checkpoint.mutate_checkpoint(self.durable, session_id, run_id, mutation, messages=messages)
 
     def admit_reviewer_selection(self, session_id: str, run_id: str, payload: dict[str, object]) -> RuntimeOperationState | None:
         from codey.runtime.core.operation_payload import _parse_model_selection
@@ -153,7 +169,7 @@ class RuntimeMutationLine:
             accepted = state
             return start_entries(projection, state)
 
-        self.session_log.mutate(session_id, mutation)
+        self._mutate(session_id, run_id, mutation)
         return accepted
 
     def _commit_state(
@@ -187,7 +203,7 @@ class RuntimeMutationLine:
             committed = next_state
             return tuple(rows)
 
-        self.session_log.mutate(session_id, mutation)
+        self._mutate(session_id, run_id, mutation)
         return committed
 
     def _commit_settle(
@@ -247,7 +263,7 @@ class RuntimeMutationLine:
             committed = next_state
             return tuple(rows)
 
-        self.session_log.mutate(session_id, mutation)
+        self._mutate(session_id, run_id, mutation)
         return committed
 
     def mark_writer_running(
@@ -256,7 +272,7 @@ class RuntimeMutationLine:
         run_id: str,
         *,
         provider_id: str,
-        writer_attempt: int = 1,
+        writer_attempt: int | None = None,
     ) -> RuntimeOperationState | None:
         return self._commit_state(
             session_id,
@@ -415,7 +431,7 @@ class RuntimeMutationLine:
             session_id,
             run_id,
             lambda state: state_mark_terminal(
-                state,
+                _resolve_abandoned_delivery(state),
                 stop_reason=stop_reason,
                 summary_chars=summary_chars,
                 turns=turns,
@@ -456,7 +472,7 @@ class RuntimeMutationLine:
             committed = prepared
             return rows
 
-        self.session_log.mutate(session_id, mutation)
+        self._mutate(session_id, run_id, mutation)
         if committed is None:
             raise RuntimeEffectError("provider effect intent was not committed")
         return committed
@@ -466,6 +482,8 @@ class RuntimeMutationLine:
         session_id: str,
         run_id: str,
         settlement: RuntimeEffectSettlement,
+        *,
+        messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
     ) -> RuntimeEffectSettlement:
         committed: RuntimeEffectSettlement | None = None
 
@@ -482,7 +500,7 @@ class RuntimeMutationLine:
             committed = prepared
             return rows
 
-        self.session_log.mutate(session_id, mutation)
+        self._mutate(session_id, run_id, mutation, messages=messages)
         if committed is None:
             raise RuntimeEffectError("provider effect settlement was not committed")
         return committed
@@ -513,7 +531,7 @@ class RuntimeMutationLine:
             committed = batch_commit
             return rows
 
-        self.session_log.mutate(session_id, mutation)
+        self._mutate(session_id, run_id, mutation)
         if committed is None:
             raise RuntimeEffectError("tool batch was not committed")
         return committed
@@ -523,6 +541,8 @@ class RuntimeMutationLine:
         session_id: str,
         run_id: str,
         settlement: RuntimeEffectSettlement,
+        *,
+        messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
     ) -> RuntimeEffectSettlement:
         committed: RuntimeEffectSettlement | None = None
 
@@ -539,7 +559,7 @@ class RuntimeMutationLine:
             committed = prepared
             return rows
 
-        self.session_log.mutate(session_id, mutation)
+        self._mutate(session_id, run_id, mutation, messages=messages)
         if committed is None:
             raise RuntimeEffectError("tool effect settlement was not committed")
         return committed
@@ -581,7 +601,7 @@ class RuntimeMutationLine:
                 recovered_lookups=recovered_lookups,
             )
 
-        self.session_log.mutate(session_id, mutation)
+        self._mutate(session_id, run_id, mutation)
 
     def record_delivery_delivered(
         self,
@@ -601,7 +621,7 @@ class RuntimeMutationLine:
             )
             return rows
 
-        self.session_log.mutate(session_id, mutation)
+        self._mutate(session_id, run_id, mutation)
 
 
 def _operation_settled_entry(state: RuntimeOperationState) -> dict[str, object]:

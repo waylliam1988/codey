@@ -19,14 +19,17 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from codey.runtime.core.api_selection import ApiRunSelection
 
-from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.automation.browser_worker import submit as submit_browser_task
+from codey.durable.errors import CommitConflict
+from codey.durable.model import thaw_json
 from codey.operations.project_adapter import run as agent_run
 from codey.operations.task_state import TaskSubmissionState
 from codey.providers.diagnostics import capture_provider_failure
 from codey.providers.model_preferences import ModelDisabledError
+from codey.providers.snapshot import capture_provider_selection, provider_snapshot
 from codey.reviews.review_policy import load_review_policy
-from codey.task.model import ResolveShellApproval, TaskInput, TaskSubmission
+from codey.task.kind import resolve_task_kind_values
+from codey.task.model import ResolveShellApproval, ResumeRun, StartTask, TaskInput, TaskSubmission
 from codey.workspace.changes import collect_changes
 
 SHELL_CONTINUATION_IDLE_TIMEOUT = 15.0
@@ -55,6 +58,7 @@ def run_task(
     review_source_run_id: str = "",
     model_selection: ApiRunSelection | None = None,
     worker_key: str = "",
+    attempt_token: str = "",
 ) -> None:
     # Heavy task stack stays lazy: importing this module (and server.py)
     # must not load operations/service modules/research (see test_server_lazy_state).
@@ -62,77 +66,103 @@ def run_task(
     # The lazy imports and get_state() live inside the guarded block so any
     # init-phase failure (import, state, policy, deps) releases a preset
     # reservation instead of pinning busy forever.
-    try:
-        from codey.app.task_services import build_task_deps
-        from codey.operations.task_entry import run_task_submission
-
-        state = get_state()
-        if review_policy is None:
-            review_policy = load_review_policy()
-        deps = build_task_deps(
-            state,
-            agent_run=agent_run,
-            collect_changes=collect_changes,
-            review_policy=review_policy,
-            capture_provider_failure=capture_provider_failure,
-        )
-    except Exception:
-        # Init-phase failure happens before TaskRuntime owns the slot: release
-        # a preset reservation so the worker exception cannot pin busy forever.
-        # Post-entry failures stay owned by TaskRuntime (release is idempotent).
-        # get_state() itself is guarded too: a broken accessor still surfaces
-        # the original error, just without a release to aim at.
+    state = get_state()
+    if run_id:
+        try:
+            if state.durable.task(run_id).attempt_token != attempt_token:
+                return
+        except KeyError:
+            return
+    with state.durable.execution(run_id, attempt_token) if run_id else contextlib.nullcontext():
+        # Browser-worker dispatches carry a pre-admitted durable task ID.  Direct
+        # callers (including the operation-level entry point) deliberately leave
+        # ``run_id`` empty so the lifecycle can reserve the run and assign its
+        # identity before durable task admission.  Only gate the former here;
+        # task_run remains the single place that starts an unassigned run.
         if run_id:
-            with contextlib.suppress(Exception):
-                get_state().release_run(run_id)
-        raise
-    try:
-        if input is not None:
-            submission = TaskSubmission.from_input(
-                session_id=session_id,
-                project=project,
-                max_turns=max_turns,
-                provider_id=provider_id,
-                input=input,
-                intent=intent,
-                run_id=run_id,
-                requested_capabilities=tuple(requested_capabilities or ()),
-                strict_research=strict_research,
-                sources_open_required=sources_open_required,
-                project_changes_required=project_changes_required,
-                denied_capabilities=tuple(denied_capabilities or ()),
-                review_source_run_id=review_source_run_id,
-                model_selection=model_selection.to_payload() if model_selection is not None else {},
+            try:
+                checkpoint = state.durable.task(run_id)
+                from codey.durable.model import TaskStatus
+
+                if checkpoint.status != TaskStatus.RUNNING:
+                    return
+                if checkpoint.phase == "dispatching":
+                    state.durable.start_task(run_id, state=dict(checkpoint.state))
+            except (CommitConflict, KeyError, ValueError):
+                return
+        try:
+            from codey.app.task_services import build_task_deps
+            from codey.operations.task_entry import run_task_submission
+
+            if review_policy is None:
+                review_policy = load_review_policy()
+            deps = build_task_deps(
+                state,
+                agent_run=agent_run,
+                collect_changes=collect_changes,
+                review_policy=review_policy,
+                capture_provider_failure=capture_provider_failure,
             )
-        else:
-            submission = TaskSubmission(
-                session_id=session_id,
-                project=project,
-                task=task,
-                max_turns=max_turns,
-                continue_task=continue_task,
-                provider_id=provider_id,
-                intent=intent,
-                run_id=run_id,
-                requested_capabilities=tuple(requested_capabilities or ()),
-                strict_research=strict_research,
-                sources_open_required=sources_open_required,
-                project_changes_required=project_changes_required,
-                denied_capabilities=tuple(denied_capabilities or ()),
-                previous_run_id=(previous_run_id or ""),
-                initial_shell_results=tuple(initial_shell_results or ()),
-                review_source_run_id=review_source_run_id,
-                model_selection=model_selection.to_payload() if model_selection is not None else {},
-                input=input,
+        except Exception:
+            # Init-phase failure happens before TaskRuntime owns the slot: release
+            # a preset reservation so the worker exception cannot pin busy forever.
+            # Post-entry failures stay owned by TaskRuntime (release is idempotent).
+            # get_state() itself is guarded too: a broken accessor still surfaces
+            # the original error, just without a release to aim at.
+            if run_id:
+                with contextlib.suppress(Exception):
+                    checkpoint = state.durable.task(run_id)
+                    if checkpoint.phase == "provider_prepared":
+                        state.durable.fail_task(run_id, "task initialization failed", state=dict(checkpoint.state))
+                    state.release_run(run_id)
+            raise
+        try:
+            if input is not None:
+                submission = TaskSubmission.from_input(
+                    session_id=session_id,
+                    project=project,
+                    max_turns=max_turns,
+                    provider_id=provider_id,
+                    input=input,
+                    intent=intent,
+                    run_id=run_id,
+                    requested_capabilities=tuple(requested_capabilities or ()),
+                    strict_research=strict_research,
+                    sources_open_required=sources_open_required,
+                    project_changes_required=project_changes_required,
+                    denied_capabilities=tuple(denied_capabilities or ()),
+                    review_source_run_id=review_source_run_id,
+                    model_selection=model_selection.to_payload() if model_selection is not None else {},
+                )
+            else:
+                submission = TaskSubmission(
+                    session_id=session_id,
+                    project=project,
+                    task=task,
+                    max_turns=max_turns,
+                    continue_task=continue_task,
+                    provider_id=provider_id,
+                    intent=intent,
+                    run_id=run_id,
+                    requested_capabilities=tuple(requested_capabilities or ()),
+                    strict_research=strict_research,
+                    sources_open_required=sources_open_required,
+                    project_changes_required=project_changes_required,
+                    denied_capabilities=tuple(denied_capabilities or ()),
+                    previous_run_id=(previous_run_id or ""),
+                    initial_shell_results=tuple(initial_shell_results or ()),
+                    review_source_run_id=review_source_run_id,
+                    model_selection=model_selection.to_payload() if model_selection is not None else {},
+                    input=input,
+                )
+            run_task_submission(
+                deps,
+                submission,
             )
-        run_task_submission(
-            deps,
-            submission,
-        )
-    finally:
-        supervisor = state.self_repair
-        if supervisor is not None:
-            supervisor.kick_if_idle(state.is_busy)
+        finally:
+            supervisor = state.self_repair
+            if supervisor is not None:
+                supervisor.kick_if_idle(state.is_busy)
 
 
 def submit_task(
@@ -164,13 +194,33 @@ def submit_task(
     # init-phase cleanup never depends on the accessor working a second time.
     review_policy = load_review_policy()
     state = get_state()
+    admitted_selection = capture_provider_selection(provider_id, model_selection)
+    shell_tool_results: tuple[dict[str, object], ...] = ()
+    if isinstance(input, ResolveShellApproval):
+        resolved = state.resolve_shell_approval(input.approval_id)
+        if resolved is None:
+            return None
+        call_id = str(resolved.get("call_id") or "")
+        if call_id:
+            shell_tool_results = ({
+                "call_id": call_id,
+                "content": str(resolved.get("model_text") or ""),
+                "is_error": resolved.get("ok") is not True,
+            },)
     # Settings saves use this same lock: disabling and admission cannot cross.
     with state.lock:
-        if not state.providers.model_preferences.allows(provider_id, model_selection.model_id if model_selection else ""):
+        if not state.providers.model_preferences.allows(provider_id, admitted_selection.model_id if admitted_selection else ""):
             raise ModelDisabledError("Selected model is disabled. Choose an enabled model in Settings.")
         if isinstance(input, ResolveShellApproval):
-            facts = state.shell_approval_records.read(input.approval_id)
-            if not facts or any(fact.kind in {"abandoned", "continuation_cancelled"} for fact in facts):
+            try:
+                approval = state.durable.approval(input.approval_id)
+            except (KeyError, OSError, TypeError, ValueError):
+                return None
+            if str(approval.status) not in {"execution_settled", "denied"}:
+                return None
+            if str(getattr(approval, "continuation_status", "waiting_for_result")) in {
+                "cancelled", "failed", "unavailable",
+            }:
                 return None
         reserved = state.reserve_run(
             session_id=session_id,
@@ -182,9 +232,56 @@ def submit_task(
         )
         if reserved is None:
             return None
-        if model_selection is not None:
-            state.run_registry.bind_api_selection(reserved.run_id, model_selection)
+        reserved_run_id = str(reserved.run_id)
+        if admitted_selection is not None:
+            state.run_registry.bind_api_selection(reserved.run_id, admitted_selection)
     try:
+        state.durable.admit_input(
+            conversation_id=session_id,
+            request_id=reserved.run_id,
+            task_id=reserved.run_id,
+            text=task,
+            provider_snapshot=provider_snapshot(
+                provider_id,
+                admitted_selection,
+                provider_session_id=state.providers.sessions_snapshot().get(provider_id, ""),
+            ),
+            task_state={
+                "project": project,
+                "task": task,
+                "max_turns": max_turns,
+                "continue_task": continue_task,
+                "provider_id": provider_id,
+                "intent": intent,
+                "task_kind": resolve_task_kind_values(project, intent),
+                "requested_capabilities": list(requested_capabilities),
+                "strict_research": strict_research,
+                "sources_open_required": sources_open_required,
+                "project_changes_required": project_changes_required,
+                "denied_capabilities": list(denied_capabilities),
+                "previous_run_id": previous_run_id,
+                "initial_shell_results": list(initial_shell_results),
+                "review_source_run_id": review_source_run_id,
+                "model_selection": admitted_selection.to_payload() if admitted_selection is not None else {},
+                "input": _task_input_payload(input),
+            },
+            tool_results=shell_tool_results,
+        )
+    except Exception:
+        state.release_run(reserved.run_id)
+        raise
+    try:
+        from codey.durable.errors import CommitConflict
+
+        try:
+            state.durable.claim_task(reserved.run_id)
+        except CommitConflict:
+            current = state.durable.task(reserved.run_id)
+            if current.phase != "dispatching":
+                raise
+            state.durable_scheduler.claim(reserved.run_id)
+            return reserved_run_id
+        state.durable_scheduler.claim(reserved.run_id)
         accepted = submit_browser_task(
             run_task,
             session_id,
@@ -206,18 +303,132 @@ def submit_task(
             get_state=lambda: state,
             review_policy=review_policy,
             review_source_run_id=review_source_run_id,
-            model_selection=model_selection,
+            model_selection=admitted_selection,
             worker_key=session_id,
+            attempt_token=state.durable.task(reserved.run_id).attempt_token,
         )
     except Exception:
+        with contextlib.suppress(Exception):
+            state.durable.unclaim_task(reserved.run_id)
+        state.durable_scheduler.retry(reserved.run_id)
         state.release_run(reserved.run_id)
         raise
     if not accepted:
-        state.release_run(reserved.run_id)
-        raise BrowserWorkerBusy("browser worker busy: queue full")
+        state.durable.unclaim_task(reserved.run_id)
+        state.durable_scheduler.retry(reserved.run_id)
+        return reserved_run_id
     state.expire_stale_shell_approvals(reserved.run_id)
-    run_id_value: str = reserved.run_id
+    run_id_value: str = reserved_run_id
     return run_id_value
+
+
+def _task_input_payload(input: TaskInput | None) -> dict[str, object] | None:
+    if isinstance(input, StartTask):
+        return {"kind": "start_task", "text": input.text}
+    if isinstance(input, ResumeRun):
+        return {"kind": "resume_run", "source_run_id": input.source_run_id, "instruction": input.instruction}
+    if isinstance(input, ResolveShellApproval):
+        return {"kind": "resolve_shell_approval", "approval_id": input.approval_id}
+    return None
+
+
+def dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) -> bool:
+    """Resume one durable checkpoint after admission or process restart."""
+    from codey.durable.model import TaskCheckpoint
+
+    if not isinstance(checkpoint, TaskCheckpoint):
+        raise TypeError("durable dispatcher requires a TaskCheckpoint")
+    stored = thaw_json(checkpoint.state)
+    if not isinstance(stored, dict):
+        raise TypeError("task checkpoint state must be an object")
+    session_id = checkpoint.conversation_id
+    task_id = checkpoint.task_id
+    task = str(stored.get("task") or "")
+    project_raw = stored.get("project")
+    project = str(project_raw) if project_raw is not None else None
+    provider_id = str(stored.get("provider_id") or checkpoint.provider_snapshot.get("provider_id") or "")
+    if not task or not provider_id:
+        raise ValueError("accepted durable task is missing dispatch identity")
+    active = state.active_run_for(session_id=session_id)
+    if active is None:
+        reserved = state.reserve_run(
+            session_id=session_id,
+            project=project,
+            task=task,
+            provider_id=provider_id,
+            run_id=task_id,
+        )
+        if reserved is None:
+            return False
+    elif active.run_id != task_id:
+        return False
+    model_payload = stored.get("model_selection")
+    model_selection = None
+    if isinstance(model_payload, dict) and model_payload:
+        from codey.runtime.core.api_selection import ApiRunSelection
+
+        model_selection = ApiRunSelection.from_payload(model_payload)
+    input_value = _task_input_from_payload(stored.get("resume_input", stored.get("input")))
+    max_turns_raw = stored.get("max_turns")
+    max_turns = max_turns_raw if type(max_turns_raw) is int else 8
+    try:
+        accepted = bool(
+            submit_browser_task(
+                run_task,
+                session_id,
+                project,
+                task,
+                max_turns,
+                bool(stored.get("continue_task")),
+                provider_id,
+                str(stored.get("intent") or "auto"),
+                task_id,
+                requested_capabilities=_string_tuple(stored.get("requested_capabilities")),
+                strict_research=bool(stored.get("strict_research")),
+                sources_open_required=bool(stored.get("sources_open_required")),
+                project_changes_required=bool(stored.get("project_changes_required")),
+                denied_capabilities=_string_tuple(stored.get("denied_capabilities")),
+                previous_run_id=str(stored.get("previous_run_id") or ""),
+                initial_shell_results=_mapping_tuple(stored.get("initial_shell_results")),
+                input=input_value,
+                get_state=lambda: state,
+                review_source_run_id=str(stored.get("review_source_run_id") or ""),
+                model_selection=model_selection,
+                worker_key=session_id,
+                attempt_token=checkpoint.attempt_token,
+            )
+        )
+        if not accepted:
+            state.release_run(task_id)
+        return accepted
+    except Exception:
+        state.release_run(task_id)
+        raise
+
+
+def _task_input_from_payload(value: object) -> TaskInput | None:
+    if not isinstance(value, dict):
+        return None
+    kind = str(value.get("kind") or "")
+    if kind == "start_task":
+        return StartTask(str(value.get("text") or ""))
+    if kind == "resume_run":
+        return ResumeRun(str(value.get("source_run_id") or ""), str(value.get("instruction") or ""))
+    if kind == "resolve_shell_approval":
+        return ResolveShellApproval(str(value.get("approval_id") or ""))
+    raise ValueError(f"unknown durable task input kind: {kind}")
+
+
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(str(item) for item in value)
+
+
+def _mapping_tuple(value: object) -> tuple[dict[str, object], ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(dict(item) for item in value if isinstance(item, dict))
 
 
 def submit_task_after_slot_release(

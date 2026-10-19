@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import json
 import threading
-from contextlib import contextmanager
+import time
+from contextlib import ExitStack, contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -71,13 +72,15 @@ def question_peer(protocol):
 
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
 @pytest.mark.parametrize("intent", ["chat", "project"])
-def test_question_answer_resumes_without_repeating_the_original_call(tmp_path, protocol, intent):
+@pytest.mark.parametrize("restart", [False, True])
+def test_question_answer_resumes_without_repeating_the_original_call(tmp_path, protocol, intent, restart):
     project = tmp_path / "project"
     project.mkdir()
     (project / "pyproject.toml").write_text('[project]\nname="question-test"\n', encoding="utf-8")
     with question_peer(protocol) as (url, requests, errors):
         target = GateTarget(url, "question-fixture", 32768, 8192, 12000, api_protocol=protocol, request_timeout=15)
-        with gate_application(target, tmp_path / "gate") as (httpd, ctx, events):
+        with ExitStack() as stack:
+            httpd, ctx, events = stack.enter_context(gate_application(target, tmp_path / "gate"))
             client = GateHTTPClient(httpd)
             source = client.post("/api/run", {"session_id": "question-chat", "project": str(project), "intent": intent,
                 "input": {"kind": "start_task", "text": "先询问检查范围，再只读分析 pyproject.toml；不要修改文件，不要运行命令。"},
@@ -86,12 +89,21 @@ def test_question_answer_resumes_without_repeating_the_original_call(tmp_path, p
             assert terminal["stop_reason"] == "question", (terminal, errors)
             question = ctx.user_questions.pending("question-chat")
             assert question is not None
+            if restart:
+                stack.close()
+                httpd, ctx, events = stack.enter_context(gate_application(target, tmp_path / "gate"))
+                client = GateHTTPClient(httpd)
+                assert ctx.user_questions.pending("question-chat")["id"] == question["id"]
             accepted = client.post("/api/questions", {"id": question["id"], "revision": question["revision"], "answer": "只读文档"})
-            identity, request = ctx.user_questions.answer_input(accepted["question"])
-            final = wait_for_run(client, request["run_id"], 15)
+            assert accepted["question"]["run_id"] == source["run_id"]
+            deadline = time.monotonic() + 15
+            while ctx.durable.task(source["run_id"]).phase not in {"completed", "failed", "cancelled"}:
+                assert time.monotonic() < deadline, (ctx.durable.task(source["run_id"]), errors)
+                time.sleep(0.02)
+            final = wait_for_run(client, source["run_id"], 15)
             assert final["stop_reason"] == "done", (final, errors)
             client.post("/api/questions", {"id": question["id"], "revision": question["revision"], "answer": "只读文档"})
             assert not errors
             assert len(requests) == 3
             assert len([event for event in events if event.get("type") == "tool" and event.get("tool_name") == "read_file"]) == 1
-            assert ctx.input_queue.get(identity)["state"] == "completed"
+            assert len(ctx.durable.tasks()) == 1

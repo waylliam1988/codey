@@ -209,20 +209,22 @@ def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict:
         else:
             raise AssertionError("approval continuation did not finish")
         proof = verify_shell_events(events, source_run, case, original_window)
-        # Confirm window identity from the actual persisted protocol history.
-        from codey.providers.context_ledger import ContextLedger
+        # Durable session history is the canonical protocol fact source.  The
+        # provider window remains an execution handle, while tool results are
+        # recovered from the same SQLite admission used after a restart.
+        from codey.durable.model import thaw_json
         from codey.runtime.core.protocol_window import ProtocolWindowRef
 
         ref = ProtocolWindowRef.from_payload(original_window)
-        input_path = directory / "input.json"
-        inputs = json.loads(input_path.read_text(encoding="utf8")) if input_path.is_file() else {}
-        state_root = Path(inputs["state"]) if inputs.get("state") else directory / "state"
-        ledger = ContextLedger.for_protocol_session(state_root, ref.session_id, ref)
-        if ledger.window_ref != ref:
-            raise AssertionError("approval continuation changed the protocol window")
-        call_key = "call_id" if target.api_protocol == "openai-responses" else "tool_call_id"
-        result_items = [item for item in ledger.events() if item.get(call_key) == record["call_id"]
-                        and (item.get("type") == "function_call_output" or item.get("role") == "tool")]
+        if state.durable.task(approval.get("continuation_run_id", "")).conversation_id != ref.session_id:
+            raise AssertionError("approval continuation changed the protocol session")
+        result_items = []
+        for entry in state.durable.entries(ref.session_id):
+            if entry.kind != "tool_result":
+                continue
+            payload = thaw_json(entry.payload)
+            if isinstance(payload, dict) and payload.get("call_id") == record["call_id"]:
+                result_items.append(payload)
         if len(result_items) != 1:
             raise AssertionError("original shell result was not committed exactly once")
         status, repeated = client.request("/api/shell_approval", {"id": approval_id, "approved": case != "shell_deny"})

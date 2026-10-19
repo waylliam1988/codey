@@ -12,7 +12,6 @@ from codey.providers import revival as provider_revival
 from codey.repairs import adapter_overrides
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.runs import work_checkpoint as work_checkpoint_module
-from codey.storage.conversation_store import ConversationStore
 from codey.storage.ui_state_store import UiStateStore
 from codey.workspace.facts import ProjectFactsStore
 
@@ -23,17 +22,6 @@ def _corrupt(path: Path) -> None:
 
 
 class StrictStoreLoadTests(unittest.TestCase):
-    def test_conversation_store_backs_up_corrupt_session(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            store = ConversationStore(td)
-            path = store.path_for("session-1")
-            _corrupt(path)
-
-            context = store.load("session-1")
-
-            self.assertFalse(context.initialized)
-            self.assertTrue(path.with_name(path.name + ".corrupt").exists())
-
     def test_project_facts_reset_corrupt_file_with_backup(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = ProjectFactsStore(td)

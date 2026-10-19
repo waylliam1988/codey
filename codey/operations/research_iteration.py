@@ -181,13 +181,14 @@ def run_research_iteration(
     active_provider = provider
     mutations = getattr(deps, "runtime_mutations", None)
     if mutations is not None and session_id and run_id:
-        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider, admitted_durable
 
         mutations.mark_writer_running(session_id, run_id, provider_id=provider_id)
         intent_sink = KernelEffectSink(
             mutations, session_id=session_id, run_id=run_id,
             provider_id=provider_id, phase="research",
             managed_outputs=getattr(deps, "managed_outputs", None),
+            durable=admitted_durable(getattr(deps, "state", None), run_id),
         )
         active_provider = KernelRecordedProvider(provider, intent_sink)
     outcome = run_task_kernel(

@@ -25,7 +25,9 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     original, _, _, expected_ledger, report = _real_research_gate()
     project, state, logdir = _dirs(tmp_path)
-    _, mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
+    _, mutations, managed, _, deps, sink = _open_runtime(
+        logdir, state, "s", "r", project, task_kind="research"
+    )
     record_entry_policy(mutations, session_id="s", run_id="r", policy=original.policy)
     live = TaskSession(policy=original.policy, task_kind="research", project="", max_turns=8)
     ledger = ResearchLedger()
@@ -57,7 +59,8 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
             KernelRecordedProvider(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
     recovered = recover_effects_for_resume(deps, session_id="s", run_id="r", project="", task_kind="research")
     assert recovered.ok
-    assert bool(recovered.recovered_tool_outcomes) is (not acknowledged)
+    assert bool(recovered.recovered_tool_outcomes) is False
+    assert bool(recovered.settled_tool_outcomes) is True
     restored_tools = SimpleNamespace(ledger=ResearchLedger())
     monkeypatch.setattr("codey.operations.task_entry._entry_executors", lambda *args: (None, None, restored_tools))
     import json
@@ -70,7 +73,8 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
     frame.recovered_tool_outcomes = recovered.recovered_tool_outcomes
     frame.settled_tool_outcomes = recovered.settled_tool_outcomes
     frame.recovered_tool_result_batch_id = recovered.recovered_tool_result_batch_id
-    deps.state = SimpleNamespace(set_provider_session=lambda *args: None)
+    deps.state = SimpleNamespace(durable=deps.runtime_mutations.durable,
+                                 set_provider_session=lambda *args: None)
     outcome = run_entry_kernel(frame, RunWork([], ExecutionEvidence()),
                                SimpleNamespace(on_event=lambda _: None, on_shell_request=None), deps,
                                task_kind="research")

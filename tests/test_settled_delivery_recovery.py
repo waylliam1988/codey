@@ -32,6 +32,7 @@ def _accept_and_mark(mutations, session_id: str, run_id: str, project: str):
 
 def _settle_batch(tmp: Path, session_id: str, run_id: str, *, long_text: str = ""):
     """真实执行一次并结算（run 不可重放），交付前中断。返回日志目录。"""
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_effects import KernelEffectSink
@@ -42,9 +43,27 @@ def _settle_batch(tmp: Path, session_id: str, run_id: str, *, long_text: str = "
 
     log, mutations = _new_log(tmp)
     _accept_and_mark(mutations, session_id, run_id, str(tmp))
+    state_home = tmp / "state"
+    state_home.mkdir(parents=True, exist_ok=True)
+    durable = DurableSession(SQLiteDurableStore(state_home / "durable.sqlite3"))
+    durable.admit_input(
+        conversation_id=session_id,
+        request_id=f"request-{run_id}",
+        task_id=run_id,
+        text="run recovery fixture",
+        provider_snapshot={"provider_id": "local", "model_id": "fixture"},
+        task_state={"task_kind": "project"},
+    )
+    durable.start_task(run_id, state={"task_kind": "project"})
+    durable.advance_task(
+        task_id=run_id, phase="assistant_intent_committed", state={"task_kind": "project"},
+    )
+    durable.advance_task(
+        task_id=run_id, phase="assistant_response_pending", state={"task_kind": "project"},
+    )
     sink = KernelEffectSink(
         mutations, session_id=session_id, run_id=run_id, provider_id="local",
-        managed_outputs=ManagedOutputStore(tmp / "state"),
+        managed_outputs=ManagedOutputStore(state_home), durable=durable,
     )
     run_call = ToolCall(name="run", args={"command": "python -m pytest", "path": "."}, call_id="native-run-1")
     read_text = long_text or "original observation"
@@ -83,6 +102,7 @@ def _settle_batch(tmp: Path, session_id: str, run_id: str, *, long_text: str = "
 
 
 def _recover(tmp: Path, session_id: str, run_id: str, project: str):
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.recovery import recover_effects_for_resume
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
@@ -93,7 +113,9 @@ def _recover(tmp: Path, session_id: str, run_id: str, project: str):
     # 销毁运行对象，重新打开日志（真实重启）
     log = RuntimeSessionLog(tmp / "sesslog")
     mutations = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(tmp / "state" / "durable.sqlite3"))
     deps = SimpleNamespace(
+        state=SimpleNamespace(durable=durable),
         runtime_mutations=mutations,
         runtime_effects=RuntimeEffectStore(log),
         tool_result_delivery=ToolResultDeliveryStore(log),
@@ -116,10 +138,11 @@ def test_settled_run_redelivered_without_reexecution_via_production_recovery():
                    side_effect=AssertionError("settled tools must not re-enter execution")):
             recovery = _recover(tmp, "s-settled", "r-settled", str(tmp))
         assert recovery.ok is True, "已结算 run 必须恢复交付"
-        assert len(recovery.recovered_tool_outcomes) == 2, (
-            f"run+read 两条已结算结果都应交付，实际 {len(recovery.recovered_tool_outcomes)}"
+        assert recovery.recovered_tool_outcomes == ()
+        assert len(recovery.settled_tool_outcomes) == 2, (
+            f"run+read 两条已结算结果都应交付，实际 {len(recovery.settled_tool_outcomes)}"
         )
-        by_index = {rec.tool_index: rec for rec in recovery.recovered_tool_outcomes}
+        by_index = {rec.tool_index: rec for rec in recovery.settled_tool_outcomes}
         run_rec, read_rec = by_index[0], by_index[1]
         assert "run output hi" in str(run_rec.outcome.model_text)
         assert run_rec.outcome.exit_code == 0
@@ -138,7 +161,8 @@ def test_settled_source_window_is_restored_without_substituting_full_body():
         _settle_batch(tmp, "s-long", "r-long", long_text=long_text)
         recovery = _recover(tmp, "s-long", "r-long", str(tmp))
         assert recovery.ok is True
-        by_index = {rec.tool_index: rec for rec in recovery.recovered_tool_outcomes}
+        assert recovery.recovered_tool_outcomes == ()
+        by_index = {rec.tool_index: rec for rec in recovery.settled_tool_outcomes}
         read_rec = by_index[1]
         assert read_rec.call.call_id == "native-read-2"
         # 受管收据完好时恢复不得丢内容、不得谎称未截断

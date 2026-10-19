@@ -1,5 +1,6 @@
 """Real desktop and CLI entries share automatic review and single repair."""
 import json
+from unittest import mock
 
 import pytest
 
@@ -43,8 +44,15 @@ def test_desktop_and_real_cli_automatically_review_and_repair_equally(tmp_path, 
             monkeypatch.setattr(state, "get_provider", lambda *_, writers=writers: next(writers))
             monkeypatch.setattr(state, "_on_event_emitted", rows.append)
             try:
-                task_submit.run_task("s", str(project), task, 8, False, "local", "project",
-                                     project_changes_required=True, get_state=lambda state=state: state)
+                with mock.patch.object(
+                    task_submit,
+                    "submit_browser_task",
+                    side_effect=lambda fn, *args, **kwargs: (fn(*args, **kwargs) or True),
+                ):
+                    task_submit.submit_task(
+                        "s", str(project), task, 8, False, "local", "project",
+                        project_changes_required=True, get_state=lambda state=state: state,
+                    )
             finally:
                 state.close()
         else:

@@ -21,6 +21,8 @@ class GenerationSettings:
 class ApiCodec(Protocol):
     endpoint: str
 
+    def encode_context(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
+
     def encode_results(self, results: list[ProviderToolResult]) -> list[dict[str, Any]]: ...
 
     def prepare(self, history: list[dict[str, Any]], pending: list[dict[str, Any]], *, system: str,

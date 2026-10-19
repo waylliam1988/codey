@@ -1,6 +1,7 @@
 """Chat Completions wire encoding and atomic history preparation."""
 from __future__ import annotations
 
+import copy
 import json
 from collections.abc import Callable
 from typing import Any, cast
@@ -10,6 +11,14 @@ from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDe
 from codey.toolchain.tool_spec import thaw_schema_value
 
 endpoint = "chat/completions"
+
+
+def encode_context(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Encode canonical history without leaking internal recovery metadata."""
+    result = copy.deepcopy(messages)
+    for message in result:
+        message.pop("is_error", None)
+    return result
 
 
 def pending_calls(items: list[dict[str, Any]]) -> tuple[str, ...]:

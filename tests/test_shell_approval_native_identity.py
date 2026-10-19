@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps
 
 LONG_CALL_ID = "shell-call-" + "x" * 100
@@ -119,7 +121,6 @@ def test_approved_shell_result_answers_original_call_id_natively():
     assert row.turn == 0 and row.tool_index == 0
 
     # 同一 native 会话继续：首条发送即回答原 shell 调用，不执行新工具
-    from types import SimpleNamespace
 
     from codey.operations.recovery import delivered_from_frame
 
@@ -215,7 +216,6 @@ def test_call_id_with_spaces_is_preserved_as_an_identity():
 def test_session_projection_never_shortens_native_call_id():
     import tempfile
     from pathlib import Path
-    from types import SimpleNamespace
 
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.kernel_protocol import build_turn_snapshot
@@ -235,7 +235,7 @@ def test_session_projection_never_shortens_native_call_id():
     assert results[0].call.call_id == LONG_CALL_ID
     assert any(row.get("call_id") == LONG_CALL_ID for row in session.executed.values())
 
-    # Real log recovery via the formal entry preserves the native call id.
+    # Real durable recovery via the formal entry preserves the native call id.
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         tmp = Path(td)
         project = tmp / "project"
@@ -244,28 +244,15 @@ def test_session_projection_never_shortens_native_call_id():
         project.mkdir(parents=True, exist_ok=True)
         state.mkdir(parents=True, exist_ok=True)
         logdir.mkdir(parents=True, exist_ok=True)
-        from codey.operations.task_effects import KernelEffectSink
-        from codey.runtime.effects.effect_records import RuntimeEffectStore
-        from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-        from codey.runtime.log.session_log import RuntimeSessionLog
-        from codey.runtime.write.mutation_line import RuntimeMutationLine
-        from codey.storage.managed_outputs import ManagedOutputStore
-        from codey.workspace.revision import WorkspaceRevisionStore
+        from tests.test_session_log_receipt_recovery_preserves_facts import (
+            _open_runtime,
+            _recover_formal,
+        )
 
         session_id = "s-long"
         run_id = "r-long-log"
-        log = RuntimeSessionLog(logdir)
-        mutations = RuntimeMutationLine(log)
-        managed = ManagedOutputStore(state)
-        rev_store = WorkspaceRevisionStore(state)
-        mutations.accept_operation(
-            session_id=session_id, run_id=run_id, project=str(project),
-            provider_id="local", turn_budget=20, max_repair_rounds=1, task_kind="project",
-        )
-        mutations.mark_writer_running(session_id, run_id, provider_id="local")
-        sink = KernelEffectSink(
-            mutations, session_id=session_id, run_id=run_id, provider_id="local",
-            managed_outputs=managed,
+        _, _, _, rev_store, _, sink = _open_runtime(
+            logdir, state, session_id, run_id, project,
         )
         (project / "a.py").write_text("x = 1\n", encoding="utf-8")
         logged = TaskSession(policy=policy, task_kind="project", project=str(project), max_turns=8)
@@ -294,38 +281,26 @@ def test_session_projection_never_shortens_native_call_id():
         assert len(logged_results) == 2
         assert logged_results[1].call.call_id == LONG_CALL_ID
 
-        from codey.operations.kernel_session_recovery import restore_task_session
-        from codey.operations.recovery import recover_effects_for_resume
-
-        log2 = RuntimeSessionLog(logdir)
-        mutations2 = RuntimeMutationLine(log2)
-        deps = SimpleNamespace(
-            runtime_mutations=mutations2,
-            runtime_effects=RuntimeEffectStore(log2),
-            tool_result_delivery=ToolResultDeliveryStore(log2),
-            managed_outputs=ManagedOutputStore(state),
-            workspace_revisions=WorkspaceRevisionStore(state),
-        )
-        recovery = recover_effects_for_resume(
-            deps, session_id=session_id, run_id=run_id, project=str(project), task_kind="project",
+        sink.durable.close()
+        fresh, recovery, delivered, rows, _ = _recover_formal(
+            project, state, logdir, session_id, run_id,
         )
         assert recovery.ok is True
-        fresh = TaskSession(policy=policy, task_kind="project", project=str(project), max_turns=8)
+        # The canonical session owns provider tool history. Recovery rows are
+        # execution projections and may be empty once the delivery is settled;
+        # verify the durable protocol fact directly instead of reconstructing
+        # it from the legacy runtime log.
+        from codey.durable import DurableSession, SQLiteDurableStore
+        from codey.durable.model import thaw_json
+        durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
         try:
-            cur = deps.workspace_revisions.current_state(str(project), ignored_paths=())
-            fresh.set_workspace_state(int(cur.revision or 0), cur.fingerprint)
-        except Exception:
-            pass
-        frame = SimpleNamespace(run_id=run_id, recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes))
-        delivered, rows, resume_start, initial = restore_task_session(frame, fresh)
-        assert any(
-            getattr(row, "call", None) is not None and getattr(row.call, "call_id", "") == LONG_CALL_ID
-            for row in rows
-        )
-        assert any(
-            getattr(value, "call", None) is not None and getattr(value.call, "call_id", "") == LONG_CALL_ID
-            for value in delivered.values()
-        )
+            effects = durable.effects(run_id)
+            assert any(
+                thaw_json(effect.intent).get("call_id") == LONG_CALL_ID
+                for effect in effects
+            )
+        finally:
+            durable.close()
 
 
 def test_malformed_shell_result_is_rejected_instead_of_coercing_success():

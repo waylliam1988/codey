@@ -5,8 +5,8 @@ import json
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from codey.agents.handoff import estimate_tokens
 from codey.providers.token_accounting import ReportedUsage, RequestContextCount
+from codey.utils.text_budget import estimate_tokens
 
 UsageParser = Callable[[dict[str, Any]], ReportedUsage | None]
 

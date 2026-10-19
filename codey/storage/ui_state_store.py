@@ -19,67 +19,9 @@ SCHEMA_VERSION = 1
 MAX_UI_STATE_BYTES = 16 * 1024 * 1024
 MAX_SESSIONS = 200
 MAX_PROJECTS = 100
-MAX_MESSAGES_PER_SESSION = 500
-MAX_FILES_PER_MESSAGE = 20
 MAX_STRING = 200_000
-MAX_VISIBLE_EXCERPT_CHARS = 12_000
-MAX_VISIBLE_EXCERPT_MESSAGES = 20
-MAX_EXCERPT_TEXT_CHARS = 1_500
 MAX_SHORT_STRING = 1_000
 MAX_TITLE = 160
-MESSAGE_KEYS = {
-    "streamId", "streamSequence", "streamState", "finalAnswer",
-    "queuedInputId",
-    "elapsedMs",
-    "preview",
-    "approval",
-    "approvalSubmission",
-    "type",
-    "text",
-    "note",
-    "n",
-    "kind",
-    "path",
-    "result",
-    "error",
-    "sessionId",
-    "id",
-    "command",
-    "commandSha256",
-    "commandChars",
-    "commandTruncated",
-    "outputTruncated",
-    "cwd",
-    "output",
-    "exitCode",
-    "approved",
-    "shellStatus",
-    "count",
-    "files",
-    "project",
-    "eventKey",
-    "runId",
-    "changed",
-    "riskLabel",
-    "riskTitle",
-    "riskDetail",
-    # Pending tool-approval and activity fields the UI round-trips; dropping
-    # them silently broke restore of in-flight cards and spinners.
-    "toolKey",
-    "activity",
-    "pending",
-    "reasoning",
-    "toolName",
-    "turn",
-    "state",
-    "status",
-    "requestId",
-    "attempts",
-    "sendFailure",
-    "runOwner",
-    "turnId", "contentRole", "answerId", "answerPartIndex", "failure",
-}
-
 
 def _empty_state() -> dict[str, Any]:
     return {
@@ -108,122 +50,6 @@ def _int(value: object) -> int:
 
 def _str(value: object, limit: int = MAX_SHORT_STRING) -> str:
     return str(value or "")[:limit]
-
-
-def _clean_files(value: object) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        return []
-    files: list[dict[str, Any]] = []
-    for item in value[:MAX_FILES_PER_MESSAGE]:
-        if not isinstance(item, dict):
-            continue
-        files.append(
-            {
-                "path": _str(item.get("path")),
-                "status": _str(item.get("status"), 20),
-                "additions": _int(item.get("additions")),
-                "deletions": _int(item.get("deletions")),
-            }
-        )
-    return files
-
-
-def _clean_approval(value: object) -> dict[str, Any] | None:
-    if not isinstance(value, dict) or value.get("type") != "shell_approval_status":
-        return None
-    keys = {"type", "id", "session_id", "run_id", "source_run_id", "continuation_run_id",
-            "decision", "execution", "continuation"}
-    clean: dict[str, Any] = {key: _str(value[key]) for key in keys if key in value}
-    clean["revision"] = _int(value.get("revision"))
-    return clean
-
-
-def _clean_failure(value: object) -> dict[str, Any] | None:
-    if not isinstance(value, dict) or value.get("schema_version") != 1:
-        return None
-    clean: dict[str, Any] = {}
-    for name in (
-        "schema_version", "code", "category", "scope", "phase", "effect",
-        "incident_id", "session_id", "run_id", "call_id", "execution_id", "source_id",
-        "diagnostic",
-    ):
-        raw = value.get(name)
-        if name == "schema_version":
-            if type(raw) is int and raw == 1:
-                clean[name] = raw
-        elif isinstance(raw, str):
-            clean[name] = _str(raw, 1000 if name == "diagnostic" else 160)
-    resource = value.get("resource")
-    if isinstance(resource, dict):
-        clean["resource"] = {
-            name: _str(resource.get(name), 240)
-            for name in ("kind", "path", "id")
-            if isinstance(resource.get(name), str)
-        }
-    retry_after = value.get("retry_after")
-    if type(retry_after) is int and 0 <= retry_after <= 86400:
-        clean["retry_after"] = retry_after
-    return clean
-
-
-def _clean_message(message: object) -> dict[str, Any] | None:
-    if not isinstance(message, dict):
-        return None
-    clean: dict[str, Any] = {}
-    for key in MESSAGE_KEYS:
-        if key not in message:
-            continue
-        value = message[key]
-        if key == "preview" and isinstance(value, dict):
-            preview: dict[str, Any] = {name: _str(value[name], 16_000 if name == "diff" else 1000) for name in ("diff", "query") if isinstance(value.get(name), str)}
-            preview.update({name: _int(value[name]) for name in ("additions", "deletions", "line_start", "line_end", "matches") if type(value.get(name)) is int})
-            preview.update({name: value[name] for name in ("diff_truncated", "diff_unavailable", "has_more") if type(value.get(name)) is bool})
-            clean[key] = preview
-        elif key == "approval":
-            clean[key] = _clean_approval(value)
-        elif key == "attempts":
-            if isinstance(value, list):
-                clean[key] = [
-                    {name: _str(item[name], 12_000 if name == "error" else MAX_SHORT_STRING)
-                     for name in ("runId", "state", "error", "sendFailure", "runOwner", "warning")
-                     if name in item}
-                    for item in value[-64:] if isinstance(item, dict)
-                ]
-        elif key == "failure":
-            failure = _clean_failure(value)
-            if failure is not None:
-                clean[key] = failure
-        elif key == "files":
-            clean[key] = _clean_files(value)
-        elif key == "exitCode":
-            # Signals have negative exits on POSIX; malformed values are unknown,
-            # never coerced to a successful zero exit.
-            clean[key] = value if type(value) is int else None
-        elif isinstance(value, bool):
-            clean[key] = value
-        elif isinstance(value, (int, float)) and not isinstance(value, bool):
-            clean[key] = _int(value)
-        elif value is None:
-            clean[key] = None
-        elif key == "reasoning":
-            if isinstance(value, str):
-                clean[key] = value[:64_000]
-        elif key in {"text", "output", "result", "command"}:
-            clean[key] = _str(value, MAX_STRING)
-        else:
-            clean[key] = _str(value)
-    return clean if clean else None
-
-
-def _clean_messages(value: object) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        return []
-    messages: list[dict[str, Any]] = []
-    for message in value[-MAX_MESSAGES_PER_SESSION:]:
-        clean = _clean_message(message)
-        if clean is not None:
-            messages.append(clean)
-    return messages
 
 
 MAX_RESEARCH_RUNS_PER_SESSION = 32
@@ -344,7 +170,6 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
             "draft": _clean_draft(item.get("draft")),
             "id": _str(item.get("id")),
             "title": _str(item.get("title") or "New chat", MAX_TITLE),
-            "messages": _clean_messages(item.get("messages")),
             "terminalRuns": [
                 _str(run_id) for run_id in terminal_runs[-32:]
             ],
@@ -413,38 +238,6 @@ def _clean_payload(payload: object) -> dict[str, Any]:
         "updated_at": _int(payload.get("updated_at")),
         "revision": _int(payload.get("revision")),
     }
-
-
-def _message_excerpt(message: dict[str, Any]) -> str:
-    kind = str(message.get("type") or "")
-    if kind == "user":
-        label = "User"
-        text = str(message.get("text") or "")
-    elif kind == "asst":
-        label = "Assistant"
-        text = str(message.get("text") or "")
-    elif kind == "review":
-        label = "Review"
-        text = str(message.get("text") or "")
-    elif kind == "done":
-        label = "Done"
-        text = str(message.get("text") or "")
-    elif kind == "changes":
-        count = _int(message.get("count"))
-        files = message.get("files")
-        paths = list[str]()
-        if isinstance(files, list):
-            paths = [
-                str(item.get("path") or "")
-                for item in files
-                if isinstance(item, dict) and item.get("path")
-            ][:3]
-        suffix = f": {', '.join(paths)}" if paths else ""
-        return f"Changes: {count} file{'s' if count != 1 else ''}{suffix}"
-    else:
-        return ""
-    text = _str(text, MAX_EXCERPT_TEXT_CHARS).strip()
-    return f"{label}: {text}" if text else ""
 
 
 class UiStateConflict(ValueError):
@@ -540,44 +333,3 @@ class UiStateStore:
         write_json_atomic(self.path, {"schema_version": SCHEMA_VERSION, "state": clean}, max_bytes=MAX_UI_STATE_BYTES)
         self._cached_state = clean
         return clean
-
-    def visible_session_excerpt(
-        self,
-        session_id: str,
-        *,
-        current_request: str = "",
-        limit: int = MAX_VISIBLE_EXCERPT_CHARS,
-    ) -> str:
-        target = (session_id or "")
-        if not target:
-            return ""
-        current = (current_request or "").strip()
-        for session in self._current().get("sessions", []):
-            if not isinstance(session, dict) or str(session.get("id") or "") != target:
-                continue
-            messages = session.get("messages")
-            if not isinstance(messages, list):
-                return ""
-            lines: list[str] = []
-            title = str(session.get("title") or "").strip()
-            if title and title != "New chat":
-                lines.append(_str(f"Title: {title}", MAX_EXCERPT_TEXT_CHARS))
-            visible_lines: list[str] = []
-            for message in reversed(messages):
-                if not isinstance(message, dict):
-                    continue
-                if (
-                    current
-                    and message.get("type") == "user"
-                    and str(message.get("text") or "").strip() == current
-                ):
-                    continue
-                line = _message_excerpt(message)
-                if line:
-                    visible_lines.append(line)
-                    if len(visible_lines) >= MAX_VISIBLE_EXCERPT_MESSAGES:
-                        break
-            lines.extend(reversed(visible_lines))
-            excerpt = "\n".join(lines).strip()
-            return _str(excerpt, max(0, limit))
-        return ""

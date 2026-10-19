@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations.completion_gate import evaluate
 from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
 from codey.runtime.log.session_log import RuntimeSessionLog
@@ -35,25 +36,50 @@ def test_recovery_preserves_facts_and_never_reexecutes(tmp_path, exits, trace):
     for action in trace:
         restored, recovery, _, _, _ = _recover_formal(project, state, logdir, "s", "r")
         if action != "restart" and expected_pending:
-            sink = KernelEffectSink(
-                RuntimeMutationLine(RuntimeSessionLog(logdir)), session_id="s", run_id="r",
-                provider_id="web", recovered_batch_id=recovery.recovered_tool_result_batch_id,
-                managed_outputs=ManagedOutputStore(state),
-            )
-            def send(text, action=action):
+            durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
+            try:
+                sink = KernelEffectSink(
+                    RuntimeMutationLine(RuntimeSessionLog(logdir), durable=durable),
+                    session_id="s", run_id="r", provider_id="web",
+                    recovered_batch_id=recovery.recovered_tool_result_batch_id,
+                    managed_outputs=ManagedOutputStore(state), durable=durable,
+                )
+
+                def send(text, action=action):
+                    if action == "failure":
+                        raise RuntimeError("provider send failed")
+                    return "ack"
+
+                provider = KernelRecordedProvider(SimpleNamespace(send=send), sink)
                 if action == "failure":
-                    raise RuntimeError("provider send failed")
-                return "ack"
-            provider = KernelRecordedProvider(SimpleNamespace(send=send), sink)
-            if action == "failure":
-                with pytest.raises(RuntimeError, match="provider send failed"):
-                    provider.send("original results")
-            else:
-                assert provider.send("original results") == "ack"
+                    with pytest.raises(RuntimeError, match="provider send failed"):
+                        provider.send("original results")
+                    # The provider receipt is ``maybe_sent``.  Recovery seals
+                    # the unknown task instead of redelivering its batch.
+                    from codey.operations.recovery import recover_effects_for_resume
+
+                    result = recover_effects_for_resume(
+                        SimpleNamespace(
+                            state=SimpleNamespace(durable=durable),
+                            runtime_mutations=RuntimeMutationLine(RuntimeSessionLog(logdir), durable=durable),
+                            runtime_effects=None,
+                            tool_result_delivery=None,
+                        ),
+                        session_id="s", run_id="r", project=str(project), task_kind="project",
+                    )
+                    assert result.ok is False
+                    assert durable.task("r").phase == "failed"
+                    durable.close()
+                    assert counts == {"edit": 1, "run": len(exits)}
+                    return
+                else:
+                    assert provider.send("original results") == "ack"
+            finally:
+                durable.close()
             # After an attempted send, ambiguity forbids automatic redelivery.
             expected_pending = False
         restored, recovery, _, _, _ = _recover_formal(project, state, logdir, "s", "r")
-        assert bool(recovery.recovered_tool_outcomes) is expected_pending
+        assert bool(recovery.recovered_tool_outcomes or recovery.recovered_tool_result_batch_id) is expected_pending
         assert restored.edited_files == expected_edits
         assert restored.verifications == expected_checks
         assert evaluate(restored, "done", context=_gate_context(restored)).complete is (exits[-1] == 0)

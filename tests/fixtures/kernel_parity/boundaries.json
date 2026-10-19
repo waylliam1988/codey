@@ -187,6 +187,16 @@
         "tests/test_legacy_json_codec_has_no_production_consumers.py",
         "tests/test_text_turn_decoder_contract.py"
       ]
+    },
+    "codey/storage/conversation_store.py": {
+      "current_owners": [
+        "codey/durable/session.py",
+        "codey/app/context.py"
+      ],
+      "tests": [
+        "tests/durable/test_session.py",
+        "tests/test_app_state_helper.py"
+      ]
     }
   },
   "entry_chains": {

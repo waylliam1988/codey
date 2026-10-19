@@ -34,7 +34,7 @@ from codey.operations.project_completion_context import (
 from codey.operations.project_completion_flow import run_project_mode
 from codey.operations.provider_preflight import connect_provider_with_preflight
 from codey.operations.provider_session import bind_api_usage
-from codey.operations.recovery import rebuilt_policy_from_log, record_entry_policy
+from codey.operations.recovery import durable_task_for, policy_from_durable_task, record_entry_policy
 from codey.operations.research_flow import (
     ResearchFlowDeps,
     record_evidence_ledger_write,
@@ -104,12 +104,12 @@ def connect_and_build_frame(
             state.emit({**event, "run_id": run_id, "session_id": request.session_id})
 
         bind_display(display_event)
-    context_home = getattr(getattr(state, "managed_outputs", None), "root", None)
-    if context_home is not None and callable(getattr(provider, "bind_context", None)):
-        provider.bind_context(request.session_id, context_home.parent)
+    if callable(getattr(type(provider), "bind_context", None)):
+        provider.bind_context(request.session_id)
     conversation = state.conversation_for(request.session_id)
     conversation_plan = plan_conversation(
         state=state,
+        task_id=run_id,
         session_id=request.session_id,
         provider_id=provider_id,
         provider=provider,
@@ -239,20 +239,17 @@ def dispatch_run_mode(
         frame.project_text = str(session_workspace(home, request.session_id))
     if request is not None:
         previous = str(getattr(request, "previous_run_id", "") or "")
-        operation = getattr(work, "operation", None)
-        recovering = bool(frame.recovered_tool_outcomes or frame.settled_tool_outcomes
-                          or getattr(operation, "task_policy", {})
-                          or (operation is not None and operation.leaf != "accepted"))
+        source_run_id = previous or frame.run_id
+        durable_session = getattr(getattr(deps, "state", None), "durable", None)
+        durable = durable_task_for(durable_session, source_run_id)
+        recovering = bool(previous or frame.recovered_tool_outcomes or frame.settled_tool_outcomes)
         if previous or recovering:
-            mutations = getattr(deps, "runtime_mutations", None)
-            frame.entry_policy = rebuilt_policy_from_log(
-                getattr(mutations, "session_log", None),
-                session_id=request.session_id, run_id=previous or frame.run_id,
-            )
+            frame.entry_policy = policy_from_durable_task(durable, task_id=source_run_id)
         else:
             frame.entry_policy = build_task_policy_for_entry(replace(request, project=frame.project_text or None), task_kind)
         record_entry_policy(getattr(deps, "runtime_mutations", None),
-                            session_id=request.session_id, run_id=frame.run_id, policy=frame.entry_policy)
+                            session_id=request.session_id, run_id=frame.run_id, policy=frame.entry_policy,
+                            durable=durable_task_for(durable_session, frame.run_id))
     # Single task entry: project/research/hybrid/readonly share one
     # run_task_mode (same TaskSession/tool loop); ResearchPipeline and project
     # review stay as workflow strategies. Auto's first answer is gated;

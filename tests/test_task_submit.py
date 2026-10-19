@@ -7,7 +7,7 @@ from unittest import mock
 
 from codey.app import task_submit
 from codey.app.provider_registry import ProviderRegistry
-from codey.automation.browser_worker import BrowserWorkerBusy
+from codey.durable import DurableSession, MemoryDurableStore
 
 
 def _fake_reserved(run_id="run-1"):
@@ -18,10 +18,22 @@ class _FakeState:
     def __init__(self, reserved=True):
         self.lock = threading.Lock()
         self.providers = ProviderRegistry()
+        self.durable = DurableSession(MemoryDurableStore())
+        self.durable_scheduler = SimpleNamespace(claim=mock.Mock(), retry=mock.Mock())
         self.reserved = reserved
         self.released: list[str] = []
         self.expired: list[str] = []
         self.run_registry = SimpleNamespace(stop_flag=SimpleNamespace(is_set=lambda: False))
+
+    def admit_and_claim(self, session_id: str, run_id: str, task: str) -> None:
+        self.durable.admit_input(
+            conversation_id=session_id,
+            request_id=run_id,
+            task_id=run_id,
+            text=task,
+            provider_snapshot={"provider_id": "deepseek"},
+        )
+        self.durable.claim_task(run_id)
 
     def reserve_run(self, **kwargs):
         return _fake_reserved() if self.reserved else None
@@ -61,11 +73,14 @@ class TaskSubmitTests(unittest.TestCase):
             task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
         self.assertEqual(state.released, ["run-1"])
 
-    def test_submit_task_raises_busy_and_releases(self) -> None:
+    def test_submit_task_retains_durable_admission_when_worker_queue_is_full(self) -> None:
         state = _FakeState(reserved=True)
-        with mock.patch.object(task_submit, "submit_browser_task", return_value=False), self.assertRaises(BrowserWorkerBusy):
-            task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
-        self.assertEqual(state.released, ["run-1"])
+        with mock.patch.object(task_submit, "submit_browser_task", return_value=False):
+            run_id = task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
+        self.assertEqual(run_id, "run-1")
+        self.assertEqual(state.released, [])
+        self.assertEqual(state.durable.task("run-1").phase, "accepted")
+        state.durable_scheduler.retry.assert_called_once_with("run-1")
 
     def test_submit_task_rejects_invalid_policy_before_reserve(self) -> None:
         import os
@@ -102,6 +117,7 @@ class TaskSubmitTests(unittest.TestCase):
         import os
 
         state = _FakeState(reserved=True)
+        state.admit_and_claim("s", "run-9", "t")
         with (
             mock.patch.dict(os.environ, {"REVIEW_POLICY": "require_weeb"}),
             self.assertRaises(ValueError),
@@ -109,6 +125,7 @@ class TaskSubmitTests(unittest.TestCase):
             task_submit.run_task(
                 "s", None, "t", 8, False, "deepseek", "auto", "run-9",
                 get_state=lambda: state,
+                attempt_token=state.durable.task("run-9").attempt_token,
             )
         self.assertEqual(state.released, ["run-9"])
 
@@ -116,6 +133,7 @@ class TaskSubmitTests(unittest.TestCase):
         import sys
 
         state = _FakeState(reserved=True)
+        state.admit_and_claim("s", "run-9", "t")
         with (
             mock.patch.dict(sys.modules, {"codey.operations.task_entry": None}),
             self.assertRaises(ImportError),
@@ -123,6 +141,7 @@ class TaskSubmitTests(unittest.TestCase):
             task_submit.run_task(
                 "s", None, "t", 8, False, "deepseek", "auto", "run-9",
                 get_state=lambda: state,
+                attempt_token=state.durable.task("run-9").attempt_token,
                 review_policy="web_if_available",
             )
         self.assertEqual(state.released, ["run-9"])
@@ -165,10 +184,10 @@ class TaskSubmitTests(unittest.TestCase):
     def test_run_task_uses_captured_state_for_post_entry_cleanup(self) -> None:
         import sys
 
-        state = SimpleNamespace(
-            self_repair=SimpleNamespace(kick_if_idle=mock.Mock()),
-            is_busy=mock.Mock(return_value=False),
-        )
+        state = _FakeState(reserved=True)
+        state.admit_and_claim("s", "run-9", "t")
+        state.self_repair = SimpleNamespace(kick_if_idle=mock.Mock())
+        state.is_busy = mock.Mock(return_value=False)
         holder = {"calls": 0}
 
         def get_state():
@@ -189,6 +208,7 @@ class TaskSubmitTests(unittest.TestCase):
             task_submit.run_task(
                 "s", None, "t", 8, False, "deepseek", "auto", "run-9",
                 get_state=get_state,
+                attempt_token=state.durable.task("run-9").attempt_token,
                 review_policy="web_if_available",
             )
 

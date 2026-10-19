@@ -111,11 +111,16 @@ _MODE_PROJECTIONS: dict[str, _ModeProjection] = {
 
 
 def resolve_task_kind(request: TaskSubmission) -> str:
-    intent = (request.intent or "auto").strip().lower()
+    return resolve_task_kind_values(request.project, request.intent)
+
+
+def resolve_task_kind_values(project: str | None, intent: str | None) -> str:
+    """Resolve mode from the admitted request fields without live settings."""
+    intent = (intent or "auto").strip().lower()
     rule = _INTENT_RULES.get(intent)
     if rule is not None:
-        return rule.with_project if request.project else rule.without_project
-    return "project" if request.project else "chat"
+        return rule.with_project if project else rule.without_project
+    return "project" if project else "chat"
 
 
 def startup_failover_mode(task_kind: str) -> str:
@@ -146,6 +151,7 @@ def trace_mode(kind: str, project: str | None) -> str:
 __all__ = [
     "conversation_mode",
     "resolve_task_kind",
+    "resolve_task_kind_values",
     "startup_failover_mode",
     "trace_mode",
     "ui_mode",

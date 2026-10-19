@@ -63,20 +63,27 @@ def test_boolean_reasoning_model_exposes_on_off_control_and_sends_thinking_flag(
 
 
 def test_removed_connection_stays_readable_and_cannot_silently_send_to_default(page):  # noqa: F811 -- imported pytest fixture
+    durable = page.codey_context.durable
+    if durable.has_conversation("a"):
+        durable.delete_conversation("a")
+    durable.create_conversation("a")
+    durable.append_message("a", "assistant_message", {"text": "Stored answer"})
     state = {"active_id": "a", "projects": [], "sessions": [{"id": "a", "provider": "retired-api", "title": "Old chat",
-             "messages": [{"type": "asst", "text": "Stored answer"}],
              "modelSelection": {"connection_id": "retired-api", "model": "old-model", "efforts": {}}}]}
     page.route("**/api/ui_state", lambda route: route.fulfill(json={"state": state}))
     requests = []
     page.route("**/api/run", lambda route: (requests.append(route.request.post_data_json), route.fulfill(status=400, json={"error": "unsupported provider"})))
-    page.reload()
-    expect(page.locator(".msg.asst")).to_contain_text("Stored answer")
-    page.locator("#task").fill("continue")
-    expect(page.locator("#send")).to_be_disabled()
-    page.locator("#task").press("Enter")
-    assert requests == []
-    expect(page.locator("#task")).to_have_value("continue")
-    assert page.evaluate("UiState.current().sessions.find(s=>s.id==='a').provider") == "retired-api"
+    try:
+        page.reload()
+        expect(page.locator(".msg.asst")).to_contain_text("Stored answer")
+        page.locator("#task").fill("continue")
+        expect(page.locator("#send")).to_be_disabled()
+        page.locator("#task").press("Enter")
+        assert requests == []
+        expect(page.locator("#task")).to_have_value("continue")
+        assert page.evaluate("UiState.current().sessions.find(s=>s.id==='a').provider") == "retired-api"
+    finally:
+        durable.delete_conversation("a")
 
 
 def test_original_chat_send_does_not_take_effort_from_currently_visible_chat(page):  # noqa: F811 -- imported pytest fixture
@@ -86,7 +93,7 @@ def test_original_chat_send_does_not_take_effort_from_currently_visible_chat(pag
     page.evaluate("""() => {
       ProviderUI.applyConfig({default:'deepseek',providers:[{id:'deepseek',label:'DeepSeek'},{id:'zen',label:'OpenCode Zen'}]});
       ProviderUI.applyApiModels([{id:'zen',models:[{id:'model',name:'Model',efforts:['low','high']}]}]);
-      const sessions = UiState.current().sessions;
+          const sessions = window.sessions;
       sessions[0].provider='zen'; sessions[0].modelSelection={connection_id:'zen',model:'model',effort:'low'};
       sessions[1].provider='zen'; sessions[1].modelSelection={connection_id:'zen',model:'model',effort:'high'};
       switchSession('b');

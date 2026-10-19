@@ -46,6 +46,7 @@ from codey.app import provider_services as provider_services
 from codey.app import task_submit as task_submit
 from codey.app.context import AppContext
 from codey.app.documents import document_response
+from codey.app.durable_events import replay_commits
 from codey.app.event_payloads import machine_event_payload
 from codey.app.http_plumbing import (
     WEB_DIR,
@@ -54,13 +55,14 @@ from codey.app.http_plumbing import (
     send_file,
     send_index,
     send_json,
-    sse_replay_cursor,
+    sse_cursor,
     validate_web_root,
     write_sse_event,
 )
 from codey.app.input_queue_routes import bind_input_queue, input_action_response, inputs_response
 from codey.app.operator_auth import OperatorAuth
-from codey.app.question_routes import question_answer_response, questions_response, recover_answers
+from codey.app.question_routes import question_answer_response, questions_response
+from codey.app.workflow_routes import workflow_fork_response, workflow_history_response
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.task.model import TaskInput
@@ -69,6 +71,28 @@ FOLDER_DIALOG_LOCK = threading.Lock()
 SHELL_CONTINUATION_IDLE_TIMEOUT = task_submit.SHELL_CONTINUATION_IDLE_TIMEOUT
 MAX_POST_BODY_BYTES = 16 * 1024 * 1024
 POST_BODY_READ_TIMEOUT = 10.0
+
+
+def _event_commit_seq(event: object) -> int:
+    if not isinstance(event, dict):
+        return 0
+    value = event.get("commit_seq")
+    return value if type(value) is int and value > 0 else 0
+
+
+def _is_replayed_durable_commit(event: object, durable_cursor: int) -> bool:
+    """Drop the EventBus copy after the durable commit was replayed.
+
+    Durable commits are reconstructed from SQLite first because the in-memory
+    EventBus is lost on restart.  A still-retained EventBus replay can contain
+    the same ``durable_commit`` projection, so sending both copies would make
+    the browser apply one committed fact twice.  Other runtime events remain
+    eligible for EventBus replay.
+    """
+    if not isinstance(event, dict) or event.get("type") != "durable_commit":
+        return False
+    commit_seq = _event_commit_seq(event)
+    return commit_seq > 0 and commit_seq <= max(0, int(durable_cursor))
 
 
 class CodeyHTTPServer(ThreadingHTTPServer):
@@ -289,8 +313,8 @@ def _transcript_route(ctx: AppContext, session_id: str, query: dict[str, list[st
     try:
         before = str((query.get("before") or [""])[0]) or None
         limit = int((query.get("limit") or ["100"])[0])
-        return 200, ctx.transcript_store.page(session_id, before=before, limit=limit)
-    except (ValueError, TypeError) as exc:
+        return 200, ctx.durable.history_page(session_id, before=before, limit=limit)
+    except (KeyError, ValueError, TypeError) as exc:
         return 400, {"ok": False, "error": str(exc)}
 
 
@@ -298,7 +322,11 @@ def _transcript_search_route(ctx: AppContext, session_id: str, query: dict[str, 
     value = str((query.get("q") or [""])[0])
     if len(value) > 200:
         return 400, {"ok": False, "error": "query too long"}
-    return 200, {"schema_version": 1, "session_id": session_id, "hits": ctx.transcript_store.search(session_id, value)}
+    try:
+        hits = ctx.durable.search_history(session_id, value)
+    except KeyError as exc:
+        return 404, {"ok": False, "error": str(exc)}
+    return 200, {"schema_version": 1, "session_id": session_id, "hits": hits}
 
 
 def _execution_output_route(ctx: AppContext, execution_id: str, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
@@ -319,6 +347,7 @@ def _execution_output_route(ctx: AppContext, execution_id: str, query: dict[str,
 
 
 _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, dict[str, Any]]]] = {
+    "/api/workflows": workflow_history_response,
     "/api/inputs": inputs_response,
     "/api/questions": questions_response,
     "/api/model_settings": lambda ctx, _query: model_settings.settings_response(ctx),
@@ -338,6 +367,7 @@ _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, d
 
 
 _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[str, Any]]]] = {
+    "/api/workflows/fork": workflow_fork_response,
     "/api/inputs": input_action_response,
     "/api/questions": question_answer_response,
     "/api/model_settings": model_settings.save_response,
@@ -588,20 +618,47 @@ class Handler(BaseHTTPRequestHandler):
         if not raw_header:
             query = parse_qs(urlparse(self.path).query)
             raw_header = (query.get("last_event_id") or [""])[0]
-        replay_cursor = sse_replay_cursor(raw_header)
+        replay_cursor, header_commit_cursor = sse_cursor(raw_header)
+        query = parse_qs(urlparse(self.path).query)
+        raw_commit_cursor = (query.get("after_commit_seq") or [""])[0]
+        try:
+            commit_cursor = int(raw_commit_cursor) if raw_commit_cursor else header_commit_cursor
+            commit_cursor = max(commit_cursor, header_commit_cursor)
+        except ValueError:
+            commit_cursor = 0
         state = get_state()
         q = state.subscribe()
         try:
-            if not self._write_sse_event({"type": "hello", "status": state.run_status()}):
+            high_water = state.durable.commit_sequence()
+            database_id = state.durable.database_id
+            client_database_id = (query.get("database_id") or [""])[0]
+            replay_requested = replay_cursor > 0 or commit_cursor > 0 or bool(client_database_id)
+            if client_database_id != database_id or commit_cursor > high_water:
+                commit_cursor = 0
+            if not self._write_sse_event({
+                "type": "hello", "status": state.run_status(),
+                "database_id": database_id, "after_commit_seq": commit_cursor,
+            }):
                 return
-            if replay_cursor is not None:
-                for event_id, replay in state.replay_events_after(
-                    replay_cursor,
-                    max_event_id=q.replay_cutoff,
-                ):
-                    public = machine_event_payload(replay) or replay
-                    if not self._write_sse_event(public, event_id=event_id):
+            if replay_requested:
+                for record in replay_commits(state.durable, commit_cursor):
+                    commit_cursor = record.sequence
+                    if not self._write_sse_event(
+                        record.to_payload(),
+                        event_id=f"{q.replay_cutoff}:{commit_cursor}",
+                    ):
                         return
+                if replay_cursor > 0:
+                    for event_id, replay in state.replay_events_after(
+                        replay_cursor,
+                        max_event_id=q.replay_cutoff,
+                    ):
+                        public = machine_event_payload(replay) or replay
+                        if _is_replayed_durable_commit(public, commit_cursor):
+                            continue
+                        commit_cursor = max(commit_cursor, _event_commit_seq(public))
+                        if not self._write_sse_event(public, event_id=f"{event_id}:{commit_cursor}"):
+                            return
             while True:
                 try:
                     ev = q.get(timeout=15)
@@ -613,12 +670,18 @@ class Handler(BaseHTTPRequestHandler):
                         break
                     continue
                 public = machine_event_payload(ev) or ev
-                if not self._write_sse_event(public, event_id=getattr(ev, "event_id", 0)):
+                if _is_replayed_durable_commit(public, commit_cursor):
+                    continue
+                commit_cursor = max(commit_cursor, _event_commit_seq(public))
+                if not self._write_sse_event(
+                    public,
+                    event_id=f"{getattr(ev, 'event_id', 0)}:{commit_cursor}",
+                ):
                     break
         finally:
             state.unsubscribe(q)
 
-    def _write_sse_event(self, event: dict[str, Any], *, event_id: int = 0) -> bool:
+    def _write_sse_event(self, event: dict[str, Any], *, event_id: int | str = 0) -> bool:
         written: bool = write_sse_event(self, event, event_id=event_id)
         return written
 
@@ -646,10 +709,8 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
         httpd = CodeyHTTPServer((host, port), Handler)
         actual_port = httpd.server_address[1]
         url = f"http://{host}:{actual_port}/"
-        print(f"[codey] UI ready: {url}")
         launch_url = httpd.launch_url(url)
         bind_input_queue(get_state())
-        recover_answers(get_state())
 
         def _run_httpd() -> None:
             assert httpd is not None
@@ -658,6 +719,7 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
 
         threading.Thread(target=_run_httpd, daemon=True).start()
         http_thread_started = True
+        print(f"[codey] UI ready: {url}")
     except BaseException:
         if httpd is not None:
             if http_thread_started:
