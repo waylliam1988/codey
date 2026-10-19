@@ -46,3 +46,19 @@ def test_durable_input_projection_survives_app_restart(tmp_path: Path) -> None:
         assert len(restarted.durable.entries("chat")) == 1
     finally:
         restarted.close()
+
+
+def test_queued_input_remove_commits_an_abort_without_creating_another_task(tmp_path: Path) -> None:
+    root = tmp_path / "state"
+    run_id = "run_" + "c" * 32
+    state = AppContext(root, start_scheduler=False)
+    try:
+        item = state.input_queue.create("input-one", _request(run_id))
+        removed = state.input_queue.remove("input-one", int(item["revision"]))
+
+        assert removed["state"] == "cancelled"
+        assert state.durable.task(run_id).status.value == "cancelled"
+        assert state.durable.store.submission(state.durable.task(run_id).submission_id).reason == "aborted"
+        assert len(state.durable.tasks()) == 1
+    finally:
+        state.close()

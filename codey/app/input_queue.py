@@ -186,7 +186,24 @@ class DurableConversationInputQueue:
         raise ValueError("durable input entries are immutable; submit a new request")
 
     def remove(self, identity: str, revision: int) -> dict[str, Any]:
-        raise ValueError("durable input cancellation is handled by task control")
+        with self.lock:
+            item = self.get(identity)
+            if item is None:
+                raise KeyError(f"unknown input identity: {identity}")
+            if int(item["revision"]) != int(revision):
+                raise ValueError("input revision conflict")
+            if item["state"] != "queued":
+                raise ValueError("input is already placed or settled")
+            request = item["request"]
+            if not isinstance(request, Mapping) or not isinstance(request.get("run_id"), str):
+                raise ValueError("durable input request is missing run_id")
+            self.durable.request_cancel(str(request["run_id"]), reason="aborted", expected_revision=int(revision))
+            updated = self.get(identity)
+        if updated is None:
+            raise RuntimeError("durable input cancellation did not produce a projection")
+        self.emit({"type": "conversation_input", "session_id": request.get("session_id", ""), "input": updated})
+        self.wake.set()
+        return updated
 
     def resume(self, identity: str, revision: int) -> dict[str, Any]:
         raise ValueError("durable input resumption is handled by task scheduler")

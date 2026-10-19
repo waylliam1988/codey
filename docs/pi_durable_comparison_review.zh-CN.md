@@ -655,3 +655,24 @@ mypy / pyrefly / ty / ruff 全部通过
 
 这仍不是完整 Pi index kernel：跨 Session 的 reverse index 需要从 durable commit 重建，等待关系的删除/修改也还没有独立索引表；当前实现优先保证语义和恢复正确，再在性能段决定是否需要持久化 placement/index。
 
+## 18. 第十五段：queued input 的 durable abort
+
+Pi 的 queued submission 可以在进入 active run 前撤回；撤回只改变 queued input 的提交状态，不创建第二个 task，也不依赖 UI 或旧 input SQLite。Codey 原先的 `DurableConversationInputQueue.remove()` 仍然直接抛错，queued input 只能通过较底层的 task control 处理，浏览器输入 facade 没有完整语义。
+
+本段已完成：
+
+- `remove(identity, revision)` 读取 durable input projection，校验 request identity、revision 和 queued 状态；
+- 通过 `DurableSession.request_cancel(..., reason="aborted")` 在同一 durable task/submission 事实源提交取消；
+- 取消后 projection 变为 `cancelled`，submission reason 为 `aborted`，task 数量不增加；
+- 事件和 wakeup 仍由 input projection facade 发布，未恢复旧 `conversation_inputs.sqlite3`；
+- 已 placed/running input 仍拒绝通过 queued remove 路径撤回，避免绕过 active task cancellation barrier。
+
+红测与相关 task failure contract：
+
+```text
+27 passed
+mypy / pyrefly / ty / ruff 全部通过
+```
+
+这只是 inbox parity 的第一步。Codey 仍没有 Pi 的独立 queued/placed document、steer/follow-up first/all placement 和 passive write 策略；下一段需要先定义 placement mutation 的事实边界，再决定是否扩展 submission 模型，不能重新引入第二个 queue store。
+
