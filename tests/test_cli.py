@@ -483,7 +483,7 @@ class ProviderCliTests(unittest.TestCase):
         self.assertIn("affinity", payload)
         self.assertIn("affinity_events", payload["affinity"])
 
-    def test_cmd_ghost_reset_deletes_sleep_files_without_router(self) -> None:
+    def test_cmd_ghost_reset_clears_sqlite_facts_without_router(self) -> None:
         from codey.ghost.affinity import GhostAffinityStore
         from codey.ghost.sleep import GhostSleepStore
         from codey.knowledge.research_interest import ResearchInterestCandidate
@@ -510,20 +510,19 @@ class ProviderCliTests(unittest.TestCase):
                 ),),
                 session_id="s1",
             )
-            self.assertTrue(sleep.state_path.exists())
-            self.assertTrue(sleep.events_path.exists())
-            self.assertTrue(affinity.projection_path.exists())
-            self.assertTrue(affinity.events_path.exists())
+            ghost_database = Path(td) / "ghost.sqlite3"
+            self.assertTrue(ghost_database.exists())
             args = mock.Mock(ghost_cmd="reset", state_home=td, yes=True)
             stdout = io.StringIO()
 
             with mock.patch("sys.stdout", stdout):
                 exit_code = cli.cmd_ghost(args)
 
-            self.assertFalse(sleep.state_path.exists())
-            self.assertFalse(sleep.events_path.exists())
-            self.assertFalse(affinity.projection_path.exists())
-            self.assertFalse(affinity.events_path.exists())
+            self.assertTrue(ghost_database.exists())
+            self.assertEqual(sleep.export_state()["sleep"], {})
+            self.assertEqual(sleep.export_state()["sleep_events"], [])
+            self.assertEqual(affinity.export_state()["affinity"]["nodes"], [])
+            self.assertEqual(affinity.export_state()["affinity"]["edges"], [])
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(exit_code, 0)
