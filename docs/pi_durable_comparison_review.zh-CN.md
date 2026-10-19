@@ -1460,4 +1460,22 @@ Codey 现在在 provider generation 的 durable transaction 边界上超过此�
 - shell/provider 真实长请求与子进程 abort cleanup 的端到端测试仍待完成；
 - InboxDoc snapshot/history、Runtime JSONL 降级清理、AppContext 与巨型模块拆分仍待完成。
 
+## 43. 第三十九段：InboxDoc snapshot/history
+
+本段把提交入口的排队输入做成可重建的 durable InboxDoc。它不是新的事实源：snapshot 从 durable submissions、tasks 和 conversation revision 读取，history 从 durable commit projections 重建；因此重启后不需要依赖 UI 缓存、Runtime JSONL 或内存队列。
+
+### 43.1 已完成
+
+- 新增 `InboxItem`、`InboxDoc` 和 `InboxHistoryEvent` 窄模型；
+- `DurableSession.inbox_doc()` 返回当前 queued submissions 的快照，并带 schema version、conversation revision 和稳定 digest；
+- `DurableSession.inbox_history()` 从 durable commit cursor 重建 admission/progress 事件，缺失的 request id 从 durable submission 补回；
+- admission 与 progress projection 在同一 durable commit 发布，SQLite 重启后 snapshot/history 保持一致；
+- 不新增 schema 表，保持 `SCHEMA_VERSION = 1`，InboxDoc 不拥有任务、提交或 UI 状态。
+
+### 43.2 与 Pi 的结果
+
+Codey 现在在输入队列的 snapshot/history 可重建性上达到 Pi durable 所需的持久化语义，并继续保留 request id 幂等、权限审批、provider snapshot 和 effect fail-closed。InboxDoc 只是 durable projection，不能反向修改事实。
+
+最后一个大块仍待完成：清理 Runtime JSONL 的生产接线、收拢 AppContext 的生命周期边界、删除死代码和重复 wiring，并对 DurableSession/SQLiteDurableStore 做有证据的模块卫生审查；这些完成后再统一更新最终的 Pi 对照结论。
+
 

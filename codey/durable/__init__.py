@@ -8,6 +8,7 @@ from codey.durable.errors import (
     SessionFailedError,
     SessionSealedError,
 )
+from codey.durable.inbox import InboxDoc, InboxHistoryEvent, InboxItem
 from codey.durable.memory import MemoryDurableStore
 from codey.durable.model import (
     TASK_CHECKPOINT_SCHEMA_VERSION,
@@ -41,6 +42,9 @@ __all__ = [
     "AbortInvocation",
     "ArtifactRecord",
     "ContextSnapshot",
+    "InboxDoc",
+    "InboxHistoryEvent",
+    "InboxItem",
     "CommitResult",
     "DurableMutation",
     "DurableSession",

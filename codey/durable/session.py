@@ -20,6 +20,12 @@ from codey.durable.errors import (
     SessionFailedError,
     SessionSealedError,
 )
+from codey.durable.inbox import (
+    InboxDoc,
+    InboxHistoryEvent,
+    history_event_from_projection,
+    item_from_record,
+)
 from codey.durable.model import (
     EXECUTION_STATE_KEYS,
     ApprovalRecord,
@@ -381,6 +387,53 @@ class DurableSession:
     @_mutation_line
     def queued_submissions(self, conversation_id: str | None = None) -> tuple[SubmissionRecord, ...]:
         return tuple(self.store.queued_submissions(conversation_id))
+
+    @_mutation_line
+    def inbox_doc(self, conversation_id: str) -> InboxDoc:
+        """Return the current queued inbox snapshot from durable submissions."""
+        _head, revision = self.store.head(conversation_id)
+        tasks = {
+            task.submission_id: task.task_id
+            for task in self.store.tasks()
+            if task.conversation_id == conversation_id
+        }
+        items = tuple(
+            item_from_record(record, task_id=tasks.get(record.submission_id))
+            for record in self.store.queued_submissions(conversation_id)
+        )
+        return InboxDoc(conversation_id, revision, items)
+
+    @_mutation_line
+    def inbox_history(self, conversation_id: str) -> tuple[InboxHistoryEvent, ...]:
+        """Rebuild inbox transitions from durable commit projections."""
+        events: list[InboxHistoryEvent] = []
+        cursor = 0
+        while True:
+            records = self.store.commits_after(cursor, limit=512)
+            if not records:
+                break
+            for record in records:
+                cursor = max(cursor, record.sequence)
+                if record.payload.get("session_id") != conversation_id:
+                    continue
+                projections = record.payload.get("projections", ())
+                if not isinstance(projections, (list, tuple)):
+                    continue
+                for projection in projections:
+                    if not isinstance(projection, Mapping):
+                        continue
+                    event = history_event_from_projection(record.sequence, conversation_id, projection)
+                    if event is not None:
+                        if not event.request_id:
+                            try:
+                                request_id = self.store.submission(event.submission_id).request_id
+                            except KeyError:
+                                request_id = ""
+                            event = replace(event, request_id=request_id)
+                        events.append(event)
+            if len(records) < 512:
+                break
+        return tuple(events)
 
     @_mutation_line
     def withdraw_queued_submission_at(

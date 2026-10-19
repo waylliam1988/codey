@@ -28,6 +28,16 @@ def mutation_projection(mutation: DurableMutation) -> dict[str, object]:
         {"type": "entry_appended", "entry_id": entry.entry_id, "kind": entry.kind}
         for entry in mutation.entries
     ])
+    submission = mutation.submission
+    if submission is not None:
+        projections.append({
+            "type": "submission_admitted",
+            "submission_id": submission.submission_id,
+            "request_id": submission.request_id,
+            "status": submission.status,
+            "placement": submission.placement,
+            "mode": submission.mode,
+        })
     task = mutation.task
     if task is not None:
         projections.append({
@@ -48,6 +58,12 @@ def mutation_projection(mutation: DurableMutation) -> dict[str, object]:
     update = mutation.submission_update
     updates = ((update,) if update is not None else ()) + mutation.submission_updates
     for update in updates:
+        projections.append({
+            "type": "submission_progressed",
+            "submission_id": update.submission_id,
+            "status": update.status,
+            "placement": update.placement,
+        })
         if update.status in {
             SubmissionStatus.DONE, SubmissionStatus.UNANSWERED, SubmissionStatus.CANCELLED,
         }:
