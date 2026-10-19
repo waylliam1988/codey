@@ -453,6 +453,7 @@ class DurableSession:
         kind: str,
         data: Mapping[str, object],
         display_only: bool = True,
+        head: str | None = None,
         placement: SubmissionPlacement | str = SubmissionPlacement.PLACED,
     ) -> CommitResult:
         return admission.admit_write(
@@ -462,6 +463,7 @@ class DurableSession:
             kind=kind,
             data=data,
             display_only=display_only,
+            head=head,
             placement=placement,
         )
 
@@ -529,20 +531,29 @@ class DurableSession:
         kind = content.get("kind")
         data = content.get("data")
         display_only = content.get("display_only")
+        head_target = content.get("head")
         if (
             not isinstance(kind, str)
             or not kind
             or not isinstance(data, Mapping)
             or type(display_only) is not bool
+            or (head_target is not None and (not isinstance(head_target, str) or not head_target))
         ):
             raise CommitConflict("queued write content is invalid")
+        if head_target is not None and head_target != "self":
+            visible = {entry.entry_id for entry in self.context(submission.conversation_id)}
+            if head_target not in visible:
+                return self._settle_stale_write(submission)
         head, revision = self.store.head(submission.conversation_id)
+        payload: dict[str, object] = {"data": dict(data), "display_only": display_only}
+        if head_target is not None:
+            payload.update({"head": head_target, "head_marker": True})
         entry = EntryDraft(
             entry_id=f"entry-{uuid.uuid4().hex}",
             conversation_id=submission.conversation_id,
             parent_id=head,
             kind=kind,
-            payload={"data": dict(data), "display_only": display_only},
+            payload=payload,
         )
         update = SubmissionUpdate(
             submission_id=submission.submission_id,
@@ -557,6 +568,20 @@ class DurableSession:
             expected_revision=revision,
             entries=(entry,),
             submission_update=update,
+        ))
+
+    def _settle_stale_write(self, submission: SubmissionRecord) -> CommitResult:
+        _head, revision = self.store.head(submission.conversation_id)
+        return self._commit(DurableMutation(
+            conversation_id=submission.conversation_id,
+            expected_revision=revision,
+            submission_update=SubmissionUpdate(
+                submission_id=submission.submission_id,
+                conversation_id=submission.conversation_id,
+                expected_status=submission.status,
+                status=SubmissionStatus.UNANSWERED,
+                reason="stale",
+            ),
         ))
 
     @_mutation_line

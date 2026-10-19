@@ -219,10 +219,10 @@ def context(session: Any, conversation_id: str, *, leaf_id: str | None = None) -
     leaf = leaf_id
     if leaf is None:
         leaf, _revision = session.store.head(conversation_id)
-    return context_path(
+    return _apply_head_cut(context_path(
         conversation_id, leaf,
         entries=session.store.entries, parent=session.store.conversation_parent,
-    )
+    ))
 
 
 def context_at(
@@ -244,12 +244,22 @@ def context_at(
         leaf = local[-1].entry_id if local else session.store.conversation_parent(conversation_id)[1]
     else:
         leaf = leaf_id
-    return context_path(
+    return _apply_head_cut(context_path(
         conversation_id,
         leaf,
         entries=visible,
         parent=session.store.conversation_parent,
-    )
+    ))
+
+
+def _apply_head_cut(path: tuple[EntryDraft, ...]) -> tuple[EntryDraft, ...]:
+    """Apply the newest durable head marker to the visible context range."""
+    for index in range(len(path) - 1, -1, -1):
+        payload = thaw_json(path[index].payload)
+        if not isinstance(payload, Mapping) or payload.get("head_marker") is not True:
+            continue
+        return path[index:]
+    return path
 
 
 def context_snapshot_at(

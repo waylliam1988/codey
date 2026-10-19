@@ -297,3 +297,77 @@ def test_display_only_write_can_land_while_a_task_is_active() -> None:
     assert session.store.submission(str(result.submission_id)).status is SubmissionStatus.DONE
     assert [entry.kind for entry in session.entries("chat")] == ["user_message", "notice"]
     assert session.task("active").status is TaskStatus.RUNNING
+
+
+def test_head_self_write_cuts_older_context(session: DurableSession) -> None:
+    session.create_conversation("chat")
+    session.append_message("chat", "user_message", {"text": "old"})
+
+    result = session.admit_write(
+        conversation_id="chat",
+        request_id="reset-1",
+        kind="compaction",
+        data={"summary": "fresh range"},
+        display_only=False,
+        head="self",
+    )
+
+    assert session.store.submission(str(result.submission_id)).status is SubmissionStatus.DONE
+    snapshot = session.context_snapshot("chat", token_budget=100)
+    assert snapshot.entry_ids == (session.entries("chat")[-1].entry_id,)
+    assert "old" not in snapshot.entry_ids
+
+
+def test_queued_head_write_becomes_stale_after_range_reset(session: DurableSession) -> None:
+    session.create_conversation("chat")
+    old = session.append_message("chat", "user_message", {"text": "old"})
+    session.admit_input(
+        conversation_id="chat", request_id="active", task_id="active",
+        text="working", provider_snapshot={},
+    )
+    session.start_task("active", state={})
+    queued = session.admit_write(
+        conversation_id="chat",
+        request_id="stale-summary",
+        kind="compaction",
+        data={"summary": "too old"},
+        display_only=False,
+        head=old.entry_id,
+        placement=SubmissionPlacement.QUEUED,
+    )
+    session.admit_write(
+        conversation_id="chat",
+        request_id="reset-1",
+        kind="compaction",
+        data={"summary": "new range"},
+        display_only=False,
+        head="self",
+    )
+    session.complete_task("active", "done", state={})
+
+    scheduler = DurableTaskScheduler(session, lambda _task: True)
+    scheduler._reconcile()
+    scheduler.close()
+
+    submission = session.store.submission(str(queued.submission_id))
+    assert submission.status is SubmissionStatus.UNANSWERED
+    assert submission.reason == "stale"
+    assert [entry.kind for entry in session.entries("chat")].count("compaction") == 1
+
+
+def test_head_write_target_in_current_range_places(session: DurableSession) -> None:
+    session.create_conversation("chat")
+    old = session.append_message("chat", "user_message", {"text": "old"})
+    result = session.admit_write(
+        conversation_id="chat",
+        request_id="summary-1",
+        kind="compaction",
+        data={"summary": "covers old"},
+        display_only=False,
+        head=old.entry_id,
+        placement=SubmissionPlacement.QUEUED,
+    )
+
+    session.place_submission(str(result.submission_id))
+    assert session.store.submission(str(result.submission_id)).status is SubmissionStatus.DONE
+    assert [entry.kind for entry in session.context("chat")] == ["compaction"]

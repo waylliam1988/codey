@@ -809,7 +809,33 @@ ruff：All checks passed
 ### 22.3 与 Pi 仍有差距
 
 - 当前 `admit_write()` 只实现 display-only payload，尚未支持带 model/head/edits 的完整 passive entry draft；
-- 尚未实现 `head: "self"` reset、head cutoff、stale write settlement 和 postTools/final 的事务边界；
+- `head`/reset/stale 的第一层语义已在下一段补齐，但仍未与完整 passive entry draft 和 postTools/final 事务边界合并；
 - queued write 的提交顺序已经 durable，但还没有 Pi `pi.inbox` document 那样的 position-based removal 和 fork-local inbox snapshot。
+
+## 23. 第十九段：head range 与 stale write
+
+本段把 write 从“只会追加普通 entry”推进到可验证的 context range 语义。head 信息作为 submission content 和 entry payload 的 durable 事实保存，恢复时不依赖内存窗口或 JSONL 推断。
+
+### 23.1 已完成
+
+- `DurableSession.admit_write(..., head="self")` 创建 head marker；`conversation_ops.context()` 和 `context_at()` 始终应用最新 marker，只暴露 marker 及其后的当前 range；
+- queued head write 在 placement 前重新读取当前 durable context；目标 entry 已不在当前 range 时，不追加 entry，而是原子结算 `SubmissionStatus.UNANSWERED`、`reason="stale"`；
+- 当前 range 内的 head write 正常 placement，并与 submission `DONE` 在同一 commit 中完成；
+- head write 禁止标记为 display-only，避免 UI-only entry 意外改变 provider context；
+- Memory/SQLite 都通过相同的 head cutoff、stale settlement 和重启可读性测试；schema 仍严格为 `SCHEMA_VERSION = 1`。
+
+### 23.2 验证
+
+```text
+inbox/head/stale + scheduler + context + fork + session 回归：127 passed
+mypy：Success
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+```
+
+### 23.3 当前相对 Pi 的结果
+
+Codey 现在已经具备 Pi head marker 的核心恢复性质：旧 context 不会在 reset 后重新进入 provider 请求，过期 queued summary 不会制造幽灵 entry，并且 stale 原因属于 durable submission 状态。仍未完成的是完整 `EntryDraft` 的 `model/head/edits` 结构、position-based inbox removal、postTools/final 同事务 boundary，以及 fork-local inbox document。
 
 

@@ -173,6 +173,7 @@ def admit_input(
 def admit_write(
     session: DurableSession, *, conversation_id: str, request_id: str,
     kind: str, data: Mapping[str, object], display_only: bool = True,
+    head: str | None = None,
     placement: SubmissionPlacement | str = SubmissionPlacement.PLACED,
 ) -> CommitResult:
     """Durably admit one passive entry write without creating a task."""
@@ -182,12 +183,20 @@ def admit_write(
         raise ValueError("write data must be an object")
     if type(display_only) is not bool:
         raise ValueError("display_only must be boolean")
+    head_target = head
+    if head_target is not None and (not isinstance(head_target, str) or not head_target):
+        raise ValueError("head must be 'self' or a non-empty entry ID")
+    if head_target is not None and display_only:
+        raise ValueError("head writes cannot be display-only")
     placement = SubmissionPlacement(placement)
-    content = {"kind": kind, "data": dict(data), "display_only": display_only}
+    content: dict[str, object] = {"kind": kind, "data": dict(data), "display_only": display_only}
+    if head_target is not None:
+        content["head"] = head_target
     fingerprint = _fingerprint({
         "kind": kind,
         "data": content["data"],
         "display_only": display_only,
+        "head": head_target,
         "placement": placement,
         "mode": "write",
     })
@@ -195,19 +204,22 @@ def admit_write(
     if existing is not None:
         return existing
     if session.store.has_conversation(conversation_id):
-        head, revision = session.store.head(conversation_id)
+        current_head, revision = session.store.head(conversation_id)
         creation = None
     else:
-        head, revision = None, 0
+        current_head, revision = None, 0
         creation = CreateConversation()
     entry = None
     if placement is SubmissionPlacement.PLACED:
+        payload: dict[str, object] = {"data": dict(data), "display_only": display_only}
+        if head_target is not None:
+            payload.update({"head": head_target, "head_marker": True})
         entry = EntryDraft(
             entry_id=f"entry-{uuid.uuid4().hex}",
             conversation_id=conversation_id,
-            parent_id=head,
+            parent_id=current_head,
             kind=kind,
-            payload={"data": dict(data), "display_only": display_only},
+            payload=payload,
         )
     submission = SubmissionDraft(
         submission_id=f"submission-{uuid.uuid4().hex}",
