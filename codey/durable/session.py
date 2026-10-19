@@ -1331,16 +1331,11 @@ class DurableSession:
 
     def _owned_descendants(self, task_id: str) -> tuple[TaskCheckpoint, ...]:
         """Return the durable ownership subtree, deepest children first."""
-        tasks = tuple(self.store.tasks())
-        children: dict[str, list[TaskCheckpoint]] = {}
-        for task in tasks:
-            if task.owner_task_id is not None:
-                children.setdefault(task.owner_task_id, []).append(task)
         result: list[TaskCheckpoint] = []
         seen: set[str] = set()
 
         def visit(parent: str) -> None:
-            for child in children.get(parent, ()):
+            for child in self.store.owned_dependents(parent):
                 if child.task_id in seen:
                     continue
                 seen.add(child.task_id)

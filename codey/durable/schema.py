@@ -85,6 +85,12 @@ MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
                 process_id INTEGER NOT NULL CHECK(process_id > 0),
                 claimed_at TEXT NOT NULL
             ) STRICT""",
+            """CREATE TABLE task_owners (
+                owner_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                child_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                PRIMARY KEY(owner_task_id, child_task_id),
+                CHECK(owner_task_id <> child_task_id)
+            ) STRICT""",
             """CREATE TABLE effects (
                 id TEXT PRIMARY KEY,
                 task_id TEXT NOT NULL REFERENCES tasks(id),
@@ -114,6 +120,8 @@ MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
             "CREATE INDEX tasks_by_checkpoint_schema ON tasks(schema_version)",
             "CREATE INDEX task_waiters_by_waited ON task_waiters(waited_task_id)",
             "CREATE INDEX task_waiters_by_waiter ON task_waiters(waiter_task_id)",
+            "CREATE INDEX task_owners_by_owner ON task_owners(owner_task_id)",
+            "CREATE INDEX task_owners_by_child ON task_owners(child_task_id)",
             "CREATE INDEX effects_by_task_digest ON effects(task_id, args_digest)",
             "CREATE INDEX artifacts_by_task ON artifacts(owner_task_id)",
             "CREATE INDEX artifacts_by_effect ON artifacts(owner_effect_id)",

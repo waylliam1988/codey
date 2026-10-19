@@ -1283,4 +1283,40 @@ Codey 现在具备 durable abort mark、普通 invocation signal、独立 abort 
 - provider generation 的 tool settlement、boundary placement、下一 checkpoint 仍需故障注入证明；
 - InboxDoc snapshot/history、Runtime JSONL 清理、AppContext/巨型模块结构审查仍待完成。
 
+## 37. 第三十三段：owner graph durable reverse index
+
+本段收敛 scheduler kernel 的另一处全量扫描差距。此前 `DurableSession._owned_descendants()` 每次取消或 completion finalization 都调用 `store.tasks()`，临时构造 owner-to-child 图；这让 owner 传播依赖扫描推导，重启后也没有明确的 durable graph 查询入口。
+
+### 37.1 已完成
+
+- schema 1 新增 `task_owners(owner_task_id, child_task_id)` 及双向索引；
+- Memory/SQLite 在 task 新建和 checkpoint 更新的同一事务中维护 owner edge；
+- SQLite 重启后可直接读取 `owned_dependents()`，删除 task 时由外键清理边；Memory 使用同语义的 reverse index；
+- `DurableStore.owned_dependents()` 成为明确窄契约；`_owned_descendants()` 只沿 immediate owner edges 递归，不再全量读取所有 tasks；
+- parent cancellation cascade、completion hold/finalization、waiting join 的既有行为保持不变；
+- 冷启动仍是 `SCHEMA_VERSION = 1`，没有 migration、旧 graph fallback 或重复的 runtime owner projection。
+
+### 37.2 验证
+
+```text
+test_owner_reverse_index.py：2 passed
+task ownership/finalization + waiting reverse index + store contract：56 passed
+mypy：Success: no issues found in 5 source files
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 37.3 与 Pi 的结果
+
+Codey 现在在 owner/downward graph 的 durable reverse lookup 上达到 Pi scheduler kernel 的关键语义，并保留 task ownership cycle 校验、CAS、attempt fencing、取消屏障和 fail-closed effect 规则。取消传播与 completion finalization 不再依赖全量 task scan。
+
+仍低于 Pi 或尚未完成的部分：
+
+- finalization/fail-fast 的专用候选集合和 commit-driven 局部 reconcile 仍可继续收敛；
+- provider generation 的 settlement、boundary placement、下一 checkpoint 故障事务仍未完成；
+- abort handler 尚未在真实 shell/provider host 中接入；
+- InboxDoc snapshot/history、Runtime JSONL 清理、AppContext/巨型模块结构审查仍待进行。
+
 
