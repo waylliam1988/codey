@@ -876,4 +876,39 @@ SCHEMA_VERSION = 1
 - scheduler 的 background ownership、完整 abort handler、close join 和跨进程 DB open fencing；
 - artifact 一等 durable metadata、旧 projection 清理以及 AppContext/巨型模块的结构审查。
 
+## 25. 第二十一段：按 durable position 撤回 queued submission
+
+本段对照 Pi `InboxDoc.items` 的数组语义，修正 Codey queued submission 的顺序和撤回边界。此前 Memory 依赖字典插入顺序，SQLite 依赖 `rowid`；两者虽然通常一致，却没有把 inbox position 写成可证明的 durable 规则。本段仍只使用 `submissions.commit_seq`，没有新增第二个 inbox 表，也没有改变 `SCHEMA_VERSION = 1`。
+
+### 25.1 已完成
+
+- `MemoryDurableStore` 和 `SQLiteDurableStore` 的 queued 查询都按 admission commit sequence 排序，并支持 conversation scope；顺序不再依赖 Python 字典或 SQLite `rowid`；
+- `DurableSession.withdraw_queued_submission_at(conversation_id, position, expected_submission_id=...)` 经过 mutation line 读取当前队列，位置变化时用 submission ID CAS 拒绝误删；
+- queued write 按位置撤回时在一个 durable commit 中结算 `unanswered/aborted`，不创建 entry；
+- queued input 按位置撤回时同时把 task 置为 terminal `cancelled`、submission 结算为 `unanswered/aborted`，不会留下可调度的孤儿 task；
+- 位置撤回保留 queued write 的显式事实，active task 的普通 abort 路径仍不会误删同 conversation 的 queued writes；
+- Memory/SQLite 共用同一顺序、CAS 和撤回 contract，重启后仍按原 admission 顺序读取。
+
+### 25.2 验证
+
+```text
+inbox + context + scheduler + input authority：61 passed
+mypy：Success
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 25.3 与 Pi 的结果
+
+Codey 已在 durable 内核层补上 Pi positional inbox removal 的核心性质：位置来自持久化提交序号，撤回和 submission/task 结算不可分离，且重复或错位操作会 fail closed。相对于 Pi，Codey 还额外保留 task CAS、attempt fencing 和安全取消语义。
+
+仍未达到完整 Pi inbox document 的部分：
+
+- Web `DurableConversationInputQueue` 仍是输入投影 facade，尚未把 queued passive writes 显示为同一 inbox view；
+- fork 后没有独立的 fork-local inbox snapshot/document；
+- postTools/final boundary 仍由 scheduler 分步调用 placement，尚未在同一个 provider generation mutation 中完成；
+- scheduler reverse index、background ownership、close join 和跨进程 open fencing 仍未完成。
+
 

@@ -469,12 +469,19 @@ class SQLiteDurableStore:
                 content=json.loads(str(row["content"])),
             )
 
-    def queued_submissions(self) -> tuple[SubmissionRecord, ...]:
+    def queued_submissions(self, conversation_id: str | None = None) -> tuple[SubmissionRecord, ...]:
         with closing(self._connect()) as database:
-            rows = database.execute(
-                "SELECT * FROM submissions WHERE status=? AND placement=? ORDER BY rowid",
-                (SubmissionStatus.QUEUED.value, SubmissionPlacement.QUEUED.value),
-            ).fetchall()
+            if conversation_id is None:
+                rows = database.execute(
+                    "SELECT * FROM submissions WHERE status=? AND placement=? ORDER BY commit_seq, id",
+                    (SubmissionStatus.QUEUED.value, SubmissionPlacement.QUEUED.value),
+                ).fetchall()
+            else:
+                rows = database.execute(
+                    "SELECT * FROM submissions WHERE conversation_id=? AND status=? AND placement=? "
+                    "ORDER BY commit_seq, id",
+                    (conversation_id, SubmissionStatus.QUEUED.value, SubmissionPlacement.QUEUED.value),
+                ).fetchall()
             return tuple(
                 SubmissionRecord(
                     submission_id=str(row["id"]),

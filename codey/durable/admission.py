@@ -186,13 +186,11 @@ def admit_write(
     if type(display_only) is not bool:
         raise ValueError("display_only must be boolean")
     normalized_model, normalized_edits = normalize_passive_fields(model, edits)
-    if display_only and normalized_edits:
-        raise ValueError("display-only writes cannot carry context edits")
     head_target = head
     if head_target is not None and (not isinstance(head_target, str) or not head_target):
         raise ValueError("head must be 'self' or a non-empty entry ID")
-    if head_target is not None and display_only:
-        raise ValueError("head writes cannot be display-only")
+    if display_only and (normalized_model is not None or normalized_edits is not None or head_target is not None):
+        raise ValueError("display-only writes cannot carry context metadata")
     placement = SubmissionPlacement(placement)
     content: dict[str, object] = {"kind": kind, "data": dict(data), "display_only": display_only}
     if normalized_model is not None:

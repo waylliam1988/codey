@@ -389,14 +389,19 @@ class MemoryDurableStore:
                     return item.record
             raise KeyError(f"unknown submission: {submission_id}")
 
-    def queued_submissions(self) -> tuple[SubmissionRecord, ...]:
+    def queued_submissions(self, conversation_id: str | None = None) -> tuple[SubmissionRecord, ...]:
         with self._lock:
-            return tuple(
+            queued = [
                 item.record
                 for item in self._submissions.values()
                 if item.record.status is SubmissionStatus.QUEUED
                 and item.record.placement is SubmissionPlacement.QUEUED
-            )
+                and (conversation_id is None or item.record.conversation_id == conversation_id)
+            ]
+            return tuple(sorted(
+                queued,
+                key=lambda item: self._submissions[(item.conversation_id, item.request_id)].result.sequence,
+            ))
 
     def submission_result_for_request(
         self, conversation_id: str, request_id: str, fingerprint: str,

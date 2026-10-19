@@ -371,8 +371,75 @@ class DurableSession:
         return tuple(self.store.pending_tasks())
 
     @_mutation_line
-    def queued_submissions(self) -> tuple[SubmissionRecord, ...]:
-        return tuple(self.store.queued_submissions())
+    def queued_submissions(self, conversation_id: str | None = None) -> tuple[SubmissionRecord, ...]:
+        return tuple(self.store.queued_submissions(conversation_id))
+
+    @_mutation_line
+    def withdraw_queued_submission_at(
+        self,
+        conversation_id: str,
+        position: int,
+        *,
+        expected_submission_id: str | None = None,
+    ) -> CommitResult:
+        """Withdraw one queued inbox item by its durable conversation position."""
+        if type(position) is not int or position < 0:
+            raise ValueError("queued submission position must be a non-negative integer")
+        queued = self.store.queued_submissions(conversation_id)
+        if position >= len(queued):
+            raise IndexError("queued submission position is out of range")
+        submission = queued[position]
+        if expected_submission_id is not None and submission.submission_id != expected_submission_id:
+            raise CommitConflict("queued submission position changed")
+        if submission.mode != "write":
+            task = next(
+                (task for task in self.store.tasks() if task.submission_id == submission.submission_id),
+                None,
+            )
+            if task is None:
+                raise CommitConflict("queued input has no task checkpoint")
+            if task.status is not TaskStatus.PENDING:
+                raise CommitConflict("queued input is no longer pending")
+            _head, revision = self.store.head(conversation_id)
+            pending = tuple(
+                effect for effect in self.store.effects_for_task(task.task_id)
+                if effect.settlement is None
+            )
+            if pending:
+                raise CommitConflict("queued input has unsettled effects")
+            next_task = replace(
+                task,
+                phase="cancelled",
+                revision=task.revision + 1,
+                state={**_release_attempt_state(task.state), "cancel_requested": True, "cancel_reason": "aborted",
+                       "pending_effect_ids": []},
+                pending_effect_id=None,
+                status=TaskStatus.CANCELLED,
+            )
+            return self._commit(DurableMutation(
+                conversation_id=conversation_id,
+                expected_revision=revision,
+                task=next_task,
+                submission_update=SubmissionUpdate(
+                    submission_id=submission.submission_id,
+                    conversation_id=conversation_id,
+                    expected_status=SubmissionStatus.QUEUED,
+                    status=SubmissionStatus.UNANSWERED,
+                    reason="aborted",
+                ),
+            ))
+        _head, revision = self.store.head(conversation_id)
+        return self._commit(DurableMutation(
+            conversation_id=conversation_id,
+            expected_revision=revision,
+            submission_update=SubmissionUpdate(
+                submission_id=submission.submission_id,
+                conversation_id=conversation_id,
+                expected_status=SubmissionStatus.QUEUED,
+                status=SubmissionStatus.UNANSWERED,
+                reason="aborted",
+            ),
+        ))
 
     @_mutation_line
     def tasks(self) -> tuple[TaskCheckpoint, ...]:
@@ -557,8 +624,8 @@ class DurableSession:
             raise CommitConflict("queued write model is invalid")
         if edits is not None and normalized_edits is None:
             raise CommitConflict("queued write edits are invalid")
-        if display_only and normalized_edits:
-            raise CommitConflict("display-only writes cannot carry context edits")
+        if display_only and (normalized_model is not None or normalized_edits is not None or head_target is not None):
+            raise CommitConflict("display-only writes cannot carry context metadata")
         if head_target is not None and head_target != "self":
             visible = {entry.entry_id for entry in self.context(submission.conversation_id)}
             if head_target not in visible:

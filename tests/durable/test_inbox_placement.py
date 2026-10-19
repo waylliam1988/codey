@@ -414,6 +414,27 @@ def test_passive_write_persists_model_and_context_edits(session: DurableSession)
     )
 
 
+def test_display_only_write_rejects_present_context_metadata(session: DurableSession) -> None:
+    with pytest.raises(ValueError, match="display-only"):
+        session.admit_write(
+            conversation_id="chat",
+            request_id="display-model",
+            kind="notice",
+            data={"text": "visible"},
+            display_only=True,
+            model={},
+        )
+    with pytest.raises(ValueError, match="display-only"):
+        session.admit_write(
+            conversation_id="chat",
+            request_id="display-edits",
+            kind="notice",
+            data={"text": "visible"},
+            display_only=True,
+            edits=[],
+        )
+
+
 def test_queued_passive_write_keeps_model_and_edits_through_placement(session: DurableSession) -> None:
     session.create_conversation("chat")
     original = session.append_message("chat", "user_message", {"text": "original"})
@@ -465,6 +486,64 @@ def test_queued_passive_metadata_survives_sqlite_restart(tmp_path: Path) -> None
         }
     finally:
         second.close()
+
+
+def test_queued_submissions_have_durable_positions_and_withdraw_positionally(
+    session: DurableSession,
+) -> None:
+    session.admit_input(
+        conversation_id="chat",
+        request_id="active-request",
+        task_id="active-task",
+        text="working",
+        provider_snapshot={},
+    )
+    session.start_task("active-task", state={})
+    first = session.admit_input(
+        conversation_id="chat",
+        request_id="queued-first",
+        task_id="queued-first-task",
+        text="first",
+        provider_snapshot={},
+        placement=SubmissionPlacement.QUEUED,
+    )
+    write = session.admit_write(
+        conversation_id="chat",
+        request_id="queued-write",
+        kind="note",
+        data={"text": "keep later"},
+        display_only=False,
+        placement=SubmissionPlacement.QUEUED,
+    )
+    last = session.admit_input(
+        conversation_id="chat",
+        request_id="queued-last",
+        task_id="queued-last-task",
+        text="last",
+        provider_snapshot={},
+        placement=SubmissionPlacement.QUEUED,
+    )
+
+    queued = session.queued_submissions("chat")
+    assert [item.submission_id for item in queued] == [
+        str(first.submission_id), str(write.submission_id), str(last.submission_id),
+    ]
+    removed = session.withdraw_queued_submission_at(
+        "chat", 1, expected_submission_id=str(write.submission_id),
+    )
+    assert removed.submission_id == str(write.submission_id)
+    withdrawn = session.store.submission(str(write.submission_id))
+    assert withdrawn.status is SubmissionStatus.UNANSWERED
+    assert withdrawn.reason == "aborted"
+    assert [item.submission_id for item in session.queued_submissions("chat")] == [
+        str(first.submission_id), str(last.submission_id),
+    ]
+    removed_input = session.withdraw_queued_submission_at("chat", 0)
+    assert removed_input.submission_id == str(first.submission_id)
+    assert session.store.submission(str(first.submission_id)).status is SubmissionStatus.UNANSWERED
+    assert session.store.submission(str(first.submission_id)).reason == "aborted"
+    assert session.task("queued-first-task").status is TaskStatus.CANCELLED
+    assert [entry.kind for entry in session.entries("chat")] == ["user_message"]
 
 
 def test_direct_stale_head_write_is_settled_without_an_entry(session: DurableSession) -> None:
