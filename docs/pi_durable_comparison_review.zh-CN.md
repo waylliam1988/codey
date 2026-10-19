@@ -676,3 +676,38 @@ mypy / pyrefly / ty / ruff 全部通过
 
 这只是 inbox parity 的第一步。Codey 仍没有 Pi 的独立 queued/placed document、steer/follow-up first/all placement 和 passive write 策略；下一段需要先定义 placement mutation 的事实边界，再决定是否扩展 submission 模型，不能重新引入第二个 queue store。
 
+## 19. 2026-10-19 当前代码快照（基于已提交实现）
+
+本节覆盖前面阶段性记录之后的实际代码。前文中把以下能力列为“待补”的描述已经过时：
+
+- `DurableSession` 已区分 `observe_commits()`（内部一致性观察）和 `subscribe_commits()`（外部投影）；内部观察失败会封存 Session，外部投影失败只记录日志。
+- conversation 的 create/fork/delete 已通过 durable commit 产生 commit sequence 和投影；branch 已有 revision CAS。
+- TaskCheckpoint 已保存 attempt token、owner 和 owner process id；普通恢复不会回收仍存活的进程所有者。
+- scheduler 已有 blocked task reason、volatile invocation signal、abort barrier，以及等待依赖的反向唤醒。
+- queued input 的撤回已经写入 task/submission 的 durable cancellation，不再创建第二个 task 或依赖旧输入数据库。
+
+### 7.1 当前已经明确胜出的部分
+
+这些结论现在有代码和局部测试作为依据：
+
+1. **effect 安全恢复**：intent、settlement、未知外部结果和 replay class 已进入 durable 状态；shell/provider 的未知结果不会被普通重启自动重跑。
+2. **权限与验证边界**：权限快照、审批状态、provider snapshot、verification、completion proof 和 Research evidence 保持独立语义，强于 Pi 的通用任务内核。
+3. **提交可观察性**：创建、分支、fork、删除、task/effect/submission 更新都能产生 durable commit sequence；SSE 可以按 sequence 补读事实投影。
+4. **执行 ownership**：attempt token 与 process fencing 组合后，旧 worker 的提交不能覆盖新 attempt；live owner 不会被普通恢复路径误判为遗留工作。
+5. **取消传播**：取消先写 durable barrier，再 signal 当前 invocation；等待中的相关 task 能被 settlement 反向唤醒，queued input 的 abort 也遵守同一事实源。
+6. **Ghost 边界**：认知/记忆使用独立 `ghost.sqlite3`，没有把后台高频写入混进主任务数据库。
+
+### 7.2 仍然低于 Pi 的硬差距
+
+1. **Inbox/placement 语义**：Codey admission 仍在提交时创建 user entry，queued input 通过 task state 扫描反推；Pi 先把 submission 放入 conversation-scoped inbox，在 boundary 按 steer/follow-up/write 策略 placement。Codey 尚无正式的 `placement`、`steer`、`followUp`、`passive write` 状态和同一队列的恢复顺序。
+2. **Scheduler kernel**：Codey 已具备关键安全边界，但 runnable、waiting reverse index、owner graph、finalization/fail-fast 候选主要仍由 `store.tasks()` 全量扫描派生；Pi 将这些索引和 invocation 生命周期作为 scheduler kernel 的稳定边界，并有 abort handler、background ownership 和 close 时 join 语义。
+3. **Context range**：Codey 有 ancestry、compaction、tool pairing、provider tokenizer 和 digest，但还没有 Pi 的一等 head marker、ContextBounds 的 head/tail 不变量、created/fork sequence cutoff、system section positional replay 和 provider-specific context range cache。
+4. **Artifact ownership**：`ManagedOutputStore` 有原子文件写入、digest、scope 和 tamper detection，但 durable schema 没有一等 artifact record；文件成功而 commit 失败、commit 成功而文件落盘失败的恢复契约仍需明确。
+5. **多进程 open fencing**：单个 Session 内的 attempt process fencing 已完成；但同一 durable DB 被两个独立应用 Session 同时打开时，仍需 state-home lease 或明确拒绝第二个 owner，不能只依赖启动扫描。
+6. **旧路径和结构卫生**：`RuntimeSessionLog`、旧 runtime store API、独立 `ConversationInputQueue`、JSONL approval/audit projection、巨型 `AppContext`/`operation_state.py`/`DurableSession` 仍需要逐项判定是只读投影、测试 fixture、生产 fallback 还是死代码。只有删除生产 fallback 后，恢复事实源才真正唯一。
+
+### 7.3 本段结论
+
+当前 Codey 已经可以在 effect fail-closed、权限/审批、provider uncertainty、completion proof、Research 证据、attempt fencing 和取消安全上明确胜过 Pi；它还不能在 durable 内核整体上宣布胜出。下一段应优先审查 inbox/placement，而不是继续堆新的 scheduler 状态字段：先证明“admitted 但未 placed”的语义，再决定是否需要改变 submission schema 和 context 入口。
+
+
