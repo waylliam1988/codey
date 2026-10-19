@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from typing import Any
+from unittest.mock import Mock
 
 from codey.app import model_settings
 from codey.app.context import AppContext
@@ -30,19 +31,13 @@ def test_model_settings_read_does_not_wait_for_long_context_lock(tmp_path) -> No
         ctx.close()
 
 
-def test_two_approval_decisions_do_not_serialize_on_first_worker(tmp_path, monkeypatch) -> None:
+def test_two_approval_decisions_use_durable_wakeup_without_continuation_workers(tmp_path, monkeypatch) -> None:
     from tests.support.shell_approval import seed_requested_approval
 
     ctx = AppContext(tmp_path)
     seed_requested_approval(ctx, approval_id="first", command="echo first")
     seed_requested_approval(ctx, approval_id="second", command="echo second")
-    entered = threading.Event()
-    release = threading.Event()
-
-    def submit(*_args: object, **_kwargs: object) -> str | None:
-        entered.set()
-        release.wait(5)
-        return None
+    submit = Mock(return_value=None)
 
     try:
         first_result: list[tuple[int, dict[str, Any]]] = []
@@ -51,14 +46,16 @@ def test_two_approval_decisions_do_not_serialize_on_first_worker(tmp_path, monke
             daemon=True,
         )
         first.start()
-        assert entered.wait(2)
+        first.join(2)
+        assert not first.is_alive()
         started = time.perf_counter()
         second = ctx.shell_approval_workflow.accept("second", False, submit)
         elapsed = time.perf_counter() - started
-        assert elapsed < 0.25, "Second approval waited for the first approval worker"
+        assert elapsed < 0.25, "Second approval waited for the first durable decision"
         assert second[0] == 202
+        assert first_result and first_result[0][0] == 202
+        submit.assert_not_called()
     finally:
-        release.set()
         first.join(5)
         ctx.shell_approval_workflow.wait(5)
         ctx.close()
