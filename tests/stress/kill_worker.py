@@ -196,13 +196,17 @@ def _point_session_full_no_ack(world: Any) -> dict:
 
 
 def _point_ghost_partial_batch(world: Any) -> dict:
+    """Abort a Ghost SQLite transaction after all rows are staged.
+
+    Ghost no longer appends JSONL chunks.  Its write contract is one SQLite
+    transaction, so a crash in the commit path must leave an empty batch (the
+    atomic counterpart of the old partial-file test).
+    """
     baseline = _crash_baseline(world)
-    real_fdopen = os.fdopen
-    with mock.patch.object(
-        os,
-        "fdopen",
-        lambda fd, *a, **k: _faulty_fdopen(real_fdopen, {"stop_after_chunks": 2}, fd, *a, **k),
-    ):
+    def _abort_after_rows() -> None:
+        raise _CrashPointReached("ghost transaction aborted before commit")
+
+    with mock.patch.object(world.ghost, "_check_cursor", _abort_after_rows):
         try:
             world.ghost_append(5, tag="cp")
         except _CrashPointReached:
@@ -213,18 +217,17 @@ def _point_ghost_partial_batch(world: Any) -> dict:
         "point": "ghost-partial-batch",
         "baseline_effect": baseline,
         "ghost_ids": [f"ghost-cp-{index}" for index in range(1, 6)],
-        "durable_count": 2,
+        "durable_count": 0,
     }
 
 
 def _point_ghost_torn_row(world: Any) -> dict:
+    """Abort a Ghost SQLite transaction before commit; no torn row is visible."""
     baseline = _crash_baseline(world)
-    real_fdopen = os.fdopen
-    with mock.patch.object(
-        os,
-        "fdopen",
-        lambda fd, *a, **k: _faulty_fdopen(real_fdopen, {"short_chunk": 1}, fd, *a, **k),
-    ):
+    def _abort_after_rows() -> None:
+        raise _CrashPointReached("ghost transaction aborted before commit")
+
+    with mock.patch.object(world.ghost, "_check_cursor", _abort_after_rows):
         try:
             world.ghost_append(3, tag="cp")
         except _CrashPointReached:

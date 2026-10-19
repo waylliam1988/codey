@@ -7,8 +7,8 @@ that test cannot reach:
 
   session log append:   torn row mid-batch ············· kill here
   session log append:   full batch, fsync done, no ack · kill here
-  ghost log append:     2 of 5 chunks on disk ··········· kill here
-  ghost log append:     torn row mid-batch ·············· kill here
+  ghost SQLite batch:    transaction abort after staging · kill here
+  ghost SQLite batch:    no torn rows can become visible ·· kill here
   atomic replace:       tmp fsynced, rename blocked ····· kill here (+ orphan tmp)
   atomic replace:       rename done, caller dead ········· kill here
   repair journal:       torn tail mid-flush ············· kill here
@@ -121,7 +121,7 @@ class CrashPointMatrixTests(unittest.TestCase):
         oracle = InvariantChecker(seed=104)
         with tempfile.TemporaryDirectory() as td:
             home, manifest, facts = self._drive("ghost-torn-row", td)
-            self.assertEqual(_ghost_ids(facts), manifest["ghost_ids"][:1])
+            self.assertEqual(_ghost_ids(facts), [])
             self._check_converges(oracle, home, facts)
 
     def test_primitive_replace_pre_rename_keeps_original_and_ignores_orphan_tmp(self) -> None:
