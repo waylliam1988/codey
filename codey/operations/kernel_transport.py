@@ -88,7 +88,12 @@ def provider_uses_native(provider: Any, *, provider_id: object = "") -> bool:
     return supports_native_tools(probe, str(provider_id or ""))
 
 
-def _native_tool_results(results: Any, session: Any) -> list[ProviderToolResult]:
+def _native_tool_results(
+    results: Any,
+    session: Any,
+    *,
+    boundary_prompt: str = "",
+) -> list[ProviderToolResult]:
     from codey.operations.kernel_prompt import _result_context
 
     rows = list(results or [])
@@ -110,6 +115,9 @@ def _native_tool_results(results: Any, session: Any) -> list[ProviderToolResult]
             # synthesize a follow-up prompt instead of a tool message.
             return []
         messages.append(ProviderToolResult(call_id, _result_context(result, session)))
+    if boundary_prompt and messages:
+        last = messages[-1]
+        messages[-1] = ProviderToolResult(last.call_id, last.content, user_content=boundary_prompt)
     return messages
 
 

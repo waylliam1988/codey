@@ -1093,4 +1093,33 @@ Codey 现在达到 Pi generation boundary 的核心 mutation 语义：一个 bou
 - fork-local inbox 还没有 Pi `InboxDoc` 的 snapshot/history 语义；
 - Runtime JSONL、AppContext、`operation_state.py` 和 DurableSession 的最终结构卫生审查仍待完成。
 
+## 31. 第二十七段：native provider boundary message range
+
+本段接通上一段尚未完成的 native provider 差距。此前 durable boundary 的返回值只被拼进 text provider 的下一轮 prompt，native provider 会直接把它丢掉。现在 queued user input 作为同一批 tool result 的边界附加消息编码，沿原生 provider 的 `send_tool_results` 路径发送。
+
+### 31.1 已完成
+
+- `ProviderToolResult` 可携带可选的 boundary user content，默认路径和既有 tool result 身份不变；
+- Chat Completions 编码为 `tool` 消息后紧接 `user` 消息；
+- Responses 编码为 `function_call_output` 后紧接 user `message` item；
+- native transport 只把 boundary input 附加在最后一个 tool result 上，保持原有 call/result 配对和单次 provider exchange；
+- text provider 继续使用普通 prompt 拼接，native provider 不再依赖 text fallback；
+- 保留 protocol window、call ID、attempt fencing、权限和 durable placement 语义。
+
+### 31.2 验证
+
+```text
+tests/test_native_boundary_message_range.py：1 passed
+native API/chat/Responses、local receipt、native cancel 回归：34 passed
+mypy：Success
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 31.3 与 Pi 的结果
+
+Codey 已补上 native provider 对 queued input 的 message-range 接线，并且保留了 Pi 没有的 provider window fencing、权限、审批和 effect audit。仍未完成的是：真实 provider 运行中 boundary placement、tool settlement 与下一 checkpoint 的统一 durable transaction 故障注入；scheduler 完整生命周期和 InboxDoc snapshot/history 仍是差距。
+
 

@@ -910,7 +910,9 @@ def _advance_after_results(
     """Deliver native receipts or build the next text prompt."""
     if native:
         try:
-            messages = _transport._native_tool_results(results, session)
+            messages = _transport._native_tool_results(
+                results, session, boundary_prompt=boundary_prompt,
+            )
         except ValueError as exc:
             return KernelResult(
                 completed=False,

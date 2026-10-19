@@ -57,7 +57,12 @@ def encode_tools(tools: list[ProviderToolDefinition] | None) -> list[dict[str, A
 
 
 def encode_results(results: list[ProviderToolResult]) -> list[dict[str, Any]]:
-    return [{"role": "tool", "tool_call_id": item.call_id, "content": item.content} for item in results]
+    encoded: list[dict[str, Any]] = []
+    for item in results:
+        encoded.append({"role": "tool", "tool_call_id": item.call_id, "content": item.content})
+        if item.user_content:
+            encoded.append({"role": "user", "content": item.user_content})
+    return encoded
 
 
 def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, system: str,

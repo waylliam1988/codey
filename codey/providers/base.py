@@ -19,6 +19,10 @@ class ProviderToolResult:
 
     call_id: str
     content: str
+    # Optional user input admitted at the same provider generation boundary.
+    # It is encoded after this tool result by native protocol codecs, keeping
+    # the call/result pair intact while avoiding a separate provider turn.
+    user_content: str | None = None
 
 
 @dataclass(frozen=True)
