@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import uuid
 from collections.abc import Mapping
@@ -9,7 +10,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codey.durable.ancestry import context_path
-from codey.durable.errors import CommitConflict, IdempotencyConflict, SchemaVersionError
+from codey.durable.errors import (
+    CommitConflict,
+    IdempotencyConflict,
+    SchedulerOwnershipError,
+    SchemaVersionError,
+)
 from codey.durable.events import mutation_projection
 from codey.durable.model import (
     ApprovalRecord,
@@ -597,6 +603,54 @@ class SQLiteDurableStore:
                     schema_version=int(row["schema_version"]),
                 )
                 for row in rows
+            )
+
+    def acquire_scheduler_owner(self, owner_id: str, process_id: int) -> None:
+        if not owner_id or type(process_id) is not int or process_id <= 0:
+            raise ValueError("scheduler owner identity is invalid")
+        with closing(self._connect()) as database:
+            database.execute("BEGIN IMMEDIATE")
+            try:
+                row = database.execute(
+                    "SELECT owner_id, process_id FROM scheduler_owners WHERE id=1"
+                ).fetchone()
+                now = datetime.now(UTC).isoformat()
+                if row is None:
+                    database.execute(
+                        "INSERT INTO scheduler_owners(id, owner_id, process_id, claimed_at) VALUES(1, ?, ?, ?)",
+                        (owner_id, process_id, now),
+                    )
+                elif str(row["owner_id"]) == owner_id:
+                    database.execute(
+                        "UPDATE scheduler_owners SET process_id=?, claimed_at=? WHERE id=1",
+                        (process_id, now),
+                    )
+                else:
+                    old_pid = int(row["process_id"])
+                    try:
+                        os.kill(old_pid, 0)
+                        alive = True
+                    except OSError:
+                        alive = False
+                    if alive:
+                        raise SchedulerOwnershipError(
+                            "another live scheduler owns this durable database"
+                        )
+                    database.execute(
+                        "UPDATE scheduler_owners SET owner_id=?, process_id=?, claimed_at=? WHERE id=1",
+                        (owner_id, process_id, now),
+                    )
+                database.execute("COMMIT")
+            except BaseException:
+                if database.in_transaction:
+                    database.execute("ROLLBACK")
+                raise
+
+    def release_scheduler_owner(self, owner_id: str) -> None:
+        with closing(self._connect()) as database:
+            database.execute(
+                "DELETE FROM scheduler_owners WHERE id=1 AND owner_id=?",
+                (owner_id,),
             )
 
     def close(self) -> None:

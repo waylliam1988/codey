@@ -4,6 +4,7 @@ from codey.durable.context import ContextSnapshot, build_context
 from codey.durable.errors import (
     CommitConflict,
     IdempotencyConflict,
+    SchedulerOwnershipError,
     SessionFailedError,
     SessionSealedError,
 )
@@ -34,6 +35,7 @@ from codey.durable.workflow import WorkflowDefinition, workflow_digest
 
 __all__ = [
     "CommitConflict",
+    "SchedulerOwnershipError",
     "ApprovalRecord",
     "ApprovalStatus",
     "ArtifactRecord",

@@ -79,6 +79,12 @@ MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
                 PRIMARY KEY(waited_task_id, waiter_task_id),
                 CHECK(waited_task_id <> waiter_task_id)
             ) STRICT""",
+            """CREATE TABLE scheduler_owners (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                owner_id TEXT NOT NULL,
+                process_id INTEGER NOT NULL CHECK(process_id > 0),
+                claimed_at TEXT NOT NULL
+            ) STRICT""",
             """CREATE TABLE effects (
                 id TEXT PRIMARY KEY,
                 task_id TEXT NOT NULL REFERENCES tasks(id),

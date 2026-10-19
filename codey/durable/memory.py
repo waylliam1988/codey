@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import uuid
 from collections.abc import Mapping
@@ -7,7 +8,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from codey.durable.ancestry import context_path
-from codey.durable.errors import CommitConflict, IdempotencyConflict
+from codey.durable.errors import CommitConflict, IdempotencyConflict, SchedulerOwnershipError
 from codey.durable.events import mutation_projection
 from codey.durable.model import (
     TASK_TERMINAL_STATUSES,
@@ -65,6 +66,7 @@ class MemoryDurableStore:
         self._sequence = 0
         self._commits: list[CommitRecord] = []
         self._history: dict[str, list[TaskTransition]] = {}
+        self._scheduler_owner: tuple[str, int] | None = None
 
     def create_conversation(self, conversation_id: str, *, parent_conversation_id: str | None = None, parent_entry_id: str | None = None) -> None:
         if not conversation_id:
@@ -524,6 +526,28 @@ class MemoryDurableStore:
         with self._lock:
             waiter_ids = self._waiters.get(task_id, set())
             return tuple(task for task in self._tasks.values() if task.task_id in waiter_ids)
+
+    def acquire_scheduler_owner(self, owner_id: str, process_id: int) -> None:
+        if not owner_id or type(process_id) is not int or process_id <= 0:
+            raise ValueError("scheduler owner identity is invalid")
+        with self._lock:
+            current = self._scheduler_owner
+            if current is None or current[0] == owner_id:
+                self._scheduler_owner = (owner_id, process_id)
+                return
+            try:
+                os.kill(current[1], 0)
+                alive = True
+            except OSError:
+                alive = False
+            if alive:
+                raise SchedulerOwnershipError("another live scheduler owns this durable store")
+            self._scheduler_owner = (owner_id, process_id)
+
+    def release_scheduler_owner(self, owner_id: str) -> None:
+        with self._lock:
+            if self._scheduler_owner is not None and self._scheduler_owner[0] == owner_id:
+                self._scheduler_owner = None
 
     def _replace_waiters(self, task: TaskCheckpoint) -> None:
         for waiters in self._waiters.values():

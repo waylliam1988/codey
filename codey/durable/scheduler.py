@@ -8,7 +8,9 @@ eligible for retry; the logical phase is never replaced by a synthetic task.
 
 from __future__ import annotations
 
+import os
 import threading
+import uuid
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
@@ -63,6 +65,8 @@ class DurableTaskScheduler:
         self._thread: threading.Thread | None = None
         self._recovered = False
         self._enabled = False
+        self._owner_id = f"scheduler-{uuid.uuid4().hex}"
+        self._owns_scheduler = False
 
     @property
     def in_flight(self) -> tuple[str, ...]:
@@ -96,13 +100,26 @@ class DurableTaskScheduler:
         return result
 
     def start(self) -> None:
-        self._enabled = True
-        if not self._recovered:
-            self._session.recover_scheduler_state()
-            self._recovered = True
-        self._session.reconcile_finalization()
-        self.notify()
-        self._ensure_thread()
+        with self._lock:
+            if self._owns_scheduler:
+                return
+        self._session.store.acquire_scheduler_owner(self._owner_id, os.getpid())
+        with self._lock:
+            self._owns_scheduler = True
+            self._enabled = True
+        try:
+            if not self._recovered:
+                self._session.recover_scheduler_state()
+                self._recovered = True
+            self._session.reconcile_finalization()
+            self.notify()
+            self._ensure_thread()
+        except BaseException:
+            with self._lock:
+                self._owns_scheduler = False
+                self._enabled = False
+            self._session.store.release_scheduler_owner(self._owner_id)
+            raise
 
     def notify(
         self,
@@ -180,7 +197,14 @@ class DurableTaskScheduler:
         thread = self._thread
         if thread is not None:
             thread.join(max(0.0, float(timeout)))
-        return thread is None or not thread.is_alive()
+        closed = thread is None or not thread.is_alive()
+        if closed:
+            with self._lock:
+                owns_scheduler = self._owns_scheduler
+                self._owns_scheduler = False
+            if owns_scheduler:
+                self._session.store.release_scheduler_owner(self._owner_id)
+        return closed
 
     def _run(self) -> None:
         try:

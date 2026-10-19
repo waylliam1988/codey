@@ -6,6 +6,10 @@ class CommitConflict(DurableStoreError):
     """The caller's expected conversation revision or parent is stale."""
 
 
+class SchedulerOwnershipError(DurableStoreError):
+    """Another live scheduler currently owns this durable database."""
+
+
 class IdempotencyConflict(DurableStoreError):
     """A request ID was reused for a different submission."""
 

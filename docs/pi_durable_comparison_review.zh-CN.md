@@ -1213,4 +1213,37 @@ Codey 现在在 branch 的 mutation ownership、CAS、commit sequence 和 SSE pr
 - scheduler 的 live invocation index、background ownership、abort handler 分层传播和 completing/finalization 调度图仍未完成；
 - fork-local `InboxDoc` snapshot/history、Runtime JSONL 旧路径清理、AppContext/巨型模块最终结构审查仍待进行。
 
+## 35. 第三十一段：scheduler background ownership
+
+本段把 scheduler 的 owner 从“仅靠应用层文件 lease 或 task attempt token 间接推断”收敛为 durable store 的明确生命周期事实。`DurableAppServices` 仍保留已有数据库文件 lease；新增的 store owner 保护低层直接创建多个 `DurableTaskScheduler` 的场景，避免两个 scheduler 同时把同一数据库当作自己的后台调度源。
+
+### 35.1 已完成
+
+- schema 1 新增单行 `scheduler_owners`，只保存 owner identity、process id 和 claim 时间；冷启动直接创建，不增加旧 schema migration；
+- Memory/SQLite 都提供同一 `acquire_scheduler_owner()` / `release_scheduler_owner()` 契约；
+- `DurableTaskScheduler.start()` 在 recovery、finalization 和 notify 前取得 owner，取得失败不会启动后台线程；
+- `close()` 只有在 invocation/thread 完整退出后释放 owner，超时返回 `False` 时仍保留 owner，允许调用方继续 close；
+- 同一 owner 可幂等重入，live PID 的其他 owner 被拒绝，已不存在的 PID 可接管；
+- task attempt token 仍负责任务级 fencing，scheduler owner 负责后台调度器级 fencing，两层语义互不替代；
+- 不影响 AppServices 已有 OS-backed database lease，也没有恢复旧 scheduler 写入路径或第二事实源。
+
+### 35.2 验证
+
+```text
+test_scheduler_ownership.py：4 个场景分别通过（单 owner、close release、dead PID reclaim、Memory/SQLite contract）
+scheduler + abort + waiting reverse index + services lifecycle：19 passed
+schema/store contract：49 passed
+mypy：Success
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+注：Windows pytest 在连续创建临时目录时偶发卡在 pytest 自身 `tmp_path` 路径解析；单个 ownership 测试和同一批实际断言均已独立运行通过，这属于测试运行环境的临时目录问题，不是生产 scheduler 失败。没有为迁就该脚本向生产代码加入 fallback。
+
+### 35.3 与 Pi 的结果
+
+Codey 现在在后台 scheduler ownership 上具备明确的 durable claim/release/reclaim 边界，补上了此前“只能从 AppServices lease 和 task attempt 间接推断”的缺口，并保留更严格的 task CAS、attempt fencing、未知 effect fail-closed、权限和审批语义。相对 Pi 仍未完全达到的部分是 abort handler 的独立 invocation、完整 background boundary/task graph index，以及真实 provider generation 的 settlement/placement/checkpoint 故障事务证明。
+
 
