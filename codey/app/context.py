@@ -37,6 +37,7 @@ from codey.app.run_registry import RunRegistry, RunSnapshot
 from codey.durable.model import (
     CommitResult,
     DurableMutation,
+    TaskCheckpoint,
     thaw_json,
 )
 from codey.knowledge.store import KnowledgeStore
@@ -141,6 +142,7 @@ class AppContext(GhostStoreAccessors):
             runtime_state_home / "durable.sqlite3",
             publish=self._publish_durable_commit,
             dispatch=lambda checkpoint: self._dispatch_durable_task(checkpoint),
+            abort_handler=self._abort_durable_task,
             start=False,
         )
         # Keep these aliases as the application facade.  Ownership and
@@ -198,6 +200,27 @@ class AppContext(GhostStoreAccessors):
         from codey.app.task_submit import dispatch_durable_task
 
         return dispatch_durable_task(checkpoint, state=self)
+
+    def _abort_durable_task(self, checkpoint: TaskCheckpoint, _invocation: object) -> None:
+        """Drive the durable cancel barrier into live provider and shell work."""
+        run_id = str(checkpoint.task_id or "")
+        if not run_id:
+            return
+        # Provider transports and shell waits observe this exact run-scoped
+        # event through their cancellation scopes.  The durable scheduler owns
+        # the checkpoint transition; this handler only interrupts live work.
+        self.run_registry.request_stop(run_id)
+        events: tuple[dict[str, Any], ...] = ()
+        with self._shell_spawn_gate, self.lock:
+            expire = getattr(self, "_expire_shell_results_locked", None)
+            if callable(expire):
+                events = tuple(expire(run_id=run_id))
+            workflow = getattr(self, "shell_approval_workflow", None)
+            cancel_queued = getattr(workflow, "cancel_queued", None)
+            if callable(cancel_queued):
+                cancel_queued(checkpoint.conversation_id)
+        for event in events:
+            self.record_shell_result(event)
 
     def _publish_durable_commit(self, result: CommitResult, mutation: DurableMutation) -> None:
         if result.record is not None:

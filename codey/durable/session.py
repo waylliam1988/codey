@@ -621,6 +621,48 @@ class DurableSession:
         method is deliberately narrow so the provider boundary has one named
         entry point without introducing a generic repository layer.
         """
+        selected, mutation = self._prepare_boundary_mutation(
+            conversation_id, at=at, steering_mode=steering_mode,
+            follow_up_mode=follow_up_mode,
+        )
+        if not selected:
+            return ()
+        self._commit(mutation)
+        return tuple(self.store.submission(item.submission_id) for item in selected)
+
+    @_mutation_line
+    def commit_generation_boundary(
+        self,
+        conversation_id: str,
+        *,
+        task_id: str,
+        at: str,
+        steering_mode: str = "one-at-a-time",
+        follow_up_mode: str = "one-at-a-time",
+    ) -> tuple[SubmissionRecord, ...]:
+        """Commit boundary placement and the active task checkpoint together."""
+        active = self.store.task(task_id)
+        if active.conversation_id != conversation_id:
+            raise CommitConflict("generation boundary task conversation mismatch")
+        if active.status in {TaskStatus.CANCELLED, TaskStatus.FAILED, TaskStatus.COMPLETED}:
+            raise CommitConflict("cannot advance a terminal generation task")
+        selected, mutation = self._prepare_boundary_mutation(
+            conversation_id, at=at, steering_mode=steering_mode,
+            follow_up_mode=follow_up_mode, task_id=task_id,
+        )
+        self._commit(mutation)
+        return tuple(self.store.submission(item.submission_id) for item in selected)
+
+    def _prepare_boundary_mutation(
+        self,
+        conversation_id: str,
+        *,
+        at: str,
+        steering_mode: str,
+        follow_up_mode: str,
+        task_id: str | None = None,
+    ) -> tuple[tuple[SubmissionRecord, ...], DurableMutation]:
+        """Build a boundary mutation without publishing it."""
         if at not in {"post_tools", "final"}:
             raise ValueError("boundary must be 'post_tools' or 'final'")
         if steering_mode not in {"all", "one-at-a-time"}:
@@ -657,9 +699,6 @@ class DurableSession:
         # Pi places passive writes first, then selected user inputs in inbox
         # order.  Keep that ordering even when a write was admitted later.
         selected.sort(key=lambda item: (0 if item.mode == "write" else 1, queued.index(item)))
-        if not selected:
-            return ()
-
         head, conversation_revision = self.store.head(conversation_id)
         current_head = head
         entries: list[EntryDraft] = []
@@ -687,14 +726,24 @@ class DurableSession:
                 task_updates.append(placement.task)
             submission_updates.append(placement.update)
 
-        self._commit(DurableMutation(
+        if task_id is not None:
+            active = self.store.task(task_id)
+            if active.conversation_id != conversation_id:
+                raise CommitConflict("generation boundary task conversation mismatch")
+            raw_state = thaw_json(active.state)
+            if not isinstance(raw_state, Mapping):
+                raise CommitConflict("generation boundary task state is corrupt")
+            state = dict(raw_state)
+            state["generation_boundary"] = at
+            task_updates.append(replace(active, revision=active.revision + 1, state=state))
+        mutation = DurableMutation(
             conversation_id=conversation_id,
             expected_revision=conversation_revision,
             entries=tuple(entries),
             task_updates=tuple(task_updates),
             submission_updates=tuple(submission_updates),
-        ))
-        return tuple(self.store.submission(item.submission_id) for item in selected)
+        )
+        return tuple(selected), mutation
 
     def _prepare_boundary_placement(
         self,

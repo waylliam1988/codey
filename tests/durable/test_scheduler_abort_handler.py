@@ -49,6 +49,26 @@ def test_abort_runs_independent_handler_after_durable_mark_and_signal() -> None:
         session.close()
 
 
+def test_app_context_abort_handler_reaches_live_run_stop_event(tmp_path) -> None:
+    from codey.app.context import AppContext
+
+    state = AppContext(tmp_path / "state", start_scheduler=False)
+    try:
+        state.durable.admit_input(
+            conversation_id="conversation", request_id="request", task_id="task",
+            text="work", provider_snapshot={"provider_id": "local"},
+        )
+        run = state.run_registry.reserve(
+            session_id="conversation", project=None, task="work",
+            provider_id="local", run_id="task",
+        )
+        assert run is not None
+        state._abort_durable_task(state.durable.task("task"), object())
+        assert state.stop_flag_for("task").is_set()
+    finally:
+        state.close()
+
+
 def _wait_until(predicate, timeout: float = 2.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

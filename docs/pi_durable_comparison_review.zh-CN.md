@@ -1356,4 +1356,39 @@ Codey 现在不仅拥有 Pi 风格的 owner/waiting reverse index，还让实际
 - abort handler 尚未在真实 shell/provider host 中接入；
 - InboxDoc snapshot/history、Runtime JSONL 清理、AppContext/巨型模块结构审查仍待进行。
 
+## 39. 第三十五段：冷启动拒绝、真实取消接线与 generation boundary checkpoint
+
+本段先核实并修正一组容易被架构图掩盖的生产风险。审查结论是：schema 删除路径确实违反冷启动约束；scheduler 的 abort contract 也确实还没有接到 AppContext 的真实运行对象。CodeMode 的只读目录和 Node worker 则是当前安全边界的明确选择，不把尚未实现的写沙箱误报为已完成能力。
+
+### 39.1 已完成
+
+- `DurableAppServices.open()` 遇到 `SchemaVersionError` 现在直接释放 lease 并拒绝启动，不再删除数据库、WAL、SHM 或 journal；`SCHEMA_VERSION = 1` 保持严格冷启动；
+- 回归测试写入不兼容数据库和 sentinel 内容，确认启动失败后原文件仍保留；
+- `AppContext` 将真实 abort handler 传给 `DurableTaskScheduler`。取消时，durable cancellation barrier 之后会设置同一 run-scoped stop event；Provider transport 的取消观察器和 shell `wait_process()` 共用该事件，待执行 shell approval 也会被同一 handler 收口；
+- generation boundary 新增 `DurableSession.commit_generation_boundary()`：active task 的 `generation_boundary` checkpoint、选中的 steer/follow-up/passive write placement、entry head 和 submission 更新在一个 durable commit 中完成；kernel 的真实 boundary callback 已改走该入口；
+- boundary commit 故障注入确认失败时 placement 和 active checkpoint 都不变；
+- `session.py`、`context.py`、`durable_services.py`、`task_entry.py` 的 mypy、pyrefly、ty 和 ruff 检查通过。
+
+### 39.2 对四项风险的判断
+
+- **Abort 物理清理**：此前确实存在 host 未接线的差距，本段已补上 run event 到 Provider/shell 的实际链路。仍需补跨线程真实长请求和真实子进程的端到端强杀测试；
+- **Schema 删除**：此前确实是硬错误，现已移除。旧库拒绝启动且不会被自动格式化；
+- **CodeMode**：只读工具和 Node worker 是当前权限模型的故意限制。runtime 已经是可替换 Protocol，Node 不可用时会返回明确的 `runtime_unavailable`；但跨执行 `store/load` 尚未形成 durable 语义，写文件沙箱也尚未开放，因此这两项不能宣称超过 Pi；
+- **巨型模块**：`AppContext`、`DurableSession`、`SQLiteDurableStore` 的职责边界仍可继续拆分，但本段没有为了降低行数引入 facade/repository 层。下一步应按事实 owner 拆出独立 boundary/scheduler projection 模块，并用架构测试证明旧接线已删除。
+
+### 39.3 验证
+
+```text
+generation boundary + inbox + services lifecycle + abort wiring：41 + 8 passed
+mypy：Success: no issues found
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 39.4 与 Pi 的结果
+
+Codey 现在在 schema fail-closed、真实取消信号传播和 generation boundary 的 active checkpoint/placement 原子性上比本段之前更接近 Pi durable，并保留权限、审批、Provider uncertainty、未知 effect fail-closed 和 completion proof。CodeMode 的写沙箱、跨执行状态、完整 Provider settlement + boundary + 下一 checkpoint 单事务，以及巨型模块拆分仍是明确未完成项；这些差距继续按测试和代码 owner 收敛，不用“接口存在”代替实际接线。
+
 

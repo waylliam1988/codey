@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from codey.app.durable_services import DurableAppServices
+from codey.durable.errors import SchemaVersionError
 from codey.storage.file_lock import LockTimeout
 
 
@@ -58,3 +59,21 @@ def test_durable_services_fences_second_open_of_same_database(tmp_path: Path) ->
         path, publish=None, dispatch=lambda _checkpoint: True, start=False,
     )
     assert reopened.close()
+
+
+def test_durable_services_rejects_incompatible_database_without_deleting_it(tmp_path: Path) -> None:
+    import sqlite3
+
+    path = tmp_path / "durable.sqlite3"
+    with sqlite3.connect(path) as database:
+        database.execute("PRAGMA user_version=2")
+        database.execute("CREATE TABLE sentinel(value TEXT NOT NULL)")
+        database.execute("INSERT INTO sentinel(value) VALUES('keep')")
+
+    with pytest.raises(SchemaVersionError):
+        DurableAppServices.open(
+            path, publish=None, dispatch=lambda _checkpoint: True, start=False,
+        )
+
+    with sqlite3.connect(path) as database:
+        assert database.execute("SELECT value FROM sentinel").fetchone() == ("keep",)

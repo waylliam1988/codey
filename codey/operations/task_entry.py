@@ -42,16 +42,19 @@ class FreshSessionOutcome:
 def _durable_boundary_callback(
     deps: Any,
     session_id: str,
+    task_id: str = "",
 ) -> Callable[[str], str | None] | None:
     """Build the narrow callback used by the kernel generation boundary."""
     durable = getattr(getattr(deps, "state", None), "durable", None)
-    if durable is None or not callable(getattr(durable, "place_boundary_inputs", None)):
+    if durable is None or not callable(getattr(durable, "commit_generation_boundary", None)):
         return None
-    if not session_id or not durable.has_conversation(session_id):
+    if not session_id or not task_id or not durable.has_conversation(session_id):
         return None
 
     def place_boundary(boundary: str) -> str | None:
-        placed = durable.place_boundary_inputs(session_id, at=boundary)
+        placed = durable.commit_generation_boundary(
+            session_id, task_id=task_id, at=boundary,
+        )
         texts: list[str] = []
         for submission in placed:
             content = getattr(submission, "content", None)
@@ -481,7 +484,9 @@ def _run_entry_kernel(  # noqa: PLR0915
                         "research_ledger": getattr(research_tools, "ledger", None),
                     },
                     trace_recorder=getattr(frame, "trace", None),
-                    on_boundary=_durable_boundary_callback(deps, str(request.session_id or "")),
+                    on_boundary=_durable_boundary_callback(
+                        deps, str(request.session_id or ""), frame.run_id,
+                    ),
                 ),
             ),
         )
