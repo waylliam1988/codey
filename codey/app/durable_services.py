@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codey.durable import DurableSession, DurableTaskScheduler, SQLiteDurableStore
+from codey.durable.errors import SchemaVersionError
 from codey.durable.model import (
     TASK_TERMINAL_STATUSES,
     CommitResult,
@@ -39,7 +40,18 @@ class DurableAppServices:
         dispatch: Callable[[TaskCheckpoint], bool],
         start: bool = True,
     ) -> DurableAppServices:
-        session = DurableSession(SQLiteDurableStore(database_path))
+        database_path = Path(database_path)
+        try:
+            session = DurableSession(SQLiteDurableStore(database_path))
+        except SchemaVersionError:
+            # The application is intentionally cold-start only.  There is no
+            # durable migration or legacy-history compatibility layer: an old
+            # database is discarded and replaced with the current schema.
+            # SQLite may leave WAL/SHM/journal sidecars behind, so remove all
+            # of them before opening the fresh store.
+            for suffix in ("", "-wal", "-shm", "-journal"):
+                database_path.with_name(database_path.name + suffix).unlink(missing_ok=True)
+            session = DurableSession(SQLiteDurableStore(database_path))
         scheduler = DurableTaskScheduler(session, dispatch)
         def observe(result: CommitResult, mutation: DurableMutation) -> None:
             del result
