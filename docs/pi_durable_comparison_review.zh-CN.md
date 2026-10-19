@@ -1516,4 +1516,41 @@ SCHEMA_VERSION = 1
 
 这五个大块完成后，Codey 的事实路径可以从 input admission、task checkpoint、effect intent/settlement、generation boundary、finalization queue、InboxDoc 和 recovery 一路追到 durable commit；UI、JSONL、trace 和 Research ledger 都没有恢复解释权。相对 Pi，Codey 在安全执行和验证边界上更强；相对 Pi 内核，长程并发 soak、全部 provider sink 收敛和更细粒度模块拆分仍是后续可量化的工作，而不是已经完成的保证。
 
+## 45. 第四十一段：evidence/project/research provider sink 统一到 generation settlement
+
+本段收拢主 task 之外的三个 provider 入口：project adapter、Research iteration 和 evidence follow-up。它们现在与 task entry 使用同一个 deferred settlement 和 generation boundary callback，不再在各自入口里隐式采用普通 provider settlement。
+
+### 45.1 已完成
+
+- 新增窄模块 `codey/operations/generation_boundary.py`，统一处理 pending provider settlement、boundary placement、submission 文本提取和 durable checkpoint callback；
+- project provider sink 在存在 admitted durable session 时启用 `defer_generation_settlement`，并把同一 callback 交给 `KernelObservationDeps.on_boundary`；
+- Research iteration 使用 admitted task 的 durable session，provider 成功响应暂存到当前 generation，在 `post_tools`/`final` boundary 通过单一 mutation 提交；
+- evidence follow-up 使用相同的 deferred settlement 和 boundary callback，避免 evidence provider 成为独立的恢复事实路径；
+- boundary mutation 成功后才清除 pending settlement；注入提交失败时 pending receipt 保留，允许恢复逻辑继续按 replay policy 处理；
+- 回归测试覆盖三条入口的接线、settlement 与 placement 的单事务 callback，以及失败时不清除 pending settlement；
+- `SCHEMA_VERSION = 1` 保持不变，没有引入 migration、fallback 或第二套 provider sink 写入路径。
+
+### 45.2 与 Pi 的结果
+
+Codey 现在在 provider generation settlement 的入口一致性上达到主 task 的同一语义：project、Research 和 evidence 都通过 durable generation boundary 收口，provider effect、placement、history 和 task checkpoint 可以由同一事务证明。Codey 继续保留 Pi 没有的 provider uncertainty、权限/审批、未知 effect fail-closed、completion proof 和 Research evidence 边界。
+
+仍不能宣称全面超过 Pi 的地方：
+
+- 尚未完成长期并发 soak/chaos 对多入口 provider settlement 的验证；
+- CodeMode 写沙箱与跨执行 `store/load` 仍未开放；
+- `DurableSession`、`SQLiteDurableStore` 仍是较大的事实 owner，尚需按语义边界继续审查是否存在有价值的拆分；
+- 全量 pytest 尚未运行，本段仅完成针对性 durable、kernel boundary、provider sink 和静态类型检查。
+
+### 45.3 本段验证
+
+```text
+provider sink / generation boundary：16 passed
+provider sink contract：4 passed
+mypy：Success: no issues found
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
 

@@ -9,7 +9,7 @@ kernel. All production tool calls converge in
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from functools import partial
@@ -18,6 +18,7 @@ from typing import Any, cast
 
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.conversation_window import WindowActivationError, activate_window, replayed_result_ids
+from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.kernel_session_recovery import restore_task_session
 from codey.operations.result import ModeOutcome
 from codey.operations.task_guidance import task_guidance_for_policy
@@ -37,44 +38,6 @@ _TASK_KINDS = frozenset({"project", "research", "hybrid", "planning", "planning_
 class FreshSessionOutcome:
     ok: bool
     error: str = ""
-
-
-def _durable_boundary_callback(
-    deps: Any,
-    session_id: str,
-    task_id: str = "",
-    sink: Any = None,
-) -> Callable[[str], str | None] | None:
-    """Build the narrow callback used by the kernel generation boundary."""
-    durable = getattr(getattr(deps, "state", None), "durable", None)
-    if durable is None or not callable(getattr(durable, "commit_generation_boundary", None)):
-        return None
-    if not session_id or not task_id or not durable.has_conversation(session_id):
-        return None
-
-    def place_boundary(boundary: str) -> str | None:
-        pending = sink.pending_provider_settlement() if sink is not None else None
-        if pending is not None:
-            settlement, messages = pending
-            placed = sink.mutations.settle_provider_effect_at_boundary(
-                session_id, task_id, settlement, boundary=boundary, messages=messages,
-            )
-            sink.clear_provider_settlement()
-        else:
-            placed = durable.commit_generation_boundary(
-                session_id, task_id=task_id, at=boundary,
-            )
-        texts: list[str] = []
-        for submission in placed:
-            content = getattr(submission, "content", None)
-            if not isinstance(content, Mapping):
-                continue
-            text = content.get("text")
-            if isinstance(text, str) and text.strip():
-                texts.append(text.strip())
-        return "\n\n".join(texts) or None
-
-    return place_boundary
 
 
 def _open_fresh_session(
@@ -494,8 +457,11 @@ def _run_entry_kernel(  # noqa: PLR0915
                         "research_ledger": getattr(research_tools, "ledger", None),
                     },
                     trace_recorder=getattr(frame, "trace", None),
-                    on_boundary=_durable_boundary_callback(
-                        deps, str(request.session_id or ""), frame.run_id, intent_sink,
+                    on_boundary=durable_generation_boundary_callback(
+                        durable=getattr(getattr(deps, "state", None), "durable", None),
+                        session_id=str(request.session_id or ""),
+                        task_id=frame.run_id,
+                        sink=intent_sink,
                     ),
                 ),
             ),

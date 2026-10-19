@@ -13,6 +13,7 @@ from typing import Any, cast
 
 from codey.agents.request import AgentRequest
 from codey.operations.conversation_window import replayed_result_ids
+from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.provider_session import ConversationProvider
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
@@ -156,6 +157,7 @@ def _wrap_provider_with_sink(request: AgentRequest, provider: Any) -> tuple[Any,
             recovered_batch_id=request.recovered_tool_result_batch_id,
             managed_outputs=request.managed_outputs,
             durable=request.durable,
+            defer_generation_settlement=request.durable is not None,
         )
         provider = KernelRecordedProvider(provider, intent_sink)
     if request.conversation is not None:
@@ -265,6 +267,12 @@ def run(request: AgentRequest) -> RunResult:
             ),
             observation=KernelObservationDeps(
                 intent_sink=intent_sink,
+                on_boundary=durable_generation_boundary_callback(
+                    durable=request.durable,
+                    session_id=request.session_id,
+                    task_id=request.run_id,
+                    sink=intent_sink,
+                ),
                 completion_context={
                     **(request.completion_context or {}),
                     "run_id": request.run_id,

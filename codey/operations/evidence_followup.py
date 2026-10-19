@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
@@ -92,6 +93,7 @@ def run_evidence_followup(
                 runtime_mutations, session_id=session_id, run_id=run_id,
                 provider_id=provider_id, phase="research",
                 durable=durable,
+                defer_generation_settlement=durable is not None,
             )
             active_provider = KernelRecordedProvider(provider, sink)
         outcome = run_task_kernel(
@@ -107,6 +109,12 @@ def run_evidence_followup(
                 execution=KernelExecutionDeps(executors={"knowledge_write": write}),
                 observation=KernelObservationDeps(
                     intent_sink=sink,
+                    on_boundary=durable_generation_boundary_callback(
+                        durable=durable,
+                        session_id=session_id,
+                        task_id=run_id,
+                        sink=sink,
+                    ),
                     on_event=on_event,
                     completion_context={
                         "run_id": run_id,

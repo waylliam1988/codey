@@ -6,6 +6,7 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
+from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
@@ -179,16 +180,19 @@ def run_research_iteration(
     )
     intent_sink = None
     active_provider = provider
+    admitted = None
     mutations = getattr(deps, "runtime_mutations", None)
     if mutations is not None and session_id and run_id:
         from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider, admitted_durable
 
         mutations.mark_writer_running(session_id, run_id, provider_id=provider_id)
+        admitted = admitted_durable(getattr(deps, "state", None), run_id)
         intent_sink = KernelEffectSink(
             mutations, session_id=session_id, run_id=run_id,
             provider_id=provider_id, phase="research",
             managed_outputs=getattr(deps, "managed_outputs", None),
-            durable=admitted_durable(getattr(deps, "state", None), run_id),
+            durable=admitted,
+            defer_generation_settlement=admitted is not None,
         )
         active_provider = KernelRecordedProvider(provider, intent_sink)
     outcome = run_task_kernel(
@@ -212,6 +216,12 @@ def run_research_iteration(
             ),
             observation=KernelObservationDeps(
                 intent_sink=intent_sink,
+                on_boundary=durable_generation_boundary_callback(
+                    durable=admitted,
+                    session_id=session_id,
+                    task_id=run_id,
+                    sink=intent_sink,
+                ),
                 trace_recorder=trace_recorder,
                 on_event=on_event,
                 completion_context={
