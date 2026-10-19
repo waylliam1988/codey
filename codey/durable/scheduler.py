@@ -170,6 +170,13 @@ class DurableTaskScheduler:
         self._enabled = False
         self._closed.set()
         self._wake.set()
+        with self._lock:
+            invocations = tuple(self._invocations.values())
+        for invocation in invocations:
+            # Closing the scheduler is a lifecycle boundary, not a durable
+            # cancellation request. Signal workers so cooperative dispatches
+            # can unwind, while the durable attempt remains recoverable.
+            invocation.signal.set()
         thread = self._thread
         if thread is not None:
             thread.join(max(0.0, float(timeout)))

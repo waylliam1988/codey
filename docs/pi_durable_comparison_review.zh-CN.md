@@ -1122,4 +1122,31 @@ SCHEMA_VERSION = 1
 
 Codey 已补上 native provider 对 queued input 的 message-range 接线，并且保留了 Pi 没有的 provider window fencing、权限、审批和 effect audit。仍未完成的是：真实 provider 运行中 boundary placement、tool settlement 与下一 checkpoint 的统一 durable transaction 故障注入；scheduler 完整生命周期和 InboxDoc snapshot/history 仍是差距。
 
+## 32. 第二十八段：scheduler close 的 invocation join
+
+本段处理 Pi scheduler 生命周期中的一个明确边界：关闭 scheduler 时，正在运行的 dispatch invocation 必须收到停止信号，并在 close 返回前等待 cooperative worker 收尾。此前 Codey 只设置 scheduler closed flag 并 join 线程，active invocation 没有收到 signal，close 可能超时而留下正在执行的 host callback。
+
+### 32.1 已完成
+
+- `DurableTaskScheduler.close()` 在设置 close barrier 后捕获当前 invocation 快照并 signal 每个 active `TaskInvocation`；
+- close 仍不伪造 durable cancellation，task attempt 的 durable checkpoint 保持可恢复，真正的用户取消继续使用 `abort_task()`；
+- scheduler thread 在 timeout 内等待 dispatch callback 结束，cooperative callback 可证明 close 返回时已释放；
+- signal 发生在 scheduler lock 释放后，避免 worker unwind 与 scheduler 状态锁互相等待；
+- 原有 abort 顺序、attempt fencing、waiting reverse wakeup 和 restart recovery 语义保持不变。
+
+### 32.2 验证
+
+```text
+test_scheduler.py + test_scheduler_abort_signal.py + test_waiting_reverse_index.py + test_task_ownership_and_finalization.py：21 passed
+mypy：Success
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 32.3 与 Pi 的结果
+
+Codey 现在在 scheduler close 的 cooperative invocation join 上达到 Pi 的关键生命周期语义，并额外保留 durable attempt recovery 与 fail-closed effect 规则。仍低于 Pi 的 scheduler 部分是持久化 live/reverse index、background ownership、abort handler 的分层调用，以及 completing/finalization 的完整 scheduler kernel 语义。
+
 
