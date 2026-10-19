@@ -714,6 +714,8 @@ mypy / pyrefly / ty / ruff 全部通过
 
 本段按 Pi `harness/inbox.ts` 的 admitted/placed 分界收敛 Codey 输入路径，保持冷启动 `SCHEMA_VERSION = 1`。没有增加旧数据库 migration，也没有恢复旧 input SQLite 写路径。
 
+这部分对应提交 `403dbaed`。该提交已经完成代码和测试，但本次审查补上按提交记录的结果，避免只在代码里留下 placement 语义而没有比较结论。
+
 ### 20.1 已完成
 
 - `SubmissionDraft`/`SubmissionRecord` 增加明确的 `placement`、`mode` 和 queued content；queued submission 可以没有 `entry_id`。
@@ -746,5 +748,37 @@ ruff: All checks passed
 - placement 与 active generation boundary 的同一事务衔接。
 
 因此本段只完成了事实边界和恢复顺序的基础，不宣布 inbox parity。下一段应把 boundary selection 做成明确 mutation，而不是继续依赖 scheduler 的全量扫描猜测。
+
+## 21. 第十七段：steer/follow-up boundary selection
+
+本段把 `403dbaed` 留下的第一处行为缺口接入 scheduler：同一 conversation 在 active task 终止后，queued input 按模式分组选择，顺序固定为 `write → steer → follow_up`。每一类内部保持 durable admission 顺序；`steering_mode` 和 `follow_up_mode` 分别决定一次放置一个还是全部放置。若本 boundary 有 steer，follow-up 留在 queued 状态，等待下一 boundary，避免较早 admission 的 follow-up 越过较晚到达的 steer。
+
+同时调整 `DurableAppServices` 的内部 commit observer：task 进入终态时触发全量 scheduler reconcile，因为释放 conversation 的 task 与待放置 submission 不是同一个 task；普通 input/task 控制提交仍按 task 定点唤醒。这样 queued input 的放置不依赖 UI、JSONL 或额外的内存队列。
+
+### 21.1 验证
+
+本段先运行新增 steer 优先测试确认红，再修改生产代码变绿：
+
+```text
+steer/follow-up placement + input authority + scheduler: 24 passed
+durable service lifecycle regression: 2 passed
+mypy：Success: no issues found in 58 source files
+pyrefly：0 errors
+ty：All checks passed
+ruff：All checks passed
+SCHEMA_VERSION = 1
+```
+
+### 21.2 当前相对 Pi 的结果
+
+- Codey 已有 admitted/queued/placed 的 durable 事实边界，并能在终态 boundary 后恢复放置；
+- steer 与 follow-up 的选择顺序、每类 `all/one-at-a-time` 策略已成为 scheduler 的显式规则；
+- scheduler 唤醒不再只依赖当前终态 task 的 task id，减少同 conversation queued 输入卡死的恢复旁路。
+
+仍低于 Pi 的部分：
+
+- `write` 目前复用文本 input 的最小表示，还没有 Pi 的 display-only write、head/reset 和 stale placement；
+- placement 仍由 scheduler 调用 `place_submission()` 分步完成，尚未与 provider generation 的 post-tools/final boundary 共用一个事务；
+- queued input 的跨进程 scheduler ownership、完整 invocation/background/abort kernel 仍未达到 Pi 的完整度。
 
 

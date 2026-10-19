@@ -13,7 +13,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codey.durable import DurableSession, DurableTaskScheduler, SQLiteDurableStore
-from codey.durable.model import CommitResult, DurableMutation, TaskCheckpoint
+from codey.durable.model import (
+    TASK_TERMINAL_STATUSES,
+    CommitResult,
+    DurableMutation,
+    TaskCheckpoint,
+)
 
 
 @dataclass
@@ -38,10 +43,14 @@ class DurableAppServices:
         scheduler = DurableTaskScheduler(session, dispatch)
         def observe(result: CommitResult, mutation: DurableMutation) -> None:
             del result
-            if (
-                mutation.task is not None
-                and any(key in mutation.task.state for key in ("input_identity", "resume_input", "workflow_origin"))
-            ):
+            if mutation.task is None:
+                return
+            if mutation.task.status in TASK_TERMINAL_STATUSES:
+                # A terminal boundary may free a conversation for a queued
+                # submission whose task is not the one being committed.
+                scheduler.notify()
+                return
+            if any(key in mutation.task.state for key in ("input_identity", "resume_input", "workflow_origin", "input_state")):
                 scheduler.notify(mutation.task.task_id)
 
         session.observe_commits(observe)

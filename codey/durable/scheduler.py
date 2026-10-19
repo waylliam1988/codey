@@ -38,11 +38,19 @@ class DurableTaskScheduler:
         *,
         retry_interval: float = 0.25,
         workflows: Mapping[str, WorkflowDefinition] | None = None,
+        steering_mode: str = "one-at-a-time",
+        follow_up_mode: str = "one-at-a-time",
     ) -> None:
         self._session = session
         self._dispatch = dispatch
         self._retry_interval = max(0.01, float(retry_interval))
         self._workflows = dict(workflows or {})
+        if steering_mode not in {"all", "one-at-a-time"}:
+            raise ValueError("invalid steering queue mode")
+        if follow_up_mode not in {"all", "one-at-a-time"}:
+            raise ValueError("invalid follow-up queue mode")
+        self._steering_mode = steering_mode
+        self._follow_up_mode = follow_up_mode
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._closed = threading.Event()
@@ -197,6 +205,11 @@ class DurableTaskScheduler:
                 self._inflight.add(task_id)
             try:
                 task = self._session.task(task_id)
+                if task.state.get("input_state") == "queued":
+                    # The inbox boundary owns placement. A queued input is a
+                    # durable submission, not a runnable task.
+                    self._remove(task_id)
+                    continue
                 block_reason = self._workflow_block_reason(task)
                 if block_reason is not None:
                     # A missing, newer, or migration-incompatible workflow is
@@ -283,11 +296,45 @@ class DurableTaskScheduler:
             if task.state.get("input_state") != "queued"
             and task.status not in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
         }
+        queued_by_conversation: dict[str, list[TaskCheckpoint]] = {}
         for task in tasks:
             if task.state.get("input_state") != "queued":
                 continue
             if task.conversation_id in active_by_conversation:
                 continue
+            queued_by_conversation.setdefault(task.conversation_id, []).append(task)
+
+        # Pi's boundary applies passive writes first, then steer inputs, and
+        # only then follow-ups.  Keep the durable admission order within each
+        # class; the queue mode controls whether that class contributes one
+        # item or the whole class at this boundary.
+        selected: list[TaskCheckpoint] = []
+        for conversation_tasks in queued_by_conversation.values():
+            by_mode = {
+                mode: [
+                    task for task in conversation_tasks
+                    if str(task.state.get("input_mode") or "follow_up") == mode
+                ]
+                for mode in ("write", "steer", "follow_up")
+            }
+            selected.extend(by_mode["write"])
+            steer_selected = (
+                by_mode["steer"]
+                if self._steering_mode == "all"
+                else by_mode["steer"][:1]
+            )
+            selected.extend(steer_selected)
+            # A steer owns this boundary. Follow-ups remain queued until the
+            # next boundary so a late steering input cannot be overtaken by
+            # an older continuation.
+            if not steer_selected:
+                selected.extend(
+                    by_mode["follow_up"]
+                    if self._follow_up_mode == "all"
+                    else by_mode["follow_up"][:1]
+                )
+
+        for task in selected:
             try:
                 self._session.place_submission(task.submission_id)
             except (CommitConflict, KeyError, ValueError):

@@ -125,3 +125,88 @@ def test_scheduler_places_queued_input_only_after_active_task_settles() -> None:
     assert dispatched == ["queued"]
     assert session.store.submission(str(queued.submission_id)).placement is SubmissionPlacement.PLACED
     assert [entry.payload["text"] for entry in session.entries("chat")] == ["current", "done", "next"]
+
+
+def test_scheduler_uses_one_at_a_time_follow_up_boundary_by_default() -> None:
+    session = DurableSession(MemoryDurableStore())
+    session.admit_input(
+        conversation_id="chat", request_id="active", task_id="active",
+        text="current", provider_snapshot={},
+    )
+    session.start_task("active", state={})
+    queued_ids = []
+    for index in range(3):
+        result = session.admit_input(
+            conversation_id="chat", request_id=f"queued-{index}", task_id=f"queued-{index}",
+            text=f"next-{index}", provider_snapshot={}, placement=SubmissionPlacement.QUEUED,
+            mode="follow_up",
+        )
+        queued_ids.append(str(result.submission_id))
+    session.complete_task("active", "done", state={})
+
+    dispatched: list[str] = []
+    scheduler = DurableTaskScheduler(session, lambda task: dispatched.append(task.task_id) or True)
+    scheduler._reconcile()
+    assert dispatched == ["queued-0"]
+    assert [session.store.submission(submission_id).placement for submission_id in queued_ids] == [
+        SubmissionPlacement.PLACED,
+        SubmissionPlacement.QUEUED,
+        SubmissionPlacement.QUEUED,
+    ]
+    scheduler.close()
+
+
+def test_scheduler_can_place_all_follow_ups_at_one_boundary() -> None:
+    session = DurableSession(MemoryDurableStore())
+    session.admit_input(
+        conversation_id="chat", request_id="active", task_id="active",
+        text="current", provider_snapshot={},
+    )
+    session.start_task("active", state={})
+    queued_ids = []
+    for index in range(2):
+        result = session.admit_input(
+            conversation_id="chat", request_id=f"queued-{index}", task_id=f"queued-{index}",
+            text=f"next-{index}", provider_snapshot={}, placement=SubmissionPlacement.QUEUED,
+            mode="follow_up",
+        )
+        queued_ids.append(str(result.submission_id))
+    session.complete_task("active", "done", state={})
+
+    dispatched: list[str] = []
+    scheduler = DurableTaskScheduler(
+        session,
+        lambda task: dispatched.append(task.task_id) or True,
+        follow_up_mode="all",
+    )
+    scheduler._reconcile()
+    assert dispatched == ["queued-0", "queued-1"]
+    assert all(session.store.submission(submission_id).placement is SubmissionPlacement.PLACED for submission_id in queued_ids)
+    scheduler.close()
+
+
+def test_steer_is_selected_before_follow_up_at_the_same_boundary(session: DurableSession) -> None:
+    session.admit_input(
+        conversation_id="chat", request_id="active", task_id="active",
+        text="current", provider_snapshot={},
+    )
+    session.start_task("active", state={})
+    follow_up = session.admit_input(
+        conversation_id="chat", request_id="follow-up", task_id="follow-up",
+        text="later", provider_snapshot={}, placement=SubmissionPlacement.QUEUED,
+        mode="follow_up",
+    )
+    steer = session.admit_input(
+        conversation_id="chat", request_id="steer", task_id="steer",
+        text="change direction", provider_snapshot={}, placement=SubmissionPlacement.QUEUED,
+        mode="steer",
+    )
+    session.complete_task("active", "done", state={})
+
+    dispatched: list[str] = []
+    scheduler = DurableTaskScheduler(session, lambda task: dispatched.append(task.task_id) or True)
+    scheduler._reconcile()
+    assert dispatched == ["steer"]
+    assert session.store.submission(str(steer.submission_id)).placement is SubmissionPlacement.PLACED
+    assert session.store.submission(str(follow_up.submission_id)).placement is SubmissionPlacement.QUEUED
+    scheduler.close()
