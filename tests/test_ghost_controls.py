@@ -91,6 +91,29 @@ def test_invalid_scope_reference_fails_closed_without_mutation(tmp_path: Path) -
     assert inbox.control_enabled("accept_events")
 
 
+def test_scope_delete_removes_control_override_and_survives_restart(tmp_path: Path) -> None:
+    inbox = GhostInboxStore(tmp_path)
+    assert inbox.set_control(
+        "admit_hints", False, scope="project", project="P:/deleted",
+    )
+    assert not inbox.control_enabled("admit_hints", project="P:/deleted")
+    assert inbox.delete_scope("project", project="P:/deleted") == 0
+    restarted = GhostInboxStore(tmp_path)
+    assert restarted.control_enabled("admit_hints", project="P:/deleted")
+
+
+def test_user_scope_delete_restores_all_controls(tmp_path: Path) -> None:
+    inbox = GhostInboxStore(tmp_path)
+    assert inbox.set_learning_enabled(False)
+    assert inbox.delete_scope("user") == 0
+    assert inbox.controls() == {
+        "accept_events": True,
+        "retrieve_projections": True,
+        "run_maintenance": True,
+        "admit_hints": True,
+    }
+
+
 def test_retrieval_and_maintenance_controls_have_separate_boundaries(tmp_path: Path) -> None:
     inbox = GhostInboxStore(tmp_path)
     state = SimpleNamespace(ghost_inbox=inbox, ghost_hebbian=None, ghost_continuity=None)

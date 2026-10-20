@@ -78,6 +78,7 @@ class ContextAdmission:
     truncated: bool = False
     digest: str = ""
     scope: str = ""
+    expires_at: str = ""
 
     def to_payload(self) -> dict[str, object]:
         capability = _identifier(self.capability_id, 80)
@@ -97,6 +98,9 @@ class ContextAdmission:
             payload["admission_reason"] = reason
         if scope:
             payload["scope"] = scope
+        expires_at = _clip(self.expires_at, 80)
+        if expires_at:
+            payload["expires_at"] = expires_at
         return payload
 
 
@@ -154,6 +158,7 @@ def admission_from_rendered_source(
         capability_id=_identifier(getattr(rendered_source, "capability_id", ""), 80),
         admission_reason=_identifier(reason, 80),
         scope=_clip(getattr(rendered_source, "scope", ""), 160),
+        expires_at=_clip(getattr(rendered_source, "expires_at", ""), 80),
         budget=max(0, int(getattr(rendered_source, "budget", 0) or 0)),
         chars=chars,
         truncated=truncated,

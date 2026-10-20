@@ -7,6 +7,7 @@ the resulting ContextEpoch.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -27,6 +28,7 @@ class GhostContextSource:
     scope: str
     capability_id: str = "local_context"
     admission_reason: str = PROVIDER_TURN_ADMISSION
+    expires_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,7 @@ def admit_ghost_context(
     request_scope: str = "",
     require_all: bool = False,
     admit_hints: bool = True,
+    as_of: str | None = None,
 ) -> GhostAdmissionResult:
     """Validate Ghost placement against the exact outbound prompt.
 
@@ -72,6 +75,9 @@ def admit_ghost_context(
     rejected: list[GhostAdmissionRejection] = []
     seen_keys: set[str] = set()
     expected_scope = str(request_scope or "").strip()
+    effective_as_of = _timestamp(as_of) if as_of else datetime.now(timezone.utc)
+    if as_of and effective_as_of is None:
+        raise ValueError("as_of must be an ISO-8601 timestamp")
     for source in sources:
         key = str(source.key or "").strip()
         text = str(source.text or "")
@@ -84,6 +90,15 @@ def admit_ghost_context(
         if not admit_hints:
             rejected.append(GhostAdmissionRejection(key, "hints_disabled"))
             continue
+        expires_at = str(source.expires_at or "").strip()
+        if expires_at:
+            expires = _timestamp(expires_at)
+            if expires is None:
+                rejected.append(GhostAdmissionRejection(key, "invalid_expiry"))
+                continue
+            if expires <= effective_as_of:
+                rejected.append(GhostAdmissionRejection(key, "expired"))
+                continue
         budget = max(0, int(source.budget or 0))
         scope = str(source.scope or "").strip()
         if budget <= 0 or len(text) > budget:
@@ -145,7 +160,7 @@ def sources_from_values(
 
 
 def source_from_value(*, key: str, text: object, budget: int, scope: str,
-                      capability_id: str = "local_context") -> GhostContextSource | None:
+                      capability_id: str = "local_context", expires_at: str = "") -> GhostContextSource | None:
     value = str(text or "").strip()
     if not value:
         return None
@@ -155,7 +170,21 @@ def source_from_value(*, key: str, text: object, budget: int, scope: str,
         budget=budget,
         scope=scope,
         capability_id=capability_id,
+        expires_at=expires_at,
     )
+
+
+def _timestamp(value: object) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 __all__ = [

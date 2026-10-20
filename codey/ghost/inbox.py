@@ -455,6 +455,11 @@ class GhostInboxStore:
         if normalized_scope == "session" and not normalized_session:
             raise ValueError("session_id is required for session scope deletion")
         with self.records.transaction():
+            controls_removed = self._delete_control_scope_unlocked(
+                normalized_scope,
+                project=normalized_project,
+                session_id=normalized_session,
+            )
             candidates = list(self._load_candidates_unlocked())
             remaining: list[GhostMemoryCandidate] = []
             removed = 0
@@ -468,7 +473,7 @@ class GhostInboxStore:
                     removed += 1
                 else:
                     remaining.append(candidate)
-            if not removed:
+            if not removed and not controls_removed:
                 return 0
             control = _ghost_control_event(
                 schema_version=INBOX_SCHEMA_VERSION,
@@ -478,12 +483,55 @@ class GhostInboxStore:
                     "project": normalized_project if normalized_scope == "project" else "",
                     "session_id": normalized_session if normalized_scope == "session" else "",
                     "removed_count": removed,
+                    "controls_removed": controls_removed,
                 },
                 now=_common.now_iso_z(),
             )
-            self._rewrite_events_from_candidates(remaining, control_event=control)
-            self._write_state(remaining)
+            if removed:
+                self._rewrite_events_from_candidates(remaining, control_event=control)
+                self._write_state(remaining)
+            else:
+                self._append_events([control])
+                self.records.mark_applied()
             return removed
+
+    def _delete_control_scope_unlocked(
+        self,
+        scope: str,
+        *,
+        project: str,
+        session_id: str,
+    ) -> bool:
+        settings = self._read_settings_unlocked()
+        scoped = settings.get("control_scopes", {})
+        if not isinstance(scoped, dict):
+            raise GhostSettingsError(self.database.path, "control_scopes must be object")
+        changed = False
+        if scope == "user":
+            changed = bool(scoped.get("user")) or any(
+                settings.get(name) is not True for name in GHOST_CONTROL_NAMES
+            ) or settings.get("learning_enabled") is not True
+            scoped["user"] = {}
+            settings["learning_enabled"] = True
+            for name in GHOST_CONTROL_NAMES:
+                settings[name] = True
+        elif scope == "project":
+            projects = scoped.get("project", {})
+            if not isinstance(projects, dict):
+                raise GhostSettingsError(self.database.path, "project controls must be object")
+            changed = project in projects
+            projects.pop(project, None)
+        elif scope == "session":
+            sessions = scoped.get("session", {})
+            if not isinstance(sessions, dict):
+                raise GhostSettingsError(self.database.path, "session controls must be object")
+            changed = session_id in sessions
+            sessions.pop(session_id, None)
+        if changed:
+            settings["control_scopes"] = scoped
+            settings["updated_at"] = _common.now_iso_z()
+            self.records.set_setting("learning", settings)
+        return changed
 
     def set_learning_enabled(self, enabled: bool) -> bool:
         if type(enabled) is not bool:

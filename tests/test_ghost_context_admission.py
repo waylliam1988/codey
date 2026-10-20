@@ -61,6 +61,32 @@ def test_required_source_rejection_fails_closed(prompt: str, source: GhostContex
     assert caught.value.rejections[0].reason == reason
 
 
+def test_expired_context_source_is_rejected_with_explicit_as_of() -> None:
+    source = GhostContextSource(
+        "ghost_directive", "Prefer Chinese answers.", 900, request_scope("project-a"),
+        expires_at="2026-10-20T00:00:00Z",
+    )
+    result = admit_ghost_context(
+        source.text, (source,), request_scope=source.scope,
+        as_of="2026-10-21T00:00:00Z",
+    )
+    assert result.accepted == ()
+    assert result.rejected[0].reason == "expired"
+
+
+def test_invalid_context_expiry_fails_closed() -> None:
+    source = GhostContextSource(
+        "ghost_directive", "Prefer Chinese answers.", 900, request_scope("project-a"),
+        expires_at="not-a-timestamp",
+    )
+    with pytest.raises(GhostAdmissionError) as caught:
+        admit_ghost_context(
+            source.text, (source,), request_scope=source.scope,
+            require_all=True, as_of="2026-10-21T00:00:00Z",
+        )
+    assert caught.value.rejections[0].reason == "invalid_expiry"
+
+
 def test_real_kernel_send_is_blocked_before_provider_when_ghost_is_not_admitted() -> None:
     sent: list[str] = []
 
