@@ -114,6 +114,7 @@ export interface ResearchDrawerDeps {
     if (deps.closeOtherDrawers) deps.closeOtherDrawers('research');
     boundSessionId = sessionId;
     boundRunId = runId;
+    runtime.Workspace?.target('research', { runId });
     runtime.UiState.setDrawerOpen('research-drawer', true);
     const scope = $('research-scope');
     if (scope && deps.getSessionTitle) scope.textContent = deps.getSessionTitle(sessionId);

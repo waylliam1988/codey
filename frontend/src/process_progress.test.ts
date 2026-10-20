@@ -48,3 +48,68 @@ it('folds out-of-order read completions into the same read group', () => {
   expect(chat.querySelector('.tg-count')?.textContent).toBe('2 files');
   expect(chat.querySelector('.tool-group')?.textContent).toContain('selfie');
 });
+
+it('attaches a child arriving before its parent, retains it through settlement and ignores a late start', () => {
+  const chat = document.createElement('div');
+  const child = {
+    type: 'tool',
+    kind: 'read',
+    path: 'child.py',
+    result: 'saved',
+    runId: 'r',
+    toolKey: 'r:child',
+    callId: 'child',
+    parentCallId: 'parent',
+  };
+  window.Process.append(chat, child, () => {});
+  window.Process.append(
+    chat,
+    {
+      type: 'tool_pending',
+      kind: 'codemode',
+      toolName: 'codemode',
+      pending: true,
+      runId: 'r',
+      toolKey: 'r:parent',
+      callId: 'parent',
+    },
+    () => {},
+  );
+  expect(chat.querySelector('[data-call-id="parent"] .tool-children [data-call-id="child"]')).not.toBeNull();
+  window.Process.append(
+    chat,
+    {
+      type: 'tool',
+      kind: 'codemode',
+      toolName: 'codemode',
+      result: 'finished',
+      runId: 'r',
+      toolKey: 'r:parent',
+      callId: 'parent',
+    },
+    () => {},
+  );
+  expect(chat.querySelector('[data-call-id="parent"] .tool-children [data-call-id="child"]')).not.toBeNull();
+  window.Process.append(chat, { ...child, type: 'tool_pending', pending: true, result: '' }, () => {});
+  expect(chat.querySelector('[data-call-id="child"]')?.textContent).toContain('saved');
+  expect(chat.querySelectorAll('[data-call-id="child"]')).toHaveLength(1);
+});
+
+it('does not nest cycles or hide child failures inside the collapsed parent', () => {
+  const chat = document.createElement('div');
+  const make = (id: string, parent: string, error = false) => ({
+    type: 'tool',
+    kind: 'read',
+    result: id,
+    runId: 'r',
+    toolKey: `r:${id}`,
+    callId: id,
+    parentCallId: parent,
+    error,
+  });
+  window.Process.append(chat, make('a', 'b'), () => {});
+  window.Process.append(chat, make('b', 'a'), () => {});
+  expect(chat.querySelector('.tool-children')).toBeNull();
+  window.Process.append(chat, make('error', 'a', true), () => {});
+  expect(chat.querySelector('.process-alerts [data-call-id="error"]')).not.toBeNull();
+});

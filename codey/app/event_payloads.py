@@ -216,6 +216,9 @@ def browser_event_payload(event: object) -> dict[str, object] | None:
     if event.get("type") not in {"tool", "tool_started"}:
         return payload
     payload["kind"] = clip_event_text(event.get("kind") or "", 80)
+    for key in ('call_id', 'parent_call_id'):
+        if isinstance(event.get(key), str) and event[key]:
+            payload[key] = clip_event_text(event[key], 512)
     if event.get("type") == "tool_started":
         return payload
     detail = event.get("detail")

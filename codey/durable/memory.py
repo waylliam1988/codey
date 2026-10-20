@@ -28,6 +28,7 @@ from codey.durable.model import (
     same_submission,
     valid_execution_attempt,
     valid_frozen_task_state,
+    valid_input_consumption,
     valid_submission_transition,
     valid_task_status_transition,
     valid_task_transition,
@@ -451,9 +452,10 @@ class MemoryDurableStore:
                 raise CommitConflict("task identity is immutable")
             if not valid_frozen_task_state(existing.state, task.state):
                 raise CommitConflict("admitted task state is immutable")
-            if not valid_task_transition(existing.phase, task.phase):
+            consumed = valid_input_consumption(existing.phase, str(existing.status), existing.state, task)
+            if not consumed and not valid_task_transition(existing.phase, task.phase):
                 raise CommitConflict(f"invalid task phase transition: {existing.phase} -> {task.phase}")
-            if not valid_task_status_transition(TaskStatus(str(existing.status)), TaskStatus(str(task.status))):
+            if not consumed and not valid_task_status_transition(TaskStatus(str(existing.status)), TaskStatus(str(task.status))):
                 raise CommitConflict(f"invalid task status transition: {existing.status} -> {task.status}")
         elif not valid_task_status_transition(None, TaskStatus(str(task.status))):
             raise CommitConflict("new task must start with a non-terminal scheduler status")

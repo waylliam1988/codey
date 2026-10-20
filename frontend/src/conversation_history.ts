@@ -59,6 +59,24 @@ export class ConversationHistory {
     return this.errors.has(id);
   }
 
+  hasAfter(id: string): boolean {
+    return this.repositories.get(id)?.current?.hasAfter === true;
+  }
+
+  async focus(session: Session, entryId: string): Promise<boolean> {
+    const repository = this.repositories.get(session.id) || new HistoryRepository();
+    this.repositories.set(session.id, repository);
+    this.sessions.set(session.id, session);
+    const request = Symbol();
+    this.requests.set(session.id, request);
+    const page = await repository.loadAround(session.id, entryId);
+    if (!page || this.requests.get(session.id) !== request) return false;
+    session.messages = reconcileHistory(session.messages, page.items);
+    this.errors.delete(session.id);
+    this.changed(session);
+    return true;
+  }
+
   async refresh(session: Session): Promise<void> {
     this.sessions.set(session.id, session);
     const repository = this.repositories.get(session.id) || new HistoryRepository();

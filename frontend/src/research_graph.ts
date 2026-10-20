@@ -314,6 +314,7 @@ export interface GraphOptions {
     let panning = false;
     let start: { x: number; y: number; sx: number; sy: number; tx: number; ty: number } | null = null;
     let moved = false;
+    let pointerId: number | null = null;
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
@@ -343,7 +344,7 @@ export interface GraphOptions {
       if (!running) return;
       const moved = stepResearchGraph(nodes, edges);
       draw();
-      if (moved < 0.4) {
+      if (!draggingNode && moved < 0.4) {
         stillFrames += 1;
         if (stillFrames >= 30) {
           frame = 0;
@@ -403,6 +404,9 @@ export interface GraphOptions {
     }
 
     function onPointerDown(event: PointerEvent): void {
+      if (event.button !== 0 || pointerId !== null) return;
+      event.preventDefault();
+      pointerId = event.pointerId;
       const point = worldPoint(event);
       const hit = nodeAt(event);
       start = { ...point, tx: state.tx, ty: state.ty };
@@ -410,15 +414,18 @@ export interface GraphOptions {
       if (hit) {
         draggingNode = hit;
         hit.fixed = true;
+        hit.vx = hit.vy = 0;
         canvas.classList.add('dragging');
       } else {
         panning = true;
         canvas.classList.add('dragging');
       }
       canvas.setPointerCapture(event.pointerId);
+      wake();
     }
 
     function onPointerMove(event: PointerEvent): void {
+      if (pointerId !== null && pointerId !== event.pointerId) return;
       const point = worldPoint(event);
       if (start && Math.hypot(point.sx - start.sx, point.sy - start.sy) > 4) moved = true;
       if (draggingNode) {
@@ -426,6 +433,7 @@ export interface GraphOptions {
         draggingNode.y = point.y;
         draggingNode.vx = 0;
         draggingNode.vy = 0;
+        wake();
         draw();
         return;
       }
@@ -443,21 +451,34 @@ export interface GraphOptions {
     }
 
     function onPointerUp(event: PointerEvent): void {
+      if (event.pointerId !== pointerId) return;
       const hit = nodeAt(event);
+      const select = !moved;
+      finishDrag();
+      if (select) {
+        state.selected = hit;
+        setDetail(detail, hit, options);
+      }
+      draw();
+    }
+
+    function finishDrag(): void {
+      const captured = pointerId;
+      pointerId = null;
       if (draggingNode) draggingNode.fixed = false;
       draggingNode = null;
       panning = false;
       canvas.classList.remove('dragging');
       try {
-        canvas.releasePointerCapture(event.pointerId);
+        if (captured !== null && canvas.hasPointerCapture(captured)) canvas.releasePointerCapture(captured);
       } catch {}
-      if (!moved) {
-        state.selected = hit;
-        setDetail(detail, hit, options);
-      }
       start = null;
       draw();
       wake();
+    }
+
+    function cancelDrag(event: PointerEvent): void {
+      if (event.pointerId === pointerId) finishDrag();
     }
 
     function onWheel(event: WheelEvent): void {
@@ -482,7 +503,9 @@ export interface GraphOptions {
     canvas.addEventListener('pointerdown', onPointerDown);
     canvas.addEventListener('pointermove', onPointerMove);
     canvas.addEventListener('pointerup', onPointerUp);
-    canvas.addEventListener('pointercancel', onPointerUp);
+    canvas.addEventListener('pointercancel', cancelDrag);
+    canvas.addEventListener('lostpointercapture', cancelDrag);
+    window.addEventListener('blur', finishDrag);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('dblclick', onDblClick);
     resize();
@@ -492,12 +515,15 @@ export interface GraphOptions {
       reset: resetView,
       stop() {
         running = false;
+        finishDrag();
         cancelAnimationFrame(frame);
         observer.disconnect();
         canvas.removeEventListener('pointerdown', onPointerDown);
         canvas.removeEventListener('pointermove', onPointerMove);
         canvas.removeEventListener('pointerup', onPointerUp);
-        canvas.removeEventListener('pointercancel', onPointerUp);
+        canvas.removeEventListener('pointercancel', cancelDrag);
+        canvas.removeEventListener('lostpointercapture', cancelDrag);
+        window.removeEventListener('blur', finishDrag);
         canvas.removeEventListener('wheel', onWheel);
         canvas.removeEventListener('dblclick', onDblClick);
       },
@@ -619,9 +645,7 @@ export interface GraphOptions {
     const r = graphNodeRadius(node);
     ctx.save();
     ctx.globalAlpha = faded ? 0.28 : 1;
-    ctx.fillStyle = hovered ? colors.ok : node.kind === 'source_url' ? colors.faint : colors.textDim;
-    if (!hovered && node.kind === 'counterpoint') ctx.fillStyle = colors.muted;
-    if (!hovered && node.kind === 'concept') ctx.fillStyle = colors.text;
+    ctx.fillStyle = colors.ok;
     ctx.beginPath();
     ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
     ctx.fill();

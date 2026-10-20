@@ -86,11 +86,9 @@ export interface ConversationNavDeps {
     if (!entry || nav.hidden || entry.button.hidden || previewSuppressed) return;
     const button = entry.button,
       rect = button.getBoundingClientRect();
-    const label = preview.querySelector<HTMLElement>('.conversation-preview-label');
     const title = preview.querySelector<HTMLElement>('.conversation-preview-title');
     const body = preview.querySelector<HTMLElement>('.conversation-preview-body');
-    if (!label || !title || !body) return;
-    label.textContent = 'Question ' + (index + 1);
+    if (!title || !body) return;
     title.textContent = plain(entry.anchor.querySelector('.body'));
     body.textContent = answerFor(entry);
     body.hidden = !body.textContent;
@@ -180,7 +178,7 @@ export interface ConversationNavDeps {
   function availableBounds(): Bounds {
     const rect = area.getBoundingClientRect();
     let right = rect.right;
-    document.querySelectorAll<HTMLElement>('.changes-drawer.open').forEach((drawer) => {
+    document.querySelectorAll<HTMLElement>('.changes-drawer.open:not(.workspace .changes-drawer)').forEach((drawer) => {
       // Drawers overlay rather than resize the chat. Count their final occupied width during animation too.
       right = Math.min(right, innerWidth - drawer.getBoundingClientRect().width);
     });
@@ -277,8 +275,7 @@ export interface ConversationNavDeps {
     preview.className = 'conversation-preview';
     preview.setAttribute('role', 'tooltip');
     preview.hidden = true;
-    preview.innerHTML =
-      '<div class="conversation-preview-label"></div><div class="conversation-preview-title"></div><div class="conversation-preview-body"></div>';
+    preview.innerHTML = '<div class="conversation-preview-title"></div><div class="conversation-preview-body"></div>';
     main.append(nav, preview);
     nav.addEventListener('pointermove', (event: PointerEvent) => {
       if (event.pointerType === 'touch') return;

@@ -40,7 +40,12 @@ def test_quote_appends_exact_selection_without_overwriting_or_sending(page, answ
 @pytest.mark.parametrize('kind', ['user', 'thinking', 'tool'])
 def test_non_answer_selections_offer_copy_only_and_hidden_quote_is_not_keyboard_target(page, kind):
     page.evaluate("kind=>addToSession('a',{type:kind,runId:'fixture-run',text:'Copy only',kind:'read',result:'Copy only'})", kind)
-    select_answer(page, '#chat > .msg:last-child')
+    if kind in {'thinking', 'tool'}:
+        page.locator('.process-summary').click()
+        page.locator('.thinking > summary' if kind == 'thinking' else '.tool-disclosure > summary').click()
+    selector = {'user': '.msg.user .body', 'thinking': '.thinking-body', 'tool': '.tool-result-panel pre'}[kind]
+    select_answer(page, selector)
+    assert page.evaluate('getSelection().toString()') == 'Copy only'
     expect(page.get_by_role('menuitem', name='Quote in reply')).to_have_count(0)
     page.keyboard.press('End')
     expect(page.locator('#selection-copy')).to_be_focused()

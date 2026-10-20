@@ -60,6 +60,7 @@ class RunEventUiPayloadTests(unittest.TestCase):
             "session_id": "session-1",
             "turn": 3,
             "tool_id": "3:2",
+            "call_id": "3:2",
             "kind": "run",
             "tool_name": "run",
             "path": "",

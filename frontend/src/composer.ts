@@ -64,6 +64,8 @@ export interface ComposerApi {
   let sendingSessionId = '';
   let ready = false;
   let outbox: InputOutbox;
+  const inputModes = new Map<string, 'steer' | 'follow_up'>();
+  let inputMode: HTMLSelectElement | null = null;
 
   function liveDefaultProvider() {
     return runtime.UiState.DEFAULT_PROVIDER;
@@ -97,6 +99,26 @@ export interface ComposerApi {
         changed: () => updateSend(),
         observe: (input) => deps.observeQueuedInput(input),
       });
+    }
+    if (!inputMode) {
+      inputMode = document.createElement('select');
+      inputMode.id = 'input-mode';
+      inputMode.className = 'input-mode';
+      inputMode.setAttribute('aria-label', 'Message delivery');
+      for (const [value, text] of [
+        ['follow_up', 'Next turn'],
+        ['steer', 'Steer current task'],
+      ]) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = text;
+        inputMode.append(option);
+      }
+      inputMode.onchange = () => {
+        inputModes.set(activeId(), inputMode!.value as 'steer' | 'follow_up');
+        updateSend();
+      };
+      $('send-hint').before(inputMode);
     }
     bindHandlers();
     syncSession();
@@ -154,6 +176,7 @@ export interface ComposerApi {
 
   function updateSend() {
     if (!deps) return;
+    document.querySelector('main')?.classList.toggle('empty-conversation', !deps.activeSession?.()?.messages.length);
     const has = $<HTMLTextAreaElement>('task').value.trim();
     const selection = runtime.ProviderUI.runSelection(deps.activeSession(), currentProviderId()).model_selection;
     const reason = runtime.Models.reason(currentProviderId(), selection?.model);
@@ -177,6 +200,12 @@ export interface ComposerApi {
     const running = isRunningForSession(activeId());
     const anotherSessionRunning = !!ownerSessionId && !running;
     const sendingCurrent = sendingSessionId === activeId();
+    const mode = inputModes.get(activeId()) || 'follow_up';
+    if (inputMode) {
+      inputMode.hidden = !running;
+      inputMode.disabled = sendingCurrent;
+      inputMode.value = mode;
+    }
     const awaitingAnswer = !!runtime.UserQuestions?.pending(activeId());
     const task = $<HTMLTextAreaElement>('task');
     const send = $<HTMLButtonElement>('send');
@@ -196,12 +225,23 @@ export interface ComposerApi {
         ? 'Sending…'
         : running
           ? has
-            ? 'Send next turn'
+            ? mode === 'steer'
+              ? 'Steer at boundary'
+              : 'Send next turn'
             : 'Stop'
           : anotherSessionRunning
             ? 'Enter'
             : 'Enter';
-    send.setAttribute('aria-label', sendingCurrent ? 'Sending message' : running ? 'Queue message' : 'Send message');
+    send.setAttribute(
+      'aria-label',
+      sendingCurrent
+        ? 'Sending message'
+        : running
+          ? mode === 'steer'
+            ? 'Steer current task'
+            : 'Queue message'
+          : 'Send message',
+    );
     const owner = deps.findSession(ownerSessionId);
     stop.setAttribute('aria-label', owner ? 'Stop ' + owner.title : 'Stop');
     stop.title = owner ? 'Stop ' + owner.title : 'Stop';
@@ -292,6 +332,7 @@ export interface ComposerApi {
     const runOwner = message.runOwner || '';
     const sessionId = message.sessionId || '';
     if (message.failure) {
+      const outputScope = new URLSearchParams({ session_id: sessionId, run_id: message.runId || '' });
       const actions = recoveryForFailure(message.failure, {
         execution_id: message.executionId,
         source_id: message.failure.source_id,
@@ -302,6 +343,9 @@ export interface ComposerApi {
         continuation: message.approval?.continuation,
       });
       return actions.map((action) => ({
+        disabled:
+          (action.kind === 'check_execution' || (action.kind === 'reload_resource' && !!message.executionId)) &&
+          (!sessionId || !message.runId),
         label:
           action.kind === 'check_execution'
             ? 'Check status'
@@ -314,7 +358,7 @@ export interface ComposerApi {
                   : 'Retry request',
         onclick: () => {
           if (action.kind === 'check_execution')
-            void fetch(`/api/executions/${encodeURIComponent(action.executionId)}/output`);
+            void fetch(`/api/executions/${encodeURIComponent(action.executionId)}/output?${outputScope}`);
           else if (action.kind === 'retry_continuation')
             void fetch('/api/shell_approval/retry', {
               method: 'POST',
@@ -328,7 +372,8 @@ export interface ComposerApi {
             target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
             target?.focus({ preventScroll: true });
           } else if (action.kind === 'reload_resource') {
-            if (message.executionId) void fetch(`/api/executions/${encodeURIComponent(message.executionId)}/output`);
+            if (message.executionId)
+              void fetch(`/api/executions/${encodeURIComponent(message.executionId)}/output?${outputScope}`);
             else
               window.dispatchEvent(
                 new CustomEvent('codey:reload-resource', { detail: { resourceId: action.resourceId } }),
@@ -395,6 +440,11 @@ export interface ComposerApi {
       sendingSessionId = sessionId;
       updateSend();
       deps.updateComposerContext();
+    }
+    if (sessionId === activeId() && !s.messages.length) {
+      const main = document.querySelector('main');
+      main?.classList.add('composer-animating');
+      window.setTimeout(() => main?.classList.remove('composer-animating'), 400);
     }
     const started = runtime.Requests.begin(sessionId, text, requestId);
     if (!started) {
@@ -474,6 +524,7 @@ export interface ComposerApi {
           task,
           provider,
           intent: deps.currentIntentForSession(sessionId),
+          input_mode: inputModes.get(sessionId) || 'follow_up',
           ...runtime.ProviderUI.runSelection(deps.findSession(sessionId), provider),
         };
         await outbox.enqueue(request, revision);

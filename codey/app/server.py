@@ -45,6 +45,7 @@ from codey.app import model_settings
 from codey.app import provider_services as provider_services
 from codey.app import task_submit as task_submit
 from codey.app.context import AppContext
+from codey.app.conversation_routes import conversation_action_response, conversation_tree_response
 from codey.app.documents import document_response
 from codey.app.durable_events import replay_commits
 from codey.app.event_payloads import browser_event_payload
@@ -361,6 +362,7 @@ def _execution_output_route(ctx: AppContext, execution_id: str, query: dict[str,
 
 
 _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, dict[str, Any]]]] = {
+    "/api/conversation_tree": conversation_tree_response,
     "/api/workflows": workflow_history_response,
     "/api/inputs": inputs_response,
     "/api/questions": questions_response,
@@ -381,6 +383,7 @@ _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, d
 
 
 _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[str, Any]]]] = {
+    "/api/conversation_tree/action": conversation_action_response,
     "/api/workflows/fork": workflow_fork_response,
     "/api/inputs": input_action_response,
     "/api/questions": question_answer_response,

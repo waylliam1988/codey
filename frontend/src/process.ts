@@ -28,6 +28,9 @@ export interface ProcessToolRecord {
   streamState?: string;
   approval?: Pick<ApprovalState, 'decision' | 'execution' | 'continuation'>;
   toolKey?: string;
+  callId?: string;
+  parentCallId?: string;
+  entryId?: string;
   toolName?: string;
   kind?: string;
   path?: string;
@@ -250,16 +253,78 @@ export interface ProcessToolRecord {
 
   function tool(block: ProcessBlock, m: ToolRecord): void {
     const key = m.toolKey || JSON.stringify(m);
+    const previous = block._process.tools.get(key);
+    if (previous && !previous.pending && m.pending) return;
     block._process.tools.set(key, m);
-    const existing =
-      m.toolKey &&
-      Array.from(block.querySelectorAll<HTMLElement>('[data-tool-key]')).find((el) => el.dataset.toolKey === m.toolKey);
+    const existing = m.toolKey
+      ? Array.from(block.querySelectorAll<HTMLElement>('[data-tool-key]')).find(
+          (el) => el.dataset.toolKey === m.toolKey,
+        )
+      : undefined;
     const target = block.querySelector<HTMLElement>(m.error ? '.process-alerts' : '.process-body');
     if (!target) return;
+    const children = existing?.querySelector(':scope > .tool-children');
+    const disclosures = existing
+      ? Array.from(existing.querySelectorAll<HTMLDetailsElement>('details')).map((detail) => detail.open)
+      : [];
     if (existing) existing.remove();
-    if (m.pending || m.error) target.append(runtime.Render.standaloneToolEl(m));
+    if (m.pending || m.error || m.parentCallId || m.toolName === 'codemode')
+      target.append(runtime.Render.standaloneToolEl(m));
     else runtime.Render.appendOrFoldTool(target, m);
+    if (m.callId) {
+      const node = Array.from(target.querySelectorAll<HTMLElement>('[data-tool-key]')).find(
+        (element) => element.dataset.toolKey === m.toolKey,
+      );
+      if (node) {
+        node.dataset.callId = m.callId;
+        node.dataset.callScope = m.runId || '';
+        if (m.entryId) node.dataset.entryId = m.entryId;
+        if (children) node.append(children);
+        node.querySelectorAll<HTMLDetailsElement>('details').forEach((detail, index) => {
+          if (disclosures[index] !== undefined) detail.open = disclosures[index];
+        });
+      }
+      syncToolTree(block);
+    }
     summary(block);
+  }
+
+  function syncToolTree(block: ProcessBlock): void {
+    const records = [...block._process.tools.values()].filter((record) => record.callId);
+    const byCall = new Map(records.map((record) => [`${record.runId}:${record.callId}`, record]));
+    const nodes = new Map<string, HTMLElement>();
+    for (const node of block.querySelectorAll<HTMLElement>('[data-call-id]')) {
+      const key = `${node.dataset.callScope}:${node.dataset.callId}`;
+      if (!nodes.get(key)?.contains(node)) nodes.set(key, node);
+    }
+    for (const record of records) {
+      const own = `${record.runId}:${record.callId}`;
+      const node = nodes.get(own);
+      if (!node || !record.parentCallId || record.error) continue;
+      const parent = nodes.get(`${record.runId}:${record.parentCallId}`);
+      let cursor: ToolRecord | undefined = record;
+      const seen = new Set<string>();
+      let depth = 0;
+      while (cursor?.parentCallId && depth <= 6) {
+        const key = `${cursor.runId}:${cursor.callId}`;
+        if (seen.has(key)) break;
+        seen.add(key);
+        cursor = byCall.get(`${cursor.runId}:${cursor.parentCallId}`);
+        depth++;
+      }
+      // Missing parents stay visible at the root until their event arrives.
+      if (!parent || parent === node || node.contains(parent) || depth > 6 || cursor?.parentCallId) continue;
+      let children = parent.querySelector<HTMLElement>(':scope > .tool-children');
+      if (!children) {
+        children = document.createElement('div');
+        children.className = 'tool-children';
+        children.setAttribute('role', 'group');
+        children.setAttribute('aria-label', 'Nested tool calls');
+        parent.append(children);
+      }
+      node.dataset.toolDepth = String(depth);
+      children.append(node);
+    }
   }
   function state(block: ProcessBlock, value: ProcessStatus, explicit = true): void {
     block._process.state = value;

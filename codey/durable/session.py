@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import threading
@@ -372,6 +373,61 @@ class DurableSession:
     @_mutation_line
     def has_conversation(self, conversation_id: str) -> bool:
         return self.store.has_conversation(conversation_id)
+
+    @_mutation_line
+    def record_display_message(self, conversation_id: str, *, run_id: str, identity: str,
+                               payload: Mapping[str, object]) -> None:
+        """Idempotent presentation history; it never enters provider context."""
+        entry_id = 'display-' + hashlib.sha256(f'{len(run_id)}:{run_id}{identity}'.encode()).hexdigest()
+        if any(entry.entry_id == entry_id for entry in self.store.entries(conversation_id)):
+            return
+        head, revision = self.store.head(conversation_id)
+        entry = EntryDraft(entry_id=entry_id, conversation_id=conversation_id, parent_id=head,
+                           kind='display_message', by_task_id=run_id,
+                           payload={**dict(payload), 'display_only': True})
+        self._commit(DurableMutation(conversation_id, revision, entries=(entry,)))
+
+    @_mutation_line
+    def history_window(self, conversation_id: str, entry_id: str, *, limit: int = 100,
+                       leaf_id: str | None = None) -> dict[str, object]:
+        return conversation_ops.history_window(self, conversation_id, entry_id, limit=limit, leaf_id=leaf_id)
+
+    @_mutation_line
+    def conversation_tree(self, conversation_id: str) -> dict[str, object]:
+        """Bounded metadata for every retained branch in this conversation and its ancestors."""
+        head, revision = self.store.head(conversation_id)
+        entries = list(self.store.entries(conversation_id))
+        parent_scope, parent_cap = self.store.conversation_parent(conversation_id)
+        if parent_scope and parent_cap:
+            entries = list(conversation_ops.context(self, parent_scope, leaf_id=parent_cap)) + entries
+        ancestors = self.conversation_lineage(conversation_id)
+        parents = {entry.parent_id for entry in entries}
+        tips = [entry for entry in entries if entry.entry_id not in parents or entry.entry_id == head]
+        return {'ok': True, 'session_id': conversation_id, 'head_entry_id': head, 'revision': revision,
+                'ancestors': ancestors, 'has_more': len(tips) > 200,
+                'branches': [{'entry_id': entry.entry_id, 'parent_entry_id': entry.parent_id,
+                              'kind': entry.kind, 'text': str(entry.payload.get('text') or entry.payload.get('content') or entry.kind)[:240],
+                              'current': entry.entry_id == head} for entry in tips[-200:]]}
+
+    @_mutation_line
+    def conversation_lineage(self, conversation_id: str) -> list[dict[str, object]]:
+        """Read fork identities without loading any conversation contents."""
+        scope = conversation_id
+        ancestors: list[dict[str, object]] = []
+        seen: set[str] = set()
+        while scope and scope not in seen and len(seen) < 64:
+            seen.add(scope)
+            parent, entry = self.store.conversation_parent(scope)
+            if parent:
+                ancestors.append({'session_id': parent, 'entry_id': entry})
+            scope = parent or ''
+        return ancestors
+
+    @_mutation_line
+    def select_idle_branch(self, conversation_id: str, entry_id: str, *, expected_revision: int) -> CommitResult:
+        if any(task.conversation_id == conversation_id for task in self.store.pending_tasks()):
+            raise CommitConflict('Wait for this conversation to finish before switching branches.')
+        return conversation_ops.branch(self, conversation_id, entry_id, expected_revision=expected_revision)
 
     @_mutation_line
     def pending_tasks(self) -> tuple[TaskCheckpoint, ...]:
@@ -783,8 +839,8 @@ class DurableSession:
         task_id: str | None = None,
     ) -> tuple[tuple[SubmissionRecord, ...], DurableMutation]:
         """Build a boundary mutation without publishing it."""
-        if at not in {"post_tools", "approval", "final"}:
-            raise ValueError("boundary must be 'post_tools', 'approval' or 'final'")
+        if at not in {"post_tools", "approval", "final", "settle"}:
+            raise ValueError("unknown generation boundary")
         if steering_mode not in {"all", "one-at-a-time"}:
             raise ValueError("invalid steering queue mode")
         if follow_up_mode not in {"all", "one-at-a-time"}:
@@ -800,17 +856,17 @@ class DurableSession:
         writes = [item for item in queued if item.mode == "write"]
         steers = [item for item in queued if item.mode == "steer"]
         follow_ups = [item for item in queued if item.mode == "follow_up"]
-        selected_users = (
+        selected_users: list[SubmissionRecord] = (
             steers if steering_mode == "all" else steers[:1]
-        )
+        ) if at in {'post_tools', 'final'} else []
         # A steering input owns the current boundary.  Follow-ups stay queued
         # until the next boundary, even when this is a final handoff; this
         # keeps a late steer from being overtaken by an older continuation.
-        if final and not selected_users:
+        if final and not selected_users and task_id is None:
             selected_users += (
                 follow_ups if follow_up_mode == "all" else follow_ups[:1]
             )
-        selected_ids = {item.submission_id for item in writes}
+        selected_ids = {item.submission_id for item in writes} if at != 'settle' else set()
         selected_ids.update(item.submission_id for item in selected_users)
         selected = [
             item for item in queued
@@ -837,6 +893,7 @@ class DurableSession:
                 current_head=current_head,
                 visible_entry_ids=visible_entry_ids,
                 task_by_submission=task_by_submission,
+                consumer_task_id=task_id,
             )
             if placement.entry is not None:
                 entries.append(placement.entry)
@@ -872,6 +929,7 @@ class DurableSession:
         current_head: str | None,
         visible_entry_ids: set[str],
         task_by_submission: Mapping[str, TaskCheckpoint],
+        consumer_task_id: str | None = None,
     ) -> _BoundaryPlacement:
         if submission.mode == "write":
             return self._prepare_boundary_write(
@@ -897,11 +955,18 @@ class DurableSession:
         state = dict(thawed_state)
         state["input_state"] = "placed"
         state["input_entry_id"] = entry.entry_id
+        consumed = submission.mode == "steer" and consumer_task_id is not None
+        if consumed:
+            state["input_state"] = "consumed"
+            state["consumed_by_task_id"] = consumer_task_id
         return _BoundaryPlacement(
-            entry, replace(task, revision=task.revision + 1, state=state),
+            entry, replace(task, revision=task.revision + 1, state=state,
+                           phase="completed" if consumed else task.phase,
+                           status=TaskStatus.COMPLETED if consumed else task.status),
             SubmissionUpdate(
                 submission_id=submission.submission_id, conversation_id=submission.conversation_id,
-                expected_status=submission.status, status=submission.status,
+                expected_status=submission.status, status=SubmissionStatus.DONE if consumed else submission.status,
+                detail={"consumed_by_task_id": consumer_task_id} if consumed else None,
                 input_entry_id=entry.entry_id, placement=SubmissionPlacement.PLACED,
             ),
         )

@@ -46,6 +46,8 @@ class DurableConversationInputQueue:
     def _state_for_task(task: Any) -> str:
         raw = task.state.get("input_state") if isinstance(task.state, Mapping) else None
         status = str(task.status)
+        if raw == "consumed":
+            return "consumed"
         if status == "completed" or task.phase == "completed":
             return "completed"
         if status == "cancelled" or task.phase == "cancelled":
@@ -81,6 +83,8 @@ class DurableConversationInputQueue:
             "state": item_state,
             "revision": int(task.revision),
             "origin": hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest(),
+            "consumed_by_run_id": state.get("consumed_by_task_id", ""),
+            "entry_id": state.get("input_entry_id", ""),
         }
 
     def _items(self, session_id: str = "") -> builtins.list[dict[str, Any]]:

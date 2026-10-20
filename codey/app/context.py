@@ -887,6 +887,9 @@ class AppContext(GhostStoreAccessors):
             payload["ok"] = payload.get("ok") is True
             if strict_exit_code(payload.get("exit_code")) is None:
                 payload.pop("exit_code", None)
+        if payload.get('type') in {'tool_started', 'tool'}:
+            from codey.app.tool_history import record_tool_display
+            record_tool_display(self, payload)
         self.event_bus.emit(payload)
         if payload.get("type") == "task_done":
             self.input_queue.completed(str(payload.get("run_id") or ""), payload)

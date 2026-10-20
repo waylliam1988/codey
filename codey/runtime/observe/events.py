@@ -43,6 +43,20 @@ def _event_metadata(event: RunEvent) -> dict[str, Any]:
     return metadata if isinstance(metadata, dict) else {}
 
 
+def _tool_identity(event: RunEvent, run_id: str) -> dict[str, str]:
+    if event.call is None:
+        return {}
+    meta = _event_metadata(event)
+    call_id = str(event.call.call_id or '')
+    if event.call.name == 'codemode':
+        from codey.codemode.identity import parent_execution_id
+        call_id = parent_execution_id(run_id, event.turn, event.call)
+    if not call_id:
+        call_id = f'{event.turn}:{_safe_tool_index(meta.get("tool_index"))}'
+    parent = meta.get('parent_call_id')
+    return {'call_id': call_id, **({'parent_call_id': parent} if isinstance(parent, str) and parent else {})}
+
+
 @dataclass(frozen=True)
 class RunEvent:
     kind: str
@@ -183,6 +197,7 @@ def run_event_ui_payload(
         canonical_name = str(meta.get("tool_name") or event.call.name or "").strip().lower()
         payload = {
             "type": "tool_started",
+            **_tool_identity(event, run_id),
             "run_id": run_id,
             "session_id": session_id,
             "turn": event.turn,
@@ -208,6 +223,7 @@ def run_event_ui_payload(
     status = event.outcome.presentation_status()
     payload = {
         "type": "tool",
+        **_tool_identity(event, run_id),
         "run_id": run_id,
         "session_id": session_id,
         "turn": event.turn,

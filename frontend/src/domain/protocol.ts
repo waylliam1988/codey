@@ -28,6 +28,8 @@ export type ServerEvent = {
   text?: string;
   reasoning?: string;
   tool_id?: string;
+  call_id?: string;
+  parent_call_id?: string;
   kind?: string;
   tool_name?: string;
   path?: string;
@@ -317,6 +319,8 @@ export function decodeServerEvent(value: unknown): ServerEvent {
     'status',
     'text',
     'tool_id',
+    'call_id',
+    'parent_call_id',
     'kind',
     'tool_name',
     'path',

@@ -34,6 +34,7 @@ from codey.durable.model import (
     thaw_json,
     valid_execution_attempt,
     valid_frozen_task_state,
+    valid_input_consumption,
     valid_submission_transition,
     valid_task_status_transition,
     valid_task_transition,
@@ -726,10 +727,11 @@ def _validate_existing_task(
     if not valid_frozen_task_state(json.loads(row["state"]), task.state):
         raise CommitConflict("admitted task state is immutable")
     previous_phase = str(row["phase"])
-    if not valid_task_transition(previous_phase, task.phase):
+    consumed = valid_input_consumption(previous_phase, str(row["status"]), previous_state, task)
+    if not consumed and not valid_task_transition(previous_phase, task.phase):
         raise CommitConflict(f"invalid task phase transition: {previous_phase} -> {task.phase}")
     previous_status = TaskStatus(str(row["status"]))
-    if not valid_task_status_transition(previous_status, TaskStatus(str(task.status))):
+    if not consumed and not valid_task_status_transition(previous_status, TaskStatus(str(task.status))):
         raise CommitConflict(f"invalid task status transition: {previous_status} -> {task.status}")
 
 

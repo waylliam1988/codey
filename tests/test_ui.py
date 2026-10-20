@@ -495,9 +495,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn('data-provider="deepseek"', HTML)
 
 
-    def test_welcome_keeps_status_copy_without_example_cards(self) -> None:
-        self.assertIn("Send a message to start.", CONVERSATION_UI_JS)
-        self.assertIn("<h1>Codey</h1>", CONVERSATION_UI_JS)
+    def test_new_chat_is_blank_without_welcome_or_example_cards(self) -> None:
+        self.assertNotIn("Send a message to start.", CONVERSATION_UI_JS)
+        self.assertNotIn("<h1>Codey</h1>", CONVERSATION_UI_JS)
+        self.assertIn("empty-conversation", CONVERSATION_UI_JS)
+        self.assertIn("main.composer-animating .composer-wrap", APP_CSS)
         self.assertNotIn("打个招呼", HTML)
         self.assertNotIn("生成 snake.py", HTML)
         self.assertNotIn("写 README", HTML)
@@ -684,6 +686,7 @@ function makeElement(tag) {
     setSelectionRange: () => {},
     append: (...kids) => { el.children.push(...kids); },
     appendChild: (kid) => { el.children.push(kid); return kid; },
+    before: () => {},
     replaceChildren: (...kids) => { el.children = kids; },
     remove: () => {
       const i = menuButtons.indexOf(el);
@@ -719,7 +722,7 @@ function fakeButton() { return { onclick: null, disabled: false, setAttribute: (
 const fakePop = { classList: { add: () => {}, remove: () => {}, contains: () => false }, contains: () => false, setAttribute: () => {} };
 global.document = {
   createElement: (tag) => makeElement(tag),
-  querySelector: () => ({before: () => {}}),
+  querySelector: () => makeElement('div'),
   querySelectorAll: (sel) => {
     if (sel === '.provider-item') return menuButtons.slice();
     return [];
@@ -737,7 +740,7 @@ global.document = {
     if (id === 'task') return { value: '', style: {}, disabled: false, scrollHeight:40, setSelectionRange: () => {}, addEventListener: () => {}, click: () => {} };
     if (id === 'composer-context') return { onclick: null, addEventListener: () => {} };
     if (id === 'send' || id === 'stop') return { onclick: null, disabled: false, style: {}, setAttribute: () => {}, click: () => {} };
-    if (id === 'send-hint') return { textContent: '' };
+    if (id === 'send-hint') return fakeButtons[id] || (fakeButtons[id] = makeElement('span'));
     if (id === 'model-menu-empty' || id === 'model-notice') return fakeButtons[id] || (fakeButtons[id] = makeElement('div'));
     return null;
   },

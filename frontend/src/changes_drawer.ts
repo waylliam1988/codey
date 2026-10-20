@@ -115,6 +115,7 @@ export interface ChangesDrawerDeps {
     }
     activeProject = project;
     selectedPath = path;
+    runtime.Workspace?.target('changes', { path });
     const scope = $('changes-scope');
     scope.textContent = runtime.UiState.pathName(project);
     scope.title = project;

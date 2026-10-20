@@ -66,7 +66,9 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
             source = body.get("request")
             if not isinstance(source, dict):
                 raise ValueError("request required")
-            request = {key: source[key] for key in ("session_id", "run_id", "project", "task", "provider", "intent", "model_selection", "max_turns") if key in source}
+            request = {key: source[key] for key in ("session_id", "run_id", "project", "task", "provider", "intent", "model_selection", "max_turns", "input_mode") if key in source}
+            if request.get("input_mode", "follow_up") not in {"steer", "follow_up"}:
+                raise ValueError("invalid input mode")
             state = ctx.load_ui_state()
             session = next((session for session in state["sessions"] if session["id"] == request.get("session_id")), None)
             if session is None:

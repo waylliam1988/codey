@@ -98,6 +98,9 @@ def seed(ctx, tmp_path, url, model, *, session_ids=("live",)):
 
 
 def open_live(pw, httpd):
+    # Assertions wait on real durable commits and HTTP/SSE reconciliation, just
+    # like browser actions. A busy Windows filesystem can exceed the default 5s.
+    expect.set_options(timeout=15000)
     browser = pw.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1440, "height": 1000})
     page.set_default_timeout(15000)
@@ -121,6 +124,105 @@ def capture(page, tmp_path, name):
     page.screenshot(path=str(root / name), full_page=True)
 
 
+@pytest.mark.parametrize('protocol', ['openai-completions', 'openai-responses'])
+def test_real_steer_is_consumed_by_the_current_task_without_a_second_run(tmp_path, protocol):
+    with streaming_peer(protocol) as (url, release, requests, peer_errors):
+        target = GateTarget(url, 'live-fixture', 32768, 8192, 12000, api_protocol=protocol, request_timeout=30)
+        with gate_application(target, tmp_path / 'gate') as (httpd, ctx, events), sync_playwright() as pw:
+            seed(ctx, tmp_path, url, target.model)
+            browser, page, errors = open_live(pw, httpd)
+            try:
+                send(page, '只读分析，不要修改文件。')
+                expect(page.locator('.msg.asst .body').first).to_contain_text('第一段已经到达。')
+                active = ctx.active_run_for(session_id='live').run_id
+                page.locator('#input-mode').select_option('steer')
+                send(page, '请把当前回答改成简短中文。不要运行工具。')
+                expect(page.locator('.pending-inputs')).to_contain_text('steer at next boundary')
+                release.set()
+                expect(page.locator('.pending-inputs')).to_contain_text('Applied · current task')
+                expect(page.locator('.spinner:visible')).to_have_count(0, timeout=20000)
+                assert len(requests) == 2
+                assert '请把当前回答改成简短中文' in json.dumps(requests[1], ensure_ascii=False)
+                receipt = ctx.input_queue.list('live')[0]
+                assert receipt['state'] == 'consumed'
+                assert receipt['consumed_by_run_id'] == active
+                assert ctx.durable.task(receipt['request']['run_id']).status.value == 'completed'
+                starts = [event for event in events if event.get('type') == 'task_start']
+                assert [event['run_id'] for event in starts] == [active]
+                page.reload()
+                expect(page.locator('.pending-inputs')).to_contain_text('Applied · current task')
+                assert not peer_errors and not errors
+            finally:
+                release.set()
+                browser.close()
+
+
+def test_real_workflow_fork_starts_from_a_saved_checkpoint_and_survives_reload(tmp_path):
+    with streaming_peer('openai-completions') as (url, release, requests, peer_errors):
+        release.set()
+        target = GateTarget(url, 'live-fixture', 32768, 8192, 12000, api_protocol='openai-completions', request_timeout=30)
+        with gate_application(target, tmp_path / 'gate') as (httpd, ctx, events), sync_playwright() as pw:
+            seed(ctx, tmp_path, url, target.model)
+            browser, page, errors = open_live(pw, httpd)
+            try:
+                send(page, '只读说明项目，不要运行工具。')
+                expect(page.locator('.msg.asst')).to_contain_text('完整回答')
+                expect(page.locator('.spinner:visible')).to_have_count(0)
+                source_head = ctx.durable.head('live')
+                page.get_by_role('button', name='Open workspace', exact=True).click()
+                page.get_by_role('menuitem', name='Branches and workflow', exact=True).click()
+                page.locator('.history-panel-tabs').get_by_role('button', name='Workflow', exact=True).click()
+                page.get_by_role('textbox', name='Branch instructions', exact=True).fill('只读：从此处给出另一种简短解释。')
+                page.locator('.workflow-point').get_by_role('button', name='Continue from here', exact=True).first.click()
+                expect(page.locator('.sess-title')).to_contain_text('Fork')
+                expect(page.locator('.msg.asst')).to_contain_text('排队补充已送达。')
+                expect(page.locator('.spinner:visible')).to_have_count(0)
+                assert len(requests) == 2 and not peer_errors and not errors
+                assert ctx.durable.head('live') == source_head
+                forks = [session for session in ctx.load_ui_state()['sessions'] if session['id'].startswith('fork_')]
+                assert len(forks) == 1
+                page.reload()
+                expect(page.locator('.sess-title')).to_contain_text('Fork')
+                expect(page.locator('.msg.asst')).to_contain_text('排队补充已送达。')
+            finally:
+                browser.close()
+
+
+def test_search_during_a_live_generation_keeps_the_stream_node_mounted(tmp_path):
+    with streaming_peer('openai-completions') as (url, release, requests, peer_errors):
+        target = GateTarget(url, 'live-fixture', 32768, 8192, 12000, api_protocol='openai-completions', request_timeout=30)
+        with gate_application(target, tmp_path / 'gate') as (httpd, ctx, events), sync_playwright() as pw:
+            seed(ctx, tmp_path, url, target.model)
+            ctx.durable.create_conversation('live')
+            original = ctx.durable.append_message('live', 'user_message', {'text': 'Archived needle'})
+            ctx.durable.append_message('live', 'assistant_message', {'text': 'Archived answer'})
+            for index in range(60):
+                ctx.durable.append_message('live', 'user_message', {'text': f'Older question {index}'})
+                ctx.durable.append_message('live', 'assistant_message', {'text': f'Older answer {index}'})
+            browser, page, errors = open_live(pw, httpd)
+            try:
+                expect(page.locator('.msg.asst').last).to_contain_text('Older answer 59')
+                send(page, '只读继续说明。不要执行工具。')
+                stream = page.locator('.msg.asst[data-stream-id]')
+                expect(stream).to_contain_text('第一段已经到达。')
+                identity = stream.element_handle()
+                page.keyboard.press('Control+k')
+                page.get_by_role('combobox', name='Find an action', exact=True).fill('Search this conversation')
+                page.keyboard.press('Enter')
+                page.get_by_role('searchbox', name='Search conversation history').fill('Archived needle')
+                page.locator('.conversation-find').get_by_role('button', name='Search', exact=True).click()
+                page.locator('[data-search-hit="0"]').click()
+                expect(page.locator(f'[data-entry-id="{original.entry_id}"]')).to_be_attached()
+                assert identity.evaluate('el => el.isConnected')
+                release.set()
+                page.get_by_role('button', name='Close conversation search', exact=True).click()
+                expect(page.locator('.spinner:visible')).to_have_count(0)
+                assert len(requests) == 1 and not peer_errors and not errors
+            finally:
+                release.set()
+                browser.close()
+
+
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
 def test_real_stream_and_queued_input_keep_one_answer_and_survive_reload(tmp_path, protocol):
     with streaming_peer(protocol) as (url, release, requests, peer_errors):
@@ -129,9 +231,15 @@ def test_real_stream_and_queued_input_keep_one_answer_and_survive_reload(tmp_pat
             seed(ctx, tmp_path, url, target.model)
             browser, page, errors = open_live(pw, httpd)
             try:
+                expect(page.locator('#chat')).to_be_empty()
+                expect(page.locator('main')).to_have_class('empty-conversation')
+                initial_top = page.locator('.composer-wrap').bounding_box()['y']
+                assert 450 < initial_top < 750
                 send(page, "只读分析项目，先给我一段说明。不要修改文件，不要运行命令。")
                 first = page.locator(".msg.asst .body").first
                 expect(first).to_contain_text("第一段已经到达。")
+                page.wait_for_function("!document.querySelector('main').classList.contains('empty-conversation') && parseFloat(getComputedStyle(document.querySelector('.composer-wrap')).marginBottom) < 1")
+                assert page.locator('.composer-wrap').bounding_box()['y'] > initial_top + 150
                 stable = first.locator("p").first.element_handle()
                 expect(page.locator(".process-summary .spinner")).to_have_count(1)
                 send(page, "只读：下一轮补充说明，不要修改文件。")

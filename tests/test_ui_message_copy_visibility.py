@@ -79,6 +79,9 @@ def test_keyboard_tab_reveals_copy_and_enter_copies_without_hover(page, kind):
     page.mouse.move(20, 20)
     expect_opacity(copy, 0)
     page.keyboard.press("Tab")
+    if kind == 'user':
+        expect(message.locator('.msg-edit')).to_be_focused()
+        page.keyboard.press('Tab')
     expect(copy).to_be_focused()
     assert copy.evaluate("e => e.matches(':focus-visible')")
     expect_opacity(copy, 1)
@@ -88,10 +91,6 @@ def test_keyboard_tab_reveals_copy_and_enter_copies_without_hover(page, kind):
     expect(copy).to_have_attribute("aria-label", "Copy message")
     expect_opacity(copy, 1)
     page.keyboard.press("Tab")
-    if kind == "user":
-        expect(message.get_by_role("button", name="Edit message", exact=True)).to_be_focused()
-        expect_opacity(copy, 1)
-        page.keyboard.press("Tab")
     expect_opacity(copy, 0)
 
 

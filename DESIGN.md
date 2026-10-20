@@ -11,6 +11,10 @@ that every target is already implemented. Track implementation and acceptance in
 `docs/uiux_completion_spec_2026-10-20.zh-CN.md`. Existing factual execution,
 authorization, recovery and accessibility requirements remain binding.
 
+Product implementation and its verification scope are tracked separately in
+`docs/uiux_implementation_2026-10-20.zh-CN.md`. The saved HTML prototype is a
+comparison artifact; its fixture messages, terminal and plan are not product data.
+
 Confirmed exceptions to reference matching: retain Codey's existing project/chat
 navigation and Settings content. The sidebar has no Codey / Local workspace
 brand heading; New chat, Add project and Search stay at the top, and Settings
@@ -39,7 +43,7 @@ Codey is a **local developer and research tool**, not a consumer chat app. The U
 
 - **Monochrome first** — black, gray, white. Hierarchy comes from typography and spacing, not color blocks.
 - **Quiet by default** — idle states show almost nothing. Activity is signaled with motion (spinner) or text, not banners.
-- **No decoration** — no emoji, no gradients for status, no “chat bubble” aesthetics, no brand-blue/purple accents.
+- **No decoration** — no emoji, gradients for status or brand-blue/purple accents. The confirmed user-message surface uses one quiet panel fill; assistant answers remain on the canvas. Actions sit below the surface.
 - **One restrained green family** — the provider availability dot, Research graph nodes and highlighted edges, native text selection, conversation navigation, and added diff lines share a muted green palette. Use role-specific brightness and opacity, not unrelated teal and gray-green accents. Other resting chrome stays monochrome.
 - **English in the UI** — labels, buttons, placeholders, and system messages use English (`New chat`, `You`, `Codey`, `Allow`, …).
   User messages, model answers, and returned thinking text retain their original language; the English rule applies to fixed application copy.

@@ -563,6 +563,16 @@ export interface UiStateApi {
   }
 
   function setDrawerOpen(id: string, open: boolean): void {
+    if (runtime.Workspace && (id === 'changes-drawer' || id === 'research-drawer')) {
+      const panel = id === 'changes-drawer' ? 'changes' : 'research';
+      const element = document.getElementById(id);
+      element?.classList.toggle('open', open);
+      element?.setAttribute('aria-hidden', String(!open));
+      if (element) element.inert = !open;
+      if (open) runtime.Workspace.reveal(panel);
+      else runtime.Workspace.panelClosed(panel);
+      return;
+    }
     // Shared drawer toggle so the three drawers stay mutually exclusive
     // without triplicating classList/aria handling. Existing open/close
     // wrappers keep their names; they delegate here.

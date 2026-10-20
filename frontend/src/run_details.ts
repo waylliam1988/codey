@@ -71,6 +71,22 @@ export interface RunDetailsAction {
       const data = cache[key] || (await fetchDetails(sessionId, runId));
       cacheSet(key, data);
       render(panel, data);
+      if (runtime.Workspace) {
+        const actions = document.createElement('div');
+        actions.className = 'run-details-actions';
+        for (const [label, action] of [
+          ['Recorded review', () => runtime.Workspace.select('review', { runId })],
+          ['Workflow history', () => runtime.Workspace.select('history', { mode: 'workflow', runId })],
+        ] as const) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'link-btn';
+          button.textContent = label;
+          button.onclick = action;
+          actions.append(button);
+        }
+        panel.append(actions);
+      }
       reveal(panel);
     } catch {
       renderUnavailable(panel);

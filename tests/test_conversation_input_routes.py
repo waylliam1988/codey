@@ -1,5 +1,33 @@
+import pytest
+
 from codey.app import input_queue_routes as routes
 from codey.app.context import AppContext
+
+
+@pytest.mark.parametrize('mode', ['steer', 'follow_up'])
+def test_input_route_preserves_delivery_mode(tmp_path, mode):
+    ctx = AppContext(tmp_path, start_scheduler=False)
+    try:
+        ctx.save_ui_state({'active_id': 'chat', 'projects': [], 'sessions': [{'id': 'chat', 'title': 'Chat', 'messages': []}]}, base_revision=0)
+        status, payload = routes.input_action_response(ctx, {'action': 'create', 'id': 'one', 'request': {
+            'session_id': 'chat', 'run_id': 'run_one', 'task': 'instruction', 'provider': 'local', 'input_mode': mode,
+        }})
+        assert status == 202
+        assert payload['item']['request']['input_mode'] == mode
+        assert ctx.durable.store.submission(ctx.durable.task('run_one').submission_id).mode == mode
+    finally:
+        ctx.close()
+
+
+def test_input_route_rejects_unknown_modes(tmp_path):
+    ctx = AppContext(tmp_path, start_scheduler=False)
+    try:
+        status, payload = routes.input_action_response(ctx, {'action': 'create', 'id': 'one', 'request': {'input_mode': 'write'}})
+        assert status == 409
+        assert payload['error'] == 'invalid input mode'
+        assert ctx.durable.tasks() == ()
+    finally:
+        ctx.close()
 
 
 def test_status_query_returns_the_durable_record_without_resubmitting(tmp_path, monkeypatch):

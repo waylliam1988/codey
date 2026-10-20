@@ -125,6 +125,27 @@ def valid_task_transition(previous: str | None, current: str) -> bool:
     return current in TASK_PHASE_TRANSITIONS.get(previous, frozenset())
 
 
+def valid_input_consumption(previous_phase: str, previous_status: str,
+                            previous_state: Mapping[str, object], current: TaskCheckpoint) -> bool:
+    """A queued steering receipt may settle without starting a provider task.
+
+    This exception does not widen the phase/status graph for executable tasks.
+    The generation boundary records the consuming task and entry atomically.
+    """
+    consumer = current.state.get("consumed_by_task_id")
+    return (
+        previous_phase == "accepted" and previous_status == "pending"
+        and previous_state.get("input_mode") == "steer"
+        and previous_state.get("input_state") == "queued"
+        and not previous_state.get("attempt_token")
+        and current.phase == "completed" and str(current.status) == "completed"
+        and current.state.get("input_state") == "consumed"
+        and isinstance(consumer, str) and bool(consumer) and consumer != current.task_id
+        and isinstance(current.state.get("input_entry_id"), str)
+        and not current.attempt_token
+    )
+
+
 class SubmissionStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
@@ -423,6 +444,10 @@ class SubmissionRecord:
             if self.mode == "write":
                 if not self.input_entry_id:
                     raise ValueError("completed writes require an entry")
+            elif (self.mode == "steer" and isinstance(self.detail, Mapping)
+                  and isinstance(self.detail.get("consumed_by_task_id"), str)
+                  and self.detail.get("consumed_by_task_id") and self.input_entry_id):
+                pass
             elif not self.answer_entry_id:
                 raise ValueError("completed submissions require an answer entry")
         if self.status != SubmissionStatus.DONE and self.answer_entry_id is not None:

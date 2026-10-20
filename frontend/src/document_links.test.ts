@@ -8,6 +8,8 @@ it('parses Windows paths, spaces and line references without treating a drive as
     line: 12,
   });
   expect(parseDocumentLink('docs/report.md#L8')).toEqual({ path: 'docs/report.md', line: 8 });
+  expect(parseDocumentLink('long.py:180')).toEqual({ path: 'long.py', line: 180 });
+  expect(parseDocumentLink('https://example.com/a.py:180')).toBeNull();
   expect(parseDocumentLink('javascript:alert(1)')).toBeNull();
   expect(parseDocumentLink('https://example.com/report.md')).toBeNull();
 });

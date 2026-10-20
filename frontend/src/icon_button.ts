@@ -1,8 +1,12 @@
-export type Icon = 'copy' | 'reload' | 'close';
+export type Icon = 'copy' | 'reload' | 'close' | 'expand' | 'dock' | 'workspace' | 'branch';
 const paths: Record<Icon, string> = {
   copy: '',
   reload: 'M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7l-3-3',
   close: 'm6 6 12 12M18 6 6 18',
+  expand: 'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5',
+  dock: 'M3 3h18v18H3ZM14 3v18',
+  workspace: 'M3 3h18v18H3ZM14 3v18M14 9h7',
+  branch: 'M6 3v12a3 3 0 0 0 3 3h9M6 9a9 9 0 0 0 9-9',
 };
 
 export function createIconSvg(icon: Icon, className = ''): SVGSVGElement {

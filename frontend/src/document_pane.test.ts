@@ -1,5 +1,87 @@
-import { expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
 import { DocumentPane } from './document_pane';
+beforeEach(() => localStorage.clear());
+
+it('restores tabs and reading preferences without storing file contents', async () => {
+  const read = vi.fn().mockResolvedValue({
+    title: 'private',
+    path: 'a.txt',
+    content: 'private contents\nsecond\nthird',
+    format: 'text',
+    version: 'v1',
+    workspace: 'root',
+  });
+  const deps = { read, markdown: vi.fn(), copy: vi.fn() };
+  const first = new DocumentPane(deps);
+  await first.open('one', { kind: 'workspace', path: 'a.txt' });
+  first.element.querySelector<HTMLElement>('[role="tabpanel"]')!.scrollTop = 120;
+  first.element.querySelector<HTMLButtonElement>('[aria-label="Wrap lines"]')!.click();
+  first.close();
+  expect(localStorage.getItem('codey:document-tabs:v1')).not.toContain('private contents');
+  const restored = new DocumentPane(deps);
+  restored.show('one');
+  await vi.waitFor(() => expect(restored.element.querySelector('pre')?.textContent).toContain('third'));
+  expect(restored.element.querySelector('.document-body')?.classList.contains('wrap')).toBe(true);
+  expect(restored.element.querySelector<HTMLElement>('.document-body')!.scrollTop).toBe(120);
+  expect(read).toHaveBeenLastCalledWith('one', { kind: 'workspace', path: 'a.txt' }, 'root');
+});
+
+it('finds text beyond the first line and never replaces source with only a preview line', async () => {
+  const pane = new DocumentPane({
+    read: vi.fn().mockResolvedValue({
+      title: 'code',
+      path: 'a.py',
+      content: 'one\ntwo\nfind <literal>\nfour',
+      format: 'text',
+      version: 'v1',
+      workspace: 'root',
+    }),
+    markdown: vi.fn(),
+    copy: vi.fn(),
+  });
+  await pane.open('chat', { kind: 'workspace', path: 'a.py', line: 3 });
+  expect(pane.element.querySelectorAll('[data-line]')).toHaveLength(4);
+  expect(pane.element.querySelector('pre')?.textContent).toBe('one\ntwo\nfind <literal>\nfour');
+  const find = pane.element.querySelector<HTMLInputElement>('[aria-label="Find in document"]')!;
+  find.value = '<literal>';
+  find.dispatchEvent(new Event('input'));
+  expect(pane.element.querySelector('mark')?.textContent).toBe('<literal>');
+  expect(pane.element.querySelector('literal')).toBeNull();
+  find.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  expect(pane.element.querySelector('mark')).toBeNull();
+  expect(pane.element.querySelector('pre')?.textContent).toContain('four');
+});
+
+it('does not replace the saved reading position with the empty body while a restored tab loads', async () => {
+  const data = {
+    title: 'Long',
+    path: 'long.txt',
+    content: 'line\n'.repeat(500),
+    format: 'text',
+    version: 'v1',
+    workspace: 'root',
+  };
+  const first = new DocumentPane({ read: vi.fn().mockResolvedValue(data), markdown: vi.fn(), copy: vi.fn() });
+  await first.open('chat', { kind: 'workspace', path: 'long.txt' });
+  first.element.querySelector<HTMLElement>('.document-body')!.scrollTop = 240;
+  first.close();
+  let resolve: (value: typeof data) => void = () => {};
+  const restored = new DocumentPane({
+    read: () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+    markdown: vi.fn(),
+    copy: vi.fn(),
+  });
+  restored.show('chat');
+  restored.element.querySelector<HTMLElement>('.document-body')!.scrollTop = 0;
+  restored.close();
+  resolve(data);
+  await vi.waitFor(() => expect(restored.element.querySelector('.document-status')).toBeNull());
+  restored.show('chat');
+  expect(restored.element.querySelector<HTMLElement>('.document-body')!.scrollTop).toBe(240);
+});
 
 it('preserves the reading position when reloading the current document', async () => {
   const pane = new DocumentPane({

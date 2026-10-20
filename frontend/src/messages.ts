@@ -6,6 +6,7 @@ import { hydrateDocumentContent } from './document_content';
 import { artifactRow, decorateDeliverables } from './artifacts';
 import type { Message, UiDeps } from './types/domain';
 import { finalAnswerMarkdown } from './answer_copy';
+import { iconButton } from './icon_button';
 interface MessagesDeps extends UiDeps {
   openDocument(sessionId: string, ref: DocumentRef): void;
   statusRow(prefix: string, text: string, options?: Record<string, unknown>): HTMLElement;
@@ -80,8 +81,14 @@ export interface MessagesApi {
       edit.onclick = () => beginMessageEdit(div, body, actions, m, activeId);
       const copy = div.querySelector('.msg-copy'),
         feedback = div.querySelector('.copy-feedback');
-      if (copy) actions.append(copy);
       actions.append(edit);
+      if (copy) actions.append(copy);
+      if (m.entryId)
+        actions.append(
+          iconButton('Branch from this message', 'branch', () =>
+            runtime.Workspace?.select('history', { entryId: m.entryId }),
+          ),
+        );
       if (feedback) actions.append(feedback);
       div.append(actions);
       chat.appendChild(div);
@@ -135,6 +142,20 @@ export interface MessagesApi {
             : () => messageCopyText(m),
           final ? 'final' : 'message',
         );
+      }
+      if (m.entryId) {
+        const actions = document.createElement('div');
+        actions.className = 'message-actions';
+        const copy = div.querySelector('.msg-copy'),
+          feedback = div.querySelector('.copy-feedback');
+        if (copy) actions.append(copy);
+        actions.append(
+          iconButton('Branch from this message', 'branch', () =>
+            runtime.Workspace?.select('history', { entryId: m.entryId }),
+          ),
+        );
+        if (feedback) actions.append(feedback);
+        div.append(actions);
       }
       streamStatus(div, m);
       chat.appendChild(div);

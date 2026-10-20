@@ -22,10 +22,16 @@ export interface ToolDisplay {
   result?: string;
   activity?: string;
   toolKey?: string;
+  callId?: string;
+  parentCallId?: string;
+  entryId?: string;
+  runId?: string;
   error?: boolean;
   pending?: boolean;
   turn?: string | number;
   outputTruncated?: boolean;
+  outputBytes?: number;
+  outputStoredBytes?: number;
   failure?: import('./failure_presentation').FailureInfo;
 }
 /* Codey render helpers: HTML escaping, minimal markdown, copy buttons,
@@ -33,6 +39,15 @@ export interface ToolDisplay {
    no index.html state, so no init()/deps are needed. */
 const renderApi = (function () {
   'use strict';
+  const toolDisplays = new WeakMap<HTMLElement, ToolDisplay>();
+  function rememberTool(node: HTMLElement, message: ToolDisplay): void {
+    toolDisplays.set(node, message);
+    if (message.callId) {
+      node.dataset.callId = message.callId;
+      node.dataset.callScope = message.runId || '';
+    }
+    if (message.entryId) node.dataset.entryId = message.entryId;
+  }
 
   function escapeHtml(text: unknown): string {
     return String(text || '').replace(
@@ -334,10 +349,14 @@ const renderApi = (function () {
   }
   function toolDetails(m: ToolDisplay, compact: boolean): HTMLElement {
     const row = toolRowEl(m, compact);
-    if (m.pending || !m.result) return row;
+    if (m.pending || !m.result) {
+      rememberTool(row, m);
+      return row;
+    }
     const details = document.createElement('details');
     details.className = 'tool-disclosure';
     if (m.toolKey) details.dataset.toolKey = m.toolKey;
+    rememberTool(details, m);
     const summary = document.createElement('summary');
     summary.append(row);
     const panel = document.createElement('div');
@@ -388,6 +407,8 @@ const renderApi = (function () {
       const note = document.createElement('div');
       note.className = 'tool-result-note';
       note.textContent = 'Output was truncated. Copy includes retained result only.';
+      if (typeof m.outputBytes === 'number' && typeof m.outputStoredBytes === 'number')
+        note.textContent = `Output was truncated · ${m.outputStoredBytes.toLocaleString()} of ${m.outputBytes.toLocaleString()} bytes stored. Copy includes the displayed result only.`;
       panel.append(note);
     }
     if (m.preview?.diff_truncated) {
@@ -443,6 +464,7 @@ const renderApi = (function () {
   function standaloneToolEl(m: ToolDisplay) {
     const div = document.createElement('div');
     div.className = 'msg tool';
+    rememberTool(div, m);
     if (m.toolKey) div.dataset.toolKey = m.toolKey;
     if (isFoldableTool(m)) {
       div.dataset.foldkind = toolKind(m);
@@ -450,7 +472,9 @@ const renderApi = (function () {
       div.dataset.toolPath = m.path || '';
       div.dataset.toolResult = m.result || '';
     }
-    div.appendChild(toolDetails(m, false));
+    const content = toolDetails(m, false);
+    for (const name of ['data-call-id', 'data-call-scope', 'data-entry-id']) content.removeAttribute(name);
+    div.appendChild(content);
     return div;
   }
   function appendToToolGroup(group: HTMLElement, m: ToolDisplay) {
@@ -485,14 +509,17 @@ const renderApi = (function () {
       last.dataset.foldturn === turn
     ) {
       const group = createToolGroup(kind, turn);
-      appendToToolGroup(group, {
-        kind,
-        turn,
-        path: last.dataset.toolPath || '',
-        result: last.dataset.toolResult || '',
-        toolKey: last.dataset.toolKey || '',
-        error: false,
-      });
+      appendToToolGroup(
+        group,
+        toolDisplays.get(last) || {
+          kind,
+          turn,
+          path: last.dataset.toolPath || '',
+          result: last.dataset.toolResult || '',
+          toolKey: last.dataset.toolKey || '',
+          error: false,
+        },
+      );
       appendToToolGroup(group, m);
       last.replaceWith(group);
       return;
@@ -505,14 +532,17 @@ const renderApi = (function () {
     );
     if (earlierStandalone) {
       const group = createToolGroup(kind, turn);
-      appendToToolGroup(group, {
-        kind,
-        turn,
-        path: earlierStandalone.dataset.toolPath || '',
-        result: earlierStandalone.dataset.toolResult || '',
-        toolKey: earlierStandalone.dataset.toolKey || '',
-        error: false,
-      });
+      appendToToolGroup(
+        group,
+        toolDisplays.get(earlierStandalone) || {
+          kind,
+          turn,
+          path: earlierStandalone.dataset.toolPath || '',
+          result: earlierStandalone.dataset.toolResult || '',
+          toolKey: earlierStandalone.dataset.toolKey || '',
+          error: false,
+        },
+      );
       appendToToolGroup(group, m);
       earlierStandalone.replaceWith(group);
       return;

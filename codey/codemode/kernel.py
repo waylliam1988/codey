@@ -7,6 +7,7 @@ from typing import Any
 
 from codey.codemode.catalog import build_catalog_snapshot, build_codemode_catalog
 from codey.codemode.host import CodeModeHost
+from codey.codemode.identity import parent_execution_id
 from codey.codemode.output import externalize_value
 from codey.codemode.protocol import parse_codemode_args
 from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
@@ -122,6 +123,7 @@ def build_execute_turn_executor(
     durable: Any = None,
     allow_writes: bool = False,
     state_store: Any = None,
+    on_event: Callable[[Any], None] | None = None,
 ) -> Callable[[ToolCall], ToolResult]:
     """Build the production parent executor; every child re-enters execute_turn."""
     from codey.operations.kernel_execution import execute_turn
@@ -144,10 +146,18 @@ def build_execute_turn_executor(
         digest = hashlib.sha256(
             json.dumps(call.args, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()[:16]
-        parent_id = f"{run_id}:turn:{turn}:codemode:{call.call_id or digest}"
+        parent_id = parent_execution_id(run_id, turn, call)
         child_scope = f"{effect_scope}:codemode:{digest}"
 
         def execute_child(child: ToolCall) -> ToolResult:
+            from codey.operations.kernel_events import _event_call
+            from codey.runtime.observe.events import RunEvent
+            from codey.toolchain.runtime import ToolOutcome
+            if on_event is not None:
+                event = RunEvent.tool_started(turn, _event_call(session, child), child.name)
+                event.metadata['parent_call_id'] = parent_id
+                event.metadata['tool_name'] = child.name
+                on_event(event)
             try:
                 child_index = int(child.call_id.rsplit(":child:", 1)[1])
             except (IndexError, ValueError):
@@ -179,6 +189,16 @@ def build_execute_turn_executor(
             )
             if not results:
                 raise RuntimeError("nested kernel returned no tool result")
+            if on_event is not None:
+                result = results[0]
+                outcome = ToolOutcome(model_text=result.model_text, ok=result.ok,
+                                      changed=result.audit.get('changed') is True,
+                                      canonical=result.canonical, audit=result.audit,
+                                      presentation=result.presentation, truncated=result.truncated)
+                event = RunEvent.tool_finished(turn, _event_call(session, child), outcome)
+                event.metadata['parent_call_id'] = parent_id
+                event.metadata['tool_name'] = child.name
+                on_event(event)
             return results[0]
 
         return CodeModeKernelExecutor(

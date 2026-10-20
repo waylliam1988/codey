@@ -6,6 +6,7 @@ export interface HistoryPage {
   items: Array<Record<string, unknown>>;
   before_cursor?: string | null;
   has_more: boolean;
+  has_after?: boolean;
 }
 
 export interface HistoryResult {
@@ -14,6 +15,7 @@ export interface HistoryResult {
   cursor: string | null;
   epoch: string;
   revision: number;
+  hasAfter?: boolean;
 }
 
 export class HistoryRepository {
@@ -72,6 +74,7 @@ export class HistoryRepository {
         cursor: page.before_cursor || null,
         epoch: page.epoch,
         revision: page.snapshot_revision,
+        hasAfter: previous.hasAfter,
       };
       return this.page;
     } finally {
@@ -84,6 +87,7 @@ export class HistoryRepository {
     const response = await fetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/messages/search?q=${encodeURIComponent(query.trim().slice(0, 200))}`,
     );
+    if (response.status === 404) return [];
     if (!response.ok) throw new Error('Could not search conversation history');
     const data = (await response.json()) as { hits?: unknown };
     return Array.isArray(data.hits)
@@ -91,8 +95,26 @@ export class HistoryRepository {
       : [];
   }
 
-  private async fetchPage(sessionId: string, cursor: string): Promise<HistoryPage> {
-    const url = `/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=100${cursor ? `&before=${encodeURIComponent(cursor)}` : ''}`;
+  async loadAround(sessionId: string, entryId: string): Promise<HistoryResult | null> {
+    this.switchSession(sessionId);
+    const generation = ++this.generation;
+    const page = await this.fetchPage(sessionId, '', entryId);
+    if (generation !== this.generation || this.session !== sessionId) return null;
+    this.page = {
+      items: dedupe(page.items),
+      hasMore: page.has_more,
+      cursor: page.before_cursor || null,
+      epoch: page.epoch,
+      revision: page.snapshot_revision,
+      hasAfter: page.has_after === true,
+    };
+    return this.page;
+  }
+
+  private async fetchPage(sessionId: string, cursor: string, target?: string): Promise<HistoryPage> {
+    const url = target
+      ? `/api/conversation_tree?${new URLSearchParams({ session_id: sessionId, entry_id: target })}`
+      : `/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=100${cursor ? `&before=${encodeURIComponent(cursor)}` : ''}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error('Could not load conversation history');
     const data = (await response.json()) as Partial<HistoryPage>;

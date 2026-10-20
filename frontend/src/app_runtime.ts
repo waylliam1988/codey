@@ -1,4 +1,11 @@
 import { DocumentPane, type DocumentRef } from './document_pane';
+import { Workspace } from './workspace';
+import { RecordedPanels } from './recorded_panels';
+import { HistoryPanel } from './history_panel';
+import { mergeForkState } from './fork_state';
+import { CommandPalette } from './command_palette';
+import { iconButton } from './icon_button';
+import './workspace.css';
 import { hydrateDocumentContent } from './document_content';
 import { streamMessage, finalStreamMessage } from './reply_stream';
 import { FrameCoalescer } from './frame_coalescer';
@@ -84,6 +91,10 @@ interface ServerEventData {
   reasoning: string;
   text: string;
   tool_id: string;
+  call_id: string;
+  parent_call_id: string;
+  output_bytes: number;
+  output_stored_bytes: number;
   kind: string;
   tool_name: string;
   path: string;
@@ -141,7 +152,11 @@ type Loose = ServerEventData;
 type AppElement = HTMLElement & { disabled: boolean };
 const $ = <T extends HTMLElement = AppElement>(id: string): T => document.getElementById(id) as T;
 const eventElement = (event: Event): Element | null => (event.target instanceof Element ? event.target : null);
+const workspace = new Workspace();
+runtime.Workspace = workspace;
 const documentPane = new DocumentPane({
+  docked: true,
+  visibility: (visible) => (visible ? workspace.reveal('files') : workspace.panelClosed('files')),
   read: async (sessionId, ref, workspace) => {
     const response = await fetch('/api/documents/read', {
       method: 'POST',
@@ -165,7 +180,138 @@ const documentPane = new DocumentPane({
   },
   copy: (text) => runtime.Render.copyText(text),
 });
-document.body.append(documentPane.element);
+workspace.register('files', 'Files', documentPane.element, () => documentPane.show(activeId));
+workspace.register('changes', 'Changes', $('changes-drawer'), (target) => {
+  const project = sessionProjectPath(activeId);
+  if (project) void runtime.ChangesDrawer.open(project, target.path || '');
+  else {
+    $('changes-body').textContent = 'Choose a project to inspect workspace changes.';
+    $('changes-subtitle').textContent = 'No project';
+    runtime.UiState.setDrawerOpen('changes-drawer', true);
+  }
+});
+workspace.register('research', 'Research', $('research-drawer'), (target) => {
+  const runId = target.runId || currentResearchRun(activeId)?.runId;
+  if (runId) runtime.ResearchDrawer.open(activeId, runId);
+  else {
+    $('research-body').textContent = 'No research recorded for this conversation.';
+    $('research-subtitle').textContent = 'No research yet';
+    runtime.UiState.setDrawerOpen('research-drawer', true);
+  }
+});
+const recordedPanels = new RecordedPanels({
+  sessionId: () => activeId,
+  messages: () => activeSession()?.messages || [],
+  openDocument,
+  copy: (text) => runtime.Render.copyText(text),
+});
+workspace.register('review', 'Review', recordedPanels.review, (target) => {
+  void recordedPanels.showReview(target);
+});
+workspace.register('outputs', 'Output', recordedPanels.outputs, () => recordedPanels.showOutputs());
+const historyPanel = new HistoryPanel({
+  session: activeSession,
+  switchSession,
+  changed: (id) => runtime.ConversationUI.refreshHistory(id),
+  adoptFork: (result, baseline) => {
+    runtime.Composer.captureDraft();
+    const current = runtime.UiState.current();
+    const follow = current.active_id === baseline.active_id;
+    const state = mergeForkState(result.state, baseline, current);
+    runtime.UiState.apply(state);
+    runtime.UiState.cache();
+    if (follow) switchSession(result.session_id);
+    else {
+      renderSidebar();
+      renderChat();
+      persistActive();
+    }
+  },
+});
+workspace.register('history', 'History', historyPanel.element, (target) => {
+  void historyPanel.show(target);
+});
+document.body.append(workspace.element);
+const workspaceMenu = document.createElement('div');
+workspaceMenu.className = 'workspace-picker';
+workspaceMenu.hidden = true;
+workspaceMenu.setAttribute('role', 'menu');
+const workspaceButton = iconButton('Open workspace', 'workspace', () => {
+  workspaceMenu.hidden = !workspaceMenu.hidden;
+  workspaceButton.setAttribute('aria-expanded', String(!workspaceMenu.hidden));
+  if (!workspaceMenu.hidden) workspaceMenu.querySelector<HTMLElement>('button')?.focus();
+});
+workspaceButton.setAttribute('aria-haspopup', 'menu');
+workspaceButton.setAttribute('aria-expanded', 'false');
+const workspaceActions = [
+  ['files', 'Files'],
+  ['changes', 'Changes'],
+  ['research', 'Research'],
+  ['review', 'Recorded review'],
+  ['outputs', 'Command output'],
+  ['history', 'Branches and workflow'],
+] as const;
+for (const [id, label] of workspaceActions) {
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.setAttribute('role', 'menuitem');
+  item.textContent = label;
+  item.onclick = () => {
+    workspaceMenu.hidden = true;
+    workspaceButton.setAttribute('aria-expanded', 'false');
+    workspace.select(id);
+    workspace.element.querySelector<HTMLElement>(`[role="tab"][aria-selected="true"]`)?.focus();
+  };
+  workspaceMenu.append(item);
+}
+workspaceMenu.onkeydown = (event) => {
+  const rows = Array.from(workspaceMenu.querySelectorAll('button'));
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    workspaceMenu.hidden = true;
+    workspaceButton.setAttribute('aria-expanded', 'false');
+    workspaceButton.focus();
+  } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+    event.preventDefault();
+    const index = rows.indexOf(document.activeElement as HTMLButtonElement);
+    rows[
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? rows.length - 1
+          : (index + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length
+    ]?.focus();
+  }
+};
+const workspaceChooser = document.createElement('div');
+workspaceChooser.className = 'workspace-chooser';
+workspaceChooser.append(workspaceButton, workspaceMenu);
+document.querySelector('.topbar-actions')?.append(workspaceChooser);
+const commandPalette = new CommandPalette(() => [
+  ...workspaceActions.map(([id, label]) => ({ id, label, run: () => workspace.select(id) })),
+  { id: 'search-conversation', label: 'Search this conversation', run: () => runtime.ConversationUI.searchHistory() },
+  { id: 'new-chat', label: 'New chat', run: () => $('btn-new-chat').click() },
+  { id: 'settings', label: 'Settings', run: () => $('btn-settings').click() },
+]);
+document.body.append(commandPalette.element);
+document.addEventListener('keydown', (event) => {
+  if (
+    !event.isComposing &&
+    (event.ctrlKey || event.metaKey) &&
+    event.key.toLowerCase() === 'k' &&
+    !document.querySelector('dialog[open]')
+  ) {
+    event.preventDefault();
+    commandPalette.open();
+  }
+});
+document.addEventListener('pointerdown', (event) => {
+  if (event.target instanceof Node && !workspaceChooser.contains(event.target)) {
+    workspaceMenu.hidden = true;
+    workspaceButton.setAttribute('aria-expanded', 'false');
+  }
+});
 const userQuestions = new UserQuestions({
   instanceId: (() => {
     try {
@@ -344,6 +490,12 @@ const expandedProjectChats = new Set<string>();
 const PROJECT_CHAT_PREVIEW = 5;
 function renderSidebar() {
   const list = $('session-list');
+  const previousArrows = new Map(
+    Array.from(list.querySelectorAll<HTMLElement>('[data-project-toggle]')).map((button) => [
+      button.dataset.projectToggle,
+      button.getAttribute('aria-expanded') === 'true',
+    ]),
+  );
   list.innerHTML = '';
   runtime.ConversationUI.updateSearch();
 
@@ -370,6 +522,7 @@ function renderSidebar() {
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'project-toggle';
+    toggle.dataset.projectToggle = p.id;
     const expanded = p.expanded || runtime.ConversationUI.isSearching();
     toggle.setAttribute('aria-expanded', String(expanded));
     toggle.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${p.name}`);
@@ -382,6 +535,9 @@ function renderSidebar() {
       p.expanded = !p.expanded;
       persistActive();
       renderSidebar();
+      list
+        .querySelector<HTMLButtonElement>(`[data-project-toggle="${CSS.escape(p.id)}"]`)
+        ?.focus({ preventScroll: true });
     };
     row.appendChild(toggle);
 
@@ -459,6 +615,12 @@ function renderSidebar() {
       node.appendChild(children);
     }
     list.appendChild(node);
+    const previous = previousArrows.get(p.id);
+    if (previous !== undefined && previous !== expanded) {
+      chevron.classList.toggle('is-collapsed', !previous);
+      chevron.getBoundingClientRect();
+      chevron.classList.toggle('is-collapsed', !expanded);
+    }
   }
 
   const loose = sessions.filter((s) => !sessionProject(s) && runtime.ConversationUI.matchesSession(s));
@@ -609,6 +771,7 @@ function armDanger(btn: HTMLButtonElement, run: () => void) {
 
 // ============================ chat rendering ============================
 function renderChat() {
+  workspace.setSession(activeId);
   documentPane.setSession(activeId);
   runtime.ConversationUI.renderChat();
 }
@@ -962,6 +1125,8 @@ $('top-menu').addEventListener('click', (e) => {
   }
   closeAllMenus();
   if (act === 'local-context') openLocalContextDrawer();
+  if (act === 'search-history') runtime.ConversationUI.searchHistory();
+  if (act === 'commands') commandPalette.open();
 });
 document.addEventListener('click', (e) => {
   if (eventElement(e)?.closest('.ctx-menu')) return;
@@ -1027,10 +1192,16 @@ function handleReplyStream(data: ServerEventData) {
     addToSession(sid, message);
 }
 
+let inputRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 function handleServerEvent(raw: unknown) {
   const data = decodeServerEvent(raw) as ServerEventData;
   if (data.type === 'durable_commit') {
     void runtime.ConversationUI.observeCommit(decodeServerEvent(raw));
+    if (inputRefreshTimer === undefined)
+      inputRefreshTimer = setTimeout(() => {
+        inputRefreshTimer = undefined;
+        void runtime.Composer.refreshQueuedInputs();
+      }, 200);
     return;
   }
   if (data.type === 'reply_stream') {
@@ -1124,7 +1295,7 @@ function handleServerEvent(raw: unknown) {
     return;
   }
   if (data.type === 'tool_started') {
-    const rawToolId = (data.tool_id || '').toString();
+    const rawToolId = (data.call_id || data.tool_id || '').toString();
     const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';
     const s = sessions.find((x) => x.id === sid);
     if (s && toolKey) {
@@ -1133,6 +1304,8 @@ function handleServerEvent(raw: unknown) {
     }
     addToSession(sid, {
       type: 'tool_pending',
+      callId: data.call_id || '',
+      parentCallId: data.parent_call_id || '',
       toolKey,
       eventKey: toolKey ? `tool:${toolKey}:start` : '',
       kind: data.kind || '',
@@ -1146,11 +1319,13 @@ function handleServerEvent(raw: unknown) {
     return;
   }
   if (data.type === 'tool') {
-    const rawToolId = (data.tool_id || '').toString();
+    const rawToolId = (data.call_id || data.tool_id || '').toString();
     const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';
     const toolStatus = (data.status || (data.ok === false ? 'error' : 'ok')).toString();
     const message = {
       type: 'tool',
+      callId: data.call_id || '',
+      parentCallId: data.parent_call_id || '',
       toolKey,
       eventKey: toolKey ? `tool:${toolKey}:final` : '',
       kind: data.kind || '',
@@ -1162,6 +1337,8 @@ function handleServerEvent(raw: unknown) {
       result: (data.detail ?? data.result ?? '').toString(),
       preview: data.preview,
       outputTruncated: data.detail_truncated || data.truncated,
+      outputBytes: data.output_bytes,
+      outputStoredBytes: data.output_stored_bytes,
       failure: data.failure,
       status: toolStatus,
       error: toolStatus === 'error',
@@ -1542,6 +1719,10 @@ function observeQueuedInput(input: QueuedInput): void {
     runId = input.request.run_id;
   const session = sessions.find((session) => session.id === sid);
   if (!session) return;
+  if (input.state === 'consumed') {
+    void runtime.ConversationUI.refreshHistory(sid, true, true);
+    return;
+  }
   const represented = session.messages.some(
     (message) =>
       message.type === 'user' &&
@@ -1763,12 +1944,18 @@ function closeLocalContextDrawer() {
 }
 
 function handleLocalContextScopeChanged() {
+  workspace.suspend();
   closeChangesDrawer();
   runtime.ResearchDrawer.close();
   if (runtime.LocalContextDrawer) runtime.LocalContextDrawer.handleScopeChanged();
 }
 
 function closeOtherDrawers(active: string | undefined) {
+  if (active && active !== 'local_context') {
+    closeLocalContextDrawer();
+    return;
+  }
+  workspace.close();
   if (active !== 'document') documentPane.close();
   if (active !== 'changes') closeChangesDrawer();
   if (active !== 'research') runtime.ResearchDrawer.close();
@@ -1899,17 +2086,20 @@ async function boot() {
     getSessionTitle: (id: string) => (sessions.find((s) => s.id === id) || {}).title || 'Chat',
     getCurrentRun: (id: string, runId: string) =>
       runtime.ResearchRuns.forRun(id, runId) as import('./research_drawer').ResearchRunView | null,
-    getResearchGraphDepth: () => researchGraphDepth,
+    getResearchGraphDepth: () => Number(workspace.getTarget('research').depth) || 1,
     setResearchGraphDepth: (value: number) => {
       researchGraphDepth = value;
+      workspace.target('research', { depth: String(value) });
     },
-    getResearchNoteFocusId: () => researchNoteFocusId,
+    getResearchNoteFocusId: () => workspace.getTarget('research').note || '',
     setResearchNoteFocusId: (value: string) => {
       researchNoteFocusId = value;
+      workspace.target('research', { note: value });
     },
-    getResearchDrawerTab: () => researchDrawerTab,
+    getResearchDrawerTab: () => workspace.getTarget('research').tab || 'evidence',
     setResearchDrawerTab: (value: string) => {
       researchDrawerTab = value;
+      workspace.target('research', { tab: value });
     },
     copyText,
     closeOtherDrawers,

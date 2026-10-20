@@ -157,17 +157,17 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
                 pane.get_by_role("button", name="Reload", exact=True).click()
                 expect(pane.locator(".document-status")).to_have_count(0)
                 expect(pane.locator(".document-body")).to_have_js_property("scrollTop", 240)
-            for name in ("Reload", "Copy document", "Close preview"):
+            for name in ("Reload", "Copy document"):
                 action = pane.get_by_role("button", name=name, exact=True)
                 action.hover()
                 assert action.evaluate("el => getComputedStyle(el).backgroundColor") == "rgba(0, 0, 0, 0)", name
             pane.get_by_role("button", name="View source", exact=True).click()
             expect(pane.locator("pre")).to_contain_text("# ")
-            pane.get_by_role("button", name="Close preview", exact=True).click()
+            page.get_by_role("button", name="Close workspace", exact=True).click()
             expect(page.get_by_role("button", name="Open report", exact=True)).to_have_count(0)
             page.locator(".artifact-row").filter(has_text="Research · Markdown").locator(".artifact-open").click()
             expect(pane.locator(".document-body .md-h1")).to_have_text("Research preview")
-            pane.get_by_role("button", name="Close preview", exact=True).click()
+            page.get_by_role("button", name="Close workspace", exact=True).click()
             research = page.locator(".artifact-row").filter(has_text="Research · Markdown")
             research.locator(".artifact-more > summary").click()
             research.get_by_role("button", name="View research evidence", exact=True).click()

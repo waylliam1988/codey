@@ -19,6 +19,8 @@
   button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
     outline: 1px solid var(--text-dim); outline-offset: 2px;
   }
+  input:focus, input:focus-visible, textarea:focus, textarea:focus-visible,
+  select:focus, select:focus-visible { outline: none; box-shadow: none; }
   .sidebar-search { min-width: 0; position: relative; }
   .search-toggle { width: 100%; height: 34px; }
   .chat-search {
@@ -113,7 +115,8 @@
     cursor: pointer;
     position: relative;
   }
-  .project-row:hover { background: var(--hover); color: var(--text); }
+  .project-row, .project-row:hover, .project-row:active { background: transparent; }
+  .project-row:hover { color: var(--text); }
   .project-row.has-active::before {
     content: ''; position: absolute; left: -6px; top: 6px; bottom: 6px;
     width: 2px; background: var(--text); border-radius: 1px;
@@ -359,6 +362,8 @@
     font-size: 14px;
     line-height: 1.7;
   }
+  .msg.user > .msg-label, .msg.asst > .msg-label, .process-block > .msg-label { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .msg.user > .body { background: var(--panel); border-radius: 10px; padding: 12px 16px; }
   .msg-copy {
     width: 26px; height: 26px; margin-top: 8px; padding: 0;
     border: 0; border-radius: 4px; background: transparent;
@@ -681,7 +686,8 @@
     padding: 12px 20px 0;
   }
   .shell-command { font: 12px/1.7 var(--font-mono); color: var(--text); margin: 4px 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .shell-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; padding: 14px 20px 18px; }
+  .shell-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; padding: 8px 12px; }
+  .shell-actions button, .question-actions button { font: 12px/18px var(--font-sans); height: 26px; padding: 3px 9px; }
   .shell-actions .approval-allow { background: var(--text); color: var(--bg); border-color: var(--text); display: inline-flex; align-items: center; gap: 8px; }
   .shell-actions .approval-allow:hover:not(:disabled) { background: var(--text); color: var(--bg); }
   .shell-actions .approval-allow .spinner { color: inherit; }
@@ -719,7 +725,11 @@
   .composer-wrap {
     background: var(--bg);
     padding: 10px 24px 16px;
+    margin-bottom: 0;
   }
+  main.composer-animating .composer-wrap { transition: margin-bottom .36s cubic-bezier(.22, 1, .36, 1); }
+  main.empty-conversation .composer-wrap { margin-bottom: clamp(0px, 28vh, 360px); }
+  @media (prefers-reduced-motion: reduce) { main.composer-animating .composer-wrap { transition: none; } }
   .composer {
     max-width: 760px; margin: 0 auto;
   }
@@ -922,7 +932,7 @@
   }
   .settings-dialog input::placeholder { color: var(--muted); }
   .settings-dialog input:focus-visible { outline: none; box-shadow: none; }
-  .settings-dialog select:focus-visible { outline: 1px solid var(--muted); outline-offset: 2px; }
+  .settings-dialog select:focus-visible { outline: none; }
   .settings-dialog option { background: var(--panel); color: var(--text); }
   .model-source { position: relative; border-bottom: 1px solid var(--border-2); }
   .model-source summary { display: flex; align-items: center; gap: 10px; padding: 14px 46px 14px 0; cursor: pointer; color: var(--text-dim); font-size: 12px; list-style: none; }
@@ -965,7 +975,7 @@
     -webkit-mask: url('/assets/chevron-down.svg') center / contain no-repeat;
   }
   .settings-select:focus { outline: none; }
-  .settings-select:focus-visible { outline: 1px solid var(--muted); outline-offset: 2px; }
+  .settings-select:focus-visible { outline: none; background: var(--hover); }
   .settings-select-menu {
     position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 2;
     padding: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
@@ -1463,7 +1473,8 @@
   .command-card[data-status="failed"] .command-status { color: var(--err-text); }
   .command-source, .command-result { position: relative; padding: 10px 42px 10px 12px; }
   .command-card section > button { position: absolute; right: 8px; top: 8px; }
-  .icon-action { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0; }
+  .icon-action { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0; border: 0; border-radius: 4px; padding: 0; background: transparent; color: var(--text-dim); cursor: pointer; font: inherit; }
+  .icon-action:hover { color: var(--text); }
   .command-card button, .document-pane button { border: 0; border-radius: 4px; padding: 4px 8px; background: transparent; color: var(--text-dim); cursor: pointer; font: inherit; }
   .command-card button:hover, .document-pane button:hover { color: var(--text); }
   .document-pane button:not(.icon-action):hover { background: var(--hover); }
@@ -1513,7 +1524,7 @@
   .question-choice input { margin-top: 4px; accent-color: var(--text-dim); }
   .question-choice small { display: block; margin-top: 3px; color: var(--text-dim); font-size: 12px; }
   .question-answer { box-sizing: border-box; width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--panel-radius); padding: 10px; font: 13px/1.6 var(--font-sans); resize: vertical; }
-  .question-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 12px 16px; flex-wrap: wrap; }
+  .question-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 8px 12px; flex-wrap: wrap; }
   .question-actions .question-confirm { color: var(--bg); background: var(--text); border-color: var(--text); }
   .question-state, .question-error { color: var(--text-dim); font-size: 12px; }
   .question-card form > .question-state:not(:empty), .question-error:not(:empty) { padding: 8px 16px 0; }

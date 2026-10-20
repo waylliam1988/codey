@@ -2,13 +2,14 @@ import { runtime } from './runtime';
 import { nestedOwnsScroll } from './scroll_owner';
 import type { Message, Project, Session } from './types/domain';
 import type { ProcessSnapshot } from './process';
-import { HistoryRepository } from './history_repository';
+import { ConversationSearch } from './conversation_search';
 import { ConversationHistory } from './conversation_history';
 import type { ServerEvent } from './domain/protocol';
 export interface ConversationUiApi {
   init(deps: ConversationUiDeps): void;
   renderChat(): void;
   refreshHistory(sessionId: string): Promise<void>;
+  searchHistory(): void;
   observeCommit(event: ServerEvent): Promise<void>;
   scrollChat(capture?: boolean): void;
   captureView(): void;
@@ -94,6 +95,75 @@ export interface ConversationUiDeps {
   const forcedHistoryRefresh = new Set<string>();
   const views = new Map<string, ViewState>();
   const historyStarts = new Map<string, number>();
+  let searchPanel: ConversationSearch | null = null;
+  const focusRendering = new Map<string, symbol>();
+  let searchOrigin: { session: string; entry: string; offset: number; scroll: number; following: boolean } | null =
+    null;
+
+  async function focusHistory(entryId: string): Promise<void> {
+    const session = deps.activeSession();
+    if (!session) return;
+    forcedHistoryRefresh.add(session.id);
+    following = false;
+    const request = Symbol();
+    focusRendering.set(session.id, request);
+    try {
+      if (!(await history.focus(session, entryId)) || deps.activeSession() !== session) return;
+    } finally {
+      if (focusRendering.get(session.id) === request) focusRendering.delete(session.id);
+    }
+    const target = $('chat').querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(entryId)}"]`);
+    if (!target) throw new Error('Message could not be displayed');
+    setScroll(
+      $('chat-area').scrollTop +
+        target.getBoundingClientRect().top -
+        $('chat-area').getBoundingClientRect().top -
+        (searchPanel && !searchPanel.element.hidden ? searchPanel.element.offsetHeight + 16 : 24),
+    );
+    captureView();
+  }
+  function searchHistory(): void {
+    if (!searchPanel) {
+      searchPanel = new ConversationSearch({
+        sessionId: () => deps.getActiveId(),
+        jump: focusHistory,
+        restore: async () => {
+          const origin = searchOrigin;
+          if (!origin || origin.session !== deps.getActiveId()) return;
+          if (origin.following) {
+            await refreshHistory(origin.session);
+            backToLatest();
+          } else if (origin.entry) {
+            await focusHistory(origin.entry);
+            const target = $('chat').querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(origin.entry)}"]`);
+            if (target)
+              setScroll(
+                $('chat-area').scrollTop +
+                  target.getBoundingClientRect().top -
+                  $('chat-area').getBoundingClientRect().top -
+                  origin.offset,
+              );
+          } else setScroll(origin.scroll);
+          captureView();
+        },
+      });
+      document.querySelector('main')?.append(searchPanel.element);
+    }
+    if (searchPanel.element.hidden) {
+      const top = $('chat-area').getBoundingClientRect().top;
+      const anchor = Array.from($('chat').querySelectorAll<HTMLElement>('[data-entry-id]')).find(
+        (node) => node.getBoundingClientRect().bottom >= top,
+      );
+      searchOrigin = {
+        session: deps.getActiveId(),
+        entry: anchor?.dataset.entryId || '',
+        offset: (anchor?.getBoundingClientRect().top || top) - top,
+        scroll: $('chat-area').scrollTop,
+        following,
+      };
+    }
+    searchPanel.open();
+  }
   const history = new ConversationHistory((session, revealEarlier) => {
     runtime.UiState?.hydrateSessionIndexes(session);
     if (revealEarlier) {
@@ -103,7 +173,8 @@ export interface ConversationUiDeps {
       historyStarts.set(session.id, 0);
       return;
     } else {
-      historyStarts.delete(session.id);
+      if (focusRendering.has(session.id)) historyStarts.set(session.id, 0);
+      else historyStarts.delete(session.id);
     }
     // A mounted conversation owns its visible nodes while live events are
     // arriving. Durable commits are still reconciled into the session model,
@@ -113,7 +184,7 @@ export interface ConversationUiDeps {
     if (deps.activeSession() === session && historyRendered.has(session.id) && !force) return;
     historyRendered.add(session.id);
     views.delete(session.id);
-    if (deps.activeSession() === session) renderChat();
+    if (deps.activeSession() === session) renderChat(focusRendering.has(session.id));
   });
   const HISTORY_BATCH = 100;
   let menuTrigger: HTMLElement | null = null;
@@ -196,6 +267,13 @@ export interface ConversationUiDeps {
     updateLatest();
   }
   function backToLatest() {
+    if (history.hasAfter(deps.getActiveId())) {
+      void refreshHistory(deps.getActiveId()).then(() => {
+        following = true;
+        scrollChat();
+      });
+      return;
+    }
     following = true;
     scrollIntent = null;
     scrollChat();
@@ -387,11 +465,16 @@ export interface ConversationUiDeps {
     name.onclick = () => startTitleRename(s.id);
     title.append(name);
   }
-  function renderChat() {
+  function renderChat(force = false) {
     if (!deps) return;
     const s = deps.activeSession();
     if (!s) return;
+    if (shownId && shownId !== s.id) {
+      searchPanel?.hide();
+      document.querySelector('main')?.classList.remove('composer-animating');
+    }
     const chat = $('chat');
+    document.querySelector('main')?.classList.toggle('empty-conversation', !s.messages.length);
     // Streaming handlers update the existing assistant node in place. Other
     // state projections may request a render while a response is still live;
     // keep that node mounted until the stream has settled or the user changes
@@ -399,7 +482,7 @@ export interface ConversationUiDeps {
     const hasLiveStream = s.messages.some(
       (message) => message.type === 'asst' && Boolean(message.streamId) && message.finalAnswer === false,
     );
-    if (shownId === s.id && hasLiveStream && chat.querySelector('.msg.asst[data-stream-id]')) return;
+    if (!force && shownId === s.id && hasLiveStream && chat.querySelector('.msg.asst[data-stream-id]')) return;
     history.ensure(s);
     runtime.Composer.syncSession();
     const p = deps.activeProject();
@@ -420,19 +503,27 @@ export interface ConversationUiDeps {
       if (changing && saved?.nodes) chat.replaceChildren(...saved.nodes);
     } else {
       const disclosures = changing ? saved?.disclosures : runtime.Process.capture(chat);
+      const streams = new Map(
+        Array.from(chat.querySelectorAll<HTMLElement>('.msg.asst[data-stream-id]')).map((node) => [
+          `${node.dataset.runId}:${node.dataset.streamId}`,
+          node,
+        ]),
+      );
       chat.replaceChildren();
-      if (!s.messages.length) {
-        const welcome = document.createElement('div');
-        welcome.className = 'welcome';
-        welcome.innerHTML = '<h1>Codey</h1><p>Send a message to start.</p>';
-        chat.append(welcome);
-      } else {
+      if (s.messages.length) {
         let start = historyStarts.get(s.id);
         if (start === undefined || start >= s.messages.length)
           start = historyBoundary(s.messages, Math.max(0, s.messages.length - HISTORY_BATCH));
         historyStarts.set(s.id, start);
         addHistoryLoader(chat, s, start);
-        for (const m of s.messages.slice(start)) deps.appendMessageNode(chat, m);
+        for (const m of s.messages.slice(start)) {
+          const before = chat.lastElementChild;
+          const stream = m.streamId && m.finalAnswer === false ? streams.get(`${m.runId}:${m.streamId}`) : undefined;
+          if (stream) chat.append(stream);
+          else deps.appendMessageNode(chat, m);
+          if (m.entryId && before !== chat.lastElementChild && chat.lastElementChild instanceof HTMLElement)
+            chat.lastElementChild.dataset.entryId = m.entryId;
+        }
       }
       runtime.Process.restore(chat, disclosures);
     }
@@ -465,9 +556,17 @@ export interface ConversationUiDeps {
     updateNotice();
   }
 
-  async function refreshHistory(sessionId: string, force = true): Promise<void> {
+  async function refreshHistory(sessionId: string, force = true, background = false): Promise<void> {
     const session = deps?.getSessions().find((item) => item.id === sessionId);
     if (!session) return;
+    if (
+      background &&
+      searchPanel &&
+      !searchPanel.element.hidden &&
+      sessionId === shownId &&
+      history.hasAfter(sessionId)
+    )
+      return;
     if (force) forcedHistoryRefresh.add(sessionId);
     await history.refresh(session);
   }
@@ -483,7 +582,7 @@ export interface ConversationUiDeps {
       // their terminal entry is committed.
       const force = true;
       if (event.kind === 'branch' || event.kind === 'fork') historyRendered.delete(event.session_id);
-      await refreshHistory(event.session_id, force);
+      await refreshHistory(event.session_id, force, event.kind !== 'branch' && event.kind !== 'fork');
     }
   }
   function historyBoundary(messages: Message[], index: number): number {
@@ -491,7 +590,7 @@ export interface ConversationUiDeps {
     return index;
   }
   function addHistoryLoader(chat: HTMLElement, session: Session, start: number): void {
-    if (!start && !history.hasMore(session.id)) return;
+    if (!start && !history.hasMore(session.id) && !history.hasAfter(session.id)) return;
     const loader = document.createElement('div');
     loader.className = 'history-loader';
     const earlier = document.createElement('button'),
@@ -553,49 +652,13 @@ export interface ConversationUiDeps {
       await load(true);
       if (history.hasMore(session.id)) await history.earlier(session, true);
     };
-    searchButton.onclick = async () => {
-      if (deps.activeSession() !== session) return;
-      let search = loader.querySelector<HTMLInputElement>('[data-history-search]');
-      if (!search) {
-        search = document.createElement('input');
-        search.type = 'search';
-        search.placeholder = 'Search this conversation';
-        search.setAttribute('aria-label', 'Search this conversation');
-        search.dataset.historySearch = '';
-        loader.insertBefore(search, earlier);
-        search.focus();
-        search.onkeydown = (event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            searchButton.click();
-          }
-        };
-        return;
-      }
-      const query = search.value;
-      if (!query.trim()) return;
-      const repository = new HistoryRepository();
-      try {
-        const hits = await repository.search(session.id, query);
-        if (deps.activeSession() !== session) return;
-        const status = document.createElement('span');
-        status.className = 'history-search-status';
-        status.textContent = hits.length ? `${hits.length} matches` : 'No matches';
-        loader.replaceChildren(status, earlier, all, searchButton);
-        window.setTimeout(() => status.remove(), 1800);
-      } catch {
-        const status = document.createElement('span');
-        status.className = 'history-search-status';
-        status.textContent = 'Search unavailable';
-        loader.prepend(status);
-        window.setTimeout(() => status.remove(), 1800);
-      }
-    };
+    searchButton.onclick = searchHistory;
     loader.append(earlier, all, searchButton);
     chat.append(loader);
   }
 
   function scrollChat(capture = true) {
+    document.querySelector('main')?.classList.toggle('empty-conversation', !deps.activeSession()?.messages.length);
     if (following) setScroll($('chat-area').scrollHeight);
     else restoreReading(views.get(shownId));
     if (capture) captureView();
@@ -603,7 +666,7 @@ export interface ConversationUiDeps {
     updateNotice();
   }
   function updateLatest() {
-    $('back-to-latest').hidden = following || isAtLatest();
+    $('back-to-latest').hidden = !history.hasAfter(deps.getActiveId()) && (following || isAtLatest());
   }
 
   function updateNotice() {
@@ -1118,7 +1181,7 @@ export interface ConversationUiDeps {
           rows[next]?.focus();
           return;
         }
-        const drawer = document.querySelector('.changes-drawer.open');
+        const drawer = document.querySelector('.changes-drawer.open:not(.workspace .changes-drawer)');
         if (drawer && e.key === 'Escape') {
           e.preventDefault();
           e.stopPropagation();
@@ -1158,6 +1221,7 @@ export interface ConversationUiDeps {
     init,
     renderChat,
     refreshHistory,
+    searchHistory,
     observeCommit,
     scrollChat,
     captureView,

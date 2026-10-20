@@ -6,6 +6,7 @@ export interface QueuedRequest {
   project?: string;
   intent?: string;
   model_selection?: unknown;
+  input_mode?: 'steer' | 'follow_up';
 }
 export interface QueuedInput {
   id: string;
@@ -17,6 +18,8 @@ export interface QueuedInput {
   local?: boolean;
   draftRevision?: number;
   rejected?: boolean;
+  consumed_by_run_id?: string;
+  entry_id?: string;
 }
 interface OutboxDeps {
   accepted(request: QueuedRequest, revision: number): void;
@@ -235,7 +238,8 @@ export class InputOutbox {
         ? 'Checking…'
         : (
             {
-              queued: 'Queued · next turn',
+              queued: item.request.input_mode === 'steer' ? 'Queued · steer at next boundary' : 'Queued · next turn',
+              consumed: 'Applied · current task',
               sending: 'Queuing…',
               dispatching: 'Sending…',
               unconfirmed: 'Delivery unconfirmed',

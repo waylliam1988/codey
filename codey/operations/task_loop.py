@@ -573,8 +573,20 @@ def _settle_at_boundary(
 ) -> KernelResult:
     if only_stop_reason and result.stop_reason != only_stop_reason:
         return result
-    settled = _call_boundary(on_boundary, boundary, turns_used, propagate=propagate)
+    settled = _call_boundary(on_boundary, 'approval' if boundary == 'approval' else 'settle', turns_used, propagate=propagate)
     return settled if isinstance(settled, KernelResult) else result
+
+
+def _finish_or_steer(action: Any, on_boundary: Callable[[str], str | None] | None,
+                     turn: int, max_turns: int, *, propagate: bool) -> Any:
+    """A late steer continues this task only when another generation can run."""
+    if not isinstance(action, KernelResult) or action.stop_reason != 'done':
+        return action
+    boundary = 'final' if turn < max_turns else 'settle'
+    steering = _call_boundary(on_boundary, boundary, turn, propagate=propagate)
+    if isinstance(steering, KernelResult):
+        return steering
+    return (f'New user input at provider boundary:\n{steering}', None) if steering else action
 
 
 def run_task_kernel(
@@ -697,11 +709,10 @@ def run_task_kernel(
             provider_id=provider_id,
             on_event=on_event,
         )
+        done_action = _finish_or_steer(done_action, on_boundary, turn, startup.max_turns,
+                                      propagate=propagate_provider_failure)
         if isinstance(done_action, KernelResult):
-            return _settle_at_boundary(
-                done_action, "final", on_boundary, turns_used,
-                propagate=propagate_provider_failure, only_stop_reason="done",
-            )
+            return done_action
         if done_action is not None:
             state.prompt, state.pending_reply = done_action
             continue
@@ -737,6 +748,7 @@ def run_task_kernel(
             turns_used, propagate_provider_failure, stop_flag,
             durable=execution.durable,
             snapshot=turn_snapshot,
+            on_event=on_event,
         )
         if isinstance(results_or_failure, KernelResult):
             # An execution-layer failure can end the run before post_tools.
@@ -791,7 +803,7 @@ def run_task_kernel(
         # the writer/repair verdict; otherwise the pending provider effect
         # makes the settle transition illegal.
         boundary_result = _call_boundary(
-            on_boundary, "final", turns_used, propagate=propagate_provider_failure,
+            on_boundary, "settle", turns_used, propagate=propagate_provider_failure,
         )
         if isinstance(boundary_result, KernelResult):
             return boundary_result
@@ -918,6 +930,7 @@ def _call_execute_turn(
     turns_used: int, propagate_provider_failure: bool, stop_flag: Any = None,
     durable: Any = None,
     snapshot: Any = None,
+    on_event: Any = None,
 ) -> Any:
     """Run one execution turn; faults fail closed as provider_failure."""
     try:
@@ -948,6 +961,7 @@ def _call_execute_turn(
                 executors=effective_runnable,
                 durable=durable,
                 allow_writes=permission_profile == "coding_writer" and project_path is not None,
+                on_event=on_event,
             )
         return _execute_turn(
             session, calls, executors=effective_runnable, run_id=run_id,

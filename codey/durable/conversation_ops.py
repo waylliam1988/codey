@@ -96,6 +96,26 @@ def search_history(
     return hits
 
 
+def history_window(session: Any, conversation_id: str, entry_id: str, *, limit: int = 100,
+                   leaf_id: str | None = None) -> dict[str, object]:
+    """Read a bounded window on one validated ancestry path without moving its head."""
+    path = [entry for entry in context(session, conversation_id, leaf_id=leaf_id) if entry.kind != 'context_snapshot']
+    position = next((index for index, entry in enumerate(path) if entry.entry_id == entry_id), None)
+    if position is None:
+        raise KeyError('entry is not on this conversation path')
+    limit = max(1, min(200, int(limit)))
+    start = max(0, position - limit // 2)
+    end = min(len(path), start + limit)
+    selected = path[start:end]
+    return {
+        'schema_version': 1, 'session_id': conversation_id, 'epoch': session.database_id,
+        'snapshot_revision': session.store.head(conversation_id)[1],
+        'items': [_history_item(entry, start + index + 1) for index, entry in enumerate(selected)],
+        'has_more': start > 0, 'has_after': end < len(path),
+        'before_cursor': _encode_history_cursor(conversation_id, selected[0].entry_id) if start else None,
+    }
+
+
 def append_message(session: Any, conversation_id: str, kind: str, payload: Mapping[str, object]) -> EntryDraft:
     parent_id, revision = session.store.head(conversation_id)
     entry = EntryDraft(
