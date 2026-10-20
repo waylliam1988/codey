@@ -6,7 +6,7 @@
 - 开始日期：2026-10-21
 - 最后更新：2026-10-21
 - 关联 Roadmap 验收门：0.6.1
-- 实验 commit：`9b9b1999` (`feat(ghost): wire context epoch admission gate`); follow-up compatibility fix `d1c5c3db`; resume harness `待提交`
+- 实验 commit：`9b9b1999` (`feat(ghost): wire context epoch admission gate`); follow-up compatibility fix `d1c5c3db`; resumable smoke harness/report `b562a40d`
 - 生产合并结论：EXPERIMENT_ONLY
 
 ## 本次目标
@@ -69,5 +69,5 @@
 ## 下一步
 
 1. 增加真实 provider-send capture/fault-injection harness，验证 outbound bytes、trace sections 和 epoch record 完全一致。
-2. 进入 0.6.2：四个独立开关、scope、过期和禁用路径；完成后再做 language 有条件 shadow。
+2. 继续 0.6.2：四个独立开关的 scope、过期、禁用、重启并发和 provider payload 路径；当前控制面实验记录见 `independent-controls.md`。
 3. 继续把 modelA admission smoke 与完整 language on/off 评估分开，不能把 20/20 smoke 写成晋级收益。
