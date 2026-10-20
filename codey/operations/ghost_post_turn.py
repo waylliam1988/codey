@@ -18,7 +18,7 @@ from codey.knowledge.research_interest import (
     build_research_interest_candidates,
 )
 from codey.operations.context import RunFrame
-from codey.operations.ghost_context import ghost_affinity_store
+from codey.operations.ghost_context import ghost_affinity_store, ghost_control_enabled
 from codey.operations.research_flow import (
     record_research_plan_trace,
     record_research_proof_review_trace,
@@ -54,7 +54,7 @@ def maybe_claim_work_item(
     store = getattr(deps.state, "ghost_work_queue", None)
     if store is None:
         return None
-    if not _ghost_learning_enabled(deps.state):
+    if not _ghost_accept_events_enabled(deps.state):
         return None
     try:
         affinity_hints = ()
@@ -160,7 +160,7 @@ def maybe_sync_continuity(
     mode = str(event.get("mode") or "")
     if mode not in {"chat", "planning"}:
         return
-    if not _ghost_learning_enabled(deps.state):
+    if not _ghost_accept_events_enabled(deps.state):
         try:
             deps.state.emit({
                 "type": "ghost_continuity_done",
@@ -207,6 +207,8 @@ def maybe_kick_sleep(
 ) -> None:
     if str(event.get("stop_reason") or "") != "done":
         return
+    if not _ghost_run_maintenance_enabled(deps.state):
+        return
     kick = getattr(deps.state, "kick_ghost_sleep", None)
     if not callable(kick):
         return
@@ -234,7 +236,7 @@ def maybe_sync_work_queue(
     affinity_store = ghost_affinity_store(deps.state)
     if store is None and affinity_store is None:
         return
-    if not _ghost_learning_enabled(deps.state):
+    if not _ghost_accept_events_enabled(deps.state):
         return
     scope = frame.request.project or ""
     try:
@@ -381,13 +383,22 @@ def complete_or_block_work_item(
 
 
 def _ghost_learning_enabled(state: TaskState) -> bool:
+    """Compatibility alias for the legacy all-updates switch."""
+    return _ghost_accept_events_enabled(state)
+
+
+def _ghost_accept_events_enabled(state: TaskState) -> bool:
     inbox_store = getattr(state, "ghost_inbox", None)
     if inbox_store is None:
         return True
     try:
-        return bool(inbox_store.learning_enabled())
+        return ghost_control_enabled(state, "accept_events")
     except Exception:
         return False
+
+
+def _ghost_run_maintenance_enabled(state: TaskState) -> bool:
+    return ghost_control_enabled(state, "run_maintenance")
 
 
 def _record_ghost_warning(

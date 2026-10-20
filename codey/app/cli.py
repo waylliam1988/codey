@@ -364,6 +364,16 @@ def _ghost_enable_disable(action: str, surface: Any, store: Any) -> int:
     return 0 if payload.get("ok") else 1
 
 
+def _ghost_control(args: argparse.Namespace, surface: Any) -> int:
+    control = str(getattr(args, "control", "") or "")
+    enabled = str(getattr(args, "enabled", "off") or "off") == "on"
+    _status, payload = surface.dispatch_action(
+        {"action": "set_control", "control": control, "enabled": enabled}
+    )
+    _print_json(payload)
+    return 0 if payload.get("ok") else 1
+
+
 def cmd_ghost(args: argparse.Namespace) -> int:
     from codey.ghost.control_surface import GhostControlSurface
     from codey.storage.local_store import DEFAULT_STATE_HOME
@@ -408,6 +418,8 @@ def cmd_ghost(args: argparse.Namespace) -> int:
         return _ghost_delete_scope(args, surface)
     if action in {"enable", "disable"}:
         return _ghost_enable_disable(action, surface, store)
+    if action == "control":
+        return _ghost_control(args, surface)
     _safe_print("ghost subcommand required", file=sys.stderr)
     return 2
 
@@ -516,6 +528,10 @@ def _add_ghost_subcommands(sub: Any) -> None:
 
     sp_ghost_disable = sub.add_parser("disable", parents=[ghost_common], help="disable future Ghost learning ingest")
     sp_ghost_disable.set_defaults(func=cmd_ghost)
+    sp_ghost_control = sub.add_parser("control", parents=[ghost_common], help="set one independent Ghost control")
+    sp_ghost_control.add_argument("control", choices=("accept_events", "retrieve_projections", "run_maintenance", "admit_hints"))
+    sp_ghost_control.add_argument("enabled", choices=("on", "off"))
+    sp_ghost_control.set_defaults(func=cmd_ghost)
 
 
 def main(argv: list[str] | None = None) -> int:

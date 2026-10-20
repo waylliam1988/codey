@@ -41,6 +41,12 @@ from codey.storage.local_store import (
 _INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 INBOX_SCHEMA_VERSION = 1
+GHOST_CONTROL_NAMES = (
+    "accept_events",
+    "retrieve_projections",
+    "run_maintenance",
+    "admit_hints",
+)
 MAX_GHOST_EVENTS = 5_000
 MAX_INBOX_ITEMS = 200
 MAX_EVENTS_BYTES = 4 * 1024 * 1024
@@ -484,6 +490,7 @@ class GhostInboxStore:
         payload = {
             "schema_version": INBOX_SCHEMA_VERSION,
             "learning_enabled": enabled,
+            **{name: enabled for name in GHOST_CONTROL_NAMES},
             "updated_at": _common.now_iso_z(),
         }
         try:
@@ -508,6 +515,54 @@ class GhostInboxStore:
         """Read the SQLite switch; only an absent setting defaults to enabled."""
         with self.records.transaction(write=False):
             return bool(self._read_settings_unlocked()["learning_enabled"])
+
+    def control_enabled(self, name: str) -> bool:
+        """Read one independent Ghost control, failing closed on corruption."""
+        control = str(name or "").strip().lower()
+        if control not in GHOST_CONTROL_NAMES:
+            raise ValueError(f"unknown Ghost control: {control or '<empty>'}")
+        with self.records.transaction(write=False):
+            settings = self._read_settings_unlocked()
+            value = settings.get(control, settings.get("learning_enabled"))
+            if type(value) is not bool:
+                raise GhostSettingsError(self.database.path, f"{control} must be bool")
+            return value
+
+    def controls(self) -> dict[str, bool]:
+        """Return all independent controls as a bounded settings snapshot."""
+        with self.records.transaction(write=False):
+            settings = self._read_settings_unlocked()
+            return {
+                name: bool(settings.get(name, settings.get("learning_enabled")))
+                for name in GHOST_CONTROL_NAMES
+            }
+
+    def set_control(self, name: str, enabled: bool) -> bool:
+        """Persist one control without changing the other controls."""
+        control = str(name or "").strip().lower()
+        if control not in GHOST_CONTROL_NAMES:
+            raise ValueError(f"unknown Ghost control: {control or '<empty>'}")
+        if type(enabled) is not bool:
+            raise ValueError(f"{control} must be bool")
+        try:
+            with self.records.transaction():
+                current = self._read_settings_unlocked()
+                current[control] = enabled
+                current["schema_version"] = INBOX_SCHEMA_VERSION
+                current["updated_at"] = _common.now_iso_z()
+                self.records.set_setting("learning", current)
+                self._append_events([
+                    _ghost_control_event(
+                        schema_version=INBOX_SCHEMA_VERSION,
+                        event_name="ghost_control_updated",
+                        payload={"control": control, "enabled": enabled},
+                        now=_common.now_iso_z(),
+                    )
+                ])
+                self.records.mark_applied()
+        except (OSError, TypeError, ValueError, GhostSettingsError):
+            return False
+        return True
 
     def compact_if_needed(self) -> dict[str, object]:
         with self.records.transaction():
@@ -670,6 +725,10 @@ class GhostInboxStore:
             raise GhostSettingsError(self.database.path, "learning_enabled must be bool")
         if type(payload.get("schema_version")) is not int or payload["schema_version"] != INBOX_SCHEMA_VERSION:
             raise GhostSettingsError(self.database.path, "schema mismatch")
+        for name in GHOST_CONTROL_NAMES:
+            value = payload.get(name, payload["learning_enabled"])
+            if type(value) is not bool:
+                raise GhostSettingsError(self.database.path, f"{name} must be bool")
         return payload
 
     def _write_state(self, candidates: Iterable[GhostMemoryCandidate]) -> None:

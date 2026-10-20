@@ -26,17 +26,28 @@ from codey.ghost.observation_index import (
 from codey.ghost.observations import GhostObservationCorruptedError
 
 
+def ghost_control_enabled(state: Any, name: str, *, default: bool = True) -> bool:
+    """Read an independent Ghost control and fail closed on bad settings."""
+    inbox = getattr(state, "ghost_inbox", None)
+    if inbox is None:
+        return default
+    try:
+        reader = getattr(inbox, "control_enabled", None)
+        if callable(reader):
+            value = reader(name)
+            return value if type(value) is bool else False
+        value = inbox.learning_enabled()
+        return value if type(value) is bool else False
+    except (GhostSettingsError, OSError, ValueError, TypeError):
+        return False
+
+
 def ghost_affinity_store(state: Any) -> Any:
     store = getattr(state, "ghost_affinity", None)
     if store is None:
         return None
-    inbox_store = getattr(state, "ghost_inbox", None)
-    if inbox_store is not None:
-        try:
-            if not inbox_store.learning_enabled():
-                return None
-        except (GhostSettingsError, OSError, ValueError):
-            return None
+    if not ghost_control_enabled(state, "retrieve_projections"):
+        return None
     return store
 
 
@@ -46,6 +57,8 @@ def ghost_directive(
     project: str = "",
     session_id: str = "",
 ) -> Any:
+    if not ghost_control_enabled(state, "retrieve_projections"):
+        return build_ghost_directive(None)
     store = getattr(state, "ghost_hebbian", None)
     if store is None:
         return build_ghost_directive(None)
@@ -63,6 +76,8 @@ def ghost_continuity(
     project: str = "",
     session_id: str = "",
 ) -> Any:
+    if not ghost_control_enabled(state, "retrieve_projections"):
+        return build_ghost_continuity(None)
     store = getattr(state, "ghost_continuity", None)
     if store is None:
         return build_ghost_continuity(None)
@@ -99,10 +114,9 @@ def ghost_experiences(
     instead of silently serving stale observations.
     """
     try:
-        inbox = getattr(state, "ghost_inbox", None)
-        if inbox is not None and not bool(inbox.learning_enabled()):
+        if not ghost_control_enabled(state, "retrieve_projections"):
             return ""
-    except (GhostSettingsError, OSError, ValueError):
+    except (GhostSettingsError, OSError, ValueError, TypeError):
         _emit_settings_warning(state, session_id=session_id)
         return ""
     try:
@@ -141,6 +155,7 @@ def _emit_settings_warning(state: Any, *, session_id: str = "") -> None:
 
 
 __all__ = [
+    "ghost_control_enabled",
     "ghost_affinity_store",
     "ghost_continuity",
     "ghost_directive",

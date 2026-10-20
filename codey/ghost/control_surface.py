@@ -45,6 +45,7 @@ _ACTIONS = frozenset({
     "reject_work_item",
     "enable_updates",
     "disable_updates",
+    "set_control",
     "delete_scope",
     "reset_all",
 })
@@ -143,6 +144,11 @@ class GhostControlSurface:
             "settings_read_failed",
             default=False,
         )
+        controls = _safe_mapping(
+            lambda: self.inbox.controls() if self.inbox is not None else {},
+            warnings,
+            "controls_read_failed",
+        )
 
         observation_rows = _safe_rows(
             lambda: self.observations.read_committed(
@@ -162,6 +168,10 @@ class GhostControlSurface:
             "ok": True,
             "available": True,
             "enabled": updates_enabled,
+            "controls": {
+                name: bool(controls.get(name, updates_enabled))
+                for name in ("accept_events", "retrieve_projections", "run_maintenance", "admit_hints")
+            },
             "scope": {
                 "session_id": session_ref,
                 "project": project_ref,
@@ -213,6 +223,8 @@ class GhostControlSurface:
                 return self._set_updates(True)
             if action == "disable_updates":
                 return self._set_updates(False)
+            if action == "set_control":
+                return self._set_control(body)
             if action == "delete_scope":
                 return self._delete_scope(body)
             if action == "reset_all":
@@ -399,6 +411,25 @@ class GhostControlSurface:
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
             "ok": ok,
             "enabled": self.inbox.learning_enabled(),
+        }
+
+    def _set_control(self, body: Mapping[str, object]) -> tuple[int, dict[str, object]]:
+        if self.inbox is None:
+            return 200, _unavailable_payload()
+        name = clip_signal_text(body.get("control"), 80).lower()
+        enabled = body.get("enabled")
+        if name not in {"accept_events", "retrieve_projections", "run_maintenance", "admit_hints"}:
+            return 400, _error_payload("unknown Ghost control")
+        if type(enabled) is not bool:
+            return 400, _error_payload("enabled must be bool")
+        ok = self.inbox.set_control(name, enabled)
+        return 200 if ok else 500, {
+            "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
+            "ok": ok,
+            "action": "set_control",
+            "control": name,
+            "enabled": enabled if ok else False,
+            "controls": self.inbox.controls() if ok else {},
         }
 
     def _delete_scope(self, body: Mapping[str, object]) -> tuple[int, dict[str, object]]:
@@ -680,6 +711,19 @@ def _safe_bool(
     except Exception:
         warnings.append(warning)
         return default
+
+
+def _safe_mapping(
+    load: Callable[[], object],
+    warnings: list[str],
+    warning: str,
+) -> dict[str, object]:
+    try:
+        value = load()
+    except Exception:
+        warnings.append(warning)
+        return {}
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _safe_text(value: object, limit: int = MAX_UI_TEXT_CHARS) -> str:

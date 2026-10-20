@@ -57,6 +57,7 @@ def admit_ghost_context(
     *,
     request_scope: str = "",
     require_all: bool = False,
+    admit_hints: bool = True,
 ) -> GhostAdmissionResult:
     """Validate Ghost placement against the exact outbound prompt.
 
@@ -80,6 +81,9 @@ def admit_ghost_context(
             rejected.append(GhostAdmissionRejection(key or "<empty>", "invalid_or_duplicate_key"))
             continue
         seen_keys.add(key)
+        if not admit_hints:
+            rejected.append(GhostAdmissionRejection(key, "hints_disabled"))
+            continue
         budget = max(0, int(source.budget or 0))
         scope = str(source.scope or "").strip()
         if budget <= 0 or len(text) > budget:

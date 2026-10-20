@@ -247,7 +247,12 @@ def _entry_project_receipt(frame: RunFrame, work: RunWork, hooks: RunHooks, deps
 
 def _entry_context(frame: RunFrame, deps: Any, policy: Any) -> tuple[str, tuple[Any, ...]]:
     from codey.agents.request import AgentRequest
-    from codey.operations.ghost_context import ghost_continuity, ghost_directive, ghost_experiences
+    from codey.operations.ghost_context import (
+        ghost_continuity,
+        ghost_control_enabled,
+        ghost_directive,
+        ghost_experiences,
+    )
     from codey.operations.project_adapter import _project_context
     from codey.operations.prompting import record_local_context_trace
     from codey.workspace.context_admission import request_scope, sources_from_values
@@ -268,6 +273,8 @@ def _entry_context(frame: RunFrame, deps: Any, policy: Any) -> tuple[str, tuple[
         experiences=experiences,
         scope=request_scope(scope, request.session_id),
     )
+    if not ghost_control_enabled(deps.state, "admit_hints"):
+        ghost_sources = ()
     record_local_context_trace(getattr(frame, "trace", None), directive, continuity)
     sections = [
         PromptEnvelopeSection(
