@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from concurrent.futures import ThreadPoolExecutor
 
 from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost.inbox import GhostInboxStore
@@ -34,6 +35,60 @@ def test_legacy_disable_updates_fails_closed_all_four_controls(tmp_path: Path) -
         "run_maintenance": False,
         "admit_hints": False,
     }
+    assert inbox.set_control("accept_events", True, scope="user")
+    assert inbox.control_enabled("accept_events") is True
+
+
+def test_control_scope_inheritance_only_allows_narrower_deny(tmp_path: Path) -> None:
+    inbox = GhostInboxStore(tmp_path)
+    assert inbox.set_control("retrieve_projections", False, scope="user")
+    assert inbox.set_control(
+        "retrieve_projections", True, scope="project", project="P:/alpha",
+    )
+    assert not inbox.control_enabled("retrieve_projections", project="P:/alpha")
+    assert not inbox.control_enabled("retrieve_projections", project="P:/other")
+
+    assert inbox.set_control("retrieve_projections", True, scope="user")
+    assert inbox.set_control(
+        "retrieve_projections", False, scope="project", project="P:/alpha",
+    )
+    assert not inbox.control_enabled("retrieve_projections", project="P:/alpha")
+    assert inbox.control_enabled("retrieve_projections", project="P:/other")
+    assert inbox.set_control(
+        "retrieve_projections", True, scope="session", session_id="s1",
+        project="P:/alpha",
+    )
+    assert not inbox.control_enabled(
+        "retrieve_projections", project="P:/alpha", session_id="s1",
+    )
+
+
+def test_scoped_controls_survive_restart_and_concurrent_writes(tmp_path: Path) -> None:
+    first = GhostInboxStore(tmp_path)
+    second = GhostInboxStore(tmp_path)
+
+    def write(project: str) -> bool:
+        return second.set_control(
+            "admit_hints", False, scope="project", project=project,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert all(pool.map(write, ("P:/one", "P:/two")))
+    restarted = GhostInboxStore(tmp_path)
+    assert not restarted.control_enabled("admit_hints", project="P:/one")
+    assert not restarted.control_enabled("admit_hints", project="P:/two")
+    assert restarted.control_enabled("admit_hints", project="P:/three")
+
+
+def test_invalid_scope_reference_fails_closed_without_mutation(tmp_path: Path) -> None:
+    inbox = GhostInboxStore(tmp_path)
+    try:
+        inbox.set_control("accept_events", False, scope="project")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("missing project must be rejected")
+    assert inbox.control_enabled("accept_events")
 
 
 def test_retrieval_and_maintenance_controls_have_separate_boundaries(tmp_path: Path) -> None:

@@ -145,7 +145,8 @@ class GhostControlSurface:
             default=False,
         )
         controls = _safe_mapping(
-            lambda: self.inbox.controls() if self.inbox is not None else {},
+            lambda: self.inbox.controls(project=project_ref, session_id=session_ref)
+            if self.inbox is not None else {},
             warnings,
             "controls_read_failed",
         )
@@ -418,18 +419,26 @@ class GhostControlSurface:
             return 200, _unavailable_payload()
         name = clip_signal_text(body.get("control"), 80).lower()
         enabled = body.get("enabled")
+        scope = clip_signal_text(body.get("scope") or "user", 40).lower()
+        project = _common.normalize_project(body.get("project"))
+        session_id = clip_signal_text(body.get("session_id"), 120)
         if name not in {"accept_events", "retrieve_projections", "run_maintenance", "admit_hints"}:
             return 400, _error_payload("unknown Ghost control")
         if type(enabled) is not bool:
             return 400, _error_payload("enabled must be bool")
-        ok = self.inbox.set_control(name, enabled)
+        ok = self.inbox.set_control(
+            name, enabled, scope=scope, project=project, session_id=session_id,
+        )
         return 200 if ok else 500, {
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
             "ok": ok,
             "action": "set_control",
             "control": name,
+            "scope": scope,
+            "project": project if scope == "project" else "",
+            "session_id": session_id if scope == "session" else "",
             "enabled": enabled if ok else False,
-            "controls": self.inbox.controls() if ok else {},
+            "controls": self.inbox.controls(project=project, session_id=session_id) if ok else {},
         }
 
     def _delete_scope(self, body: Mapping[str, object]) -> tuple[int, dict[str, object]]:

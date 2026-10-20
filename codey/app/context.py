@@ -820,7 +820,9 @@ class AppContext(GhostStoreAccessors):
             try:
                 control = getattr(inbox, "control_enabled", None)
                 if callable(control):
-                    if not control("run_maintenance"):
+                    if not control(
+                        "run_maintenance", project=project, session_id=session_id,
+                    ):
                         return False
                 elif not inbox.learning_enabled():
                     return False

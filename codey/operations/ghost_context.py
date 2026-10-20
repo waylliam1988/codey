@@ -26,7 +26,14 @@ from codey.ghost.observation_index import (
 from codey.ghost.observations import GhostObservationCorruptedError
 
 
-def ghost_control_enabled(state: Any, name: str, *, default: bool = True) -> bool:
+def ghost_control_enabled(
+    state: Any,
+    name: str,
+    *,
+    project: str = "",
+    session_id: str = "",
+    default: bool = True,
+) -> bool:
     """Read an independent Ghost control and fail closed on bad settings."""
     inbox = getattr(state, "ghost_inbox", None)
     if inbox is None:
@@ -34,7 +41,10 @@ def ghost_control_enabled(state: Any, name: str, *, default: bool = True) -> boo
     try:
         reader = getattr(inbox, "control_enabled", None)
         if callable(reader):
-            value = reader(name)
+            try:
+                value = reader(name, project=project, session_id=session_id)
+            except TypeError:
+                value = reader(name)
             return value if type(value) is bool else False
         value = inbox.learning_enabled()
         return value if type(value) is bool else False
@@ -42,11 +52,16 @@ def ghost_control_enabled(state: Any, name: str, *, default: bool = True) -> boo
         return False
 
 
-def ghost_affinity_store(state: Any) -> Any:
+def ghost_affinity_store(
+    state: Any,
+    *,
+    project: str = "",
+    session_id: str = "",
+) -> Any:
     store = getattr(state, "ghost_affinity", None)
     if store is None:
         return None
-    if not ghost_control_enabled(state, "accept_events"):
+    if not ghost_control_enabled(state, "accept_events", project=project, session_id=session_id):
         return None
     return store
 
@@ -57,7 +72,7 @@ def ghost_directive(
     project: str = "",
     session_id: str = "",
 ) -> Any:
-    if not ghost_control_enabled(state, "retrieve_projections"):
+    if not ghost_control_enabled(state, "retrieve_projections", project=project, session_id=session_id):
         return build_ghost_directive(None)
     store = getattr(state, "ghost_hebbian", None)
     if store is None:
@@ -66,7 +81,7 @@ def ghost_directive(
         store,
         project=project,
         session_id=session_id,
-        affinity_store=ghost_affinity_store(state),
+        affinity_store=ghost_affinity_store(state, project=project, session_id=session_id),
     )
 
 
@@ -76,7 +91,7 @@ def ghost_continuity(
     project: str = "",
     session_id: str = "",
 ) -> Any:
-    if not ghost_control_enabled(state, "retrieve_projections"):
+    if not ghost_control_enabled(state, "retrieve_projections", project=project, session_id=session_id):
         return build_ghost_continuity(None)
     store = getattr(state, "ghost_continuity", None)
     if store is None:
@@ -114,7 +129,7 @@ def ghost_experiences(
     instead of silently serving stale observations.
     """
     try:
-        if not ghost_control_enabled(state, "retrieve_projections"):
+        if not ghost_control_enabled(state, "retrieve_projections", project=project, session_id=session_id):
             return ""
     except (GhostSettingsError, OSError, ValueError, TypeError):
         _emit_settings_warning(state, session_id=session_id)

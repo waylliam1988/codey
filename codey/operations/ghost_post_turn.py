@@ -54,11 +54,13 @@ def maybe_claim_work_item(
     store = getattr(deps.state, "ghost_work_queue", None)
     if store is None:
         return None
-    if not _ghost_accept_events_enabled(deps.state):
+    if not _ghost_accept_events_enabled(deps.state, project=request.project, session_id=request.session_id):
         return None
     try:
         affinity_hints = ()
-        affinity_store = ghost_affinity_store(deps.state)
+        affinity_store = ghost_affinity_store(
+            deps.state, project=request.project, session_id=request.session_id,
+        )
         if affinity_store is not None:
             try:
                 queued = store.list_items(
@@ -160,7 +162,10 @@ def maybe_sync_continuity(
     mode = str(event.get("mode") or "")
     if mode not in {"chat", "planning"}:
         return
-    if not _ghost_accept_events_enabled(deps.state):
+    if not _ghost_accept_events_enabled(
+        deps.state, project=frame.project_text if mode != "chat" else "",
+        session_id=frame.request.session_id,
+    ):
         try:
             deps.state.emit({
                 "type": "ghost_continuity_done",
@@ -207,7 +212,9 @@ def maybe_kick_sleep(
 ) -> None:
     if str(event.get("stop_reason") or "") != "done":
         return
-    if not _ghost_run_maintenance_enabled(deps.state):
+    if not _ghost_run_maintenance_enabled(
+        deps.state, project=frame.project_text, session_id=frame.request.session_id,
+    ):
         return
     kick = getattr(deps.state, "kick_ghost_sleep", None)
     if not callable(kick):
@@ -233,10 +240,14 @@ def maybe_sync_work_queue(
     run_projection: Any = None,
 ) -> None:
     store = getattr(deps.state, "ghost_work_queue", None)
-    affinity_store = ghost_affinity_store(deps.state)
+    affinity_store = ghost_affinity_store(
+        deps.state, project=frame.project_text, session_id=frame.request.session_id,
+    )
     if store is None and affinity_store is None:
         return
-    if not _ghost_accept_events_enabled(deps.state):
+    if not _ghost_accept_events_enabled(
+        deps.state, project=frame.project_text, session_id=frame.request.session_id,
+    ):
         return
     scope = frame.request.project or ""
     try:
@@ -290,10 +301,12 @@ def sync_affinity_terminal_event(
     project_text: str,
     run_projection: Any = None,
 ) -> None:
-    affinity_store = ghost_affinity_store(deps.state)
+    session_id = str(event.get("session_id") or getattr(request, "session_id", "") or "")
+    affinity_store = ghost_affinity_store(
+        deps.state, project=project_text, session_id=session_id,
+    )
     if affinity_store is None:
         return
-    session_id = str(event.get("session_id") or getattr(request, "session_id", "") or "")
     try:
         affinity_store.sync_from_sources(
             hebbian_store=getattr(deps.state, "ghost_hebbian", None),
@@ -387,18 +400,32 @@ def _ghost_learning_enabled(state: TaskState) -> bool:
     return _ghost_accept_events_enabled(state)
 
 
-def _ghost_accept_events_enabled(state: TaskState) -> bool:
+def _ghost_accept_events_enabled(
+    state: TaskState,
+    *,
+    project: str = "",
+    session_id: str = "",
+) -> bool:
     inbox_store = getattr(state, "ghost_inbox", None)
     if inbox_store is None:
         return True
     try:
-        return ghost_control_enabled(state, "accept_events")
+        return ghost_control_enabled(
+            state, "accept_events", project=project, session_id=session_id,
+        )
     except Exception:
         return False
 
 
-def _ghost_run_maintenance_enabled(state: TaskState) -> bool:
-    return ghost_control_enabled(state, "run_maintenance")
+def _ghost_run_maintenance_enabled(
+    state: TaskState,
+    *,
+    project: str = "",
+    session_id: str = "",
+) -> bool:
+    return ghost_control_enabled(
+        state, "run_maintenance", project=project, session_id=session_id,
+    )
 
 
 def _record_ghost_warning(

@@ -47,6 +47,7 @@ GHOST_CONTROL_NAMES = (
     "run_maintenance",
     "admit_hints",
 )
+GHOST_CONTROL_SCOPES = ("user", "project", "session")
 MAX_GHOST_EVENTS = 5_000
 MAX_INBOX_ITEMS = 200
 MAX_EVENTS_BYTES = 4 * 1024 * 1024
@@ -487,10 +488,19 @@ class GhostInboxStore:
     def set_learning_enabled(self, enabled: bool) -> bool:
         if type(enabled) is not bool:
             raise ValueError("learning_enabled must be bool")
+        scoped: dict[str, object] = {"user": {name: enabled for name in GHOST_CONTROL_NAMES}}
+        try:
+            with self.records.transaction(write=False):
+                existing = self.records.setting("learning", {})
+            if isinstance(existing, dict) and isinstance(existing.get("control_scopes"), dict):
+                scoped.update({key: value for key, value in existing["control_scopes"].items() if key in {"project", "session"}})
+        except Exception:
+            pass
         payload = {
             "schema_version": INBOX_SCHEMA_VERSION,
             "learning_enabled": enabled,
             **{name: enabled for name in GHOST_CONTROL_NAMES},
+            "control_scopes": scoped,
             "updated_at": _common.now_iso_z(),
         }
         try:
@@ -514,40 +524,68 @@ class GhostInboxStore:
     def learning_enabled(self) -> bool:
         """Read the SQLite switch; only an absent setting defaults to enabled."""
         with self.records.transaction(write=False):
-            return bool(self._read_settings_unlocked()["learning_enabled"])
+            return self._effective_controls_unlocked(self._read_settings_unlocked())["accept_events"]
 
-    def control_enabled(self, name: str) -> bool:
+    def control_enabled(
+        self,
+        name: str,
+        *,
+        project: str = "",
+        session_id: str = "",
+    ) -> bool:
         """Read one independent Ghost control, failing closed on corruption."""
         control = str(name or "").strip().lower()
         if control not in GHOST_CONTROL_NAMES:
             raise ValueError(f"unknown Ghost control: {control or '<empty>'}")
         with self.records.transaction(write=False):
-            settings = self._read_settings_unlocked()
-            value = settings.get(control, settings.get("learning_enabled"))
-            if type(value) is not bool:
-                raise GhostSettingsError(self.database.path, f"{control} must be bool")
-            return value
+            return self._effective_controls_unlocked(
+                self._read_settings_unlocked(), project=project, session_id=session_id,
+            )[control]
 
-    def controls(self) -> dict[str, bool]:
+    def controls(self, *, project: str = "", session_id: str = "") -> dict[str, bool]:
         """Return all independent controls as a bounded settings snapshot."""
         with self.records.transaction(write=False):
-            settings = self._read_settings_unlocked()
-            return {
-                name: bool(settings.get(name, settings.get("learning_enabled")))
-                for name in GHOST_CONTROL_NAMES
-            }
+            return self._effective_controls_unlocked(
+                self._read_settings_unlocked(), project=project, session_id=session_id,
+            )
 
-    def set_control(self, name: str, enabled: bool) -> bool:
+    def set_control(
+        self,
+        name: str,
+        enabled: bool,
+        *,
+        scope: str = "user",
+        project: str = "",
+        session_id: str = "",
+    ) -> bool:
         """Persist one control without changing the other controls."""
         control = str(name or "").strip().lower()
         if control not in GHOST_CONTROL_NAMES:
             raise ValueError(f"unknown Ghost control: {control or '<empty>'}")
         if type(enabled) is not bool:
             raise ValueError(f"{control} must be bool")
+        normalized_scope, scope_ref = _control_scope_ref(
+            scope, project=project, session_id=session_id,
+        )
         try:
             with self.records.transaction():
                 current = self._read_settings_unlocked()
-                current[control] = enabled
+                scoped = current.setdefault("control_scopes", {})
+                if not isinstance(scoped, dict):
+                    raise GhostSettingsError(self.database.path, "control_scopes must be object")
+                bucket = scoped.setdefault(normalized_scope, {})
+                if normalized_scope == "user":
+                    bucket[control] = enabled
+                    current[control] = enabled
+                    if control == "accept_events":
+                        current["learning_enabled"] = enabled
+                else:
+                    if not scope_ref:
+                        raise ValueError(f"{normalized_scope} scope reference required")
+                    entry = bucket.setdefault(scope_ref, {})
+                    if not isinstance(entry, dict):
+                        raise GhostSettingsError(self.database.path, "control scope entry must be object")
+                    entry[control] = enabled
                 current["schema_version"] = INBOX_SCHEMA_VERSION
                 current["updated_at"] = _common.now_iso_z()
                 self.records.set_setting("learning", current)
@@ -555,7 +593,12 @@ class GhostInboxStore:
                     _ghost_control_event(
                         schema_version=INBOX_SCHEMA_VERSION,
                         event_name="ghost_control_updated",
-                        payload={"control": control, "enabled": enabled},
+                        payload={
+                            "control": control,
+                            "enabled": enabled,
+                            "scope": normalized_scope,
+                            "scope_ref": scope_ref,
+                        },
                         now=_common.now_iso_z(),
                     )
                 ])
@@ -563,6 +606,51 @@ class GhostInboxStore:
         except (OSError, TypeError, ValueError, GhostSettingsError):
             return False
         return True
+
+    def _effective_controls_unlocked(
+        self,
+        settings: dict[str, object],
+        *,
+        project: str = "",
+        session_id: str = "",
+    ) -> dict[str, bool]:
+        fallback = settings.get("learning_enabled")
+        if type(fallback) is not bool:
+            raise GhostSettingsError(self.database.path, "learning_enabled must be bool")
+        values = {
+            name: bool(settings.get(name, fallback))
+            for name in GHOST_CONTROL_NAMES
+        }
+        scoped = settings.get("control_scopes", {})
+        if not isinstance(scoped, dict):
+            raise GhostSettingsError(self.database.path, "control_scopes must be object")
+
+        def apply(bucket: object) -> None:
+            if bucket is None:
+                return
+            if not isinstance(bucket, dict):
+                raise GhostSettingsError(self.database.path, "control scope bucket must be object")
+            for name in GHOST_CONTROL_NAMES:
+                value = bucket.get(name)
+                if value is not None and type(value) is not bool:
+                    raise GhostSettingsError(self.database.path, f"{name} must be bool")
+                if type(value) is bool:
+                    values[name] = values[name] and value
+
+        apply(scoped.get("user", {}))
+        project_ref = _common.normalize_project(project)
+        session_ref = clip_signal_text(session_id, 120)
+        if project_ref:
+            projects = scoped.get("project", {})
+            if not isinstance(projects, dict):
+                raise GhostSettingsError(self.database.path, "project controls must be object")
+            apply(projects.get(project_ref, {}))
+        if session_ref:
+            sessions = scoped.get("session", {})
+            if not isinstance(sessions, dict):
+                raise GhostSettingsError(self.database.path, "session controls must be object")
+            apply(sessions.get(session_ref, {}))
+        return values
 
     def compact_if_needed(self) -> dict[str, object]:
         with self.records.transaction():
@@ -729,6 +817,13 @@ class GhostInboxStore:
             value = payload.get(name, payload["learning_enabled"])
             if type(value) is not bool:
                 raise GhostSettingsError(self.database.path, f"{name} must be bool")
+        scoped = payload.get("control_scopes", {})
+        if not isinstance(scoped, dict):
+            raise GhostSettingsError(self.database.path, "control_scopes must be object")
+        for scope in GHOST_CONTROL_SCOPES:
+            bucket = scoped.get(scope, {})
+            if not isinstance(bucket, dict):
+                raise GhostSettingsError(self.database.path, f"{scope} controls must be object")
         return payload
 
     def _write_state(self, candidates: Iterable[GhostMemoryCandidate]) -> None:
@@ -862,6 +957,28 @@ def _token_slug(value: object) -> str:
 
 def _scope_ref(candidate: GhostMemoryCandidate) -> str:
     return candidate.scope_ref
+
+
+def _control_scope_ref(
+    scope: str,
+    *,
+    project: str = "",
+    session_id: str = "",
+) -> tuple[str, str]:
+    normalized = str(scope or "").strip().lower()
+    if normalized not in GHOST_CONTROL_SCOPES:
+        raise ValueError("scope must be user, project, or session")
+    if normalized == "project":
+        ref = _common.normalize_project(project)
+        if not ref:
+            raise ValueError("project is required for project control")
+        return normalized, ref
+    if normalized == "session":
+        ref = clip_signal_text(session_id, 120)
+        if not ref:
+            raise ValueError("session_id is required for session control")
+        return normalized, ref
+    return normalized, ""
 
 
 def _scope_filter_matches(

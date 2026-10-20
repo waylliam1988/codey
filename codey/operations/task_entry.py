@@ -245,7 +245,7 @@ def _entry_project_receipt(frame: RunFrame, work: RunWork, hooks: RunHooks, deps
     return receipt, payload
 
 
-def _entry_context(frame: RunFrame, deps: Any, policy: Any) -> tuple[str, tuple[Any, ...]]:
+def _entry_context(frame: RunFrame, deps: Any, policy: Any) -> tuple[str, tuple[Any, ...], bool]:
     from codey.agents.request import AgentRequest
     from codey.operations.ghost_context import (
         ghost_continuity,
@@ -273,7 +273,10 @@ def _entry_context(frame: RunFrame, deps: Any, policy: Any) -> tuple[str, tuple[
         experiences=experiences,
         scope=request_scope(scope, request.session_id),
     )
-    if not ghost_control_enabled(deps.state, "admit_hints"):
+    admit_hints = ghost_control_enabled(
+        deps.state, "admit_hints", project=scope, session_id=request.session_id,
+    )
+    if not admit_hints:
         ghost_sources = ()
     record_local_context_trace(getattr(frame, "trace", None), directive, continuity)
     sections = [
@@ -290,7 +293,7 @@ def _entry_context(frame: RunFrame, deps: Any, policy: Any) -> tuple[str, tuple[
         for source in ghost_sources
     ]
     if not policy.allows("project.read"):
-        return PromptEnvelope(sections).render().text, ghost_sources
+        return PromptEnvelope(sections).render().text, ghost_sources, admit_hints
     workspace_context = _project_context(AgentRequest(
         provider=frame.provider, project=Path(frame.project_text), task=request.task,
         permission_profile="coding_writer" if policy.allows("project.write") else "planning_readonly",
@@ -304,7 +307,7 @@ def _entry_context(frame: RunFrame, deps: Any, policy: Any) -> tuple[str, tuple[
             freshness="run_start",
             source_refs=("context_source:workspace_context",),
         ))
-    return PromptEnvelope(sections).render().text, ghost_sources
+    return PromptEnvelope(sections).render().text, ghost_sources, admit_hints
 
 
 def _workspace_writer(frame: RunFrame, state: Any, stack: ExitStack) -> Any:
@@ -439,7 +442,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                 "receipt": {"display": {"summary": fresh.error[:2000]}},
             })
     active_provider, intent_sink, stop_flag = _entry_provider_sink(frame, deps, kind)
-    context_text, ghost_sources = _entry_context(frame, deps, policy)
+    context_text, ghost_sources, admit_hints = _entry_context(frame, deps, policy)
     ensure_workspace_writer = _workspace_writer(frame, deps.state, writer_stack) if kind == "chat" else None
     try:
         ignored = tuple(getattr(getattr(config_result, "config", None), "ignored_paths", ()) or ())
@@ -463,6 +466,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                     start_turn=max(resume_start, session.turn + 1) if continuation_followup else resume_start,
                     context_text="\n\n".join(part for part in (context_text, continuation_followup) if part),
                     ghost_sources=ghost_sources,
+                    admit_hints=admit_hints,
                     initial_results=initial_results or None,
                     initial_turn=initial_turn,
                     window_ref=getattr(active_provider, "window_ref", None),

@@ -367,8 +367,13 @@ def _ghost_enable_disable(action: str, surface: Any, store: Any) -> int:
 def _ghost_control(args: argparse.Namespace, surface: Any) -> int:
     control = str(getattr(args, "control", "") or "")
     enabled = str(getattr(args, "enabled", "off") or "off") == "on"
+    scope = str(getattr(args, "scope", "user") or "user")
     _status, payload = surface.dispatch_action(
-        {"action": "set_control", "control": control, "enabled": enabled}
+        {
+            "action": "set_control", "control": control, "enabled": enabled,
+            "scope": scope, "project": getattr(args, "project", ""),
+            "session_id": getattr(args, "session_id", ""),
+        }
     )
     _print_json(payload)
     return 0 if payload.get("ok") else 1
@@ -531,6 +536,9 @@ def _add_ghost_subcommands(sub: Any) -> None:
     sp_ghost_control = sub.add_parser("control", parents=[ghost_common], help="set one independent Ghost control")
     sp_ghost_control.add_argument("control", choices=("accept_events", "retrieve_projections", "run_maintenance", "admit_hints"))
     sp_ghost_control.add_argument("enabled", choices=("on", "off"))
+    sp_ghost_control.add_argument("--scope", choices=("user", "project", "session"), default="user")
+    sp_ghost_control.add_argument("--project", default="")
+    sp_ghost_control.add_argument("--session-id", default="")
     sp_ghost_control.set_defaults(func=cmd_ghost)
 
 

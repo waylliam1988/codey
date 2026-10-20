@@ -108,3 +108,28 @@ def test_real_kernel_send_captures_admitted_ghost_bytes() -> None:
     assert outcome.stop_reason == "done"
     assert len(sent) == 1
     assert source.text in sent[0]
+
+
+def test_real_kernel_send_respects_admit_hints_control_before_provider() -> None:
+    sent: list[str] = []
+
+    def send(prompt: str) -> str:
+        sent.append(prompt)
+        return '{"tool":"done","args":{"summary":"unexpected"}}'
+
+    source = _source()
+    outcome = run_task_kernel(
+        TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=1),
+        request=KernelRunRequest(
+            transport=KernelTransportDeps(
+                provider=SimpleNamespace(send=send),
+                run_id="ghost-admission-disabled",
+                context_text=source.text,
+                ghost_sources=(source,),
+                admit_hints=False,
+            ),
+        ),
+    )
+
+    assert outcome.stop_reason == "provider_failure"
+    assert sent == []

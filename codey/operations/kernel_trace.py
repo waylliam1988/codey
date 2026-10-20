@@ -16,6 +16,7 @@ def record_outbound(
     pending_results: Any,
     ghost_sources: tuple[GhostContextSource, ...] = (),
     require_ghost_sources: bool = False,
+    admit_hints: bool = True,
 ) -> None:
     if pending_reply is not None or (native and pending_results is not None):
         return
@@ -24,6 +25,7 @@ def record_outbound(
         ghost_sources,
         request_scope=(ghost_sources[0].scope if ghost_sources else ""),
         require_all=require_ghost_sources,
+        admit_hints=admit_hints,
     )
     if trace is not None and admission.accepted:
         FailOpenPromptTrace(trace).call(
