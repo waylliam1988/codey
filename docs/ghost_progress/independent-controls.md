@@ -6,7 +6,7 @@
 - 开始日期：2026-10-21
 - 最后更新：2026-10-21
 - 关联 Roadmap 验收门：0.6.2 scope 与四个开关
-- 实验 commit：`496247fc` (`feat(ghost): add independent control gates`); scoped projection/send gate `89622a8c`; follow-up boundary fix `6f18485e`; architecture audit `a7797877`
+- 实验 commit：`496247fc` (`feat(ghost): add independent control gates`); scoped projection/send gate `89622a8c`; lifecycle/expiry fixture `c3701ab4`; follow-up boundary fix `6f18485e`; architecture audit `a7797877`
 - 生产合并结论：`SHADOW_ONLY`
 
 ## 本次目标
@@ -24,11 +24,15 @@
   `learning_enabled` 迁移读取。
 - 控制 projection 支持 user/project/session 覆盖；继承按 user → project →
   session 计算，任何上层 deny 都不能被更窄 scope 的 allow 覆盖。
+- scope delete 会删除对应 project/session override；user delete 恢复四个控制默认值，
+  并在重启后保持删除结果。
 - prompt-side directive、continuity 和 experience retrieval 使用
   `retrieve_projections`；post-turn ingest/continuity/work queue 使用
   `accept_events`；sleep kick 使用 `run_maintenance`。
 - task entry 在构造 Ghost sources 时检查 `admit_hints`；admission API 也支持
   显式 `admit_hints=False`，拒绝原因是 `hints_disabled`。
+- admission source 支持显式 `expires_at`，用 `as_of` 做 deterministic expiry 判断；
+  过期或非法时间拒绝，不进入 provider payload。
 - 控制面 summary 和 action 增加 controls 映射，CLI 增加
   `codey ghost control <name> on|off`。
 - 新增 deterministic control fixture tests；没有修改默认 prompt、排序策略或
@@ -69,9 +73,9 @@ python -m pytest tests/test_learning_switch_fail_closed.py -q
 
 - 四个控制可独立写入和读取；旧 settings 可以继续读取。
 - retrieval、maintenance、admission 和 event acceptance 已在代码边界接线；
-  scope inheritance、restart/concurrent settings 和真实 kernel provider capture
-  已有 deterministic evidence。
-- 仍尚未完成 expiry、scope delete/export/reset 的控制 manifest、并发 runtime
+  scope inheritance、restart/concurrent settings、expiry 和真实 kernel provider
+  capture 已有 deterministic evidence。
+- 仍尚未完成 scope export/reset 的控制 manifest、并发 runtime
   请求矩阵、成本/延迟测量和完整 0.6.2 acceptance battery。
 - 本实验没有 live/offline 模型行为对照，也没有证明任何 language 或 command
   收益；不能把它当作 Ghost language 晋级。
