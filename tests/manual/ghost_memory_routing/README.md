@@ -17,6 +17,8 @@
 
 `reports/REPORT.md` 对应同 prompt 排序，`REPORT2.md` 对应扩槽位排序，
 `REPORT3.md` 对应分层路由，`REPORT4.md` 对应偏好族与预算压力验收。
+`reports/REPORT4-frozen-evaluation.md` 是 0.6.0 冻结 evaluator 重新复算的脱敏报告；其
+完整性规则和 `PROMOTE-MATCHED` rank 映射由 `evaluation_contract.py` 固定。
 数字保留为历史文件标识；长期路线使用实验名称和具体行为描述。
 
 归档迁入日期为 2026-10-19。原目录共 1,491 文件、48,217,898 字节，迁移时逐文件
@@ -87,6 +89,9 @@ python tests/manual/ghost_memory_routing/round4.py report
 - 历史 `family_verdicts()` 会跳过缺失 suite、把缺失 off 视作零，未强制最低样本量，
   且 `PROMOTE-MATCHED` 缺 rank 映射。它的 PROMOTE 不是生产 gate；未来使用前必须按
   [晋级协议](../../../docs/ghost_future_direction.zh-CN.md#06-晋级协议)修正，并冻结必测矩阵。
+- 0.6.0 已将这些完整性问题移到 `evaluation_contract.py`：modelA 单模型试点固定为
+  language/command 各自 on/off、4 个问法、每问法 5 次；缺失 suite、control 或样本量输出
+  `INCOMPLETE`，不会把缺失当成 0。该结果仍是 `EXPERIMENT_ONLY`，没有改变默认 prompt。
 
 长期结论与实现顺序见 [Ghost 方向](../../../docs/ghost_future_direction.zh-CN.md)和
 [Roadmap](../../../ROADMAP.zh-CN.md)。原始报告保持历史判定，后续解释不回写成新测量。

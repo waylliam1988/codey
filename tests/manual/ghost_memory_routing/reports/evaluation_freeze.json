@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "experiment": "frozen-evaluation-and-ownership-audit",
+  "roadmap_gate": "0.6.0",
+  "status": "EXPERIMENT_COMPLETE",
+  "pilot_scope": "single_model_pilot",
+  "required_suites": ["modelA"],
+  "model_ids": {
+    "modelA": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M"
+  },
+  "task_phrases_per_family": 4,
+  "reps_per_phrase": 5,
+  "minimum_runs_per_cell": 20,
+  "cells": [
+    {"family": "language", "on": "lang_on_d2", "off": "lang_off_d2", "min_runs": 20},
+    {"family": "command", "on": "cmd_on_d2", "off": "cmd_off_d2", "min_runs": 20}
+  ],
+  "missing_data": "INCOMPLETE; never impute missing controls or samples as zero",
+  "default_prompt_changed": false,
+  "promotion_scope": "modelA only; no cross-model claim",
+  "source_metrics": "reports/measurements.json",
+  "raw_data_policy": "raw prompts, replies, state and full logs remain local"
+}

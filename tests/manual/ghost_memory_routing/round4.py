@@ -497,6 +497,12 @@ def report() -> int:
                          f"behavior_families={len(fam_lines)/4:.2f} "
                          f"({'; '.join(ln.strip('- ')[:38] for ln in fam_lines)})")
     verdicts = family_verdicts(cells)
+    coverage = verdicts.get("_coverage", {})
+    lines += ["", "## frozen matrix coverage", "",
+              f"- status: **{coverage.get('status', 'INCOMPLETE')}**",
+              f"- required suites: {', '.join(coverage.get('required_suites', [])) or 'none'}"]
+    if coverage.get("missing"):
+        lines.append(f"- missing: {json.dumps(coverage['missing'], ensure_ascii=False)}")
     lines += ["", "## promotion verdicts", "", _md(verdicts)]
     (HERE / "REPORT4.md").write_text("\n".join(lines), encoding="utf-8")
     print("\n".join(lines))
@@ -504,52 +510,16 @@ def report() -> int:
 
 
 def family_verdicts(cells: dict) -> dict:
-    def rates(cell: str, suite: str, family: str) -> tuple[float, int]:
-        table = cells.get(cell, {}).get(suite, {})
-        entry = table.get(family)
-        if not entry or not entry["runs"]:
-            return (0.0, 0)
-        return (entry["passed"] / max(1, entry["runs"]), entry["runs"])
+    from evaluation_contract import family_verdicts as frozen_family_verdicts
 
-    suites = sorted({suite for suite_cells in cells.values()
-                     for suite, table in suite_cells.items()
-                     if any(e.get("runs") for e in table.values())} or {"modelA"})
-    rank = {"SHADOW": 0, "REVIEW": 1, "PROMOTE": 2}
-    merged: dict[str, dict] = {}
-    for family in ("language", "command"):
-        rule = ("promote if deliverable consistently beats withheld control"
-                if family == "language" else
-                "promote only when task-matched and stable; else shadow")
-        per_suite, codes = [], []
-        for suite in suites:
-            table = cells.get(f"{'lang' if family == 'language' else 'cmd'}_on_d2", {}).get(suite, {})
-            if not table:
-                continue
-            if family == "language":
-                on, n_on = rates("lang_on_d2", suite, "lang")
-                off, _ = rates("lang_off_d2", suite, "lang")
-                verdict = ("SHADOW" if on < 0.5 or on <= off else
-                           ("PROMOTE" if on >= 0.8 else "REVIEW"))
-            else:
-                on, _ = rates("cmd_on_d2", suite, "cmd")
-                off, _ = rates("cmd_off_d2", suite, "cmd")
-                verdict = ("PROMOTE-MATCHED" if on >= 0.6 else
-                           ("SHADOW" if on <= off else "REVIEW"))
-            per_suite.append(f"{suite}: {on*100:.0f}% vs {off*100:.0f}% -> {verdict}")
-            codes.append(rank.get(verdict, 0))
-        final = ("weakest across models: " if len(suites) > 1 else "")
-        final += {0: "SHADOW", 1: "REVIEW", 2: "PROMOTE"}.get(min(codes), "SHADOW") if codes else "SHADOW"
-        merged[family] = {"rule": rule, "per_model": "; ".join(per_suite) or "no runs",
-                          "verdict": final}
-    merged["format_length_answer_first"] = {"verdict": "WEAK-HINT-ONLY (no compliance evidence)"}
-    merged["self_description"] = {"verdict": "EXCLUDED by default"}
-    merged["hebbian"] = {"verdict": "ordering feature + explainability only; no final say"}
-    return merged
+    return frozen_family_verdicts(cells)
 
 
 def _md(mapping: dict) -> str:
     rows = ["| family | on | off | rule | verdict |", "|---|---|---|---|---|"]
     for name, item in mapping.items():
+        if name.startswith("_"):
+            continue
         on_cell = item.get("on") if item.get("on") not in (None, "-") else item.get("per_model", "-")
         rows.append(f"| {name} | {on_cell} | {item.get('off','-')} "
                     f"| {item.get('rule','-')} | **{item['verdict']}** |")

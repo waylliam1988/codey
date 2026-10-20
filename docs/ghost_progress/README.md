@@ -9,7 +9,7 @@
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
 | 历史 memory-routing 归档 | `EXPERIMENT_COMPLETE` | 脚本、脱敏测量、报告和来源摘要已提交；这是实验基线，不是生产晋级 | [实验目录](../../tests/manual/ghost_memory_routing/README.md) |
-| 0.6.0 评估冻结与所有权审计 | `NOT STARTED` | 先冻结必测矩阵、完整性规则、scorer 和事件所有权 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
+| 0.6.0 评估冻结与所有权审计 | `EXPERIMENT_COMPLETE` | modelA 单模型 pilot 的矩阵、完整性规则、rank 映射和 admission 所有权已冻结；不改变默认 prompt | [进度记录](frozen-evaluation-ownership-audit.md) |
 | 0.6.1 Context Epoch admission | `NOT STARTED` | 接通真实 provider-send 前准入，验证实际发送字节 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.2 scope 与四个开关 | `NOT STARTED` | 独立控制接收、检索、维护、准入 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.3 冲突生命周期与持久删除 | `NOT STARTED` | supersede、tombstone、删除/rebuild 零复活 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
