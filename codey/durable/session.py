@@ -47,6 +47,7 @@ from codey.durable.model import (
     thaw_json,
     valid_approval_transition,
 )
+from codey.durable.process import process_is_alive as _process_is_alive
 from codey.durable.reducer import with_effect_intents, with_effect_settlement
 from codey.durable.store import DurableStore
 from codey.durable.timeline import TaskSnapshot, TaskTransition, snapshot_at
@@ -62,21 +63,6 @@ class _BoundaryPlacement:
     entry: EntryDraft | None
     task: TaskCheckpoint | None
     update: SubmissionUpdate
-
-
-def _process_is_alive(value: object) -> bool:
-    """Return whether a durable attempt owner process is still running."""
-    if type(value) is not int or value <= 0:
-        return False
-    try:
-        os.kill(value, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
 
 
 def _release_attempt_state(state: Mapping[str, object]) -> dict[str, object]:
@@ -145,8 +131,16 @@ class DurableSession:
                     current = None
                 if current is not None:
                     bound = self._execution.get()
-                    expected = (bound[1] if bound is not None and bound[0] == task_id
-                                else current.attempt_token if current.state.get("attempt_owner") == self._owner_id else "")
+                    # A cancellation barrier may have terminalized the task
+                    # and released its attempt token while the worker is
+                    # committing its final runtime projection.  The old
+                    # worker token must not make that already-authoritative
+                    # terminal checkpoint look like a foreign writer.
+                    if current.phase in {"cancelled", "failed", "completed"} and not current.attempt_token:
+                        expected = ""
+                    else:
+                        expected = (bound[1] if bound is not None and bound[0] == task_id
+                                    else current.attempt_token if current.state.get("attempt_owner") == self._owner_id else "")
                     mutation = replace(mutation, expected_attempt_token=expected)
             result = self.store.commit(mutation)
             self._publish_commit(result, mutation)
@@ -703,6 +697,23 @@ class DurableSession:
             conversation_id, at=at, steering_mode=steering_mode,
             follow_up_mode=follow_up_mode, task_id=task_id,
         )
+        # The active task owns this boundary and must travel as the mutation's
+        # task checkpoint.  A plain task update cannot carry the bound
+        # execution attempt token, so committing it while the attempt is
+        # running fails the execution-attempt fence.
+        boundary_task = next(
+            (update for update in mutation.task_updates if update.task_id == task_id),
+            None,
+        )
+        if boundary_task is None:
+            raise CommitConflict("generation boundary mutation lost the active task")
+        mutation = replace(
+            mutation,
+            task=boundary_task,
+            task_updates=tuple(
+                update for update in mutation.task_updates if update.task_id != task_id
+            ),
+        )
         self._commit(mutation)
         return tuple(self.store.submission(item.submission_id) for item in selected)
 
@@ -772,8 +783,8 @@ class DurableSession:
         task_id: str | None = None,
     ) -> tuple[tuple[SubmissionRecord, ...], DurableMutation]:
         """Build a boundary mutation without publishing it."""
-        if at not in {"post_tools", "final"}:
-            raise ValueError("boundary must be 'post_tools' or 'final'")
+        if at not in {"post_tools", "approval", "final"}:
+            raise ValueError("boundary must be 'post_tools', 'approval' or 'final'")
         if steering_mode not in {"all", "one-at-a-time"}:
             raise ValueError("invalid steering queue mode")
         if follow_up_mode not in {"all", "one-at-a-time"}:

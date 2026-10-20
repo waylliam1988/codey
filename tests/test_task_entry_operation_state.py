@@ -46,7 +46,6 @@ from codey.runtime.core.operation_state import (
     outcome_for_terminal,
 )
 from codey.runtime.core.run_result import RunResult
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.task.model import TaskSubmission
@@ -324,7 +323,13 @@ class CleanRunTerminalTests(unittest.TestCase):
             crashed_state.release_run(run_id)
             self.assertTrue(crashed_state.close())
 
-            resumed_state = server.AppContext(state_home)
+            # Keep the scheduler idle while this test drives the resumed task
+            # directly; otherwise its background dispatcher can claim the
+            # same durable attempt concurrently with the explicit runner.
+            resumed_state = server.AppContext(state_home, start_scheduler=False)
+            # The previous context has stopped, so reclaim any durable
+            # attempt it left behind before directly dispatching the task.
+            resumed_state.durable.recover_scheduler_state(force=True)
             event = _run(
                 _runner(resumed_state, writer),
                 resumed_state,
@@ -337,6 +342,7 @@ class CleanRunTerminalTests(unittest.TestCase):
             self.assertEqual(writer.observed_phases, [LEAF_WRITER_RUNNING])
             self.assertEqual(event["stop_reason"], "done")
             self.assertEqual(_operation(resumed_state, run_id).leaf, LEAF_TERMINAL)
+            resumed_state.close()
 
 
 class RuntimeEnvelopeTests(unittest.TestCase):
@@ -828,9 +834,12 @@ class CrashPositionTests(unittest.TestCase):
         for commits, expected_phase, expected_text in positions:
             with self.subTest(phase=expected_phase), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
                 state_home = Path(td) / "state"
-                log = RuntimeSessionLog(state_home)
-                store = RuntimeOperationStore(log)
-                line = RuntimeMutationLine(log)
+                from codey.durable import DurableSession, SQLiteDurableStore
+                durable = DurableSession(SQLiteDurableStore(state_home / "durable.sqlite3"))
+                durable.admit_input(conversation_id=SESSION, request_id="request-run-crash", task_id="run-crash",
+                                    text="crash", provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
+                store = RuntimeOperationStore(durable=durable)
+                line = RuntimeMutationLine(durable=durable)
                 started = line.accept_operation(
                     session_id=SESSION,
                     run_id="run-crash",
@@ -852,7 +861,9 @@ class CrashPositionTests(unittest.TestCase):
                 ledgers.open_interrupted(SESSION, "run-crash")
 
                 # A fresh process would build a fresh store.
-                recovered_store = RuntimeOperationStore(RuntimeSessionLog(state_home))
+                durable.close()
+                reopened = DurableSession(SQLiteDurableStore(state_home / "durable.sqlite3"))
+                recovered_store = RuntimeOperationStore(durable=reopened)
                 recovered = recovered_store.load(SESSION, "run-crash")
                 assert recovered is not None
                 self.assertEqual(recovered.leaf, expected_phase)
@@ -867,13 +878,17 @@ class CrashPositionTests(unittest.TestCase):
                 progress = [row.to_jsonable() for row in summary.rows if row.label == "Progress"]
                 self.assertEqual(len(progress), 1)
                 self.assertEqual(progress[0]["value"], expected_text)
+                reopened.close()
 
     def test_stale_non_terminal_snapshot_never_shows_progress_after_finished_run(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             state_home = Path(td) / "state"
-            log = RuntimeSessionLog(state_home)
-            store = RuntimeOperationStore(log)
-            line = RuntimeMutationLine(log)
+            from codey.durable import DurableSession, SQLiteDurableStore
+            durable = DurableSession(SQLiteDurableStore(state_home / "durable.sqlite3"))
+            durable.admit_input(conversation_id=SESSION, request_id="request-run-stale", task_id="run-stale", text="stale",
+                                provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
+            store = RuntimeOperationStore(durable=durable)
+            line = RuntimeMutationLine(durable=durable)
             started = line.accept_operation(
                 session_id=SESSION,
                 run_id="run-stale",
@@ -910,13 +925,17 @@ class CrashPositionTests(unittest.TestCase):
                 [row.label for row in summary.rows if row.label == "Progress"],
                 [],
             )
+            durable.close()
 
     def test_terminal_operation_shows_no_progress_line(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             state_home = Path(td) / "state"
-            log = RuntimeSessionLog(state_home)
-            store = RuntimeOperationStore(log)
-            line = RuntimeMutationLine(log)
+            from codey.durable import DurableSession, SQLiteDurableStore
+            durable = DurableSession(SQLiteDurableStore(state_home / "durable.sqlite3"))
+            durable.admit_input(conversation_id=SESSION, request_id="request-run-done", task_id="run-done", text="completed",
+                                provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
+            store = RuntimeOperationStore(durable=durable)
+            line = RuntimeMutationLine(durable=durable)
             started = line.accept_operation(
                 session_id=SESSION,
                 run_id="run-done",
@@ -947,6 +966,7 @@ class CrashPositionTests(unittest.TestCase):
                 [row.label for row in summary.rows if row.label == "Progress"],
                 [],
             )
+            durable.close()
 
 
 class RuntimeOperationLedgersStub:

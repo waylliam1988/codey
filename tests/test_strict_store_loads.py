@@ -6,7 +6,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.ghost.sleep import GhostSleepStore
 from codey.providers import controls as provider_controls
 from codey.providers import revival as provider_revival
 from codey.repairs import adapter_overrides
@@ -64,16 +63,6 @@ class StrictStoreLoadTests(unittest.TestCase):
             self.assertIsNone(store._load_payload(path))
             self.assertFalse(path.with_name(path.name + ".corrupt").exists())
             self.assertTrue(path.exists())
-
-    def test_ghost_sleep_resets_corrupt_state_with_backup(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            store = GhostSleepStore(td)
-            _corrupt(store.state_path)
-
-            self.assertIsNone(store._read_state_payload_unlocked())
-            self.assertTrue(
-                store.state_path.with_name(store.state_path.name + ".corrupt").exists()
-            )
 
     def test_revival_store_rebuilds_from_backup(self) -> None:
         with tempfile.TemporaryDirectory() as td:

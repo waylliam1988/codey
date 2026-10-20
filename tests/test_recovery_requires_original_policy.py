@@ -203,13 +203,13 @@ def test_resume_before_first_settlement_keeps_original_policy_or_blocks(tmp_path
     project, state, logdir = _dirs(tmp_path)
     log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     original = TaskPolicy(frozenset({"control", "project.read"}), required_checks=("custom_required",))
-    durable = _durable_task(
-        "s", "r", project, task_kind="hybrid", policy=original if persisted else None
-    )
+    # The runtime fixture already owns the admitted durable task. Reuse its
+    # session so policy and operation state cannot diverge across stores.
+    durable = mutations.durable
     if persisted:
         record_entry_policy(mutations, session_id="s", run_id="r", policy=original, durable=durable)
     mutations.mark_writer_running("s", "r", provider_id="local")
-    operation = RuntimeOperationStore(log).load("s", "r")
+    operation = RuntimeOperationStore(durable=durable).load("s", "r")
     frame = SimpleNamespace(request=TaskSubmission("s", str(project), "edit and search web", 8, False,
                                                    "local", intent="hybrid", run_id="r",
                                                    previous_run_id="r"),

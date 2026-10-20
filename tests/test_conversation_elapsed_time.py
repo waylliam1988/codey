@@ -23,11 +23,9 @@ def test_close_retains_queue_resources_until_its_live_run_terminalizes(tmp_path)
     request = {"session_id": "s", "run_id": "r", "task": "read", "provider": "local"}
     ctx.input_queue.create("input", request)
 
-    def submit(body):
-        ctx.reserve_run(session_id="s", project=None, task="read", provider_id="local", run_id="r")
-        return 200, {"ok": True}
-
-    ctx.input_queue.dispatch_one(lambda: True, submit)
+    # Directly placeable input is admitted as submitted; the active run slot
+    # is the shutdown resource that must remain alive until its terminal event.
+    ctx.reserve_run(session_id="s", project=None, task="read", provider_id="local", run_id="r")
     assert ctx.close() is False
     assert ctx.input_queue.get("input")["state"] == "submitted"
     ctx.emit({"type": "task_done", "run_id": "r", "session_id": "s", "stop_reason": "stopped"})

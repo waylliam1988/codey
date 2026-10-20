@@ -675,7 +675,7 @@ class JsonToolCodecTests(unittest.TestCase):
     def test_format_results_empties_invalid_managed_output_sha256(self) -> None:
         codec = JsonToolCodec()
         call = ToolCall("run", {"path": ".", "command": "python -m pytest -q"})
-        for sha256 in ("abc\nINJECTED", object(), "z" * 64):
+        for sha256 in ("abc\nINJECTED", None, "z" * 64):
             with self.subTest(sha256=sha256):
                 prompt = codec.format_results([
                     ToolResult(

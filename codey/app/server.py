@@ -47,7 +47,7 @@ from codey.app import task_submit as task_submit
 from codey.app.context import AppContext
 from codey.app.documents import document_response
 from codey.app.durable_events import replay_commits
-from codey.app.event_payloads import machine_event_payload
+from codey.app.event_payloads import browser_event_payload
 from codey.app.http_plumbing import (
     WEB_DIR,
     request_origin_allowed,
@@ -667,7 +667,7 @@ class Handler(BaseHTTPRequestHandler):
                         replay_cursor,
                         max_event_id=q.replay_cutoff,
                     ):
-                        public = machine_event_payload(replay) or replay
+                        public = browser_event_payload(replay) or replay
                         if _is_replayed_durable_commit(public, commit_cursor):
                             continue
                         commit_cursor = max(commit_cursor, _event_commit_seq(public))
@@ -683,7 +683,7 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         break
                     continue
-                public = machine_event_payload(ev) or ev
+                public = browser_event_payload(ev) or ev
                 if _is_replayed_durable_commit(public, commit_cursor):
                     continue
                 commit_cursor = max(commit_cursor, _event_commit_seq(public))

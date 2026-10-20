@@ -21,6 +21,7 @@ from codey.storage.local_store import StoreCorruption
 class SnapshotRequireBaselineTests(unittest.TestCase):
     def _tracker(self, root: Path, home: Path):
         ctx = app_context.AppContext(home)
+        self.addCleanup(ctx.close)
         tracker = ctx.change_tracker_for(str(root), persistent=True)
         return ctx, tracker
 
@@ -43,6 +44,7 @@ class SnapshotRequireBaselineTests(unittest.TestCase):
             if body_dir.exists():
                 self.assertEqual(sorted(p.name for p in body_dir.glob("*.txt")), bodies_before)
             self.assertEqual((root / "a.py").read_text(encoding="utf-8"), "B")
+            ctx.close()
 
     def test_cached_capture_with_missing_entry_raises(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as home:
@@ -64,6 +66,7 @@ class SnapshotRequireBaselineTests(unittest.TestCase):
             after = json.loads(manifest.read_text(encoding="utf-8"))
             self.assertIn("b.py", after["files"])
             self.assertEqual((root / "a.py").read_text(encoding="utf-8"), "B")
+            ctx.close()
 
     def test_cached_capture_with_drifted_disk_baseline_raises(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as home:
@@ -80,6 +83,7 @@ class SnapshotRequireBaselineTests(unittest.TestCase):
             with self.assertRaises(StoreCorruption):
                 tracker.capture_before("a.py")
             self.assertEqual((root / "a.py").read_text(encoding="utf-8"), "A")
+            ctx.close()
 
     def test_missing_old_body_blocks_new_baseline_and_reports_capacity(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as home:
@@ -97,6 +101,7 @@ class SnapshotRequireBaselineTests(unittest.TestCase):
                 tracker.capture_before("b.py")
             after = json.loads(manifest.read_text(encoding="utf-8"))
             self.assertNotIn("b.py", after["files"])
+            ctx.close()
 
 
 class LedgerStrictTests(unittest.TestCase):
@@ -240,6 +245,7 @@ class UiStateConflictApiTests(unittest.TestCase):
             self.assertEqual(status, 409)
             self.assertEqual(body["revision"], rev)
             self.assertEqual(ctx.load_ui_state()["active_id"], "a")
+            ctx.close()
 
     def test_interleaved_pages_second_writer_conflicts(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -252,6 +258,7 @@ class UiStateConflictApiTests(unittest.TestCase):
             status_b, body_b = app_api.save_ui_state_response(ctx, {"state": page_b, "base_revision": base})
             self.assertEqual(status_b, 409)
             self.assertEqual(body_b["revision"], body_a["revision"])
+            ctx.close()
 
     def test_duplicate_same_content_succeeds_idempotently(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -262,6 +269,7 @@ class UiStateConflictApiTests(unittest.TestCase):
             status2, body2 = app_api.save_ui_state_response(ctx, {"state": payload, "base_revision": 0})
             self.assertEqual(status2, 200)
             self.assertEqual(body2["revision"], body1["revision"])
+            ctx.close()
 
     def test_second_server_instance_is_rejected(self) -> None:
         from pathlib import Path as _Path

@@ -574,7 +574,10 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
             recovery.recovered_tool_result_batch_id
             if recovery_run_id == setup.run_id else ""
         ),
-        settled_tool_outcomes=tuple(recovery.settled_tool_outcomes) + shell_rows,
+        settled_tool_outcomes=tuple(recovery.settled_tool_outcomes) + tuple(
+            row for row in shell_rows
+            if row.call.call_id not in {item.call.call_id for item in recovery.settled_tool_outcomes}
+        ),
     ), None
 
 
@@ -809,6 +812,9 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         frame, provider, setup.provider_id, conversation = _connect_provider_frame(
             deps, setup, workload, hooks
         )
+        register_provider = getattr(state, "register_active_provider", None)
+        if callable(register_provider):
+            register_provider(setup.run_id, provider)
 
         # Phase 5 -- ModeExecution + RunFinalizer (both delegated; ghost
         # post-turn runs inside finish/settle helpers).
@@ -874,6 +880,10 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
                 current_item.close()
         except Exception:
             pass
+        unregister_provider = getattr(state, "unregister_active_provider", None)
+        if callable(unregister_provider):
+            with contextlib.suppress(Exception):
+                unregister_provider(setup.run_id, provider)
         if setup.writer_acquired:
             try:
                 release = getattr(state, "release_project_writer", None)

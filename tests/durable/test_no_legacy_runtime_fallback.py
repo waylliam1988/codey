@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 import pytest
@@ -18,13 +17,13 @@ from codey.runtime.write.task_runtime import TaskRuntime
     [RuntimeMutationLine, RuntimeOperationStore, RuntimeEffectStore, ToolResultDeliveryStore],
 )
 def test_runtime_projection_and_writer_apis_have_no_session_log_fallback(factory: object) -> None:
-    parameters = inspect.signature(factory).parameters
+    parameters = factory.__init__.__code__.co_varnames
     assert "session_log" not in parameters
     assert "durable" in parameters
 
 
 def test_task_runtime_has_no_session_log_fallback() -> None:
-    parameters = inspect.signature(TaskRuntime).parameters
+    parameters = TaskRuntime.__init__.__code__.co_varnames
     assert "session_log" not in parameters
     assert "durable" in parameters
 

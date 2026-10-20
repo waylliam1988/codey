@@ -74,6 +74,30 @@ def test_tool_effect_intents_can_be_committed_as_each_call_is_admitted() -> None
     assert next_checkpoint.state["pending_effect_ids"] == ("effect-1", "effect-2")
 
 
+def test_tool_effect_intent_can_overlap_deferred_provider_settlement() -> None:
+    current = _checkpoint(
+        phase="assistant_intent_committed",
+        state={"pending_effect_ids": ["provider-1"]},
+        pending_effect_id="provider-1",
+    )
+    next_checkpoint = with_effect_intents(
+        current,
+        (
+            EffectRecord(
+                effect_id="tool-1",
+                task_id="task-1",
+                category="tool_call",
+                replay_class="unsafe",
+                args_digest="c" * 64,
+                status="pending",
+                intent={"effect_id": "tool-1"},
+            ),
+        ),
+    )
+    assert next_checkpoint.phase == "tool_effect_running"
+    assert next_checkpoint.state["pending_effect_ids"] == ("provider-1", "tool-1")
+
+
 @pytest.mark.parametrize(
     ("state", "pending_effect_id"),
     [

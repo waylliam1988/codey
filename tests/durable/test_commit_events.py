@@ -34,7 +34,7 @@ def test_replay_retains_original_conversation_entry_and_task_identity(session: D
     assert payload["task_id"] == "task"
     assert payload["entry_ids"] == [session.entries("conversation")[0].entry_id]
     assert {event["type"] for event in payload["projections"]} == {
-        "conversation_created", "entry_appended", "task_progressed",
+        "conversation_created", "entry_appended", "submission_admitted", "task_progressed",
     }
 
 

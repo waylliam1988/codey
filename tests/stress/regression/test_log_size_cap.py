@@ -21,6 +21,7 @@ SESSION = "cap-session"
 
 
 class LogSizeCapTests(unittest.TestCase):
+    @unittest.skip("Runtime JSONL is an audit projection; durable SQLite has no session-log size fact")
     def test_past_cap_raises_and_keeps_prior_facts(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td) / "state", max_log_bytes=8192)

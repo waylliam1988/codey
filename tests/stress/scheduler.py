@@ -51,6 +51,7 @@ from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectError,
     RuntimeEffectIntent,
+    compute_args_digest,
 )
 from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
@@ -805,6 +806,9 @@ def _provider_intent_for(world: Any, step: dict) -> RuntimeEffectIntent:
         run_id=step["run"],
         turn=step.get("turn", 1),
         provider_id=step.get("provider_id", "mock"),
+        args_digest=compute_args_digest(
+            {"provider_id": step.get("provider_id", "mock"), "turn": step.get("turn", 1)}
+        ),
     )
 
 
@@ -827,6 +831,7 @@ def _tool_pair_for(world: Any, step: dict) -> tuple:
         tool_index=0,
         tool_name="read",
         replay_class="safe",
+        args_digest=compute_args_digest({"tool": "read", "ref": step["ref"]}),
     )
     return batch, tool
 

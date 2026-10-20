@@ -185,6 +185,19 @@ class DurableConversationInputQueue:
         if status < 200 or status >= 300 or result.get("ok") is not True:
             with self.lock, contextlib.suppress(Exception):
                 self.durable.unclaim_task(task_id)
+        else:
+            # Admission may leave the durable input queued while the task is
+            # waiting for a conversation slot. Once the dispatch callback has
+            # accepted it, publish the submitted state in the same canonical
+            # task record so status and shutdown retention observe reality.
+            with self.lock, contextlib.suppress(Exception):
+                current = self.durable.task(task_id)
+                if current.state.get("input_state") == "queued":
+                    self.durable.update_task_state(
+                        task_id,
+                        {"input_state": "placed"},
+                        expected_revision=current.revision,
+                    )
         self.emit({"type": "conversation_input", "session_id": item["request"]["session_id"], "input": self.get(str(item["id"])) or item})
         return True
 

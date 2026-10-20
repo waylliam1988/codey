@@ -2,23 +2,31 @@
 import json
 from dataclasses import replace
 
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.providers import local_config
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.core.outcome import OperationOutcome
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.task_runtime import TaskRuntime
 from codey.task.model import TaskSubmission
 
 
 def test_cold_start_keeps_admitted_selection_and_does_not_write_secret(tmp_path):
     selection = ApiRunSelection("local", "rev_original", "model_original", "openai-responses", True)
-    log = RuntimeSessionLog(tmp_path)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    durable.admit_input(
+        conversation_id="session", request_id="request-run", task_id="run", text="hello",
+        provider_snapshot={"provider_id": "local", "model_id": "model_original"},
+        task_state={"model_selection": selection.to_payload()},
+    )
     request = TaskSubmission("session", None, "hello", 2, False, "local", run_id="run", model_selection=selection.to_payload())
-    TaskRuntime(log, lambda request: OperationOutcome.suspended(reason="approval")).run(request)
-    reloaded = RuntimeOperationStore(RuntimeSessionLog(tmp_path)).load("session", "run")
+    TaskRuntime(lambda request: OperationOutcome.suspended(reason="approval"), durable=durable).run(request)
+    durable.close()
+    reloaded_durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    reloaded = RuntimeOperationStore(durable=reloaded_durable).load("session", "run")
     assert ApiRunSelection.from_payload(reloaded.model_selection) == selection
-    assert "api_key" not in log.path_for("session").read_text(encoding="utf8")
+    assert "api_key" not in str(reloaded_durable.entries("session"))
+    reloaded_durable.close()
 
 
 def test_changed_connection_blocks_restore_but_changed_model_keeps_original(tmp_path, monkeypatch):
@@ -79,7 +87,7 @@ def test_production_admission_restores_original_selection_after_settings_and_res
             ),
             task_state={"task": "task", "provider_id": "local", "model_selection": admitted.model_selection},
         )
-        TaskRuntime(None, lambda _: OperationOutcome.suspended(reason="approval"), durable=state.durable).run(admitted)
+        TaskRuntime(lambda _: OperationOutcome.suspended(reason="approval"), durable=state.durable).run(admitted)
     finally:
         state.close()
     local_config.save_local_config(replace(config, model="second", api_protocol="openai-completions"))

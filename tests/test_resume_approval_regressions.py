@@ -151,7 +151,7 @@ def test_cold_start_rebuild_restores_source_run_api_selection(tmp_path) -> None:
             task_state={"task": "source task", "provider_id": "local"},
             initial_phase="dispatching",
         )
-        TaskRuntime(None, lambda _: OperationOutcome.suspended(reason="approval"), durable=state.durable).run(request)
+        TaskRuntime(lambda _: OperationOutcome.suspended(reason="approval"), durable=state.durable).run(request)
         _durable_requested_approval(
             state,
             approval_id="approval-cold-start",

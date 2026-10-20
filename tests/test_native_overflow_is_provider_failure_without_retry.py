@@ -111,7 +111,6 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
     """Overflow fails closed on the ledger: single NOT_SENT attempt, no retry."""
     from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
     (tmp_path / "app.py").write_text("hello\n", encoding="utf-8")
@@ -141,14 +140,20 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
         return TaskPolicy(grants=frozenset({"project.read", "control"}))
 
     session_id, run_id = "sess-native-lock-1", "run-native-lock-1"
-    log = RuntimeSessionLog(tmp_path / "state")
-    line = RuntimeMutationLine(log)
+    from codey.durable import DurableSession, MemoryDurableStore
+    durable = DurableSession(MemoryDurableStore())
+    durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
+                        text="read", provider_snapshot={"provider_id": "local"})
+    durable.start_task(run_id, state={})
+    durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={})
+    durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={})
+    line = RuntimeMutationLine(durable=durable)
     line.accept_operation(
         session_id=session_id, run_id=run_id, project=str(tmp_path),
         provider_id="local", turn_budget=10, max_repair_rounds=1, task_kind="project",
     )
     line.mark_writer_running(session_id, run_id, provider_id="local")
-    sink = KernelEffectSink(line, session_id=session_id, run_id=run_id, provider_id="local")
+    sink = KernelEffectSink(line, session_id=session_id, run_id=run_id, provider_id="local", durable=durable)
     provider = StrictOverflowProvider()
     recorded = KernelRecordedProvider(provider, sink)
     session = TaskSession(policy=_policy(), task_kind="project", project=str(tmp_path), max_turns=3)
@@ -178,12 +183,12 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
     assert provider.tool_sends == 1
     from codey.runtime.effects.effect_records import SENT_STATE_NOT_SENT, RuntimeEffectStore
 
-    effects = RuntimeEffectStore(log).load_effects(session_id, run_id)
+    effects = RuntimeEffectStore(durable=durable).load_effects(session_id, run_id)
     failed = [r for r in effects if r.intent.effect_category == "provider_send" and r.settlement is not None and r.settlement.status == "error"]
     assert failed
     assert failed[-1].settlement is not None
     assert failed[-1].settlement.sent_state == SENT_STATE_NOT_SENT
-    batches = ToolResultDeliveryStore(log).load_batches(session_id, run_id)
+    batches = ToolResultDeliveryStore(durable=durable).load_batches(session_id, run_id)
     assert len(batches) == 1
     batch = batches[0]
     assert len(batch.send_attempts) == 1

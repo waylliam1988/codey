@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import time
+import threading
 
 import pytest
 
@@ -50,21 +50,23 @@ def test_runtime_executes_independent_read_calls_concurrently() -> None:
     from codey.codemode.runtime import NodeWorkerRuntime
     from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
 
+    rendezvous = threading.Barrier(2)
+
     def invoke(_name: str, args: dict[str, object]) -> object:
-        time.sleep(0.2)
+        # The barrier makes this a semantic concurrency check.  A serial
+        # runtime cannot pass it, while worker startup and host scheduling
+        # jitter do not affect the assertion.
+        rendezvous.wait(timeout=1)
         return args["path"]
 
-    started = time.monotonic()
     result = NodeWorkerRuntime().execute(
         "return await Promise.all(['a.py', 'b.py'].map(path => tools.read_file({path})));",
         catalog=(ToolCatalogEntry("read_file", "read", read_only=True, parallel_safe=True),),
         invoke=invoke,
         limits=CodeModeLimits(timeout_ms=5_000, max_concurrent_calls=2),
     )
-    elapsed = time.monotonic() - started
     assert result.ok is True
     assert result.value == ["a.py", "b.py"]
-    assert elapsed < 0.35
 
 
 def test_large_codemode_value_is_written_as_artifact_reference() -> None:

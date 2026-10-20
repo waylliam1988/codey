@@ -20,8 +20,9 @@ def test_history_and_replayed_events_use_the_persisted_database_identity(tmp_pat
     session.create_conversation("chat")
     session.append_message("chat", "user_message", {"text": "hello"})
     assert session.history_page("chat")["epoch"] == session.database_id
-    [event] = session.commits_after(0)
-    assert event.to_payload()["database_id"] == session.database_id
+    events = session.commits_after(0)
+    assert [event.sequence for event in events] == [1, 2]
+    assert all(event.to_payload()["database_id"] == session.database_id for event in events)
 
 
 @pytest.mark.parametrize("scope,after", [("other-database", 1), (None, 1), ("current", 500), ("current", 1)])
@@ -50,4 +51,4 @@ def test_sse_reconciles_database_reset_or_cursor_ahead_without_skipping_commits(
     server.Handler._sse(handler)
     assert written[0]["database_id"] == session.database_id
     replayed = [item["commit_seq"] for item in written if item["type"] == "durable_commit"]
-    assert replayed == ([2] if scope == "current" and after == 1 else [1, 2])
+    assert replayed == ([2, 3] if scope == "current" and after == 1 else [1, 2, 3])

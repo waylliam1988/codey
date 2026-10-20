@@ -11,7 +11,6 @@ from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core import cancellation
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
-from codey.runtime.log.session_log import RuntimeSessionLog
 
 pytestmark = pytest.mark.usefixtures("no_external_advisor_models")
 
@@ -81,7 +80,7 @@ def test_failure_boundary_publishes_one_truthful_terminal_and_closes_provider(tm
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     try:
         task = durable.task(result.run_id)
-        operation = RuntimeOperationStore(RuntimeSessionLog(state), durable=durable).load(
+        operation = RuntimeOperationStore(durable=durable).load(
             result.session_id, result.run_id
         )
         assert task.phase == "failed"
@@ -96,7 +95,7 @@ def test_failure_boundary_publishes_one_truthful_terminal_and_closes_provider(tm
             assert (project / "made.py").read_text() == "x = 1\n"
             assert provider.calls == 1
             assert provider.receipts[0].call_id == "c1"
-            effects = RuntimeEffectStore(RuntimeSessionLog(state), durable=durable).load_effects(
+            effects = RuntimeEffectStore(durable=durable).load_effects(
                 result.session_id, result.run_id
             )
             assert len([effect for effect in effects if effect.intent.effect_category == "tool_call" and effect.is_settled]) == 1

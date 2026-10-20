@@ -123,10 +123,14 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     events: list[object] = []
     hooks = SimpleNamespace(on_event=events.append, on_shell_request=events.append)
     managed = object()
-    mutations = SimpleNamespace(mark_writer_running=lambda *_args, **_kwargs: None)
+    mutations = SimpleNamespace(
+        mark_writer_running=lambda *_args, **_kwargs: None,
+        set_task_policy=lambda *_args, **_kwargs: None,
+    )
+    state = AppContext(tmp_path / ".codey")
     deps = SimpleNamespace(
         knowledge_store=None, search_factory=None, runtime_mutations=mutations,
-        managed_outputs=managed, state=AppContext(tmp_path / ".codey"),
+        managed_outputs=managed, state=state,
     )
     with (patch("codey.operations.task_loop.run_task_kernel",
                 return_value=KernelResult(True, "done", 1, "done")) as kernel,
@@ -142,6 +146,7 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     assert request.observation.on_event is hooks.on_event
     assert request.observation.on_shell_request is hooks.on_shell_request
     assert request.execution.managed_outputs is managed
+    state.close()
 
 
 def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
@@ -162,12 +167,14 @@ def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
         window_action=None,
     )
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
-    deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=AppContext(tmp_path / "state"))
+    state = AppContext(tmp_path / "state")
+    deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=state)
     with patch("codey.operations.task_loop.run_task_kernel",
                return_value=KernelResult(True, "done", 1, "done")) as kernel:
         run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),
                          hooks, deps)
     assert project.is_dir()
+    state.close()
     assert kernel.call_args.kwargs["request"].execution.project_path == project.resolve()
 
 
@@ -875,23 +882,27 @@ def test_failed_intent_commit_prevents_tool_execution(tmp_path) -> None:
 
 
 def test_production_kernel_persists_tool_and_delivery_receipts(tmp_path) -> None:
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
     from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.task.model import TaskSubmission
 
-    log = RuntimeSessionLog(tmp_path / "state")
-    line = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
+    durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="read",
+                        provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
+    durable.start_task("r", state={"task_kind": "project"})
+    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "project"})
+    line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="s", run_id="r", project=str(tmp_path),
                           provider_id="deepseek", turn_budget=3, max_repair_rounds=0,
                           task_kind="project")
     line.mark_writer_running("s", "r", provider_id="deepseek")
-    sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="deepseek")
+    sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="deepseek", durable=durable)
     replies = iter([
         '{"tool":"read_file","args":{"path":"file.txt"}}',
         '{"tool":"done","args":{"summary":"read file"}}',
@@ -923,50 +934,60 @@ def test_production_kernel_persists_tool_and_delivery_receipts(tmp_path) -> None
         ),
     )
     assert outcome.stop_reason == "done"
-    effects = RuntimeEffectStore(log).load_effects("s", "r")
+    effects = RuntimeEffectStore(durable=durable).load_effects("s", "r")
     assert any(row.intent.effect_category == "tool_call" and row.settlement is not None for row in effects)
     assert sum(row.intent.effect_category == "provider_send" for row in effects) == 2
-    batches = ToolResultDeliveryStore(log).load_batches("s", "r")
+    batches = ToolResultDeliveryStore(durable=durable).load_batches("s", "r")
     assert len(batches) == 1
     assert batches[0].is_delivered
+    durable.close()
 
 
 def test_shared_effect_replay_class_matches_tool_contract(tmp_path) -> None:
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.task_effects import KernelEffectSink
     from codey.runtime.core.models import ToolCall
     from codey.runtime.effects.effect_records import RuntimeEffectStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
-    log = RuntimeSessionLog(tmp_path / "state")
-    line = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
+    durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="research",
+                        provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
+    durable.start_task("r", state={"task_kind": "research"})
+    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "research"})
+    line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="s", run_id="r", project="", provider_id="deepseek",
                           turn_budget=2, max_repair_rounds=0, task_kind="research")
     line.mark_writer_running("s", "r", provider_id="deepseek")
-    sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="deepseek")
+    sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="deepseek", durable=durable)
     calls = [ToolCall("web_search", {"query": "q"}),
              ToolCall("open_url", {"url": "https://example.com"}),
              ToolCall("knowledge_write", {"title": "note"})]
     sink.begin_turn([(f"effect-{i}", call, i) for i, call in enumerate(calls)], turn=1)
     rows = {row.intent.tool_name: row.intent.replay_class
-            for row in RuntimeEffectStore(log).load_effects("s", "r")}
+            for row in RuntimeEffectStore(durable=durable).load_effects("s", "r")}
     assert rows["web_search"] == "safe"
     assert rows["open_url"] == "safe"
     assert rows["knowledge_write"] == "unsafe"
+    durable.close()
 
 
 def test_same_run_research_and_writer_effect_slots_do_not_collide(tmp_path) -> None:
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall
     from codey.runtime.effects.effect_records import RuntimeEffectStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
-    log = RuntimeSessionLog(tmp_path / "state")
-    line = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
+    durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="hybrid",
+                        provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
+    durable.start_task("r", state={"task_kind": "hybrid"})
+    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "hybrid"})
+    line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="s", run_id="r", project=str(tmp_path),
                           provider_id="deepseek", turn_budget=2, max_repair_rounds=0,
                           task_kind="hybrid")
@@ -979,7 +1000,7 @@ def test_same_run_research_and_writer_effect_slots_do_not_collide(tmp_path) -> N
         (research, "research:1", "web_search", {"query": "q"}),
         (writer, "writer", "read_file", {"path": "a.txt"}),
     ):
-        sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="deepseek")
+        sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="deepseek", durable=durable)
         execute_turn(
             session, [ToolCall(name, args)],
             executors={name: lambda _call, current=name: calls.append(current) or "ok"},
@@ -987,20 +1008,25 @@ def test_same_run_research_and_writer_effect_slots_do_not_collide(tmp_path) -> N
         )
         KernelRecordedProvider(SimpleNamespace(send=lambda *_args, **_kwargs: "ok"), sink).send("continue")
     assert calls == ["web_search", "read_file"]
-    effects = [row for row in RuntimeEffectStore(log).load_effects("s", "r")
+    effects = [row for row in RuntimeEffectStore(durable=durable).load_effects("s", "r")
                if row.intent.effect_category == "tool_call"]
     assert len({row.intent.effect_id for row in effects}) == 2
+    durable.close()
 
 
 def test_default_writer_records_effects_in_existing_runtime(tmp_path) -> None:
     from codey.agents.request import AgentRequest
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.project_adapter import run
     from codey.runtime.effects.effect_records import RuntimeEffectStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
-    log = RuntimeSessionLog(tmp_path / "state")
-    line = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
+    durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="read",
+                        provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
+    durable.start_task("r", state={"task_kind": "project"})
+    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "project"})
+    line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="s", run_id="r", project=str(tmp_path),
                           provider_id="deepseek", turn_budget=3, max_repair_rounds=0,
                           task_kind="project")
@@ -1020,11 +1046,12 @@ def test_default_writer_records_effects_in_existing_runtime(tmp_path) -> None:
     outcome = run(AgentRequest(
         provider=Provider(), project=tmp_path, task="read", max_turns=3,
         fresh_chat=False, session_id="s", run_id="r", provider_id="deepseek",
-        runtime_mutations=line, on_event=lambda _event: None,
+        runtime_mutations=line, durable=durable, on_event=lambda _event: None,
     ))
     assert outcome.stop_reason == "done"
-    effects = RuntimeEffectStore(log).load_effects("s", "r")
+    effects = RuntimeEffectStore(durable=durable).load_effects("s", "r")
     assert any(row.intent.effect_category == "tool_call" for row in effects)
+    durable.close()
 
 
 def test_writer_recovery_delivers_previous_tool_result_without_rerunning(tmp_path) -> None:
@@ -1061,14 +1088,18 @@ def test_writer_recovery_delivers_previous_tool_result_without_rerunning(tmp_pat
 
 
 def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) -> None:
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.knowledge.store import KnowledgeStore
     from codey.operations.research_iteration import run_research_iteration
     from codey.runtime.effects.effect_records import RuntimeEffectStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
-    log = RuntimeSessionLog(tmp_path / "state")
-    line = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
+    durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="q",
+                        provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
+    durable.start_task("r", state={"task_kind": "research"})
+    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "research"})
+    line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="s", run_id="r", project="", provider_id="deepseek",
                           turn_budget=2, max_repair_rounds=0, task_kind="research")
 
@@ -1087,16 +1118,18 @@ def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) ->
 
     store = KnowledgeStore(tmp_path / "knowledge")
     iteration = run_research_iteration(
-        SimpleNamespace(knowledge_store=store, runtime_mutations=line),
+        SimpleNamespace(knowledge_store=store, runtime_mutations=line,
+                        durable=durable, state=SimpleNamespace(durable=durable)),
         provider=Provider(), session_id="s", project="", task="q", max_turns=1,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
         run_id="r", chat_handoff="", trace_recorder=None, search=Search(),
     )
-    effects = RuntimeEffectStore(log).load_effects("s", "r")
+    effects = RuntimeEffectStore(durable=durable).load_effects("s", "r")
     assert any(row.intent.effect_category == "tool_call" for row in effects), iteration.result.summary
     assert any(row.intent.effect_category == "provider_send" for row in effects)
     assert iteration.result.synthesis_id == ""
     assert not iteration.result.notes_created
+    durable.close()
 
 
 def test_research_evidence_followup_uses_shared_kernel_with_fresh_url_guard() -> None:
@@ -1208,16 +1241,20 @@ def test_unified_writer_notifies_change_tracker_around_edit(tmp_path) -> None:
 def test_native_writer_uses_same_durable_delivery_chain(tmp_path, monkeypatch) -> None:
     from codey.agents.handoff import ConversationContext
     from codey.agents.request import AgentRequest
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.env_names import NATIVE_TOOLS_ENV
     from codey.operations.project_adapter import run
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
     monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
-    log = RuntimeSessionLog(tmp_path / "state")
-    line = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
+    durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="read app.py",
+                        provider_snapshot={"provider_id": "local", "model_id": "test"})
+    durable.start_task("r", state={"task_kind": "project"})
+    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "project"})
+    line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="s", run_id="r", project=str(tmp_path),
                           provider_id="local", turn_budget=3, max_repair_rounds=0,
                           task_kind="project")
@@ -1244,13 +1281,14 @@ def test_native_writer_uses_same_durable_delivery_chain(tmp_path, monkeypatch) -
     result = run(AgentRequest(
         provider=Provider(), project=tmp_path, task="read app.py", max_turns=3,
         fresh_chat=False, session_id="s", run_id="r", provider_id="local",
-        runtime_mutations=line, on_event=lambda _event: None,
+        runtime_mutations=line, durable=durable, on_event=lambda _event: None,
         conversation=conversation,
     ))
     assert result.stop_reason == "done"
     assert sent[0].call_id == "c1"
     assert conversation.estimated_context_tokens > 0
-    assert ToolResultDeliveryStore(log).load_batches("s", "r")[0].is_delivered
+    assert ToolResultDeliveryStore(durable=durable).load_batches("s", "r")[0].is_delivered
+    durable.close()
 
 
 def test_native_final_turn_answers_tool_call_before_budget_stop(tmp_path, monkeypatch) -> None:

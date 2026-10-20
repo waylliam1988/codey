@@ -1,3 +1,11 @@
+import io
+from types import SimpleNamespace
+
+import pytest
+
+from codey.app import server
+from codey.app.event_bus import EventBus
+from codey.app.event_payloads import browser_event_payload, machine_event_payload
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 from codey.toolchain.runtime import ToolOutcome
@@ -21,3 +29,78 @@ def test_detail_limit_is_explicit_and_separate_from_runner_truncation():
     assert len(payload["detail"]) == 64_000
     assert payload["detail_truncated"] is True
     assert payload["truncated"] is False
+
+
+@pytest.mark.parametrize("replay", [False, True])
+def test_http_sse_preserves_expanded_file_content_and_preview(monkeypatch, replay):
+    text = "first line\n第二行\nlast line\n"
+    payload = run_event_ui_payload("run", "chat", RunEvent.tool_finished(
+        1, ToolCall("read", {"path": "cache.py"}),
+        ToolOutcome(text, True, presentation={"preview": {"line_start": 1, "line_end": 3}}),
+    ))
+    bus = EventBus(replay_limit=8)
+    if replay:
+        bus.emit({"type": "info", "text": "earlier event"})
+        bus.emit(payload)
+
+    def subscribe():
+        subscriber = bus.subscribe()
+        if not replay:
+            bus.emit(payload)
+        return subscriber
+
+    ctx = SimpleNamespace(
+        subscribe=subscribe, unsubscribe=bus.unsubscribe,
+        durable=SimpleNamespace(commit_sequence=lambda: 0, database_id="db"),
+        run_status=lambda: "idle", replay_events_after=bus.replay_events_after,
+    )
+    monkeypatch.setattr(server, "get_state", lambda: ctx)
+    handler = object.__new__(server.Handler)
+    handler.path = "/api/events?last_event_id=1" if replay else "/api/events"
+    handler.headers = {}
+    handler.wfile = io.BytesIO()
+    handler.send_response = lambda *args: None
+    handler.send_header = lambda *args: None
+    handler.end_headers = lambda: None
+    events = []
+
+    def capture(event, *, event_id=0):
+        events.append(event)
+        return event["type"] != "tool"
+
+    handler._write_sse_event = capture
+    handler._sse()
+    tool = next(event for event in events if event["type"] == "tool")
+    assert tool["detail"] == text
+    assert tool["detail_truncated"] is False
+    assert tool["kind"] == "read"
+    assert tool["preview"] == {"line_start": 1, "line_end": 3}
+
+
+def test_browser_tool_details_are_bounded_and_machine_summary_stays_compact():
+    event = {
+        "type": "tool", "kind": "edit", "result": "summary", "detail": "x" * 70_000,
+        "preview": {"diff": "y" * 70_000, "additions": 3, "deletions": True,
+                    "line_start": -1, "matches": 2**60, "query": "q" * 900,
+                    "has_more": True, "unexpected": "private"},
+    }
+    public = browser_event_payload(event)
+    assert len(public["detail"]) == 64_000
+    assert public["detail_truncated"] is True
+    assert len(public["preview"]["diff"]) == 64_000
+    assert public["preview"]["diff_truncated"] is True
+    assert public["preview"]["additions"] == 3
+    assert public["preview"]["has_more"] is True
+    assert len(public["preview"]["query"]) == 500
+    assert not {"deletions", "line_start", "matches", "unexpected"} & public["preview"].keys()
+    assert "detail" not in machine_event_payload(event)
+    assert "preview" not in machine_event_payload(event)
+
+
+def test_browser_tool_start_and_legacy_summary_keep_their_available_fields():
+    start = browser_event_payload({"type": "tool_started", "kind": "read", "activity": "Reading"})
+    assert start["kind"] == "read"
+    assert start["activity"] == "Reading"
+    legacy = browser_event_payload({"type": "tool", "kind": "read", "result": "old summary"})
+    assert legacy["result"] == "old summary"
+    assert "detail" not in legacy

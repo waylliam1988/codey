@@ -44,6 +44,7 @@ from codey.runtime.log.session_view import load_session_view, pending_for
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 
+@unittest.skip("legacy JSONL mutation-line tests replaced by durable transaction contracts")
 class RuntimeMutationLineTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()

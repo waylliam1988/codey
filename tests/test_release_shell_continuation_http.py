@@ -89,5 +89,7 @@ def test_http_approval_returns_original_result_without_another_user_message(tmp_
         assert len(requests) == 2
         assert proof["ok"] is True
         assert proof["stop_reason"] == "done"
-        assert proof["source_run_id"] != proof["continuation_run_id"]
-        assert "Shell result received" in proof["summary"]
+    # Approval settlement resumes the original durable task checkpoint; no
+    # second task identity or synthetic user submission is created.
+    assert proof["source_run_id"] == proof["continuation_run_id"]
+    assert "Shell result received" in proof["summary"]

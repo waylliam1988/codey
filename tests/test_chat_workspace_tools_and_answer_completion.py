@@ -182,8 +182,11 @@ def test_busy_workspace_blocks_chat_edit_but_allows_greeting(tmp_path):
     root = tmp_path / "workspace"
     root.mkdir()
     home = tmp_path / "state"
-    with closing(AppContext(home)) as owner, closing(AppContext(home)) as reader:
-        assert owner.acquire_project_writer(root)
+    # A durable state home has one owning AppContext. The writer lease is
+    # process-local within that context; opening a second context on the same
+    # database is rejected by the durable database lease.
+    with closing(AppContext(home)) as reader:
+        assert reader.acquire_project_writer(root)
         greeting = workspace_frame(root, NativeConversation(AssistantTurn(text="Hello!")))
         result, _ = execute_frame(greeting, reader)
         assert result.event["stop_reason"] == "done"

@@ -5758,6 +5758,9 @@ class SessionThreadingTests(unittest.TestCase):
                 base_revision=0,
             )
 
+            # The durable state now has an exclusive writer lease.  A restart
+            # closes the previous owner before opening the new process state.
+            self.assertTrue(first.close())
             restarted = server.AppContext(state_home)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"

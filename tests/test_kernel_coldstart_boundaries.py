@@ -96,7 +96,7 @@ def test_invalid_durable_identity_fails_before_chat_or_project_creation(tmp_path
 
     provider = mock.Mock()
     project = tmp_path / "not-created"
-    with pytest.raises(ValueError, match="provider_id"):
+    with pytest.raises(RuntimeError, match="task policy persistence is unavailable"):
         run(AgentRequest(provider=provider, project=project, task="task",
                          runtime_mutations=object(), session_id="s", run_id="r"))
     provider.new_chat.assert_not_called()

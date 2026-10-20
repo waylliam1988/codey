@@ -13,13 +13,22 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
-def _new_log(tmp: Path):
+def _new_log(tmp: Path, session_id: str, run_id: str):
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
     log = RuntimeSessionLog(tmp / "sesslog")
-    mutations = RuntimeMutationLine(log)
-    return log, mutations
+    durable = DurableSession(SQLiteDurableStore(tmp / "state" / "durable.sqlite3"))
+    durable.admit_input(
+        conversation_id=session_id, request_id=f"request-{run_id}", task_id=run_id,
+        text="run recovery fixture", provider_snapshot={"provider_id": "local"},
+        task_state={"task_kind": "project"},
+    )
+    durable.start_task(run_id, state={"task_kind": "project"})
+    durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={"task_kind": "project"})
+    durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={"task_kind": "project"})
+    return log, RuntimeMutationLine(durable=durable), durable
 
 
 def _accept_and_mark(mutations, session_id: str, run_id: str, project: str):
@@ -32,7 +41,6 @@ def _accept_and_mark(mutations, session_id: str, run_id: str, project: str):
 
 def _settle_batch(tmp: Path, session_id: str, run_id: str, *, long_text: str = ""):
     """真实执行一次并结算（run 不可重放），交付前中断。返回日志目录。"""
-    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_effects import KernelEffectSink
@@ -41,26 +49,10 @@ def _settle_batch(tmp: Path, session_id: str, run_id: str, *, long_text: str = "
     from codey.runtime.core.models import ToolCall, ToolResult
     from codey.storage.managed_outputs import ManagedOutputStore
 
-    log, mutations = _new_log(tmp)
+    log, mutations, durable = _new_log(tmp, session_id, run_id)
     _accept_and_mark(mutations, session_id, run_id, str(tmp))
     state_home = tmp / "state"
     state_home.mkdir(parents=True, exist_ok=True)
-    durable = DurableSession(SQLiteDurableStore(state_home / "durable.sqlite3"))
-    durable.admit_input(
-        conversation_id=session_id,
-        request_id=f"request-{run_id}",
-        task_id=run_id,
-        text="run recovery fixture",
-        provider_snapshot={"provider_id": "local", "model_id": "fixture"},
-        task_state={"task_kind": "project"},
-    )
-    durable.start_task(run_id, state={"task_kind": "project"})
-    durable.advance_task(
-        task_id=run_id, phase="assistant_intent_committed", state={"task_kind": "project"},
-    )
-    durable.advance_task(
-        task_id=run_id, phase="assistant_response_pending", state={"task_kind": "project"},
-    )
     sink = KernelEffectSink(
         mutations, session_id=session_id, run_id=run_id, provider_id="local",
         managed_outputs=ManagedOutputStore(state_home), durable=durable,
@@ -106,19 +98,17 @@ def _recover(tmp: Path, session_id: str, run_id: str, project: str):
     from codey.operations.recovery import recover_effects_for_resume
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
 
     # 销毁运行对象，重新打开日志（真实重启）
-    log = RuntimeSessionLog(tmp / "sesslog")
-    mutations = RuntimeMutationLine(log)
     durable = DurableSession(SQLiteDurableStore(tmp / "state" / "durable.sqlite3"))
+    mutations = RuntimeMutationLine(durable=durable)
     deps = SimpleNamespace(
         state=SimpleNamespace(durable=durable),
         runtime_mutations=mutations,
-        runtime_effects=RuntimeEffectStore(log),
-        tool_result_delivery=ToolResultDeliveryStore(log),
+        runtime_effects=RuntimeEffectStore(durable=durable),
+        tool_result_delivery=ToolResultDeliveryStore(durable=durable),
         managed_outputs=ManagedOutputStore(tmp / "state"),
     )
     return recover_effects_for_resume(
@@ -178,20 +168,23 @@ def test_long_result_cannot_settle_without_durable_receipt():
     from codey.operations.task_effects import KernelEffectSink
     from codey.runtime.core.models import ToolCall, ToolResult
     from codey.runtime.effects.effect_records import RuntimeEffectStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         tmp = Path(td)
-        log = RuntimeSessionLog(tmp / "sesslog")
-        mutations = RuntimeMutationLine(log)
+        from codey.durable import DurableSession, SQLiteDurableStore
+        durable = DurableSession(SQLiteDurableStore(tmp / "state" / "durable.sqlite3"))
+        durable.admit_input(conversation_id="s-honest", request_id="request-honest", task_id="r-honest", text="honest", provider_snapshot={"provider_id": "local"})
+        durable.start_task("r-honest", state={})
+        durable.advance_task(task_id="r-honest", phase="assistant_response_pending", state={})
+        mutations = RuntimeMutationLine(durable=durable)
         mutations.accept_operation(
             session_id="s-honest", run_id="r-honest", project=str(tmp),
             provider_id="local", turn_budget=10, max_repair_rounds=1, task_kind="project",
         )
         mutations.mark_writer_running("s-honest", "r-honest", provider_id="local")
         sink = KernelEffectSink(
-            mutations, session_id="s-honest", run_id="r-honest", provider_id="local",
+            mutations, session_id="s-honest", run_id="r-honest", provider_id="local", durable=durable,
         )
         full = "X0123456789\n" * 900
         assert len(full) > 8000
@@ -199,7 +192,7 @@ def test_long_result_cannot_settle_without_durable_receipt():
         sink.begin_turn([("eff-h", call, 0)], turn=1)
         with pytest.raises(ValueError, match="durable managed receipt"):
             sink.settle("eff-h", True, result=ToolResult(ok=True, call=call, model_text=full))
-        assert RuntimeEffectStore(log).load_effects("s-honest", "r-honest")[0].is_pending
+        assert RuntimeEffectStore(durable=durable).load_effects("s-honest", "r-honest")[0].is_pending
 
 
 def test_settled_redelivery_with_missing_receipt_fails_closed():

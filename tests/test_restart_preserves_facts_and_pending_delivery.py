@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from codey.operations.completion_gate import evaluate
 from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from tests.test_session_log_receipt_recovery_preserves_facts import (
@@ -45,7 +44,7 @@ def test_restart_before_send_still_has_same_native_results(tmp_path):
     # the provider; recovery facts and provider delivery are separate views.
     from codey.durable import DurableSession, SQLiteDurableStore
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
-    batch = ToolResultDeliveryStore(RuntimeSessionLog(logdir), durable=durable).load_batches("s", "r")[0]
+    batch = ToolResultDeliveryStore(durable=durable).load_batches("s", "r")[0]
     assert batch.is_recovered is True
     assert batch.is_terminal is False
 
@@ -56,13 +55,12 @@ def test_successful_send_closes_delivery_but_keeps_all_facts(tmp_path):
         project, state, logdir, "s", "r", [{"exit_code": 0}],
     )
     first, recovery, _, _, _ = _recover_formal(project, state, logdir, "s", "r")
-    log = RuntimeSessionLog(logdir)
     from codey.durable import DurableSession, SQLiteDurableStore
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     sink = KernelEffectSink(
-        RuntimeMutationLine(log, durable=durable), session_id="s", run_id="r", provider_id="web",
+        RuntimeMutationLine(durable=durable), session_id="s", run_id="r", provider_id="web",
         recovered_batch_id=recovery.recovered_tool_result_batch_id,
-        managed_outputs=ManagedOutputStore(state),
+            managed_outputs=ManagedOutputStore(state), durable=durable,
     )
     sends = []
     provider = SimpleNamespace(send=lambda text: sends.append(text) or "ack")
@@ -88,8 +86,9 @@ def test_project_adapter_restores_delivered_facts_without_resending(tmp_path):
     from codey.durable import DurableSession, SQLiteDurableStore
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     sink = KernelEffectSink(
-        RuntimeMutationLine(RuntimeSessionLog(logdir), durable=durable), session_id="s", run_id="r", provider_id="web",
-        recovered_batch_id=recovery.recovered_tool_result_batch_id, managed_outputs=ManagedOutputStore(state),
+        RuntimeMutationLine(durable=durable), session_id="s", run_id="r", provider_id="web",
+            recovered_batch_id=recovery.recovered_tool_result_batch_id, managed_outputs=ManagedOutputStore(state),
+            durable=durable,
     )
     KernelRecordedProvider(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
     _, after, _, _, _ = _recover_formal(project, state, logdir, "s", "r")
@@ -128,9 +127,8 @@ def test_real_entry_delivers_recovered_batch_before_done(tmp_path):
 
     project, state, logdir = _dirs(tmp_path)
     _settle_edit_then_runs(project, state, logdir, "s", "r", [{"exit_code": 0}])
-    log = RuntimeSessionLog(logdir)
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
-    mutations = RuntimeMutationLine(log, durable=durable)
+    mutations = RuntimeMutationLine(durable=durable)
     record_entry_policy(
         mutations,
         session_id="s",
@@ -161,7 +159,7 @@ def test_real_entry_delivers_recovered_batch_before_done(tmp_path):
                               task_kind="project")
     assert result.event["stop_reason"] == "done"
     assert len(prompts) == 1 and "run out" in prompts[0]
-    batch = ToolResultDeliveryStore(log, durable=durable).load_batches("s", "r")[0]
+    batch = ToolResultDeliveryStore(durable=durable).load_batches("s", "r")[0]
     assert batch.is_delivered is True
     assert len(frame.entry_session.verifications) == 1
 
@@ -173,7 +171,7 @@ def test_crash_after_entry_sink_initialization_keeps_delivery_pending(tmp_path):
     _, before, _, _, _ = _recover_formal(project, state, logdir, "s", "r")
     from codey.durable import DurableSession, SQLiteDurableStore
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
-    deps = SimpleNamespace(runtime_mutations=RuntimeMutationLine(RuntimeSessionLog(logdir), durable=durable),
+    deps = SimpleNamespace(runtime_mutations=RuntimeMutationLine(durable=durable),
                            managed_outputs=ManagedOutputStore(state), state=SimpleNamespace(durable=durable))
     frame = SimpleNamespace(request=SimpleNamespace(session_id="s"), run_id="r", provider_id="local",
                             provider=SimpleNamespace(), recovered_tool_result_batch_id=before.recovered_tool_result_batch_id)
@@ -192,20 +190,19 @@ def test_provider_change_after_acknowledged_delivery_can_resume(tmp_path):
     project, state, logdir = _dirs(tmp_path)
     _settle_edit_then_runs(project, state, logdir, "s", "r", [{"exit_code": 0}])
     _, recovery, _, _, _ = _recover_formal(project, state, logdir, "s", "r")
-    log = RuntimeSessionLog(logdir)
     from codey.durable import DurableSession, SQLiteDurableStore
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
-    mutations = RuntimeMutationLine(log, durable=durable)
+    mutations = RuntimeMutationLine(durable=durable)
     sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local",
                             recovered_batch_id=recovery.recovered_tool_result_batch_id,
-                            managed_outputs=ManagedOutputStore(state))
+                                managed_outputs=ManagedOutputStore(state), durable=durable)
     KernelRecordedProvider(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
     deps = SimpleNamespace(runtime_mutations=mutations, managed_outputs=ManagedOutputStore(state),
                            state=SimpleNamespace(durable=durable))
     frame = SimpleNamespace(request=SimpleNamespace(session_id="s"), run_id="r", provider_id="web",
                             provider=SimpleNamespace(), recovered_tool_result_batch_id="")
     _entry_provider_sink(frame, deps, "project")
-    current = RuntimeOperationStore(log, durable=durable).load("s", "r")
+    current = RuntimeOperationStore(durable=durable).load("s", "r")
     assert current.leaf == LEAF_WRITER_RUNNING
     assert current.provider_id == "web"
     _, after, _, _, _ = _recover_formal(project, state, logdir, "s", "r")

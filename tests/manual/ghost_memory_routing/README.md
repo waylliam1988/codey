@@ -54,7 +54,7 @@ python tests/manual/ghost_memory_routing/round4.py report
 ```
 
 生成文件写到 `artifacts/ghost_memory_routing/`，不会覆盖随目录保存的历史 `reports/`。
-设置 `CODEY_GHOST_EXPERIMENT_HOME` 可将所有生成物和隔离 state 重定向到另一个目录。
+设置 `GHOST_EXPERIMENT_HOME` 可将所有生成物和隔离 state 重定向到另一个目录。
 重新导出 metrics 时显式执行 `summarize.py --export --input <新快照路径>`，不要覆盖历史快照。
 
 ## 第二模型或新配置运行

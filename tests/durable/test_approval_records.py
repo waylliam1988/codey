@@ -21,7 +21,7 @@ def test_shell_approval_admission_is_durable_before_audit_projection(tmp_path: P
     """The JSONL audit projection must never own approval admission."""
     from codey.app.context import AppContext
 
-    state = AppContext(tmp_path)
+    state = AppContext(tmp_path, start_scheduler=False)
     try:
         state.durable.admit_input(
             conversation_id="conversation-1",
@@ -347,7 +347,7 @@ def test_restart_rebuilds_pending_approval_from_task_checkpoint_without_audit_pr
     finally:
         state.close()
 
-    restarted = AppContext(tmp_path)
+    restarted = AppContext(tmp_path, start_scheduler=False)
     try:
         pending = restarted.approvals.shell_snapshot().get("approval-1")
         assert pending is not None
@@ -362,7 +362,7 @@ def test_restart_schedules_durable_approved_shell_without_audit_projection(
     from codey.app.context import AppContext
     from codey.runtime.effects.shell_approval_records import ShellApprovalFact
 
-    state = AppContext(tmp_path)
+    state = AppContext(tmp_path, start_scheduler=False)
     try:
         state.durable.admit_input(
             conversation_id="conversation-1",
@@ -390,7 +390,7 @@ def test_restart_schedules_durable_approved_shell_without_audit_projection(
     finally:
         state.close()
 
-    restarted = AppContext(tmp_path)
+    restarted = AppContext(tmp_path, start_scheduler=False)
     scheduled: list[str] = []
     try:
         monkeypatch.setattr(restarted.shell_approval_workflow, "_schedule", scheduled.append)

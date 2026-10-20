@@ -38,18 +38,21 @@ class LocalContinuityTests(unittest.TestCase):
                 check=False,
             )
             restarted = server.AppContext(state_td)
-            facts = restarted.project_facts.render(root)
-            conversation = restarted.conversation_for("chat-1")
-            tracker = restarted.change_tracker_for(root, persistent=True)
-            change_data = changes.collect_changes(root, tracker)
-            restored = tracker.restore()
+            try:
+                facts = restarted.project_facts.render(root)
+                conversation = restarted.conversation_for("chat-1")
+                tracker = restarted.change_tracker_for(root, persistent=True)
+                change_data = changes.collect_changes(root, tracker)
+                restored = tracker.restore()
 
-            self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertIn("python -m unittest", facts)
-            self.assertEqual(conversation.snapshot.goal, "ORANGE-417")
-            self.assertEqual(change_data["changed_count"], 1)
-            self.assertTrue(restored.ok, restored)
-            self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertIn("python -m unittest", facts)
+                self.assertEqual(conversation.snapshot.goal, "ORANGE-417")
+                self.assertEqual(change_data["changed_count"], 1)
+                self.assertTrue(restored.ok, restored)
+                self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
+            finally:
+                restarted.close()
 
 
 if __name__ == "__main__":

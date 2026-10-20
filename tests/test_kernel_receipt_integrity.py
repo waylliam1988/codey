@@ -9,19 +9,18 @@ from tests.test_settled_delivery_recovery import _accept_and_mark, _new_log
 
 
 def test_long_model_result_and_metadata_survive_restart(tmp_path):
-    log, mutations = _new_log(tmp_path)
+    log, mutations, durable = _new_log(tmp_path, "session", "run")
     _accept_and_mark(mutations, "session", "run", str(tmp_path))
     store = ManagedOutputStore(tmp_path / "state")
     sink = KernelEffectSink(mutations, session_id="session", run_id="run",
-                            provider_id="local", managed_outputs=store)
+                            provider_id="local", managed_outputs=store, durable=durable)
     call = ToolCall("run", {"command": "pytest", "path": "."}, call_id="call-1")
     result = ToolResult(call, "完整输出\r\n" * 1800, ok=True,
                         canonical={"ok": True}, audit={"exit_code": 0, "capture_truncated": False},
                         presentation={"summary": "验证通过"})
     sink.begin_turn([("effect-1", call, 0)], turn=1)
     sink.settle("effect-1", True, result=result)
-    log, _ = _new_log(tmp_path)
-    projection = RuntimeEffectStore(log).load_effects("session", "run")[0]
+    projection = RuntimeEffectStore(durable=durable).load_effects("session", "run")[0]
     restored = rebuild_settled_tool_result(projection, managed_store=store,
                                           session_id="session", run_id="run")
     assert restored is not None

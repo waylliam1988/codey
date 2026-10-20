@@ -41,7 +41,6 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectStore,
 )
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.workspace.revision import WorkspaceRevisionStore
 
@@ -153,6 +152,36 @@ def _write_resume_fixture(project_dir: Path) -> None:
     )
 
 
+def _open_runtime(
+    state_home: Path,
+    *,
+    session_id: str,
+    run_id: str,
+    provider_id: str,
+    task: str,
+) -> tuple[DurableSession, RuntimeEffectStore, ToolResultDeliveryStore, RuntimeMutationLine]:
+    durable = DurableSession(SQLiteDurableStore(state_home / "durable.sqlite3"))
+    durable.admit_input(
+        conversation_id=session_id,
+        request_id=run_id,
+        task_id=run_id,
+        text=task,
+        provider_snapshot=provider_snapshot(provider_id, None),
+        task_state={"task_kind": "project"},
+    )
+    durable.claim_task(run_id)
+    durable.start_task(run_id, state={"task_kind": "project"})
+    durable.advance_task(
+        task_id=run_id, phase="assistant_response_pending", state={"task_kind": "project"},
+    )
+    return (
+        durable,
+        RuntimeEffectStore(durable=durable),
+        ToolResultDeliveryStore(durable=durable),
+        RuntimeMutationLine(durable=durable),
+    )
+
+
 def _record_pending_tool_batch(
     mutations: RuntimeMutationLine,
     *,
@@ -167,7 +196,7 @@ def _record_pending_tool_batch(
 
     sink = KernelEffectSink(
         mutations, session_id=session_id, run_id=run_id,
-        provider_id="smoke",
+        provider_id="smoke", durable=mutations.durable,
     )
     items = [
         (turn_effect_id(run_id, 1, tool_index), call, tool_index)
@@ -225,10 +254,13 @@ def run_self_test() -> bool:
         session_id = "smoke_replay_session"
         run_id = "smoke_replay_run"
 
-        session_log = RuntimeSessionLog(state_home)
-        effects_store = RuntimeEffectStore(session_log)
-        delivery_store = ToolResultDeliveryStore(session_log)
-        mutations = RuntimeMutationLine(session_log)
+        durable, effects_store, delivery_store, mutations = _open_runtime(
+            state_home,
+            session_id=session_id,
+            run_id=run_id,
+            provider_id="MockResumeProvider",
+            task="finish project task after crash",
+        )
         mutations.accept_operation(
             session_id=session_id,
             run_id=run_id,
@@ -270,9 +302,7 @@ def run_self_test() -> bool:
         deps.tool_result_delivery = delivery_store
         deps.runtime_mutations = mutations
         deps.state = Mock()
-        # This smoke exercises the runtime projection recovery path directly;
-        # durable task recovery is intentionally absent from this fixture.
-        deps.state.durable = None
+        deps.state.durable = durable
         deps.state.runtime_effects = effects_store
         deps.state.tool_result_delivery = delivery_store
         deps.state.runtime_mutations = mutations
@@ -331,6 +361,7 @@ def run_self_test() -> bool:
             session_id=session_id,
             run_id=run_id,
             runtime_mutations=mutations,
+            durable=durable,
             recovered_tool_outcomes=recovered_outcomes,
             recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
         )
@@ -386,22 +417,13 @@ def run_same_run_self_test() -> bool:
         run_id = "smoke_same_run_run"
         provider = _ScriptedResumeProvider()
         events = []
-        session_log = RuntimeSessionLog(state_home)
-        durable = DurableSession(SQLiteDurableStore(state_home / "durable.sqlite3"))
-        durable.admit_input(
-            conversation_id=session_id,
-            request_id=run_id,
-            task_id=run_id,
-            text=SAME_RUN_TASK,
-            provider_snapshot=provider_snapshot(provider.name, None),
-            task_state={"task": SAME_RUN_TASK, "provider_id": provider.name, "project": str(project_dir)},
+        durable, effects_store, delivery_store, mutations = _open_runtime(
+            state_home,
+            session_id=session_id,
+            run_id=run_id,
+            provider_id=provider.name,
+            task=SAME_RUN_TASK,
         )
-        durable.claim_task(run_id)
-        durable.start_task(run_id, state={"next": "run"})
-        durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={"next": "tool"})
-        effects_store = RuntimeEffectStore(session_log, durable=durable)
-        delivery_store = ToolResultDeliveryStore(session_log, durable=durable)
-        mutations = RuntimeMutationLine(session_log, durable=durable)
 
         started = mutations.accept_operation(
             session_id=session_id,
@@ -430,8 +452,6 @@ def run_same_run_self_test() -> bool:
         deps.tool_result_delivery = delivery_store
         deps.runtime_mutations = mutations
         deps.state = Mock()
-        # This smoke exercises the runtime projection recovery path directly;
-        # durable task recovery is intentionally absent from this fixture.
         deps.state.durable = durable
         deps.state.runtime_effects = effects_store
         deps.state.tool_result_delivery = delivery_store
@@ -460,6 +480,7 @@ def run_same_run_self_test() -> bool:
                 session_id=session_id,
                 run_id=run_id,
                 runtime_mutations=mutations,
+                durable=durable,
                 recovered_tool_outcomes=recovered_outcomes,
                 recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
             )
@@ -513,10 +534,13 @@ def _run_live_resume_case(
 
         session_id = f"safe_replay_live_{provider_id}"
         run_id = f"safe_replay_live_{provider_id}_{int(started_at)}"
-        session_log = RuntimeSessionLog(state_home)
-        effects_store = RuntimeEffectStore(session_log)
-        delivery_store = ToolResultDeliveryStore(session_log)
-        mutations = RuntimeMutationLine(session_log)
+        durable, effects_store, delivery_store, mutations = _open_runtime(
+            state_home,
+            session_id=session_id,
+            run_id=run_id,
+            provider_id=provider_id,
+            task=LIVE_TASK,
+        )
         mutations.accept_operation(
             session_id=session_id,
             run_id=run_id,
@@ -554,6 +578,7 @@ def _run_live_resume_case(
                 session_id=session_id,
                 run_id=run_id,
                 runtime_mutations=mutations,
+                durable=durable,
             ))
         except _InjectedCrash:
             crashed = True
@@ -575,6 +600,7 @@ def _run_live_resume_case(
         recover_deps.tool_result_delivery = delivery_store
         recover_deps.runtime_mutations = mutations
         recover_deps.state = Mock()
+        recover_deps.state.durable = durable
         recover_deps.state.runtime_effects = effects_store
         recover_deps.state.tool_result_delivery = delivery_store
         recover_deps.state.runtime_mutations = mutations
@@ -610,6 +636,7 @@ def _run_live_resume_case(
             session_id=session_id,
             run_id=run_id,
             runtime_mutations=mutations,
+            durable=durable,
             recovered_tool_outcomes=recovered_outcomes,
             recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
         ))

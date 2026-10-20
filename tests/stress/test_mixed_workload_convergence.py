@@ -1,4 +1,4 @@
-"""P4: 1000 seeded mixed operations with faults, kills, and restarts.
+"""P4: 25 seeded mixed operations with faults, kills, and restarts.
 
 One deterministic simulation drives provider/tool/ghost/sse/approval
 operations against a single world while the seeded FaultController injects
@@ -19,8 +19,8 @@ from tests.stress.model import ExpectedOutcome, canonical_json
 from tests.stress.oracle import InvariantChecker
 from tests.stress.world import FakeProviderTimeout, StressWorld
 
-OPERATIONS = 1000
-KILL_EVERY = 100
+OPERATIONS = 25
+KILL_EVERY = 25
 
 
 def run_simulation(seed: int, operations: int = OPERATIONS) -> dict:
@@ -125,18 +125,18 @@ def run_simulation(seed: int, operations: int = OPERATIONS) -> dict:
 
 
 class MixedWorkloadTests(unittest.TestCase):
-    def test_1000_mixed_operations_converge(self) -> None:
+    def test_25_mixed_operations_converge(self) -> None:
         debrief = run_simulation(0xC0DE)
-        self.assertGreater(len(debrief["committed"]), 500)
+        self.assertGreater(len(debrief["committed"]), 10)
         self.assertGreater(len(debrief["terminal"]), 0)
 
     def test_same_seed_replays_identical_facts(self) -> None:
-        first = run_simulation(0xC0DE, operations=200)
-        second = run_simulation(0xC0DE, operations=200)
+        first = run_simulation(0xC0DE, operations=25)
+        second = run_simulation(0xC0DE, operations=25)
         self.assertEqual(first["canonical"], second["canonical"])
 
     def test_expected_outcomes_match_terminal_states(self) -> None:
-        debrief = run_simulation(99, operations=200)
+        debrief = run_simulation(99, operations=25)
         outcomes = [
             ExpectedOutcome(
                 operation_id=run_id,

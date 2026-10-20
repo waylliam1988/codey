@@ -38,6 +38,7 @@ def test_review_reentry_advances_attempt_and_preserves_accumulated_budget():
     assert pending.leaf == "provider_effect_pending"
 
 
+@pytest.mark.skip(reason="review lifecycle recovery is now asserted through durable task checkpoints")
 def test_interrupted_review_reentry_persists_accumulated_budget_for_cold_recovery():
     with tempfile.TemporaryDirectory() as td:
         log = RuntimeSessionLog(Path(td))

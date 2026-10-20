@@ -35,3 +35,12 @@ def test_recovery_settles_pending_unsafe_tools_without_replay() -> None:
 def test_recovery_rejects_effects_that_do_not_match_checkpoint() -> None:
     decision = decide_recovery(_task("assistant_response_pending"), (_effect("tool_call"),))
     assert decision.action == "fail_invariant"
+
+
+def test_recovery_reconciles_deferred_provider_after_tool_receipt() -> None:
+    task = _task("tool_effect_running")
+    provider = _effect("provider_send")
+    tool = _effect("tool_call", settled=True)
+    decision = decide_recovery(task, (provider, tool))
+    assert decision.action == "reconcile_provider_generation"
+    assert decision.effect_ids == ("provider_send-1",)

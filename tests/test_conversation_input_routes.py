@@ -3,15 +3,16 @@ from codey.app.context import AppContext
 
 
 def test_status_query_returns_the_durable_record_without_resubmitting(tmp_path, monkeypatch):
-    # Admission is durable before the volatile scheduler claims the task;
-    # keep the scheduler stopped so this route test observes that boundary.
+    # Admission is durable before any worker runs. A directly placeable input
+    # is already submitted in the durable projection even while the scheduler
+    # is stopped.
     ctx = AppContext(tmp_path, start_scheduler=False)
     monkeypatch.setattr(routes, "bind_input_queue", lambda ctx: None)
     try:
         ctx.input_queue.create("one", {"session_id": "chat", "run_id": "run_one", "task": "hello", "provider": "local"})
         status, body = routes.inputs_response(ctx, {"id": ["one"]})
         assert status == 200
-        assert body["item"]["state"] == "queued"
+        assert body["item"]["state"] == "submitted"
     finally:
         ctx.close()
 

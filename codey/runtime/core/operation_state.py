@@ -77,6 +77,8 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     LEAF_PROVIDER_EFFECT_PENDING: frozenset({
         LEAF_WRITER_RUNNING,
         LEAF_REPAIR_RUNNING,
+        LEAF_TOOL_EFFECT_PENDING,
+        LEAF_TOOL_DELIVERY_PENDING,
         LEAF_TERMINAL,
     }),
     LEAF_TOOL_EFFECT_PENDING: frozenset({
@@ -784,6 +786,14 @@ def mark_provider_effect_pending(
 def mark_provider_effect_settled(
     state: RuntimeOperationState,
 ) -> RuntimeOperationState:
+    # A generation may defer the provider settlement until a post-tools or
+    # final boundary. Tool intents can therefore be pending while the
+    # provider effect is still unsettled. The effect projection proves which
+    # provider record is being settled; preserve the tool delivery state here.
+    if state.leaf in {LEAF_TOOL_EFFECT_PENDING, LEAF_TOOL_DELIVERY_PENDING}:
+        return state
+    if state.leaf in {LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING}:
+        return state
     if state.leaf != LEAF_PROVIDER_EFFECT_PENDING:
         raise RuntimeOperationTransitionError(f"expected {LEAF_PROVIDER_EFFECT_PENDING}")
     if state.driver == DRIVER_REPAIR:

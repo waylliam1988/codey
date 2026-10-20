@@ -12,6 +12,10 @@ from tests.test_ui_inplace_render import _goto_restored_ui
 
 def test_project_actions_preview_search_and_quiet_copy(tmp_path, monkeypatch):
     ctx = AppContext(tmp_path / "state")
+    for index in range(8):
+        session_id = f"chat-{index}"
+        ctx.durable.create_conversation(session_id)
+        ctx.durable.append_message(session_id, "assistant_message", {"text": "Saved answer"})
     ctx.save_ui_state(
         {
             "active_id": "chat-7",
@@ -22,7 +26,7 @@ def test_project_actions_preview_search_and_quiet_copy(tmp_path, monkeypatch):
                     "title": f"Chat {i}",
                     "projectId": "project",
                     "provider": "deepseek",
-                    "messages": [{"type": "research_done", "text": "Saved", "sessionId": f"chat-{i}"}],
+                    "messages": [],
                 }
                 for i in range(8)
             ],

@@ -94,6 +94,10 @@ def checkpoint_entries(task: TaskCheckpoint, effects: tuple[EffectRecord, ...], 
         return ()
     rows = [operation_started_entry(state), operation_state_entry(state)]
     for effect in effects:
+        # Shell approvals are owned by the durable approval state machine;
+        # their receipt shape is intentionally outside the runtime projection.
+        if effect.category == "shell":
+            continue
         rows.append(effect_intent_entry(RuntimeEffectIntent.from_payload(cast(dict[str, Any], thaw_json(effect.intent)))))
         if effect.settlement is not None:
             rows.append(effect_settlement_entry(RuntimeEffectSettlement.from_payload(
@@ -204,4 +208,17 @@ def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
                 boundary_result.extend(selected)
         return mutation
 
-    durable.transact_task(run_id, derive)
+    # A user stop may advance the task checkpoint while the provider worker is
+    # settling its runtime operation.  Rebuild the mutation from the newer
+    # checkpoint rather than turning that expected cancellation race into an
+    # unhandled worker failure.  The reducer is pure and the durable CAS still
+    # rejects any competing write after the bounded retry budget.
+    from codey.durable.errors import CommitConflict
+
+    for attempt in range(3):
+        try:
+            durable.transact_task(run_id, derive)
+            return
+        except CommitConflict:
+            if attempt == 2:
+                raise

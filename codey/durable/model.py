@@ -21,7 +21,10 @@ TASK_PHASE_TRANSITIONS: Mapping[str, frozenset[str]] = MappingProxyType(
             }
         ),
         "assistant_intent_committed": frozenset(
-            {"provider_prepared", "assistant_response_pending", "assistant_response_unknown", "failed", "cancelled"}
+            {
+                "provider_prepared", "assistant_response_pending", "tool_effect_running",
+                "assistant_response_unknown", "failed", "cancelled",
+            }
         ),
         "assistant_response_pending": frozenset(
             {

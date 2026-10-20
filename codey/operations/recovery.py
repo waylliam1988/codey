@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -65,6 +66,7 @@ def recover_effects_for_resume(
     )
     if durable is None:
         return ResumeRecoveryResult(ok=False)
+    _recover_shell_approval(deps, durable=durable, session_id=session_id, run_id=run_id)
     pending = _recover_pending_effects(
         deps, session_id=session_id, run_id=run_id, project=project,
         task_kind=task_kind, ignored_paths=ignored_paths,
@@ -88,6 +90,63 @@ def recover_effects_for_resume(
     except (OSError, ValueError, TypeError, AttributeError):
         return ResumeRecoveryResult(ok=False)
     return replace(pending, settled_tool_outcomes=facts)
+
+
+def _recover_shell_approval(
+    deps: Any, *, durable: DurableSession, session_id: str, run_id: str,
+) -> None:
+    """Settle the original tool call from a verified approval receipt.
+
+    Shell execution and its receipt are owned by the approval workflow. A
+    resumed task must reconcile that receipt before generic crash recovery
+    considers the original unsafe tool call. Repeating this step after a
+    crash only reads the receipt; it never executes the command again.
+    """
+    from codey.operations.kernel_receipts import result_receipt_fields
+    from codey.runtime.core.models import ToolCall, ToolResult
+    from codey.runtime.effects.effect_records import compute_args_digest
+
+    task, effects = durable.task_facts(run_id)
+    resume = task.state.get("resume_input")
+    if not isinstance(resume, Mapping) or resume.get("kind") != "resolve_shell_approval":
+        return
+    resolver = getattr(getattr(deps, "state", None), "resolve_shell_approval", None)
+    payload = resolver(str(resume.get("approval_id") or "")) if callable(resolver) else None
+    if not isinstance(payload, dict):
+        raise ValueError("durable shell approval result is unavailable or uncertain")
+    call_id = payload.get("call_id")
+    if not call_id:
+        return
+    matching = tuple(effect for effect in effects
+                     if effect.category == EFFECT_CATEGORY_TOOL_CALL
+                     and effect.intent.get("call_id") == call_id)
+    if len(matching) != 1 or matching[0].intent.get("tool_name") != "shell":
+        raise ValueError("shell approval does not identify one original shell tool call")
+    effect = matching[0]
+    if effect.settlement is not None:
+        return
+    call = ToolCall("shell", {"command": payload["command"], "path": payload["cwd"]}, call_id=call_id)
+    if compute_args_digest(call.args) != effect.args_digest:
+        raise ValueError("shell approval arguments differ from original tool call")
+    mutations = _runtime_mutations(deps)
+    if mutations is None:
+        raise ValueError("shell approval recovery requires runtime mutations")
+    result = ToolResult(
+        ok=payload["ok"], call=call, model_text=payload["model_text"],
+        audit={"exit_code": payload["exit_code"]}, truncated=payload["truncated"],
+    )
+    settlement = RuntimeEffectSettlement(
+        effect_id=effect.effect_id, effect_category=EFFECT_CATEGORY_TOOL_CALL,
+        session_id=session_id, run_id=run_id,
+        status=SETTLEMENT_STATUS_OK if result.ok else SETTLEMENT_STATUS_ERROR,
+        error_code="" if result.ok else payload["error_code"] or "shell_error",
+        replay_class=effect.replay_class, exit_code=payload["exit_code"],
+        **result_receipt_fields(result, store=_managed_output_store(deps),
+                                session_id=session_id, run_id=run_id, effect_id=effect.effect_id),
+    )
+    # The approval commit already appended the native tool result. Only the
+    # original effect and its runtime state need settlement here.
+    mutations.settle_tool_effect(session_id, run_id, settlement)
 
 
 def _settled_facts(
@@ -138,6 +197,19 @@ def _recover_pending_effects(
     )
     if terminal is not None:
         return terminal
+    if durable_decision.action == "reconcile_provider_generation":
+        try:
+            _reconcile_provider_generation(
+                durable, task_id=run_id, mutations=mutations, session_id=session_id,
+            )
+            recovered_batch_id = _recover_settled_delivery(
+                durable, mutations=mutations, session_id=session_id, run_id=run_id,
+            )
+        except (OSError, ValueError, TypeError, AttributeError, RuntimeError):
+            return ResumeRecoveryResult(ok=False)
+        return ResumeRecoveryResult(
+            ok=True, recovered_tool_result_batch_id=recovered_batch_id,
+        )
     if durable_decision.action == "recover_tool_effects":
         return _recover_durable_tool_effects(
             durable, run_id=run_id, project=project,
@@ -154,6 +226,97 @@ def _recover_pending_effects(
             recovered_tool_result_batch_id=recovered_batch_id,
         )
     return ResumeRecoveryResult(ok=False)
+
+
+def _reconcile_provider_generation(
+    durable: DurableSession,
+    *,
+    task_id: str,
+    mutations: RuntimeMutationLine | None,
+    session_id: str,
+) -> None:
+    """Close a deferred provider generation proved by committed tool facts.
+
+    A generation settlement is normally committed at ``post_tools`` together
+    with inbox placement.  A crash after a tool receipt commits but before
+    that boundary leaves the provider intent pending.  The settled tool
+    receipt is durable evidence that the provider response was observed, so
+    recovery seals that provider effect and reconstructs the assistant tool
+    call from the receipt before the next provider request is built.
+    """
+    if mutations is None:
+        raise RuntimeError("provider generation recovery requires runtime mutations")
+    task, effects = durable.task_facts(task_id)
+    provider = next(
+        effect for effect in effects
+        if effect.category == "provider_send" and effect.settlement is None
+    )
+
+    def tool_order(effect: EffectRecord) -> tuple[int, int]:
+        intent = RuntimeEffectIntent.from_payload(_intent_object(effect))
+        return intent.turn, intent.tool_index
+
+    tool_effects = sorted(
+        (
+            effect for effect in effects
+            if effect.category == EFFECT_CATEGORY_TOOL_CALL
+            and effect.settlement is not None
+        ),
+        key=tool_order,
+    )
+    if not tool_effects:
+        raise ValueError("deferred provider generation has no settled tool receipt")
+    recovered_messages: list[tuple[str, dict[str, object]]] = []
+    for effect in tool_effects:
+        intent = effect.intent
+        call_id = str(intent.get("call_id") or "")
+        if not call_id:
+            # Text-originated tool calls have no provider chain id. Their
+            # results are delivered through the recovered delivery batch as a
+            # follow-up prompt; synthesizing a tool_call/tool_result pair with
+            # an empty id would corrupt the next provider request.
+            continue
+        raw_payload = effect.settlement.get("result_payload") if effect.settlement else None
+        if not isinstance(raw_payload, str) or not raw_payload:
+            raise ValueError("settled tool receipt has no recoverable arguments")
+        payload = json.loads(raw_payload)
+        args = payload.get("args") if isinstance(payload, dict) else None
+        if not isinstance(args, dict):
+            raise ValueError("settled tool receipt arguments are invalid")
+        call: dict[str, object] = {
+            "id": call_id,
+            "type": "function",
+            "function": {
+                "name": str(intent.get("tool_name") or ""),
+                "arguments": json.dumps(args, ensure_ascii=False),
+            },
+        }
+        tool_settlement = effect.settlement or {}
+        recovered_messages.append(("tool_call", {"content": "", "tool_calls": [call]}))
+        recovered_messages.append(("tool_result", {
+            "call_id": call_id,
+            "content": str(tool_settlement.get("result_text") or tool_settlement.get("result_excerpt") or ""),
+            "is_error": tool_settlement.get("status") != SETTLEMENT_STATUS_OK,
+            "result_ref": str(tool_settlement.get("result_ref") or ""),
+        }))
+    raw_intent = provider.intent
+    settlement = RuntimeEffectSettlement(
+        effect_id=provider.effect_id,
+        effect_category=provider.category,
+        session_id=str(raw_intent.get("session_id") or session_id),
+        run_id=str(raw_intent.get("run_id") or task.task_id),
+        status=SETTLEMENT_STATUS_OK,
+        lane=str(raw_intent.get("lane") or ""),
+        operation_id=str(raw_intent.get("operation_id") or ""),
+        sent_state="settled",
+        replay_class=provider.replay_class,
+    )
+    mutations.settle_provider_effect(
+        session_id,
+        task_id,
+        settlement,
+        messages=tuple(recovered_messages),
+    )
 
 
 def _settled_delivery_batch_id(

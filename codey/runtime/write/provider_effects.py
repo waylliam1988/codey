@@ -37,7 +37,6 @@ from codey.runtime.effects.tool_result_delivery import (
 from codey.runtime.log.session_view import (
     SessionView,
     driver_for_state,
-    pending_for,
     require_open_view,
 )
 
@@ -155,18 +154,31 @@ def build_provider_settle_rows(
     prepared = prepare_settlement(session_id, run_id, settlement, effects)
     if matching.settlement is not None:
         return (), prepared
-    pending = pending_for(view)
     rows = [effect_settlement_entry(prepared)]
+    # The provider intent owns the delivery batch it was attempting to
+    # acknowledge.  At a generation boundary the current operation leaf may
+    # already point at the next tool batch, so deriving this from
+    # ``pending_for(view)`` can mark the wrong batch (or lose the receipt).
+    delivery_batch_id = matching.intent.delivery_batch_id
+    pending_batch = next(
+        (batch for batch in view.batches if batch.intent.batch_id == delivery_batch_id),
+        None,
+    )
     if (
-        pending.delivery_batch_id
+        pending_batch is not None
         and prepared.status == "ok"
         and prepared.sent_state == SENT_STATE_SETTLED
+        # A provider settlement closes the generation that produced the
+        # current tool batch.  The batch is marked delivered only when this
+        # provider effect actually carried its delivery attempt; a deferred
+        # generation has no such attempt yet and must remain recoverable.
+        and prepared.effect_id in pending_batch.active_attempts
     ):
         batches = view.batches
         delivered = delivered_entry(
             session_id,
             run_id,
-            batch_id=pending.delivery_batch_id,
+            batch_id=delivery_batch_id,
             provider_effect_id=prepared.effect_id,
             batches=batches,
         )

@@ -943,6 +943,10 @@ def _durable_effects(durable: Any, *, run_id: str) -> tuple[RuntimeEffectProject
     except KeyError:
         return ()
     for record in records:
+        # Approval execution receipts belong to the durable approval machine,
+        # not the provider/tool runtime projection.
+        if record.category == "shell":
+            continue
         raw_intent = thaw_json(record.intent)
         if not isinstance(raw_intent, dict):
             raise RuntimeEffectError("durable effect intent must be an object")

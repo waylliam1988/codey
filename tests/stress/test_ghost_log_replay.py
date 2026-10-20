@@ -81,23 +81,41 @@ class GhostReplayTests(unittest.TestCase):
             world.keepalive.cleanup()
 
     def test_session_projection_incremental_equals_rebuild(self) -> None:
-        from codey.runtime.log.session_projection import reduce_session
-
         world = _world()
         try:
             world.accept_operation("run-1")
             intent = world.provider_intent("run-1")
             world.begin_provider("run-1", intent)
             world.settle_provider("run-1", intent.effect_id)
-            incremental = world.log.projection(world.session_id)
+            state = world.operations.load(world.session_id, "run-1")
+            self.assertIsNotNone(state)
+            incremental = {
+                "operation": state.to_payload(),
+                "effects": [
+                    {
+                        "intent": effect.intent.to_payload(),
+                        "settlement": effect.settlement.to_payload() if effect.settlement else None,
+                    }
+                    for effect in world.effects.load_effects(world.session_id, "run-1")
+                ],
+                "batches": [batch.intent.to_payload() for batch in world.delivery.load_batches(world.session_id, "run-1")],
+            }
             world.restart()
-            rebuilt_entries = world.log.read(world.session_id)
-            rebuilt = reduce_session(rebuilt_entries)
+            rebuilt_state = world.operations.load(world.session_id, "run-1")
+            self.assertIsNotNone(rebuilt_state)
+            rebuilt = {
+                "operation": rebuilt_state.to_payload(),
+                "effects": [
+                    {
+                        "intent": effect.intent.to_payload(),
+                        "settlement": effect.settlement.to_payload() if effect.settlement else None,
+                    }
+                    for effect in world.effects.load_effects(world.session_id, "run-1")
+                ],
+                "batches": [batch.intent.to_payload() for batch in world.delivery.load_batches(world.session_id, "run-1")],
+            }
             oracle = InvariantChecker(seed=31)
-            oracle.check_projection_rebuildable(
-                incremental.to_payload() if hasattr(incremental, "to_payload") else incremental,
-                rebuilt.to_payload() if hasattr(rebuilt, "to_payload") else rebuilt,
-            )
+            oracle.check_projection_rebuildable(incremental, rebuilt)
         finally:
             world.keepalive.cleanup()
 

@@ -243,12 +243,14 @@ def _length_reply_action(
 
 
 def _provider_failure(exc: Exception, turns_used: int, *, propagate: bool) -> KernelResult:
-    if propagate:
-        raise exc
+    from codey.durable.errors import CommitConflict
     from codey.runtime.core.cancellation import TaskCancelled
 
-    if isinstance(exc, TaskCancelled):
+    cancellation_barrier = isinstance(exc, CommitConflict) and str(exc) == "task cancellation barrier is active"
+    if isinstance(exc, TaskCancelled) or cancellation_barrier:
         return KernelResult(completed=False, summary="stopped", turns=turns_used, stop_reason="stopped")
+    if propagate:
+        raise exc
     # Preserve the error type for invariant diagnostics: a bare str(exc)
     # would hide whether the fault was a settle invariant, a digest outage,
     # or a genuine provider transport error.
@@ -560,58 +562,59 @@ def _call_boundary(
         return _provider_failure(exc, turns_used, propagate=propagate)
 
 
-def run_task_kernel(  # noqa: PLR0915
+def _settle_at_boundary(
+    result: KernelResult,
+    boundary: str,
+    on_boundary: Callable[[str], str | None] | None,
+    turns_used: int,
+    *,
+    propagate: bool,
+    only_stop_reason: str = "",
+) -> KernelResult:
+    if only_stop_reason and result.stop_reason != only_stop_reason:
+        return result
+    settled = _call_boundary(on_boundary, boundary, turns_used, propagate=propagate)
+    return settled if isinstance(settled, KernelResult) else result
+
+
+def run_task_kernel(
     session: TaskSession,
     *,
     request: KernelRunRequest,
 ) -> KernelResult:
-    provider, executors = request.transport.provider, request.execution.executors
-    run_id, effect_scope, provider_id = (
-        request.transport.run_id, request.transport.effect_scope, request.transport.provider_id
+    transport, execution, observation = (
+        request.transport, request.execution, request.observation,
     )
-    project_path = request.execution.project_path
-    tool_fns = request.execution.tool_fns
-    research_tools = request.execution.research_tools
-    change_tracker = request.execution.change_tracker
-    managed_outputs = request.execution.managed_outputs
-    session_id = request.execution.session_id
-    permission_profile = request.execution.permission_profile
-    user_task = request.transport.user_task
-    context_text = request.transport.context_text
-    stop_flag = request.transport.stop_flag
-    stagnant_turns = request.transport.stagnant_turns
-    delivered = request.transport.delivered
-    intent_sink = request.observation.intent_sink
-    completion_context = request.observation.completion_context
-    on_event = request.observation.on_event
-    on_shell_request = request.observation.on_shell_request
-    propagate_provider_failure = request.observation.propagate_provider_failure
-    on_boundary = request.observation.on_boundary
-    start_turn = request.transport.start_turn
-    initial_results = request.transport.initial_results
-    provider_session_changed = request.transport.provider_session_changed
-    workspace_ignored_paths = request.execution.workspace_ignored_paths
-    workspace_revision_store = request.execution.workspace_revision_store
-    trace_recorder = request.observation.trace_recorder
-    completion_context = _completion_context_with_ignores(completion_context, workspace_ignored_paths)
+    provider = transport.provider
+    provider_id = transport.provider_id
+    project_path = execution.project_path
+    stop_flag = transport.stop_flag
+    stagnant_turns = transport.stagnant_turns
+    intent_sink = observation.intent_sink
+    on_event = observation.on_event
+    propagate_provider_failure = observation.propagate_provider_failure
+    on_boundary = observation.on_boundary
+    completion_context = _completion_context_with_ignores(
+        observation.completion_context, execution.workspace_ignored_paths,
+    )
     try:
-        resume_start = _resume_start(start_turn)
+        resume_start = _resume_start(transport.start_turn)
         startup = _kernel_startup(
             session,
             provider,
-            executors=executors,
-            run_id=run_id,
-            effect_scope=(effect_scope or ""),
+            executors=execution.executors,
+            run_id=transport.run_id,
+            effect_scope=(transport.effect_scope or ""),
             provider_id=provider_id,
-            user_task=user_task,
-            context_text=context_text,
+            user_task=transport.user_task,
+            context_text=transport.context_text,
             task_guidance=request.task_guidance,
             completion_context=completion_context,
-            initial_results=initial_results,
-            provider_session_changed=provider_session_changed,
-            delivered=delivered,
-            initial_turn=request.transport.initial_turn,
-            replayed_result_ids=request.transport.replayed_result_ids,
+            initial_results=transport.initial_results,
+            provider_session_changed=transport.provider_session_changed,
+            delivered=transport.delivered,
+            initial_turn=transport.initial_turn,
+            replayed_result_ids=transport.replayed_result_ids,
         )
     except RecoveryFailed as exc:
         # Recovery delivery failures must never fall through to the initial
@@ -630,7 +633,7 @@ def run_task_kernel(  # noqa: PLR0915
     state = startup.state
     native = startup.native
     native_tools = startup.native_tools
-    window_ref = startup.window_ref or request.transport.window_ref
+    window_ref = startup.window_ref or transport.window_ref
     progress = KernelProgress(stagnant_turns)
     prev_contract = startup.snapshot.contract_text
     for turn in range(resume_start, startup.max_turns + 1):
@@ -661,11 +664,17 @@ def run_task_kernel(  # noqa: PLR0915
             session, provider, state, turn_snapshot, native_tools,
             native=native, provider_id=provider_id, turn=turn,
             stop_flag=stop_flag, on_event=on_event, stagnant_turns=stagnant_turns,
-            propagate_provider_failure=propagate_provider_failure, trace_recorder=trace_recorder,
+            propagate_provider_failure=propagate_provider_failure,
+            trace_recorder=observation.trace_recorder,
             window_ref=window_ref,
         )
         if isinstance(received, KernelResult):
-            return received
+            # A received protocol failure has no following tool batch, so its
+            # deferred provider effect must be settled before the verdict.
+            return _settle_at_boundary(
+                received, "final", on_boundary, turns_used,
+                propagate=propagate_provider_failure, only_stop_reason="protocol",
+            )
         if received is None:
             continue
         plan, reply = received.plan, received.reply
@@ -680,52 +689,70 @@ def run_task_kernel(  # noqa: PLR0915
             native_tools,
             completion_context=completion_context,
             project_path=project_path,
-            on_shell_request=on_shell_request,
+            on_shell_request=observation.on_shell_request,
             turn=turn,
             identity_ref=startup.identity_ref,
             intent_sink=intent_sink,
-            permission_profile=permission_profile,
+            permission_profile=execution.permission_profile,
             provider_id=provider_id,
             on_event=on_event,
         )
         if isinstance(done_action, KernelResult):
-            if done_action.stop_reason == "done":
-                boundary_result = _call_boundary(
-                    on_boundary, "final", turns_used, propagate=propagate_provider_failure,
-                )
-                if isinstance(boundary_result, KernelResult):
-                    return boundary_result
-            return done_action
+            return _settle_at_boundary(
+                done_action, "final", on_boundary, turns_used,
+                propagate=propagate_provider_failure, only_stop_reason="done",
+            )
         if done_action is not None:
             state.prompt, state.pending_reply = done_action
             continue
         if approval is not None:
-            return cast(KernelResult, approval)
-        blocked = _ensure_workspace_writer(request.execution.ensure_workspace_writer, calls, provider, reply,
-                                           native_tools, turns_used, propagate_provider_failure)
+            # A shell approval pauses between provider generation and tool
+            # execution. Persist the deferred provider settlement and its
+            # assistant tool-call history before waiting; the approval
+            # result can then append the matching tool result atomically.
+            return _settle_at_boundary(
+                cast(KernelResult, approval), "approval", on_boundary, turns_used,
+                propagate=propagate_provider_failure,
+            )
+        blocked = _ensure_workspace_writer(
+            execution.ensure_workspace_writer, calls, provider, reply,
+            native_tools, turns_used, propagate_provider_failure,
+        )
         if blocked is not None:
-            return blocked
+            # No tool batch follows this generation, but its provider effect
+            # was still received. Settle it at the final boundary so the
+            # outer writer verdict does not run against a pending provider.
+            return _settle_at_boundary(
+                blocked, "final", on_boundary, turns_used,
+                propagate=propagate_provider_failure,
+            )
         _events._emit_tool_starts(on_event, session, turn, calls)
         _outer_evidence = _outer_evidence_for_context(completion_context)
         results_or_failure = _call_execute_turn(
-            session, calls, startup.executors, run_id, effect_scope, turn,
-            project_path, tool_fns, research_tools, change_tracker,
-            managed_outputs, session_id, permission_profile,
+            session, calls, startup.executors, transport.run_id, transport.effect_scope, turn,
+            project_path, execution.tool_fns, execution.research_tools, execution.change_tracker,
+            execution.managed_outputs, execution.session_id, execution.permission_profile,
             startup.delivered, intent_sink, controller, _outer_evidence,
-            workspace_ignored_paths, workspace_revision_store,
+            execution.workspace_ignored_paths, execution.workspace_revision_store,
             turns_used, propagate_provider_failure, stop_flag,
-            durable=request.execution.durable,
+            durable=execution.durable,
             snapshot=turn_snapshot,
         )
         if isinstance(results_or_failure, KernelResult):
-            return results_or_failure
+            # An execution-layer failure can end the run before post_tools.
+            # The provider generation was already received, so settle it at
+            # the final boundary before the outer lifecycle settles the
+            # writer/repair state.
+            return _settle_at_boundary(
+                results_or_failure, "final", on_boundary, turns_used,
+                propagate=propagate_provider_failure,
+            )
         results = results_or_failure
-        boundary_result = _call_boundary(
+        boundary_prompt = _call_boundary(
             on_boundary, "post_tools", turns_used, propagate=propagate_provider_failure,
         )
-        if isinstance(boundary_result, KernelResult):
-            return boundary_result
-        boundary_prompt = boundary_result
+        if isinstance(boundary_prompt, KernelResult):
+            return boundary_prompt
         try:
             _events._emit_tool_results(on_event, session, results, run_id=startup.identity_ref, turn=turn)
         except RecoveryFailed as exc:
@@ -748,7 +775,7 @@ def run_task_kernel(  # noqa: PLR0915
                                     declared_tools=native_tools)
         if stopped is not None:
             return cast(KernelResult, stopped)
-    return _finish_after_budget(
+    finished = _finish_after_budget(
         session,
         provider,
         state.pending_messages,
@@ -757,6 +784,18 @@ def run_task_kernel(  # noqa: PLR0915
         propagate_provider_failure=propagate_provider_failure,
         declared_tools=native_tools,
     )
+    if finished.stop_reason == "max_turns":
+        # The turn budget can stop after a completed provider generation whose
+        # settlement was deferred (for example a rejected done without tools).
+        # Settle it at the final boundary before the outer lifecycle records
+        # the writer/repair verdict; otherwise the pending provider effect
+        # makes the settle transition illegal.
+        boundary_result = _call_boundary(
+            on_boundary, "final", turns_used, propagate=propagate_provider_failure,
+        )
+        if isinstance(boundary_result, KernelResult):
+            return boundary_result
+    return finished
 
 
 def _stop_at_turn_start(

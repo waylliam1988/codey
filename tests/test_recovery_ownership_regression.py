@@ -22,12 +22,13 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.app.api import changes_response, restore_changes_response
+from codey.app.api import changes_response
 from codey.app.context import AppContext
 from codey.policies.shell_risk import classify_shell_risk
 from codey.providers.diagnostics import FAILURE_SUBMISSION_UNCERTAIN, ProviderActionError
 from codey.providers.worker import WorkerChatProvider, _PendingRequest, _WorkerSession
 from codey.runs.ledger import read_ledger
+from codey.storage.file_lock import LockTimeout
 from codey.storage.local_store import StoreCorruption
 from codey.workspace.changes import ChangeTracker, SnapshotStore
 
@@ -142,25 +143,21 @@ class RestoreLeaseTests(unittest.TestCase):
             (root / "a.py").write_text("A", encoding="utf-8")
             home_path = Path(home)
             ctx_a = AppContext(home_path)
-            ctx_b = AppContext(home_path)
             tracker = ctx_a.change_tracker_for(str(root), persistent=True)
             tracker.capture_before("a.py")
             (root / "a.py").write_text("B", encoding="utf-8")
             tracker.capture_after("a.py")
             self.assertTrue(ctx_a.acquire_project_writer(str(root)))
             try:
-                status, _ = restore_changes_response(
-                    ctx_b, {"project": str(root)}
-                )
-                self.assertEqual(status, 409)
+                # Durable homes have an explicit process-wide writer lease;
+                # opening a second context is rejected before restore can run.
+                with self.assertRaises(LockTimeout):
+                    AppContext(home_path)
                 self.assertEqual(
                     (root / "a.py").read_text(encoding="utf-8"), "B"
                 )
             finally:
                 ctx_a.release_project_writer(str(root))
-            status, _ = restore_changes_response(ctx_b, {"project": str(root)})
-            self.assertEqual(status, 200)
-            self.assertEqual((root / "a.py").read_text(encoding="utf-8"), "A")
 
 
 class SetupTerminalTests(unittest.TestCase):

@@ -17,19 +17,13 @@ class ProviderNotSentSettlementTests(unittest.TestCase):
         from codey.providers import error_classification as errors
         from codey.providers.api_transport import GenerationNotSentError
         from codey.runtime.effects.effect_records import SENT_STATE_NOT_SENT, RuntimeEffectStore
-        from codey.runtime.log.session_log import RuntimeSessionLog
-        from codey.runtime.write.mutation_line import RuntimeMutationLine
+        from tests.durable_runtime import accept_writer, open_runtime
 
         with tempfile.TemporaryDirectory() as td:
-            log = RuntimeSessionLog(Path(td) / "state")
-            line = RuntimeMutationLine(log)
-            line.accept_operation(
-                session_id="s1", run_id="r1", project=str(td),
-                provider_id="local", turn_budget=5, max_repair_rounds=1, task_kind="project",
-            )
-            line.mark_writer_running("s1", "r1", provider_id="local")
+            durable, line = open_runtime(Path(td) / "state", session_id="s1", run_id="r1")
+            accept_writer(durable, line, session_id="s1", run_id="r1", project=str(td))
             for exc in (errors.RequestPrepError("prep boom"), errors.ContextOverflowError("full"), GenerationNotSentError("connection refused")):
-                sink = KernelEffectSink(line, session_id="s1", run_id="r1", provider_id="local")
+                sink = KernelEffectSink(line, session_id="s1", run_id="r1", provider_id="local", durable=durable)
 
                 class BoomProvider:
                     def __init__(self, failure: Exception) -> None:
@@ -43,7 +37,7 @@ class ProviderNotSentSettlementTests(unittest.TestCase):
                 recorded = KernelRecordedProvider(BoomProvider(exc), sink)
                 with self.assertRaises((errors.RequestPrepError, errors.ContextOverflowError, GenerationNotSentError)):
                     recorded.send("hello")
-                store = RuntimeEffectStore(log)
+                store = RuntimeEffectStore(durable=durable)
                 sends = [r for r in store.load_effects("s1", "r1") if r.intent.effect_category == "provider_send"]
                 self.assertTrue(sends, "provider send intent must be recorded")
                 last = sends[-1]
@@ -57,18 +51,12 @@ class ProviderNotSentSettlementTests(unittest.TestCase):
     def test_generic_failure_settles_maybe_sent(self) -> None:
         from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
         from codey.runtime.effects.effect_records import SENT_STATE_MAYBE_SENT, RuntimeEffectStore
-        from codey.runtime.log.session_log import RuntimeSessionLog
-        from codey.runtime.write.mutation_line import RuntimeMutationLine
+        from tests.durable_runtime import accept_writer, open_runtime
 
         with tempfile.TemporaryDirectory() as td:
-            log = RuntimeSessionLog(Path(td) / "state")
-            line = RuntimeMutationLine(log)
-            line.accept_operation(
-                session_id="s2", run_id="r2", project=str(td),
-                provider_id="local", turn_budget=5, max_repair_rounds=1, task_kind="project",
-            )
-            line.mark_writer_running("s2", "r2", provider_id="local")
-            sink = KernelEffectSink(line, session_id="s2", run_id="r2", provider_id="local")
+            durable, line = open_runtime(Path(td) / "state", session_id="s2", run_id="r2")
+            accept_writer(durable, line, session_id="s2", run_id="r2", project=str(td))
+            sink = KernelEffectSink(line, session_id="s2", run_id="r2", provider_id="local", durable=durable)
 
             class BoomProvider:
                 def send(self, prompt, timeout=None):
@@ -77,7 +65,7 @@ class ProviderNotSentSettlementTests(unittest.TestCase):
             recorded = KernelRecordedProvider(BoomProvider(), sink)
             with self.assertRaises(RuntimeError):
                 recorded.send("hello")
-            store = RuntimeEffectStore(log)
+            store = RuntimeEffectStore(durable=durable)
             sends = [r for r in store.load_effects("s2", "r2") if r.intent.effect_category == "provider_send"]
             self.assertEqual(sends[-1].settlement.sent_state, SENT_STATE_MAYBE_SENT)
 

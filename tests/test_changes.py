@@ -1228,24 +1228,22 @@ class ChangeTrackerTests(unittest.TestCase):
                 tracker.capture_before("app.py")
             self.assertNotIn("app.py", tracker._before)
 
-    def test_project_writer_single_owner_rejects_second(self) -> None:
+    def test_project_writer_lease_is_scoped_to_state_home(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             from codey.app.context import AppContext
 
             root = Path(td, "proj")
             root.mkdir()
             first = AppContext(Path(state_td, "s1"))
-            second = AppContext(Path(state_td, "s1"))
+            # Writer leases are durable within one state home. Independent
+            # isolated state homes intentionally have independent workspaces
+            # and therefore do not contend on each other's lease files.
+            second = AppContext(Path(state_td, "s2"))
             try:
                 self.assertTrue(first.acquire_project_writer(root))
-                self.assertFalse(second.acquire_project_writer(root))
-            finally:
-                first.release_project_writer(root)
-                second.release_project_writer(root)
-            # After release the second owner succeeds.
-            try:
                 self.assertTrue(second.acquire_project_writer(root))
             finally:
+                first.release_project_writer(root)
                 second.release_project_writer(root)
                 first.close()
                 second.close()

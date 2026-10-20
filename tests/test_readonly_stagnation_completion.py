@@ -15,16 +15,22 @@ def test_readonly_completion_from_repair_settled_preserves_phase_and_budget(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from codey.completion.verification_policy import VerificationCandidate
+    from codey.durable import DurableSession, MemoryDurableStore
     from codey.operations import project_candidate_validation as validation
     from codey.runtime.core.operation_state import LEAF_REPAIR_SETTLED
     from codey.runtime.core.run_result import RunResult
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.observe.execution_evidence import CheckEvidence
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     project = tmp_path / "project"
     project.mkdir()
     check = VerificationCandidate("python -m unittest discover", ".", "fixture")
-    mutation_line = RuntimeMutationLine(RuntimeSessionLog(tmp_path / "runtime"))
+    durable = DurableSession(MemoryDurableStore())
+    durable.admit_input(
+        conversation_id="s1", request_id="request-run-1", task_id="run-1",
+        text="readonly stagnation", provider_snapshot={"provider_id": "deepseek"},
+    )
+    durable.start_task("run-1", state={})
+    mutation_line = RuntimeMutationLine(durable=durable)
     mutation_line.accept_operation(
         session_id="s1", run_id="run-1", project=str(project), provider_id="deepseek",
         turn_budget=12, max_repair_rounds=1, task_kind="project",

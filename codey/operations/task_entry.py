@@ -203,8 +203,9 @@ def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, An
         from codey.operations.provider_session import ConversationProvider
 
         active_provider = ConversationProvider(active_provider, frame.conversation)
-    stop_flag = getattr(getattr(deps, "state", None), "run_registry", None)
-    stop_flag = getattr(stop_flag, "stop_flag", None)
+    registry = getattr(getattr(deps, "state", None), "run_registry", None)
+    stop_for = getattr(registry, "stop_flag_for", None)
+    stop_flag = stop_for(frame.run_id) if callable(stop_for) else getattr(registry, "stop_flag", None)
     return active_provider, intent_sink, stop_flag
 
 

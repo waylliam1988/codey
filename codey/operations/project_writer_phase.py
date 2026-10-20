@@ -388,7 +388,10 @@ def _run_writer_phase(ctx: ProjectRun) -> None:
     result = ctx.result
     # Approval and cancellation can retain an unexecuted or uncertain intent.
     # The outer lifecycle terminalizes them without claiming tool settlement.
-    if result.stop_reason not in {"approval", "stopped"}:
+    # A question pauses the provider generation at its durable effect
+    # boundary. The outer lifecycle settles it after the answer; settling the
+    # writer here would attempt provider_effect_pending -> writer_settled.
+    if result.stop_reason not in {"approval", "question", "stopped"}:
         _commit_runtime_operation(
             ctx,
             "mark_writer_settled",

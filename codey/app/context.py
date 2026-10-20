@@ -1,11 +1,9 @@
 """Application assembly: shared context, stores, and UI-agnostic constants.
-
 This module owns AppContext (all local stores, registries, daemons) plus the
 small constants both the HTTP server and headless runners need. server.py keeps
 only HTTP/SSE routing, the global STATE, and task-runner wiring, so importing
 the headless runner never builds global UI state as a side effect.
 """
-
 from __future__ import annotations
 
 import contextlib
@@ -20,9 +18,9 @@ from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from codey.repairs.self_repair import SelfRepairSupervisor
-
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.app import event_bus
+from codey.app.active_provider_registry import ActiveProviderRegistry
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.conversation_registry import ConversationRegistry
 from codey.app.conversation_runtime import ConversationRuntime
@@ -60,7 +58,6 @@ from codey.workspace.revision import WorkspaceRevisionStore
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
 SSE_REPLAY_LIMIT = 512
-
 def _close_if_discarded(store: object) -> None:
     """Best-effort close for a double-checked loser (e.g. KnowledgeStore index)."""
     close = getattr(store, "close", None)
@@ -68,10 +65,8 @@ def _close_if_discarded(store: object) -> None:
         return
     with contextlib.suppress(Exception):
         close()
-
 MAX_CONVERSATION_STATES = 32
 MAX_CHANGE_TRACKERS = 32
-
 logger = logging.getLogger(__name__)
 
 class AppContext(GhostStoreAccessors):
@@ -105,6 +100,7 @@ class AppContext(GhostStoreAccessors):
             replay_limit=SSE_REPLAY_LIMIT if replay_limit is None else replay_limit
         )
         self.run_registry = RunRegistry()
+        self._active_providers = ActiveProviderRegistry()
         self._run_modes: dict[str, str] = {}
         self.approvals = ApprovalRegistry()
         self.research_changes: dict[str, object] = {}
@@ -210,6 +206,13 @@ class AppContext(GhostStoreAccessors):
         # event through their cancellation scopes.  The durable scheduler owns
         # the checkpoint transition; this handler only interrupts live work.
         self.run_registry.request_stop(run_id)
+        provider = self._active_providers.get(run_id)
+        abandon = getattr(provider, "abandon_inflight", None)
+        if callable(abandon):
+            try:
+                abandon()
+            except Exception as exc:
+                logger.debug("provider abort cleanup failed for %s: %s", run_id, exc)
         events: tuple[dict[str, Any], ...] = ()
         with self._shell_spawn_gate, self.lock:
             expire = getattr(self, "_expire_shell_results_locked", None)
@@ -221,6 +224,18 @@ class AppContext(GhostStoreAccessors):
                 cancel_queued(checkpoint.conversation_id)
         for event in events:
             self.record_shell_result(event)
+
+    def register_active_provider(self, run_id: str, provider: object) -> None:
+        """Register the raw provider transport for a live durable run."""
+        if not run_id or provider is None:
+            return
+        self._active_providers.register(run_id, provider)
+
+    def unregister_active_provider(self, run_id: str, provider: object | None = None) -> None:
+        """Drop a run transport, preserving a newer replacement if present."""
+        if not run_id:
+            return
+        self._active_providers.unregister(run_id, provider)
 
     def _publish_durable_commit(self, result: CommitResult, mutation: DurableMutation) -> None:
         if result.record is not None:
@@ -550,6 +565,7 @@ class AppContext(GhostStoreAccessors):
         (UI stop, headless shell-reject); the executor side holds the same
         gate across final-check+Popen in ``shell_service.execute_shell_ticket``.
         """
+        abort_targets: tuple[str, ...] = ()
         with self._shell_spawn_gate:
             self.run_registry.request_stop(run_id)
             with self.lock:
@@ -559,14 +575,11 @@ class AppContext(GhostStoreAccessors):
                 # restart may dispatch the task again.
                 durable = getattr(self, "durable", None)
                 if durable is not None and not self._close_requested:
-                    targets = (
+                    abort_targets = (
                         (str(run_id),)
                         if run_id
                         else tuple(run.run_id for run in self.run_registry.active_runs())
                     )
-                    for target in targets:
-                        with contextlib.suppress(KeyError):
-                            durable.request_cancel(target, reason="user stopped")
                 self.approvals.cancel_teach()
                 if self._close_requested:
                     # Shutdown interrupts live execution but preserves durable
@@ -577,6 +590,14 @@ class AppContext(GhostStoreAccessors):
                     target_session = self.run_registry.session_for(run_id) if run_id else ""
                     events = self._expire_shell_results_locked(run_id=run_id) if run_id else self._expire_shell_results_locked()
                     self.shell_approval_workflow.cancel_queued(target_session)
+        # Route the durable cancellation through the scheduler's abort line so
+        # the live provider transport and shell process receive the same
+        # run-scoped cancellation signal. Do this after releasing AppContext's
+        # lock: the abort handler performs shell cleanup and may publish facts.
+        if abort_targets:
+            for target in abort_targets:
+                with contextlib.suppress(KeyError, ValueError):
+                    self.durable_scheduler.abort_task(target, reason="user stopped")
         for event in events:
             self.record_shell_result(event)
         if not self._close_requested:

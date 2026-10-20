@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -122,17 +123,29 @@ def test_scheduler_places_queued_input_only_after_active_task_settles() -> None:
     session.complete_task("active", "done", state={})
 
     dispatched: list[str] = []
+    accepted = threading.Event()
+
+    def dispatch(task) -> bool:
+        dispatched.append(task.task_id)
+        accepted.set()
+        return True
+
     scheduler = DurableTaskScheduler(
         session,
-        lambda task: dispatched.append(task.task_id) or True,
+        dispatch,
         retry_interval=0.01,
     )
-    scheduler.start()
-    scheduler.close()
-
-    assert dispatched == ["queued"]
-    assert session.store.submission(str(queued.submission_id)).placement is SubmissionPlacement.PLACED
-    assert [entry.payload["text"] for entry in session.entries("chat")] == ["current", "done", "next"]
+    try:
+        scheduler.start()
+        # start() launches an asynchronous dispatcher. Closing immediately
+        # can legitimately stop it before it has placed or dispatched input.
+        assert accepted.wait(2)
+        assert dispatched == ["queued"]
+        assert session.store.submission(str(queued.submission_id)).placement is SubmissionPlacement.PLACED
+        assert [entry.payload["text"] for entry in session.entries("chat")] == ["current", "done", "next"]
+    finally:
+        assert scheduler.close()
+        session.close()
 
 
 def test_scheduler_uses_one_at_a_time_follow_up_boundary_by_default() -> None:

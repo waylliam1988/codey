@@ -10,7 +10,7 @@ def test_codemode_child_scopes_produce_distinct_durable_batches() -> None:
             self.batch_ids: list[str] = []
 
         def begin_tool_batch(self, _session_id: str, _run_id: str, *, delivery_intent: object, **_kwargs: object) -> None:
-            self.batch_ids.append(str(getattr(delivery_intent, "batch_id")))
+            self.batch_ids.append(str(delivery_intent.batch_id))
 
     mutations = Mutations()
     durable = type("Durable", (), {"effects": lambda _self, _run_id: ()})()

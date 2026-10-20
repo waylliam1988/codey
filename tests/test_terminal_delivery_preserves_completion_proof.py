@@ -26,16 +26,21 @@ def test_unknown_done_delivery_retains_proof_and_separate_delivery_status(monkey
 
 
 def test_final_delivery_and_proof_reference_survive_formal_log_restart(tmp_path):
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.runtime.core.operation_state import RuntimeOperationStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
-    log = RuntimeSessionLog(tmp_path)
-    mutations = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    durable.admit_input(conversation_id="session", request_id="request-run", task_id="run", text="test",
+                        provider_snapshot={"provider_id": "local", "model_id": "test"})
+    mutations = RuntimeMutationLine(durable=durable)
     mutations.accept_operation(session_id="session", run_id="run", provider_id="local", turn_budget=2, max_repair_rounds=1)
     mutations.mark_terminal("session", "run", stop_reason="delivery_pending", summary_chars=10, turns=1, max_turns=2, provider="local",
                             final_delivery="unknown", proof_ref="completion_proof:0123456789abcdef", proof_status="complete")
-    recovered = RuntimeOperationStore(RuntimeSessionLog(tmp_path)).load("session", "run")
+    durable.close()
+    reopened = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    recovered = RuntimeOperationStore(durable=reopened).load("session", "run")
     assert recovered.final_delivery == "unknown"
     assert recovered.completion_proof_status == "complete"
     assert recovered.completion_proof_ref == "completion_proof:0123456789abcdef"
+    reopened.close()

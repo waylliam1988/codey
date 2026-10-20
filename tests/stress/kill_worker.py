@@ -151,15 +151,14 @@ def _crash_baseline(world: Any) -> str:
 
 
 def _point_session_torn_row(world: Any) -> dict:
+    """A failed SQLite mutation is atomic: no partial runtime row is visible."""
     baseline = _crash_baseline(world)
     world.accept_operation("run-cp-2")
     doomed = world.provider_intent("run-cp-2")
-    real_fdopen = os.fdopen
-    with mock.patch.object(
-        os,
-        "fdopen",
-        lambda fd, *a, **k: _faulty_fdopen(real_fdopen, {"short_chunk": 0}, fd, *a, **k),
-    ):
+    def _abort_before_commit(_mutation: object) -> None:
+        raise _CrashPointReached("durable transaction aborted before commit")
+
+    with mock.patch.object(world.durable.store, "commit", _abort_before_commit):
         try:
             world.begin_provider("run-cp-2", doomed)
         except _CrashPointReached:
@@ -179,13 +178,13 @@ def _point_session_full_no_ack(world: Any) -> dict:
     baseline = _crash_baseline(world)
     world.accept_operation("run-cp-2")
     committed = world.provider_intent("run-cp-2")
-    real_fsync = os.fsync
+    real_commit = world.durable.store.commit
 
-    def _die_after_fsync(fd: int) -> None:
-        real_fsync(fd)
-        raise _CrashPointReached("died after fsync, before ack")
+    def _die_after_commit(mutation: object) -> Any:
+        real_commit(mutation)
+        raise _CrashPointReached("died after durable commit, before ack")
 
-    with mock.patch.object(os, "fsync", _die_after_fsync):
+    with mock.patch.object(world.durable.store, "commit", _die_after_commit):
         try:
             world.begin_provider("run-cp-2", committed)
         except _CrashPointReached:

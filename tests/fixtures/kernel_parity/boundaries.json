@@ -197,6 +197,36 @@
         "tests/durable/test_session.py",
         "tests/test_app_state_helper.py"
       ]
+    },
+    "codey/ghost/event_log.py": {
+      "current_owners": [
+        "codey/ghost/sqlite.py",
+        "codey/ghost/record_store.py"
+      ],
+      "tests": [
+        "tests/test_ghost_sqlite_store.py",
+        "tests/test_ghost_graph_sqlite.py"
+      ]
+    },
+    "codey/ghost/event_projection.py": {
+      "current_owners": [
+        "codey/ghost/sqlite.py",
+        "codey/ghost/events.py"
+      ],
+      "tests": [
+        "tests/test_ghost_events.py",
+        "tests/test_ghost_corruption_contract.py"
+      ]
+    },
+    "codey/storage/event_state.py": {
+      "current_owners": [
+        "codey/durable/session.py",
+        "codey/durable/timeline.py"
+      ],
+      "tests": [
+        "tests/durable/test_session.py",
+        "tests/durable/test_workflow_timeline.py"
+      ]
     }
   },
   "entry_chains": {

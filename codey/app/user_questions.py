@@ -171,8 +171,72 @@ class DurableUserQuestionStore:
             if status == TaskStatus.WAITING:
                 status = TaskStatus.PENDING
                 state.update(attempt_token="", attempt_owner="", attempt_process_id=0)
-            next_task = replace(task, revision=task.revision + 1, state=state, status=status)
+            # The provider response that produced ask_user was observed before
+            # the question was published. Its deferred provider receipt must
+            # be closed in the same answer commit, otherwise recovery leaves a
+            # pending provider effect and the continuation cannot begin a new
+            # generation. This is an observation settlement, not a replay.
+            from codey.durable.reducer import with_effect_settlement
+            from codey.runtime.effects.effect_records import RuntimeEffectSettlement
+
+            provider_settlements = []
+            settled_task = task
+            for effect in _effects:
+                if effect.category != "provider_send" or effect.settlement is not None:
+                    continue
+                intent = effect.intent
+                settlement = RuntimeEffectSettlement(
+                    effect_id=effect.effect_id,
+                    effect_category=effect.category,
+                    session_id=str(intent.get("session_id") or task.conversation_id),
+                    run_id=str(intent.get("run_id") or task.task_id),
+                    status="ok",
+                    lane=str(intent.get("lane") or ""),
+                    operation_id=str(intent.get("operation_id") or ""),
+                    sent_state="settled",
+                    replay_class=effect.replay_class,
+                )
+                settled_record = replace(
+                    effect,
+                    status="ok",
+                    settlement=settlement.to_payload(),
+                )
+                provider_settlements.append(settled_record)
+                settled_task = with_effect_settlement(settled_task, settled_record)
+            state = {
+                **dict(settled_task.state),
+                "question": updated,
+                "resume_input": resume,
+                "resume_entry_id": entry.entry_id,
+            }
+            # The answered question proves the previous provider response was
+            # observed.  Resume from a fresh provider generation boundary so
+            # the next provider intent is legal even when the parked task was
+            # left at assistant_intent_committed.
+            # The ask_user control call is acknowledged by the provider and
+            # has no executable tool effect. Older checkpoints can therefore
+            # still expose ``tool_effect_running`` after the acknowledgement
+            # receipt was folded in. Once the durable pending-effect fence is
+            # empty, the answer starts a fresh provider generation from the
+            # canonical prepared phase. A genuinely pending external effect
+            # remains fenced and is never silently skipped.
+            pending_effects = state.get("pending_effect_ids", ())
+            restart_phase = settled_task.phase
+            if not pending_effects and task.phase in {
+                "assistant_intent_committed", "assistant_response_pending", "tool_effect_running",
+            }:
+                restart_phase = "provider_prepared"
+            if provider_settlements:
+                restart_phase = "provider_prepared"
+            next_task = replace(
+                settled_task,
+                phase=restart_phase,
+                revision=task.revision + 1,
+                state=state,
+                status=status,
+            )
             return DurableMutation(task.conversation_id, conversation_revision, entries=(entry,), task=next_task,
+                                   settlements=tuple(provider_settlements),
                                    expected_attempt_token=task.attempt_token)
 
         self.durable.transact_task(str(item["run_id"]), accept)

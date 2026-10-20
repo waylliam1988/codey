@@ -27,7 +27,6 @@ from codey.operations.task_run import TaskRunDeps
 from codey.providers.api_chat import encode_tools
 from codey.providers.api_provider import ApiProvider
 from codey.runtime.core.cancellation import start_process, wait_process
-from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes, is_git_repository
 from tools.local_model_gate_attempts import REPO_ROOT, GateTarget, make_provider, record_api_generations, write_json
@@ -137,7 +136,7 @@ def _stage(directory: Path, stage: str, *, scripted: bool) -> int:
             ))
         terminal = context.run_registry.last_terminal_event() or {}
         policy = policy_from_durable_task(context.durable, task_id=RUN_ID)
-        effects = RuntimeEffectStore(context.runtime_mutations.session_log, durable=context.durable).load_effects(SESSION_ID, RUN_ID)
+        effects = context.runtime_effects.load_effects(SESSION_ID, RUN_ID)
         original = json.loads((directory / "interruption.json").read_text(encoding="utf-8")) if stage == "resume" else {}
         recovered = next((effect for effect in effects if effect.intent.effect_id == original.get("effect_id")), None)
         batches = context.tool_result_delivery.load_batches(SESSION_ID, RUN_ID)

@@ -1,7 +1,8 @@
-export type Icon = 'copy' | 'reload';
+export type Icon = 'copy' | 'reload' | 'close';
 const paths: Record<Icon, string> = {
   copy: '',
   reload: 'M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7l-3-3',
+  close: 'm6 6 12 12M18 6 6 18',
 };
 
 export function createIconSvg(icon: Icon, className = ''): SVGSVGElement {
@@ -15,6 +16,7 @@ export function createIconSvg(icon: Icon, className = ''): SVGSVGElement {
   svg.setAttribute('stroke-linecap', 'round');
   svg.setAttribute('stroke-linejoin', 'round');
   svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
   if (className) svg.classList.add(className);
   if (icon === 'copy') {
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');

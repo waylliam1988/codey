@@ -24,6 +24,12 @@ def _inbox(td: str) -> GhostInboxStore:
     return GhostInboxStore(Path(td))
 
 
+def _corrupt_settings(store: GhostInboxStore) -> None:
+    store.records.set_setting(
+        "learning", {"schema_version": 1, "learning_enabled": "false"},
+    )
+
+
 class LearningSwitchFailClosedTests(unittest.TestCase):
     def test_missing_file_defaults_enabled(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -34,7 +40,7 @@ class LearningSwitchFailClosedTests(unittest.TestCase):
             store = _inbox(td)
             self.assertTrue(store.set_learning_enabled(False))
             self.assertFalse(store.learning_enabled())
-            store.settings_path.write_text("{broken", encoding="utf-8")
+            _corrupt_settings(store)
             # Fail-closed: must NOT silently return True.
             try:
                 value = store.learning_enabled()
@@ -45,28 +51,26 @@ class LearningSwitchFailClosedTests(unittest.TestCase):
                 "corrupt settings must not read as learning_enabled=True",
             )
 
-    def test_corrupt_settings_keeps_file_for_repair(self) -> None:
+    def test_corrupt_settings_keeps_row_for_repair(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = _inbox(td)
             store.set_learning_enabled(False)
-            store.settings_path.write_text("{broken", encoding="utf-8")
+            _corrupt_settings(store)
+            corrupt = store.records.setting("learning", None)
             with contextlib.suppress(Exception):
                 store.learning_enabled()
-            # The corrupt file must stay in place so the user can inspect
+            # The corrupt row must stay in place so the user can inspect
             # it; silently quarantining + returning enabled hides the error.
-            self.assertTrue(
-                store.settings_path.exists(),
-                "corrupt settings file must not vanish silently",
+            self.assertEqual(
+                store.records.setting("learning", None),
+                corrupt,
+                "corrupt settings row must not vanish silently",
             )
 
     def test_string_false_is_not_enabled(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = _inbox(td)
-            store.directory.mkdir(parents=True, exist_ok=True)
-            store.settings_path.write_text(
-                '{"schema_version": 1, "learning_enabled": "false"}',
-                encoding="utf-8",
-            )
+            _corrupt_settings(store)
             try:
                 value = store.learning_enabled()
             except Exception:
@@ -124,7 +128,7 @@ class LearningSwitchFailClosedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = _inbox(td)
             store.set_learning_enabled(False)
-            store.settings_path.write_text("{broken", encoding="utf-8")
+            _corrupt_settings(store)
             with contextlib.suppress(Exception):
                 store.learning_enabled()
             self.assertTrue(store.set_learning_enabled(True))
@@ -146,7 +150,7 @@ class LearningSwitchFailClosedTests(unittest.TestCase):
                 user_text="hi", assistant_text="hello",
                 stop_reason="done", provider_id="local",
             )
-            inbox.settings_path.write_text("{broken", encoding="utf-8")
+            _corrupt_settings(inbox)
 
             state = SimpleNamespace(
                 ghost_inbox=inbox,

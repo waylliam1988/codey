@@ -30,7 +30,10 @@ def test_observed_403_never_replays_or_changes_readonly_authority(tmp_path, monk
     assert result.stop_reason == "provider_failure" and not result.completed
     assert "403" in result.summary and "FreeTierError" in result.summary
     assert len(requests) == 1
-    assert {tool["name"] for tool in requests[0]["tools"]} == {"done", "ask_user", "references", "search", "ls", "read", "shell", "read_tool_result"}
+    assert {tool["name"] for tool in requests[0]["tools"]} == {
+        "done", "ask_user", "references", "search", "ls", "read", "shell",
+        "read_tool_result", "codemode",
+    }
     shell = next(t for t in requests[0]["tools"] if t["name"] == "shell")
     assert "unavailable" in shell["description"].lower()
     assert session.policy == policy

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from collections.abc import Mapping
 from contextlib import closing
@@ -58,15 +57,18 @@ from codey.durable.timeline import (
 class SQLiteDurableStore:
     """SQLite implementation of the durable append contract."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, *, synchronous: str = "FULL") -> None:
+        if synchronous not in {"FULL", "NORMAL"}:
+            raise ValueError("synchronous must be 'FULL' or 'NORMAL'")
         self.path = Path(path)
+        self._synchronous = synchronous
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._database_id = initialize_database(self._connect)
 
     def _connect(self) -> sqlite3.Connection:
         database = sqlite3.connect(self.path, isolation_level=None, timeout=30)
         database.row_factory = sqlite3.Row
-        database.execute("PRAGMA synchronous=FULL")
+        database.execute(f"PRAGMA synchronous={self._synchronous}")
         database.execute("PRAGMA foreign_keys=ON")
         return database
 
@@ -461,11 +463,9 @@ class SQLiteDurableStore:
                     )
                 else:
                     old_pid = int(row["process_id"])
-                    try:
-                        os.kill(old_pid, 0)
-                        alive = True
-                    except OSError:
-                        alive = False
+                    from codey.durable.process import process_is_alive
+
+                    alive = process_is_alive(old_pid)
                     if alive:
                         raise SchedulerOwnershipError(
                             "another live scheduler owns this durable database"

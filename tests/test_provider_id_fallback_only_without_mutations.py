@@ -32,17 +32,11 @@ class ProviderIdFallbackOnlyWithoutMutationsTests(unittest.TestCase):
     def test_empty_provider_id_with_mutations_raises(self) -> None:
         from codey.agents.request import AgentRequest
         from codey.operations.project_adapter import run as project_run
-        from codey.runtime.log.session_log import RuntimeSessionLog
-        from codey.runtime.write.mutation_line import RuntimeMutationLine
+        from tests.durable_runtime import accept_writer, open_runtime
 
         with tempfile.TemporaryDirectory() as td:
-            log = RuntimeSessionLog(Path(td) / "state")
-            line = RuntimeMutationLine(log)
-            line.accept_operation(
-                session_id="s1", run_id="r1", project=str(td),
-                provider_id="mock_provider", turn_budget=5, max_repair_rounds=1, task_kind="project",
-            )
-            line.mark_writer_running("s1", "r1", provider_id="mock_provider")
+            durable, line = open_runtime(Path(td) / "state", session_id="s1", run_id="r1", provider_id="mock_provider")
+            accept_writer(durable, line, session_id="s1", run_id="r1", project=str(td), provider_id="mock_provider")
             with self.assertRaises(Exception) as cm:
                 project_run(
                     AgentRequest(
@@ -53,6 +47,7 @@ class ProviderIdFallbackOnlyWithoutMutationsTests(unittest.TestCase):
                         session_id="s1",
                         run_id="r1",
                         runtime_mutations=line,
+                        durable=durable,
                     )
                 )
             self.assertIn("provider_id", str(cm.exception))

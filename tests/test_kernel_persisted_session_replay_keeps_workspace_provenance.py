@@ -54,7 +54,7 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
     durable.start_task(run_id, state={"task_kind": "project"})
     durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={"task_kind": "project"})
     durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={"task_kind": "project"})
-    mutations = RuntimeMutationLine(log, durable=durable)
+    mutations = RuntimeMutationLine(durable=durable)
     managed = ManagedOutputStore(state)
     rev_store = WorkspaceRevisionStore(state)
     mutations.accept_operation(
@@ -69,8 +69,8 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
     deps = SimpleNamespace(
         state=SimpleNamespace(durable=durable),
         runtime_mutations=mutations,
-        runtime_effects=RuntimeEffectStore(log, durable=durable),
-        tool_result_delivery=ToolResultDeliveryStore(log, durable=durable),
+        runtime_effects=RuntimeEffectStore(durable=durable),
+        tool_result_delivery=ToolResultDeliveryStore(durable=durable),
         managed_outputs=managed,
         workspace_revisions=rev_store,
     )
@@ -91,19 +91,17 @@ def _recover_formal(project, state, logdir, session_id, run_id):
     from codey.operations.recovery import recover_effects_for_resume
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.workspace.revision import WorkspaceRevisionStore
 
-    log = RuntimeSessionLog(logdir)
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
-    mutations = RuntimeMutationLine(log, durable=durable)
+    mutations = RuntimeMutationLine(durable=durable)
     deps = SimpleNamespace(
         state=SimpleNamespace(durable=durable),
         runtime_mutations=mutations,
-        runtime_effects=RuntimeEffectStore(log, durable=durable),
-        tool_result_delivery=ToolResultDeliveryStore(log, durable=durable),
+        runtime_effects=RuntimeEffectStore(durable=durable),
+        tool_result_delivery=ToolResultDeliveryStore(durable=durable),
         managed_outputs=ManagedOutputStore(state),
         workspace_revisions=WorkspaceRevisionStore(state),
     )

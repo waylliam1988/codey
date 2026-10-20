@@ -110,13 +110,19 @@ class DurableTaskScheduler:
             return self._abort_invocations.get(task_id)
 
     def abort_task(self, task_id: str, *, reason: str = "cancelled") -> CommitResult:
-        """Durably mark cancellation, then signal the active dispatch invocation."""
+        """Durably mark cancellation, then run the host abort barrier.
+
+        A task can be executing in a host-owned worker after the scheduler's
+        short dispatch invocation has returned.  The durable cancellation
+        still needs to reach that worker's physical resources, so the abort
+        handler also runs when no scheduler invocation is present.
+        """
         result = self._session.request_cancel(task_id, reason=reason)
         with self._lock:
             invocation = self._invocations.get(task_id)
+        handler = self._abort_handler
         if invocation is not None:
             invocation.signal.set()
-            handler = self._abort_handler
             if handler is not None:
                 with self._lock:
                     existing = self._abort_invocations.get(task_id)
@@ -141,6 +147,22 @@ class DurableTaskScheduler:
                 abort_invocation.done.wait()
                 if abort_invocation.error is not None:
                     raise abort_invocation.error
+        elif handler is not None:
+            try:
+                checkpoint = self._session.task(task_id)
+            except KeyError:
+                checkpoint = None
+            if checkpoint is not None:
+                # Host workers may outlive the scheduler dispatch call.  Use
+                # the durable attempt token to keep the abort callback's
+                # identity explicit even without a volatile invocation.
+                abort_invocation = AbortInvocation(
+                    task_id=task_id,
+                    attempt_token=checkpoint.attempt_token,
+                    signal=threading.Event(),
+                    done=threading.Event(),
+                )
+                handler(checkpoint, abort_invocation)
         return result
 
     def _run_abort_handler(
@@ -243,12 +265,13 @@ class DurableTaskScheduler:
             self._scheduled.add(task_id)
 
     def close(self, timeout: float = 5.0) -> bool:
-        self._enabled = False
-        self._closed.set()
-        self._wake.set()
         with self._lock:
+            self._enabled = False
+            self._closed.set()
             invocations = tuple(self._invocations.values())
             abort_invocations = tuple(self._abort_invocations.values())
+            thread = self._thread
+        self._wake.set()
         for invocation in invocations:
             # Closing the scheduler is a lifecycle boundary, not a durable
             # cancellation request. Signal workers so cooperative dispatches
@@ -256,7 +279,6 @@ class DurableTaskScheduler:
             invocation.signal.set()
         for abort_invocation in abort_invocations:
             abort_invocation.signal.set()
-        thread = self._thread
         if thread is not None:
             thread.join(max(0.0, float(timeout)))
         closed = thread is None or not thread.is_alive()
@@ -282,11 +304,16 @@ class DurableTaskScheduler:
                     return
                 self._reconcile()
                 with self._lock:
-                    if not self._pending:
+                    if not self._pending and not self._reconcile_requested:
+                        # Retire under the same lock used to start a worker.
+                        # A later notification must see the vacant slot even
+                        # while this thread is still unwinding its finally.
+                        self._thread = None
                         return
         finally:
             with self._lock:
-                self._thread = None
+                if self._thread is threading.current_thread():
+                    self._thread = None
 
     def _ensure_thread(self) -> None:
         with self._lock:
@@ -294,10 +321,15 @@ class DurableTaskScheduler:
                 return
             if not self._enabled or (not self._pending and not self._reconcile_requested) or self._closed.is_set():
                 return
-            self._closed.clear()
             thread = threading.Thread(target=self._run, name="codey-durable-scheduler", daemon=True)
             self._thread = thread
-        thread.start()
+            # Publish and start atomically: another notifier or close() must
+            # never observe an unstarted thread as a free slot or join it.
+            try:
+                thread.start()
+            except BaseException:
+                self._thread = None
+                raise
 
     def _reconcile(self) -> None:
         with self._lock:

@@ -299,6 +299,11 @@ class ProvidersAppSweepTests(unittest.TestCase):
                          "execute still does (command or '').strip() without type guard")
 
 
+class _ExplodingInteger:
+    def __int__(self):
+        raise AssertionError("transition must inspect the raw type, not convert it")
+
+
 class GhostKnowledgeSweepTests(unittest.TestCase):
     def test_work_queue_int_bool(self):
         from codey.ghost.work_queue import _int
@@ -308,16 +313,13 @@ class GhostKnowledgeSweepTests(unittest.TestCase):
         from codey.ghost import work_queue_events as wq_events
         from tests.test_work_queue_events_owns_replay import _item
 
-        class ExplodingInteger:
-            def __int__(self):
-                raise AssertionError("transition must inspect the raw type, not convert it")
-
         item = _item(status="blocked")
         before = item.to_payload()
-        for value in (float("inf"), float("nan"), True, False, "0", 0.0, -1, 1, ExplodingInteger()):
-            with self.subTest(value=value):
-                self.assertIsNone(wq_events._apply_queue_transition(item, {"retry_count": value}, now="now"))
-                self.assertEqual(item.to_payload(), before)
+        for value in (float("inf"), float("nan"), True, False, "0", 0.0, -1, 1, _ExplodingInteger()):
+            # Keep the adversarial object out of unittest.subTest metadata:
+            # pytest-xdist must pickle subtest parameters between workers.
+            self.assertIsNone(wq_events._apply_queue_transition(item, {"retry_count": value}, now="now"))
+            self.assertEqual(item.to_payload(), before)
         queued = wq_events._apply_queue_transition(item, {"retry_count": 0}, now="now")
         self.assertIsNotNone(queued)
         self.assertEqual(queued.status, "queued")

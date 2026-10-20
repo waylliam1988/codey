@@ -23,7 +23,12 @@ def with_effect_intents(current: TaskCheckpoint, effects: tuple[EffectRecord, ..
     }:
         phase = "assistant_intent_committed"
     elif categories in ({"tool_call"}, {"shell"}) and current.phase in {
-        "assistant_response_pending", "tool_intent_committed", "tool_effect_running",
+        # A provider generation may be settled at the post-tools boundary.
+        # Its response can therefore admit tool effects while the provider
+        # send receipt is still pending.  The task checkpoint owns both
+        # intents until that boundary transaction closes the generation.
+        "assistant_intent_committed", "assistant_response_pending",
+        "tool_intent_committed", "tool_effect_running",
     }:
         phase = "tool_effect_running"
     elif len(categories) != 1:
@@ -42,16 +47,47 @@ def with_effect_settlement(current: TaskCheckpoint, effect: EffectRecord) -> Tas
         raise TypeError("task checkpoint state must be a JSON object")
     pending = [item for item in state.get("pending_effect_ids", []) if item != effect.effect_id]
     phase = current.phase
-    if effect.category == "provider_send" and phase == "assistant_intent_committed":
+    next_state = dict(state)
+    if effect.category == "provider_send" and phase in {
+        "assistant_intent_committed", "tool_effect_running",
+    }:
         sent_state = effect.settlement.get("sent_state")
-        if effect.status == "interrupted" or sent_state == "maybe_sent":
-            phase = "assistant_response_unknown"
+        if phase == "tool_effect_running" and pending:
+            # Provider settlement may be committed at the post-tools
+            # boundary while one or more tool effects from that generation
+            # are still running. Keep the tool lifecycle phase until those
+            # effects settle; jumping to an assistant phase is an illegal
+            # transition and loses the remaining effect fence.
+            next_state["provider_settlement_state"] = (
+                "maybe_sent" if effect.status == "interrupted" or sent_state == "maybe_sent"
+                else "not_sent" if sent_state == "not_sent" else "settled"
+            )
+            phase = "tool_effect_running"
+        elif effect.status == "interrupted" or sent_state == "maybe_sent":
+            # If tool effects from the same generation are still pending, the
+            # checkpoint must keep their execution phase so their settlements
+            # can commit. Once those effects are drained, retain the unknown
+            # provider outcome in the explicit effect_unknown phase; jumping
+            # to assistant_response_unknown would violate the tool lifecycle.
+            if phase == "tool_effect_running":
+                phase = "tool_effect_running" if any(pending) else "effect_unknown"
+            else:
+                phase = "assistant_response_unknown"
         elif sent_state == "not_sent":
             phase = "provider_prepared"
+        elif phase == "tool_effect_running":
+            # The tool receipt may be folded into the same transaction before
+            # its deferred provider settlement. Once no tool fence remains,
+            # the settled generation is ready for the next provider request.
+            phase = "tool_outcome_ready"
         else:
             phase = "assistant_response_pending"
     elif effect.category in {"tool_call", "shell"} and phase == "tool_effect_running":
-        phase = "tool_effect_running" if pending else "tool_outcome_ready"
+        if pending:
+            phase = "tool_effect_running"
+        else:
+            provider_state = next_state.pop("provider_settlement_state", "settled")
+            phase = "effect_unknown" if provider_state == "maybe_sent" else "tool_outcome_ready"
     return replace(current, phase=phase, revision=current.revision + 1,
-                   state={**state, "pending_effect_ids": pending},
+                   state={**next_state, "pending_effect_ids": pending},
                    pending_effect_id=pending[-1] if pending else None)

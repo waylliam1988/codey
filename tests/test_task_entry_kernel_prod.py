@@ -456,13 +456,11 @@ class DispatchSwitchTests(unittest.TestCase):
         from codey.durable import DurableSession, MemoryDurableStore
         from codey.operations.recovery import policy_from_durable_task, record_entry_policy
         from codey.policies.task_policy import TaskPolicy
-        from codey.runtime.log.session_log import RuntimeSessionLog
         from codey.runtime.write.mutation_line import RuntimeMutationLine
 
-        with tempfile.TemporaryDirectory() as td:
-            log = RuntimeSessionLog(td)
-            mutations = RuntimeMutationLine(log)
+        with tempfile.TemporaryDirectory():
             durable = DurableSession(MemoryDurableStore())
+            mutations = RuntimeMutationLine(durable=durable)
             durable.admit_input(
                 conversation_id="s-policy",
                 request_id="r-policy",

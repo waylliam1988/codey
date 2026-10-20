@@ -158,7 +158,10 @@ def verify_shell_events(events: list[dict], source_run: str, case: str, original
         raise AssertionError(f"execution output mismatch: {result}")
     if not approved and (result.get("exit_code") is not None or SHELL_MARKER in result.get("output", "")):
         raise AssertionError("denied command was reported as executed")
-    finals = [row for row in terminals if row.get("stop_reason") == "done" and row.get("run_id") != source_run]
+    # Approval continuation resumes the original durable task checkpoint. It
+    # therefore keeps the source run identity while producing a second
+    # terminal event after the settled tool result.
+    finals = [row for row in terminals if row.get("stop_reason") == "done"]
     if len(finals) != 1 or events.index(result) >= events.index(finals[0]):
         raise AssertionError("missing or out-of-order continuation completion")
     return {"source_run_id": source_run, "continuation_run_id": finals[0]["run_id"],
@@ -198,10 +201,14 @@ def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict:
         deadline = time.monotonic() + target.request_timeout
         while time.monotonic() < deadline:
             snapshot = client.state()
-            final = snapshot.get("last_terminal_event") or {}
             approval = next((row for row in snapshot.get("shell_approvals", []) if row["id"] == approval_id), {})
             continuation_run = approval.get("continuation_run_id")
-            if (not snapshot.get("busy") and continuation_run and final.get("run_id") == continuation_run):
+            completed = any(
+                row.get("type") == "task_done" and row.get("run_id") == source_run
+                and row.get("stop_reason") == "done"
+                for row in events
+            )
+            if (not snapshot.get("busy") and continuation_run == source_run and completed):
                 break
             if approval.get("continuation") in {"failed", "cancelled"} or approval.get("execution") == "uncertain":
                 raise AssertionError(f"approval continuation failed: {approval}")

@@ -208,6 +208,43 @@ def machine_event_payload(event: object) -> dict[str, object] | None:
     return None
 
 
+def browser_event_payload(event: object) -> dict[str, object] | None:
+    """Keep bounded inspection content on the browser's live and replay stream."""
+    payload = machine_event_payload(event)
+    if payload is None or not isinstance(event, dict):
+        return payload
+    if event.get("type") not in {"tool", "tool_started"}:
+        return payload
+    payload["kind"] = clip_event_text(event.get("kind") or "", 80)
+    if event.get("type") == "tool_started":
+        return payload
+    detail = event.get("detail")
+    if isinstance(detail, str):
+        payload["detail"] = clip_event_text(detail, 64_000)
+        payload["detail_truncated"] = event.get("detail_truncated") is True or len(detail) > 64_000
+    preview = event.get("preview")
+    if isinstance(preview, dict):
+        bounded: dict[str, object] = {}
+        for key in ("additions", "deletions", "line_start", "line_end", "matches"):
+            value = preview.get(key)
+            if type(value) is int and 0 <= value <= 2**53 - 1:
+                bounded[key] = value
+        for key in ("diff_truncated", "diff_unavailable", "has_more"):
+            value = preview.get(key)
+            if type(value) is bool:
+                bounded[key] = value
+        query = preview.get("query")
+        if isinstance(query, str):
+            bounded["query"] = clip_event_text(query, 500)
+        diff = preview.get("diff")
+        if isinstance(diff, str):
+            bounded["diff"] = clip_event_text(diff, 64_000)
+            if len(diff) > 64_000:
+                bounded["diff_truncated"] = True
+        payload["preview"] = bounded
+    return payload
+
+
 def _int_or_zero(value: object) -> int:
     if isinstance(value, bool):
         return 0

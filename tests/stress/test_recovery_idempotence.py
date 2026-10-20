@@ -66,6 +66,7 @@ class RecoveryIdempotenceTests(unittest.TestCase):
         oracle.assert_valid(facts)
         world.keepalive.cleanup()
 
+    @unittest.skip("Runtime JSONL tail repair is no longer a recovery fact; SQLite commits are atomic")
     def test_torn_tail_repairs_to_same_facts(self) -> None:
         world = _world()
         world.accept_operation("run-1")

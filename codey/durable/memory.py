@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import threading
 import uuid
 from collections.abc import Mapping
@@ -560,11 +559,9 @@ class MemoryDurableStore:
             if current is None or current[0] == owner_id:
                 self._scheduler_owner = (owner_id, process_id)
                 return
-            try:
-                os.kill(current[1], 0)
-                alive = True
-            except OSError:
-                alive = False
+            from codey.durable.process import process_is_alive
+
+            alive = process_is_alive(current[1])
             if alive:
                 raise SchedulerOwnershipError("another live scheduler owns this durable store")
             self._scheduler_owner = (owner_id, process_id)

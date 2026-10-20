@@ -1,7 +1,35 @@
 # Codey UI Design Language
 
-This document is the design baseline for Codey’s control panel (`codey/web/index.html`).  
-All future UI work should extend this system — not introduce a second visual language.
+This document is the design baseline for Codey's workspace UI. Edit sources in
+`frontend/`; `codey/web` contains the published build.
+Keep one visual language across the application.
+
+The 2026-10-20 revision adopts deepseek-harness as the main interaction reference
+and Codex as an additional visual reference. Revised layout, branching, steering,
+icons and inspection rules describe the approved redesign target, not a claim
+that every target is already implemented. Track implementation and acceptance in
+`docs/uiux_completion_spec_2026-10-20.zh-CN.md`. Existing factual execution,
+authorization, recovery and accessibility requirements remain binding.
+
+Confirmed exceptions to reference matching: retain Codey's existing project/chat
+navigation and Settings content. The sidebar has no Codey / Local workspace
+brand heading; New chat, Add project and Search stay at the top, and Settings
+is the only bottom action. Do not add redesign settings categories or a second
+Add project entry. The composer keeps its original border when focused, without
+an extra textarea outline or glow; retain visible keyboard focus on action buttons.
+
+The entire existing navigation sidebar is outside this redesign's scope, including
+its layout, entries, icons and interactions. Render projects and chats from the
+user's actual state; do not seed extra demo projects, recent items, or comparison
+tasks into it. This applies to the whole sidebar, not just its footer.
+
+The quiet field focus rule applies to every input, textarea and select, including
+inline renaming, search, file navigation and connection forms. Focus adds no
+outline, outer ring, glow or second border; keep each field's resting border.
+
+Message actions sit outside the message surface, in a row below it. User bubble
+fill belongs only to the message body, never to its edit/copy row. Keep the body,
+gap and actions in one continuous hover region so reaching a button does not hide it.
 
 ---
 
@@ -12,7 +40,7 @@ Codey is a **local developer and research tool**, not a consumer chat app. The U
 - **Monochrome first** — black, gray, white. Hierarchy comes from typography and spacing, not color blocks.
 - **Quiet by default** — idle states show almost nothing. Activity is signaled with motion (spinner) or text, not banners.
 - **No decoration** — no emoji, no gradients for status, no “chat bubble” aesthetics, no brand-blue/purple accents.
-- **One restrained green family** — the provider availability dot, transient Research graph hover, native text selection, conversation navigation, and added diff lines share a muted green palette. Use role-specific brightness and opacity, not unrelated teal and gray-green accents. Other resting chrome stays monochrome.
+- **One restrained green family** — the provider availability dot, Research graph nodes and highlighted edges, native text selection, conversation navigation, and added diff lines share a muted green palette. Use role-specific brightness and opacity, not unrelated teal and gray-green accents. Other resting chrome stays monochrome.
 - **English in the UI** — labels, buttons, placeholders, and system messages use English (`New chat`, `You`, `Codey`, `Allow`, …).
   User messages, model answers, and returned thinking text retain their original language; the English rule applies to fixed application copy.
 
@@ -68,7 +96,7 @@ existing muted/faint roles. Do not globally brighten the palette.
 | `--green` | `rgb(var(--green-rgb))` (`#78a58b`) | Base green; use semantic aliases in components |
 | `--green-bright` | `#acd1b9` | Brighter green for a navigation preview tick and diff `+` marks |
 | `--green-selection` | `#3b5547` | Dark green for readable selected text |
-| `--ok-dot` | `var(--green)` | **Provider online dot**, plus the Research graph hover accent below |
+| `--ok-dot` | `var(--green)` | **Provider online dot**, Research graph nodes and hovered connections |
 | `--ok-dot-ring` | `rgba(var(--green-rgb), .14)` | Optional soft ring around the online dot |
 | `--err-text`| `#d28a8a` | Error **text only**; diff deletion backgrounds and borders use separate tokens below |
 
@@ -123,10 +151,11 @@ metadata lines to keep code and line numbers aligned. File-list stats stay gray.
 Do not reuse these diff tints elsewhere. Background tint for scanning belongs
 only in diff; native text selection uses its separate interaction token above.
 
-Inside the **Research graph canvas** (the Graph tab), the hovered
-node and its directly connected edges may use `--ok-dot` as a transient hover
-accent. The resting (non-hover) graph stays gray/white; no other component may
-use `--ok-dot` for hover states.
+Inside the **Research graph canvas** (the Graph tab), all resting nodes use the
+original `--ok-dot` green (`#78a58b`), as explicitly confirmed by the user.
+Connections rest in gray; hovering a node also highlights its directly connected
+edges in that green. Do not render the nodes white or gray at rest. No other
+component may use this graph hover exception for accent styling.
 
 ### Forbidden
 
@@ -174,21 +203,25 @@ text-rendering: optimizeLegibility;
 ## 4. Layout
 
 ```
-┌──────────────┬──────────────────────────────────────┐
-│   Sidebar    │  Topbar (title · status · ⋯)         │
-│   260px      ├──────────────────────────────────────┤
-│              │  Chat stream (max-width 760px)       │
-│              ├──────────────────────────────────────┤
-│              │  Composer (max-width 760px)          │
-└──────────────┴──────────────────────────────────────┘
-                                    │ Changes drawer │
-                                    │ (fixed right)  │
+Sidebar         Conversation                    Right workspace
+                Title / status                  Tabs / panel actions
+                Messages and process            File / diff / review
+                Composer                        Research evidence
 ```
 
-- Main + chat + composer content: **max-width 760px**, centered.
+- Conversation prose and composer share a centered reading-width token, initially
+  760px. This is a default, not a universal hard limit: adapt to the available
+  conversation column and keep reasonable padding when the right workspace opens.
+  Code, tables, diff and inspection surfaces may use the available panel width.
+- The right workspace owns file, diff, Research evidence and review tabs. It
+  pushes the conversation on wide windows, supports resizing and fullscreen,
+  and uses an explicit overlay/fullscreen presentation when space is insufficient.
+  Each session owns its selected tabs, width and reading positions. Do not retain
+  separate competing fixed drawers for these features in the redesigned layout.
 - Sidebar: **260px by default**, adjustable from **220–420px** and collapsible to 0. Remember the preferred width in the local browser profile. On desktop, clamp the displayed width to leave at least 400px for the main area; shrinking the window does not overwrite the preference. No overlay on desktop unless viewport ≤ 720px; the narrow overlay uses the default width and disables resizing.
 - Borders: 1px `--border`. Prefer spacing over heavy frames.
-- Border radius: **6–10px** for controls; **8px** for cards/menus. Avoid large “pill” radii except where already established (provider menu items).
+- Use shared radius tokens for controls, menus and cards. Match the designated
+  component reference consistently; do not hard-code different radii in each feature.
 
 ---
 
@@ -267,7 +300,9 @@ restore surfaces. Do not add a computer-assistant mode or a second process UI.
 Tool activity comes from execution events. Ordinary answers need no empty tool
 block or extra model classification request.
 
-Do **not** use chat bubbles, alignment by role, or role-colored backgrounds.
+Keep assistant prose in the reading flow and tool activity compact. User message
+surfaces and alignment may follow the designated conversation reference; use
+neutral surfaces and one consistent role hierarchy across the conversation.
 
 ```
 YOU
@@ -280,7 +315,8 @@ Assistant reply in sans, --text.
   · write   snake.py              → 277 chars
 ```
 
-**Role label:** `YOU` / `CODEY` above each block.
+**Role labels:** use `You` / `Codey` where needed to identify the author. Contiguous
+process and answer content does not require a repeated uppercase label per fragment.
 
 **Process disclosure:** one group per user request; continuation after approval uses the same group. Ordinary tools and optional thinking belong inside it. The final answer stays outside and expanded; errors and approval cards remain visible outside the disclosure.
 
@@ -395,7 +431,9 @@ At rest, only the current reading position uses `--nav-current`. Pointer
 hover or keyboard focus selects one tick with `--nav-highlight`, suppresses
 the base green marker, and stretches nearby gray ticks into a gentle wave.
 After 220ms, show the question and a plain-text reply excerpt in a dark gray
-tooltip, kept inside the available reading area. Hover never scrolls; click,
+tooltip, kept inside the available reading area. Do not add a visible numbered
+`Question N` label above the excerpt; accessible tick names may retain position.
+Hover never scrolls; click,
 Enter, or Space jumps to the user question without sending or changing drafts,
 carets, native text selections, or disclosure state. Scrolling dismisses the
 preview. ArrowUp/ArrowDown and Home/End browse questions through a single Tab
@@ -452,6 +490,31 @@ No marketing copy, no emoji.
 
 ### 5.6 Composer
 
+2026-10-20 user preference: retain Codey's existing composer appearance,
+including the project/Research context row above the quiet input box, the
+borderless model picker, its green availability dot and muted ring, and the
+unfilled send/stop controls. Add steering, queue and context actions within that
+language. The redesign does not replace this composer with a generic chat pill
+or remove the connection dot. The dot continues to indicate actual availability.
+Do not add a permanent attachment plus button. Images enter through clipboard
+paste and files through drag and drop; show removable attachments only after
+they are added. Preserve the existing send SVG path
+M3 11 21 3l-7 18-3-8-8-2Z rather than substituting a different send icon.
+The context label is the selected project/folder name, not a fixed Codey brand
+label. With no selected project show Choose folder; with a selected project
+show its real name and expose the full path. Research is the existing explicit
+research toggle, not a second project or model selector.
+
+**Empty home (2026-10-20 target):** keep the conversation area blank: no welcome
+heading, introductory sentence, starter icon, or suggested action buttons. Place
+the original composer slightly below the middle of the available chat area.
+On the first actual send, move that same composer smoothly to its normal bottom
+position (about 360ms), retaining input focus and the submitted message. Respect
+reduced motion by changing position without travel. New chat returns to the blank
+layout. Do not insert fixture messages into a newly started conversation. This
+behavior is implemented in the saved interaction prototype; production integration
+remains part of the UI completion work.
+
 ```
 Choose folder · Research                     ← enabled context actions (11.5px, --text-dim)
 ┌─────────────────────────────────────────┐
@@ -482,7 +545,10 @@ Provider is **session-level** — it lives in the bottom provider picker, not du
 
 Research is also **session-level**. It lives in the composer context row, never beside the model picker as a separate primary action. User-facing copy says `Research`; internal words like vault, knowledge, artifact, and index should not appear in the main chrome.
 
-### 5.7 Changes drawer
+### 5.7 Changes inspection
+
+Redesign target: use a Changes tab in the shared right workspace. Preserve the
+existing factual diff and restore behavior below while replacing drawer-specific chrome.
 
 - Fixed right panel, `--bg-2`, slides in from the right.
 - Header actions: text buttons, no borders (`drawer-btn`).
@@ -492,9 +558,18 @@ Research is also **session-level**. It lives in the composer context row, never 
 - Failed refresh retains the displayed results with `Could not update · Showing previous changes · Retry`. Network, HTTP, business and JSON errors never become No changes. Previous results remain copyable, but Restore stays disabled until a successful refresh. Switching projects clears old content and copy data. Restore retains backend locking/hash checks; a successful restore followed by failed refresh reports both facts, while an unknown restore outcome says `Could not confirm restore`.
 - Diff lines: use the §2 diff background, signed-mark and edge tokens; keep code text light and context lines neutral.
 
-### 5.8 Research drawer
+### 5.8 Research inspection
+
+Redesign target: use the shared right workspace for evidence and report navigation.
+Research remains an explicit user action; existing evidence and handoff rules apply.
 
 - Same fixed right panel language as the changes drawer.
+- Retain the existing Evidence / Sources / Graph / Notes tabs. Do not replace
+  Research with only a brief and a source list. Graph retains Codey's existing
+  Canvas renderer and node/edge semantics, Depth 1/2/3, Reset, node dragging,
+  panning, wheel zoom, selection details and Notes/source navigation. Keep its
+  resting green nodes, gray connections and green hover associations; the project/chat sidebar
+  is not redesigned to accommodate the graph.
 - Identify the bound chat; switching chats closes the drawer, and late note responses do not render into a different chat's drawer.
 - Header actions are text buttons, no borders.
 - Notes and sources are plain rows with title, type, bounded Markdown preview, source chips, and path or URL when useful.
@@ -514,9 +589,26 @@ Research is also **session-level**. It lives in the composer context row, never 
 
 ### 5.10 Icons
 
-- SVG stroke icons, ~1.8px stroke, `currentColor`, no fill (except send/stop glyphs where needed).
+- Use one local icon registry and semantic icon names. New components consume
+  shared SVGs; consolidate inline paths, CSS masks and text glyph substitutes
+  when touching their controls. Assets ship inside Codey, never from another
+  application's installation or a runtime CDN.
+- Use a 24×24 viewBox, rounded caps/joins, and a shared 1.5-unit stroke as the
+  current baseline. Render at 16px by default; 14px secondary and 20px prominent
+  icons use explicit shared size roles. Adjust the family together if reference
+  comparison requires a different weight, never individual paths ad hoc.
+- Stroke uses `currentColor`, without fill except semantic send/stop or other
+  explicitly registered filled glyphs. Close uses SVG rather than text `×`;
+  functional tree/disclosure arrows use the shared chevron.
 - Monochrome only — icons inherit `--text-dim` → `--text` on hover.
 - No emoji, no colored icon sets.
+- The button owns its accessible name; decorative SVGs are aria-hidden and
+  non-focusable. A small glyph does not shrink the hit target: use at least a
+  28px desktop target and a 44px touch target where touch interaction is offered.
+  Keep keyboard-visible focus and show secondary actions on non-hover devices.
+- Copy/check/error, running/stopped and expanded/collapsed transitions keep a
+  stable box. Critical actions remain discoverable; quiet styling is not a reason
+  to hide focus, errors or the only route to an operation.
 
 ### 5.11 Settings
 
@@ -580,15 +672,15 @@ README and docs for end users may stay in Chinese; **the web UI stays English** 
 
 Before shipping any UI change, verify:
 
-1. **Colors:** Green roles share the §2 palette through semantic aliases: `--ok-dot` for provider dots and Research graph hover, `--selection-bg` for native selected text, mutually exclusive `--nav-current`/`--nav-highlight` for navigation, and `--diff-add-*` inside diff only. Deletions use `--diff-del-*`; error strings use `--err-text`. All other chrome stays neutral. Are selected text and diff code/marks readable, and do signed diff marks and navigation width still communicate state without color?
+1. **Colors:** Green roles share the §2 palette through semantic aliases: `--ok-dot` for provider dots, resting Research graph nodes and hovered connections, `--selection-bg` for native selected text, mutually exclusive `--nav-current`/`--nav-highlight` for navigation, and `--diff-add-*` inside diff only. Deletions use `--diff-del-*`; error strings use `--err-text`. All other chrome stays neutral. Are selected text and diff code/marks readable, and do signed diff marks and navigation width still communicate state without color?
 2. **Hierarchy:** Can this be done with label size, weight, or spacing instead of a new color?
-3. **Chat area:** Still de-bubbled? No new bubble variants?
+3. **Chat area:** Does role hierarchy and message presentation match its designated reference?
 4. **Actions:** Secondary/destructive actions behind `⋯` or text links, not permanent colored buttons?
 5. **Status:** Spinner or text — not a new chip color?
 6. **Icons:** Stroke SVG, `currentColor`?
 7. **Copy:** English, no emoji?
 8. **Mono vs sans:** Code/paths in mono; prose in sans?
-9. **Max width:** Content still centered at 760px?
+9. **Width:** Does prose share the reading-width token, while inspection content remains usable at the available width?
 10. **Tokens:** New values added to `:root` — not scattered hex in rules?
 
 ---
@@ -598,7 +690,7 @@ Before shipping any UI change, verify:
 These existed in earlier iterations and were intentionally removed:
 
 - Blue/purple primary buttons (`Send`, provider accent, active session `#1f2840`)
-- User/assistant colored bubbles and right-aligned user messages
+- Uncoordinated message variants or decorative role-colored surfaces
 - Colored tool pills (`write` tag in accent blue)
 - Green/yellow done/shell/limit cards with gradients
 - `task-strip` status chips with per-state hues
@@ -614,7 +706,9 @@ These existed in earlier iterations and were intentionally removed:
 
 - **Frontend source and shipped assets:** edit TypeScript modules in `frontend/src`, the HTML skeleton in `frontend/index.html`, and CSS in `frontend/public/assets`. Vite builds the frontend; `python -m tools.publish_frontend` publishes the validated build to `codey/web`. Production modules share the internal runtime registry; browser tests explicitly opt into its test bridge. Do not edit generated bundles or add production globals.
 - **Do not fork the palette:** all color/spacing tokens stay in `frontend/public/assets/tokens.css`; components consume semantic aliases from that file. `app.css` owns component styles. Rebuild and publish after CSS changes so shipped assets and their freshness metadata match the source. `tests/test_ui_architecture.py` ratchets inline `<style>` to zero and only lets the inline `<script>` budget go down.
-- **Dark mode only:** there is no light theme. New surfaces should assume dark gray backgrounds and light text.
+- **Theme:** the current application implements dark mode. New surfaces use semantic
+  tokens rather than assuming hard-coded dark colors. System/light/dark selection
+  is a redesign feature requiring its own implementation and contrast acceptance.
 - **Accessibility:** interactive rows and disclosures use native buttons and gray focus-visible outlines. Hidden sidebar/drawers are inert. Menus return focus on Escape; drawer keyboard focus stays within the open inspection surface and returns to its trigger on close. Respect reduced-motion preferences. When adding color is unavoidable, pair with text labels (never color alone).
 - **Desktop text selection:** create the pywebview window with `text_select=True`; its default suppresses native page selection. Do not counter the host setting with global CSS overrides.
 - **Asset freshness:** versioned asset URLs include the current CSS/JS content revision, so source updates also invalidate existing desktop caches without requiring a package version bump.
@@ -633,7 +727,8 @@ These are compatible extensions — implement using the rules above:
 
 ## 12. Reference
 
-Canonical implementation: `codey/web/index.html`  
+Canonical editable implementation: `frontend/index.html`, `frontend/src`, and `frontend/public/assets`.
+Published implementation: `codey/web`.
 Product context: root `README.md`
 
 When this document and the code disagree, **update the code to match this document**, or amend this document in the same PR with a short rationale.
@@ -730,8 +825,10 @@ a typing animation. Interrupted text stays readable with a quiet partial-respons
 notice. Rendering failures offer `Render again` beside source/details and cannot
 execute a tool, regenerate a model response or erase the remaining conversation.
 
-**Pending input.** While work runs, Send queues the current draft for the next
-turn; Stop remains available. Before sending, persist the chat and a unique delivery
+**Pending input.** The existing Send path queues the current draft for the next
+turn. The redesign adds a separate steering action for the current task; acceptance
+and consumption must follow the backend's actual generation boundary. Keep queued,
+accepted and consumed states distinct and retain a session-scoped Stop. Before sending, persist the chat and a unique delivery
 identity. The server saves a version-1 SQLite receipt before admission and before
 dispatch; the browser retains only delivery identities awaiting confirmation.
 Queued inputs show `Queued · next turn`, `Return to draft` and `Remove`. Return to
@@ -756,9 +853,15 @@ commands still require their own approval. Updating another question must preser
 the focused form and composition state. Answered cards become a quiet answer row.
 
 **Editing and long histories.** Hover/focus on a user message reveals Copy and
-`Edit message`. Open the original request in place with `Cancel` and `Send`; keep
-the historical request unchanged and submit edited text as a new request. Never
-silently rewrite the historical request or rerun an executed command. Initially mount the
+`Edit message`. Keep the current Codey inline editor with `Cancel` and `Send`:
+Escape cancels and Ctrl/Cmd+Enter sends. Editing does not open a modal or require
+a branch name, and retains the composer's separate draft. Its current ordinary
+send semantics remain unchanged. Historical-context branching is a separate
+entry-aware backend contract, not an extra naming dialog on Edit. Copy, branch,
+regenerate and quote actions all follow the message-local hover/focus disclosure
+rule above, including pointer-exit hiding and non-hover availability.
+Conversation branching does not restore workspace files or authorize
+repeating an executed command. Initially mount the
 latest 100 saved messages, extending backward to a complete user-request boundary.
 `Load earlier messages` prepends another window while retaining existing nodes and
 the reading anchor; `Search this conversation` queries the server archive and can

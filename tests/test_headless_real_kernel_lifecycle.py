@@ -10,7 +10,6 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core.operation_state import RuntimeOperationStore
-from codey.runtime.log.session_log import RuntimeSessionLog
 
 pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
 
@@ -57,7 +56,7 @@ def test_explicit_planning_enters_running_before_durable_provider_send(tmp_path,
     assert any(row.get("tool_name") == "read_file" and row.get("ok") is True for row in rows)
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     try:
-        operation = RuntimeOperationStore(RuntimeSessionLog(state), durable=durable).load(
+        operation = RuntimeOperationStore(durable=durable).load(
             result.session_id, result.run_id
         )
         assert operation is not None
@@ -94,7 +93,7 @@ def test_headless_shell_denial_cancels_without_transition_error(tmp_path, monkey
     assert not (project / "unapproved").exists()
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     try:
-        operation = RuntimeOperationStore(RuntimeSessionLog(state), durable=durable).load(
+        operation = RuntimeOperationStore(durable=durable).load(
             result.session_id, result.run_id
         )
         assert operation is not None

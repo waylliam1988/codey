@@ -268,7 +268,7 @@ class ToolOutcomeTests(unittest.TestCase):
                 self.assertNotIn("full output retained locally", outcome.model_text)
 
     def test_tool_outcome_empties_invalid_managed_output_sha256(self) -> None:
-        for sha256 in ("abc\nINJECTED", object(), "z" * 64):
+        for sha256 in ("abc\nINJECTED", None, "z" * 64):
             with self.subTest(sha256=sha256):
                 outcome = tool_runtime.ToolOutcome(
                     "ok",

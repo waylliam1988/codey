@@ -21,6 +21,7 @@ from typing import Any
 
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.event_bus import EventBus
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.ghost.record_store import GhostRecords
 from codey.ghost.sqlite import GhostSQLite
 from codey.repairs.journal import RepairJournal
@@ -31,6 +32,7 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
     RuntimeEffectStore,
+    compute_args_digest,
 )
 from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
@@ -38,7 +40,6 @@ from codey.runtime.effects.tool_result_delivery import (
     ToolResultDeliveryStore,
     compute_batch_digest,
 )
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from tests.stress.faults import FaultController
 from tests.stress.model import DurableSnapshot
@@ -106,11 +107,19 @@ class StressWorld:
     # -- lifecycle -----------------------------------------------------
 
     def _open(self) -> None:
-        self.log = RuntimeSessionLog(self.state_home)
-        self.line = RuntimeMutationLine(self.log)
-        self.operations = RuntimeOperationStore(self.log)
-        self.effects = RuntimeEffectStore(self.log)
-        self.delivery = ToolResultDeliveryStore(self.log)
+        # This simulation validates process-restart recovery, not power-loss
+        # durability. Keep production's FULL sync default out of its stress
+        # throughput path while retaining SQLite transaction semantics.
+        self.durable = DurableSession(
+            SQLiteDurableStore(self.state_home / "durable.sqlite3", synchronous="NORMAL")
+        )
+        # Runtime stores are read/write adapters over the same durable
+        # checkpoint.  JSONL remains an optional audit projection and is not
+        # opened by the stress world.
+        self.line = RuntimeMutationLine(durable=self.durable)
+        self.operations = RuntimeOperationStore(durable=self.durable)
+        self.effects = RuntimeEffectStore(durable=self.durable)
+        self.delivery = ToolResultDeliveryStore(durable=self.durable)
         self.ghost = GhostRecords(GhostSQLite(self.state_home), "inbox")
         self.bus = EventBus(replay_limit=512)
         self.approvals = ApprovalRegistry()
@@ -119,6 +128,7 @@ class StressWorld:
 
     def restart(self) -> StressWorld:
         """Logical process kill: forget everything in memory, reopen disk state."""
+        self.durable.close()
         self._open()
         self.provider = FakeProvider(self.provider.mode)
         return self
@@ -141,6 +151,20 @@ class StressWorld:
     # -- operation envelope ----------------------------------------------
 
     def accept_operation(self, run_id: str, provider_id: str = "mock") -> None:
+        self.durable.admit_input(
+            conversation_id=self.session_id,
+            request_id=f"request-{run_id}",
+            task_id=run_id,
+            text="stress input",
+            provider_snapshot={"provider_id": provider_id, "model_id": "stress"},
+            task_state={"task_kind": "stress"},
+        )
+        self.durable.start_task(run_id, state={"task_kind": "stress"})
+        self.durable.advance_task(
+            task_id=run_id,
+            phase="assistant_response_pending",
+            state={"task_kind": "stress"},
+        )
         self.line.accept_operation(
             session_id=self.session_id,
             run_id=run_id,
@@ -165,6 +189,7 @@ class StressWorld:
             run_id=run_id,
             turn=turn,
             provider_id=provider_id,
+            args_digest=compute_args_digest({"provider_id": provider_id, "turn": turn}),
         )
 
     def begin_provider(
@@ -231,6 +256,8 @@ class StressWorld:
             tool_index=0,
             tool_name="read",
             replay_class="safe",
+            args_digest=compute_args_digest({"tool": "read", "ref": ref}),
+            display_ref=ref,
         )
 
     def begin_batch(
@@ -298,9 +325,20 @@ class StressWorld:
     VOLATILE_PAYLOAD_KEYS = frozenset({"created_at", "started_at", "updated_at"})
 
     def canonical(self) -> dict:
+        from codey.durable.checkpoint import checkpoint_entries
+
         rows = []
         batch_aliases: dict[str, str] = {}
-        for entry in self.log.read(self.session_id):
+        entries = []
+        for task in self.durable.tasks():
+            if task.conversation_id != self.session_id:
+                continue
+            try:
+                _task, effects = self.durable.task_facts(task.task_id)
+            except KeyError:
+                continue
+            entries.extend(checkpoint_entries(task, effects, session_id=self.session_id))
+        for entry in entries:
             batch_id = entry.batch_id
             if batch_id not in batch_aliases:
                 batch_aliases[batch_id] = f"<batch{len(batch_aliases)}>"

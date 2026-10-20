@@ -12,7 +12,6 @@ import pytest
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations.completion_gate import evaluate
 from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from tests.test_session_log_receipt_recovery_preserves_facts import (
@@ -39,7 +38,7 @@ def test_recovery_preserves_facts_and_never_reexecutes(tmp_path, exits, trace):
             durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
             try:
                 sink = KernelEffectSink(
-                    RuntimeMutationLine(RuntimeSessionLog(logdir), durable=durable),
+                    RuntimeMutationLine(durable=durable),
                     session_id="s", run_id="r", provider_id="web",
                     recovered_batch_id=recovery.recovered_tool_result_batch_id,
                     managed_outputs=ManagedOutputStore(state), durable=durable,
@@ -61,7 +60,7 @@ def test_recovery_preserves_facts_and_never_reexecutes(tmp_path, exits, trace):
                     result = recover_effects_for_resume(
                         SimpleNamespace(
                             state=SimpleNamespace(durable=durable),
-                            runtime_mutations=RuntimeMutationLine(RuntimeSessionLog(logdir), durable=durable),
+                            runtime_mutations=RuntimeMutationLine(durable=durable),
                             runtime_effects=None,
                             tool_result_delivery=None,
                         ),

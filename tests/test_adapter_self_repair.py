@@ -1146,19 +1146,22 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
 
             state = server.AppContext(Path(td) / "state")
             supervisor = SelfRepairSupervisor(td, runner=runner, clock=lambda: 100.0)
-            supervisor.maybe_enqueue(
-                "qwen",
-                _failure(FAILURE_RESPONSE_MISSING),
-                ProviderHealth(state=STATE_OPEN, last_failure_kind=FAILURE_RESPONSE_MISSING),
-            )
+            try:
+                supervisor.maybe_enqueue(
+                    "qwen",
+                    _failure(FAILURE_RESPONSE_MISSING),
+                    ProviderHealth(state=STATE_OPEN, last_failure_kind=FAILURE_RESPONSE_MISSING),
+                )
 
-            self.assertTrue(supervisor.kick_if_idle(state.is_busy))
-            self.assertTrue(ran.wait(2.0))
-            deadline = time.time() + 2.0
-            while supervisor._kick_running and time.time() < deadline:
-                time.sleep(0.01)
-            self.assertFalse(supervisor._kick_running)
-            self.assertEqual(supervisor.pending(), ())
+                self.assertTrue(supervisor.kick_if_idle(state.is_busy))
+                self.assertTrue(ran.wait(2.0))
+                deadline = time.time() + 2.0
+                while supervisor._kick_running and time.time() < deadline:
+                    time.sleep(0.01)
+                self.assertFalse(supervisor._kick_running)
+                self.assertEqual(supervisor.pending(), ())
+            finally:
+                state.close()
 
     def test_state_runs_self_repair_without_browser_worker(self) -> None:
         # kick_if_idle never touches the browser worker queue: the repair
@@ -1232,17 +1235,20 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(Path(td) / "state")
-            state.self_repair._kick_running = True
+            try:
+                state.self_repair._kick_running = True
 
-            reserved = state.reserve_run(
-                session_id="s",
-                project=td,
-                task="task",
-                provider_id="qwen",
-            )
+                reserved = state.reserve_run(
+                    session_id="s",
+                    project=td,
+                    task="task",
+                    provider_id="qwen",
+                )
 
-            self.assertIsNotNone(reserved)
-            self.assertEqual(reserved.provider_id, "qwen")
+                self.assertIsNotNone(reserved)
+                self.assertEqual(reserved.provider_id, "qwen")
+            finally:
+                state.close()
 
 
 class TargetIdSessionTests(unittest.TestCase):

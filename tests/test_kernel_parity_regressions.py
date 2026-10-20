@@ -302,6 +302,9 @@ def test_explicit_provider_normalizer_survives_production_wrappers(wrappers):
     sink = SimpleNamespace(send_index=0, run_id="r", session_id="s", phase="writer", provider_id="local",
                            delivery_batch_id="", mutations=mutations,
                                durable=None,
+                           pending_provider_settlement=lambda: None,
+                           clear_provider_settlement=lambda: None,
+                           defer_generation_settlement=False,
                            _record_durable_intent=lambda *_a, **_k: None,
                            _settle_durable=lambda *_a, **_k: None)
 

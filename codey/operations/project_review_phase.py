@@ -99,7 +99,7 @@ def _repair_writer(
             checkpoint=checkpoint,
         )
         result = replace(result, turns=previous_turns + result.turns)
-        if result.stop_reason not in {"approval", "stopped"}:
+        if result.stop_reason not in {"approval", "question", "stopped"}:
             commit_runtime_operation(
                 ctx, "mark_writer_settled",
                 lambda mutations, session_id, run_id: mutations.mark_writer_settled(

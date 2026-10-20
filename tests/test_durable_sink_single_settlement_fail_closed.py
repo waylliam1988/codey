@@ -18,22 +18,27 @@ from pathlib import Path
 
 class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
     def _sink(self, tmp: Path, session_id: str, run_id: str):
+        from codey.durable import DurableSession, MemoryDurableStore
         from codey.operations.task_effects import KernelEffectSink
         from codey.runtime.core.models import ToolCall
-        from codey.runtime.log.session_log import RuntimeSessionLog
         from codey.runtime.write.mutation_line import RuntimeMutationLine
 
-        log = RuntimeSessionLog(tmp / "state")
-        line = RuntimeMutationLine(log)
+        durable = DurableSession(MemoryDurableStore())
+        durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
+                            text="read", provider_snapshot={"provider_id": "local"})
+        durable.start_task(run_id, state={})
+        durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={})
+        durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={})
+        line = RuntimeMutationLine(durable=durable)
         line.accept_operation(
             session_id=session_id, run_id=run_id, project=str(tmp),
             provider_id="local", turn_budget=10, max_repair_rounds=1, task_kind="project",
         )
         line.mark_writer_running(session_id, run_id, provider_id="local")
-        sink = KernelEffectSink(line, session_id=session_id, run_id=run_id, provider_id="local")
+        sink = KernelEffectSink(line, session_id=session_id, run_id=run_id, provider_id="local", durable=durable)
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
         sink.begin_turn([(f"{run_id}:task#1#0", call, 0)], turn=1)
-        return sink, log
+        return sink, durable
 
     def test_second_settlement_with_different_status_raises(self) -> None:
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -41,7 +46,7 @@ class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            sink, _log = self._sink(tmp, "sess-durable-1", "run-durable-1")
+            sink, _durable = self._sink(tmp, "sess-durable-1", "run-durable-1")
             identity = "run-durable-1:task#1#0"
             result = ToolResult(ToolCall("read_file", {"path": "a.py"}, "c1"), "hello", ok=True)
             # First settlement ok=True commits.
@@ -54,27 +59,32 @@ class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
             self.assertIn("already settled", str(cm.exception))
 
     def test_execute_turn_with_durable_sink_settles_once(self) -> None:
+        from codey.durable import DurableSession, MemoryDurableStore
         from codey.operations.kernel_execution import execute_turn
         from codey.operations.task_effects import KernelEffectSink
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.runtime.effects.effect_records import RuntimeEffectStore
-        from codey.runtime.log.session_log import RuntimeSessionLog
         from codey.runtime.write.mutation_line import RuntimeMutationLine
 
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             (tmp / "a.py").write_text("hello\n", encoding="utf-8")
             session_id, run_id = "sess-durable-2", "run-durable-2"
-            log = RuntimeSessionLog(tmp / "state")
-            line = RuntimeMutationLine(log)
+            durable = DurableSession(MemoryDurableStore())
+            durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
+                                text="read", provider_snapshot={"provider_id": "local"})
+            durable.start_task(run_id, state={})
+            durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={})
+            durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={})
+            line = RuntimeMutationLine(durable=durable)
             line.accept_operation(
                 session_id=session_id, run_id=run_id, project=str(tmp),
                 provider_id="local", turn_budget=10, max_repair_rounds=1, task_kind="project",
             )
             line.mark_writer_running(session_id, run_id, provider_id="local")
-            sink = KernelEffectSink(line, session_id=session_id, run_id=run_id, provider_id="local")
+            sink = KernelEffectSink(line, session_id=session_id, run_id=run_id, provider_id="local", durable=durable)
             session = TaskSession(
                 policy=TaskPolicy(grants=frozenset({"project.read", "control"})),
                 task_kind="project", project=str(tmp), max_turns=2,
@@ -88,7 +98,7 @@ class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
             )
             self.assertEqual(len(results), 1)
             identity = turn_effect_id(f"{run_id}:task", 1, 0)
-            rows = RuntimeEffectStore(log).load_effects(session_id, run_id)
+            rows = RuntimeEffectStore(durable=durable).load_effects(session_id, run_id)
             settled = [r for r in rows if r.intent.effect_id == identity and r.settlement is not None]
             self.assertEqual(len(settled), 1)
 

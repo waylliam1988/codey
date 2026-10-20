@@ -36,7 +36,11 @@ def make_app_state(case: unittest.TestCase, *path_parts: str) -> AppContext:
     tmp = tempfile.TemporaryDirectory()
     case.addCleanup(tmp.cleanup)
     parts = path_parts or ("state",)
-    return AppContext(Path(tmp.name, *parts))
+    state = AppContext(Path(tmp.name, *parts))
+    # DurableAppServices owns a Windows lease file; release it before the
+    # temporary directory cleanup removes the database tree.
+    case.addCleanup(state.close)
+    return state
 
 
 __all__ = ["make_app_state"]

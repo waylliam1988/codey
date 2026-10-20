@@ -7,7 +7,6 @@ from codey.runtime.effects.effect_records import (
     prepare_intent,
 )
 from codey.runtime.effects.replay_policy import ReplayClass
-from codey.runtime.log.session_log import RuntimeSessionLog
 
 
 def test_production_effect_projection_reads_durable_record_without_jsonl(tmp_path: Path) -> None:
@@ -36,8 +35,7 @@ def test_production_effect_projection_reads_durable_record_without_jsonl(tmp_pat
             "effect-1", "task-1", "tool_call", "safe", "sha256:abc", "pending", intent.to_payload()
         ),
     )
-    runtime = RuntimeSessionLog(tmp_path / "runtime")
-    projections = RuntimeEffectStore(runtime, durable=durable).load_effects("conversation-1", "task-1")
+    projections = RuntimeEffectStore(durable=durable).load_effects("conversation-1", "task-1")
     assert len(projections) == 1
     assert projections[0].intent.effect_id == "effect-1"
     assert projections[0].is_pending

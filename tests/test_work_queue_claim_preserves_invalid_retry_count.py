@@ -44,7 +44,8 @@ def test_invalid_claim_counter_is_rejected_by_validation_and_replay(value):
         "ts": event["ts"],
         "item": item.to_payload(),
     }
-    assert items_from_events([observed, event]) == [item]
+    with pytest.raises(ValueError, match="invalid Ghost work event envelope"):
+        items_from_events([observed, event])
 
 
 def test_exact_integer_claim_still_replays():

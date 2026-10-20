@@ -16,7 +16,6 @@ from codey.durable import DurableSession, SQLiteDurableStore
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.core.run_result import RunResult
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.observe.events import MAX_EVENT_TEXT_CHARS, RunEvent
 from codey.toolchain.runtime import ToolOutcome
 
@@ -139,7 +138,7 @@ class HeadlessRunnerTests(unittest.TestCase):
             )
             durable = DurableSession(SQLiteDurableStore(state_home / "durable.sqlite3"))
             try:
-                operation = RuntimeOperationStore(RuntimeSessionLog(state_home), durable=durable).load(
+                operation = RuntimeOperationStore(durable=durable).load(
                     "session-op", result.run_id,
                 )
                 task = durable.task(result.run_id)

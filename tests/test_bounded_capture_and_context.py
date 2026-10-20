@@ -588,26 +588,28 @@ class LocalPrepareRequestTests(unittest.TestCase):
 
     def test_prep_failure_settles_not_sent_without_rollover(self) -> None:
         import tempfile
-        from pathlib import Path
 
+        from codey.durable import DurableSession, MemoryDurableStore
         from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
         from codey.providers import error_classification as errors
         from codey.runtime.effects.effect_records import SENT_STATE_NOT_SENT, RuntimeEffectStore
-        from codey.runtime.log.session_log import RuntimeSessionLog
         from codey.runtime.write.mutation_line import RuntimeMutationLine
 
         exc = errors.RequestPrepError("local context compaction failed: boom")
         # A prep failure is not a context overflow: no rollover retry.
         self.assertNotIsInstance(exc, errors.ContextOverflowError)
         with tempfile.TemporaryDirectory() as td:
-            log = RuntimeSessionLog(Path(td) / "state")
-            line = RuntimeMutationLine(log)
+            durable = DurableSession(MemoryDurableStore())
+            durable.admit_input(conversation_id="s", request_id="r", task_id="r", text="hello",
+                                provider_snapshot={"provider_id": "local"})
+            durable.start_task("r", state={})
+            line = RuntimeMutationLine(durable=durable)
             line.accept_operation(
                 session_id="s", run_id="r", project=str(td),
                 provider_id="local", turn_budget=5, max_repair_rounds=1, task_kind="project",
             )
             line.mark_writer_running("s", "r", provider_id="local")
-            sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local")
+            sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable)
 
             class BoomProvider:
                 def send(self, prompt, timeout=None):
@@ -616,7 +618,7 @@ class LocalPrepareRequestTests(unittest.TestCase):
             recorded = KernelRecordedProvider(BoomProvider(), sink)
             with self.assertRaises(errors.RequestPrepError):
                 recorded.send("hello")
-            store = RuntimeEffectStore(log)
+            store = RuntimeEffectStore(durable=durable)
             sends = [r for r in store.load_effects("s", "r") if r.intent.effect_category == "provider_send"]
             self.assertTrue(sends)
             self.assertEqual(sends[-1].settlement.sent_state, SENT_STATE_NOT_SENT)

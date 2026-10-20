@@ -259,6 +259,11 @@ def test_real_question_card_resumes_the_native_run_and_opens_read_details(tmp_pa
                 page.locator(".process-block").filter(has=detail).locator(".process-summary").click()
                 detail.locator("summary").click()
                 expect(detail.locator("pre")).to_contain_text("[project]")
+                project = Path(ctx.load_ui_state()["projects"][0]["path"])
+                expected_lines = (project / "pyproject.toml").read_text(encoding="utf-8").splitlines()[:2]
+                assert len(expected_lines) == 2
+                assert detail.locator("pre").text_content().splitlines()[:2] == expected_lines
+                expect(detail.locator(".tl-result")).to_contain_text("lines")
                 assert len(requests) == 3 and not peer_errors and not errors
                 capture(page, tmp_path, f"question-{protocol}.png")
             finally:

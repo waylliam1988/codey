@@ -4,7 +4,6 @@ from dataclasses import replace
 import pytest
 
 from codey.runtime.core import operation_state as states
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from tests.test_runtime_operation_state import _state
 
@@ -46,8 +45,11 @@ def test_admission_cannot_switch_provider():
 
 
 def test_admission_is_committed_through_existing_session_log(tmp_path):
-    log = RuntimeSessionLog(tmp_path)
-    line = RuntimeMutationLine(log)
+    from codey.durable import DurableSession, SQLiteDurableStore
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    durable.admit_input(conversation_id="s1", request_id="request-run-1", task_id="run-1", text="test",
+                        provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
+    line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id='s1', run_id='run-1', project='.', provider_id='deepseek',
                           turn_budget=5, max_repair_rounds=1, task_kind='project')
     line.mark_writer_running('s1', 'run-1', provider_id='deepseek')
@@ -56,10 +58,15 @@ def test_admission_is_committed_through_existing_session_log(tmp_path):
     commit = getattr(line, 'mark_candidate_validation_running', None)
     assert callable(commit), 'Validation admission must persist, not just mutate an in-memory flag'
     result = commit('s1', 'run-1', provider_id='deepseek', writer_attempt=2)
-    restored = states.operation_state_from_entries(log.read('s1'), session_id='s1', run_id='run-1')
+    from codey.durable.checkpoint import checkpoint_entries
+    restored = states.operation_state_from_entries(
+        checkpoint_entries(durable.task("run-1"), durable.effects("run-1"), session_id="s1"),
+        session_id="s1", run_id="run-1",
+    )
     assert restored is not None
     assert restored == result
     assert restored.turns_used == 3 and restored.writer_attempt == 2
+    durable.close()
 
 
 def test_repair_admission_preserves_the_failed_proof_and_existing_repair_round():

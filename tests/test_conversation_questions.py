@@ -48,7 +48,7 @@ def test_question_answer_is_durable_and_a_different_second_answer_is_rejected(tm
 
     from codey.app.context import AppContext
 
-    ctx = AppContext(tmp_path)
+    ctx = AppContext(tmp_path, start_scheduler=False)
     ctx.durable.admit_input(
         conversation_id="chat", request_id="source", task_id="run_source",
         text="source task", provider_snapshot={"provider_id": "local"},
@@ -70,7 +70,10 @@ def test_question_answer_is_durable_and_a_different_second_answer_is_rejected(tm
 def test_pending_question_is_not_hidden_by_newer_completed_history(tmp_path):
     from codey.app.context import AppContext
 
-    ctx = AppContext(tmp_path)
+    # This test creates historical durable rows. Keep the scheduler out of
+    # the fixture so it cannot claim a task between admission and question
+    # metadata being attached.
+    ctx = AppContext(tmp_path, start_scheduler=False)
     store = ctx.user_questions
     ctx.durable.admit_input(
         conversation_id="old-chat", request_id="old-source", task_id="old-run",
@@ -79,7 +82,11 @@ def test_pending_question_is_not_hidden_by_newer_completed_history(tmp_path):
     store.request("old", "old-chat", "old-run", QUESTION, {})
     # One durable task owns one question; use distinct source tasks for the
     # historical rows instead of an unowned legacy database.
-    for index in range(260):
+    # Durable question history has no legacy 250-row projection cap. A few
+    # newer completed questions are enough to prove the pending one remains
+    # discoverable without turning this contract test into an O(n^2) store
+    # benchmark.
+    for index in range(3):
         identity = f"q{index}"
         task_id = f"r{index}"
         ctx.durable.admit_input(

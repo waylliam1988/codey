@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from codey.completion.edit_integrity import observe_edit_integrity
+from codey.durable import DurableSession, MemoryDurableStore
 from codey.runs.details import load_run_details, unavailable_summary
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.receipt import build_task_receipt
@@ -13,8 +14,20 @@ from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, RunTraceStore
 from codey.runtime.core.operation_state import (
     RuntimeOperationStore,
 )
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+
+
+def _runtime(session_id: str, run_id: str) -> tuple[DurableSession, RuntimeMutationLine]:
+    durable = DurableSession(MemoryDurableStore())
+    durable.admit_input(
+        conversation_id=session_id,
+        request_id=f"request-{run_id}",
+        task_id=run_id,
+        text="runtime test",
+        provider_snapshot={"provider_id": "deepseek"},
+    )
+    durable.start_task(run_id, state={})
+    return durable, RuntimeMutationLine(durable=durable)
 
 CLEAN_SOURCE_DIFF = (
     "diff --git a/src/mod.py b/src/mod.py\n"
@@ -314,9 +327,8 @@ class RunDetailsTests(unittest.TestCase):
             state = Path(td)
             ledger_store = RunLedgerStore(state)
             trace_store = RunTraceStore(state)
-            log = RuntimeSessionLog(state)
-            store = RuntimeOperationStore(log)
-            line = RuntimeMutationLine(log)
+            durable, line = _runtime("session-progress", "run-progress")
+            store = RuntimeOperationStore(durable=durable)
             started = line.accept_operation(
                 session_id="session-progress",
                 run_id="run-progress",
@@ -378,9 +390,8 @@ class RunDetailsTests(unittest.TestCase):
     def test_runtime_only_interrupted_operation_makes_details_available(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = Path(td)
-            log = RuntimeSessionLog(state)
-            store = RuntimeOperationStore(log)
-            line = RuntimeMutationLine(log)
+            durable, line = _runtime("session-runtime-only", "run-runtime-only")
+            store = RuntimeOperationStore(durable=durable)
             started = line.accept_operation(
                 session_id="session-runtime-only",
                 run_id="run-runtime-only",
@@ -415,9 +426,8 @@ class RunDetailsTests(unittest.TestCase):
     def test_runtime_only_terminal_operation_makes_details_available_without_progress(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = Path(td)
-            log = RuntimeSessionLog(state)
-            store = RuntimeOperationStore(log)
-            line = RuntimeMutationLine(log)
+            durable, line = _runtime("session-runtime-terminal", "run-runtime-terminal")
+            store = RuntimeOperationStore(durable=durable)
             started = line.accept_operation(
                 session_id="session-runtime-terminal",
                 run_id="run-runtime-terminal",

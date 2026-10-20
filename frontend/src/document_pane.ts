@@ -176,20 +176,16 @@ export class DocumentPane {
       select.setAttribute('aria-selected', String(key === state.selected));
       const group = document.createElement('div');
       group.className = 'document-tab';
-      const close = button(`Close ${title}`, () => {
+      const close = iconButton(`Close ${title}`, 'close', () => {
         tab.generation++;
         state.tabs.delete(key);
         if (state.selected === key) state.selected = state.tabs.keys().next().value || '';
         this.render();
       });
-      close.className = 'icon-action';
-      close.textContent = '×';
       group.append(select, close);
       strip.append(group);
     }
-    const closePreview = button('Close preview', () => this.close());
-    closePreview.className = 'icon-action';
-    closePreview.textContent = '×';
+    const closePreview = iconButton('Close preview', 'close', () => this.close());
     strip.append(closePreview);
     this.element.append(strip);
     const tab = state.tabs.get(state.selected);

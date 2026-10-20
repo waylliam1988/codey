@@ -62,34 +62,45 @@ def test_production_review_uses_distinct_api_reviewer_with_frozen_writer(tmp_pat
 def test_reviewer_selection_survives_restart_and_cannot_be_rebound(tmp_path):
     import pytest
 
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.runtime.core.operation_state import RuntimeOperationStore, RuntimeOperationTransitionError
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
     selection = ApiRunSelection("zen", "revision", "reviewer", "openai-completions", True)
-    log = RuntimeSessionLog(tmp_path)
-    mutations = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    durable.admit_input(conversation_id="s", request_id="req-r", task_id="r", text="test",
+                        provider_snapshot={"provider_id": "zen", "model_id": "test"})
+    durable.start_task("r", state={})
+    mutations = RuntimeMutationLine(durable=durable)
     mutations.accept_operation(session_id="s", run_id="r", provider_id="zen", turn_budget=4, max_repair_rounds=1)
     mutations.admit_reviewer_selection("s", "r", selection.to_payload())
-    restarted = RuntimeOperationStore(RuntimeSessionLog(tmp_path)).load("s", "r")
+    durable.close()
+    restarted_durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    restarted = RuntimeOperationStore(durable=restarted_durable).load("s", "r")
     assert restarted.reviewer_selection == selection.to_payload()
     with pytest.raises(RuntimeOperationTransitionError, match="immutable"):
-        mutations.admit_reviewer_selection("s", "r", replace(selection, model_id="another").to_payload())
+        RuntimeMutationLine(durable=restarted_durable).admit_reviewer_selection(
+            "s", "r", replace(selection, model_id="another").to_payload()
+        )
+    restarted_durable.close()
 
 
 def test_standalone_api_review_uses_selected_model_instead_of_selecting_another(tmp_path):
     from codey.app import review_service
-    from codey.runtime.log.session_log import RuntimeSessionLog
+    from codey.durable import DurableSession, SQLiteDurableStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
     selected = ApiRunSelection("zen", "agreement", "selected-reviewer", "openai-completions", True)
-    log = RuntimeSessionLog(tmp_path)
-    mutations = RuntimeMutationLine(log)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    durable.admit_input(conversation_id="s", request_id="req-r", task_id="r", text="test",
+                        provider_snapshot={"provider_id": "zen", "model_id": "test"})
+    durable.start_task("r", state={})
+    mutations = RuntimeMutationLine(durable=durable)
     mutations.accept_operation(session_id="s", run_id="r", provider_id="zen", turn_budget=4, max_repair_rounds=1,
                                task_kind="review", model_selection=selected.to_payload())
     enable_models(tmp_path, zen=["writer", "reviewer", "selected-reviewer"])
     context = SimpleNamespace(providers=ProviderRegistry(tmp_path), lock=threading.Lock(), run_registry=SimpleNamespace(api_selection_for=lambda _: selected), emit=lambda _: None,
-                              runtime_log=log, runtime_mutations=mutations)
+                              runtime_log=durable, runtime_mutations=mutations)
     with patch("codey.app.provider_services.reviewer_candidates", return_value=()), \
             patch("codey.providers.api_connections.capture_reviewer_selection", side_effect=AssertionError("no writer exists in a review-only run")), \
             patch("codey.providers.api_connections.open_selection", return_value="selected-provider") as opened, \
@@ -97,3 +108,4 @@ def test_standalone_api_review_uses_selected_model_instead_of_selecting_another(
         assert review_service.run_review(context, session_id="s", project="fixture", task="review", writer_summary="",
             changes={}, recent_log="", writer_id="zen", run_id="r", review_impact_map="", standalone=True) == ("zen", "approved")
     assert opened.call_args.args == (selected,)
+    durable.close()
