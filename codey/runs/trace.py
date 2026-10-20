@@ -154,6 +154,7 @@ class PromptSectionTrace:
     admission_reason: str = ""
     capability_id: str = ""
     scope: str = ""
+    expires_at: str = ""
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -180,6 +181,8 @@ class PromptSectionTrace:
             payload["capability_id"] = _identifier(self.capability_id, 80)
         if self.scope:
             payload["scope"] = _clip(self.scope, 160)
+        if self.expires_at:
+            payload["expires_at"] = _clip(self.expires_at, 80)
         return payload
 
 
@@ -774,6 +777,7 @@ class RunTraceRecorder:
                 admission_reason=admission.admission_reason,
                 capability_id=admission.capability_id,
                 scope=admission.scope,
+                expires_at=admission.expires_at,
             )
             key = (
                 item.name,
