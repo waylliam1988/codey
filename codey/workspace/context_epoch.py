@@ -73,6 +73,7 @@ class ContextAdmission:
     source_ref: str
     capability_id: str = ""
     admission_reason: str = ""
+    scope: str = ""
     budget: int = 0
     chars: int = 0
     truncated: bool = False
@@ -81,6 +82,7 @@ class ContextAdmission:
     def to_payload(self) -> dict[str, object]:
         capability = _identifier(self.capability_id, 80)
         reason = _identifier(self.admission_reason, 80)
+        scope = _clip(self.scope, 160)
         payload: dict[str, object] = {
             "source_key": _identifier(self.source_key, 80),
             "source_ref": _clip(self.source_ref, 120),
@@ -93,6 +95,8 @@ class ContextAdmission:
             payload["capability_id"] = capability
         if reason:
             payload["admission_reason"] = reason
+        if scope:
+            payload["scope"] = scope
         return payload
 
 
@@ -149,6 +153,7 @@ def admission_from_rendered_source(
         source_ref=source_ref,
         capability_id=_identifier(getattr(rendered_source, "capability_id", ""), 80),
         admission_reason=_identifier(reason, 80),
+        scope=_clip(getattr(rendered_source, "scope", ""), 160),
         budget=max(0, int(getattr(rendered_source, "budget", 0) or 0)),
         chars=chars,
         truncated=truncated,

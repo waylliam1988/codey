@@ -59,7 +59,6 @@ class KernelResult:
     proof: Any | None = None
     delivery: str = "not_required"
 
-
 @dataclass(frozen=True)
 class KernelTransportDeps:
     """Provider and turn transport state owned by the kernel boundary."""
@@ -70,6 +69,7 @@ class KernelTransportDeps:
     provider_id: object = ""
     user_task: object = ""
     context_text: str = ""
+    ghost_sources: tuple[Any, ...] = ()
     stop_flag: Any = None
     stagnant_turns: int | None = None
     delivered: Mapping[str, ToolResult] | None = None
@@ -79,7 +79,6 @@ class KernelTransportDeps:
     initial_turn: InitialNativeTurn | None = None
     window_ref: Any = None
     replayed_result_ids: frozenset[str] = frozenset()
-
 
 @dataclass(frozen=True)
 class KernelExecutionDeps:
@@ -98,7 +97,6 @@ class KernelExecutionDeps:
     ensure_workspace_writer: Callable[[], None] | None = None
     durable: Any = None
 
-
 @dataclass(frozen=True)
 class KernelObservationDeps:
     """Completion, recovery, and event sinks for one kernel run."""
@@ -115,7 +113,6 @@ class KernelObservationDeps:
     # receipt chain intact and therefore consume the durable placement on the
     # following generation boundary.
     on_boundary: Callable[[str], str | None] | None = None
-
 
 @dataclass(frozen=True)
 class KernelRunRequest:
@@ -162,6 +159,7 @@ def _receive_turn_plan(
     session: TaskSession, provider: Any, state: _ProviderTurnState, snapshot: Any, native_tools: Any,
     *, native: bool, provider_id: object, turn: int, stop_flag: Any, on_event: Any, window_ref: Any = None,
     stagnant_turns: int | None, propagate_provider_failure: bool, trace_recorder: Any,
+    ghost_sources: tuple[Any, ...] = (), require_ghost_sources: bool = False,
 ) -> _ReceivedPlan | KernelResult | None:
     """Receive once; cancellation, truncation and protocol repair precede execution.
 
@@ -179,7 +177,8 @@ def _receive_turn_plan(
             if callable(refs):
                 refs(tuple(session._memory_results))
         record_outbound(trace_recorder, state.prompt, native=native, pending_reply=state.pending_reply,
-                        pending_results=state.pending_messages)
+                        pending_results=state.pending_messages, ghost_sources=ghost_sources,
+                        require_ghost_sources=require_ghost_sources)
         reply, state.pending_reply, state.pending_messages = _transport.send_kernel_reply(
             provider, native, state.prompt, native_tools, state.pending_reply, state.pending_messages,
             window_ref,
@@ -678,6 +677,7 @@ def run_task_kernel(
             stop_flag=stop_flag, on_event=on_event, stagnant_turns=stagnant_turns,
             propagate_provider_failure=propagate_provider_failure,
             trace_recorder=observation.trace_recorder,
+            ghost_sources=tuple(transport.ghost_sources or ()), require_ghost_sources=(turn == resume_start),
             window_ref=window_ref,
         )
         if isinstance(received, KernelResult):

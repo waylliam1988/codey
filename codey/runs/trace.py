@@ -153,6 +153,7 @@ class PromptSectionTrace:
     epoch_id: str = ""
     admission_reason: str = ""
     capability_id: str = ""
+    scope: str = ""
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -177,6 +178,8 @@ class PromptSectionTrace:
             payload["admission_reason"] = _identifier(self.admission_reason, 80)
         if self.capability_id:
             payload["capability_id"] = _identifier(self.capability_id, 80)
+        if self.scope:
+            payload["scope"] = _clip(self.scope, 160)
         return payload
 
 
@@ -572,6 +575,7 @@ class RunTraceRecorder:
         epoch_id: str = "",
         admission_reason: str = "",
         capability_id: str = "",
+        scope: str = "",
     ) -> bool:
         rendered = str(text or "")
         if not rendered:
@@ -593,6 +597,7 @@ class RunTraceRecorder:
             epoch_id=_identifier(epoch_id, 80),
             admission_reason=_identifier(admission_reason, 80),
             capability_id=_identifier(capability_id, 80),
+            scope=_clip(scope, 160),
         )
         key = (
             item.name,
@@ -768,6 +773,7 @@ class RunTraceRecorder:
                 epoch_id=normalized_epoch,
                 admission_reason=admission.admission_reason,
                 capability_id=admission.capability_id,
+                scope=admission.scope,
             )
             key = (
                 item.name,

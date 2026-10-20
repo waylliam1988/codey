@@ -75,6 +75,23 @@ def _project_context(request: AgentRequest) -> str:
     return f"{rendered.text}\n\n{candidate_text}" if candidate_text else rendered.text
 
 
+def _project_ghost_sources(request: AgentRequest) -> tuple[Any, ...]:
+    from codey.workspace.context_admission import request_scope, sources_from_values
+    from codey.policies.permissions import allows_context_source, profile_for_name
+
+    profile = profile_for_name(request.permission_profile)
+    return sources_from_values(
+        directive=(request.ghost_directive
+                   if allows_context_source(profile, "ghost_directive") else ""),
+        continuity=(request.ghost_continuity
+                    if allows_context_source(profile, "ghost_continuity") else ""),
+        # build_agent_context currently does not expose the experiences key
+        # through permission profiles, so it cannot be admitted on this path.
+        experiences="",
+        scope=request_scope(request.project, request.session_id),
+    )
+
+
 def _open_fresh_chat(request: AgentRequest) -> bool:
     window_action = request.window_action
     if window_action is not None:
@@ -246,6 +263,7 @@ def run(request: AgentRequest) -> RunResult:
                 provider_id=request.provider_id,
                 user_task=request.task,
                 context_text=_project_context(request),
+                ghost_sources=_project_ghost_sources(request),
                 stop_flag=request.stop_flag,
                 stagnant_turns=request.stagnant_turns,
                 delivered=delivered,

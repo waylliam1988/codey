@@ -24,6 +24,7 @@ class ContextSource:
     heading: str = ""
     capability_id: str = ""
     admission_reason: str = ""
+    scope: str = ""
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,7 @@ class RenderedContextSource:
     why_included: str
     capability_id: str = ""
     admission_reason: str = ""
+    scope: str = ""
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,7 @@ def render_context_source(source: ContextSource) -> RenderedContextSource | None
         why_included=source.why_included,
         capability_id=source.capability_id,
         admission_reason=source.admission_reason,
+        scope=source.scope,
     )
 
 

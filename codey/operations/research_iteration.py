@@ -143,6 +143,7 @@ def run_research_iteration(
         )
     provider.new_chat()
     from codey.operations.provider_session import ObservedProvider
+    from codey.workspace.context_admission import request_scope, source_from_value
     from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
     from codey.workspace.context_epoch import context_epoch_id
 
@@ -195,6 +196,13 @@ def run_research_iteration(
             defer_generation_settlement=admitted is not None,
         )
         active_provider = KernelRecordedProvider(provider, intent_sink)
+    topic_source = source_from_value(
+        key="research_topic_continuity",
+        text=topic_continuity_context,
+        budget=900,
+        scope=request_scope(project, session_id),
+        capability_id="research_topic_continuity",
+    )
     outcome = run_task_kernel(
         session,
         request=KernelRunRequest(
@@ -205,6 +213,7 @@ def run_research_iteration(
                 effect_scope="research:1",
                 provider_id=provider_id,
                 user_task=task,
+                ghost_sources=(topic_source,) if topic_source is not None else (),
                 stop_flag=stop_flag,
             ),
             execution=KernelExecutionDeps(

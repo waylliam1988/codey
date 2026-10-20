@@ -2,16 +2,40 @@
 
 from typing import Any
 
+from codey.workspace.context_admission import GhostContextSource, admit_ghost_context
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
 from codey.utils.refs import digest_text
 
 
-def record_outbound(trace: Any, prompt: str, *, native: bool, pending_reply: Any, pending_results: Any) -> None:
+def record_outbound(
+    trace: Any,
+    prompt: str,
+    *,
+    native: bool,
+    pending_reply: Any,
+    pending_results: Any,
+    ghost_sources: tuple[GhostContextSource, ...] = (),
+    require_ghost_sources: bool = False,
+) -> None:
     if pending_reply is not None or (native and pending_results is not None):
         return
+    admission = admit_ghost_context(
+        prompt,
+        ghost_sources,
+        request_scope=(ghost_sources[0].scope if ghost_sources else ""),
+        require_all=require_ghost_sources,
+    )
+    if trace is not None and admission.accepted:
+        FailOpenPromptTrace(trace).call(
+            "record_context_sources",
+            admission.accepted,
+            epoch_id=admission.epoch.epoch_id,
+            admission_reason="provider_turn_boundary",
+        )
     record_provider_send_prompt(
         trace, name="workspace_outbound_prompt", text=prompt, purpose="shared workspace kernel request",
         source_ref="provider_send:workspace", capability_id="agent_runner",
+        epoch_id=admission.epoch.epoch_id,
     )
 
 
