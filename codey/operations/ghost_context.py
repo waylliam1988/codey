@@ -46,7 +46,7 @@ def ghost_affinity_store(state: Any) -> Any:
     store = getattr(state, "ghost_affinity", None)
     if store is None:
         return None
-    if not ghost_control_enabled(state, "retrieve_projections"):
+    if not ghost_control_enabled(state, "accept_events"):
         return None
     return store
 
