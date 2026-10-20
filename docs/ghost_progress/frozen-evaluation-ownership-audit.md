@@ -6,7 +6,7 @@
 - 开始日期：2026-10-21
 - 最后更新：2026-10-21
 - 关联 Roadmap 验收门：0.6.0
-- 实验 commit：见本文件最后的 Git commit 记录
+- 实验 commit：`250a1fea` (`test(ghost): freeze evaluation and ownership audit`)
 - 生产合并结论：EXPERIMENT_ONLY
 
 ## 本次目标
