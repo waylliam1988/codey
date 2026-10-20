@@ -6,7 +6,7 @@
 - 开始日期：2026-10-21
 - 最后更新：2026-10-21
 - 关联 Roadmap 验收门：0.6.1
-- 实验 commit：`9b9b1999` (`feat(ghost): wire context epoch admission gate`); follow-up compatibility fix `d1c5c3db`
+- 实验 commit：`9b9b1999` (`feat(ghost): wire context epoch admission gate`); follow-up compatibility fix `d1c5c3db`; resume harness `待提交`
 - 生产合并结论：EXPERIMENT_ONLY
 
 ## 本次目标
@@ -34,6 +34,7 @@
 - provider-send capture fixture：admitted Ghost bytes 被 fake provider 捕获；缺失 source 时 provider 调用次数为 0；预算和 scope rejection 均 fail closed。
 - live smoke 前置健康检查：`GET http://127.0.0.1:5001/v1/models` 于 2026-10-21 02:12（Asia/Taipei）返回 HTTP 200，model 状态为 `loaded`。
 - live smoke（未完成）：命令使用 suite `admission_smoke_20261021`、cell `lang_on_d2`、model `koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M` 和 endpoint `http://127.0.0.1:5001/v1`；2026-10-21 02:13（Asia/Taipei）等待约 90 秒无新 stdout 后停止。本地隔离 JSONL 有 14/20 个 `done` rows，6 个 cell 缺失。该故障和缺失数据不计入模型行为阴性，也未重复重试。
+- live smoke 恢复：先确认同一 endpoint/model 返回 `loaded`，使用 resume harness 只追加 index `14,15,16,17,18,19`；6 个缺失 cell 均 `done`，最终 `admission_smoke_20261021/lang_on_d2` 为 20/20、20/20 judge pass。脱敏结果见 `tests/manual/ghost_memory_routing/reports/REPORT4-admission-live.md`。
 
 ## 实验配置
 
@@ -44,9 +45,9 @@
 ## 结果与限制
 
 真实 shared-kernel provider-send 边界已经有可捕获的拒绝行为，且 source ref、digest、budget、scope 和 epoch
-来自同一 admission projection。正常 admitted case 不改 prompt 字节。真实 KoboldCpp smoke 已部分完成
-14/20，但因运行无响应而不完整；尚未完成真实 provider payload 对照、成本/延迟测量、四个独立 Ghost
-开关和完整 scope/expiry matrix，因此不能标记
+来自同一 admission projection。正常 admitted case 不改 prompt 字节。真实 KoboldCpp smoke 已恢复并完成
+20/20，但它是单 cell admission smoke，没有 on/off 对照；尚未完成真实 provider payload capture/fault injection、
+成本/延迟测量、四个独立 Ghost 开关和完整 scope/expiry matrix，因此不能标记
 `EXPERIMENT_COMPLETE`，也不能晋级为生产合并。
 
 研究 continuity 已通过中性 workspace admission contract 接入；它仍然不是 Evidence，不生成 citation，
@@ -61,12 +62,12 @@
 - KoboldCpp/runtime 故障记录：endpoint `http://127.0.0.1:5001/v1`，model
   `koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`，suite
   `admission_smoke_20261021`，cell `lang_on_d2`；健康检查正常，运行到 14/20 后约 90 秒无新输出，已停止。
-  需要重新打开或检查 KoboldCpp 后，只重跑缺失的 6 个 cell，并使用新 suite 或明确运行目录。
+  已按恢复规则只重跑缺失的 6 个 index；原始 JSONL/state 仍只保留在本地隔离目录。
 - 回滚实验 commit 会移除 provider-send gate 和 metadata；既有 Ghost stores、Evidence、Permission、
   CompletionProof 不受影响。
 
 ## 下一步
 
 1. 增加真实 provider-send capture/fault-injection harness，验证 outbound bytes、trace sections 和 epoch record 完全一致。
-2. 记录一个 KoboldCpp model/config 的最小 live smoke；若服务故障立即停止重试并标记阻塞，不把故障算成模型阴性。
-3. 进入 0.6.2：四个独立开关、scope、过期和禁用路径；完成后再做 language 有条件 shadow。
+2. 进入 0.6.2：四个独立开关、scope、过期和禁用路径；完成后再做 language 有条件 shadow。
+3. 继续把 modelA admission smoke 与完整 language on/off 评估分开，不能把 20/20 smoke 写成晋级收益。

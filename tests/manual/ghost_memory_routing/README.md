@@ -19,6 +19,8 @@
 `REPORT3.md` 对应分层路由，`REPORT4.md` 对应偏好族与预算压力验收。
 `reports/REPORT4-frozen-evaluation.md` 是 0.6.0 冻结 evaluator 重新复算的脱敏报告；其
 完整性规则和 `PROMOTE-MATCHED` rank 映射由 `evaluation_contract.py` 固定。
+`reports/REPORT4-admission-live.md` 是 0.6.1 真实 runtime/provider-send smoke 的脱敏报告；
+它只覆盖 admission smoke suite，不构成 language 晋级对照。
 数字保留为历史文件标识；长期路线使用实验名称和具体行为描述。
 
 归档迁入日期为 2026-10-19。原目录共 1,491 文件、48,217,898 字节，迁移时逐文件
@@ -53,6 +55,12 @@ python tests/manual/ghost_memory_routing/build_report.py
 python tests/manual/ghost_memory_routing/round2.py report
 python tests/manual/ghost_memory_routing/round3.py report
 python tests/manual/ghost_memory_routing/round4.py report
+```
+
+如果 live 运行中断，恢复后可以只追加缺失 index，不覆盖已有 JSONL：
+
+```powershell
+python tests/manual/ghost_memory_routing/round4.py run --suite <suite> --cells lang_on_d2 --indices 14,15,16,17,18,19 --endpoint <URL> --model <MODEL_ID>
 ```
 
 生成文件写到 `artifacts/ghost_memory_routing/`，不会覆盖随目录保存的历史 `reports/`。

@@ -161,8 +161,23 @@ CELLS = [
 ]
 
 
+def parse_indices(value: str) -> set[int] | None:
+    """Parse an optional comma-separated resume index set."""
+    text = (value or "").strip()
+    if not text:
+        return None
+    indices: set[int] = set()
+    for token in text.split(","):
+        token = token.strip()
+        if not token or not token.isdigit():
+            raise ValueError("--indices must be comma-separated non-negative integers")
+        indices.add(int(token))
+    return indices
+
+
 def run_cells(cell_names: list[str], endpoint: str, model: str, suite: str,
-              state_root: Path, timeout_run: float) -> int:
+              state_root: Path, timeout_run: float,
+              indices: set[int] | None = None) -> int:
     RUNS4_DIR.mkdir(exist_ok=True)
     from codey.app import server as app_server
     from codey.app.context import AppContext
@@ -172,7 +187,18 @@ def run_cells(cell_names: list[str], endpoint: str, model: str, suite: str,
         if cell_names and cell["name"] not in cell_names:
             continue
         rows_path = RUNS4_DIR / f"{cell['name']}__{suite}.jsonl"
-        rows_path.unlink(missing_ok=True)
+        existing_indices: set[int] = set()
+        if indices is None:
+            rows_path.unlink(missing_ok=True)
+        elif rows_path.exists():
+            for line in rows_path.read_text(encoding="utf-8").splitlines():
+                try:
+                    row = json.loads(line)
+                    index = row.get("index")
+                    if type(index) is int and index >= 0:
+                        existing_indices.add(index)
+                except (json.JSONDecodeError, OSError):
+                    continue
         events: list[dict] = []
         with patch.dict("os.environ", {"NATIVE_TOOLS": "1"}), \
                 patch.object(local_config, "DEFAULT_STATE_HOME", state_root), \
@@ -197,6 +223,8 @@ def run_cells(cell_names: list[str], endpoint: str, model: str, suite: str,
                         client = GateHTTPClient(httpd)
                         with rows_path.open("a", encoding="utf-8") as sink:
                             for index, task in enumerate(cell["pool"]):
+                                if indices is not None and (index not in indices or index in existing_indices):
+                                    continue
                                 globals()["CURRENT_TASK"] = task
                                 session_id = (f"gh4-{cell['name']}-{suite}-{index}"
                                               f"-{int(time.time()*1000)}")
@@ -534,6 +562,8 @@ def main() -> int:
     parser.add_argument("--endpoint", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--model", default="koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M")
     parser.add_argument("--timeout-run", type=float, default=120.0)
+    parser.add_argument("--indices", default="",
+                        help="resume only these zero-based task indices without replacing existing JSONL")
     args = parser.parse_args()
     if args.command == "seed":
         if (round2.ARMS_ROOT / "R4").exists():
@@ -544,8 +574,12 @@ def main() -> int:
         return 0
     if args.command == "run":
         wanted = [c for c in args.cells.split(",") if c] or [cell["name"] for cell in CELLS]
+        try:
+            indices = parse_indices(args.indices)
+        except ValueError as exc:
+            parser.error(str(exc))
         return run_cells(wanted, args.endpoint, args.model, args.suite,
-                         round2.ARMS_ROOT / "R4", args.timeout_run)
+                         round2.ARMS_ROOT / "R4", args.timeout_run, indices=indices)
     if args.command == "offline":
         out = {"parity": parity_check(), "conflict": conflict_suite(),
                "trigger": trigger_scan()}
