@@ -73,11 +73,11 @@ class ContextAdmission:
     source_ref: str
     capability_id: str = ""
     admission_reason: str = ""
-    scope: str = ""
     budget: int = 0
     chars: int = 0
     truncated: bool = False
     digest: str = ""
+    scope: str = ""
 
     def to_payload(self) -> dict[str, object]:
         capability = _identifier(self.capability_id, 80)
