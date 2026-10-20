@@ -6,7 +6,7 @@
 - 开始日期：2026-10-21
 - 最后更新：2026-10-21
 - 关联 Roadmap 验收门：0.6.1
-- 实验 commit：`9b9b1999` (`feat(ghost): wire context epoch admission gate`)
+- 实验 commit：`9b9b1999` (`feat(ghost): wire context epoch admission gate`); follow-up compatibility fix `d1c5c3db`
 - 生产合并结论：EXPERIMENT_ONLY
 
 ## 本次目标
