@@ -2285,6 +2285,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # execution-output stores; keep their lifecycle in one boundary.
             "app/context.py",
             "ghost/continuity.py",
+            # GhostInbox remains the single durable owner for candidate state,
+            # learning settings, and the four independent control gates.
+            "ghost/inbox.py",
             "providers/controls.py",
             # Transport lifecycle and pooled HTTP plumbing are one cohesive
             # boundary; the stop-race fix crossed the 1000-line warning by one.
@@ -2323,7 +2326,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # DurableSession, scheduler and durable projection wiring now
             # live at the application boundary; this is the single assembly
             # point and stays below the next structural split threshold.
-            "app/context.py": 1176,
+            # Independent Ghost maintenance control adds a small gate at the
+            # app-owned sleep scheduler boundary.
+            "app/context.py": 1185,
             "ghost/affinity.py": 2750,
             "ghost/continuity.py": 1350,
             "ghost/hebbian.py": 1300,
