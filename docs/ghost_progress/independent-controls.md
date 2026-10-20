@@ -6,7 +6,7 @@
 - 开始日期：2026-10-21
 - 最后更新：2026-10-21
 - 关联 Roadmap 验收门：0.6.2 scope 与四个开关
-- 实验 commit：`496247fc` (`feat(ghost): add independent control gates`); follow-up boundary fix `6f18485e`; architecture audit `a7797877`
+- 实验 commit：`496247fc` (`feat(ghost): add independent control gates`); scoped projection/send gate `89622a8c`; follow-up boundary fix `6f18485e`; architecture audit `a7797877`
 - 生产合并结论：`SHADOW_ONLY`
 
 ## 本次目标
@@ -22,6 +22,8 @@
 - `GhostInboxStore` 将四个控制写入现有 learning settings，并保留旧的
   `enable/disable` 全开/全关兼容行为；旧 settings 缺少新字段时按
   `learning_enabled` 迁移读取。
+- 控制 projection 支持 user/project/session 覆盖；继承按 user → project →
+  session 计算，任何上层 deny 都不能被更窄 scope 的 allow 覆盖。
 - prompt-side directive、continuity 和 experience retrieval 使用
   `retrieve_projections`；post-turn ingest/continuity/work queue 使用
   `accept_events`；sleep kick 使用 `run_maintenance`。
@@ -47,20 +49,30 @@ git diff --check
 
 结果：resume harness `5 passed`；工作树 diff check 通过。
 
+```powershell
+python -m pytest tests/test_ghost_controls.py tests/test_ghost_context_admission.py -q
+python -m pytest tests/test_learning_switch_fail_closed.py -q
+```
+
+结果：controls/admission `15 passed`；kernel transport 全集 `1002 passed`。
+
 ## 实验配置
 
 - 模型 / suite / endpoint：无模型；离线临时 state fixture；无 endpoint
-- tasks / cells / reps：四个控制各 1 个独立开关案例；legacy 全关案例 1；
-  retrieval/maintenance boundary 1；admission on/off 1；control surface 1
+- tasks / cells / reps：四个控制各 1 个独立开关案例；legacy 全关/恢复案例 1；
+  user/project/session inheritance 1；restart/concurrent writers 1；
+  retrieval/maintenance boundary 1；admission on/off provider capture 1；control surface 1
 - on/off 对照：单控制切换与其它控制保持开启；legacy `disable_updates` 作为
   全关兼容对照；admission `admit_hints=True/False`
 
 ## 结果与限制
 
 - 四个控制可独立写入和读取；旧 settings 可以继续读取。
-- retrieval、maintenance、admission 和 event acceptance 已在代码边界接线，
-  但尚未完成 scope、过期、删除/重建、重启并发和真实 provider payload 的完整
-  0.6.2 矩阵。
+- retrieval、maintenance、admission 和 event acceptance 已在代码边界接线；
+  scope inheritance、restart/concurrent settings 和真实 kernel provider capture
+  已有 deterministic evidence。
+- 仍尚未完成 expiry、scope delete/export/reset 的控制 manifest、并发 runtime
+  请求矩阵、成本/延迟测量和完整 0.6.2 acceptance battery。
 - 本实验没有 live/offline 模型行为对照，也没有证明任何 language 或 command
   收益；不能把它当作 Ghost language 晋级。
 - 这是控制面 shadow 研究，未进入真实 provider-send 的生产启用决策，默认 prompt
@@ -75,9 +87,10 @@ git diff --check
 
 ## 下一步
 
-1. 为四个控制补充 scope、过期、禁用、重启和并发 deterministic replay fixture。
-2. 在 shared kernel/provider capture 中验证 `admit_hints` 关闭时实际 outbound
-   bytes 不含 Ghost source，开启时 epoch/digest 与 trace 一致。
+1. 为四个控制补充 expiry、scope delete/export/reset 和 control projection replay
+   fixture。
+2. 在 shared kernel/provider capture 中继续验证 `admit_hints` 关闭时实际 outbound
+   bytes 不含 Ghost source，开启时 epoch/digest 与 trace 一致，并记录成本/延迟。
 3. 保持 0.6.2 `INCOMPLETE`，完成后再决定是否进入更窄的 shadow runtime。
 4. World Model 继续保持 shadow：只研究 bounded event/prediction review 和
    projection admission，不进入默认 prompt。

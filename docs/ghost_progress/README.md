@@ -11,7 +11,7 @@
 | 历史 memory-routing 归档 | `EXPERIMENT_COMPLETE` | 脚本、脱敏测量、报告和来源摘要已提交；这是实验基线，不是生产晋级 | [实验目录](../../tests/manual/ghost_memory_routing/README.md) |
 | 0.6.0 评估冻结与所有权审计 | `EXPERIMENT_COMPLETE` | modelA 单模型 pilot 的矩阵、完整性规则、rank 映射和 admission 所有权已冻结；不改变默认 prompt | [进度记录](frozen-evaluation-ownership-audit.md) |
 | 0.6.1 Context Epoch admission | `INCOMPLETE` | shared kernel 已有 fail-closed capture path；尚缺 live smoke、故障注入报告和完整生产矩阵 | [进度记录](context-epoch-admission-wiring.md) |
-| 0.6.2 scope 与四个开关 | `INCOMPLETE` | 四个独立控制已接入离线 runtime 边界；尚缺 scope/生命周期/重启并发和 provider payload 矩阵 | [进度记录](independent-controls.md) |
+| 0.6.2 scope 与四个开关 | `INCOMPLETE` | scoped projection、重启/并发 settings 和 kernel provider capture 已验证；尚缺 expiry、delete/export/reset 与完整 acceptance battery | [进度记录](independent-controls.md) |
 | 0.6.3 冲突生命周期与持久删除 | `NOT STARTED` | supersede、tombstone、删除/rebuild 零复活 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.4 确定性 replay 与显式时间 | `NOT STARTED` | 不依赖 wall clock，projection digest 可复现 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.5 类型化 language 与最小遥测 | `NOT STARTED` | language 先 shadow，Hebbian 只作辅助特征 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
