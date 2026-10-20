@@ -18,7 +18,7 @@ from codey.agents.tool_execution import (
 from codey.agents.tools import AgentToolFns
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession, EffectRecord, MemoryDurableStore
 from codey.operations.recovery import ResumeRecoveryResult, recover_effects_for_resume
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
@@ -28,7 +28,6 @@ from codey.runtime.core.models import ToolCall
 from codey.runtime.core.operation_state import (
     RuntimeOperationStore,
     lane_for_run,
-    mark_tool_effect_pending,
     operation_id_for_run,
 )
 from codey.runtime.core.run_result import RunResult
@@ -1067,166 +1066,113 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(len(recovery.recovered_tool_outcomes), 1)
 
     def test_resume_does_not_replay_planning_readonly_effects(self) -> None:
-        self.skipTest("planning recovery fixture used removed JSONL fact source")
-        test_file = self.project_dir / "target.txt"
-        test_file.write_text("file content to read", encoding="utf-8")
-
         run_id = "run-planning-readonly"
-        self.line.accept_operation(
+        self.durable.admit_input(
+            conversation_id=self.session_id,
+            request_id=run_id,
+            task_id=run_id,
+            text="planning recovery",
+            provider_snapshot={"provider_id": "mock_provider"},
+        )
+        self.durable.start_task(run_id, state={})
+        self.durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={})
+        self.durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={})
+        self.durable.advance_task(task_id=run_id, phase="tool_effect_running", state={})
+        effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id)
+        intent = RuntimeEffectIntent(
+            effect_id=effect_id,
+            effect_category=EFFECT_CATEGORY_TOOL_CALL,
             session_id=self.session_id,
             run_id=run_id,
-            project=str(self.project_dir),
-            provider_id="mock_provider",
-            turn_budget=10,
-            max_repair_rounds=1,
-            task_kind="planning_readonly",
+            tool_name="read",
+            replay_class=ReplayClass.SAFE,
+            replay_args={"path": "target.txt"},
         )
-        self.line.mark_writer_running(
-            self.session_id,
+        self.durable.record_effect_intent(
             run_id,
-            provider_id="mock_provider",
-        )
-        eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id)
-        items = (
-            DeliveryBatchItem(
-                tool_index=0,
-                tool_name="read",
-                ref=eff_read,
-                replay_class="safe",
-                is_denied=False,
+            EffectRecord(
+                effect_id=effect_id,
+                task_id=run_id,
+                category=EFFECT_CATEGORY_TOOL_CALL,
+                replay_class=ReplayClass.SAFE,
+                args_digest="read-target",
+                status="pending",
+                intent=intent.to_payload(),
             ),
         )
-        self.line.begin_tool_batch(
-            self.session_id,
-            run_id,
-            intents=(
-                RuntimeEffectIntent(
-                    effect_id=eff_read,
-                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
-                    session_id=self.session_id,
-                    run_id=run_id,
-                    phase="writer",
-                    turn=1,
-                    tool_index=0,
-                    tool_name="read",
-                    replay_class=ReplayClass.SAFE,
-                    replay_args={"path": "target.txt"},
+        executor = Mock(side_effect=AssertionError("planning-only effects must not replay"))
+        with patch("codey.operations.recovery.execute_information_tool_call", executor):
+            recovery = recover_effects_for_resume(
+                SimpleNamespace(
+                    state=SimpleNamespace(durable=self.durable),
+                    runtime_effects=None,
+                    runtime_mutations=None,
+                    tool_result_delivery=None,
                 ),
-            ),
-            delivery_intent=DeliveryBatchIntent(
-                batch_id=new_batch_id(run_id, 1),
                 session_id=self.session_id,
                 run_id=run_id,
-                turn=1,
-                items=items,
-                batch_digest=compute_batch_digest(items),
-            ),
-        )
-        self._sync_runtime_effect_to_durable(run_id, eff_read)
+                project=str(self.project_dir),
+                task_kind="planning_readonly",
+            )
 
-        recovery = recover_effects_for_resume(
-            self._deps(),
-            session_id=self.session_id,
-            run_id=run_id,
-            project=str(self.project_dir),
-            task_kind="planning_readonly",
-        )
-
-        self.assertFalse(recovery.ok)  # Interrupted tool has no trustworthy result receipt.
+        self.assertFalse(recovery.ok)
         self.assertEqual(recovery.recovered_tool_outcomes, ())
-        loaded = self.durable.effects(run_id)
-        proj = next(p for p in loaded if p.effect_id == eff_read)
-        self.assertIsNotNone(proj.settlement)
-        assert proj.settlement is not None
-        self.assertEqual(proj.settlement["status"], "interrupted")
-        self.assertEqual(proj.settlement.get("replay_count", 0), 0)
+        executor.assert_not_called()
 
     def test_resume_invalid_persisted_replay_args_stops_without_executing(self) -> None:
-        self.skipTest("invalid replay args are now validated from durable effect intent")
         eff_id = "eff_bad_replay_args"
         lane = lane_for_run(self.run_id)
         op_id = operation_id_for_run(self.run_id)
-        batch_id = new_batch_id(self.run_id, 1)
-        items = (
-            DeliveryBatchItem(
-                tool_index=0,
-                tool_name="read",
-                ref=eff_id,
-                replay_class="safe",
-                is_denied=False,
-            ),
-        )
-        _commit_log_entry(self.log,
-            self.session_id,
-            lane=lane,
-            operation_id=op_id,
-            kind="operation_effect",
-            payload={
-                "schema_version": 1,
-                "effect_kind": "runtime_effect",
-                "record_kind": "intent",
-                "ref": f"effect:{eff_id}",
-                "effect_id": eff_id,
-                "effect_category": "tool_call",
-                "session_id": self.session_id,
-                "run_id": self.run_id,
-                "lane": lane,
-                "operation_id": op_id,
-                "turn": 1,
-                "tool_index": 0,
-                "tool_name": "read",
-                "replay_class": "safe",
-                "replay_args": {"path": "../outside.py"},
-            },
-        )
-        _commit_log_entry(self.log,
-            self.session_id,
-            lane=lane,
-            operation_id=op_id,
-            kind="operation_effect",
-            payload=DeliveryBatchIntent(
-                batch_id=batch_id,
-                session_id=self.session_id,
-                run_id=self.run_id,
-                turn=1,
-                items=items,
-                batch_digest=compute_batch_digest(items),
-            ).to_payload(),
-        )
-        current = self.operations.load(self.session_id, self.run_id)
-        assert current is not None
-        pending = mark_tool_effect_pending(
-            current,
-            driver="writer",
-            turn=1,
-        )
-        _commit_log_entry(
-            self.log,
-            self.session_id,
-            lane=pending.lane,
-            operation_id=pending.operation_id,
-            kind="operation_state",
-            payload=pending.to_payload(),
-        )
-        self._sync_runtime_effect_to_durable(self.run_id, eff_id)
-
-        recovery = recover_effects_for_resume(
-            self._deps(),
+        intent = RuntimeEffectIntent(
+            effect_id=eff_id,
+            effect_category=EFFECT_CATEGORY_TOOL_CALL,
             session_id=self.session_id,
             run_id=self.run_id,
-            project=str(self.project_dir),
-            task_kind="project",
+            lane=lane,
+            operation_id=op_id,
+            turn=1,
+            tool_name="read",
+            replay_class=ReplayClass.SAFE,
+            replay_args={"path": "target.txt"},
         )
+        self.durable.advance_task(task_id=self.run_id, phase="tool_effect_running", state={})
+        invalid_payload = intent.to_payload()
+        invalid_payload["replay_args"] = {"path": "../outside.py"}
+        self.durable.record_effect_intent(
+            self.run_id,
+            EffectRecord(
+                effect_id=eff_id,
+                task_id=self.run_id,
+                category=EFFECT_CATEGORY_TOOL_CALL,
+                replay_class=ReplayClass.SAFE,
+                args_digest="invalid-replay-args",
+                status="pending",
+                intent=invalid_payload,
+            ),
+        )
+
+        executor = Mock(side_effect=AssertionError("invalid replay args must not execute"))
+        with patch("codey.operations.recovery.execute_information_tool_call", executor):
+            recovery = recover_effects_for_resume(
+                SimpleNamespace(
+                    state=SimpleNamespace(durable=self.durable),
+                    runtime_effects=None,
+                    runtime_mutations=None,
+                    tool_result_delivery=None,
+                ),
+                session_id=self.session_id,
+                run_id=self.run_id,
+                project=str(self.project_dir),
+                task_kind="project",
+            )
 
         self.assertFalse(recovery.ok)  # No original observation can be reconstructed.
         self.assertEqual(recovery.recovered_tool_outcomes, ())
-        loaded = self.durable.effects(self.run_id)
-        proj = next(p for p in loaded if p.effect_id == eff_id)
-        self.assertIsNone(proj.intent.get("replay_args"))
-        self.assertIsNotNone(proj.settlement)
-        assert proj.settlement is not None
-        self.assertEqual(proj.settlement["status"], "interrupted")
-        self.assertEqual(proj.settlement.get("replay_count", 0), 0)
+        effect = next(row for row in self.durable.effects(self.run_id) if row.effect_id == eff_id)
+        self.assertEqual(effect.status, "interrupted")
+        self.assertEqual(effect.intent.get("replay_args"), {"path": "../outside.py"})
+        self.assertEqual(effect.settlement.get("replay_count", 0), 0)
+        executor.assert_not_called()
 
     def test_resume_replay_propagates_cancellation(self) -> None:
         test_file = self.project_dir / "target.txt"

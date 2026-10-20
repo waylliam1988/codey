@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+- Make concurrency and subprocess regressions deterministic: replace sleep-based
+  scheduling, output, worker, file-lock, and shell Stop assertions with events,
+  explicit release points, and direct state reconciliation. Bring durable recovery
+  cases onto the current effect-record fixtures, assert the existing run-event
+  `call_id`, and record the final full-suite result of 9145 passed, 59 skipped, and
+  1515 subtests with 88.21% statement and 77.33% branch coverage.
 - Keep Settings reads responsive while a task holds the application lifecycle lock by taking the read-only model-use snapshot outside that long transaction. Make send admission reach `/api/run` without waiting for a blocking `/api/state` reconciliation; the server remains the authority for same-session serial admission and the existing 409 reconciliation path handles stale client state. Added red/green regressions for both cases and refreshed the packaged browser assets.
 - Complete the next conversation UI integration pass across the real frontend and Codey HTTP service: structured provider/execution failure projections with bounded recovery actions, identity-safe message and canonical final-answer copying, same-origin question draft persistence, bounded live shell execution snapshots, local KaTeX/Mermaid rendering shared by prose/Research/document previews, transcript archive pagination/search, and session-scoped parallel admission with serial execution within each session. The packaged browser path and isolated Playwright regressions pass against deterministic local model peers; shell output observation is intentionally bounded polling rather than a dedicated output SSE stream, and unsupported Mermaid shapes, cross-origin draft migration, and unarchived legacy history remain explicit limits.
 - Harden the conversation UI recovery boundaries: an explicitly rejected queued input (`input_queue_full` or `input_not_found`) becomes recoverable `Not sent` state, while unknown delivery outcomes remain status-check protected; bind Research report cards to their message run identity, preserve code literals across Markdown repairs, and load all local images through the bounded worker pool. Add regression coverage for each boundary and verify the packaged UI against the real HTTP service.

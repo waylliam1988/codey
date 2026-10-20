@@ -3,7 +3,6 @@ from __future__ import annotations
 import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 
 from codey.runtime.core import cancellation
@@ -14,9 +13,25 @@ def test_real_process_output_is_visible_before_exit(tmp_path):
     store = ExecutionOutputStore(tmp_path, max_bytes=4096)
     execution_id = "execution-live"
     store.create(execution_id, session_id="session", run_id="run")
-    observer = ExecutionOutputObserver(store, execution_id)
+    release = tmp_path / "release-process"
+    script = (
+        "import pathlib,time\n"
+        "print('ready', flush=True)\n"
+        f"release=pathlib.Path({str(release)!r})\n"
+        "while not release.exists():\n"
+        "    time.sleep(0.01)\n"
+        "print('done', flush=True)\n"
+    )
+    output_ready = threading.Event()
+    observer = ExecutionOutputObserver(
+        store,
+        execution_id,
+        on_update=lambda snapshot: output_ready.set()
+        if "ready" in snapshot["stdout"]["text"]
+        else None,
+    )
     process = subprocess.Popen(
-        [sys.executable, "-c", "import sys,time; print('ready', flush=True); time.sleep(2); print('done', flush=True)"],
+        [sys.executable, "-c", script],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -34,23 +49,22 @@ def test_real_process_output_is_visible_before_exit(tmp_path):
 
     worker = threading.Thread(target=wait_for_process)
     worker.start()
-    deadline = time.monotonic() + 2
-    seen = ""
-    while time.monotonic() < deadline:
-        snapshot = store.snapshot(execution_id)
-        seen = snapshot["stdout"]["text"]
-        if "ready" in seen:
-            break
-        time.sleep(0.02)
-    assert "ready" in seen
-    assert worker.is_alive()
-    worker.join(timeout=5)
-    assert not worker.is_alive()
-    assert result["value"].returncode == 0
-    settled = store.settled(execution_id, 0)
-    assert settled["execution_state"] == "settled"
-    observer.close()
-    store.close()
+    try:
+        assert output_ready.wait(5)
+        seen = store.snapshot(execution_id)["stdout"]["text"]
+        assert "ready" in seen
+        assert worker.is_alive()
+        release.touch()
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+        assert result["value"].returncode == 0
+        settled = store.settled(execution_id, 0)
+        assert settled["execution_state"] == "settled"
+    finally:
+        release.touch()
+        worker.join(timeout=5)
+        observer.close()
+        store.close()
 
 
 def test_observer_preserves_utf8_split_across_pipe_reads(tmp_path):

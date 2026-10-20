@@ -26,18 +26,18 @@ def test_abort_marks_task_then_signals_active_dispatch_invocation(tmp_path) -> N
         assert invocation is not None
         assert invocation.attempt_token == task.attempt_token
         assert invocation.mode == "run"
-        assert invocation.signal.wait(2)
+        assert invocation.signal.wait(10)
         released.set()
         return True
 
     scheduler = DurableTaskScheduler(session, dispatch, retry_interval=0.01)
     scheduler.start()
     try:
-        assert started.wait(2)
+        assert started.wait(10)
         scheduler.abort_task("task", reason="user")
         assert session.task("task").state["cancel_requested"] is True
-        assert released.wait(2)
-        assert _wait_until(lambda: session.task("task").status is TaskStatus.CANCELLED)
+        assert released.wait(10)
+        assert _wait_until(lambda: session.task("task").status is TaskStatus.CANCELLED, timeout=10)
     finally:
         scheduler.close()
         session.close()

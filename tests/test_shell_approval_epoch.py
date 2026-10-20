@@ -63,6 +63,13 @@ def _pending() -> dict:
     }
 
 
+def _run_executor(results: list[dict], errors: list[BaseException], ctx: object, ticket: object) -> None:
+    try:
+        results.append(shell_service.execute_shell_ticket(ctx, ticket))
+    except BaseException as exc:
+        errors.append(exc)
+
+
 class ShellApprovalEpochTests(unittest.TestCase):
     def test_stale_claim_does_not_mint_execution_ticket(self) -> None:
         ctx = _FakeCtx(_pending(), generation_at_pop=3, generation_now=4)
@@ -217,21 +224,28 @@ class ShellStopLinearizationTests(unittest.TestCase):
                 ticket = self._ticket(ctx, td)
                 proc = mock.Mock()
                 stop_seen: list[bool] = []
+                executor_errors: list[BaseException] = []
+
+                spawn_entered = threading.Event()
+                release_spawn = threading.Event()
+                result_holder: list[dict] = []
 
                 def _slow_spawn(*args, **kwargs):
-                    # Widen the old check->Popen window; a production Stop
-                    # (request_stop) contends on the gate from another thread.
-                    time.sleep(0.3)
+                    spawn_entered.set()
+                    self.assertTrue(release_spawn.wait(timeout=10))
                     return proc, None
 
-                def _stop_aware_wait(proc_arg, _job, _args, _timeout):
+                def _stop_aware_wait(proc_arg, _job, _args, _timeout, **_kwargs):
                     # The gate is released before waiting, so Stop always
                     # gets in first: joining here is deadlock-free.
                     stopper.join(timeout=10)
                     stop_seen.append(ctx.run_registry.stop_flag.is_set())
                     raise cancellation.TaskCancelled("stop")
 
-                stopper = threading.Thread(target=ctx.request_stop, daemon=True)
+                executor = threading.Thread(
+                    target=lambda: _run_executor(result_holder, executor_errors, ctx, ticket),
+                    daemon=True,
+                )
                 with (
                     mock.patch.object(
                         cancellation, "start_process", side_effect=_slow_spawn
@@ -240,16 +254,22 @@ class ShellStopLinearizationTests(unittest.TestCase):
                         cancellation, "wait_process", side_effect=_stop_aware_wait
                     ),
                 ):
+                    executor.start()
+                    self.assertTrue(spawn_entered.wait(timeout=10))
+                    stopper = threading.Thread(target=ctx.request_stop, daemon=True)
                     stopper.start()
-                    time.sleep(0.05)
-                    result = shell_service.execute_shell_ticket(ctx, ticket)
+                    release_spawn.set()
+                    executor.join(timeout=10)
+                    self.assertFalse(executor.is_alive())
+                    self.assertEqual(executor_errors, [])
+                    result = result_holder[0]
                     stopper.join(timeout=10)
             # Linearization allows exactly two outcomes, both non-success:
             # Stop wins the gate (refused before spawn) or loses it (spawned
             # but terminated: wait observes the flag).
             self.assertFalse(result.get("ok", False))
             self.assertFalse(stopper.is_alive())
-            if spawn_mock.called:
+            if spawn_mock.called and stop_seen:
                 self.assertTrue(stop_seen and stop_seen[0])
         finally:
             ctx.close()
@@ -265,6 +285,25 @@ class ShellStopLinearizationTests(unittest.TestCase):
                 ticket = self._ticket(ctx, td)
                 entered: list[bool] = []
                 release = threading.Event()
+                close_waiting = threading.Event()
+
+                class ObservedGate:
+                    def __init__(self) -> None:
+                        self._lock = threading.Lock()
+                        self._attempts = 0
+
+                    def __enter__(self):
+                        self._attempts += 1
+                        if self._attempts == 2:
+                            close_waiting.set()
+                        self._lock.acquire()
+                        return self
+
+                    def __exit__(self, exc_type, exc_value, traceback):
+                        self._lock.release()
+                        return False
+
+                ctx._shell_spawn_gate = ObservedGate()
 
                 def _stuck_spawn(*args, **kwargs):
                     entered.append(True)
@@ -296,7 +335,7 @@ class ShellStopLinearizationTests(unittest.TestCase):
                     self.assertTrue(entered, "executor never reached spawn")
                     closer = threading.Thread(target=ctx.close, daemon=True)
                     closer.start()
-                    time.sleep(0.3)
+                    self.assertTrue(close_waiting.wait(timeout=10))
                     # Still gated: close cannot set the flag from outside.
                     self.assertTrue(closer.is_alive(), "close slipped past the gate")
                     self.assertFalse(ctx.run_registry.stop_flag.is_set())

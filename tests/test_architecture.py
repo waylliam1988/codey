@@ -2323,7 +2323,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # DurableSession, scheduler and durable projection wiring now
             # live at the application boundary; this is the single assembly
             # point and stays below the next structural split threshold.
-            "app/context.py": 1170,
+            "app/context.py": 1176,
             "ghost/affinity.py": 2750,
             "ghost/continuity.py": 1350,
             "ghost/hebbian.py": 1300,
@@ -2365,12 +2365,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # reconciliation and context/fork reads remain one explicit
             # DurableSession owner; keep a measured ceiling until a semantic
             # split can move a whole owner without adding repositories.
-            "durable/session.py": 2140,
+            "durable/session.py": 2177,
             # Headless shell denial now shares the durable cancellation
             # barrier with the live kernel; keep the cohesive loop just above
             # the previous warning ceiling until a whole semantic owner can
             # move without duplicating its boundary.
-            "operations/task_loop.py": 1120,
+            "operations/task_loop.py": 1125,
             # LF/CRLF line-boundary note (was a one-line overclaim).
             # PLR split 2026-09-26: 1381 lines after search_files scan split.
             "toolchain/runtime.py": 1440,

@@ -4,6 +4,7 @@
 
 ## 未发布
 
+- 将并发和子进程回归测试改为确定性：调度重派、输出观察、worker 健康、文件锁和 Shell Stop 测试使用事件、显式释放点及直接状态对账，移除依赖睡眠时长的判定。把 durable 恢复用例迁移到当前 effect record fixture，补上 run-event 已有的 `call_id` 断言，并记录最终全量结果：9145 passed、59 skipped、1515 subtests，语句覆盖率 88.21%、分支覆盖率 77.33%。
 - 设置读取不再等待任务生命周期锁的长事务，打开 Settings 时仍能及时取得只读模型占用快照；发送流程不再被阻塞的 `/api/state` reconciliation 卡住，而是直接进入 `/api/run` 准入，陈旧客户端状态继续由现有 409 对账路径处理。新增两条先红后绿回归，并重新发布正式前端 bundle。
 - 完成下一阶段中间对话区的真实前后端联调：结构化 provider/执行失败投影与有界恢复动作、按身份区分的消息复制和 canonical 最终回答复制、同源提问草稿持久化、有界实时 Shell 执行快照、正文/Research/文档预览共用本地 KaTeX/Mermaid、展示历史归档分页与搜索，以及按 session 并行、单 session 串行的运行准入。正式发布页面在隔离状态目录中通过真实 Codey HTTP 服务和本地确定性模型对端的 Playwright 回归；Shell 输出观察明确采用有界轮询，不宣称专用输出 SSE，未支持的 Mermaid 图种、跨 origin 草稿迁移和旧版本从未归档的历史仍是明确边界。
 - 收紧中间对话区的恢复边界：明确被拒绝的排队输入（`input_queue_full` 或 `input_not_found`）进入可恢复的 `Not sent` 状态，未知投递结果继续保留状态查询保护；Research 报告卡按消息自身的运行身份打开，Markdown 修正保留代码字面量，本地图片通过有界 worker 全部加载。为四个边界补充回归测试，并用真实 HTTP 服务验证发布后的页面。

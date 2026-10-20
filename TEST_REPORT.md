@@ -2,18 +2,18 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
-## Current verification (2026-10-17)
+## Current verification (2026-10-21)
 
 | Check | Result |
 | --- | --- |
-| Final complete pytest | **8784 passed, 8 skipped, 1520 subtests; 1531.36s** |
-| Final required machine contracts | **1129 passed, 14 subtests; no skips; 337.24s** |
-| Production statement coverage | **88.53%**; CI minimum **85%** |
-| Production branch coverage | **78.24%**; CI minimum **75%** |
-| Coverage scope | All **429** production Python files; Python subprocesses included |
+| Final complete pytest | **9145 passed, 59 skipped, 1515 subtests; 3178.34s (52:58)** |
+| Final required machine contracts | **1129 passed, 14 subtests; no skips** |
+| Production statement coverage | **88.21%**; CI minimum **85%** |
+| Production branch coverage | **77.33%**; CI minimum **75%** |
+| Coverage scope | All **478** production Python files; Python subprocesses included |
 | Python static checks | `mypy codey`, `pyrefly check codey`, and `ty check codey` passed; `pyrefly check` over tests/tools still reports the repository's existing unannotated test/tool baseline |
 | Ruff / diff check | passed |
-| TypeScript / Biome / Vitest | **34 files / 132 tests passed; typecheck, build and published metadata check passed** |
+| TypeScript / Biome / Vitest | **42 files / 177 tests passed; typecheck, build and published metadata check passed** |
 | Real HTTP protocol continuation | **22 passed**, using deterministic local peers for both native protocols |
 | Real HTTP Stop stress | **100 passed**: 50 before headers, 50 during silent error bodies |
 | Transport regression group | **64 passed**; final implementation also passed under coverage |
@@ -69,10 +69,8 @@ read access, the same `ty check codey` command passed.
 
 Coverage reports were generated from the final complete-suite capture and its
 parallel subprocess data. The full-production coverage gate and JSON/XML/HTML
-generation passed. The new approval tests are included in the final suite.
-The coverage percentages above remain the latest collected coverage snapshot;
-the final pytest rerun recorded here was not used to replace them without a new
-coverage collection.
+generation passed. The deterministic concurrency and durable-recovery tests are
+included in that capture.
 
 This change also verified a clean Python 3.12 environment from the generated
 `requirements-ci.txt`: hash-checked installation, editable project installation
@@ -84,11 +82,9 @@ all passed. The migrated Allow/Deny response reconciliation and conversation UI
 regressions run in Vitest against the real frontend modules; the Python bridge
 tests and enum shims were removed.
 
-The eight skips are explicit environment gates: six require POSIX permission,
-process-group, absolute-path or `O_NOFOLLOW` behavior; two opt into an external
-workspace smoke or the separate real desktop-browser workflow. The required
-machine-contract gate has no skips. The actual HTTP/Chromium approval and
-document regressions run normally in the complete suite.
+The 59 skips are explicit environment, platform, or separately gated integration
+cases. The required machine-contract gate has no skips. The actual HTTP/Chromium
+approval and document regressions run normally in the complete suite.
 
 Installed-package UI evidence is under ignored
 `.e2e-artifacts/review-20261015/`. Coverage reports are under
@@ -118,6 +114,26 @@ unannotated tests and tools; that failure is recorded rather than hidden. The
 packaged asset refresh came from `npm run build` followed by
 `python tools/publish_frontend.py`; no external model API or Selfie business file
 was used.
+
+## 2026-10-21 deterministic concurrency-test cleanup
+
+The final pass replaced timing-only assertions in scheduler redispatch, process
+output observation, browser-worker health, file-lock contention, and shell Stop
+linearization tests with events, explicit release points, and direct reconciliation
+steps. The scheduler abort budget was widened only for the test's bounded teardown
+path; production timing and behavior were unchanged. Two durable recovery tests
+that had been skipped because they used removed JSONL fixtures now construct the
+current durable effect records and execute as real regressions. The run-event
+characterization now asserts the existing `call_id` field, and the architecture
+line ceilings were updated to the measured current values.
+
+Focused regression checks passed before the final run. The final complete suite
+then passed **9145/9145**, with **59** explicit skips and **1515** subtests. Coverage
+combination, JSON/XML/HTML generation, and the full-production gate passed at
+**88.21% statements** and **77.33% branches**. The five untracked `collect*.txt`
+and `file_ranges.txt` files were confirmed to be unreferenced historical analysis
+outputs and removed. After the report update, the affected regression selection
+passed again: **187 tests and 399 subtests**.
 
 ## Reports and reproduction
 

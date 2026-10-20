@@ -1,7 +1,5 @@
 """A review repair reenters writing explicitly; settled/failed facts cannot leak."""
-import tempfile
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 
@@ -11,10 +9,7 @@ from codey.runtime.core.operation_state import (
     RuntimeOperationTransitionError,
     mark_provider_effect_pending,
     mark_writer_running,
-    operation_state_from_entries,
 )
-from codey.runtime.log.session_log import RuntimeSessionLog
-from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 
 def settled():
@@ -36,24 +31,6 @@ def test_review_reentry_advances_attempt_and_preserves_accumulated_budget():
     assert RuntimeOperationState.from_payload(state.to_payload()) == state
     pending = mark_provider_effect_pending(state, driver="writer", provider_id="local", turn=5)
     assert pending.leaf == "provider_effect_pending"
-
-
-@pytest.mark.skip(reason="review lifecycle recovery is now asserted through durable task checkpoints")
-def test_interrupted_review_reentry_persists_accumulated_budget_for_cold_recovery():
-    with tempfile.TemporaryDirectory() as td:
-        log = RuntimeSessionLog(Path(td))
-        line = RuntimeMutationLine(log)
-        line.accept_operation(session_id="s", run_id="r", project="", provider_id="local", turn_budget=8,
-                              max_repair_rounds=1, task_kind="project")
-        line.mark_writer_running("s", "r", provider_id="local")
-        line.mark_writer_settled("s", "r", provider_id="local", turns_used=4, stop_reason="done")
-        running = line.mark_writer_running("s", "r", provider_id="local", writer_attempt=2)
-        assert running is not None and running.turns_used == 4
-        restored = operation_state_from_entries(log.read("s"), session_id="s", run_id="r")
-        assert restored is not None
-        assert restored.leaf == "writer_running"
-        assert restored.turns_used == 4
-
 
 @pytest.mark.parametrize("previous,attempt", [
     (settled(), 1), (replace(settled(), stop_reason="provider_failure"), 2),

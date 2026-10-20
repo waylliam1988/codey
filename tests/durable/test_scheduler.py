@@ -212,15 +212,15 @@ def test_waiting_task_is_not_redispatched_until_explicitly_requeued(tmp_path: Pa
     session.wait_task("task-wait", state={"wait_reason": "approval"})
     seen: list[str] = []
     scheduler = DurableTaskScheduler(session, lambda task: seen.append(task.task_id) or True, retry_interval=0.01)
-    scheduler.start()
     try:
-        time.sleep(0.05)
+        scheduler._reconcile()
         assert seen == []
         assert session.task("task-wait").status == TaskStatus.WAITING
         session.advance_task(task_id="task-wait", phase="provider_prepared", state={"next": "resume"})
         session.unclaim_task("task-wait")
         scheduler.notify("task-wait")
-        assert _wait_for(lambda: seen == ["task-wait"])
+        scheduler._reconcile()
+        assert seen == ["task-wait"]
     finally:
         scheduler.close()
         session.close()

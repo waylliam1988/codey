@@ -41,10 +41,11 @@ class BrowserWorkerTests(unittest.TestCase):
         worker = browser_worker.BrowserWorker(name="test-close-terminal", max_queue_size=8)
         # Track manually: this close is the assertion itself.
         running_started = threading.Event()
+        release_running = threading.Event()
 
         def _running() -> str:
             running_started.set()
-            time.sleep(0.2)
+            self.assertTrue(release_running.wait(timeout=10.0))
             return "running-done"
 
         runner_errors: list[BaseException] = []
@@ -68,10 +69,14 @@ class BrowserWorkerTests(unittest.TestCase):
 
         queued = threading.Thread(target=_run_queued, daemon=True)
         queued.start()
-        deadline = time.monotonic() + 10.0
-        while time.monotonic() < deadline and worker.health_snapshot().queue_size < 1:
-            time.sleep(0.01)
-        self.assertGreaterEqual(worker.health_snapshot().queue_size, 1)
+        try:
+            deadline = time.monotonic() + 10.0
+            while time.monotonic() < deadline and worker.health_snapshot().queue_size < 1:
+                time.sleep(0.01)
+            self.assertGreaterEqual(worker.health_snapshot().queue_size, 1)
+            self.assertFalse(worker.close(timeout=0.1))
+        finally:
+            release_running.set()
         self.assertTrue(worker.close(timeout=5.0))
         runner.join(timeout=10.0)
         queued.join(timeout=10.0)
@@ -88,22 +93,27 @@ class BrowserWorkerTests(unittest.TestCase):
         worker = browser_worker.BrowserWorker(name="test-submit-close-race", max_queue_size=8)
         outcomes: list[str] = []
         stop = threading.Event()
+        accepted_once = threading.Event()
 
         def _submit_loop() -> None:
             while not stop.is_set():
                 try:
                     accepted = worker.submit(lambda: None)
                     outcomes.append("accepted" if accepted else "dropped")
+                    if accepted:
+                        accepted_once.set()
                 except RuntimeError:
                     outcomes.append("closed-error")
                     return
 
         submitter = threading.Thread(target=_submit_loop, daemon=True)
         submitter.start()
-        time.sleep(0.1)
-        self.assertTrue(worker.close(timeout=5.0))
-        stop.set()
-        submitter.join(timeout=10.0)
+        try:
+            self.assertTrue(accepted_once.wait(2.0))
+            self.assertTrue(worker.close(timeout=5.0))
+        finally:
+            stop.set()
+            submitter.join(timeout=10.0)
         self.assertFalse(submitter.is_alive())
         self.assertIn("closed-error", outcomes)
         self.assertFalse(worker._thread.is_alive())
@@ -336,8 +346,9 @@ class BrowserWorkerTests(unittest.TestCase):
         thread.join(timeout=1.0)
         self.assertTrue(any(isinstance(exc, TimeoutError) for exc in errors))
 
-        time.sleep(0.03)
-        health = worker.health_snapshot()
+        health = worker.health_snapshot(
+            now=time.monotonic() + worker._stuck_after_seconds,
+        )
 
         self.assertEqual(health.state, "stuck")
         self.assertEqual(health.current_job_state, "abandoned")
@@ -346,8 +357,8 @@ class BrowserWorkerTests(unittest.TestCase):
 
         probe_ran = threading.Event()
         worker.submit(probe_ran.set)
-        self.assertFalse(probe_ran.wait(0.05))
         self.assertGreaterEqual(worker.health_snapshot().queue_size, 1)
+        self.assertFalse(probe_ran.is_set())
 
         release.set()
         self.assertTrue(probe_ran.wait(2.0))

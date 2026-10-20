@@ -46,21 +46,35 @@ class FileLockTests(unittest.TestCase):
         active_holders = 0
         max_concurrent = 0
         lock = threading.Lock()
+        first_acquired = threading.Event()
+        attempting = [threading.Event() for _ in range(5)]
+        release_first = threading.Event()
 
-        def worker() -> None:
+        def worker(index: int) -> None:
             nonlocal active_holders, max_concurrent
+            attempting[index].set()
             with with_file_lock(target, timeout_seconds=5.0):
                 with lock:
                     active_holders += 1
                     if active_holders > max_concurrent:
                         max_concurrent = active_holders
-                time.sleep(0.05)
+                if index == 0:
+                    first_acquired.set()
+                    self.assertTrue(release_first.wait(timeout=5.0))
                 with lock:
                     active_holders -= 1
 
-        threads = [threading.Thread(target=worker) for _ in range(5)]
-        for t in threads:
-            t.start()
+        threads = [threading.Thread(target=worker, args=(index,)) for index in range(5)]
+        threads[0].start()
+        try:
+            self.assertTrue(first_acquired.wait(timeout=2.0))
+            for t in threads[1:]:
+                t.start()
+            self.assertTrue(all(event.wait(timeout=2.0) for event in attempting))
+            with lock:
+                self.assertEqual(active_holders, 1)
+        finally:
+            release_first.set()
         for t in threads:
             t.join()
 
@@ -100,16 +114,17 @@ class FileLockTests(unittest.TestCase):
     def test_cross_process_mutual_exclusion(self) -> None:
         target = self.root / "cross_proc.json"
         script = f"""
-import sys, time
+import sys
 from codey.storage.file_lock import with_file_lock
 
 with with_file_lock({repr(str(target))}, timeout_seconds=5.0):
     sys.stdout.write("ACQUIRED\\n")
     sys.stdout.flush()
-    time.sleep(1.0)
+    sys.stdin.readline()
 """
         proc = subprocess.Popen(
             [sys.executable, "-c", script],
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -124,6 +139,9 @@ with with_file_lock({repr(str(target))}, timeout_seconds=5.0):
             with self.assertRaises(LockTimeout), with_file_lock(target, timeout_seconds=0.2):
                 pass
 
+            assert proc.stdin is not None
+            proc.stdin.write("release\n")
+            proc.stdin.flush()
             proc.wait(timeout=3.0)
             self.assertEqual(proc.returncode, 0)
 
@@ -138,6 +156,8 @@ with with_file_lock({repr(str(target))}, timeout_seconds=5.0):
                 proc.stdout.close()
             if proc.stderr is not None:
                 proc.stderr.close()
+            if proc.stdin is not None:
+                proc.stdin.close()
 
     def test_process_lock_registry_releases_unused_paths(self) -> None:
         import codey.storage.file_lock as fl

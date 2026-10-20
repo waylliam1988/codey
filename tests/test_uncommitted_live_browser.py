@@ -172,10 +172,11 @@ def test_real_http_history_search_returns_archived_context(tmp_path, monkeypatch
             page.goto(httpd.launch_url(f"http://127.0.0.1:{httpd.server_port}/"))
             expect(page.locator(".msg.user")).to_have_count(100)
             page.get_by_role("button", name="Search this conversation", exact=True).click()
-            page.get_by_role("searchbox", name="Search this conversation", exact=True).fill("needle")
-            page.get_by_role("searchbox", name="Search this conversation", exact=True).press("Enter")
-            expect(page.locator(".history-search-status")).to_have_text("1 matches")
-            page.get_by_role("button", name="Load earlier messages", exact=True).click()
+            search = page.get_by_role("searchbox", name="Search conversation history", exact=True)
+            search.fill("needle")
+            search.press("Enter")
+            expect(page.locator('.conversation-find [role="status"]')).to_have_text("1 matches")
+            page.locator(".conversation-find-results button").get_by_text("needle", exact=False).click()
             expect(page.locator(f'.msg.user[data-message-id="{needle_id}"]')).to_be_attached()
             browser.close()
     finally:
@@ -208,7 +209,16 @@ def test_real_question_draft_survives_browser_refresh_before_submission(tmp_path
 
 
 def test_real_shell_card_shows_flushed_output_before_process_exit(tmp_path, monkeypatch):
-    script = "import sys,time; print('EARLY_OUTPUT', flush=True); time.sleep(6); print('LATE_OUTPUT', flush=True)"
+    release = tmp_path / "release-shell"
+    script = (
+        "import pathlib,time\n"
+        "print('EARLY_OUTPUT', flush=True)\n"
+        f"release=pathlib.Path({str(release)!r})\n"
+        "deadline=time.monotonic()+30\n"
+        "while not release.exists() and time.monotonic()<deadline:\n"
+        "    time.sleep(0.05)\n"
+        "print('LATE_OUTPUT', flush=True)\n"
+    )
     command = f'"{sys.executable}" -c "import base64;exec(base64.b64decode(\'{base64.b64encode(script.encode()).decode()}\'))"'
     ctx = AppContext(tmp_path / "state")
     seed_requested_approval(ctx, continue_after=False, command=command)
@@ -227,12 +237,14 @@ def test_real_shell_card_shows_flushed_output_before_process_exit(tmp_path, monk
             card = page.locator(".command-card")
             expect(card).to_be_visible()
             card.locator("summary").click()
-            expect(card.locator(".shell-stdout")).to_contain_text("EARLY_OUTPUT", timeout=1500)
+            expect(card.locator(".shell-stdout")).to_contain_text("EARLY_OUTPUT", timeout=15000)
             assert card.locator(".command-label").text_content() == "Running"
+            release.touch()
             expect(card.locator(".shell-stdout")).to_contain_text("LATE_OUTPUT", timeout=10000)
-            expect(card.locator(".command-label")).to_have_text("Ran", timeout=15000)
+            expect(card.locator(".command-label")).to_have_text("Ran", timeout=20000)
             browser.close()
     finally:
+        release.touch()
         httpd.shutdown()
         httpd.server_close()
         thread.join(timeout=5)

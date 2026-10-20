@@ -124,6 +124,7 @@ class RunEventUiPayloadCharacterizationTests(unittest.TestCase):
 
         self.assertEqual(payload, {
             "type": "tool",
+            "call_id": "2:0",
             "run_id": "run-1",
             "session_id": "session-1",
             "turn": 2,
