@@ -6,7 +6,7 @@
 - 开始日期：2026-10-21
 - 最后更新：2026-10-21
 - 关联 Roadmap 验收门：0.6.2 scope 与四个开关
-- 实验 commit：`496247fc` (`feat(ghost): add independent control gates`); follow-up boundary fix `6f18485e`
+- 实验 commit：`496247fc` (`feat(ghost): add independent control gates`); follow-up boundary fix `6f18485e`; architecture audit `a7797877`
 - 生产合并结论：`SHADOW_ONLY`
 
 ## 本次目标
