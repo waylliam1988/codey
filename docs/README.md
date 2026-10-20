@@ -32,6 +32,8 @@
 - [设计原则与后续建议](codey_from_codex_principles.md)
 - [Codey Roadmap：0.6 语言闭环、后续按族晋级与独立研究](../ROADMAP.zh-CN.md)
 - [Ghost 本地经验路由：偏好投递与预算路由实验、限制与晋级协议](ghost_future_direction.zh-CN.md)
+- [Ghost / World Model 团队交接说明与进度规则](ghost_handoff.zh-CN.md)
+- [Ghost / World Model 进度板](ghost_progress/README.md)
 - [Ghost 长期学习研究愿景：可停止的研究假设，不作为 0.6 前置条件](codey_ghost_long_term_learning_architecture.md)
 - [Pi 启发的历史重构讨论与后续建议](codey_pi_v2_refactor_direction.zh-CN.md)
 - [跨版本工具协议策略](tool_protocol_portability_plan.zh-CN.md)
