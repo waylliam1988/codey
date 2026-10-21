@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import subprocess
 import sys
@@ -140,6 +141,8 @@ def main():
     if args.report:
         print(json.dumps(summarize(json.loads(args.report.read_text(encoding="utf-8"))), indent=2))
         return
+    if not {"expected_head", "expected_revision"} <= set(inspect.signature(DurableSession.admit_write).parameters):
+        parser.error("run the source matrix from the ghost/canonical-context candidate branch; main only recomputes reports")
     if not args.suite or Path(args.suite).name != args.suite or args.suite in {".", ".."}:
         parser.error("--suite must be a directory name")
     root = DATA_ROOT / args.suite
