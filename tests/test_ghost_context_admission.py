@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +12,8 @@ from codey.ghost.admission import (
     request_scope,
 )
 from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps, run_task_kernel
+from codey.operations.project_adapter import _project_context, _project_ghost_sources
+from codey.agents.request import AgentRequest
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 
@@ -159,3 +162,20 @@ def test_real_kernel_send_respects_admit_hints_control_before_provider() -> None
 
     assert outcome.stop_reason == "provider_failure"
     assert sent == []
+
+
+def test_project_adapter_drops_ghost_text_when_admit_hints_is_disabled(tmp_path: Path) -> None:
+    request = AgentRequest(
+        provider=SimpleNamespace(),
+        project=tmp_path,
+        task="inspect project",
+        ghost_directive="secret directive",
+        ghost_continuity="secret continuity",
+        ghost_experiences="secret history",
+        admit_hints=False,
+    )
+    assert _project_ghost_sources(request) == ()
+    context = _project_context(request)
+    assert "secret directive" not in context
+    assert "secret continuity" not in context
+    assert "secret history" not in context

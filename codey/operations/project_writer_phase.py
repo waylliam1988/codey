@@ -16,6 +16,7 @@ from codey.agents.writer_failover import (
     WriterFailoverRunner,
 )
 from codey.operations.ghost_context import ghost_experiences as _ghost_experiences
+from codey.operations.ghost_context import ghost_control_enabled
 from codey.operations.project_completion_context import (
     ProjectRun,
     managed_tool_fns,
@@ -127,6 +128,9 @@ def _run_one_writer_attempt(
         ghost_directive="",
         ghost_continuity="",
         ghost_experiences=(writer_experiences or ""),
+        admit_hints=ghost_control_enabled(
+            ctx.state, "admit_hints", project=ctx.project, session_id=ctx.request.session_id,
+        ),
         completion_repair_context=(
             ctx.repair_projection.prompt_text
             if ctx.repair_projection is not None

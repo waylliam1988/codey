@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from codey.operations.generation_boundary import durable_generation_boundary_callback
+from codey.operations.ghost_context import ghost_control_enabled
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
@@ -214,6 +215,9 @@ def run_research_iteration(
                 provider_id=provider_id,
                 user_task=task,
                 ghost_sources=(topic_source,) if topic_source is not None else (),
+                admit_hints=ghost_control_enabled(
+                    getattr(deps, "state", None), "admit_hints", project=project, session_id=session_id,
+                ),
                 stop_flag=stop_flag,
             ),
             execution=KernelExecutionDeps(

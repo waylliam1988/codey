@@ -46,9 +46,9 @@ def _project_context(request: AgentRequest) -> str:
         project_map=request.project_map,
         project_config_warnings=request.project_config_warnings,
         work_checkpoint=request.work_checkpoint,
-        ghost_directive=request.ghost_directive,
-        ghost_continuity=request.ghost_continuity,
-        ghost_experiences=request.ghost_experiences,
+        ghost_directive=request.ghost_directive if request.admit_hints else "",
+        ghost_continuity=request.ghost_continuity if request.admit_hints else "",
+        ghost_experiences=request.ghost_experiences if request.admit_hints else "",
         completion_repair_context=request.completion_repair_context,
     )
     trace = FailOpenPromptTrace(request.trace_recorder)
@@ -80,6 +80,8 @@ def _project_ghost_sources(request: AgentRequest) -> tuple[Any, ...]:
     from codey.policies.permissions import allows_context_source, profile_for_name
 
     profile = profile_for_name(request.permission_profile)
+    if not bool(getattr(request, "admit_hints", True)):
+        return ()
     return sources_from_values(
         directive=(request.ghost_directive
                    if allows_context_source(profile, "ghost_directive") else ""),

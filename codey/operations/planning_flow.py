@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 from codey.agents.request import AgentRequest
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.ghost_context import ghost_continuity as _ghost_continuity_fn
+from codey.operations.ghost_context import ghost_control_enabled
 from codey.operations.ghost_context import ghost_directive as _ghost_directive_fn
 from codey.operations.prompting import record_local_context_trace
 from codey.operations.result import ModeOutcome
@@ -142,6 +143,9 @@ def run_planning_readonly_mode(
             ghost_directive=ghost_directive.text,
             ghost_continuity=ghost_continuity.text,
             ghost_experiences=str(experiences or ""),
+            admit_hints=ghost_control_enabled(
+                state, "admit_hints", project=project, session_id=request.session_id,
+            ),
             permission_profile="planning_readonly",
             trace_recorder=frame.trace,
             session_id=request.session_id,
