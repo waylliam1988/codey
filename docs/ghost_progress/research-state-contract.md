@@ -6,7 +6,9 @@
 - 开始日期：2026-10-21
 - 最后更新：2026-10-21
 - 关联 Roadmap 验收门：0.6.1 Context Epoch admission；0.6.2 控制边界
-- 实验 commit：`41167a7a`（生产契约）；`23e4a4b6`（parity/test fixture）
+- 实验 commit：`41167a7a`（生产契约）；`23e4a4b6`（parity/test fixture）；
+  `8abb6a7f`（settlement frame fixture）；`50cc333d`（durable cold-start lock ordering）；
+  `ea33efbe`（concurrent cold-start regression）
 - 生产合并结论：`SHADOW_ONLY`
 
 ## 本次目标
@@ -27,6 +29,11 @@
   设为开启以复现既有 parity 基线。
 - 修复 Context Epoch 过期时间的类型收窄和 Ghost control scope 空字典类型，
   使全树类型检查可复现通过。
+- 全量 pytest 暴露的四个 settlement 失败均来自测试构造的 `frame` 缺少生产
+  `RunFrame.project_text`，由 `8abb6a7f` 补齐 fixture；没有修改 Ghost 生产逻辑。
+- 全量 pytest 暴露一个真实的 durable 并发冷启动竞态：schema 初始化曾在写锁
+  之前读取 `user_version`。`50cc333d` 将版本读取移入 `BEGIN IMMEDIATE` 后，
+  `ea33efbe` 增加并发冷启动回归，避免 reader 观察到未提交的临时版本。
 
 ## 验收命令与结果
 
@@ -59,6 +66,18 @@ git diff --check
 
 结果：`9 passed`；diff check 通过。
 
+```powershell
+python -m pytest -q
+```
+
+结果：`9177 passed, 59 skipped, 1518 subtests passed in 2659.24s`。
+
+```powershell
+python -m pytest tests/durable/test_database_cursor.py::test_concurrent_cold_start_serializes_schema_initialization tests/stress/test_multiprocess_concurrency.py -q
+```
+
+结果：`2 passed`；连续独立运行 multiprocess stress 3 次均通过。
+
 ## 实验配置
 
 - 模型 / suite / endpoint：无 KoboldCpp；shared kernel deterministic fake provider；
@@ -77,6 +96,8 @@ git diff --check
 - parity 观察保持不变，说明显式开启控制的 fixture 保留了旧行为。
 - 这是离线结构和 provider-send 边界实验；没有 KoboldCpp live/offline 模型行为
   对照、成本/延迟测量或跨模型结果。
+- 全量测试没有留下未分类失败；durable 修复只保证初始化锁顺序和 schema 观察
+  一致性，不扩大 Ghost 的 prompt 权限或写入路径。
 
 ## 当前生产边界
 
