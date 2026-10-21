@@ -139,7 +139,9 @@ class GhostControlSurface:
             project=project_ref,
         )
         updates_enabled = _safe_bool(
-            lambda: self.inbox.learning_enabled() if self.inbox is not None else False,
+            lambda: self.inbox.control_enabled(
+                "accept_events", project=project_ref, session_id=session_ref,
+            ) if self.inbox is not None else False,
             warnings,
             "settings_read_failed",
             default=False,
