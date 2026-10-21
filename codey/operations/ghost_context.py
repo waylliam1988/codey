@@ -38,16 +38,9 @@ def ghost_control_enabled(
     if inbox is None:
         return False
     try:
-        reader = getattr(inbox, "control_enabled", None)
-        if callable(reader):
-            try:
-                value = reader(name, project=project, session_id=session_id)
-            except TypeError:
-                value = reader(name)
-            return value if type(value) is bool else False
-        value = inbox.learning_enabled()
+        value = inbox.control_enabled(name, project=project, session_id=session_id)
         return value if type(value) is bool else False
-    except (GhostSettingsError, OSError, ValueError, TypeError):
+    except (GhostSettingsError, OSError, ValueError, TypeError, AttributeError):
         return False
 
 

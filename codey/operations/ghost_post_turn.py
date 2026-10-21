@@ -395,26 +395,15 @@ def complete_or_block_work_item(
         return
 
 
-def _ghost_learning_enabled(state: TaskState) -> bool:
-    """Compatibility alias for the legacy all-updates switch."""
-    return _ghost_accept_events_enabled(state)
-
-
 def _ghost_accept_events_enabled(
     state: TaskState,
     *,
     project: str = "",
     session_id: str = "",
 ) -> bool:
-    inbox_store = getattr(state, "ghost_inbox", None)
-    if inbox_store is None:
-        return True
-    try:
-        return ghost_control_enabled(
-            state, "accept_events", project=project, session_id=session_id,
-        )
-    except Exception:
-        return False
+    return ghost_control_enabled(
+        state, "accept_events", project=project, session_id=session_id,
+    )
 
 
 def _ghost_run_maintenance_enabled(

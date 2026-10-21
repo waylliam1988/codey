@@ -76,13 +76,16 @@ def _persist_observation_row(
     """
     try:
         inbox = getattr(state, "ghost_inbox", None) if state is not None else None
-        if inbox is not None:
-            try:
-                learning_on = bool(inbox.learning_enabled())
-            except Exception:
-                return False, "settings_error"
-            if not learning_on:
-                return True, "skipped"
+        if inbox is None:
+            return True, "skipped"
+        try:
+            accept_events_on = inbox.control_enabled("accept_events", project=project, session_id=session_id)
+        except Exception:
+            return False, "settings_error"
+        if type(accept_events_on) is not bool:
+            return False, "settings_error"
+        if not accept_events_on:
+            return True, "skipped"
         store = getattr(state, "ghost_observations", None) if state is not None else None
         if store is None:
             return True, "skipped"
