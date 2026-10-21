@@ -15,12 +15,16 @@ from codey.durable.schema import MIGRATIONS, SCHEMA_VERSION, validate_schema
 def initialize_database(connect: Callable[[], sqlite3.Connection]) -> str:
     """Create or validate the exact cold-start schema and return its identity."""
     with closing(connect()) as database:
-        user_version = int(database.execute("PRAGMA user_version").fetchone()[0])
-        if user_version > SCHEMA_VERSION:
-            raise SchemaVersionError("durable database uses a newer schema")
         database.execute("PRAGMA journal_mode=WAL")
         database.execute("BEGIN IMMEDIATE")
         try:
+            # Read the version after taking the writer lock.  A concurrent
+            # cold start may have created the migration marker but not yet
+            # committed PRAGMA user_version; reading it before BEGIN IMMEDIATE
+            # would cache that transient 0 and falsely reject a valid schema.
+            user_version = int(database.execute("PRAGMA user_version").fetchone()[0])
+            if user_version > SCHEMA_VERSION:
+                raise SchemaVersionError("durable database uses a newer schema")
             tables = {
                 str(row["name"])
                 for row in database.execute(
