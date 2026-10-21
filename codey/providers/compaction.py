@@ -31,6 +31,12 @@ class ContextSnapshot:
     identity: str
     result_refs: frozenset[str]
     checkpoints: frozenset[str] = frozenset()
+    durable_revision: int | None = None
+    durable_head: str | None = None
+    # One semantic durable message may expand to several protocol items
+    # (Responses function_call/function_call_output).  ``None`` marks a
+    # provider-only item such as a system prompt or a pending request.
+    durable_entry_ids: tuple[str | None, ...] = ()
 
 
 class CompactionCoordinator:

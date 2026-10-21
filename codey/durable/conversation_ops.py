@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import Any, cast
 
@@ -344,8 +344,51 @@ def context_snapshot(
         positions = {entry.entry_id: index for index, entry in enumerate(path)}
         if before_entry_id not in positions:
             raise CommitConflict("input entry does not belong to the selected context path")
-        path = path[:positions[before_entry_id]]
+        cutoff = positions[before_entry_id]
+        prefix = path[:cutoff]
+        # A compaction write is appended after the current input because it is
+        # its own durable mutation.  It may still rewrite facts strictly
+        # before that input.  Admit only edits with an explicit source fence
+        # whose complete source set is already in the prefix; no target or
+        # text inference is used here, so a future edit cannot leak backward.
+        path = _include_committed_edits_before_cutoff(path, prefix, cutoff)
     return build_context(path, token_budget=token_budget, token_counter=token_counter)
+
+
+def _include_committed_edits_before_cutoff(
+    path: tuple[EntryDraft, ...], prefix: tuple[EntryDraft, ...], cutoff: int,
+) -> tuple[EntryDraft, ...]:
+    available = {entry.entry_id for entry in prefix}
+    selected = list(prefix)
+    for entry in path[cutoff:]:
+        if entry.kind != "context_edit":
+            continue
+        payload = thaw_json(entry.payload)
+        if not isinstance(payload, Mapping):
+            continue
+        data = payload.get("data")
+        if not isinstance(data, Mapping):
+            continue
+        source_ids = data.get("source_entry_ids")
+        if not isinstance(source_ids, Sequence) or isinstance(source_ids, (str, bytes)):
+            continue
+        normalized = tuple(item for item in source_ids if isinstance(item, str) and item)
+        if not normalized or len(normalized) != len(source_ids) or not set(normalized) <= available:
+            continue
+        selected.append(entry)
+        edits = payload.get("edits", payload.get("context_edits"))
+        if not isinstance(edits, Sequence) or isinstance(edits, (str, bytes)):
+            continue
+        for raw_edit in edits:
+            if not isinstance(raw_edit, Mapping) or raw_edit.get("action") != "replace":
+                continue
+            target = raw_edit.get("target")
+            messages = raw_edit.get("messages")
+            if not isinstance(target, str) or not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)):
+                continue
+            available.update(f"{target}:replacement:{index}" for index, message in enumerate(messages)
+                             if isinstance(message, Mapping))
+    return tuple(selected)
 
 
 def save_context_snapshot(session: Any, conversation_id: str, payload: Mapping[str, object]) -> EntryDraft:

@@ -105,6 +105,11 @@ class ApiProvider:
         self._request_receipt: object | None = None
         self.context_ledger = ContextLedger()
         self._context_session = ""
+        self._durable: Any = None
+        self._durable_session_id = ""
+        self._durable_source_entry_ids: tuple[str | None, ...] = ()
+        self._attempt_gate: Callable[[ApiProvider, dict[str, Any]], None] | None = None
+        self._attempt_gate_prompt = ""
         self._parent_cancelled: Callable[[], bool] = lambda: False
         self._task_stop_event: Any = None
         self._result_refs: frozenset[str] = frozenset()
@@ -304,12 +309,41 @@ class ApiProvider:
     def send(self, text: str, timeout: float | None = None) -> str:
         return self._exchange([{"role": "user", "content": text}], None, timeout=timeout, text_only=True).text
 
-    def load_durable_context(self, messages: list[dict[str, Any]]) -> None:
+    def bind_durable_context(self, durable: Any, conversation_id: str) -> None:
+        if durable is None or not conversation_id:
+            raise ValueError("durable context binding requires a session and conversation")
+        if not callable(getattr(durable, "admit_write", None)):
+            raise TypeError("durable context binding requires the canonical writer")
+        with self._state_lock:
+            self._durable = durable
+            self._durable_session_id = conversation_id
+
+    def bind_attempt_gate(self, gate: Callable[[ApiProvider, dict[str, Any]], None] | None) -> None:
+        """Bind the single final payload gate used immediately before HTTP."""
+        if gate is not None and not callable(gate):
+            raise TypeError("attempt gate must be callable")
+        with self._state_lock:
+            self._attempt_gate = gate
+
+    def set_attempt_gate_prompt(self, prompt: str) -> None:
+        with self._state_lock:
+            self._attempt_gate_prompt = str(prompt or "")
+
+    def load_durable_context(self, messages: list[dict[str, Any]], *,
+                             source_entry_ids: tuple[str, ...] = ()) -> None:
         """Seed a fresh local protocol window from the canonical session path."""
         if not isinstance(messages, list):
             raise TypeError("durable context must be a list")
+        if source_entry_ids and len(source_entry_ids) != len(messages):
+            raise ValueError("durable source IDs must match semantic context messages")
+        encoded: list[dict[str, Any]] = []
+        encoded_ids: list[str | None] = []
+        for message, entry_id in zip(messages, source_entry_ids or (None,) * len(messages), strict=True):
+            part = self._codec.encode_context([message])
+            encoded.extend(part)
+            encoded_ids.extend([entry_id] * len(part))
         with self._state_lock:
-            candidate = self._codec.prepare([], self._codec.encode_context(messages),
+            candidate = self._codec.prepare([], encoded,
                                             system=self.system_prompt, tools=self._declared_tools or None)
             if self._messages:
                 if self._messages == candidate:
@@ -318,6 +352,10 @@ class ApiProvider:
             self._codec.validate_view(candidate)
             self.context_ledger.commit(candidate)
             self._messages = candidate
+            prefix = len(candidate) - len(encoded)
+            if prefix not in {0, 1} or candidate[prefix:] != encoded:
+                raise ValueError("durable source IDs do not match the encoded provider view")
+            self._durable_source_entry_ids = (None,) * prefix + tuple(encoded_ids)
             self._history_revision += 1
 
     def send_turn(self, prompt: str, tools: list[ProviderToolDefinition] | None = None,
@@ -448,6 +486,11 @@ class ApiProvider:
                     delivery_commit=delivery_commit,
                 )
             self._compaction.accept(checkpoints)
+            prior_ids = self._durable_source_entry_ids
+            retained_ids = prior_ids[:len(candidate)]
+            if len(retained_ids) < len(candidate):
+                retained_ids = retained_ids + (None,) * (len(candidate) - len(retained_ids))
+            self._durable_source_entry_ids = retained_ids + (None,) * len(output)
             self._messages = [*candidate, *output]
             self._last_output_estimate = estimate_request({"messages": output}, deadline=time.monotonic()).value or 0
             self._history_revision += 1
@@ -520,6 +563,16 @@ class ApiProvider:
                 self._display_stream.observe(event)
         count, context_budget, outcome = self.last_context_count, self.context_budget, "unknown"
         try:
+            gate = self._attempt_gate
+            if gate is not None:
+                from codey.providers.error_classification import RequestPrepError
+
+                try:
+                    gate(self, payload)
+                except RequestPrepError:
+                    raise
+                except Exception as exc:
+                    raise RequestPrepError(f"provider payload admission failed: {exc}") from exc
             body = api_transport.generate(
                 f"{self.base_url}/{self._codec.endpoint}", payload, self._headers(),
                 timeout=max(0.001, deadline - time.monotonic()), observe=self._notify_http_attempt,
@@ -621,6 +674,7 @@ class ApiProvider:
             self.context_ledger.open_window(ref, reset_permit=True, reason="initial_open")
             self._context_session = session_id
             self._messages = []
+            self._durable_source_entry_ids = ()
             self._window_ref = ref
 
     def export_work_state(self) -> str:
@@ -649,6 +703,8 @@ class ApiProvider:
         if client.http_session is not None and hasattr(client.http_session, "retain"):
             client.http_session.retain()
         client._parent_cancelled = lambda: generation != self._generation
+        client._attempt_gate = self._attempt_gate
+        client._attempt_gate_prompt = self._attempt_gate_prompt
         client.bind_usage(self.connection_id, self.on_usage)
         return client
 
@@ -724,8 +780,13 @@ class ApiProvider:
 
     def _context_snapshot(self) -> ContextSnapshot:
         with self._state_lock:
+            revision = head = None
+            durable_entry_ids = self._durable_source_entry_ids
+            if self._durable is not None and self._durable_session_id:
+                _head, revision = self._durable.head(self._durable_session_id)
+                head = _head
             return ContextSnapshot(copy.deepcopy(self._messages), self._generation, self.model_identity, self._result_refs,
-                                   self.context_ledger.checkpoint_digests())
+                                   self.context_ledger.checkpoint_digests(), revision, head, durable_entry_ids)
 
     def _count_context(self, items: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
                        deadline: float) -> RequestContextCount:
@@ -733,6 +794,34 @@ class ApiProvider:
 
     def _commit_context(self, selected: ContextRange, replacement: list[dict[str, Any]], checkpoint: dict[str, Any],
                         snapshot: ContextSnapshot, tools: list[ProviderToolDefinition] | None, deadline: float) -> bool:
+        durable = self._durable
+        durable_ids = snapshot.durable_entry_ids
+        durable_revision = snapshot.durable_revision
+        durable_head = snapshot.durable_head
+        durable_edit = None
+        if durable is not None:
+            if (not durable_ids or durable_revision is None or durable_head is None
+                    or len(durable_ids) != len(self._messages)):
+                return False
+            source_ids = durable_ids[selected.start:selected.end]
+            if not source_ids or any(not isinstance(entry_id, str) or not entry_id for entry_id in source_ids):
+                return False
+            summary = checkpoint.get("text")
+            if not isinstance(summary, str) or not summary.strip():
+                return False
+            durable_edit = {
+                "conversation_id": self._durable_session_id,
+                "request_id": f"context-edit:{selected.source_digest}",
+                "kind": "context_edit",
+                "data": {"source_digest": selected.source_digest, "source_entry_ids": list(source_ids),
+                         "captured_revision": durable_revision, "model_identity": snapshot.identity},
+                "display_only": False,
+                "edits": [{"target": source_ids[0], "action": "replace",
+                            "messages": [{"role": "assistant", "content": summary}]}]
+                + [{"target": entry_id, "action": "omit"} for entry_id in source_ids[1:]],
+                "expected_revision": durable_revision,
+                "expected_head": durable_head,
+            }
         with self._state_lock:
             if (snapshot.generation != self._generation or snapshot.identity != self.model_identity
                     or digest(self._messages[selected.start:selected.end]) != selected.source_digest):
@@ -746,6 +835,8 @@ class ApiProvider:
         with self._state_lock:
             if revision != self._history_revision or snapshot.generation != self._generation:
                 return False
+            if durable_edit is not None:
+                durable.admit_write(**durable_edit)
             if self._window_ref is not None:
                 self.context_ledger.commit_exchange(
                     self._window_ref,

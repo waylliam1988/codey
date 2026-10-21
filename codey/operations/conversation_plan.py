@@ -187,11 +187,8 @@ def build_conversation_plan(  # noqa: C901, PLR0912, PLR0915
         pending = pending_calls(history) if callable(pending_calls) else ()
         if isinstance(pending, (tuple, list, set, frozenset)) and pending:
             raise ValueError("cannot open a new protocol window while calls are pending")
-    if fresh_chat and isinstance(budget, ContextBudget):
-        export = getattr(provider, "export_work_state", None)
-        work_state = export() if callable(export) else ""
-        if work_state:
-            handoff = "\n\n".join(part for part in (handoff, work_state) if part)
+    # Durable context is the sole recovery source. Provider protocol state is
+    # reconstructed at activation and never serialized into handoff text.
     if fresh_chat and durable_handoff:
         handoff = "\n\n".join(part for part in (handoff, durable_handoff) if part)
     if fresh_chat and can_summarize_current_chat and not isinstance(budget, ContextBudget) and not pure:
@@ -236,17 +233,12 @@ def build_conversation_plan(  # noqa: C901, PLR0912, PLR0915
     recovered_owner_prompt = ""
     if fresh_chat and pure:
         handoff = render_recovered_handoff(prior_snapshot, visible_excerpt) if (handoff or visible_excerpt or prior_snapshot.to_payload()) else ""
-        if isinstance(budget, ContextBudget) and work_state:
-            handoff = "\n\n".join(part for part in (handoff, work_state) if part)
     elif fresh_chat:
         if handoff or visible_excerpt or prior_snapshot.to_payload():
-            preserved_work_state = work_state if isinstance(budget, ContextBudget) else ""
             handoff = render_recovered_handoff(
                 prior_snapshot,
                 visible_excerpt,
             )
-            if preserved_work_state:
-                handoff += "\n\n" + preserved_work_state
         if visible_excerpt:
             recovered_owner_prompt = handoff
     raw_window_ref = getattr(provider, "window_ref", None)

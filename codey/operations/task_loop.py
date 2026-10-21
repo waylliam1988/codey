@@ -13,8 +13,9 @@ tool results become the next prompt (web) or the next tool_results call
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, cast
 
 from codey.operations import kernel_events as _events
@@ -37,6 +38,7 @@ from codey.providers.base import ProviderToolDefinition, ProviderToolResult, Tur
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.workspace.coding_context import render_coding_context
 from codey.workspace.context_admission import GhostContextSource, admit_ghost_context
+from codey.workspace.context_epoch import ContextEpoch, context_epoch_id
 
 if TYPE_CHECKING:  # Annotations only; the loop never re-exports TaskSession.
     from codey.operations.task_session import TaskSession
@@ -75,6 +77,8 @@ class KernelTransportDeps:
     context_scope: str = "request"
     ghost_sources: tuple[GhostContextSource, ...] = ()
     admit_hints: bool = True
+    attempt_gate: Callable[[Any, dict[str, Any]], None] | None = None
+    attempt_admit_hints: Callable[[], bool] | None = None
     stop_flag: Any = None
     stagnant_turns: int | None = None
     delivered: Mapping[str, ToolResult] | None = None
@@ -157,7 +161,64 @@ class _KernelStartup:
     native_tools: list[ProviderToolDefinition]
     snapshot: Any
     pending_recovery: bool
+    attempt_gate_bound: bool = False
     window_ref: Any = None
+
+
+def _payload_strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, Mapping):
+        result: list[str] = []
+        for item in value.values():
+            result.extend(_payload_strings(item))
+        return result
+    if isinstance(value, (list, tuple)):
+        result = []
+        for item in value:
+            result.extend(_payload_strings(item))
+        return result
+    return []
+
+
+def _bind_attempt_gate(
+    provider: Any, transport: KernelTransportDeps, trace_recorder: Any,
+) -> bool:
+    binder = getattr(provider, "bind_attempt_gate", None)
+    if not callable(binder):
+        return False
+    gate: Callable[[Any, dict[str, Any]], None] | None = transport.attempt_gate
+    if gate is None and transport.ghost_sources:
+        def gate(client: Any, payload: dict[str, Any]) -> None:
+            rendered = "\n".join(_payload_strings(payload))
+            enabled = (transport.attempt_admit_hints() if transport.attempt_admit_hints is not None
+                       else transport.admit_hints)
+            sources = transport.ghost_sources
+            if getattr(client, "purpose", "conversation") == "compaction":
+                # Auxiliary prompts may contain only a declared encoding of a
+                # source.  Gate the representations that are actually present;
+                # a missing source is not invented as a failure.
+                variants = []
+                for source in sources:
+                    escaped = replace(source, text=json.dumps(source.text, ensure_ascii=False)[1:-1])
+                    variants.append((source, escaped))
+                present = tuple(escaped if escaped.text in rendered else source
+                                for source, escaped in variants
+                                if source.text in rendered or escaped.text in rendered)
+                sources = present
+            admission = admit_ghost_context(
+                rendered, sources, request_scope=transport.context_scope,
+                require_all=bool(sources), admit_hints=enabled,
+            )
+            if getattr(client, "purpose", "conversation") == "conversation":
+                prompt = getattr(client, "_attempt_gate_prompt", "") or rendered
+                admission = replace(
+                    admission,
+                    epoch=ContextEpoch(epoch_id=context_epoch_id(prompt), admissions=admission.epoch.admissions),
+                )
+                record_outbound(trace_recorder, prompt, admission=admission)
+    binder(gate)
+    return gate is not None
 
 
 def _receive_turn_plan(
@@ -166,6 +227,7 @@ def _receive_turn_plan(
     stagnant_turns: int | None, propagate_provider_failure: bool, trace_recorder: Any, context_scope: str,
     ghost_sources: tuple[GhostContextSource, ...] = (), require_ghost_sources: bool = False,
     admit_hints: bool = True,
+    kernel_admission: bool = True,
 ) -> _ReceivedPlan | KernelResult | None:
     """Receive once; cancellation, truncation and protocol repair precede execution.
 
@@ -180,7 +242,10 @@ def _receive_turn_plan(
             refs = getattr(provider, "set_result_refs", None)
             if callable(refs):
                 refs(tuple(session._memory_results))
-        if state.pending_reply is None and not (native and state.pending_messages is not None):
+        set_gate_prompt = getattr(provider, "set_attempt_gate_prompt", None)
+        if callable(set_gate_prompt):
+            set_gate_prompt(state.prompt)
+        if kernel_admission and state.pending_reply is None and not (native and state.pending_messages is not None):
             admission = admit_ghost_context(
                 state.prompt, ghost_sources, request_scope=context_scope,
                 require_all=require_ghost_sources, admit_hints=admit_hints,
@@ -481,6 +546,7 @@ def _kernel_startup(
     delivered: Mapping[str, ToolResult] | None,
     initial_turn: InitialNativeTurn | None = None,
     replayed_result_ids: frozenset[str] = frozenset(),
+    attempt_gate_bound: bool = False,
 ) -> _KernelStartup:
     runnable = dict(executors or {})
     delivered_map = dict(delivered or {})
@@ -532,6 +598,7 @@ def _kernel_startup(
                                  pending_reply=initial_turn.reply if initial_turn is not None else None,
                                  pending_messages=pending_native_messages),
         native_tools=native_tools, snapshot=initial_snapshot, pending_recovery=bool(pending_initial),
+        attempt_gate_bound=attempt_gate_bound,
         # Keep the exact reference carried by the approval/recovery row.  The
         # caller may not reconstruct it from the current provider binding when
         # a continuation crossed a run boundary.
@@ -616,6 +683,7 @@ def run_task_kernel(
         observation.completion_context, execution.workspace_ignored_paths,
     )
     try:
+        attempt_gate_bound = _bind_attempt_gate(provider, transport, observation.trace_recorder)
         resume_start = _resume_start(transport.start_turn)
         startup = _kernel_startup(
             session,
@@ -633,6 +701,7 @@ def run_task_kernel(
             delivered=transport.delivered,
             initial_turn=transport.initial_turn,
             replayed_result_ids=transport.replayed_result_ids,
+            attempt_gate_bound=attempt_gate_bound,
         )
     except RecoveryFailed as exc:
         # Recovery delivery failures must never fall through to the initial
@@ -684,9 +753,11 @@ def run_task_kernel(
             stop_flag=stop_flag, on_event=on_event, stagnant_turns=stagnant_turns,
             propagate_provider_failure=propagate_provider_failure,
             trace_recorder=observation.trace_recorder,
-            ghost_sources=transport.ghost_sources, require_ghost_sources=(turn == resume_start),
+            ghost_sources=transport.ghost_sources,
+            require_ghost_sources=(turn == resume_start and not startup.attempt_gate_bound),
             context_scope=transport.context_scope,
             admit_hints=transport.admit_hints,
+            kernel_admission=not startup.attempt_gate_bound,
             window_ref=window_ref,
         )
         if isinstance(received, KernelResult):

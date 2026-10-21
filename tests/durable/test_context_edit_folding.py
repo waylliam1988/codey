@@ -116,6 +116,35 @@ def test_nested_checkpoint_and_new_tail_rebuild_identically_after_restart(tmp_pa
             {"role": "assistant", "content": "new incremental answer"})
 
 
+def test_cutoff_replays_a_later_edit_only_when_its_sources_precede_the_cutoff(session):
+    original = session.append_message("chat", "user_message", {"text": "early fact " * 1000})
+    current = session.append_message("chat", "user_message", {"text": "current input"})
+    head, revision = session.head("chat")
+    session.admit_write(
+        conversation_id="chat", request_id="cutoff-summary", kind="context_edit",
+        data={"source_entry_ids": [original.entry_id]}, display_only=False,
+        edits=[replacement(original.entry_id, "retained early fact")],
+        expected_revision=revision, expected_head=head,
+    )
+    snapshot = session.context_snapshot("chat", token_budget=100, before_entry_id=current.entry_id)
+    assert snapshot.messages == ({"role": "assistant", "content": "retained early fact"},)
+
+
+def test_cutoff_does_not_apply_an_edit_that_names_a_future_source(session):
+    session.append_message("chat", "user_message", {"text": "early fact"})
+    current = session.append_message("chat", "user_message", {"text": "current input"})
+    future = session.append_message("chat", "user_message", {"text": "future fact"})
+    head, revision = session.head("chat")
+    session.admit_write(
+        conversation_id="chat", request_id="future-summary", kind="context_edit",
+        data={"source_entry_ids": [future.entry_id]}, display_only=False,
+        edits=[replacement(future.entry_id, "future summary")],
+        expected_revision=revision, expected_head=head,
+    )
+    snapshot = session.context_snapshot("chat", token_budget=100, before_entry_id=current.entry_id)
+    assert snapshot.messages == ({"role": "user", "content": "early fact"},)
+
+
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
 def test_folded_checkpoint_and_native_tail_reach_the_actual_codec_attempt(session, monkeypatch, protocol):
     from codey.providers import api_transport

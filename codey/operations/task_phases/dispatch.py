@@ -106,6 +106,9 @@ def connect_and_build_frame(
         bind_display(display_event)
     if callable(getattr(type(provider), "bind_context", None)):
         provider.bind_context(request.session_id)
+    bind_durable = getattr(provider, "bind_durable_context", None)
+    if callable(bind_durable):
+        bind_durable(state.durable, request.session_id)
     conversation = state.conversation_for(request.session_id)
     conversation_plan = plan_conversation(
         state=state,

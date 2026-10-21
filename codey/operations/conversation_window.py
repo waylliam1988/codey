@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import inspect
+from collections.abc import Mapping
+
 from codey.durable.model import thaw_json
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.core.window_action import OpenWindow, ReuseWindow, WindowAction, WindowOpenReason
@@ -79,7 +82,16 @@ def _restore_context(provider: object, action: OpenWindow) -> None:
     if not callable(load):
         raise WindowActivationError("provider cannot load planned durable context")
     try:
-        load([thaw_json(message) for message in action.context.messages])
+        messages = [thaw_json(message) for message in action.context.messages]
+        parameters: Mapping[str, inspect.Parameter]
+        try:
+            parameters = inspect.signature(load).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "source_entry_ids" in parameters:
+            load(messages, source_entry_ids=action.context.entry_ids)
+        else:
+            load(messages)
     except Exception as exc:
         raise WindowActivationError(f"durable context activation failed: {exc}") from exc
 

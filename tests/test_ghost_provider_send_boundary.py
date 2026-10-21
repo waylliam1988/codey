@@ -219,4 +219,5 @@ def test_scoped_hint_control_reaches_entry_api_http(tmp_path, capture_endpoint, 
     assert result.event["stop_reason"] == "done", result.event
     assert len(payloads) == 1
     assert (hint in json.dumps(payloads[0])) == (control == "enabled")
-    assert calls == [{"project": "", "session_id": frame.request.session_id}]
+    expected_calls = 2 if control == "enabled" else 1
+    assert calls == [{"project": "", "session_id": frame.request.session_id}] * expected_calls
