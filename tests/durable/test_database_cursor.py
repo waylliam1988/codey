@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Queue
 from types import SimpleNamespace
@@ -13,6 +14,17 @@ def test_database_identity_survives_reopen_and_separates_independent_databases(t
     identity = first.database_id
     assert identity and DurableSession(SQLiteDurableStore(path)).database_id == identity
     assert DurableSession(SQLiteDurableStore(tmp_path / "other.sqlite3")).database_id != identity
+
+
+def test_concurrent_cold_start_serializes_schema_initialization(tmp_path: Path) -> None:
+    path = tmp_path / "durable.sqlite3"
+
+    def open_store(_index: int) -> str:
+        return SQLiteDurableStore(path).database_id
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        identities = list(pool.map(open_store, range(8)))
+    assert identities and all(identity == identities[0] for identity in identities)
 
 
 def test_history_and_replayed_events_use_the_persisted_database_identity(tmp_path: Path) -> None:
