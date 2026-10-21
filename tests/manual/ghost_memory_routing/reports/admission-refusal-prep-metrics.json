@@ -1,0 +1,206 @@
+{
+  "schema": "ghost_payload_admission_placement_v1",
+  "config": {
+    "suite": "final_admission_refusal_prep_20261021",
+    "model": "synthetic-payload-placement",
+    "endpoint": "ephemeral loopback HTTP",
+    "commit": "b1a787234a1e039de361f77573e3bf1d23705414",
+    "placements": [
+      "attempt_declared_json"
+    ],
+    "cases": [
+      "lease_expiry",
+      "lease_revoke"
+    ],
+    "protocols": [
+      "openai-completions",
+      "openai-responses"
+    ],
+    "cells": 4,
+    "reps": 1,
+    "context": 65536,
+    "reserve": 8192,
+    "keep_recent": 12000,
+    "output": 128,
+    "temperature": 0,
+    "timeout": 5,
+    "max_turns": 1,
+    "counter": "fixed pressure fixture; not real tokenizer",
+    "durable": true,
+    "refusal_type": "request_prep",
+    "production_changes": false,
+    "candidate": "same validator moved; kernel predicate replaced, not stacked"
+  },
+  "rows": [
+    {
+      "protocol": "openai-completions",
+      "placement": "attempt_declared_json",
+      "case": "lease_expiry",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:02+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:dd003f609caff03f",
+          "declared_rendering": "direct",
+          "source_digests": [
+            {
+              "key": "ghost_directive",
+              "origin": "sha256:6edc8e0893db41af8dcd55ce1bedd811767f45f98960bf9fad2a6f5818347abc",
+              "rendered": "sha256:6edc8e0893db41af8dcd55ce1bedd811767f45f98960bf9fad2a6f5818347abc"
+            }
+          ],
+          "reason": "Ghost context admission rejected: ghost_directive:expired"
+        }
+      ],
+      "wire": [],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "durable_effects": [
+        {
+          "sent_state": "not_sent",
+          "status": "error",
+          "error_code": "RequestPrepError"
+        }
+      ],
+      "refusal_type": "request_prep",
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "attempt_declared_json",
+      "case": "lease_revoke",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:dd003f609caff03f",
+          "declared_rendering": "direct",
+          "source_digests": [
+            {
+              "key": "ghost_directive",
+              "origin": "sha256:6edc8e0893db41af8dcd55ce1bedd811767f45f98960bf9fad2a6f5818347abc",
+              "rendered": "sha256:6edc8e0893db41af8dcd55ce1bedd811767f45f98960bf9fad2a6f5818347abc"
+            }
+          ],
+          "reason": "Ghost context admission rejected: ghost_directive:hints_disabled"
+        }
+      ],
+      "wire": [],
+      "transitions": [
+        "revoked_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "durable_effects": [
+        {
+          "sent_state": "not_sent",
+          "status": "error",
+          "error_code": "RequestPrepError"
+        }
+      ],
+      "refusal_type": "request_prep",
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "attempt_declared_json",
+      "case": "lease_expiry",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:02+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a",
+          "declared_rendering": "direct",
+          "source_digests": [
+            {
+              "key": "ghost_directive",
+              "origin": "sha256:6edc8e0893db41af8dcd55ce1bedd811767f45f98960bf9fad2a6f5818347abc",
+              "rendered": "sha256:6edc8e0893db41af8dcd55ce1bedd811767f45f98960bf9fad2a6f5818347abc"
+            }
+          ],
+          "reason": "Ghost context admission rejected: ghost_directive:expired"
+        }
+      ],
+      "wire": [],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "durable_effects": [
+        {
+          "sent_state": "not_sent",
+          "status": "error",
+          "error_code": "RequestPrepError"
+        }
+      ],
+      "refusal_type": "request_prep",
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "attempt_declared_json",
+      "case": "lease_revoke",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a",
+          "declared_rendering": "direct",
+          "source_digests": [
+            {
+              "key": "ghost_directive",
+              "origin": "sha256:6edc8e0893db41af8dcd55ce1bedd811767f45f98960bf9fad2a6f5818347abc",
+              "rendered": "sha256:6edc8e0893db41af8dcd55ce1bedd811767f45f98960bf9fad2a6f5818347abc"
+            }
+          ],
+          "reason": "Ghost context admission rejected: ghost_directive:hints_disabled"
+        }
+      ],
+      "wire": [],
+      "transitions": [
+        "revoked_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "durable_effects": [
+        {
+          "sent_state": "not_sent",
+          "status": "error",
+          "error_code": "RequestPrepError"
+        }
+      ],
+      "refusal_type": "request_prep",
+      "compaction_diagnostics": []
+    }
+  ],
+  "decision": "EXPERIMENT_ONLY",
+  "model_behavior_score": null
+}

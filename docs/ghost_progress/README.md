@@ -16,6 +16,7 @@
 | Scoped Control Failure Closure | `PRODUCTION_MERGED` | `34e201dc` 移除 unscoped/learning fallback；缺 authority 不学不写，settlement 尊重项目/会话 deny；实际 entry→HTTP on/off/error 与扩展回归已验证 | [修复与验证](scoped-control-failure-closure.md) |
 | Provider Control Revocation | `EXPERIMENT_ONLY` / `INCOMPLETE` | `c39f0897`：真实 session 控制首轮后关闭，text/native 均在第二次 HTTP 重发 hint；6 项对照完整，不合并未验证 guard | [负结果与报告](provider-control-revocation.md) |
 | Final Payload Admission Placement | `EXPERIMENT_ONLY` / `INCOMPLETE` | 60 项定位 lease/retry/辅助发送时隙；`3b04b8a6` 的独立 66 项证明显式 JSON 表示可修复编码误拒，但 history-only 摘要仍缺来源继承，暂不合并 | [宿主实验](final-payload-admission-placement.md) |
+| Admission Refusal Settlement | `EXPERIMENT_ONLY` / `INCOMPLETE` | `b1a78723`：8 项真实 durable 对照，0 HTTP 的 GhostError 被记为 MAYBE_SENT；已有 prep 契约为 NOT_SENT，尚未证明完整 native 恢复 | [拒绝与恢复边界](admission-refusal-settlement.md) |
 | 0.6.2 scope 与四个开关 | `INCOMPLETE` | scoped 读取/写入故障关闭已修复；运行中撤回仍有真实 HTTP 缺口，尚缺 reset manifest、runtime 并发矩阵与完整 acceptance battery | [进度记录](independent-controls.md) |
 | Research parity state contract | `EXPERIMENT_COMPLETE` | research 生产依赖显式携带 state；缺失 Ghost control fail closed；不改变默认 prompt | [进度记录](research-state-contract.md) |
 | 0.6.3 冲突生命周期与持久删除 | `NOT STARTED` | supersede、tombstone、删除/rebuild 零复活 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
