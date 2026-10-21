@@ -1,0 +1,80 @@
+{
+  "schema": "ghost_history_expiry_probe_v1",
+  "config": {
+    "suite": "provider_history_expiry_20261021_recorded",
+    "model": "synthetic-history-expiry",
+    "endpoint": "ephemeral loopback HTTP",
+    "commit": "3d013af15d5c901dd542573793017281958beda5",
+    "tasks": [
+      "read_fixture_then_done"
+    ],
+    "cells": 4,
+    "reps": 1,
+    "protocols": [
+      "text",
+      "native"
+    ],
+    "context": 32768,
+    "reserve": 8192,
+    "keep_recent": 12000,
+    "output_tokens": 128,
+    "temperature": 0.3,
+    "timeout_seconds": 5,
+    "max_turns": 2,
+    "hypothesis": "expired hints remain in second actual HTTP request history"
+  },
+  "rows": [
+    {
+      "native": false,
+      "expiring": false,
+      "requests": 2,
+      "stop_reason": "done",
+      "admission_clock_reads": [
+        "2040-01-01T00:00:00+00:00",
+        "2040-01-01T00:00:02+00:00"
+      ],
+      "expiry_explicitly_blocked": false,
+      "second_payload_has_hint": true,
+      "expired_hint_sent": false
+    },
+    {
+      "native": false,
+      "expiring": true,
+      "requests": 2,
+      "stop_reason": "done",
+      "admission_clock_reads": [
+        "2040-01-01T00:00:00+00:00",
+        "2040-01-01T00:00:02+00:00"
+      ],
+      "expiry_explicitly_blocked": false,
+      "second_payload_has_hint": true,
+      "expired_hint_sent": true
+    },
+    {
+      "native": true,
+      "expiring": false,
+      "requests": 2,
+      "stop_reason": "done",
+      "admission_clock_reads": [
+        "2040-01-01T00:00:00+00:00"
+      ],
+      "expiry_explicitly_blocked": false,
+      "second_payload_has_hint": true,
+      "expired_hint_sent": false
+    },
+    {
+      "native": true,
+      "expiring": true,
+      "requests": 2,
+      "stop_reason": "done",
+      "admission_clock_reads": [
+        "2040-01-01T00:00:00+00:00"
+      ],
+      "expiry_explicitly_blocked": false,
+      "second_payload_has_hint": true,
+      "expired_hint_sent": true
+    }
+  ],
+  "decision": "EXPERIMENT_ONLY",
+  "model_behavior_score": null
+}
