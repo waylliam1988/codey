@@ -93,3 +93,15 @@ ty 和本轮脚本 Ruff 通过；没有全量 pytest。一次选错旧文件名�
 不新增 decoder fallback、不绕过辅助发送、不把范围扩大为模型收益。
 本实验不证明跨 run/resume、远端 web history 可见性或完整 trace/wire parity。
 World Model 继续 SHADOW。
+
+## 继续实验：Producer Declaration / History-only Derivation
+
+目标：保持最终 attempt 单一 predicate，由实际 auxiliary fork producer 显式登记 JSON source
+表示，而非 gate 在匹配失败后猜编码。保留原文/rendered digest、scope、budget、expiry；
+未登记的 client 不放行。假设这能修复 quote/newline 编码误拒，却仍不足以追踪语义摘要后的来源。
+增加 history-only compaction：当前 builder 无 Ghost candidate，source 只在 fixture 旧 history 中；
+候选持有 fixture 声明的历史 catalog，kernel 基线只持当前候选。这不冒充生产已有历史 catalog。
+
+配置保持前一阶段；Completions/Responses × 11 场景 × kernel/attempt/attempt_declared_json，
+66 项各一次；原 60 项作为独立归档，不合并统计样本。本阶段没有生产改动，状态 INCOMPLETE。
+新参数是显式实验 arm，不改变原 60 项的默认复现配置。

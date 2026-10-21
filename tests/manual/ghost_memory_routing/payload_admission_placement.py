@@ -32,10 +32,12 @@ from codey.policies.task_policy import TaskPolicy  # noqa: E402
 from codey.providers.api_provider import ApiProvider  # noqa: E402
 from codey.providers.api_request_policy import LocalRequestPolicy, RequestLease, RetryDirective  # noqa: E402
 from codey.providers.token_accounting import RequestContextCount  # noqa: E402
+from codey.utils.refs import digest_text  # noqa: E402
 from codey.workspace.context_admission import GhostAdmissionResult, admit_ghost_context, request_scope  # noqa: E402
 from codey.workspace.context_epoch import ContextEpoch, context_epoch_id  # noqa: E402
 
 PLACEMENTS = ("kernel", "preparation", "attempt")
+DECLARED_PLACEMENT = "attempt_declared_json"
 CASES = ("enabled", "disabled_initially", "lease_expiry", "lease_revoke", "wire_rewrite", "retry_expiry",
          "compaction_enabled", "compaction_lease_expiry", "unicode_enabled", "unicode_compaction")
 ASCII_HINT = "Synthetic approved preference."
@@ -207,15 +209,36 @@ def probe(directory, project, *, protocol, placement, case):
                 {"role": "assistant", "content": "recent accepted answer"},
             ])
 
+        # Producer-owned declarations for this experiment, not inferred from
+        # missing text at admission. An undeclared provider is an error.
+        declarations = {provider: (sources, "direct")}
+        fork = ApiProvider.fork_auxiliary
+
+        def declared_fork(client):
+            auxiliary = fork(client)
+            declarations[auxiliary] = (
+                tuple(replace(source, text=json.dumps(source.text, ensure_ascii=False)[1:-1]) for source in sources),
+                "json_string_fragment",
+            )
+            return auxiliary
+
         def gate(client, payload):
             # Exactly one predicate owner in candidate cells. Text extraction
             # deliberately has no speculative decoder or lineage fallback.
             event = {"purpose": client.purpose, "at": Clock.current.isoformat(), "decision": "pending",
                      "payload_epoch": context_epoch_id(json.dumps(payload, ensure_ascii=False))}
+            rendered_sources = sources
+            if placement == DECLARED_PLACEMENT:
+                rendered_sources, rendering = declarations[client]
+                event["declared_rendering"] = rendering
+                event["source_digests"] = [
+                    {"key": source.key, "origin": digest_text(source.text), "rendered": digest_text(rendered.text)}
+                    for source, rendered in zip(sources, rendered_sources, strict=True)
+                ]
             gates.append(event)
             try:
                 admission = admit_ghost_context(
-                    "\n".join(strings(payload)), sources, request_scope=request_scope(project, session_id),
+                    "\n".join(strings(payload)), rendered_sources, request_scope=request_scope(project, session_id),
                     require_all=True, admit_hints=ghost_control_enabled(
                         state, "admit_hints", project=str(project), session_id=session_id,
                     ),
@@ -247,11 +270,15 @@ def probe(directory, project, *, protocol, placement, case):
                     stack.enter_context(patch("codey.operations.task_loop.admit_ghost_context", no_kernel_predicate))
                     method, replacement = ("_admit_request", prepared) if placement == "preparation" else ("_generate_attempt", attempted)
                     stack.enter_context(patch.object(ApiProvider, method, replacement))
+                    if placement == DECLARED_PLACEMENT:
+                        stack.enter_context(patch.object(ApiProvider, "fork_auxiliary", declared_fork))
+                current_request = replace(request, ghost_directive="") if case == "history_only_compaction" else request
                 result = run_task_kernel(
                     TaskSession(policy=TaskPolicy(frozenset({"control"})), max_turns=1, coding_context_enabled=False),
                     request=KernelRunRequest(
-                        transport=KernelTransportDeps(provider=provider, context_text=_project_context(request),
-                            user_task=request.task, ghost_sources=sources, admit_hints=enabled,
+                        transport=KernelTransportDeps(provider=provider, context_text=_project_context(current_request),
+                            user_task=request.task, ghost_sources=() if case == "history_only_compaction" else sources,
+                            admit_hints=enabled,
                             context_scope=request_scope(project, session_id)),
                         execution=KernelExecutionDeps(project_path=project, session_id=session_id),
                     ),
@@ -263,7 +290,8 @@ def probe(directory, project, *, protocol, placement, case):
                 raise RuntimeError(f"unexpected provider failure: {result.summary}")
             if policy.acquires != policy.releases:
                 raise RuntimeError("admission rejection leaked request lease")
-            stable = case in {"enabled", "disabled_initially", "unicode_enabled", "compaction_enabled", "unicode_compaction"}
+            stable = case in {"enabled", "disabled_initially", "unicode_enabled", "compaction_enabled",
+                              "unicode_compaction", "history_only_compaction"}
             if placement == "kernel" and stable and result.stop_reason != "done":
                 raise RuntimeError("baseline healthy control failed")
             return {"protocol": protocol, "placement": placement, "case": case,
@@ -288,6 +316,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--suite", required=True)
     parser.add_argument("--metrics-out", type=Path)
+    parser.add_argument("--placement", choices=(*PLACEMENTS, DECLARED_PLACEMENT), nargs="+", default=PLACEMENTS)
+    parser.add_argument("--include-history-only", action="store_true")
     args = parser.parse_args()
     if Path(args.suite).name != args.suite or args.suite in {".", ".."}:
         parser.error("suite must be a directory name")
@@ -295,19 +325,21 @@ def main():
     root.mkdir(parents=True, exist_ok=False)
     project = root / "shared-project"
     project.mkdir()
+    selected_cases = (*CASES, "history_only_compaction") if args.include_history_only else CASES
     manifest = {"suite": args.suite, "model": "synthetic-payload-placement", "endpoint": "ephemeral loopback HTTP",
                 "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
                 "started_at": datetime.now(UTC).isoformat(), "command": subprocess.list2cmdline(sys.argv),
-                "placements": list(PLACEMENTS), "cases": list(CASES),
-                "protocols": ["openai-completions", "openai-responses"], "cells": len(CASES) * 6, "reps": 1,
+                "placements": list(args.placement), "cases": list(selected_cases),
+                "protocols": ["openai-completions", "openai-responses"],
+                "cells": len(selected_cases) * len(args.placement) * 2, "reps": 1,
                 "context": 65536, "reserve": 8192, "keep_recent": 12000, "output": 128, "temperature": 0,
                 "timeout": 5, "max_turns": 1, "counter": "fixed pressure fixture; not real tokenizer",
                 "production_changes": False, "candidate": "same validator moved; kernel predicate replaced, not stacked"}
     (root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     rows = []
     for protocol in manifest["protocols"]:
-        for case in CASES:
-            for placement in PLACEMENTS:
+        for case in selected_cases:
+            for placement in args.placement:
                 cell = f"{protocol}-{case}-{placement}"
                 try:
                     row = probe(root / cell, project, protocol=protocol, placement=placement, case=case)
