@@ -34,7 +34,7 @@ def test_work_state_is_updated_before_each_actual_kernel_send(monkeypatch):
     monkeypatch.setattr("codey.operations.kernel_transport.send_kernel_reply", lambda *args: (_ for _ in ()).throw(RuntimeError("offline")))
     _receive_turn_plan(session, provider, _ProviderTurnState(prompt="next"), SimpleNamespace(), [], native=False,
                        provider_id="local", turn=1, stop_flag=lambda: False, on_event=None, stagnant_turns=None,
-                       propagate_provider_failure=False, trace_recorder=None)
+                       propagate_provider_failure=False, trace_recorder=None, context_scope="request")
     assert captured and "latest intent" in captured[0]
 
 

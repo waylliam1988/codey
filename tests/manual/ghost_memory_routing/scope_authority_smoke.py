@@ -32,19 +32,23 @@ def write_json(path, value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase", choices=["baseline", "candidate"], required=True)
+    parser.add_argument("--attempt", default="", help="New implementation attempt; never overwrites a prior phase")
     parser.add_argument("--suite", default="scope_authority_20261021")
     parser.add_argument("--endpoint", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--model", default=MODEL)
     args = parser.parse_args()
     if Path(args.suite).name != args.suite or args.suite in {".", ".."}:
         parser.error("suite must be a directory name")
+    if args.attempt and (Path(args.attempt).name != args.attempt or args.attempt in {".", ".."}):
+        parser.error("attempt must be a directory name")
     root = DATA_ROOT / args.suite
     project = root / "project"
     project.mkdir(parents=True, exist_ok=True)
-    phase = root / args.phase
+    phase = root / (f"{args.phase}-{args.attempt}" if args.attempt else args.phase)
     phase.mkdir(exist_ok=False)
     config = {
-        "suite": args.suite, "phase": args.phase, "endpoint": args.endpoint, "model": args.model,
+        "suite": args.suite, "phase": args.phase, "attempt": args.attempt,
+        "endpoint": args.endpoint, "model": args.model,
         "started_at": datetime.now(UTC).isoformat(),
         "command": subprocess.list2cmdline(sys.argv),
         "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
@@ -55,6 +59,13 @@ def main():
         "production_entry": "project_adapter.run", "profile": "planning_readonly",
         "policy_grants": ["control"], "max_turns": 1,
         "note": "Structural smoke only; no frozen language evaluation or behavioral score.",
+        "implementation_sha256": {
+            name: hashlib.sha256((REPO / name).read_bytes()).hexdigest()
+            for name in (
+                "codey/operations/task_loop.py", "codey/operations/kernel_trace.py",
+                "codey/operations/project_adapter.py", "codey/workspace/context_admission.py",
+            )
+        },
     }
     write_json(phase / "manifest.json", config)
     cell = "health"

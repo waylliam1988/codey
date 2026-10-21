@@ -21,6 +21,7 @@ from codey.operations.task_loop import (
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.api_provider import ApiProvider
+from codey.runs.trace import RunTraceStore
 from codey.utils.refs import digest_text
 from codey.workspace.context_admission import request_scope
 from codey.workspace.context_epoch import context_epoch_id
@@ -63,7 +64,7 @@ def capture_endpoint():
 @pytest.mark.parametrize("native", [False, True], ids=["text", "native"])
 @pytest.mark.parametrize("fault", [
     "none", "off", "scope", "global_first_scope", "global_then_project", "session_scope", "budget", "expiry",
-    "invalid_expiry", "missing_bytes", "disabled", "duplicate_key", "trace_failure", "scope_trace_failure",
+    "invalid_expiry", "missing_bytes", "disabled", "duplicate_key", "trace_failure", "scope_trace_failure", "empty_scope",
 ])
 def test_builder_kernel_api_wire_admission(tmp_path, capture_endpoint, native, fault):
     endpoint, payloads = capture_endpoint
@@ -92,22 +93,29 @@ def test_builder_kernel_api_wire_admission(tmp_path, capture_endpoint, native, f
         sources = (*sources, sources[0])
 
     admissions, boundaries = [], []
+    recorder = RunTraceStore(tmp_path / "trace").open(
+        run_id="scope-capture", session_id="session-a", project=tmp_path,
+        mode_initial="planning", provider_initial="local",
+    )
 
     def record_sources(rows, **kwargs):
         if "trace_failure" in fault:
             raise RuntimeError("trace sink unavailable")
         admissions.append((rows, kwargs))
+        recorder.record_context_sources(rows, **kwargs)
 
     def record_boundary(row, **_kwargs):
         if "trace_failure" in fault:
             raise RuntimeError("trace sink unavailable")
         boundaries.append(row)
+        recorder.record_provider_prompt_boundary(row)
 
     trace = SimpleNamespace(record_context_sources=record_sources, record_provider_prompt_boundary=record_boundary)
     outcome = run_task_kernel(
         TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=1),
         request=KernelRunRequest(
             transport=KernelTransportDeps(provider=provider, context_text=context,
+                                          context_scope="" if fault == "empty_scope" else request_scope(tmp_path, "session-a"),
                                           ghost_sources=sources, admit_hints=fault != "disabled"),
             execution=KernelExecutionDeps(project_path=tmp_path, session_id="session-a"),
             observation=KernelObservationDeps(trace_recorder=trace),
@@ -127,15 +135,34 @@ def test_builder_kernel_api_wire_admission(tmp_path, capture_endpoint, native, f
             if sources:
                 assert admissions == [(sources, {"epoch_id": context_epoch_id(outbound),
                                                  "admission_reason": "provider_turn_boundary"})]
-                assert digest_text(sources[0].text) == digest_text(request.ghost_directive)
+                for source in sources:
+                    section = next(row for row in recorder.manifest.prompt_sections if row.name == source.key)
+                    assert section.digest == digest_text(source.text)
+                    assert section.scope == source.scope
+                    assert section.budget == source.budget
+                    assert section.epoch_id == context_epoch_id(outbound)
+                    assert section.source_refs == (f"context_source:{source.key}",)
             else:
                 assert admissions == []
+            outbound_section = next(row for row in recorder.manifest.prompt_sections
+                                    if row.name == "workspace_outbound_prompt")
+            assert outbound_section.digest == digest_text(outbound)
+            assert outbound_section.epoch_id == context_epoch_id(outbound)
+            assert request.ghost_directive not in repr(recorder.manifest.to_payload())
     else:
         assert admissions == []
         assert boundaries == []
+        expected_reason = {
+            "scope": "scope_mismatch", "scope_trace_failure": "scope_mismatch",
+            "global_first_scope": "scope_mismatch", "session_scope": "scope_mismatch",
+            "budget": "over_budget", "expiry": "expired", "invalid_expiry": "invalid_expiry",
+            "missing_bytes": "not_in_provider_payload", "disabled": "hints_disabled",
+            "duplicate_key": "invalid_or_duplicate_key", "empty_scope": "missing_request_scope",
+        }[fault]
+        assert f":{expected_reason}" in outcome.summary
 
 
-def test_session_scope_uses_execution_session_not_candidate():
+def test_session_scope_uses_request_session_not_candidate():
     sent = []
     from codey.workspace.context_admission import sources_from_values
 
@@ -144,9 +171,21 @@ def test_session_scope_uses_execution_session_not_candidate():
         TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=1),
         request=KernelRunRequest(
             transport=KernelTransportDeps(provider=SimpleNamespace(send=lambda prompt: sent.append(prompt)),
+                                          context_scope=request_scope(session_id="current"),
                                           context_text=sources[0].text, ghost_sources=sources),
             execution=KernelExecutionDeps(session_id="current"),
         ),
     )
     assert result.stop_reason == "provider_failure"
     assert sent == []
+
+
+@pytest.mark.parametrize("kind", ["project", "session"])
+def test_scope_identity_does_not_alias_long_shared_prefixes(kind):
+    prefix = "shared-" + "x" * 160
+    def scope(suffix):
+        return request_scope(prefix + suffix) if kind == "project" else request_scope(session_id=prefix + suffix)
+
+    assert scope("a") != scope("b")
+    assert scope("a") == scope("a")
+    assert len(scope("a")) <= 160
