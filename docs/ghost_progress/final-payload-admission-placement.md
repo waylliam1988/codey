@@ -105,3 +105,44 @@ World Model 继续 SHADOW。
 配置保持前一阶段；Completions/Responses × 11 场景 × kernel/attempt/attempt_declared_json，
 66 项各一次；原 60 项作为独立归档，不合并统计样本。本阶段没有生产改动，状态 INCOMPLETE。
 新参数是显式实验 arm，不改变原 60 项的默认复现配置。
+
+受测提交：`3b04b8a67733a15b1ae6021c619ce2ef05970015`；suite `final_payload_declared_20261021`。
+
+| 位置（各 22 cells） | HTTP | 失效 source HTTP | rewrite HTTP | 健康对照被拒 |
+|---|---:|---:|---:|---:|
+| kernel | 32 | 10 | 2 | 0 |
+| attempt 原文 | 14 | 0 | 0 | 4 |
+| attempt producer 声明 JSON 表示 | 18 | 0 | 0 | 2 |
+
+66/66 完整，共 64 HTTP；全部 lease 平衡。显式 producer 登记修复两个 codec 的中文 JSON
+误拒，基线与声明 arm 的五组健康对照 × 两个 codec 实际 payload 序列一致。
+但 history-only source 经摘要改写后，两个 attempt arm 均在已完成一次辅助 HTTP 后拒绝主请求，
+原因仍是 `not_in_provider_payload`。编码声明必要，但不能代替语义派生的来源继承。
+没有修改 source budget/scope/expiry、没有失败后尝试其他解码。历史 catalog 仍是显式 fixture，
+没有被偷换成生产 canonical lineage 已完成。
+
+```powershell
+python tests/manual/ghost_memory_routing/payload_admission_placement.py --suite final_payload_declared_repro --placement kernel attempt attempt_declared_json --include-history-only --metrics-out artifacts/ghost_memory_routing/payload-declared-repro-metrics.json
+python -m pytest tests/test_context_compaction_transactions_and_lifecycle.py tests/test_zen_compaction_auxiliary_request_boundary.py tests/test_ghost_round4_resume.py -q --tb=short
+```
+
+保存报告时 suite 为 `final_payload_declared_20261021`，metrics-out 为
+`tests/manual/ghost_memory_routing/reports/payload-declared-metrics.json`。回归：23 passed（1.38s），
+本阶段只改实验脚本与文档，生产类型检查结果见前一阶段，不重复宣称额外检查。
+[第二阶段脱敏指标](../../tests/manual/ghost_memory_routing/reports/payload-declared-metrics.json)；
+[第二阶段报告](../../tests/manual/ghost_memory_routing/reports/payload-declared.md)。
+
+## 后续实现约束（未实现）
+
+优先复用现有 ContextLedger journal 与 compaction checkpoint 的 source/item_digest 关系，
+让 origin ref/digest、scope、expiry 和预算随 canonical source 与派生项保留；不新增 Ghost
+数据库、平行 history 或中央可变 manager。生产 metadata 必须由 renderer/codec 产生并在 wire
+剥离，不能由模型声称来源。分块、lossless encoding、summary 和恢复均要继承来源。
+
+派生项不能通过换 key 获得一份新预算；同一 origin 的当前文本与摘要必须按明确的预算契约
+一起计算。最终 validator 校验绑定的表示与来源，不猜 unescape、不以缺 lineage 为已授权。
+原始候选 digest 与实际 rendered digest 应分别记录，epoch/trace 最终还需绑定准确 wire。
+
+迁移到 provider 内部后，拒绝已发生在 durable provider intent 之后；错误类型还必须能准确
+结算 NOT_SENT、释放 lease 和恢复 native delivery。当前实验直接抛 GhostAdmissionError，
+尚未证明 durable settlement 正确，不能把“零 HTTP”直接当作恢复验收完成。
