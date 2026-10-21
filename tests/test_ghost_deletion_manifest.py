@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost.deletion_manifest import (
     MANIFEST_BLOCKED,
     MANIFEST_COMPLETED,
@@ -13,6 +14,11 @@ from codey.ghost.deletion_manifest import (
     replay,
     started_event,
     store_event,
+)
+from codey.ghost.deletion_manifest_coordinator import (
+    GHOST_STORE_NAMES,
+    DeletionManifestCoordinator,
+    DeletionTarget,
 )
 from codey.ghost.deletion_manifest_store import DeletionManifestStore
 from codey.ghost.sqlite import GhostSQLite
@@ -114,3 +120,77 @@ def test_manifest_store_rejects_operation_reuse_and_corrupts_closed_state(tmp_pa
         )
     with pytest.raises(DeletionManifestError, match="manifest stores"):
         store.get(manifest.operation_id)
+
+
+def test_coordinator_retries_only_pending_stores_after_a_blocked_store(tmp_path) -> None:
+    calls: list[str] = []
+    fail = {"continuity"}
+
+    def target(name: str) -> DeletionTarget:
+        def delete_scope(_scope: str, **_kwargs: object) -> dict[str, str]:
+            calls.append(name)
+            if name in fail:
+                fail.remove(name)
+                raise OSError("temporary store fault")
+            return {"store": name}
+
+        def reset_all() -> bool:
+            calls.append(name)
+            return True
+
+        return DeletionTarget(delete_scope=delete_scope, reset_all=reset_all)
+
+    database = GhostSQLite(tmp_path)
+    store = DeletionManifestStore(database)
+    coordinator = DeletionManifestCoordinator(store, {name: target(name) for name in GHOST_STORE_NAMES})
+    manifest = new_manifest(
+        operation_id="delete-retry", action="delete_scope", scope="project",
+        project="P:/demo", requested_at="2026-10-22T00:00:00Z", retention_class="tombstone",
+        stores=GHOST_STORE_NAMES,
+    )
+    blocked = coordinator.run(manifest, project="P:/demo")
+    assert blocked.status == MANIFEST_BLOCKED
+    assert calls == ["inbox", "hebbian", "continuity"]
+
+    resumed = coordinator.run(manifest, project="P:/demo")
+    assert resumed.status == MANIFEST_BLOCKED
+    assert calls == ["inbox", "hebbian", "continuity", "sleep", "work_queue", "affinity", "observations"]
+    assert resumed.store("inbox").status == STORE_COMPLETED
+    assert resumed.store("continuity").status == STORE_BLOCKED
+    assert resumed.pending_stores == ()
+
+
+def test_coordinator_requires_exactly_the_existing_seven_store_targets(tmp_path) -> None:
+    store = DeletionManifestStore(GhostSQLite(tmp_path))
+    target = DeletionTarget(delete_scope=lambda *_args, **_kwargs: None, reset_all=lambda: None)
+    with pytest.raises(ValueError, match="exactly the seven"):
+        DeletionManifestCoordinator(store, {name: target for name in GHOST_STORE_NAMES[:-1]})
+
+
+def test_coordinator_binds_the_existing_seven_store_reset_methods(tmp_path) -> None:
+    surface = GhostControlSurface.from_state_home(tmp_path)
+    stores = {
+        "inbox": surface.inbox,
+        "hebbian": surface.hebbian,
+        "continuity": surface.continuity,
+        "sleep": surface.sleep,
+        "work_queue": surface.work_queue,
+        "affinity": surface.affinity,
+        "observations": surface.observations,
+    }
+    targets = {}
+    for name, ghost_store in stores.items():
+        assert ghost_store is not None
+        reset = (lambda store=ghost_store: store.reset_all(preserve_settings=True)) if name == "inbox" else ghost_store.reset_all
+        targets[name] = DeletionTarget(delete_scope=ghost_store.delete_scope, reset_all=reset)
+    manifest = new_manifest(
+        operation_id="reset-seven-stores", action="reset_all", scope="all",
+        requested_at="2026-10-22T00:00:00Z", retention_class="tombstone", stores=GHOST_STORE_NAMES,
+    )
+    result = DeletionManifestCoordinator(
+        DeletionManifestStore(GhostSQLite(tmp_path)), targets,
+    ).run(manifest)
+    assert result.status == MANIFEST_COMPLETED
+    assert result.pending_stores == ()
+    restarted = GhostControlSurface.from_state_home(tmp_path)
+    assert restarted.export_state()["ok"] is True
