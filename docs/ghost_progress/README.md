@@ -13,7 +13,9 @@
 | 0.6.1 Context Epoch admission | `INCOMPLETE` | 请求 scope 的真实 HTTP capture/故障注入及 live on/off 已验证；后续 provider history 会重发过期 hint，完整发送矩阵仍缺口 | [进度记录](context-epoch-admission-wiring.md) |
 | Provider Send Scope Authority | `PRODUCTION_MERGED` | `3d013af1` 修复候选自授权、混合 scope 误拒绝与长身份截断别名；有效 on/off 请求 payload 不变 | [子实验](provider-send-scope-authority.md) |
 | Provider History Expiry | `EXPERIMENT_ONLY` / `INCOMPLETE` | `bf7f1b8f`：text/native 的 expiry 两项均在第二次实际 HTTP payload 重发过期 hint；不合并未验证 guard | [负结果与下一步](provider-history-expiry.md) |
-| 0.6.2 scope 与四个开关 | `INCOMPLETE` | scoped projection、重启/并发 settings、expiry、delete/export 和 kernel provider capture 已验证；尚缺 reset manifest、runtime 并发矩阵与完整 acceptance battery | [进度记录](independent-controls.md) |
+| Scoped Control Failure Closure | `PRODUCTION_MERGED` | `34e201dc` 移除 unscoped/learning fallback；缺 authority 不学不写，settlement 尊重项目/会话 deny；实际 entry→HTTP on/off/error 与扩展回归已验证 | [修复与验证](scoped-control-failure-closure.md) |
+| Provider Control Revocation | `EXPERIMENT_ONLY` / `INCOMPLETE` | `c39f0897`：真实 session 控制首轮后关闭，text/native 均在第二次 HTTP 重发 hint；6 项对照完整，不合并未验证 guard | [负结果与报告](provider-control-revocation.md) |
+| 0.6.2 scope 与四个开关 | `INCOMPLETE` | scoped 读取/写入故障关闭已修复；运行中撤回仍有真实 HTTP 缺口，尚缺 reset manifest、runtime 并发矩阵与完整 acceptance battery | [进度记录](independent-controls.md) |
 | Research parity state contract | `EXPERIMENT_COMPLETE` | research 生产依赖显式携带 state；缺失 Ghost control fail closed；不改变默认 prompt | [进度记录](research-state-contract.md) |
 | 0.6.3 冲突生命周期与持久删除 | `NOT STARTED` | supersede、tombstone、删除/rebuild 零复活 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.4 确定性 replay 与显式时间 | `NOT STARTED` | 不依赖 wall clock，projection digest 可复现 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |

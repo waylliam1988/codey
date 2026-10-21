@@ -11,6 +11,13 @@
 
 ## 本次目标
 
+2026-10-21 后续边界更新：`34e201dc` 已移除 scoped TypeError 后无 scope 重试、旧 learning reader
+降级及 post-turn 缺 authority 放行；settlement 改为真实 scoped accept_events，保留 settings_error
+健康状态。见 [Scoped Control Failure Closure](scoped-control-failure-closure.md)，该安全修复单独
+PRODUCTION_MERGED，不代表整个四开关验收完成。新 [Provider Control Revocation](provider-control-revocation.md)
+六项实际 entry→HTTP 对照确认：首轮后 session 关闭 admit_hints，两个协议均重发历史 hint。
+整个 0.6.2 仍 INCOMPLETE。以下早期实验的兼容说明不代表当前 runtime 仍可无 scope 放行。
+
 验证 `accept_events`、`retrieve_projections`、`run_maintenance` 和
 `admit_hints` 四个控制可以独立持久化、读取和 fail closed，并在真实 runtime
 边界分别阻止事件接收、投影检索、后台维护和 provider-send 前 hint admission。
@@ -65,7 +72,9 @@ kernel transport 全集 `1002 passed`。
 python -m pytest tests/test_kernel_legacy_parity.py -q
 ```
 
-结果：`694 passed`；无 state 的 research parity fixture 保持旧的 admit 默认行为。
+结果：当时 `694 passed`。无 state 时默认放行的实现已被后续
+[Research State Contract](research-state-contract.md) 撤销；当前 fixture 必须显式提供生产 state，
+control 缺失拒绝。不得恢复该 fallback。
 
 ## 实验配置
 
@@ -100,8 +109,9 @@ python -m pytest tests/test_kernel_legacy_parity.py -q
 
 1. 为四个控制补充 expiry、scope delete/export/reset 和 control projection replay
    fixture。
-2. 在 shared kernel/provider capture 中继续验证 `admit_hints` 关闭时实际 outbound
-   bytes 不含 Ghost source，开启时 epoch/digest 与 trace 一致，并记录成本/延迟。
+2. 初始 `admit_hints` 关闭和 scoped 读取失败的实际 entry→HTTP 已验证；优先修复运行中关闭
+   后的历史重发。与 history expiry 一起研究最终 payload 的唯一 gate，覆盖正常发送、native
+   results/repair/receipt/resume/compaction，保留拒绝后的恢复语义，再测成本/延迟。
 3. 保持 0.6.2 `INCOMPLETE`，完成后再决定是否进入更窄的 shadow runtime。
 4. World Model 继续保持 shadow：只研究 bounded event/prediction review 和
    projection admission，不进入默认 prompt。

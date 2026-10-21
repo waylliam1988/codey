@@ -60,3 +60,7 @@ ApiProvider 的 `_admit_request` 可见 codec 构建和 compaction 后的真实 
 网页 provider 的远端 history 可见性也必须明确，不能伪称看到了完整历史。
 先验证失败关闭及恢复语义，不为消除红灯而丢弃历史、添加第二个 Ghost validator 或插入重复 callback。
 本次不合并 history 生产实现；World Model 继续 SHADOW。
+
+后续 [Provider Control Revocation](provider-control-revocation.md) 已用实际 task entry、真实
+GhostInboxStore session 控制及 HTTP 完成六项对照：首轮后关闭两项均重发 hint，初始关闭两项
+均无 hint。这与 expiry 缺口共同约束最终 payload gate，不能只重新读取 entry 开关而保留旧 history 漏洞。

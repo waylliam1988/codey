@@ -77,3 +77,6 @@
    优先确定完整 payload/history 的统一 admission 宿主，不通过重复 validator 或静默删历史遮盖缺口。
 3. 随后继续四个独立开关的真实 runtime scope、expiry、禁用和恢复矩阵，见 `independent-controls.md`。
    modelA admission smoke 与完整 language on/off 评估仍分开，不能把结构 smoke 写成语言收益。
+   `34e201dc` 已单独合并 scoped 控制故障关闭与 observation 写入修复；真实 entry→HTTP
+   初始 on/off/error 对照通过。但 [首轮后撤回实验](provider-control-revocation.md) 的两个协议
+   均继续发送旧 hint，与 expiry 一起保持为最终 payload/history gate 的未完成项。
