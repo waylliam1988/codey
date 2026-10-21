@@ -631,6 +631,7 @@ class DurableSession:
         edits: Sequence[Mapping[str, object]] | None = None,
         head: str | None = None,
         placement: SubmissionPlacement | str = SubmissionPlacement.PLACED,
+        expected_revision: int | None = None,
     ) -> CommitResult:
         return admission.admit_write(
             self,
@@ -643,6 +644,7 @@ class DurableSession:
             edits=edits,
             head=head,
             placement=placement,
+            expected_revision=expected_revision,
         )
 
     @_mutation_line

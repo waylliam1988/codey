@@ -198,6 +198,7 @@ def admit_write(
     edits: Sequence[Mapping[str, object]] | None = None,
     head: str | None = None,
     placement: SubmissionPlacement | str = SubmissionPlacement.PLACED,
+    expected_revision: int | None = None,
 ) -> CommitResult:
     """Durably admit one passive entry write without creating a task."""
     if not kind or kind.startswith("pi."):
@@ -213,6 +214,11 @@ def admit_write(
     if display_only and (normalized_model is not None or normalized_edits is not None or head_target is not None):
         raise ValueError("display-only writes cannot carry context metadata")
     placement = SubmissionPlacement(placement)
+    if expected_revision is not None:
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError("expected revision must be a non-negative integer")
+        if placement is not SubmissionPlacement.PLACED:
+            raise ValueError("a revision-fenced write must be placed immediately")
     content: dict[str, object] = {"kind": kind, "data": dict(data), "display_only": display_only}
     if normalized_model is not None:
         content["model"] = normalized_model
@@ -220,7 +226,7 @@ def admit_write(
         content["edits"] = normalized_edits
     if head_target is not None:
         content["head"] = head_target
-    fingerprint = _fingerprint({
+    identity: dict[str, object] = {
         "kind": kind,
         "data": content["data"],
         "display_only": display_only,
@@ -229,7 +235,10 @@ def admit_write(
         "head": head_target,
         "placement": placement,
         "mode": "write",
-    })
+    }
+    if expected_revision is not None:
+        identity["expected_revision"] = expected_revision
+    fingerprint = _fingerprint(identity)
     existing = session.store.submission_result_for_request(conversation_id, request_id, fingerprint)
     if existing is not None:
         return existing
@@ -239,6 +248,8 @@ def admit_write(
     else:
         current_head, revision = None, 0
         creation = CreateConversation()
+    if expected_revision is not None and revision != expected_revision:
+        raise CommitConflict("conversation revision changed")
     stale = False
     if head_target is not None and head_target != "self":
         if creation is not None:
