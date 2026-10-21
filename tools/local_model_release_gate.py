@@ -853,13 +853,13 @@ def main(argv: list[str] | None = None) -> int:
             )
         else:
             from codey.providers.api_connections import capture_selection
-            from codey.providers.zen.identity import ZEN_BASE_URL
+            from codey.providers.zen.connection import endpoint_for_selection
 
             if not args.model or args.protocol != "native":
                 raise ValueError("Zen gate requires an explicit model and native tool protocol")
             admitted = capture_selection(args.provider, {"model": args.model})
             model = admitted.model_id
-            target = attempts.GateTarget(ZEN_BASE_URL, model, admitted.context_window_tokens,
+            target = attempts.GateTarget(endpoint_for_selection(admitted), model, admitted.context_window_tokens,
                 admitted.context_reserve_tokens, admitted.context_keep_recent_tokens,
                 provider_id=args.provider, api_selection=admitted.to_payload(), request_timeout=min(args.timeout, TIMEOUT),
                 turn_budget=args.turn_budget)

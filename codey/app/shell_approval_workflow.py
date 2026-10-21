@@ -299,7 +299,7 @@ class ShellApprovalWorkflow:
 
     def _schedule(self, approval_id: str) -> None:
         with self._condition:
-            if self._closing or approval_id in self._workers:
+            if self._closing or getattr(getattr(self.ctx, "control_service", None), "draining", False) or approval_id in self._workers:
                 return
             worker = threading.Thread(
                 target=self._work, args=(approval_id,), name=f"approval-{approval_id}", daemon=True
@@ -316,6 +316,10 @@ class ShellApprovalWorkflow:
                     return False
                 self._condition.wait(remaining)
             return True
+
+    def quiescent(self) -> bool:
+        with self._condition:
+            return not self._workers
 
     def cancel_queued(self, session_id: str = "") -> None:
         """Called under the Stop spawn gate and context lock."""
@@ -426,7 +430,7 @@ class ShellApprovalWorkflow:
         if pending is None:
             return
         if last.kind == "approved":
-            if self._closing or self.ctx.shutdown_requested():
+            if self._closing or self.ctx.shutdown_requested() or getattr(getattr(self.ctx, "control_service", None), "draining", False):
                 return
             with self._condition:
                 self._executing.add(approval_id)

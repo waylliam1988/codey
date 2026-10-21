@@ -7,9 +7,9 @@ required suite, cell, task family, control, or minimum sample count is absent.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
-
+from typing import Any
 
 SCHEMA_VERSION = 1
 PILOT_SUITE = "modelA"

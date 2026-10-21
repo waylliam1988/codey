@@ -737,7 +737,7 @@ global.document = {
     if (id === 'local-config-pop') return fakePop;
     if (id === 'local-config-close') return fakeButtons['local-config-close'] || (fakeButtons['local-config-close'] = fakeButton());
     if (id === 'local-config-save') return fakeButtons['local-config-save'] || (fakeButtons['local-config-save'] = fakeButton());
-    if (id === 'task') return { value: '', style: {}, disabled: false, scrollHeight:40, setSelectionRange: () => {}, addEventListener: () => {}, click: () => {} };
+    if (id === 'task') return { value: '', style: {}, disabled: false, scrollHeight:40, setSelectionRange: () => {}, addEventListener: () => {}, click: () => {}, before: () => {} };
     if (id === 'composer-context') return { onclick: null, addEventListener: () => {} };
     if (id === 'send' || id === 'stop') return { onclick: null, disabled: false, style: {}, setAttribute: () => {}, click: () => {} };
     if (id === 'send-hint') return fakeButtons[id] || (fakeButtons[id] = makeElement('span'));

@@ -27,7 +27,7 @@ def test_packaged_history_prepends_without_remounting_visible_messages(tmp_path,
         },
         base_revision=0,
     )
-    monkeypatch.setattr(server, "STATE", ctx)
+    monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
     worker = threading.Thread(target=httpd.serve_forever, daemon=True)
     worker.start()

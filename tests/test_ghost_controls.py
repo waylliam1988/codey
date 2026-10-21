@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
-from concurrent.futures import ThreadPoolExecutor
 
-from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost import _common
+from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost.inbox import GhostInboxStore
-from codey.operations import ghost_context
-from codey.operations import ghost_post_turn
+from codey.operations import ghost_context, ghost_post_turn
 from codey.workspace.context_admission import GhostContextSource, admit_ghost_context
 
 
@@ -69,7 +68,7 @@ def test_control_scope_inheritance_only_allows_narrower_deny(tmp_path: Path) -> 
 
 
 def test_scoped_controls_survive_restart_and_concurrent_writes(tmp_path: Path) -> None:
-    first = GhostInboxStore(tmp_path)
+    GhostInboxStore(tmp_path)
     second = GhostInboxStore(tmp_path)
 
     def write(project: str) -> bool:

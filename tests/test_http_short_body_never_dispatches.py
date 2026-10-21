@@ -5,6 +5,7 @@ from __future__ import annotations
 import http.client
 import json
 import socket
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -36,7 +37,7 @@ def test_eof_dispatch_requires_the_complete_declared_body(httpd, short):
     route = mock.Mock(return_value=(200, {"ok": True}))
     with (
         mock.patch.dict(server._POST_ROUTES, {"/api/stop": route}),
-        mock.patch.object(server, "get_state", return_value=object()) as state,
+        mock.patch.object(server.Handler, "_get_state", return_value=SimpleNamespace(control_service=None)) as state,
     ):
         status, body = _post_and_half_close(httpd, "/api/stop", b"{}", 3 if short else 2, cookie=cookie)
     if short:

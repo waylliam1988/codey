@@ -273,7 +273,9 @@ export class InputOutbox {
           action === 'check' ? this.check(item.id) : this.action(item, action as 'edit' | 'remove' | 'resume');
         actions.append(button);
       }
-      row.append(label, text, actions);
+      row.append(label);
+      if (item.state !== 'unconfirmed') row.append(text);
+      row.append(actions);
       if (item.error) {
         const details = document.createElement('details'),
           head = document.createElement('summary'),

@@ -51,13 +51,13 @@ class SafePrintTests(unittest.TestCase):
 
 class UiCliTests(unittest.TestCase):
     def test_cmd_ui_uses_server_serve_without_browser_flag(self) -> None:
-        args = mock.Mock(port=6060)
+        args = mock.Mock(port=6060, state_home="")
 
-        with mock.patch("codey.app.server.serve") as serve:
+        with mock.patch("codey.app.desktop.open_desktop") as serve:
             exit_code = cli.cmd_ui(args)
 
         self.assertEqual(exit_code, 0)
-        serve.assert_called_once_with(host="127.0.0.1", port=6060)
+        serve.assert_called_once_with(cli.Path.home() / ".codey", port=6060)
 
 
 class ProviderCliTests(unittest.TestCase):

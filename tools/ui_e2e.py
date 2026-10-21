@@ -457,7 +457,6 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
     project.mkdir()
     _make_project(project)
 
-    original_state = codey_server.STATE
     original_connect_provider = provider_services.connect_provider
     original_connect_existing_provider = provider_services.connect_existing_provider
     original_connect_fresh_provider_tab = provider_services.connect_fresh_provider_tab
@@ -466,9 +465,9 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
     writer = ScriptedWriter()
     httpd: codey_server.CodeyHTTPServer | None = None
     try:
-        codey_server.STATE = codey_server.AppContext(temp_root / "state")
+        state = codey_server.AppContext(temp_root / "state")
         provider_controls.set_teach_handler(
-            functools.partial(sibling_probe.handle_control_teach, codey_server.STATE)
+            functools.partial(sibling_probe.handle_control_teach, state)
         )
         provider_services.connect_provider = lambda provider_id: writer
         provider_services.connect_fresh_provider_tab = lambda provider_id: ScriptedReviewer()
@@ -483,6 +482,12 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
         codey_server.pick_folder = lambda mode="open", initial=None: str(project)
 
         httpd = codey_server.CodeyHTTPServer(("127.0.0.1", 0), codey_server.Handler)
+        from codey.app.public_event_feed import PublicEventFeed
+
+        httpd.app_context = state
+        feed = PublicEventFeed()
+        httpd.public_feed = feed
+        unobserve = state.event_bus.observe(feed.publish)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         host, port = httpd.server_address
@@ -522,19 +527,17 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
         if httpd is not None:
             httpd.shutdown()
             httpd.server_close()
-        codey_server.STATE = original_state
+        if "unobserve" in locals():
+            unobserve()
+            feed.close()
+        if "state" in locals():
+            state.close()
         provider_services.connect_provider = original_connect_provider
         provider_services.connect_fresh_provider_tab = original_connect_fresh_provider_tab
         provider_services.provider_tab_availability = original_provider_tab_availability
         provider_services.connect_existing_provider = original_connect_existing_provider
         codey_server.pick_folder = original_pick_folder
-        if original_state is not None:
-            provider_controls.set_teach_handler(
-                functools.partial(sibling_probe.handle_control_teach, original_state)
-            )
-            provider_controls.set_doctor_handler(
-                functools.partial(sibling_probe.handle_profile_doctor, original_state)
-            )
+        provider_controls.set_teach_handler(None)
         shutil.rmtree(temp_root, ignore_errors=True)
 
 

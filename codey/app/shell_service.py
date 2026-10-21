@@ -267,6 +267,8 @@ def claim_shell_ticket(
     always gate->lock.
     """
     with ctx._shell_spawn_gate:
+        if getattr(getattr(ctx, "control_service", None), "draining", False):
+            return None, None
         return mint_shell_ticket(
             lock=ctx.lock,
             approvals=ctx.approvals,

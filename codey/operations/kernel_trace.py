@@ -2,9 +2,9 @@
 
 from typing import Any
 
-from codey.workspace.context_admission import GhostContextSource, admit_ghost_context
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
 from codey.utils.refs import digest_text
+from codey.workspace.context_admission import GhostContextSource, admit_ghost_context
 
 
 def record_outbound(

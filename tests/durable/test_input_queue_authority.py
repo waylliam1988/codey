@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from codey.app.context import AppContext
+from codey.runtime.core.api_selection import ApiRunSelection
+
+SELECTION = ApiRunSelection("local", "fixture", "fixture", "openai-completions", True)
 
 
 def _request(run_id: str) -> dict[str, object]:
@@ -21,7 +24,7 @@ def test_app_input_is_a_durable_submission_without_legacy_input_database(tmp_pat
     run_id = "run_" + "a" * 32
     state = AppContext(root, start_scheduler=False)
     try:
-        item = state.input_queue.create("input-one", _request(run_id))
+        item = state.input_queue.create("input-one", _request(run_id), model_selection=SELECTION)
         assert item["state"] == "submitted"
         assert state.durable.task(run_id).state["input_identity"] == "input-one"
         assert len(state.durable.entries("chat")) == 1
@@ -34,7 +37,7 @@ def test_durable_input_projection_survives_app_restart(tmp_path: Path) -> None:
     root = tmp_path / "state"
     run_id = "run_" + "b" * 32
     state = AppContext(root, start_scheduler=False)
-    state.input_queue.create("input-one", _request(run_id))
+    state.input_queue.create("input-one", _request(run_id), model_selection=SELECTION)
     state.close()
 
     restarted = AppContext(root, start_scheduler=False)
@@ -61,7 +64,7 @@ def test_queued_input_remove_commits_an_abort_without_creating_another_task(tmp_
             provider_snapshot={"provider_id": "local"},
         )
         state.durable.start_task("active-task", state={})
-        item = state.input_queue.create("input-one", _request(run_id))
+        item = state.input_queue.create("input-one", _request(run_id), model_selection=SELECTION)
         removed = state.input_queue.remove("input-one", int(item["revision"]))
 
         assert removed["state"] == "cancelled"

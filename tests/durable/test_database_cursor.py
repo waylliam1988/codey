@@ -1,7 +1,6 @@
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from queue import Queue
-from types import SimpleNamespace
 
 import pytest
 
@@ -27,6 +26,31 @@ def test_concurrent_cold_start_serializes_schema_initialization(tmp_path: Path) 
     assert identities and all(identity == identities[0] for identity in identities)
 
 
+def test_cold_start_serializes_the_wal_change_before_schema_transactions(tmp_path, monkeypatch):
+    first_entered, release, second_entered = threading.Event(), threading.Event(), threading.Event()
+    calls = []
+
+    def initialize(connect):
+        calls.append(True)
+        if len(calls) == 1:
+            first_entered.set()
+            assert release.wait(10)
+        else:
+            second_entered.set()
+        return "database-fixture"
+
+    monkeypatch.setattr("codey.durable.sqlite.initialize_database", initialize)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(SQLiteDurableStore, tmp_path / "durable.sqlite3")
+        assert first_entered.wait(5)
+        second = pool.submit(SQLiteDurableStore, tmp_path / "durable.sqlite3")
+        try:
+            assert not second_entered.wait(0.2), "A second initializer entered before the first WAL transition finished"
+        finally:
+            release.set()
+        assert first.result().database_id == second.result().database_id
+
+
 def test_history_and_replayed_events_use_the_persisted_database_identity(tmp_path: Path) -> None:
     session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
     session.create_conversation("chat")
@@ -38,29 +62,15 @@ def test_history_and_replayed_events_use_the_persisted_database_identity(tmp_pat
 
 
 @pytest.mark.parametrize("scope,after", [("other-database", 1), (None, 1), ("current", 500), ("current", 1)])
-def test_sse_reconciles_database_reset_or_cursor_ahead_without_skipping_commits(monkeypatch, scope, after) -> None:
-    from codey.app import server
+def test_sse_reconciles_database_reset_or_cursor_ahead_without_skipping_commits(scope, after) -> None:
+    from tests.sse_http import capture_events
 
     session = DurableSession(MemoryDurableStore())
     session.create_conversation("chat")
     for text in ("a", "b"):
         session.append_message("chat", "user_message", {"text": text})
-    events = Queue()
-    events.replay_cutoff = 7
-    events.put({"type": "end"})
-    state = SimpleNamespace(durable=session, run_status=lambda: {}, subscribe=lambda: events, unsubscribe=lambda _q: None)
-    monkeypatch.setattr(server, "get_state", lambda: state)
-    written = []
-
-    def write(event, **_kwargs):
-        written.append(event)
-        return event["type"] != "end"
-
     identity = session.database_id if scope == "current" else scope
-    handler = SimpleNamespace(path=f"/api/events?after_commit_seq={after}" + (f"&database_id={identity}" if identity else ""),
-        headers={}, send_response=lambda *_args: None, send_header=lambda *_args: None,
-        end_headers=lambda: None, _write_sse_event=write)
-    server.Handler._sse(handler)
+    written = capture_events(session, f"/api/events?after_commit_seq={after}" + (f"&database_id={identity}" if identity else ""))
     assert written[0]["database_id"] == session.database_id
     replayed = [item["commit_seq"] for item in written if item["type"] == "durable_commit"]
     assert replayed == ([2, 3] if scope == "current" and after == 1 else [1, 2, 3])

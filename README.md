@@ -54,6 +54,8 @@ a managed session workspace under `~/.codey/workspaces/<session_key>`. Chat
 can write scripts and request local commands without choosing a folder.
 Both use the same tools; Shell commands still require approval.
 
+The desktop attaches to a shared local service. Closing its window leaves the
+service and its tasks running; `python -m codey ui` reconnects to it.
 The local UI authorizes itself automatically when Codey opens it. If the native
 window cannot open, use the complete launch link printed by Codey. That link is
 single-use and expires after five minutes; restart Codey to obtain a new link
@@ -96,8 +98,11 @@ explicitly selects Chat Completions (`/chat/completions`) or Responses
 
 To use free Zen models, expand its source in Settings, Refresh models and choose
 the models you want. Only enabled, selected models appear in the composer. The
-catalog combines the public directory and live endpoint listing; a network
-failure retains the bounded cache. No registration or personal key is
+catalog reads model addresses, protocols and explicit zero-cost prices directly
+from the official directory, with ETag and bounded cached fallback. It does not
+require a `/models` endpoint or relay through OpenCode.exe. Approved API path
+changes are discovered without a Codey update; new domains or protocols require
+review. No registration or personal key is
 required by this partner connection, but eligibility and tool restrictions are
 checked by the service for each request. A free listing does not guarantee access
 to every task mode. Muse coding and Space Bunny review were verified; see
@@ -119,6 +124,20 @@ work state reduce repeated input while preserving distinct observations and scop
 receipt reads. See [the latest local comparison and its limits](docs/context-compaction-optimization-2026-10-09.zh-CN.md).
 
 ## CLI
+
+External agents can delegate to the same service through CLI, JSONL RPC or the
+optional MCP adapter. Accepted messages appear in the normal desktop chat;
+the controller observes bounded results, independently verifies files/behavior,
+and can send a linked refinement. User takeover invalidates stale control requests.
+See [external control, installation and release switching](docs/external-control-implementation.zh-CN.md).
+
+```powershell
+python -m codey serve --state-home E:\codey-state --allow-project E:\my-project
+python -m codey control health --state-home E:\codey-state
+python -m codey rpc --state-home E:\codey-state
+# Optional: pip install -e ".[mcp]"
+python -m codey mcp --state-home E:\codey-state
+```
 
 ```powershell
 # Single chat message

@@ -1,14 +1,11 @@
-import io
-from types import SimpleNamespace
-
 import pytest
 
-from codey.app import server
-from codey.app.event_bus import EventBus
 from codey.app.event_payloads import browser_event_payload, machine_event_payload
+from codey.durable import DurableSession, MemoryDurableStore
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 from codey.toolchain.runtime import ToolOutcome
+from tests.sse_http import capture_events
 
 
 def test_tool_summary_does_not_destroy_retained_multiline_details():
@@ -32,44 +29,16 @@ def test_detail_limit_is_explicit_and_separate_from_runner_truncation():
 
 
 @pytest.mark.parametrize("replay", [False, True])
-def test_http_sse_preserves_expanded_file_content_and_preview(monkeypatch, replay):
+def test_http_sse_preserves_expanded_file_content_and_preview(replay):
     text = "first line\n第二行\nlast line\n"
     payload = run_event_ui_payload("run", "chat", RunEvent.tool_finished(
         1, ToolCall("read", {"path": "cache.py"}),
         ToolOutcome(text, True, presentation={"preview": {"line_start": 1, "line_end": 3}}),
     ))
-    bus = EventBus(replay_limit=8)
-    if replay:
-        bus.emit({"type": "info", "text": "earlier event"})
-        bus.emit(payload)
-
-    def subscribe():
-        subscriber = bus.subscribe()
-        if not replay:
-            bus.emit(payload)
-        return subscriber
-
-    ctx = SimpleNamespace(
-        subscribe=subscribe, unsubscribe=bus.unsubscribe,
-        durable=SimpleNamespace(commit_sequence=lambda: 0, database_id="db"),
-        run_status=lambda: "idle", replay_events_after=bus.replay_events_after,
-    )
-    monkeypatch.setattr(server, "get_state", lambda: ctx)
-    handler = object.__new__(server.Handler)
-    handler.path = "/api/events?last_event_id=1" if replay else "/api/events"
-    handler.headers = {}
-    handler.wfile = io.BytesIO()
-    handler.send_response = lambda *args: None
-    handler.send_header = lambda *args: None
-    handler.end_headers = lambda: None
-    events = []
-
-    def capture(event, *, event_id=0):
-        events.append(event)
-        return event["type"] != "tool"
-
-    handler._write_sse_event = capture
-    handler._sse()
+    events = capture_events(DurableSession(MemoryDurableStore()),
+        "/api/events?last_event_id=1" if replay else "/api/events",
+        live=() if replay else (payload,),
+        replayed=({"type": "info", "text": "earlier event"}, payload) if replay else ())
     tool = next(event for event in events if event["type"] == "tool")
     assert tool["detail"] == text
     assert tool["detail_truncated"] is False

@@ -255,8 +255,8 @@ def _entry_context(frame: RunFrame, deps: Any, policy: Any) -> tuple[str, tuple[
     )
     from codey.operations.project_adapter import _project_context
     from codey.operations.prompting import record_local_context_trace
-    from codey.workspace.context_admission import request_scope, sources_from_values
     from codey.runtime.observe.prompt_envelope import PromptEnvelope, PromptEnvelopeSection
+    from codey.workspace.context_admission import request_scope, sources_from_values
     from codey.workspace.context_epoch import context_source_ref
 
     request = frame.request

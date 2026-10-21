@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, SupportsIndex, SupportsInt, TypeAlias, cast
 
 from codey.agents.shell_approval import shell_command_event_fields
@@ -213,6 +214,19 @@ def browser_event_payload(event: object) -> dict[str, object] | None:
     payload = machine_event_payload(event)
     if payload is None or not isinstance(event, dict):
         return payload
+    if event.get("type") == "task_done":
+        if type(event.get("elapsed_ms")) is int:
+            payload["elapsed_ms"] = max(0, event["elapsed_ms"])
+        if isinstance(event.get("research"), dict):
+            fields = {"restoreable", "synthesis_id", "notes_created", "notes_updated", "source_urls", "sources_read",
+                      "queries", "search_results", "opened_sources", "coverage", "citation_map", "evidence_items",
+                      "counterpoints", "quality_warnings", "max_turns_used", "completion_proof", "followup_applied",
+                      "followup_rounds", "pipeline_stop_reason", "planner_stop_reason", "fresh_source_count",
+                      "new_evidence_count", "final_evidence_count", "attempted_fresh_source_count", "attempted_new_evidence_count"}
+            budget = [64_000, 0]
+            payload["research"] = _bounded_research_value({key: value for key, value in event["research"].items() if key in fields}, budget)
+            if budget[1]:
+                payload["research_truncated"] = True
     if event.get("type") not in {"tool", "tool_started"}:
         return payload
     payload["kind"] = clip_event_text(event.get("kind") or "", 80)
@@ -246,6 +260,38 @@ def browser_event_payload(event: object) -> dict[str, object] | None:
                 bounded["diff_truncated"] = True
         payload["preview"] = bounded
     return payload
+
+
+def _bounded_research_value(value: object, budget: list[int], depth: int = 0) -> object:
+    """Bound browser evidence as one observation, without changing stored facts."""
+    if budget[0] <= 0 or depth > 6:
+        budget[1] = 1
+        return None
+    budget[0] -= 16
+    if isinstance(value, str):
+        text = value[:min(2000, max(0, budget[0] // 4))]
+        budget[0] -= len(text.encode("utf-8"))
+        budget[1] |= len(text) < len(value)
+        return text
+    if isinstance(value, dict):
+        result = {}
+        for key, item in list(value.items())[:64]:
+            if budget[0] <= 0:
+                break
+            name = str(key)[:80]
+            budget[0] -= len(name.encode("utf-8")) + 4
+            result[name] = _bounded_research_value(item, budget, depth + 1)
+        budget[1] |= len(result) < len(value)
+        return result
+    if isinstance(value, (list, tuple)):
+        rows = []
+        for item in value[:64]:
+            if budget[0] <= 0:
+                break
+            rows.append(_bounded_research_value(item, budget, depth + 1))
+        budget[1] |= len(rows) < len(value)
+        return rows
+    return value if value is None or type(value) in {bool, int} or isinstance(value, float) and math.isfinite(value) else None
 
 
 def _int_or_zero(value: object) -> int:

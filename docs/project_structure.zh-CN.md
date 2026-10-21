@@ -9,6 +9,9 @@ codey/
   __init__.py   包版本的唯一来源
   __main__.py   python -m codey 入口
   app/          HTTP/桌面/CLI 入口、注册表、任务提交与资源生命周期
+  control/      CLI、JSONL RPC、可选 MCP 与共享协议/客户端
+  durable/      SQLite 持久入场、会话、任务检查点、审批与 scheduler
+  launcher/     不可变 runtime 版本准备、独立切换与回退 runner
   automation/   本地自动化作业与调度
   task/         用户提交与任务类型数据
   policies/     任务授权、动作、网络与命令边界
@@ -29,12 +32,31 @@ codey/
   runs/         运行 ledger、trace、检查点、详情与收据
   utils/        共用文本、引用与扫描小工具
   web/          随包发布的本地 UI、JavaScript/CSS
+frontend/src/   TypeScript UI 源码与 Vitest；Vite 构建后发布到 codey/web
 tests/          行为回归、架构锁、压力测试与本地/浏览器 E2E
   support/      仅测试使用的夹具与历史对照适配器
   manual/       实机实验与历史报告
 tools/          发布门槛、诊断、parity 与开发工具
 docs/           当前架构、发布说明与带日期的审查记录
 ```
+
+## 共享服务与外部控制
+
+| 所有者 | 职责 |
+| --- | --- |
+| `app/service.py`、`desktop.py` | 窗口独立的服务 lease、显式 HTTP/context 所有权与桌面连接 |
+| `control/protocol.py`、`client.py`、`cli.py`、`rpc.py`、`mcp.py` | 单一 schema、绑定实例的 loopback 客户端及薄协议适配；MCP 依赖可选 |
+| `app/control_service.py` | 委派、代次校验、人工接管、停止及独立验收入场 |
+| `app/control_conversations.py`、`control_queries.py` | 原侧栏/聊天历史接入及有界运行/证据查询 |
+| `durable/control.py`、`admission.py`、`session.py` | 被动控制配置/回执；消息元数据通过原入场和任务检查点持久化 |
+| `app/public_event_feed.py`、`event_payloads.py` | 有界公共编码、重放游标与慢订阅隔离 |
+| `launcher/releases.py`、`runner.py` | 不可变候选、隔离检查、排空/切换/健康确认，不回滚任务事实的版本回退 |
+| `frontend/src/app_runtime.ts`、`input_outbox.ts`、`requests.ts` | 外部聊天清单同步、输入框投递对账及终态运行 start 重放抑制 |
+
+共享服务先持久化入场，再交给原 scheduler 和任务内核；`control/` 不执行模型任务。
+不保留模块级 HTTP STATE、旧提交包装器或第二套聊天写口。会话查询与 mutation line 串行。
+`durable/sqlite.py` 为冷启动初始化（包括 WAL 设置）取得 lease，再使用正常事务。
+命令、权限和依赖/schema 不变的切换边界见[外部控制实现](external-control-implementation.zh-CN.md)。
 
 ## 顺着一次任务阅读
 
@@ -54,7 +76,7 @@ Chat、编程、Research、规划与获授权的混合任务共用模型工具�
 
 | 所有者 | 职责 |
 | --- | --- |
-| `codey/app/operator_auth.py`、`frontend/src/operator_auth.ts` | 进程内 HTTP/SSE 操作者凭据及 UI 启动认证；独立于模型/任务授权 |
+| `codey/app/operator_auth.py`、`frontend/src/operator_auth.ts` | 一次性 UI 启动认证及服务替换后仍有效的派生浏览器会话；独立于模型/任务授权 |
 | `codey/runtime/core/models.py` | 不可变 `ToolResult`，必须携带精确布尔状态；展示文字不决定状态 |
 | `codey/app/task_services.py`、`task/entry_auth.py` | 桌面/headless 的审查与顾问服务只有一个组合入口；HTTP/CLI 授权只有一套推导规则 |
 | `codey/operations/task_state.py` | `TaskState` 与类型化提交资源包 |
@@ -80,7 +102,7 @@ Chat、编程、Research、规划与获授权的混合任务共用模型工具�
 | `codey/providers/api_provider.py`、`api_transport.py` | 统一最终请求计数/裁剪/准入、锁、取消与候选提交；传输交付原始 usage 事件，不重发未知结果 |
 | `codey/providers/api_stream.py` | SSE 解码与明确的流式调用身份；完整 ID 不拼接，歧义片段直接关闭请求 |
 | `codey/providers/zen/node_http.py`、`node_http.mjs` | 可选 Node fetch 桥接、有界 IPC、提交/取消证据；不执行项目工具 |
-| `codey/web/assets/provider_ui.js`、`messages.js`、`render.js` | 固定宽度且受窗口约束的菜单、唯一审批卡片、明确 Shell 状态与历史未知结果 |
+| `frontend/src/provider_ui.ts`、`messages.ts`、`render.ts` | 固定宽度且受窗口约束的菜单、唯一审批卡片、明确 Shell 状态与历史未知结果 |
 | `tools/coverage_gate.py`、`check_javascript.py`、`source_size_inventory.py` | 完整生产目录覆盖率门、实际 JS/MJS 资源发现、已跟踪与新增源码行数盘点 |
 | `tools/zen_free_model_gate.py` | 连接器专用实机聊天/读取/审批矩阵与思考变体；证据进入忽略目录，不进入确定性 CI |
 | `codey/providers/api_codec.py` | 无状态 codec 契约及生成参数；连接工厂解析预算，Provider 构造时选定协议 |
@@ -94,11 +116,11 @@ Chat、编程、Research、规划与获授权的混合任务共用模型工具�
 | `codey/runs/trace.py`、`details.py` | 规范化请求记录、有界明细与完整已知量汇总；显示上次请求上下文和不完整用量，不依赖连接包 |
 | `codey/providers/model_preferences.py` | 带 revision 的原子来源/模型偏好；目录观察不改变选择 |
 | `codey/app/model_settings.py`、`provider_services.py` | 通用来源描述、显式发现、使用中模型保护与已选范围服务 |
-| `codey/web/assets/models.js`、`model_settings.js` | 前端权威快照与共用暂存编辑器；可选连接提供数据，不增加专属 UI 分支 |
-| `codey/web/assets/ui_state.js`、`composer.js`、`codey/storage/ui_state_store.py` | 草稿随聊天通过现有 UI 状态存储持久保存，校验 UTF-16 选区；发送只消费 revision 仍匹配的快照 |
-| `codey/web/assets/conversation_ui.js`、`conversation_nav.js` | 明确阅读意图、有界缓存与阅读锚点、当前回答选区动作；引用编辑现有草稿 |
-| `codey/web/assets/changes_drawer.js` | 唯一拥有 Changes 项目、显示数据、新鲜度和操作；局部刷新保留阅读现场，旧数据禁止恢复 |
-| `codey/web/assets/settings.js` | 独立连接字段 baseline 与保存生命周期；模型偏好修改判断和来源行更新留在 model_settings.js |
+| `frontend/src/models.ts`、`model_settings.ts` | 前端权威快照与共用暂存编辑器；可选连接提供数据，不增加专属 UI 分支 |
+| `frontend/src/ui_state.ts`、`composer.ts`、`codey/storage/ui_state_store.py` | 草稿随聊天通过现有 UI 状态存储持久保存，校验 UTF-16 选区；发送只消费 revision 仍匹配的快照 |
+| `frontend/src/conversation_ui.ts`、`conversation_nav.ts` | 明确阅读意图、有界缓存与阅读锚点、当前回答选区动作；引用编辑现有草稿 |
+| `frontend/src/changes_drawer.ts` | 唯一拥有 Changes 项目、显示数据、新鲜度和操作；局部刷新保留阅读现场，旧数据禁止恢复 |
+| `frontend/src/settings.ts` | 独立连接字段 baseline 与保存生命周期；模型偏好修改判断和来源行更新留在 model_settings.js |
 | `codey/providers/zen/` | 动态免费目录、限定合作身份与访问观察；`usage.py` 独占 Zen 两种协议字段映射，`declarations.py` 拥有临时不可用 read/shell 网络声明，`connection.py` 拥有有界文本调用拒绝；不授予任务权限，删除生产包和注册时还需清理专用测试、gate 和文档 |
 | `codey/runtime/core/api_selection.py`、`operation_payload.py` | 无秘密的冻结 API 选择，以及严格接纳/交付 payload 校验 |
 | `codey/research/source_gateway.py`、`tools.py` | 显式来源/工具结果；取消及截止异常直接传播，不继续 fallback 获取 |
@@ -197,7 +219,7 @@ Store 模块；它们是领域所有者，不是新的通用框架。continuity 
 
 | 归属 | 职责 |
 | --- | --- |
-| `codey/app/input_queue.py`、`codey/app/input_queue_routes.py`、`codey/storage/conversation_db.py` | 下一轮输入的持久收据、准入/调度状态、修订校验和事务级 SQLite 句柄 |
+| `codey/app/input_queue.py`、`codey/app/input_queue_routes.py`、`codey/durable/session.py` | 下一轮输入的持久收据、准入/调度状态、修订校验和事务级 SQLite 句柄 |
 | `codey/app/user_questions.py`、`codey/app/question_routes.py`、`codey/operations/kernel_question.py` | 问题请求、答案接纳和继续任务身份的持久化 |
 | `frontend/src/input_outbox.ts` | 浏览器投递身份、明确拒绝后的恢复和不确定响应的状态查询；不具备执行授权能力 |
 | `frontend/src/messages.ts`、`frontend/src/research_runs.ts` | 按消息绑定 Research 报告身份及证据/文档入口 |

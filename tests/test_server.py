@@ -57,6 +57,7 @@ from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 from codey.toolchain.runtime import ToolOutcome
 from codey.workspace import changes
 from codey.workspace.changes import ChangeTracker
+from tests import http_context
 from tests.app_state import make_app_state
 from tests.operator_http import OperatorHTTPConnection
 from tests.support.shell_approval import add_pending_approval
@@ -106,12 +107,12 @@ def _persist_approval(state, pending):
 # test-only wiring in AppContext). Tests wait explicitly here so no daemon
 # holds state files while TemporaryDirectory cleans up on Windows.
 def _run_task_with_ghost_wait(*args, **kwargs):
-    kwargs.setdefault("get_state", server.get_state)
+    kwargs.setdefault("get_state", http_context.get_context)
     try:
         return task_submit.run_task(*args, **kwargs)
     finally:
         try:
-            state = getattr(server, "STATE", None)
+            state = server.CodeyHTTPServer.app_context
             wait = getattr(state, "wait_for_ghost_sleep", None)
             if callable(wait):
                 wait(timeout=30)
@@ -733,7 +734,7 @@ class ProviderStatusTests(unittest.TestCase):
                 ),
             )
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(
                     provider_services,
                     "provider_tab_availability",
@@ -1268,7 +1269,7 @@ class ResearchGraphApiTests(unittest.TestCase):
             thread.start()
             host, port = httpd.server_address
             try:
-                with mock.patch.object(server, "STATE", state):
+                with mock.patch.object(server.CodeyHTTPServer, "app_context", state):
                     conn = OperatorHTTPConnection(httpd, timeout=5)
                     path = (
                         "/api/research/graph?session_id=s1"
@@ -1301,7 +1302,7 @@ class ResearchGraphApiTests(unittest.TestCase):
             thread.start()
             host, port = httpd.server_address
             try:
-                with mock.patch.object(server, "STATE", state):
+                with mock.patch.object(server.CodeyHTTPServer, "app_context", state):
                     conn = OperatorHTTPConnection(httpd, timeout=5)
                     conn.request("GET", "/api/research/graph?session_id=missing&focus=unknown")
                     response = conn.getresponse()
@@ -1325,7 +1326,7 @@ class ResearchGraphApiTests(unittest.TestCase):
         thread.start()
         host, port = httpd.server_address
         try:
-            with mock.patch.object(server, "STATE", state):
+            with mock.patch.object(server.CodeyHTTPServer, "app_context", state):
                 conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request("GET", "/api/research/concept_graph?session_id=s1")
                 response = conn.getresponse()
@@ -1345,7 +1346,7 @@ class ResearchGraphApiTests(unittest.TestCase):
         thread.start()
         host, port = httpd.server_address
         try:
-            with mock.patch.object(server, "STATE", state):
+            with mock.patch.object(server.CodeyHTTPServer, "app_context", state):
                 conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request("GET", "/api/changes?project=x")
                 response = conn.getresponse()
@@ -1369,7 +1370,7 @@ class ResearchGraphApiTests(unittest.TestCase):
             thread.start()
             host, port = httpd.server_address
             try:
-                with mock.patch.object(server, "STATE", state):
+                with mock.patch.object(server.CodeyHTTPServer, "app_context", state):
                     conn = OperatorHTTPConnection(httpd, timeout=5)
                     body = json.dumps({"ids": [note.id, "missing"]}).encode("utf-8")
                     conn.request(
@@ -1400,7 +1401,7 @@ class ResearchGraphApiTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch(
                     "codey.app.api.provider_services.provider_availability",
                     side_effect=AssertionError("catalog must not probe"),
@@ -1836,7 +1837,7 @@ class WebAssetTests(unittest.TestCase):
         payloads = {}
         try:
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(
                     provider_services,
                     "provider_availability",
@@ -1898,6 +1899,11 @@ class WebAssetTests(unittest.TestCase):
 class LocalProviderApiTests(unittest.TestCase):
     def _start_server(self):
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        context = server.AppContext()
+        attachment = mock.patch.object(server.CodeyHTTPServer, "app_context", context)
+        attachment.start()
+        self.addCleanup(attachment.stop)
+        self.addCleanup(context.close)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         host, port = httpd.server_address
@@ -1942,7 +1948,7 @@ class LocalProviderApiTests(unittest.TestCase):
             state = app_context.AppContext(td)
             base = int(state.load_ui_state().get("revision") or 0)
             try:
-                with mock.patch.object(server, "STATE", state):
+                with mock.patch.object(server.CodeyHTTPServer, "app_context", state):
                     conn = OperatorHTTPConnection(httpd, timeout=5)
                     conn.request(
                         "POST",
@@ -1987,7 +1993,7 @@ class LocalProviderApiTests(unittest.TestCase):
         )
         assert run is not None
         try:
-            with mock.patch.object(server, "STATE", state):
+            with mock.patch.object(server.CodeyHTTPServer, "app_context", state):
                 conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request(
                     "POST",
@@ -2011,7 +2017,7 @@ class LocalProviderApiTests(unittest.TestCase):
         fake_continuity.delete_scope.side_effect = OSError("disk failure")
         state.ghost_continuity = fake_continuity
         try:
-            with mock.patch.object(server, "STATE", state):
+            with mock.patch.object(server.CodeyHTTPServer, "app_context", state):
                 conn = OperatorHTTPConnection(httpd, timeout=5)
                 conn.request(
                     "POST",
@@ -2044,7 +2050,7 @@ class LocalProviderApiTests(unittest.TestCase):
             )
             assert run is not None
             try:
-                with mock.patch.object(server, "STATE", state):
+                with mock.patch.object(server.CodeyHTTPServer, "app_context", state):
                     conn = OperatorHTTPConnection(httpd, timeout=5)
                     conn.request(
                         "POST",
@@ -2187,10 +2193,7 @@ class LocalProviderApiTests(unittest.TestCase):
             httpd.shutdown()
 
     def test_empty_api_key_preserves_existing_key_for_probe_and_save(self) -> None:
-        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
-        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-        thread.start()
-        host, port = httpd.server_address
+        httpd, host, port = self._start_server()
         try:
             with (
                 mock.patch.object(
@@ -2229,7 +2232,7 @@ class LocalProviderApiTests(unittest.TestCase):
                 payload = json.loads(response.read().decode("utf-8"))
                 conn.close()
 
-            self.assertEqual(response.status, 200)
+            self.assertEqual(response.status, 200, payload)
             self.assertTrue(payload["ok"])
             probe.assert_called_once_with("http://127.0.0.1:1234/v1", api_key="old-secret")
             save.assert_called_once()
@@ -2556,10 +2559,10 @@ class RunSnapshotTests(unittest.TestCase):
         }))
 
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(task_submit, "submit_browser_task") as submit,
         ):
-            run_id = server._submit_task("session-new", None, "hello", 8, False, "deepseek")
+            run_id = http_context.submit("session-new", None, "hello", 8, False, "deepseek")
 
         emitted = []
         while not events.empty():
@@ -2722,7 +2725,7 @@ class RunSnapshotTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "replay_events_after", wraps=original_replay) as replay,
             ):
                 conn = OperatorHTTPConnection(httpd, timeout=5)
@@ -2755,7 +2758,7 @@ class RunSnapshotTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "replay_events_after", wraps=original_replay) as replay,
             ):
                 conn = OperatorHTTPConnection(httpd, timeout=5)
@@ -2777,7 +2780,7 @@ class RunSnapshotTests(unittest.TestCase):
 
         self.assertEqual(response.status, 200)
         self.assertTrue(any('"type": "hello"' in line for line in lines), lines)
-        self.assertTrue(any('"seq": 2' in line for line in lines), lines)
+        self.assertTrue(any('"seq":2' in line for line in lines), lines)
         replay.assert_called_once()
         self.assertEqual(replay.call_args[0][0], 1)
 
@@ -3251,12 +3254,12 @@ class RunSnapshotTests(unittest.TestCase):
     def test_submit_task_reserves_before_browser_queue(self) -> None:
         state = server.AppContext()
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(task_submit, "submit_browser_task") as submit,
         ):
-            run_id = server._submit_task("session-1", None, "hello", 8, False, "deepseek")
-            parallel_run_id = server._submit_task("session-2", None, "second", 8, False, "qwen")
-            same_session_rejected = server._submit_task(
+            run_id = http_context.submit("session-1", None, "hello", 8, False, "deepseek")
+            parallel_run_id = http_context.submit("session-2", None, "second", 8, False, "qwen")
+            same_session_rejected = http_context.submit(
                 "session-1", None, "third", 8, False, "qwen"
             )
 
@@ -3277,10 +3280,10 @@ class RunSnapshotTests(unittest.TestCase):
         state.run_registry.stop_flag.set()
 
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(task_submit, "submit_browser_task") as submit,
         ):
-            run_id = server._submit_task_after_slot_release(
+            run_id = http_context.continue_after_slot(
                 "session-1",
                 "E:/demo",
                 "continue after shell",
@@ -3335,15 +3338,15 @@ class RunSnapshotTests(unittest.TestCase):
             )
 
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(task_submit, "submit_browser_task") as submit,
-            mock.patch.object(server.time, "sleep", side_effect=AssertionError("polling sleep")),
+            mock.patch.object(task_submit.time, "sleep", side_effect=AssertionError("polling sleep")),
             mock.patch.object(state.run_registry, "wait_for_slot", wraps=state.run_registry.wait_for_slot) as wait_for_slot,
         ):
             thread = threading.Thread(target=release_previous)
             thread.start()
             try:
-                run_id = server._submit_task_after_slot_release(
+                run_id = http_context.continue_after_slot(
                     "session-1",
                     "E:/demo",
                     "continue after shell",
@@ -3375,10 +3378,10 @@ class RunSnapshotTests(unittest.TestCase):
         assert active is not None
 
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(task_submit, "submit_browser_task") as submit,
         ):
-            run_id = server._submit_task_after_slot_release(
+            run_id = http_context.continue_after_slot(
                 "session-1",
                 "E:/demo",
                 "continue after shell",
@@ -3453,10 +3456,10 @@ class RunSnapshotTests(unittest.TestCase):
         state.run_registry.stop_flag = flipping  # type: ignore[assignment]
 
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(task_submit, "submit_browser_task") as submit,
         ):
-            run_id = server._submit_task_after_slot_release(
+            run_id = http_context.continue_after_slot(
                 "session-1",
                 None,
                 "continue after shell",
@@ -3478,7 +3481,7 @@ class RunSnapshotTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(server, "MAX_POST_BODY_BYTES", 8),
             ):
                 conn = OperatorHTTPConnection(httpd, timeout=5)
@@ -3532,15 +3535,13 @@ class RunSnapshotTests(unittest.TestCase):
             host, port = httpd.server_address
             try:
                 with (
-                    mock.patch.object(server, "STATE", state),
+                    mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                     mock.patch.object(shell_service, "execute_shell_ticket", return_value={
                         "ok": True,
                         "exit_code": 0,
                         "output": "ok",
                     }),
-                    mock.patch.object(
-                        server,
-                        "_submit_task_after_slot_release",
+                    mock.patch("codey.app.task_submit.submit_task_after_slot_release",
                         return_value="run-next",
                     ) as submit,
                 ):
@@ -3833,7 +3834,7 @@ class SessionThreadingTests(unittest.TestCase):
             _declare_protocol_window(provider)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
             ):
                 _run_task_with_ghost_wait(
@@ -3885,7 +3886,7 @@ class SessionThreadingTests(unittest.TestCase):
             _declare_protocol_window(provider)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
             ):
                 _run_task_with_ghost_wait(
@@ -3908,7 +3909,7 @@ class SessionThreadingTests(unittest.TestCase):
             _declare_protocol_window(provider)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
             ):
                 _run_task_with_ghost_wait(
@@ -3948,7 +3949,7 @@ class SessionThreadingTests(unittest.TestCase):
             _declare_protocol_window(provider)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
             ):
                 _run_task_with_ghost_wait(
@@ -4084,7 +4085,7 @@ class SessionThreadingTests(unittest.TestCase):
             _declare_protocol_window(provider)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(state, "kick_ghost_sleep") as kick_sleep,
             ):
@@ -4113,7 +4114,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.location = "https://chat.deepseek.com/"
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
                     task_submit,
@@ -4148,7 +4149,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.location = "https://chat.deepseek.com/"
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
                     task_submit,
@@ -4183,7 +4184,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.location = "https://chat.deepseek.com/"
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
                     task_submit,
@@ -4344,7 +4345,7 @@ class SessionThreadingTests(unittest.TestCase):
         with (
             mock.patch.object(sibling_probe, "borrow_open_provider", return_value=helper),
             mock.patch.object(
-                server.time,
+                task_submit.time,
                 "monotonic",
                 side_effect=[100.0, 101.0, 105.0, 110.0],
             ),
@@ -4508,7 +4509,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch.object(
                 task_submit,
@@ -4549,7 +4550,7 @@ class SessionThreadingTests(unittest.TestCase):
         provider.location = "https://chat.stepfun.com/chats/"
 
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch(
                 "codey.operations.research_iteration.run_research_iteration",
@@ -4614,7 +4615,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return RunResult("checked", "done", 1, False, False, True)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
@@ -4671,7 +4672,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch(
                 "codey.operations.task_phases.dispatch.run_task_mode",
@@ -4714,7 +4715,7 @@ class SessionThreadingTests(unittest.TestCase):
         provider.location = "https://chat.stepfun.com/chats/"
 
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(
                 state,
                 "get_provider",
@@ -4754,7 +4755,7 @@ class SessionThreadingTests(unittest.TestCase):
         provider.location = "https://kimi.moonshot.cn/"
 
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch(
                 "codey.operations.research_iteration.run_research_iteration",
@@ -4798,7 +4799,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(
                 state,
                 "get_provider",
@@ -4848,7 +4849,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch(
                 "codey.operations.task_phases.dispatch.run_task_mode",
@@ -4900,7 +4901,7 @@ class SessionThreadingTests(unittest.TestCase):
             state = server.AppContext(Path(td) / "state")
             events = state.subscribe()
             with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
             ):
@@ -4936,7 +4937,7 @@ class SessionThreadingTests(unittest.TestCase):
             state = server.AppContext(Path(td) / "state")
             events = state.subscribe()
             with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
             ):
@@ -4966,7 +4967,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider),
         ):
             Path(td, "empty.txt").write_text("", encoding="utf-8")
@@ -5057,7 +5058,7 @@ class SessionThreadingTests(unittest.TestCase):
             ]
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(consensus_service, "run_research_advisors", return_value=()),
@@ -5188,7 +5189,7 @@ class SessionThreadingTests(unittest.TestCase):
             ]
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
@@ -5321,7 +5322,7 @@ class SessionThreadingTests(unittest.TestCase):
             ]
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(consensus_service, "run_research_advisors", return_value=()),
@@ -5370,7 +5371,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.send.side_effect = ["not json", "still not json", "again not json"]
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
@@ -5414,7 +5415,7 @@ class SessionThreadingTests(unittest.TestCase):
             })
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch(
                     "codey.operations.task_phases.dispatch.run_task_mode",
@@ -5475,7 +5476,7 @@ class SessionThreadingTests(unittest.TestCase):
             })
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch(
                     "codey.operations.task_phases.dispatch.run_task_mode",
@@ -5520,7 +5521,7 @@ class SessionThreadingTests(unittest.TestCase):
         _declare_protocol_window(second)
 
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", side_effect=[first, second]),
             mock.patch.object(task_submit, "agent_run") as agent_run,
         ):
@@ -5539,7 +5540,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider = _DeclaredChatProvider()
             provider.send.return_value = "Selected model answer"
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
             ):
                 _run_task_with_ghost_wait("session-1", None, "Explain a breathing app", 8, False, "deepseek", "chat")
@@ -5593,7 +5594,7 @@ class SessionThreadingTests(unittest.TestCase):
             _declare_protocol_window(provider)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
@@ -5662,7 +5663,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.location = "https://chat.deepseek.com/"
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
                     task_submit,
@@ -5767,7 +5768,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.location = "https://chat.deepseek.com/"
 
             with (
-                mock.patch.object(server, "STATE", restarted),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", restarted),
                 mock.patch.object(restarted, "get_provider", return_value=provider),
                 mock.patch.object(
                     task_submit,
@@ -5817,7 +5818,7 @@ class SessionThreadingTests(unittest.TestCase):
         _declare_protocol_window(next_model)
 
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", side_effect=[writer, next_model]),
         ):
             _run_task_with_ghost_wait("session-1", None, "Choose a database", 8, False, "deepseek", "chat")
@@ -5849,7 +5850,7 @@ class SessionThreadingTests(unittest.TestCase):
         _declare_protocol_window(second_a)
 
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(
                 state,
                 "get_provider",
@@ -5883,7 +5884,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", side_effect=[first, second]),
         ):
             # Windows CI temp paths can contain short-name aliases (RUNNER~1).
@@ -5936,7 +5937,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(
                 task_submit,
@@ -6018,7 +6019,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return RunResult("implemented", "done", 2, True, True)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
@@ -6091,7 +6092,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(
                 task_submit,
@@ -6143,7 +6144,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6199,7 +6200,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6256,7 +6257,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6337,7 +6338,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer) as get_provider,
             mock.patch.object(
                 task_submit,
@@ -6402,7 +6403,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6455,7 +6456,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6507,7 +6508,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6549,7 +6550,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6597,7 +6598,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6646,7 +6647,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6669,7 +6670,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6714,7 +6715,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6758,7 +6759,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6798,7 +6799,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6827,7 +6828,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6880,7 +6881,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6939,7 +6940,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -6993,7 +6994,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -7040,7 +7041,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -7070,7 +7071,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
                 task_submit,
@@ -7122,7 +7123,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(task_submit, "agent_run", side_effect=TimeoutError("response timed out")),
         ):
@@ -7154,7 +7155,7 @@ class SessionThreadingTests(unittest.TestCase):
         events = state.subscribe()
 
         with (
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(
                 state,
                 "get_provider",
@@ -7189,7 +7190,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(
                 task_submit,
@@ -7221,7 +7222,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(
                 task_submit,
@@ -7255,7 +7256,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(task_submit, "agent_run", side_effect=stopped_agent),
         ):
@@ -7307,7 +7308,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return RunResult("complete", "done", 1, True, True)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
@@ -7378,70 +7379,17 @@ class UiLaunchTests(unittest.TestCase):
             self.assertEqual(loaded["sessions"], saved["sessions"])
             self.assertEqual(loaded["revision"], 1)
 
-    def test_serve_launches_pywebview_window(self) -> None:
-        fake_webview = mock.Mock()
-
-        with (
-            mock.patch.dict("sys.modules", {"webview": fake_webview}),
-            mock.patch.object(server, "CodeyHTTPServer") as httpd_cls,
-            mock.patch.object(provider_services, "start_provider_warmup") as warmup,
-        ):
-            httpd = mock.Mock()
-            httpd.server_address = ("127.0.0.1", 43210)
-            httpd_cls.return_value = httpd
-
-            def stop_server() -> None:
-                raise KeyboardInterrupt
-
-            httpd.serve_forever.side_effect = stop_server
-
-            server.serve(port=0)
-
-        fake_webview.create_window.assert_called_once()
-        fake_webview.start.assert_called_once()
-        warmup.assert_not_called()
-        _, kwargs = fake_webview.start.call_args
-        self.assertFalse(kwargs["private_mode"])
-        self.assertEqual(kwargs["storage_path"], str(server.DEFAULT_STATE_HOME / "webview"))
-        httpd.shutdown.assert_called_once()
-
-    def test_serve_keeps_http_server_available_when_webview_fails(self) -> None:
-        fake_webview = mock.Mock()
-        fake_webview.start.side_effect = RuntimeError("missing webview runtime")
-
-        with (
-            mock.patch.dict("sys.modules", {"webview": fake_webview}),
-            mock.patch.object(server, "CodeyHTTPServer") as httpd_cls,
-            mock.patch.object(provider_services, "start_provider_warmup") as warmup,
-            mock.patch.object(server, "_wait_for_manual_browser", side_effect=KeyboardInterrupt) as fallback,
-            mock.patch("builtins.print") as printed,
-        ):
-            httpd = mock.Mock()
-            httpd.server_address = ("127.0.0.1", 43210)
-            httpd.launch_url.side_effect = lambda base: base + "#codey_bootstrap=test-only"
-            httpd_cls.return_value = httpd
-
-            server.serve(port=0)
-
-        fake_webview.create_window.assert_called_once()
-        fake_webview.start.assert_called_once()
-        warmup.assert_not_called()
-        fallback.assert_called_once()
-        self.assertEqual(fallback.call_args.args[0], "http://127.0.0.1:43210/#codey_bootstrap=test-only")
-        self.assertIn("missing webview runtime", str(fallback.call_args.args[1]))
-        printed.assert_any_call("\n[codey] shutting down")
-        httpd.shutdown.assert_called_once()
-
-    def test_serve_releases_lease_when_http_server_construction_fails(self) -> None:
-        lease = mock.Mock()
-        with (
-            self.assertRaisesRegex(OSError, "port busy"),
-            mock.patch("codey.storage.file_lock.acquire_lease", return_value=lease),
-            mock.patch.object(server.CodeyHTTPServer, "__init__", side_effect=OSError("port busy")),
-        ):
-            server.serve(port=0)
-
-        lease.release.assert_called_once()
+    def test_window_attaches_to_shared_service(self) -> None:
+        from codey.app.desktop import open_desktop
+        client = mock.Mock()
+        client.lifecycle.return_value = {"url": "http://127.0.0.1:43210/#codey_bootstrap=test"}
+        view = mock.Mock()
+        with mock.patch("codey.app.desktop.ensure_service", return_value=client) as ensure, mock.patch.dict("sys.modules", {"webview": view}):
+            open_desktop(Path("state"), port=0)
+        ensure.assert_called_once_with(Path("state"), port=0)
+        view.create_window.assert_called_once()
+        view.start.assert_called_once()
+        client.lifecycle.assert_called_once_with("desktop_url")
 
 
 if __name__ == "__main__":

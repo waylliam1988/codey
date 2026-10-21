@@ -42,10 +42,10 @@ leaving unused models editable. Automatic failover, repair, reviewers and
 advisors use the same scope. HTTP API sends require an explicit model, and the
 resolved selection is checked again before admission.
 
-The zero-build frontend has two small modules:
+The TypeScript frontend has two source owners, built into the packaged UI:
 
-- `models.js` owns the authoritative source snapshot and selection predicates.
-- `model_settings.js` renders every source with the same disclosure, master
+- `frontend/src/models.ts` owns the authoritative source snapshot and selection predicates.
+- `frontend/src/model_settings.ts` renders every source with the same disclosure, master
   toggle and model checkboxes; changes are staged until Save.
 
 Connection fields stay inside Local's `Connection` disclosure. `Save connection`
@@ -71,6 +71,15 @@ explicitly estimate preflight context. Service-reported usage remains separate;
 missing usage is unknown. See [token accounting](token-accounting.zh-CN.md).
 
 ## Removing an optional integration
+
+Zen discovers model API addresses, protocol, limits and explicit zero-cost prices
+directly from `https://models.opencode.ai/api.json`. ETag and a 60-second lazy
+refresh allow approved API paths to change without shipping Codey. Failed refresh
+preserves valid cached facts with stale/error information. There is no second
+endpoint-availability index and no dependency on `/models`, OpenCode.exe or its
+credentials. A run freezes its endpoint revision; a changed endpoint rejects its
+old selection rather than silently rerouting it. New trust domains and unsupported
+protocols still require review. See [implementation and removal boundaries](external-control-implementation.zh-CN.md).
 
 Remove its `API_CONNECTIONS` registration and backend package. The shared
 frontend contains no Zen/OpenCode-specific branch or label: source rows and
@@ -106,9 +115,8 @@ delivery and package inclusion retain separate integration coverage. Scripted
 Research sources use scoped DNS answers and fresh caches while executing the
 real URL policy, so offline verification does not depend on public DNS.
 
-Latest Windows/Python 3.12 verification: **8574 passed, 7 skipped, 1510 subtests**;
-required machine contracts **1125 passed, 14 subtests, no skips**. See [the test report](../TEST_REPORT.md)
-for TDD, the interrupted first continuity run, historical replay and platform limits.
+Current results, full-run failures and focused fixes are maintained in
+[the test report](../TEST_REPORT.md), including TDD and platform limits.
 
 Primary tests: `tests/test_model_preferences.py`,
 `tests/test_ui_model_management.py`, `tests/test_offline_models_demo.py`,

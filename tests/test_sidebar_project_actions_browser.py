@@ -33,7 +33,7 @@ def test_project_actions_preview_search_and_quiet_copy(tmp_path, monkeypatch):
         },
         base_revision=0,
     )
-    monkeypatch.setattr(server, "STATE", ctx)
+    monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
     worker = threading.Thread(target=httpd.serve_forever, daemon=True)
     worker.start()

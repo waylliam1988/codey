@@ -664,6 +664,10 @@ class MemoryDurableStore:
         with self._lock:
             return conversation_id in self._heads
 
+    def conversation_ids(self) -> tuple[str, ...]:
+        with self._lock:
+            return tuple(sorted(self._heads))
+
     def close(self) -> None:
         return None
 

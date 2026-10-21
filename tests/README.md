@@ -6,6 +6,21 @@ Run the full deterministic suite with:
 pytest -q
 ```
 
+## External control and shared-service ownership
+
+`test_external_control.py`, `test_control_runtime_ownership.py`,
+`test_control_service_startup.py` and `test_control_evidence_budget.py` cover
+identity-bound admission, delegation generations, bounded observation, desktop
+history, thin RPC/MCP adapters and independent review. `test_release_control.py`
+uses real replacement processes for immutable validation/switch/rollback.
+`test_zen_dynamic_endpoints.py` and the optional-removal probe cover directory
+changes without executable forwarding. These tests do not replace live-model checks.
+
+Raw HTTP fixtures explicitly attach AppContext and the production public feed
+(`http_context.py` / `sse_http.py`); no global HTTP owner is supplied by production.
+Approval restart fixtures observe the original durable wakeup without a model
+scheduler consuming it. Frontend source behavior lives beside its TypeScript module.
+
 ## Current verification and coverage
 
 Current complete-suite counts, machine-contract results, coverage measurements,

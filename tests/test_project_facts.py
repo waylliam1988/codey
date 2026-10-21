@@ -15,6 +15,7 @@ from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.execution_evidence import CheckEvidence
 from codey.toolchain.runtime import ToolOutcome
 from codey.workspace.facts import MAX_VERIFIED_COMMANDS, ProjectFactsStore
+from tests import http_context
 
 
 class FakeProvider:
@@ -263,7 +264,7 @@ class ProjectFactsTests(unittest.TestCase):
                 return RunResult("complete", "done", 1, True)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
@@ -272,8 +273,8 @@ class ProjectFactsTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
-                task_submit.run_task("session-1", td, "first", 4, False, "deepseek", "project", get_state=server.get_state)
-                task_submit.run_task("session-1", td, "second", 4, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-1", td, "first", 4, False, "deepseek", "project", get_state=http_context.get_context)
+                task_submit.run_task("session-1", td, "second", 4, False, "deepseek", "project", get_state=http_context.get_context)
 
             state.close()
             self.assertEqual(captured_facts[0], "")
@@ -325,7 +326,7 @@ class ProjectFactsTests(unittest.TestCase):
             }
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
@@ -336,7 +337,7 @@ class ProjectFactsTests(unittest.TestCase):
                     return_value="npm",
                 ),
             ):
-                task_submit.run_task("session-1", str(project), "Update backend", 8, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-1", str(project), "Update backend", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
             state.wait_for_ghost_sleep(timeout=30)
             facts = state.project_facts.load(project)
@@ -362,7 +363,7 @@ class ProjectFactsTests(unittest.TestCase):
                 return RunResult("failed", "done", 1, False)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
@@ -371,7 +372,7 @@ class ProjectFactsTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
-                task_submit.run_task("session-1", td, "first", 4, False, "qwen", "project", get_state=server.get_state)
+                task_submit.run_task("session-1", td, "first", 4, False, "qwen", "project", get_state=http_context.get_context)
 
             rendered = state.project_facts.render(td)
             state.close()
@@ -392,7 +393,7 @@ class ProjectFactsTests(unittest.TestCase):
                 return RunResult("complete", "done", 1, True)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
@@ -406,7 +407,7 @@ class ProjectFactsTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
-                task_submit.run_task("session-1", td, "task", 4, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-1", td, "task", 4, False, "deepseek", "project", get_state=http_context.get_context)
 
             state.wait_for_ghost_sleep(timeout=30)
             self.assertEqual(state.run_registry.last_stop_reason(), "done")

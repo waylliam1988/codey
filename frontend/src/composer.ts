@@ -92,7 +92,7 @@ export interface ComposerApi {
     PROVIDERS = deps.PROVIDERS || [];
     if (!outbox) {
       const element = document.createElement('div');
-      document.querySelector('.composer')!.before(element);
+      $('task').before(element);
       outbox = new InputOutbox(element, {
         accepted: (request, revision) => clearDraftIfUnchanged(request.session_id, request.task, revision),
         edit: (session, text) => recallMessage(session, text),

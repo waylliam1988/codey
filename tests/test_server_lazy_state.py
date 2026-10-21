@@ -7,6 +7,8 @@ import sys
 import unittest
 from unittest import mock
 
+from tests import http_context
+
 _HEAVY_MODULES = (
     "codey.automation.browser",
     "codey.providers.registry",
@@ -40,7 +42,7 @@ class ServerLazyStateTests(unittest.TestCase):
     def test_import_leaves_global_unbuilt(self) -> None:
         script = (
             "import codey.app.server as server; "
-            "print('built' if server.STATE is not None else 'lazy')"
+            "print('built' if server.CodeyHTTPServer.app_context is not None else 'lazy')"
         )
         completed = subprocess.run(
             [sys.executable, "-c", script],
@@ -129,8 +131,8 @@ class ServerLazyStateTests(unittest.TestCase):
         from codey.app import server
 
         sentinel = object()
-        with mock.patch.object(server, "STATE", sentinel):
-            self.assertIs(server.get_state(), sentinel)
+        with mock.patch.object(server.CodeyHTTPServer, "app_context", sentinel):
+            self.assertIs(http_context.get_context(), sentinel)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 
 from codey.policies.task_policy import TaskPolicy
+from tests import http_context
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -250,7 +251,7 @@ class TimedProvider:
 @contextmanager
 def patched_server(recorder: FlowRecorder, state_home: Path) -> Iterator[codey_server.AppContext]:
     state = codey_server.AppContext(state_home)
-    original_state = codey_server.STATE
+    original_state = codey_server.CodeyHTTPServer.app_context
     original_connect_provider = provider_services.connect_provider
     original_connect_existing = provider_services.connect_existing_provider
     original_borrow_open_provider = provider_services.borrow_open_provider
@@ -275,7 +276,7 @@ def patched_server(recorder: FlowRecorder, state_home: Path) -> Iterator[codey_s
         return wrap(provider, provider_id, "borrowed-advisor")
 
     try:
-        codey_server.STATE = state
+        codey_server.CodeyHTTPServer.app_context = state
         provider_services.connect_provider = timed_connect_provider
         provider_services.connect_existing_provider = timed_connect_existing
         provider_services.borrow_open_provider = timed_borrow_open_provider
@@ -285,7 +286,7 @@ def patched_server(recorder: FlowRecorder, state_home: Path) -> Iterator[codey_s
         )
         yield state
     finally:
-        codey_server.STATE = original_state
+        codey_server.CodeyHTTPServer.app_context = original_state
         provider_services.connect_provider = original_connect_provider
         provider_services.connect_existing_provider = original_connect_existing
         provider_services.borrow_open_provider = original_borrow_open_provider
@@ -384,7 +385,7 @@ def run_task(
         max_turns=max_turns,
         continue_task=continue_task,
         provider_id=WRITER_ID,
-        get_state=codey_server.get_state,
+        get_state=http_context.get_context,
     )
     terminal = state.run_registry.last_terminal_event() or {}
     recorder.event("task_terminal", terminal=terminal)

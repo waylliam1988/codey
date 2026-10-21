@@ -1,6 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from './types/domain';
 
+it('rejects a replayed start after history restoration removed the browser attempt', async () => {
+  await import('./requests');
+  const restored = {
+    id: 'restored',
+    messages: [{ type: 'user', runId: 'finished' }],
+    terminalRuns: ['finished'],
+  } as Session;
+  window.Requests.init({ getSessions: () => [restored] } as Parameters<typeof window.Requests.init>[0]);
+  expect(window.Requests.acceptsEvent({ session_id: 'restored', run_id: 'finished', type: 'task_start' })).toBe(false);
+  expect(window.Requests.acceptsEvent({ session_id: 'restored', run_id: 'finished', type: 'task_done' })).toBe(true);
+});
+
 it('renders pending request progress only in the process summary, keeping failure recovery separate', async () => {
   await import('./process');
   await import('./requests');

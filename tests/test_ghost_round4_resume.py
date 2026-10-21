@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
 SCRIPT = Path(__file__).parent / "manual" / "ghost_memory_routing" / "round4.py"
 sys.path.insert(0, str(SCRIPT.parent))
 SPEC = importlib.util.spec_from_file_location("ghost_round4_resume", SCRIPT)

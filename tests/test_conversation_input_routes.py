@@ -3,6 +3,8 @@ import pytest
 from codey.app import input_queue_routes as routes
 from codey.app.context import AppContext
 
+pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
+
 
 @pytest.mark.parametrize('mode', ['steer', 'follow_up'])
 def test_input_route_preserves_delivery_mode(tmp_path, mode):

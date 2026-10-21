@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
-
 
 MODULE_PATH = (
     Path(__file__).parent
@@ -13,7 +13,6 @@ MODULE_PATH = (
 SPEC = importlib.util.spec_from_file_location("ghost_evaluation_contract", MODULE_PATH)
 assert SPEC and SPEC.loader
 contract = importlib.util.module_from_spec(SPEC)
-import sys
 sys.modules[SPEC.name] = contract
 SPEC.loader.exec_module(contract)
 

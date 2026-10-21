@@ -100,6 +100,25 @@ class DurableSession:
     def database_id(self) -> str:
         return self.store.database_id
 
+    @_mutation_line
+    def conversation_ids(self) -> tuple[str, ...]:
+        return self.store.conversation_ids()
+
+    @_mutation_line
+    def submission(self, submission_id: str) -> SubmissionRecord:
+        return self.store.submission(submission_id)
+
+    @contextmanager
+    def control_line(self) -> Generator[None, None, None]:
+        """Coordinate control reads/admission with the existing mutation line.
+
+        Each write remains an atomic durable commit. Revocation precedes its
+        cancellation cleanup so restart cannot dispatch the old generation.
+        """
+        with self._write_lock:
+            self._ensure_usable()
+            yield
+
     def __init__(
         self,
         store: DurableStore,
@@ -394,34 +413,11 @@ class DurableSession:
 
     @_mutation_line
     def conversation_tree(self, conversation_id: str) -> dict[str, object]:
-        """Bounded metadata for every retained branch in this conversation and its ancestors."""
-        head, revision = self.store.head(conversation_id)
-        entries = list(self.store.entries(conversation_id))
-        parent_scope, parent_cap = self.store.conversation_parent(conversation_id)
-        if parent_scope and parent_cap:
-            entries = list(conversation_ops.context(self, parent_scope, leaf_id=parent_cap)) + entries
-        ancestors = self.conversation_lineage(conversation_id)
-        parents = {entry.parent_id for entry in entries}
-        tips = [entry for entry in entries if entry.entry_id not in parents or entry.entry_id == head]
-        return {'ok': True, 'session_id': conversation_id, 'head_entry_id': head, 'revision': revision,
-                'ancestors': ancestors, 'has_more': len(tips) > 200,
-                'branches': [{'entry_id': entry.entry_id, 'parent_entry_id': entry.parent_id,
-                              'kind': entry.kind, 'text': str(entry.payload.get('text') or entry.payload.get('content') or entry.kind)[:240],
-                              'current': entry.entry_id == head} for entry in tips[-200:]]}
+        return conversation_ops.conversation_tree(self, conversation_id)
 
     @_mutation_line
     def conversation_lineage(self, conversation_id: str) -> list[dict[str, object]]:
-        """Read fork identities without loading any conversation contents."""
-        scope = conversation_id
-        ancestors: list[dict[str, object]] = []
-        seen: set[str] = set()
-        while scope and scope not in seen and len(seen) < 64:
-            seen.add(scope)
-            parent, entry = self.store.conversation_parent(scope)
-            if parent:
-                ancestors.append({'session_id': parent, 'entry_id': entry})
-            scope = parent or ''
-        return ancestors
+        return conversation_ops.conversation_lineage(self, conversation_id)
 
     @_mutation_line
     def select_idle_branch(self, conversation_id: str, entry_id: str, *, expected_revision: int) -> CommitResult:
@@ -677,7 +673,7 @@ class DurableSession:
             conversation_id=task.conversation_id,
             parent_id=head,
             kind="user_message",
-            payload={"text": text},
+            payload={"text": text, **admission.message_metadata(content)},
             by_task_id=task.task_id,
         )
         thawed_state = thaw_json(task.state)
@@ -947,7 +943,8 @@ class DurableSession:
             raise CommitConflict("queued submission has no input text")
         entry = EntryDraft(
             entry_id=f"entry-{uuid.uuid4().hex}", conversation_id=submission.conversation_id,
-            parent_id=current_head, kind="user_message", payload={"text": text}, by_task_id=task.task_id,
+            parent_id=current_head, kind="user_message",
+            payload={"text": text, **admission.message_metadata(content)}, by_task_id=task.task_id,
         )
         thawed_state = thaw_json(task.state)
         if not isinstance(thawed_state, Mapping):

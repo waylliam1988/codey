@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from codey.ghost.admission import (
+from codey.agents.request import AgentRequest
+from codey.operations.project_adapter import _project_context, _project_ghost_sources
+from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps, run_task_kernel
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
+from codey.workspace.context_admission import (
     GhostAdmissionError,
     GhostContextSource,
     admit_ghost_context,
     request_scope,
 )
-from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps, run_task_kernel
-from codey.operations.project_adapter import _project_context, _project_ghost_sources
-from codey.agents.request import AgentRequest
-from codey.operations.task_session import TaskSession
-from codey.policies.task_policy import TaskPolicy
 
 
 def _source(text: str = "Prefer Chinese answers.", **kwargs) -> GhostContextSource:

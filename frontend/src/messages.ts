@@ -68,6 +68,9 @@ export interface MessagesApi {
       div.className = 'msg user';
       if (m.id) div.dataset.messageId = m.id;
       div.innerHTML = `<div class="msg-label">You</div><div class="body"></div>`;
+      const label = div.querySelector<HTMLElement>('.msg-label');
+      if (label && m.source?.name) label.textContent = m.source.name;
+      if (m.source?.actor_id) div.dataset.sourceActor = m.source.actor_id;
       const body = div.querySelector<HTMLElement>('.body');
       if (body) body.textContent = String(m.text);
       addMessageCopyButton(div, messageCopyText(m));

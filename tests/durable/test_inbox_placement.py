@@ -16,6 +16,7 @@ from codey.durable import (
 )
 from codey.durable.model import thaw_json
 from codey.durable.scheduler import DurableTaskScheduler
+from codey.runtime.core.api_selection import ApiRunSelection
 
 
 @pytest.fixture(params=["memory", "sqlite"])
@@ -97,6 +98,7 @@ def test_busy_input_is_admitted_queued_without_history_entry(tmp_path: Path) -> 
                 "provider": "local",
                 "intent": "chat",
             },
+            model_selection=ApiRunSelection("local", "fixture", "fixture", "openai-completions", True),
         )
 
         assert item["state"] == "queued"

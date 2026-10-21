@@ -52,8 +52,12 @@ def test_question_releases_execution_and_restart_wakes_the_same_task_once(tmp_pa
         monkeypatch.setattr("codey.app.task_services.build_task_deps", lambda state, **kwargs:
             build_task_deps(state, connect_provider=lambda *_a, **_kw: resumed_provider, **kwargs))
 
+        workers = []
+
         def submit(fn, *args, **kwargs):
-            fn(*args, **kwargs)
+            # Production enqueues the worker; it never executes model work
+            # inline while dispatch still owns the admission gate.
+            workers.append(lambda: fn(*args, **kwargs))
             return True
 
         monkeypatch.setattr("codey.app.task_submit.submit_browser_task", submit)
@@ -71,6 +75,8 @@ def test_question_releases_execution_and_restart_wakes_the_same_task_once(tmp_pa
         scheduler = DurableTaskScheduler(restarted.durable, dispatch)
         try:
             scheduler._reconcile()
+            assert len(workers) == 1
+            workers.pop()()
             scheduler._reconcile()
             assert seen == [result.run_id]
             assert not errors

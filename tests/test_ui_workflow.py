@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture(scope="module")
 def ui_browser(tmp_path_factory):
     app_context = server.AppContext(tmp_path_factory.mktemp("ui-workflow") / "state")
-    original = server.STATE
-    server.STATE = app_context
+    original = server.CodeyHTTPServer.app_context
+    server.CodeyHTTPServer.app_context = app_context
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -35,13 +35,13 @@ def ui_browser(tmp_path_factory):
         httpd.server_close()
         thread.join(timeout=2)
         app_context.close()
-        server.STATE = original
+        server.CodeyHTTPServer.app_context = original
 
 
 @pytest.fixture
 def page(ui_browser):
     browser, url = ui_browser
-    app_context = server.STATE
+    app_context = server.CodeyHTTPServer.app_context
     assert app_context is not None
     page = browser.new_page(viewport={"width": 1280, "height": 800})
     boot_errors = []

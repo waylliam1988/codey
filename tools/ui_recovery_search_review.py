@@ -229,8 +229,13 @@ def main(exercise_page=exercise, artifacts=ARTIFACTS):
     artifacts.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="codey-ui-review-") as temporary:
         ctx = server.AppContext(Path(temporary) / "state")
-        server.STATE = ctx
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        from codey.app.public_event_feed import PublicEventFeed
+
+        httpd.app_context = ctx
+        feed = PublicEventFeed()
+        httpd.public_feed = feed
+        unobserve = ctx.event_bus.observe(feed.publish)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         with socket.socket() as sock:
@@ -264,7 +269,8 @@ def main(exercise_page=exercise, artifacts=ARTIFACTS):
             httpd.server_close()
             thread.join(timeout=2)
             ctx.close()
-            server.STATE = None
+            unobserve()
+            feed.close()
         return 0 if result.get("passed") else 1
 
 

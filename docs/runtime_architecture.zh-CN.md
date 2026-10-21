@@ -5,6 +5,32 @@
 
 完整包结构与当前函数入口见[项目结构与职责地图](project_structure.zh-CN.md)。
 
+## 服务、控制与持久入场（2026-10-21）
+
+`app/service.py::LocalService` 持有显式 AppContext、HTTP server、公共事件广播和服务 lease；
+`app/desktop.py` 只连接窗口。桌面、CLI control、JSONL RPC 与可选 MCP 共用该服务，
+不在 handler 中隐式初始化全局状态。独立的 `agent` headless 命令仍使用共用任务服务。
+
+```text
+桌面输入 / control HTTP ← CLI / RPC / MCP
+             ↓
+DurableSession 入场、请求指纹、原任务检查点与输入队列
+             ↓
+原 scheduler → 原 task runtime → 原模型工具内核
+             ↓
+持久聊天/执行事实 → 公共事件广播 → 桌面与外部观察
+```
+
+`durable/control.py` 保存控制配置与幂等回执，被动条目不成为第二套执行状态。
+外部消息来源和返修关系经过原消息写口持久化；会话与提交查询通过 DurableSession 的锁读取。
+独立验收绑定工作区候选摘要，不能由模型的完成总结代替。人工接管与停止推进控制代次。
+广播只缓存有界公共字节，慢订阅独立断开，重连再从持久事实对账。
+
+`launcher/` 在不可变 runtime 快照间受控切换：隔离验证、drain、进程替换、健康确认、
+启动失败回退。只支持依赖与数据库 schema 不变，不回滚任务数据库。
+`durable/sqlite.py` 用现有 OS lease 序列化冷启动初始化，包括 WAL 转换；不改变事务写入权威。
+接口、启动方式与边界见[外部控制实现](external-control-implementation.zh-CN.md)。
+
 ## 文本协议边界（2026-10-12）
 
 任务入口在 `task_loop._receive_turn_plan` 将文本模式的字符串交给

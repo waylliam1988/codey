@@ -6,6 +6,7 @@ import logging
 import queue
 import threading
 from collections import deque
+from collections.abc import Callable
 from typing import Any
 
 from codey.utils.refs import parse_int
@@ -72,6 +73,17 @@ class EventBus:
         self._subscribers: list[EventSubscriber] = []
         self._sequence = 0
         self._replay: deque[tuple[int, dict[str, Any]]] = deque(maxlen=replay_limit)
+        self._observers: list[Callable[[int, dict[str, Any]], None]] = []
+
+    def observe(self, callback: Callable[[int, dict[str, Any]], None]) -> Callable[[], None]:
+        with self._lock:
+            self._observers.append(callback)
+
+        def unsubscribe() -> None:
+            with self._lock:
+                if callback in self._observers:
+                    self._observers.remove(callback)
+        return unsubscribe
 
     @property
     def sequence(self) -> int:
@@ -84,6 +96,11 @@ class EventBus:
             self._sequence += 1
             event_id = self._sequence
             self._replay.append((event_id, dict(payload)))
+            for observer in self._observers:
+                try:
+                    observer(event_id, payload)
+                except Exception:
+                    logger.exception("event observer failed")
             for sub in list(self._subscribers):
                 self._put_for_subscriber(
                     sub,

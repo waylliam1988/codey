@@ -200,7 +200,7 @@ def main() -> int:
         store = state_home / "provider-controls.json"
         state = server.AppContext(state_home)
         try:
-            server.STATE = state
+            server.CodeyHTTPServer.app_context = state
             provider_controls.CONTROL_STORE = store
             provider_controls.set_teach_handler(None)
             provider_flow.set_recovery_handler(state.handle_flow_recovery)
@@ -225,7 +225,7 @@ def main() -> int:
         finally:
             provider_controls.end_task_context()
             provider_controls.CONTROL_STORE = old_store
-            server.STATE = old_state
+            server.CodeyHTTPServer.app_context = old_state
             provider_controls.set_teach_handler(old_state.handle_control_teach)
             provider_controls.set_doctor_handler(old_state.handle_profile_doctor)
             provider_flow.set_recovery_handler(old_state.handle_flow_recovery)

@@ -1195,6 +1195,10 @@ function handleReplyStream(data: ServerEventData) {
 let inputRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 function handleServerEvent(raw: unknown) {
   const data = decodeServerEvent(raw) as ServerEventData;
+  if (data.type === 'conversation_inventory_changed') {
+    void runtime.UiState.refreshInventory?.();
+    return;
+  }
   if (data.type === 'durable_commit') {
     void runtime.ConversationUI.observeCommit(decodeServerEvent(raw));
     if (inputRefreshTimer === undefined)

@@ -12,7 +12,7 @@ from codey.providers.zen.identity import ZenIdentity
 
 
 def directory():
-    return {"opencode": {"npm": "@ai-sdk/openai-compatible", "api": "https://opencode.ai/inference/v1", "models": {
+    return {"opencode": {"npm": "@ai-sdk/openai-compatible", "api": "https://opencode.ai/inference/openai/v1", "models": {
         "chat-free": {"name": "Chat Free", "tool_call": True, "cost": {"input": 0, "output": 0}, "limit": {"context": 32768, "output": 4096}},
         "response-free": {"limit": {"context": 131072, "output": 8192}, "name": "Responses Free", "tool_call": True, "cost": {"input": 0, "output": 0}, "provider": {"npm": "@ai-sdk/openai"}},
         "paid": {"tool_call": True, "cost": {"input": 1, "output": 0}},
@@ -22,7 +22,7 @@ def directory():
 
 
 def test_catalog_uses_model_protocol_override_and_explicit_zero_cost():
-    models = parse_models(directory(), {"chat-free", "response-free", "paid", "unknown-price", "other-protocol"})
+    models = parse_models(directory())
     assert {m.id: m.protocol for m in models} == {"chat-free": "openai-completions", "response-free": "openai-responses"}
 
 
@@ -31,7 +31,7 @@ def test_catalog_preserves_boolean_reasoning_toggle_capability():
     listing["opencode"]["models"]["chat-free"]["reasoning"] = True
     listing["opencode"]["models"]["chat-free"]["reasoning_options"] = [{"type": "toggle"}]
 
-    model = next(model for model in parse_models(listing, {"chat-free"}) if model.id == "chat-free")
+    model = next(model for model in parse_models(listing) if model.id == "chat-free")
 
     assert model.thinking_toggle is True
     assert model.efforts == ()
@@ -40,9 +40,9 @@ def test_catalog_preserves_boolean_reasoning_toggle_capability():
 
 def test_catalog_accepts_current_inference_api_destination():
     listing = directory()
-    listing["opencode"]["api"] = "https://opencode.ai/inference/v1"
+    listing["opencode"]["api"] = "https://opencode.ai/inference/openai/v1"
 
-    assert parse_models(listing, {"chat-free"})
+    assert parse_models(listing)
 
 
 @pytest.mark.parametrize("status", [304, 403])
@@ -70,7 +70,7 @@ def test_catalog_closes_http_error_stream_and_preserves_response_classification(
 def test_malformed_model_metadata_does_not_hide_other_free_models(field, value):
     listing = directory()
     listing["opencode"]["models"]["chat-free"][field] = value
-    parsed = parse_models(listing, {"chat-free", "response-free"})
+    parsed = parse_models(listing)
     assert "response-free" in {model.id for model in parsed}
 
 
@@ -95,8 +95,8 @@ def test_catalog_keeps_cache_on_network_failure_then_removes_delisted_model(tmp_
 
 def test_zen_identity_rejects_other_destinations_and_uses_upstream_session_shape():
     identity = ZenIdentity()
-    first = identity.headers("https://opencode.ai/inference/v1")
-    second = identity.headers("https://opencode.ai/inference/v1")
+    first = identity.headers("https://opencode.ai/inference/openai/v1")
+    second = identity.headers("https://opencode.ai/inference/openai/v1")
     assert re.fullmatch(r"ses_[0-9a-f]{12}[0-9A-Za-z]{14}", first["x-opencode-session-id"])
     assert first["x-opencode-session-id"] == second["x-opencode-session-id"]
     assert first["x-opencode-request"] != second["x-opencode-request"]
@@ -119,13 +119,13 @@ def test_upstream_identifier_resets_counter_when_timestamp_changes(monkeypatch):
 
 @pytest.mark.parametrize("limits", [{}, {"context": 262144}, {"output": 8192}])
 def test_zen_models_without_explicit_context_and_output_limits_are_not_admitted(limits):
-    directory = {"opencode": {"npm": "@ai-sdk/openai-compatible", "models": {
+    directory = {"opencode": {"api": "https://opencode.ai/inference/openai/v1", "npm": "@ai-sdk/openai-compatible", "models": {
         "incomplete": {"tool_call": True, "cost": {"input": 0, "output": 0}, "limit": limits}}}}
-    assert parse_models(directory, {"incomplete"}) == ()
+    assert parse_models(directory) == ()
 
 
 def test_selected_model_without_capacity_explains_why_it_cannot_be_admitted(tmp_path):
-    listing = {"opencode": {"npm": "@ai-sdk/openai-compatible", "models": {
+    listing = {"opencode": {"api": "https://opencode.ai/inference/openai/v1", "npm": "@ai-sdk/openai-compatible", "models": {
         "incomplete": {"tool_call": True, "cost": {"input": 0, "output": 0}}}}}
     catalog = ZenCatalog(tmp_path, fetch=lambda url, etag: (
         {"data": [{"id": "incomplete"}]} if url.endswith("/models") else listing, ""))
@@ -138,7 +138,7 @@ def test_model_output_reservation_fits_small_selected_context(monkeypatch):
     from codey.providers.zen.catalog import ZenModel
 
     monkeypatch.setattr(connection, "catalog", lambda: SimpleNamespace(
-        require=lambda _: ZenModel("small", "Small", "openai-completions", 4096, 8192)))
+        require=lambda _: ZenModel("small", "Small", "openai-completions", 4096, 8192, "https://opencode.ai/inference/openai/v1")))
     selection = connection.capture_selection({"model": "small"})
     assert selection.output_tokens == 1024
 
@@ -150,7 +150,7 @@ def test_zen_toggle_selection_becomes_explicit_thinking_flag(monkeypatch):
     from codey.providers.zen.catalog import ZenModel
 
     monkeypatch.setattr(connection, "catalog", lambda: SimpleNamespace(
-        require=lambda _: ZenModel("toggle", "Toggle", "openai-completions", 32768, 8192,
+        require=lambda _: ZenModel("toggle", "Toggle", "openai-completions", 32768, 8192, "https://opencode.ai/inference/openai/v1",
                                    thinking_toggle=True)))
 
     enabled = connection.capture_selection({"model": "toggle", "thinking": True})

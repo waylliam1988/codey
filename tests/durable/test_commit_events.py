@@ -4,8 +4,6 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from queue import Queue
-from types import SimpleNamespace
 
 import pytest
 
@@ -123,34 +121,15 @@ session.admit_input(conversation_id='conversation', request_id='request', task_i
     assert record.to_payload()["entry_ids"] == [reopened.entries("conversation")[0].entry_id]
 
 
-def test_sse_replays_every_page_and_suppresses_queued_duplicates(monkeypatch: pytest.MonkeyPatch) -> None:
-    from codey.app import server
+def test_sse_replays_every_page_and_suppresses_queued_duplicates() -> None:
+    from tests.sse_http import capture_events
 
     durable = DurableSession(MemoryDurableStore())
     durable.create_conversation("conversation")
     for index in range(520):
         durable.append_message("conversation", "user_message", {"text": str(index)})
-    queue = Queue()
-    queue.replay_cutoff = 7
-    queue.put(durable.commits_after(520)[0].to_payload())
-    queue.put({"type": "end"})
-    closed = []
-    state = SimpleNamespace(durable=durable, run_status=lambda: {}, subscribe=lambda: queue,
-                            unsubscribe=lambda q: closed.append(q))
-    monkeypatch.setattr(server, "get_state", lambda: state)
-    written = []
-
-    def write(event, *, event_id=0):
-        written.append(event)
-        return event["type"] != "end"
-
-    handler = SimpleNamespace(
-        path=f"/api/events?after_commit_seq=1&database_id={durable.database_id}", headers={},
-        send_response=lambda *_args: None, send_header=lambda *_args: None,
-        end_headers=lambda: None, _write_sse_event=write,
-    )
-    server.Handler._sse(handler)
+    written = capture_events(durable, f"/api/events?after_commit_seq=1&database_id={durable.database_id}",
+                             live=[durable.commits_after(520)[0].to_payload()])
     replayed = [event for event in written if event["type"] == "durable_commit"]
     assert [event["commit_seq"] for event in replayed] == list(range(2, 522))
     assert all(event["session_id"] == "conversation" and event["entry_ids"] for event in replayed)
-    assert closed == [queue]

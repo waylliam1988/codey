@@ -61,7 +61,12 @@ class TaskRuntime:
 
     def run(self, request: TaskSubmission) -> None:
         if self.prepare is not None:
-            prepared = self.prepare(request)
+            try:
+                prepared = self.prepare(request)
+            except Exception as exc:
+                if request.run_id:
+                    self._settle_task(request, OperationOutcome.failed(reason=str(exc)[:500]))
+                raise
             if prepared is None:
                 return
             request = prepared
@@ -140,6 +145,7 @@ class TaskRuntime:
             checkpoint = importlib.import_module("codey.durable.checkpoint")
             operation = checkpoint.operation_from_checkpoint(task, request.session_id)
             if operation is not None and operation.leaf == LEAF_TERMINAL:
+                self._settle_task(request, outcome)
                 return
         settled = self.mutations.mark_terminal(
             request.session_id,
@@ -151,6 +157,24 @@ class TaskRuntime:
             provider=request.provider_id,
         )
         del settled
+        self._settle_task(request, outcome)
+
+    def _settle_task(self, request: TaskSubmission, outcome: OperationOutcome) -> None:
+        # A provider connection can fail before the generation kernel starts.
+        # The operation reducer still records its terminal, but the admitted
+        # task/submission must reach the same fact through the kernel's normal
+        # completion/cancellation APIs. Never leave it dispatchable forever.
+        with self.durable.control_line():
+            task = self.durable.task(request.run_id)
+            if str(task.status) in {"completed", "failed", "cancelled"}:
+                return
+            state = dict(task.state)
+            if outcome.status == "aborted" or state.get("cancel_requested"):
+                self.durable.request_cancel(request.run_id, reason=outcome.reason or "stopped")
+            elif outcome.status == "completed":
+                self.durable.complete_task(request.run_id, outcome.summary, state=state)
+            else:
+                self.durable.fail_task(request.run_id, outcome.reason or "error", state=state)
 
 
 def _turn_budget(request: TaskSubmission) -> int:

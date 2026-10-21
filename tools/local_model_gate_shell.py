@@ -78,6 +78,7 @@ def gate_application(target: GateTarget, directory: Path):
     """Isolate app/config stores while using production factories and worker."""
     from codey.app import server
     from codey.app.context import AppContext
+    from codey.app.public_event_feed import PublicEventFeed
     from codey.providers import local_config
 
     directory.mkdir(parents=True, exist_ok=True)
@@ -109,10 +110,14 @@ def gate_application(target: GateTarget, directory: Path):
         sources[target.provider_id] = {"enabled": True, "models": [target.model]}
         preferences.save(sources, base_revision=snapshot["revision"])
         state.ghost_inbox.set_learning_enabled(False)
-        stack.enter_context(patch.object(server, "STATE", state))
         stack.enter_context(isolate_gate_secondary_models(target))
         stack.enter_context(record_api_generations(directory / "provider.jsonl"))
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        httpd.app_context = state
+        feed = PublicEventFeed()
+        httpd.public_feed = feed
+        stack.callback(feed.close)
+        stack.callback(state.event_bus.observe(feed.publish))
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         try:

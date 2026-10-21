@@ -8,6 +8,7 @@ from unittest import mock
 from codey.app import task_submit
 from codey.app.provider_registry import ProviderRegistry
 from codey.durable import DurableSession, MemoryDurableStore
+from tests import http_context
 
 
 def _fake_reserved(run_id="run-1"):
@@ -17,6 +18,7 @@ def _fake_reserved(run_id="run-1"):
 class _FakeState:
     def __init__(self, reserved=True):
         self.lock = threading.Lock()
+        self._shell_spawn_gate = threading.Lock()
         self.providers = ProviderRegistry()
         self.durable = DurableSession(MemoryDurableStore())
         self.durable_scheduler = SimpleNamespace(claim=mock.Mock(), retry=mock.Mock())
@@ -227,15 +229,14 @@ class TaskSubmitTests(unittest.TestCase):
         self.assertIsNone(run_id)
 
     def test_server_wrappers_bind_get_state(self) -> None:
-        from codey.app import server
 
         with (
             mock.patch.object(task_submit, "submit_task", return_value="run-9") as inner,
-            mock.patch.object(server, "get_state") as get_state,
+            mock.patch("tests.http_context.get_context") as get_state,
         ):
             sentinel = object()
             get_state.return_value = sentinel
-            run_id = server._submit_task("s", None, "t", 8, False, "deepseek")
+            run_id = http_context.submit("s", None, "t", 8, False, "deepseek")
         self.assertEqual(run_id, "run-9")
         self.assertEqual(inner.call_args.kwargs["get_state"](), sentinel)
 

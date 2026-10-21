@@ -44,6 +44,7 @@ from codey.repairs.self_repair import SelfRepairSupervisor
 from codey.repairs.self_repair_job import SelfRepairJob
 from codey.repairs.self_repair_worker import _run_worker_job, run_self_repair_worker
 from codey.runtime.core.run_result import RunResult
+from tests import http_context
 
 
 def _source_tree(root: Path) -> None:
@@ -1110,7 +1111,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
             }
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", side_effect=[writer, sibling]),
                 mock.patch.object(
                     task_submit,
@@ -1123,7 +1124,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                 # tests: with koboldcpp serving it stalls ~2min via faulthandler.
                 mock.patch.object(consensus_service, "run_consensus", return_value=None),
             ):
-                task_submit.run_task("session-self-repair", td, "task", 8, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-self-repair", td, "task", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
             state.wait_for_ghost_sleep(timeout=30)
             state.self_repair.maybe_enqueue.assert_called_once()

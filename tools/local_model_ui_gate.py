@@ -68,13 +68,13 @@ def _preflight(provider_id: str = "local") -> tuple[str, str]:
     provider_id = str(provider_id or "local").strip().lower()
     if provider_id == "zen":
         from codey.providers.api_connections import capture_selection
-        from codey.providers.zen.identity import ZEN_BASE_URL
+        from codey.providers.zen.connection import endpoint_for_selection
 
         model = os.environ.get("UI_GATE_MODEL", "").strip()
         if not model:
             raise RuntimeError("UI_GATE_MODEL is required for the Zen UI gate")
         selected = capture_selection(provider_id, {"model": model})
-        return ZEN_BASE_URL, selected.model_id
+        return endpoint_for_selection(selected), selected.model_id
     if provider_id != "local":
         if provider_id not in PROVIDER_LABELS or provider_id == "local":
             raise RuntimeError(f"unsupported UI gate provider: {provider_id}")
@@ -551,7 +551,6 @@ def run_local_model_ui_gate(
     history_path = artifact_dir / "local-model-provider-history.jsonl"
     project = temp_root / "project"
     project.mkdir()
-    original_state = codey_server.STATE
     original_pick_folder = codey_server.pick_folder
     httpd: codey_server.CodeyHTTPServer | None = None
     page_errors: list[str] = []
@@ -559,13 +558,18 @@ def run_local_model_ui_gate(
         state = AppContext(temp_root / "state")
         _configure_gate_model_preferences(state, provider_id, model)
         _configure_research_store(state, temp_root, selected_cases)
-        codey_server.STATE = state
         provider_controls.set_teach_handler(
-            functools.partial(sibling_probe.handle_control_teach, codey_server.STATE)
+            functools.partial(sibling_probe.handle_control_teach, state)
         )
         codey_server.pick_folder = lambda mode="open", initial=None: str(project)
         provider_services.reset_provider_availability_cache()
         httpd = codey_server.CodeyHTTPServer(("127.0.0.1", 0), codey_server.Handler)
+        from codey.app.public_event_feed import PublicEventFeed
+
+        httpd.app_context = state
+        feed = PublicEventFeed()
+        httpd.public_feed = feed
+        unobserve = state.event_bus.observe(feed.publish)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         address = httpd.server_address
@@ -619,7 +623,10 @@ def run_local_model_ui_gate(
             httpd.server_close()
         if "state" in locals():
             state.close()
-        codey_server.STATE = original_state
+        if "unobserve" in locals():
+            unobserve()
+            feed.close()
+        provider_controls.set_teach_handler(None)
         codey_server.pick_folder = original_pick_folder
         provider_services.reset_provider_availability_cache()
         # Keep failed runs for model/UI diagnosis. Successful runs are cleaned

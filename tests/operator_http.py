@@ -8,6 +8,12 @@ import json
 
 class OperatorHTTPConnection(http.client.HTTPConnection):
     def __init__(self, httpd, *, timeout=5, connect_host=None):
+        if getattr(httpd, "public_feed", None) is None and httpd.app_context is not None:
+            from codey.app.public_event_feed import PublicEventFeed
+
+            httpd.public_feed = PublicEventFeed()
+            httpd.public_feed.sequence = httpd.app_context.event_bus.sequence
+            httpd.app_context.event_bus.observe(httpd.public_feed.publish)
         host, port = httpd.server_address
         super().__init__(connect_host or host, port, timeout=timeout)
         self._operator_cookie = ""

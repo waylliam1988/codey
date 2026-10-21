@@ -54,7 +54,7 @@ def request(httpd, method, path, *, body=None, headers=None):
     ("GET", "/api/state"), ("GET", "/api/run_details"), ("GET", "/api/events"),
 ])
 def test_unauthenticated_http_never_reaches_control_or_state(httpd, method, path):
-    with mock.patch.object(server, "get_state", side_effect=AssertionError("unauthenticated dispatch")) as state:
+    with mock.patch.object(server.Handler, "_get_state", side_effect=AssertionError("unauthenticated dispatch")) as state:
         status, _, body = request(httpd, method, path, body="{}")
     assert status == 401
     assert json.loads(body)["error"] == "operator authentication required"
@@ -77,7 +77,7 @@ def test_valid_bootstrap_sets_private_cookie_and_allows_real_route(httpd):
     assert token not in body.decode()
     with (
         mock.patch.dict(server._GET_ROUTES, {"/api/state": lambda *_: (200, {"status": "idle"})}),
-        mock.patch.object(server, "get_state", return_value=object()),
+        mock.patch.object(server.Handler, "_get_state", return_value=object()),
     ):
         status, _, body = request(httpd, "GET", "/api/state", headers={"Cookie": cookie.split(";", 1)[0]})
     assert status == 200 and json.loads(body) == {"status": "idle"}
@@ -102,7 +102,7 @@ def test_cookie_does_not_authorize_a_new_server(httpd):
 
 def test_authenticated_cookie_does_not_bypass_origin_fence(httpd):
     _, headers, _ = exchange(httpd, httpd.operator_auth.issue_bootstrap())
-    with mock.patch.object(server, "get_state") as state:
+    with mock.patch("tests.http_context.get_context") as state:
         status, _, _ = request(httpd, "POST", "/api/run", body="{}", headers={
             "Cookie": headers["Set-Cookie"], "Origin": "http://evil.example",
         })

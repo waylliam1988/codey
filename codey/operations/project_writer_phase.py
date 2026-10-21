@@ -15,8 +15,8 @@ from codey.agents.writer_failover import (
     WriterAttempt,
     WriterFailoverRunner,
 )
-from codey.operations.ghost_context import ghost_experiences as _ghost_experiences
 from codey.operations.ghost_context import ghost_control_enabled
+from codey.operations.ghost_context import ghost_experiences as _ghost_experiences
 from codey.operations.project_completion_context import (
     ProjectRun,
     managed_tool_fns,

@@ -889,6 +889,10 @@ streaming timer or full-answer Collapse is introduced.
   record. `Return to draft` removes that local record before restoring the text.
   Transport loss and other ambiguous responses remain `Delivery unconfirmed`
   and require `Check status`; they are never treated as safe to resend.
+  Keep this status and action inside the composer, with the original text still
+  editable in the input. Do not duplicate the prompt above it. External accepted
+  messages use the normal persisted transcript with their source label; inventory
+  updates add chats without stealing the current chat or draft.
 - A Research report card resolves through the `runId` on its own message. A
   message without a run identity may use the only stored Research run for that
   session, preserving older single-run records; it never selects the latest run

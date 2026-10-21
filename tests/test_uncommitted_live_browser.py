@@ -19,6 +19,7 @@ from playwright.sync_api import expect, sync_playwright
 from codey.app import server
 from codey.app.context import AppContext
 from codey.app.shell_approval_state import restore_pending_shell_approvals
+from tests.http_context import attach_public_events
 from tests.support.shell_approval import seed_requested_approval
 from tests.test_conversation_live_browser import open_live, seed, send
 from tests.test_conversation_question_http import question_peer
@@ -121,8 +122,9 @@ def test_real_http_state_supports_final_copy_and_shared_rich_blocks(tmp_path, mo
     for message in payload["sessions"][0]["messages"]:
         kind = {"user": "user_message", "asst": "assistant_message"}.get(message["type"], "display_message")
         ctx.durable.append_message("rich", kind, message)
-    monkeypatch.setattr(server, "STATE", ctx)
+    monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+    close_events = attach_public_events(httpd)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
@@ -143,6 +145,7 @@ def test_real_http_state_supports_final_copy_and_shared_rich_blocks(tmp_path, mo
             assert page.evaluate("window.__copied") == "最终第一段\n\n\\(x^2\\)\n\n```mermaid\ngraph TD\n A-->B\n```\n\n最终第二段 | 保持原文"
             browser.close()
     finally:
+        close_events()
         httpd.shutdown()
         httpd.server_close()
         thread.join(timeout=5)
@@ -161,8 +164,9 @@ def test_real_http_history_search_returns_archived_context(tmp_path, monkeypatch
         if i == 23:
             needle_id = entry.entry_id
     ctx.save_ui_state({"active_id": "history", "projects": [], "sessions": [{"id": "history", "messages": messages}]}, base_revision=0)
-    monkeypatch.setattr(server, "STATE", ctx)
+    monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+    close_events = attach_public_events(httpd)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
@@ -180,6 +184,7 @@ def test_real_http_history_search_returns_archived_context(tmp_path, monkeypatch
             expect(page.locator(f'.msg.user[data-message-id="{needle_id}"]')).to_be_attached()
             browser.close()
     finally:
+        close_events()
         httpd.shutdown()
         httpd.server_close()
         thread.join(timeout=5)
@@ -224,8 +229,9 @@ def test_real_shell_card_shows_flushed_output_before_process_exit(tmp_path, monk
     seed_requested_approval(ctx, continue_after=False, command=command)
     restore_pending_shell_approvals(ctx)
     ctx.save_ui_state({"active_id": "session", "projects": [], "sessions": [{"id": "session", "title": "Shell", "provider": "local", "messages": []}]}, base_revision=0)
-    monkeypatch.setattr(server, "STATE", ctx)
+    monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+    close_events = attach_public_events(httpd)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
@@ -245,6 +251,7 @@ def test_real_shell_card_shows_flushed_output_before_process_exit(tmp_path, monk
             browser.close()
     finally:
         release.touch()
+        close_events()
         httpd.shutdown()
         httpd.server_close()
         thread.join(timeout=5)

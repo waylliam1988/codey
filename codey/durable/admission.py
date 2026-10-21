@@ -27,6 +27,25 @@ if TYPE_CHECKING:
     from codey.durable.session import DurableSession
 
 
+def message_metadata(state: Mapping[str, object] | None) -> dict[str, object]:
+    raw = (state or {}).get("message_metadata", {})
+    if not isinstance(raw, Mapping) or set(raw) - {"source", "in_reply_to_run_id"}:
+        raise ValueError("invalid message metadata")
+    result: dict[str, object] = {}
+    if "source" in raw:
+        source = raw["source"]
+        if (not isinstance(source, Mapping) or set(source) != {"actor_id", "name", "kind"}
+                or any(not isinstance(value, str) or not value or len(value) > 512 for value in source.values())):
+            raise ValueError("invalid message source metadata")
+        result["source"] = dict(source)
+    if "in_reply_to_run_id" in raw:
+        reply = raw["in_reply_to_run_id"]
+        if not isinstance(reply, str) or len(reply) > 512:
+            raise ValueError("invalid reply metadata")
+        result["in_reply_to_run_id"] = reply
+    return result
+
+
 def admit_input(
     session: DurableSession, *, conversation_id: str, request_id: str, task_id: str,
     text: str, provider_snapshot: Mapping[str, object], task_state: Mapping[str, object] | None = None,
@@ -44,6 +63,7 @@ def admit_input(
 ) -> CommitResult:
     if not text.strip():
         raise ValueError("input text is required")
+    metadata = message_metadata(task_state)
     placement = SubmissionPlacement(placement)
     if mode not in {"steer", "follow_up", "write"}:
         raise ValueError("unknown submission mode")
@@ -73,6 +93,7 @@ def admit_input(
         creation = creation or CreateConversation()
     fingerprint = _fingerprint({
         "text": text,
+        "message_metadata": metadata,
         "provider_snapshot": provider_snapshot,
         "tool_results": tuple(dict(result) for result in tool_results),
         "workflow_origin": (task_state or {}).get("workflow_origin"),
@@ -114,7 +135,7 @@ def admit_input(
             conversation_id=conversation_id,
             parent_id=head,
             kind="user_message",
-            payload={"text": text},
+            payload={"text": text, **metadata},
             by_task_id=task_id,
         )
         entries.append(entry)
@@ -126,7 +147,7 @@ def admit_input(
         fingerprint=fingerprint,
         placement=placement,
         mode=mode,
-        content={"text": text},
+        content={"text": text, "message_metadata": metadata},
     )
     state = {
         **dict(task_state or {}),

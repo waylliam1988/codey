@@ -120,11 +120,10 @@ def test_history_projection_encodes_nested_immutable_payloads_as_json(tmp_path: 
 
 
 def test_startup_failure_never_announces_ui_ready(tmp_path: Path, monkeypatch, capsys) -> None:
-    from codey.app import server
+    from codey.app.context import AppContext
+    from codey.app.service import LocalService
 
-    monkeypatch.setattr(server, "DEFAULT_STATE_HOME", tmp_path)
-    monkeypatch.setattr(server, "get_state", Mock(side_effect=SchemaVersionError("newer schema")))
-    monkeypatch.setattr(server, "CodeyHTTPServer", Mock(return_value=Mock(server_address=("127.0.0.1", 5173))))
+    monkeypatch.setattr(AppContext, "__init__", Mock(side_effect=SchemaVersionError("newer schema")))
     with pytest.raises(SchemaVersionError):
-        server.serve(port=0)
+        LocalService(tmp_path).start()
     assert "UI ready" not in capsys.readouterr().out

@@ -231,7 +231,7 @@ def run_arm(arm: str, reps: int, endpoint: str, model: str, timeout_run: float) 
         state.providers.model_preferences.save(sources, base_revision=snapshot["revision"])
         state.ghost_inbox.set_learning_enabled(True)
 
-        with patch.object(app_server, "STATE", state):
+        with patch.object(app_server.CodeyHTTPServer, "app_context", state):
             httpd = app_server.CodeyHTTPServer(("127.0.0.1", 0), app_server.Handler)
             thread = threading.Thread(target=httpd.serve_forever, daemon=True)
             thread.start()

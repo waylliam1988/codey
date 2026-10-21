@@ -2,7 +2,83 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
-## Current verification (2026-10-21)
+## External control v0.3 verification (2026-10-21)
+
+This pass implements the shared local service, delegation/review loop, desktop
+chat synchronization, RPC/MCP, bounded public feed, immutable release switching,
+and dynamic Zen endpoint discovery. Usage and limits are in
+[the implementation guide](docs/external-control-implementation.zh-CN.md).
+The package version remains unchanged; v0.3 is the external-control design version.
+
+| Check | Result |
+| --- | --- |
+| Complete pytest, no failure cap | **9226 passed, 5 failed, 59 skipped, 1515 subtests; 2970.15s (49:30)** |
+| Required machine contracts after SQLite initialization fix | **1129 passed, 14 subtests, no skips; 792.03s (13:12)** |
+| Focused regression after all five full-run failures | **11 passed; 48.99s** |
+| Additional UI and documentation-contract checks | **49 passed; 3.44s** |
+| Frontend | **42 files / 178 tests passed**; TypeScript, Biome, production build and published metadata passed |
+| Python production static checks | Ruff, mypy (**495 source files**), Pyrefly and ty passed before the final test/document-only migration |
+| Current coverage | Not measured for this worktree; baseline coverage below is historical |
+
+The complete run was allowed to finish before fixes. Its five failures were:
+
+- Two real browser approval/retry cases and one live shell-output case: their
+  raw HTTP fixtures omitted the public feed now owned explicitly by LocalService.
+  Fixtures now attach/detach the production event feed; no old SSE path was restored.
+- Approval HTTP restart: an obsolete continuation-submission mock and an active
+  model scheduler made the fixture race canonical wakeup. The fixture now observes
+  the original pending task without dispatching model work, and asserts the same
+  task/submission identity and resolve-shell-approval input, with no second task.
+- Provider selector DOM harness: its textarea stub lacked Element.before, used
+  by the composer. The stub now follows the production DOM API.
+
+The focused run covered all five failures plus adjacent tests. An intermediate
+fixture edit also added cleanup to the model peer by mistake; its NameError was
+fixed before the final 11-pass run. Per the user's instruction, **no second full
+suite is run after these fixes**. GitHub CI will establish the post-fix complete
+suite and coverage; this report does not claim that result in advance.
+
+Other completed checks during implementation: focused backend **268 passed,
+6 subtests**; durable/architecture/task/HTTP **568 passed, 5 skipped, 399 subtests**;
+real-process release **7 passed**; Zen suites **90 passed**; real conversation
+browser and external-control **38 passed**; after the SQLite fix, targeted
+**70 passed** and architecture/startup/ownership **103 passed, 399 subtests**.
+
+New production defects were first reproduced red: queue metadata and source
+identity loss, terminal checkpoint leaks before native preparation, pause/drain
+races, release validation/rollback identity issues, browser authentication loss
+on replacement, late task_start replay reviving a terminal spinner, dropped
+Research/elapsed fields, and concurrent SQLite WAL initialization. The last one
+now serializes complete cold initialization with the existing OS-backed lease;
+normal transactions and their write authority are unchanged. Tests using removed
+HTTP globals, queue writers or SSE internals were migrated to current entry points.
+
+Earlier capped full attempts (before the user prohibited failure limits) ended at
+3/2167, 5/2180 and 5/3315 failed/passed, mainly on stale fixtures. The third attempt
+also hit scheduler recovery's 2s wait and approval admission's 250ms timing checks
+while machine/full suites ran concurrently. Both passed serial focused reruns;
+assertions were left intact. These are recorded flakes, not claimed production
+fixes. The final machine and complete suites above ran serially, and those two
+checks passed. Interrupted machine attempts preceded source/bundle changes and
+are not counted as passes.
+
+Real-model verification used isolated state and public Zen models: initial
+`greeting.txt` and its linked refinement were independently checked byte for byte.
+The refinement reached max_turns; file acceptance is distinguished from normal
+model termination. No shell/install was delegated. Real automatic switching
+preserved the service port and database identity, and the browser remained
+authenticated and restored chat/model selection. Evidence is retained locally in
+ignored `artifacts/external-control-live/`, including `simple-run.json`,
+`visible-chat.jpg`, complete-run JUnit and focused JUnit; credentials/runtime
+state are not committed. The observed page is the shared browser frontend;
+native WebView rendering is not claimed as visually verified.
+
+This is Windows/Python 3.12 verification. Other Python versions and fresh
+post-fix coverage remain CI work. Automatic release switching requires unchanged
+runtime dependencies and database schema; no arbitrary migration rollback,
+throughput ranking, or token-saving percentage is claimed.
+
+## Pre-external-control baseline (2026-10-21)
 
 | Check | Result |
 | --- | --- |

@@ -183,6 +183,9 @@ export interface RequestsDeps {
     return update(sessionId, runId, { warning: 'Local memory update unavailable' });
   }
   function acceptsEvent(data: EventData): boolean {
+    // History restores durable user entries without a browser attempt. The
+    // session's settled run identities still forbid replay from reviving work.
+    if (data.type === 'task_start' && session(data.session_id)?.terminalRuns?.includes(data.run_id)) return false;
     const match = forRun(data.session_id, data.run_id);
     if (!match) return true;
     // Approvals and their settlements remain real records after a run ends.

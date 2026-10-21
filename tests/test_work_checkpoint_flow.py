@@ -13,6 +13,7 @@ from codey.runtime.core.models import ToolCall
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
 from codey.toolchain.runtime import ToolOutcome
+from tests import http_context
 
 _POST_TASK_SIDEEFFECT_PATCHES: list[mock.Mock] = []
 
@@ -103,12 +104,12 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 "diff": _clean_diff("app.py"),
             }
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=interrupted),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
             ):
-                task_submit.run_task("session-1", str(project), "Do work", 8, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-1", str(project), "Do work", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
             checkpoint = state.work_checkpoints.load("session-1")
             self.assertIsNotNone(checkpoint)
@@ -124,7 +125,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 return RunResult("finished", "done", 1, False, False, False)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=resumed),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
@@ -134,7 +135,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     return_value=None,
                 ),
             ):
-                task_submit.run_task("session-1", str(project), "Continue safely", 8, True, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-1", str(project), "Continue safely", 8, True, "deepseek", "project", get_state=http_context.get_context)
 
             resumed_request = captured["request"]
             self.assertIn("Local execution checkpoint", resumed_request.work_checkpoint)
@@ -194,7 +195,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 return RunResult("finished", "done", 1, False, False, False)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(
                     state,
                     "get_provider",
@@ -215,7 +216,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     False,
                     "deepseek",
                     "project",
-                    get_state=server.get_state,
+                    get_state=http_context.get_context,
                 )
 
             self.assertEqual(get_provider.call_args_list[1].args, ("stepfun",))
@@ -245,7 +246,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             provider = self._provider()
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(
                     state,
                     "get_provider",
@@ -270,7 +271,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     False,
                     "deepseek",
                     "project",
-                    get_state=server.get_state,
+                    get_state=http_context.get_context,
                 )
 
             self.assertEqual(
@@ -302,7 +303,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             ))
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(
                     state,
                     "get_provider",
@@ -327,7 +328,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     False,
                     "deepseek",
                     "project",
-                    get_state=server.get_state,
+                    get_state=http_context.get_context,
                 )
 
             self.assertEqual(
@@ -381,7 +382,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 return RunResult("done", "done", 1)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", side_effect=providers),
                 mock.patch.object(task_submit, "agent_run", side_effect=writer),
                 mock.patch.object(
@@ -403,7 +404,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     False,
                     "deepseek",
                     "project",
-                    get_state=server.get_state,
+                    get_state=http_context.get_context,
                 )
 
             resumed_request = captured["request"]
@@ -439,7 +440,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 ))
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(
                     state,
                     "get_provider",
@@ -455,7 +456,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     False,
                     "deepseek",
                     "project",
-                    get_state=server.get_state,
+                    get_state=http_context.get_context,
                 )
 
             get_provider.assert_called_once_with("deepseek")
@@ -483,7 +484,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 ))
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(
                     state,
                     "get_provider",
@@ -499,7 +500,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     False,
                     "deepseek",
                     "project",
-                    get_state=server.get_state,
+                    get_state=http_context.get_context,
                 )
 
             self.assertEqual(agent_run.call_count, 3)
@@ -533,7 +534,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 return RunResult("new answer", "done", 1, False, False, False)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(
@@ -542,7 +543,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
-                task_submit.run_task("session-1", str(project), "New task", 8, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-1", str(project), "New task", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
             self.assertEqual(captured["request"].work_checkpoint, "")
             self.assertIsNone(state.work_checkpoints.load("session-1"))
@@ -592,13 +593,13 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 "diff": _clean_diff("app.py"),
             }
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", return_value=None),
             ):
-                task_submit.run_task("session-1", str(project), "Do work", 8, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-1", str(project), "Do work", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
             checkpoint = state.work_checkpoints.load("session-1")
             self.assertIsNotNone(checkpoint)
@@ -658,13 +659,13 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             }
             review = mock.Mock(return_value=None)
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", review),
             ):
-                task_submit.run_task("session-1", str(project), "Fix login", 8, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-1", str(project), "Fix login", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
             rendered = review.call_args.kwargs["verification_map"]
             execution = review.call_args.kwargs["execution_evidence"]
@@ -702,7 +703,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             review = mock.Mock(return_value=None)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
                     task_submit,
@@ -716,7 +717,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     side_effect=RuntimeError("scan failed"),
                 ),
             ):
-                task_submit.run_task("session-1", str(project), "Change app", 8, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-1", str(project), "Change app", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
             self.assertEqual(review.call_args.kwargs["verification_map"], "")
 
@@ -757,18 +758,18 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 return RunResult("failed broader check", "no_progress", 3, False, True, True)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=interrupted),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
             ):
-                task_submit.run_task("session-1", str(project), "Fix app", 8, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-1", str(project), "Fix app", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
             checkpoint = state.work_checkpoints.load("session-1")
             self.assertEqual(checkpoint.successful_checks_after_last_change, ())
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
                     task_submit,
@@ -778,7 +779,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", return_value=None),
             ):
-                task_submit.run_task("session-1", str(project), "Continue", 8, True, "deepseek", get_state=server.get_state)
+                task_submit.run_task("session-1", str(project), "Continue", 8, True, "deepseek", get_state=http_context.get_context)
 
             self.assertFalse(state.run_registry.last_terminal_event()["receipt"]["verification"]["checks_passed"])
 
@@ -817,7 +818,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 return RunResult("done", "done", 2, True, True, True)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
@@ -831,7 +832,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     False,
                     "deepseek",
                     "project",
-                    get_state=server.get_state,
+                    get_state=http_context.get_context,
                 )
 
             self.assertFalse(state.run_registry.last_terminal_event()["receipt"]["verification"]["checks_passed"])
@@ -857,7 +858,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 return RunResult("done", "done", 1)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(
@@ -873,7 +874,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
-                    get_state=server.get_state,
+                    get_state=http_context.get_context,
                 )
 
     def test_candidate_loader_drops_stale_historical_npm_script(self) -> None:
@@ -907,7 +908,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 return RunResult("done", "done", 1)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(
@@ -927,7 +928,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
-                    get_state=server.get_state,
+                    get_state=http_context.get_context,
                 )
 
 

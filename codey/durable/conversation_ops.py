@@ -31,6 +31,36 @@ def entries(session: Any, conversation_id: str) -> tuple[EntryDraft, ...]:
     return tuple(session.store.entries(conversation_id))
 
 
+def conversation_tree(session: Any, conversation_id: str) -> dict[str, object]:
+    """Bounded branch metadata, derived under the owning session's read line."""
+    head, revision = session.store.head(conversation_id)
+    retained = list(session.store.entries(conversation_id))
+    parent_scope, parent_cap = session.store.conversation_parent(conversation_id)
+    if parent_scope and parent_cap:
+        retained = list(context(session, parent_scope, leaf_id=parent_cap)) + retained
+    parents = {entry.parent_id for entry in retained}
+    tips = [entry for entry in retained if entry.entry_id not in parents or entry.entry_id == head]
+    return {'ok': True, 'session_id': conversation_id, 'head_entry_id': head, 'revision': revision,
+            'ancestors': conversation_lineage(session, conversation_id), 'has_more': len(tips) > 200,
+            'branches': [{'entry_id': entry.entry_id, 'parent_entry_id': entry.parent_id,
+                          'kind': entry.kind, 'text': str(entry.payload.get('text') or entry.payload.get('content') or entry.kind)[:240],
+                          'current': entry.entry_id == head} for entry in tips[-200:]]}
+
+
+def conversation_lineage(session: Any, conversation_id: str) -> list[dict[str, object]]:
+    """Read fork identities without loading conversation contents."""
+    scope = conversation_id
+    ancestors: list[dict[str, object]] = []
+    seen: set[str] = set()
+    while scope and scope not in seen and len(seen) < 64:
+        seen.add(scope)
+        parent, entry = session.store.conversation_parent(scope)
+        if parent:
+            ancestors.append({'session_id': parent, 'entry_id': entry})
+        scope = parent or ''
+    return ancestors
+
+
 def history_page(
     session: Any,
     conversation_id: str,
@@ -39,7 +69,8 @@ def history_page(
     limit: int = 100,
 ) -> dict[str, object]:
     limit = max(1, min(200, int(limit)))
-    path = [entry for entry in context(session, conversation_id) if entry.kind != "context_snapshot"]
+    path = [entry for entry in context(session, conversation_id)
+            if entry.kind not in {"context_snapshot", "control_config", "control_receipt"}]
     boundary = len(path)
     if before:
         decoded_cursor = _decode_history_cursor(before)
@@ -339,6 +370,10 @@ def latest_context_snapshot(session: Any, conversation_id: str) -> EntryDraft | 
 
 def _history_item(entry: EntryDraft, ordinal: int) -> dict[str, object]:
     item = cast(dict[str, object], thaw_json(entry.payload))
+    if entry.kind == "control_review":
+        review = cast(dict[str, object], item.get("data", {}))
+        verdict = "Review passed" if review.get("passed") else "Changes requested"
+        item.update(type="info", text=f"{review.get('source', 'Reviewer')} · {verdict}: {review.get('summary', '')}")
     item.setdefault("type", {
         "user_message": "user", "assistant_message": "asst", "tool_call": "tool_call",
         "tool_result": "tool_result", "compaction": "info",

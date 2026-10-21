@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from codey.providers.api_transport import AttemptControl, GenerationNotSentError, GenerationUnknownError
-from codey.providers.zen.identity import ZEN_BASE_URL
+from codey.providers.zen.identity import validate_generation_url
 
 
 def node_runtime() -> str:
@@ -115,8 +115,10 @@ class NodeResponse:
 
 def open_request(request: urllib.request.Request, timeout: float, *, control: AttemptControl | None = None,
                  transport_options: Mapping[str, object] | None = None) -> NodeResponse:
-    if request.full_url not in {ZEN_BASE_URL + "/responses", ZEN_BASE_URL + "/chat/completions"}:
-        raise GenerationNotSentError("Zen fetch destination is not allowed")
+    try:
+        validate_generation_url(request.full_url)
+    except ValueError as exc:
+        raise GenerationNotSentError("Zen fetch destination is not allowed") from exc
     active = control or AttemptControl()
     if not isinstance(request.data, (bytes, type(None))):
         raise GenerationNotSentError("Zen fetch requires a prepared byte body")

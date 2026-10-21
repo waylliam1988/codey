@@ -25,9 +25,10 @@ def _safe_print(value: Any, *, file: Any = None) -> None:
 
 
 def cmd_ui(args: argparse.Namespace) -> int:
-    from codey.app.server import serve
+    from codey.app.desktop import open_desktop
+    from codey.storage.local_store import DEFAULT_STATE_HOME
 
-    serve(host="127.0.0.1", port=args.port)
+    open_desktop(Path(args.state_home) if args.state_home else DEFAULT_STATE_HOME, port=args.port)
     return 0
 
 
@@ -546,7 +547,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
 
     # Default: if no subcommand given, launch the UI.
-    if not argv or argv[0] not in {"ui", "chat", "agent", "ghost", "-h", "--help"}:
+    if not argv or argv[0] not in {"ui", "chat", "agent", "ghost", "serve", "control", "rpc", "mcp", "-h", "--help"}:
         argv = ["ui", *argv]
 
     # Single parser tree: ghost shares the root parser so its registration
@@ -559,6 +560,7 @@ def main(argv: list[str] | None = None) -> int:
 
     sp_ui = sub.add_parser("ui", help="launch the native UI (default)")
     sp_ui.add_argument("--port", type=int, default=5173)
+    sp_ui.add_argument("--state-home", default="")
     sp_ui.set_defaults(func=cmd_ui)
 
     sp_chat = sub.add_parser("chat", help="single-shot prompt")
@@ -593,6 +595,10 @@ def main(argv: list[str] | None = None) -> int:
     sp_ghost = sub.add_parser("ghost", help="inspect and control Ghost memory inbox")
     sp_ghost_sub = sp_ghost.add_subparsers(dest="ghost_cmd", required=True)
     _add_ghost_subcommands(sp_ghost_sub)
+
+    from codey.control.cli import register
+
+    register(sub)
 
     args = ap.parse_args(argv)
     if args.cmd == "agent":

@@ -215,7 +215,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
             _skip_or_fail_browser_unavailable(f"playwright chromium browser is not available: {exc}", exc)
         cls.tmp = tempfile.TemporaryDirectory()
         cls.state = codey_server.AppContext(Path(cls.tmp.name) / "state")
-        cls.state_patch = mock.patch.object(codey_server, "STATE", cls.state)
+        cls.state_patch = mock.patch.object(codey_server.CodeyHTTPServer, "app_context", cls.state)
         cls.state_patch.start()
         cls.httpd = codey_server.CodeyHTTPServer(("127.0.0.1", 0), codey_server.Handler)
         cls.server_thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)

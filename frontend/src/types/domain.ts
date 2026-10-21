@@ -71,6 +71,7 @@ export interface RequestAttempt {
   runOwner?: string;
 }
 export interface Message extends importToolDisplay {
+  source?: { actor_id: string; name: string; kind: string };
   entryId?: string;
   elapsedMs?: number;
   queuedInputId?: string;

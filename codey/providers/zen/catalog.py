@@ -1,4 +1,4 @@
-"""Public directory plus actual endpoint listing, with bounded ETag cache."""
+"""Official model directory and endpoint discovery, with bounded ETag cache."""
 from __future__ import annotations
 
 import json
@@ -14,7 +14,7 @@ from typing import Any
 from codey.providers.api_transport import NoGenerationRedirect
 from codey.providers.zen.access import ZenAccessObservations
 from codey.providers.zen.declarations import TRANSPORT_CONTRACT
-from codey.providers.zen.identity import CONNECTION_REVISION, ZEN_BASE_URL, ZenIdentity
+from codey.providers.zen.identity import CONNECTION_REVISION, ZenIdentity, validate_endpoint
 from codey.storage.local_store import StoreCorruption, read_json_strict, write_json_atomic
 
 DIRECTORY_URL = "https://models.opencode.ai/api.json"
@@ -28,6 +28,7 @@ class ZenModel:
     protocol: str
     context: int
     output: int
+    api: str
     efforts: tuple[str, ...] = ()
     input_limit_tokens: int | None = None
     thinking_toggle: bool = False
@@ -49,18 +50,19 @@ def _model_limits(model: dict[str, Any]) -> tuple[int, int, int | None] | None:
     return context, output, input_limit
 
 
-def parse_models(directory: object, available: set[str]) -> tuple[ZenModel, ...]:
+def parse_models(directory: object) -> tuple[ZenModel, ...]:
     if not isinstance(directory, dict) or not isinstance(directory.get("opencode"), dict):
         raise ValueError("Zen directory is missing the provider")
     provider = directory["opencode"]
-    if provider.get("api", ZEN_BASE_URL) != ZEN_BASE_URL:
-        raise ValueError("Zen directory changed its API destination")
     models = provider.get("models")
     if not isinstance(models, dict):
         raise ValueError("Zen directory has malformed models")
+    if not models:
+        return ()
+    provider_api = validate_endpoint(provider.get("api"))
     result: list[ZenModel] = []
     for identity, model in models.items():
-        if not isinstance(identity, str) or identity not in available or not isinstance(model, dict):
+        if not isinstance(identity, str) or not isinstance(model, dict):
             continue
         cost = model.get("cost") or {}
         if not isinstance(cost, dict) or any(type(cost.get(key)) not in {int, float} or cost[key] != 0 for key in ("input", "output")):
@@ -69,6 +71,10 @@ def parse_models(directory: object, available: set[str]) -> tuple[ZenModel, ...]
             continue
         implementation = model.get("provider") or {}
         if not isinstance(implementation, dict):
+            continue
+        try:
+            api = validate_endpoint(implementation.get("api", provider_api))
+        except ValueError:
             continue
         npm = implementation.get("npm", provider.get("npm"))
         protocol = PROTOCOLS.get(npm) if isinstance(npm, str) else None
@@ -85,7 +91,7 @@ def parse_models(directory: object, available: set[str]) -> tuple[ZenModel, ...]
         efforts = tuple(value for option in options if isinstance(option, dict) and option.get("type") == "effort"
                         and isinstance(option.get("values"), list) for value in option["values"]
                         if isinstance(value, str) and value in {"minimal", "low", "medium", "high", "xhigh", "max"})
-        result.append(ZenModel(identity, str(model.get("name") or identity), protocol, context, output, efforts,
+        result.append(ZenModel(identity, str(model.get("name") or identity), protocol, context, output, api, efforts,
                                input_limit, thinking_toggle))
     return tuple(sorted(result, key=lambda model: model.id))
 
@@ -126,8 +132,9 @@ class ZenCatalog:
         self._refresh_version = 0
         try:
             cache = read_json_strict(self.path)
-            if isinstance(cache, dict) and cache.get("schema_version") == 1:
-                self.models = parse_models(cache["directory"], set(cache["available"]))
+            if isinstance(cache, dict) and cache.get("schema_version") == 2:
+                directory = cache["directory"]
+                self.models = parse_models(directory)
                 self._directory = cache["directory"]
                 self.etag = cache["etag"]
                 self.updated = float(cache["updated"])
@@ -142,22 +149,18 @@ class ZenCatalog:
             self._refresh_version += 1
             version = self._refresh_version
         try:
-                directory, etag = self.fetch(DIRECTORY_URL, old_etag)
-                directory = directory if directory is not None else old_directory
-                listing, _ = self.fetch(ZEN_BASE_URL + "/models", "")
-                if not isinstance(listing, dict) or not isinstance(listing.get("data"), list):
-                    raise ValueError("Zen endpoint returned a malformed listing")
-                available = {row["id"] for row in listing["data"] if isinstance(row, dict) and isinstance(row.get("id"), str)}
-                models = parse_models(directory, available)
-                snapshot = {"opencode": directory["opencode"]}
-                updated = time.time()
-                with self._lock:
-                    if version != self._refresh_version:
-                        return self.models
-                    write_json_atomic(self.path, {"schema_version": 1, "directory": snapshot, "available": sorted(available),
-                                              "etag": etag, "updated": updated})
-                    self._directory, self.models, self.etag, self.updated = snapshot, models, etag, updated
-                    self.stale, self.error = False, ""
+            directory, etag = self.fetch(DIRECTORY_URL, old_etag)
+            directory = directory if directory is not None else old_directory
+            models = parse_models(directory)
+            snapshot = {"opencode": directory["opencode"]}
+            updated = time.time()
+            with self._lock:
+                if version != self._refresh_version:
+                    return self.models
+                write_json_atomic(self.path, {"schema_version": 2, "directory": snapshot,
+                                          "etag": etag, "updated": updated})
+                self._directory, self.models, self.etag, self.updated = snapshot, models, etag, updated
+                self.stale, self.error = False, ""
         except (OSError, ValueError, TypeError, KeyError) as exc:
             with self._lock:
                 if version == self._refresh_version:

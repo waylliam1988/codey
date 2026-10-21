@@ -12,12 +12,27 @@ overview, not a release gate.
   agreed public partner connection. The service checks access for every request;
   a free listing does not guarantee all task modes. See [live validation](../TEST_REPORT.md).
   Muse Spark 1.3 shares the Chat tools and Shell approval with other connections.
-  Its removable profile cannot grant permission. This change has deterministic
-  tool/removal coverage, with no upstream Zen live run. Standalone API review uses the selected model.
+  Its removable profile cannot grant permission. Current live and deterministic coverage are recorded in the test report. Standalone API review uses the selected model.
 - No API key is required for web providers; you log in through a dedicated Edge
   or Chrome browser profile.
 - Provider-specific browser code is isolated in adapters, so website breakage
   can be repaired without changing the agent core.
+
+## External delegation and observation
+
+The window-independent local service supports CLI control, JSONL RPC and optional
+MCP. External requests enter the same durable input and execution paths as desktop
+messages, with their source and refinement relationship visible in chat. Controllers
+can wait for changes, inspect bounded results/evidence and independently review a
+candidate before requesting a linked repair. User takeover and stop invalidate stale
+control requests; command approval remains with the user.
+
+Public events are encoded once with bounded subscribers. Operator-controlled
+release switching validates an immutable runtime copy, drains the old service and
+verifies the replacement, with rollback on startup failure. Automatic switching
+requires unchanged dependencies and database schema. Endpoint discovery reads
+approved addresses from the official OpenCode directory without using its executable.
+See [implementation, setup and limits](external-control-implementation.zh-CN.md).
 
 ## Work Modes
 

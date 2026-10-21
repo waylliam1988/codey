@@ -24,7 +24,7 @@ def test_workspace_files_history_search_branches_and_layout_restore(tmp_path, mo
         ctx.durable.append_message('chat', 'assistant_message', {'text': f'Answer {index}\n\n' + 'Readable text. ' * 12})
     ctx.durable.append_message('chat', 'assistant_message', {'text': 'Open `long.py:180` to inspect the complete source.'})
     ctx.save_ui_state({'active_id': 'chat', 'projects': [{'id': 'p', 'name': 'Codey', 'path': str(project), 'expanded': True}], 'sessions': [{'id': 'chat', 'title': 'Workspace test', 'projectId': 'p'}, {'id': 'other', 'title': 'Other chat', 'projectId': 'p'}]}, base_revision=0)
-    monkeypatch.setattr(server, 'STATE', ctx)
+    monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(('127.0.0.1', 0), server.Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()

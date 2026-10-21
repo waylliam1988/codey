@@ -8,6 +8,13 @@ from tools import local_model_gate_attempts as attempts
 from tools import local_model_release_gate as release
 from tools import local_model_ui_gate as ui
 
+ENDPOINT = "https://opencode.ai/inference/current/openai/v2"
+
+
+@pytest.fixture(autouse=True)
+def selected_endpoint(monkeypatch):
+    monkeypatch.setattr("codey.providers.zen.connection.endpoint_for_selection", lambda _: ENDPOINT)
+
 
 def selection():
     return ApiRunSelection("zen", "test-agreement", "muse-fixture", "openai-responses", True,
@@ -57,7 +64,7 @@ def test_ui_zen_preflight_uses_catalog_instead_of_browser_tab(monkeypatch):
     monkeypatch.setattr(ui.provider_services, "provider_tab_availability",
                         lambda: (_ for _ in ()).throw(AssertionError("Browser probe")))
     monkeypatch.setenv("UI_GATE_MODEL", "muse-fixture")
-    assert ui._preflight("zen") == ("https://opencode.ai/inference/v1", "muse-fixture")
+    assert ui._preflight("zen") == (ENDPOINT, "muse-fixture")
 
 
 def test_zen_gate_factory_opens_frozen_connection_without_local_identity(monkeypatch, tmp_path):

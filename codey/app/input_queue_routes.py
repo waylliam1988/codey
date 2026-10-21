@@ -63,6 +63,8 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
     action = body.get("action")
     try:
         if action == "create":
+            if getattr(getattr(ctx, "control_service", None), "draining", False):
+                return 503, {"ok": False, "error": "server_draining"}
             source = body.get("request")
             if not isinstance(source, dict):
                 raise ValueError("request required")
@@ -78,7 +80,13 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
             actual = str(Path(request["project"]).resolve()) if request.get("project") else ""
             if expected != actual:
                 raise ValueError("input workspace changed")
-            item = ctx.input_queue.create(identity, request)
+            from codey.providers.snapshot import capture_provider_selection
+
+            selection = capture_provider_selection(str(request.get("provider") or ""), request.get("model_selection"))
+            with ctx._shell_spawn_gate:
+                if getattr(getattr(ctx, "control_service", None), "draining", False):
+                    return 503, {"ok": False, "error": "server_draining"}
+                item = ctx.input_queue.create(identity, request, model_selection=selection)
         else:
             revision = body.get("revision")
             if type(revision) is not int:
@@ -96,6 +104,8 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
                 if ctx.active_run_for(session_id=str(item["request"].get("session_id") or "")) is not None:
                     return 409, {"ok": False, "error": "task still stopping"}
                 with ctx._shell_spawn_gate:
+                    if getattr(getattr(ctx, "control_service", None), "draining", False):
+                        return 503, {"ok": False, "error": "server_draining"}
                     item = ctx.input_queue.resume(identity, revision)
                     ctx.run_registry.clear_stop(str(item["request"].get("run_id") or ""))
             else:

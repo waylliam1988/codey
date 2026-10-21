@@ -63,7 +63,7 @@ def test_stop_disk_failure_keeps_approval_queryable_until_durable_retry(tmp_path
     ctx = AppContext(tmp_path)
     _seed_requested_approval(ctx, "stop-disk-failure")
     restore_pending_shell_approvals(ctx)
-    monkeypatch.setattr(server, "STATE", ctx)
+    monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -87,13 +87,15 @@ def test_stop_disk_failure_keeps_approval_queryable_until_durable_retry(tmp_path
 
 def test_restart_approval_round_trip_uses_real_http_and_is_single_use(tmp_path: Path) -> None:
     approval_id = "approval-http-restart"
-    first = AppContext(tmp_path)
+    # Observe durable wakeup without allowing a model worker to consume it.
+    first = AppContext(tmp_path, start_scheduler=False)
     _seed_requested_approval(first, approval_id)
+    original_task = first.durable.task("source-run")
     first.close()
 
-    restarted = AppContext(tmp_path)
-    original_state = server.STATE
-    server.STATE = restarted
+    restarted = AppContext(tmp_path, start_scheduler=False)
+    original_state = server.CodeyHTTPServer.app_context
+    server.CodeyHTTPServer.app_context = restarted
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -115,22 +117,6 @@ def test_restart_approval_round_trip_uses_real_http_and_is_single_use(tmp_path: 
                     "truncated": False,
                 },
             ),
-            mock.patch.object(
-                server,
-                "_submit_task_after_slot_release",
-                side_effect=lambda session_id, project, task, max_turns, continue_task, provider_id, intent="auto", **kwargs: (
-                    restarted.durable.admit_input(
-                        conversation_id=session_id,
-                        request_id=str(kwargs.get("run_id") or "resume-run"),
-                        task_id=str(kwargs.get("run_id") or "resume-run"),
-                        text=task,
-                        provider_snapshot={"provider_id": provider_id},
-                        task_state={"task_kind": "chat", "project": project, "task": task},
-                        initial_phase="dispatching",
-                    ),
-                    str(kwargs.get("run_id") or "resume-run"),
-                )[1],
-            ),
         ):
             status, payload = _http_json(
                 conn,
@@ -148,6 +134,12 @@ def test_restart_approval_round_trip_uses_real_http_and_is_single_use(tmp_path: 
             status, approval = _http_json(conn, "GET", f"/api/shell_approval?id={approval_id}")
         assert approval["continuation"] == "started"
         assert approval["execution"] == "settled"
+        assert approval["continuation_run_id"] == original_task.task_id
+        resumed = restarted.durable.task(original_task.task_id)
+        assert resumed.submission_id == original_task.submission_id
+        assert resumed.status.value == "pending"
+        assert resumed.state["resume_input"] == {"kind": "resolve_shell_approval", "approval_id": approval_id}
+        assert len(restarted.durable.tasks()) == 1
 
         status, payload = _http_json(
             conn,
@@ -163,4 +155,4 @@ def test_restart_approval_round_trip_uses_real_http_and_is_single_use(tmp_path: 
         httpd.server_close()
         thread.join(timeout=5)
         restarted.close()
-        server.STATE = original_state
+        server.CodeyHTTPServer.app_context = original_state

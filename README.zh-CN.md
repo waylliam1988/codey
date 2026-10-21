@@ -48,6 +48,7 @@ Codey 会打开本地 UI：`http://127.0.0.1:<port>/`。模型网站只在发送
 写脚本等任务使用 `~/.codey/workspaces/<session_key>`，本机 Shell 命令仍需审批。
 选择项目文件夹后，同一套工具使用该目录和上下文，不需要切换聊天模式。
 
+桌面连接共享本机服务，关闭窗口后服务和任务继续运行；`python -m codey ui` 可以重新连接。
 Codey 打开的本地 UI 会自动完成操作者认证。原生窗口无法打开时，使用终端打印的
 完整启动链接。链接只能使用一次、五分钟后过期；已使用或过期时，重启 Codey 获取
 新链接。这不需要额外的 AI 账号。
@@ -82,8 +83,9 @@ Connection → Advanced → `API protocol` 明确选择 Chat Completions
 原生工具调用或文本工具请求。
 
 使用 Zen 免费模型时，在 Settings 展开该来源、Refresh models 并明确勾选；
-只有来源开启且已选择的模型进入对话框菜单。目录取公开目录与实际 endpoint 列表
-的交集，只收录明确零费用且协议受支持的模型；断网保留有界缓存。
+只有来源开启且已选择的模型进入对话框菜单。模型地址、协议和明确零费用价格直接来自
+官方目录，使用 ETag 与有界缓存；不要求地址提供 `/models`，也不通过 OpenCode.exe 转发。
+已批准域名下的 API 路径变化无需更新 Codey，新域名或协议仍需评估。
 本合作连接不要求注册或个人密钥，但每次请求的资格与工具限制仍由上游检查；
 免费列表不代表所有任务模式都能访问。已验证 Muse 编码与 Space Bunny 审查，
 具体范围见[测试报告](TEST_REPORT.md)。
@@ -101,6 +103,18 @@ API 会话在后台维护经过计数的工作上下文，并保留已接纳的�
 详见[最新优化对比与验证边界](docs/context-compaction-optimization-2026-10-09.zh-CN.md)。
 
 ## 命令行
+
+外部智能体可通过 CLI、JSONL RPC 或可选 MCP 将任务交给同一服务。接纳后的消息正常显示
+在桌面聊天中；控制者读取有界结果、独立检查文件和行为，再发送关联返修。用户接管后旧控制请求失效。
+安装、委派及自动版本切换边界见[外部控制实现说明](docs/external-control-implementation.zh-CN.md)。
+
+```powershell
+python -m codey serve --state-home E:\codey-state --allow-project E:\my-project
+python -m codey control health --state-home E:\codey-state
+python -m codey rpc --state-home E:\codey-state
+# 可选依赖：pip install -e ".[mcp]"
+python -m codey mcp --state-home E:\codey-state
+```
 
 ```powershell
 # 单次聊天，不写文件

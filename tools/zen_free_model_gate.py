@@ -10,8 +10,7 @@ from tools.local_model_release_gate import _metadata
 
 
 def run_matrix(directory: Path, timeout: int) -> bool:
-    from codey.providers.zen.connection import capture_selection, model_payload
-    from codey.providers.zen.identity import ZEN_BASE_URL
+    from codey.providers.zen.connection import capture_selection, endpoint_for_selection, model_payload
 
     directory.mkdir(parents=True, exist_ok=False)
     catalog = model_payload()
@@ -27,7 +26,7 @@ def run_matrix(directory: Path, timeout: int) -> bool:
                 chosen["thinking"] = thinking
             selection = capture_selection(chosen)
             target = attempts.GateTarget(
-                ZEN_BASE_URL, selection.model_id, selection.context_window_tokens,
+                endpoint_for_selection(selection), selection.model_id, selection.context_window_tokens,
                 selection.context_reserve_tokens, selection.context_keep_recent_tokens,
                 provider_id="zen", api_selection=selection.to_payload(), api_protocol=selection.protocol,
                 request_timeout=timeout,

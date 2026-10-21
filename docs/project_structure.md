@@ -10,6 +10,9 @@ codey/
   __init__.py   Single source of the package version
   __main__.py   python -m codey entry
   app/          HTTP/desktop/CLI entry, registries, task submission and resource ownership
+  control/      Shared protocol/client, CLI, JSONL RPC and optional MCP
+  durable/      SQLite admission, conversations, tasks, approvals and scheduler
+  launcher/     Immutable runtime preparation and independent switch/rollback runner
   automation/   Local automation jobs and scheduling
   task/         User submission and task-kind data
   policies/     Task grants, action guards, network and command boundaries
@@ -30,12 +33,33 @@ codey/
   runs/         Run ledgers, traces, checkpoints, details and receipts
   utils/        Small shared text, reference and scan helpers
   web/          Packaged local UI and JavaScript/CSS assets
+frontend/src/   TypeScript UI sources and Vitest; Vite build publishes to codey/web
 tests/          Behavioral regressions, architecture locks, stress and local/browser E2E
   support/      Test-only fixtures and historical comparison adapters
   manual/       Live experiments and their historical reports
 tools/          Release gates, diagnostics, parity and development utilities
 docs/           Current architecture, release guidance and dated audit reports
 ```
+
+## Shared service and external control
+
+| Owner | Responsibility |
+| --- | --- |
+| `app/service.py`, `desktop.py` | Window-independent service lease, explicit HTTP/context ownership and attach-only desktop |
+| `control/protocol.py`, `client.py`, `cli.py`, `rpc.py`, `mcp.py` | One schema, instance-bound loopback client and thin transport adapters; MCP dependency is optional |
+| `app/control_service.py` | Delegation, generation checks, user takeover, stop and independent review admission |
+| `app/control_conversations.py`, `control_queries.py` | Existing sidebar/history integration and bounded run/evidence queries |
+| `durable/control.py`, `admission.py`, `session.py` | Passive control receipts/configuration; metadata travels through canonical message admission and task checkpoints |
+| `app/public_event_feed.py`, `event_payloads.py` | One bounded public encoding, replay cursors and independent slow-subscriber isolation |
+| `launcher/releases.py`, `runner.py` | Immutable candidates, isolated checks, drain/switch/health verification and rollback without restoring old task facts |
+| `frontend/src/app_runtime.ts`, `input_outbox.ts`, `requests.ts` | External chat inventory, composer delivery reconciliation and rejection of terminal-run start replays |
+
+The shared service accepts durable inputs before dispatching the existing scheduler
+and task kernel. `control/` does not execute model work. No module-level HTTP STATE,
+legacy submit wrapper or parallel chat writer is retained. Session-owned reads
+serialize with the mutation line. `durable/sqlite.py` leases cold initialization,
+including WAL setup, before normal transactions begin. See [external control](external-control-implementation.zh-CN.md)
+for commands, authority and same-schema/dependency upgrade limits.
 
 ## Follow a task
 
@@ -56,7 +80,7 @@ Using web tools in ordinary coding does not automatically require research notes
 
 | Owner | Responsibility |
 | --- | --- |
-| `codey/app/operator_auth.py`, `web/assets/operator_auth.js` | Process-local HTTP/SSE operator credential and UI bootstrap; independent of model/task grants |
+| `codey/app/operator_auth.py`, `frontend/src/operator_auth.ts` | Single-use UI bootstrap and capability-derived browser session surviving service replacement; independent of model/task grants |
 | `codey/runtime/core/models.py` | Immutable `ToolResult` with mandatory exact boolean status; display text has no status authority |
 | `codey/app/task_services.py`, `task/entry_auth.py` | Compose desktop/headless review and advisor services once; derive HTTP and CLI authorization with one rule set |
 | `codey/operations/task_state.py` | `TaskState` and the typed submission-store bundle |
@@ -82,7 +106,7 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/providers/api_provider.py`, `api_transport.py` | One exchange lifecycle owns locks, cancellation and candidate commit; shared bounded transport never replays unknown outcomes |
 | `codey/providers/api_stream.py` | SSE decoding and unambiguous streamed tool-call identity; complete IDs are atomic, ambiguous fragments fail closed |
 | `codey/providers/zen/node_http.py`, `node_http.mjs` | Optional Node fetch bridge, bounded IPC and submission/cancellation evidence; no project-tool execution |
-| `codey/web/assets/provider_ui.js`, `messages.js`, `render.js` | Stable viewport-bounded model menu and single approval card; explicit shell status and unknown historical results |
+| `frontend/src/provider_ui.ts`, `messages.ts`, `render.ts` | Stable viewport-bounded model menu and single approval card; explicit shell status and unknown historical results |
 | `tools/coverage_gate.py`, `check_javascript.py`, `source_size_inventory.py` | Complete-production coverage minima, actual shipped JS/MJS discovery, and tracked/new source-size inventory |
 | `tools/zen_free_model_gate.py` | Connector-specific live chat/read/approval matrix and thinking variants; evidence under ignored artifacts, outside deterministic CI |
 | `codey/providers/api_codec.py` | Stateless codec contract and generation settings; connection factories resolve budgets, the provider selects its codec once |
@@ -93,16 +117,16 @@ Using web tools in ordinary coding does not automatically require research notes
 | `codey/providers/api_connections.py`, `local_connection.py` | Lazy connection factories and admitted Local configuration; shared runtime does not import Zen |
 | `codey/providers/model_preferences.py` | Atomic revisioned source/model consent; catalog observations never change selection |
 | `codey/app/model_settings.py`, `provider_services.py` | Generic source descriptors, explicit discovery, model-use protection and selected-scope services |
-| `codey/web/assets/models.js`, `model_settings.js` | Authoritative frontend snapshot and shared staged source editor; optional connectors supply data, not UI branches |
-| `codey/web/assets/ui_state.js`, `composer.js`, `codey/storage/ui_state_store.py` | Chat-owned durable drafts and UTF-16 selection validation through the existing UI-state store; accepted snapshots consume only unchanged revisions |
-| `codey/web/assets/conversation_ui.js`, `conversation_nav.js` | Explicit reading intent, bounded cached views/reading anchors and current-answer selection actions; quoting edits the existing draft |
-| `codey/web/assets/changes_drawer.js` | Sole owner of Changes project, displayed data, freshness and operations; keyed refresh preserves reading context and stale data cannot restore |
-| `codey/web/assets/settings.js` | Independent connection-field baseline/save lifecycle; model preference dirty state and source-row reconciliation stay in model_settings.js |
+| `frontend/src/models.ts`, `model_settings.ts` | Authoritative frontend snapshot and shared staged source editor; optional connectors supply data, not UI branches |
+| `frontend/src/ui_state.ts`, `composer.ts`, `codey/storage/ui_state_store.py` | Chat-owned durable drafts and UTF-16 selection validation through the existing UI-state store; accepted snapshots consume only unchanged revisions |
+| `frontend/src/conversation_ui.ts`, `conversation_nav.ts` | Explicit reading intent, bounded cached views/reading anchors and current-answer selection actions; quoting edits the existing draft |
+| `frontend/src/changes_drawer.ts` | Sole owner of Changes project, displayed data, freshness and operations; keyed refresh preserves reading context and stale data cannot restore |
+| `frontend/src/settings.ts` | Independent connection-field baseline/save lifecycle; model preference dirty state and source-row reconciliation stay in model_settings.js |
 | `codey/providers/zen/` | Public/free catalog, scoped partner identity and access observations; `declarations.py` owns the temporary unavailable read/shell wire profile, and `connection.py` owns bounded text-call rejection. No task grants; removing production registration/package also requires cleaning its dedicated tests, gates and docs |
 | `codey/runtime/core/api_selection.py`, `operation_payload.py` | Non-secret frozen API selection and strict admission/delivery payload validation |
 | `codey/research/source_gateway.py`, `tools.py` | Explicit acquisition/tool outcomes; cancellation/deadlines propagate without fallback acquisition |
 | `codey/app/context.py`, `event_bus.py`, `event_payloads.py` | Common run identity/mode and strict status publication; replay bus and pure bounded machine-event/receipt projection |
-| `codey/app/headless_runner.py`, `cli.py`, `web/assets/sse.js` | Consume common events as JSONL, CLI text and browser reconciliation without inferring success |
+| `codey/app/headless_runner.py`, `cli.py`, `frontend/src/sse.ts` | Consume common events as JSONL, CLI text and browser reconciliation without inferring success |
 | `tools/machine_contract_gate.py` | Shared CI/local required checks; missing tests, failures and skips close the gate |
 | `tests/manual/semantic_holdout_local_ab.py` | New callable/file fixtures and correct-source controls through the same native Codey/Pi comparison loop and oracle |
 | `tests/manual/codey_vs_opencode_agent_stability_ab.py`, `opencode_installed_agent_worker.py` | Explicit installed-build native agent comparison and local sidecar observer; shared task/scoring machinery, independent state, no production agent replacement |
@@ -208,7 +232,7 @@ See [current verification](../TEST_REPORT.md), [transport diagnosis](provider_ci
 
 | Owner | Responsibility |
 | --- | --- |
-| `codey/app/input_queue.py`, `codey/app/input_queue_routes.py`, `codey/storage/conversation_db.py` | Durable next-turn input receipts, admission/dispatch state, revision checks and transaction-scoped SQLite handles |
+| `codey/app/input_queue.py`, `codey/app/input_queue_routes.py`, `codey/durable/session.py` | Durable next-turn input receipts, admission/dispatch state, revision checks and transaction-scoped SQLite handles |
 | `codey/app/user_questions.py`, `codey/app/question_routes.py`, `codey/operations/kernel_question.py` | Durable question requests, answer acceptance and continuation identity |
 | `frontend/src/input_outbox.ts` | Browser delivery identities, explicit rejection recovery and uncertain-response status checks; it never authorizes execution |
 | `frontend/src/messages.ts`, `frontend/src/research_runs.ts` | Message-owned Research report identity and evidence/document actions |

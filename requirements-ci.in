@@ -19,3 +19,6 @@ ruff==0.15.14
 mypy==1.18.2
 pyrefly==1.3.2
 ty==0.0.87
+
+# Optional MCP adapter is exercised by the contract tests.
+mcp==2.3.0

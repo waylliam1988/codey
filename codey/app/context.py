@@ -80,6 +80,7 @@ class AppContext(GhostStoreAccessors):
     ) -> None:
         self._ephemeral_runtime_home = tempfile.TemporaryDirectory() if state_home is None else None
         self.state_home = Path(state_home) if state_home else None
+        self.control_service: Any = None
         if self.state_home is not None:
             runtime_state_home = self.state_home
         else:
@@ -1086,6 +1087,7 @@ class AppContext(GhostStoreAccessors):
         try:
             return self.shell_approval_workflow.close() and self.ghost_sleep_daemon.wait(timeout=2.0)
         except Exception:
+            logger.exception("Background worker cleanup failed")
             return False
 
     def close(self) -> bool:  # noqa: C901, PLR0912
@@ -1133,6 +1135,7 @@ class AppContext(GhostStoreAccessors):
                     return True
                 except Exception:
                     if attempt == 2:
+                        logger.exception("Resource cleanup failed: %s", type(store).__name__)
                         return False
                     time.sleep(0.05 * (attempt + 1))
             return False

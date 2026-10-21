@@ -1,6 +1,7 @@
 import time
 
 from codey.app.context import AppContext
+from codey.runtime.core.api_selection import ApiRunSelection
 
 
 def test_elapsed_time_comes_from_the_server_run_lifecycle(tmp_path, monkeypatch):
@@ -21,7 +22,7 @@ def test_elapsed_time_comes_from_the_server_run_lifecycle(tmp_path, monkeypatch)
 def test_close_retains_queue_resources_until_its_live_run_terminalizes(tmp_path):
     ctx = AppContext(tmp_path)
     request = {"session_id": "s", "run_id": "r", "task": "read", "provider": "local"}
-    ctx.input_queue.create("input", request)
+    ctx.input_queue.create("input", request, model_selection=ApiRunSelection("local", "fixture", "fixture", "openai-completions", True))
 
     # Directly placeable input is admitted as submitted; the active run slot
     # is the shutdown resource that must remain alive until its terminal event.

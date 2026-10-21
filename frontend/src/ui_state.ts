@@ -31,6 +31,7 @@ export interface UiStateApi {
   persistNow(): void;
   bindPagehide(): void;
   restoreFromServer(): Promise<void>;
+  refreshInventory(): Promise<void>;
   ensureSaved(): Promise<boolean>;
 }
 /* Codey UI state runtime: local cache, durable snapshot sync, and versioning. */
@@ -622,6 +623,25 @@ export interface UiStateApi {
     });
   }
 
+  async function refreshInventory(): Promise<void> {
+    const response = await fetch('/api/ui_state', { cache: 'no-store' });
+    if (!response.ok) return;
+    const data = await response.json();
+    const current = currentUiState();
+    const existing = new Map(getSessions().map((session) => [session.id, session]));
+    // Inventory is authoritative; local drafts, live messages and the reader's
+    // current selection survive a conversation created by another client.
+    const sessions = normalizeSessions(data.state.sessions).map((session) => {
+      const local = existing.get(session.id);
+      return local ? { ...session, draft: local.draft, messages: local.messages } : session;
+    });
+    applyUiState({ ...data.state, sessions, active_id: current.active_id });
+    cacheUiState();
+    deps.renderSidebar?.();
+    deps.renderChat?.();
+    deps.updateComposerContext?.();
+  }
+
   async function restoreUiStateFromServer() {
     try {
       const r = await fetch('/api/ui_state', { cache: 'no-store' });
@@ -677,6 +697,7 @@ export interface UiStateApi {
     persistNow: persistActiveNow,
     bindPagehide: bindUiStatePagehide,
     restoreFromServer: restoreUiStateFromServer,
+    refreshInventory,
     ensureSaved,
   };
 })();

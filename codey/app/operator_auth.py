@@ -1,4 +1,4 @@
-"""Process-local operator credentials; never task or model capabilities."""
+"""Browser sessions and one-time process-local launch credentials."""
 
 from __future__ import annotations
 
@@ -12,9 +12,10 @@ BOOTSTRAP_LIFETIME_SECONDS = 300.0
 
 
 class OperatorAuth:
-    def __init__(self, port: int, *, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(self, port: int, *, clock: Callable[[], float] = time.monotonic,
+                 session_token: str | None = None) -> None:
         self.cookie_name = f"codey_operator_{port}"
-        self._session_token = secrets.token_urlsafe(32)
+        self._session_token = session_token if session_token is not None else secrets.token_urlsafe(32)
         self._bootstrap_token = ""
         self._bootstrap_deadline = 0.0
         self._clock = clock

@@ -53,6 +53,7 @@ from codey.durable.timeline import (
     public_commit_payload,
     transition_from_payload,
 )
+from codey.storage.file_lock import acquire_lease
 
 
 class SQLiteDurableStore:
@@ -64,7 +65,10 @@ class SQLiteDurableStore:
         self.path = Path(path)
         self._synchronous = synchronous
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._database_id = initialize_database(self._connect)
+        # WAL mode changes precede BEGIN IMMEDIATE and do not reliably invoke
+        # SQLite's busy handler. Serialize that complete cold-start boundary.
+        with acquire_lease(self.path.with_name(self.path.name + ".initialization"), timeout_seconds=30):
+            self._database_id = initialize_database(self._connect)
 
     def _connect(self) -> sqlite3.Connection:
         database = sqlite3.connect(self.path, isolation_level=None, timeout=30)
@@ -232,6 +236,10 @@ class SQLiteDurableStore:
                 if database.in_transaction:
                     database.execute("ROLLBACK")
                 raise
+
+    def conversation_ids(self) -> tuple[str, ...]:
+        with closing(self._connect()) as database:
+            return tuple(str(row[0]) for row in database.execute("SELECT id FROM conversations ORDER BY id"))
 
     def entries(self, conversation_id: str) -> tuple[EntryDraft, ...]:
         with closing(self._connect()) as database:

@@ -1,6 +1,6 @@
 """Task submission wiring for the HTTP server.
 
-``server.py`` keeps HTTP/SSE routing, global STATE, and boot only. Everything
+``server.py`` keeps HTTP/SSE routing and explicitly attached context only. Everything
 that reserves a run, queues the browser worker, or builds ``TaskRunDeps``
 lives here so the task path is importable without the HTTP layer.
 
@@ -87,7 +87,11 @@ def run_task(
                 if checkpoint.status != TaskStatus.RUNNING:
                     return
                 if checkpoint.phase == "dispatching":
-                    state.durable.start_task(run_id, state=dict(checkpoint.state))
+                    runtime_state = dict(checkpoint.state)
+                    control = getattr(state, "control_service", None)
+                    if control is not None:
+                        runtime_state["execution_runtime"] = {"instance_id": control.instance_id, "release_id": control.release_id}
+                    state.durable.start_task(run_id, state=runtime_state)
             except (CommitConflict, KeyError, ValueError):
                 return
         try:
@@ -194,6 +198,9 @@ def submit_task(
     # init-phase cleanup never depends on the accessor working a second time.
     review_policy = load_review_policy()
     state = get_state()
+    service = getattr(state, "control_service", None)
+    if service is not None and service.draining:
+        return None
     admitted_selection = capture_provider_selection(provider_id, model_selection)
     shell_tool_results: tuple[dict[str, object], ...] = ()
     if isinstance(input, ResolveShellApproval):
@@ -208,7 +215,9 @@ def submit_task(
                 "is_error": resolved.get("ok") is not True,
             },)
     # Settings saves use this same lock: disabling and admission cannot cross.
-    with state.lock:
+    with state._shell_spawn_gate, state.lock:
+        if service is not None and service.draining:
+            return None
         if not state.providers.model_preferences.allows(provider_id, admitted_selection.model_id if admitted_selection else ""):
             raise ModelDisabledError("Selected model is disabled. Choose an enabled model in Settings.")
         if isinstance(input, ResolveShellApproval):
@@ -334,10 +343,18 @@ def _task_input_payload(input: TaskInput | None) -> dict[str, object] | None:
 
 def dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) -> bool:
     """Resume one durable checkpoint after admission or process restart."""
+    with state._shell_spawn_gate:
+        return _dispatch_durable_task(checkpoint, state=state)
+
+
+def _dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) -> bool:
     from codey.durable.model import TaskCheckpoint
 
     if not isinstance(checkpoint, TaskCheckpoint):
         raise TypeError("durable dispatcher requires a TaskCheckpoint")
+    control_service = getattr(state, "control_service", None)
+    if control_service is not None and not control_service.permits_dispatch(checkpoint):
+        return False
     stored = thaw_json(checkpoint.state)
     if not isinstance(stored, dict):
         raise TypeError("task checkpoint state must be an object")

@@ -15,6 +15,7 @@
 | [runtime_architecture.zh-CN.md](runtime_architecture.zh-CN.md) | 当前 Runtime 架构 |
 | [api_request_reliability_architecture.zh-CN.md](api_request_reliability_architecture.zh-CN.md) | API 请求、取消、连接与恢复边界 |
 | [model-management.md](model-management.md) | 模型管理与可选连接拆除 |
+| [external-control-implementation.zh-CN.md](external-control-implementation.zh-CN.md) | 外部控制 v0.3 实现、使用、模型地址发现与版本切换边界 |
 | [token-accounting.zh-CN.md](token-accounting.zh-CN.md) | 请求预算与 token 用量归属 |
 | [kernel_invariants.zh-CN.md](kernel_invariants.zh-CN.md) | 内核不变量；文内历史验证只对应记录版本 |
 | [kernel_parity.zh-CN.md](kernel_parity.zh-CN.md) | 固定 oracle、差异分类和 parity 检查 |
@@ -30,6 +31,8 @@
 实施新工作前先核对现行源码与验收项，不按旧路径恢复已经删除的模块。
 
 - [设计原则与后续建议](codey_from_codex_principles.md)
+- [外部控制：委派、观察、桌面同步与返修验收设计](external-control-design.zh-CN.md)
+- [外部控制实施细则：RPC、MCP、广播优化与自动版本切换](external-control-transports-and-updates.zh-CN.md)
 - [Codey Roadmap：0.6 语言闭环、后续按族晋级与独立研究](../ROADMAP.zh-CN.md)
 - [Ghost 本地经验路由：偏好投递与预算路由实验、限制与晋级协议](ghost_future_direction.zh-CN.md)
 - [Ghost / World Model 团队交接说明与进度规则](ghost_handoff.zh-CN.md)

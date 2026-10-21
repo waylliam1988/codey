@@ -24,6 +24,7 @@ from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
 from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
 from codey.toolchain.runtime import ToolOutcome
+from tests import http_context
 
 VALID_SHA256 = "a" * 64
 
@@ -369,7 +370,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             }
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
@@ -377,7 +378,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(consensus_service, "run_consensus", return_value=None),
                 mock.patch.object(review_service, "run_review", return_value=None),
             ):
-                task_submit.run_task("session-ledger", str(project), "Update app.py", 8, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-ledger", str(project), "Update app.py", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
             # Explicit ghost wait replaces the removed sync flag: no daemon
             # may hold state files while TemporaryDirectory cleans up.
@@ -448,14 +449,14 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 return RunResult("done", "done", 1, False, False, False)
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent),
                 mock.patch.object(task_submit, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}),
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
                 mock.patch.object(consensus_service, "run_consensus", return_value=None),
             ):
-                task_submit.run_task("session-fail-open", str(project), "Read app.py", 8, False, "deepseek", "project", get_state=server.get_state)
+                task_submit.run_task("session-fail-open", str(project), "Read app.py", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
             state.wait_for_ghost_sleep(timeout=30)
             self.assertEqual(state.run_registry.last_terminal_event()["stop_reason"], "done")
@@ -472,7 +473,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             provider = self._provider()
 
             with (
-                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=TimeoutError("response timed out")),
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
@@ -486,7 +487,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                     False,
                     "deepseek",
                     "project",
-                    get_state=server.get_state,
+                    get_state=http_context.get_context,
                 )
 
             run_id = state.run_registry.last_terminal_event()["run_id"]

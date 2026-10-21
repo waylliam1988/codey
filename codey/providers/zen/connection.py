@@ -15,7 +15,7 @@ from codey.providers.error_classification import OutputLengthError
 from codey.providers.token_accounting import RequestContextCount
 from codey.providers.zen.catalog import ZenCatalog
 from codey.providers.zen.declarations import TEXT_PROMPT_PREFIX, prepare_declarations, transport_identity
-from codey.providers.zen.identity import CONNECTION_REVISION, ZEN_BASE_URL, ZenIdentity
+from codey.providers.zen.identity import CONNECTION_REVISION, ZenIdentity, revision_for_endpoint
 from codey.providers.zen.node_http import open_request as open_zen_request
 from codey.providers.zen.reliability import ZenRequestPolicy, ZenResourcesRegistry, make_control_scope
 from codey.providers.zen.usage import configure_usage, parser_for
@@ -246,7 +246,7 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
     if effort is not None and model.thinking_toggle:
         raise ValueError("selected Zen toggle model does not advertise reasoning efforts")
     reserve = min(8192, model.context // 4)
-    return ApiRunSelection("zen", CONNECTION_REVISION, model.id, model.protocol, True, model.context,
+    return ApiRunSelection("zen", revision_for_endpoint(model.api), model.id, model.protocol, True, model.context,
                            reserve, min(12000, model.context - reserve), reasoning_effort=effort,
                            thinking_enabled=thinking,
                            stream=True, tool_choice="auto", output_tokens=min(model.output, reserve), budget_source="model_catalog",
@@ -254,22 +254,31 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
 
 
 def validate_selection(selection: ApiRunSelection) -> None:
-    if selection.connection_revision != CONNECTION_REVISION:
-        raise ValueError("original Zen connection agreement is unavailable")
-    catalog().require(selection.model_id, protocol=selection.protocol)
+    model = catalog().require(selection.model_id, protocol=selection.protocol)
+    if selection.connection_revision != revision_for_endpoint(model.api):
+        raise ValueError("Zen connection endpoint changed; start a new explicitly admitted request")
+
+
+def endpoint_for_selection(selection: ApiRunSelection) -> str:
+    """Read the admitted endpoint for observers without creating a runtime."""
+    endpoint = catalog().require_cached(selection.model_id, protocol=selection.protocol).api
+    if selection.connection_revision != revision_for_endpoint(endpoint):
+        raise ValueError("Zen connection endpoint changed while opening the selection")
+    return endpoint
 
 
 def open_selection(selection: ApiRunSelection) -> ZenProvider:
     validate_selection(selection)
+    endpoint = endpoint_for_selection(selection)
     identity = ZenIdentity()
-    scope = make_control_scope(ZEN_BASE_URL, "public", CONNECTION_REVISION)
+    scope = make_control_scope(endpoint, "public", selection.connection_revision)
     coordinator = ZenResourcesRegistry.get_or_create(scope)
     http_session = ZenResourcesRegistry.get_session(scope)
 
     def headers(base_url: str) -> dict[str, str]:
         return identity.headers(base_url)
 
-    provider = ApiProvider(ZEN_BASE_URL, selection.model_id, api_key="public", api_protocol=selection.protocol,
+    provider = ApiProvider(endpoint, selection.model_id, api_key="public", api_protocol=selection.protocol,
                            stream=selection.stream, tool_choice=selection.tool_choice, output_tokens=selection.output_tokens,
                            request_headers=headers, native_tools=selection.native_tools,
                            context_window_tokens=selection.context_window_tokens, context_reserve_tokens=selection.context_reserve_tokens,
@@ -279,7 +288,7 @@ def open_selection(selection: ApiRunSelection) -> ZenProvider:
                            usage_parser=parser_for(selection.protocol), configure_request=configure_usage,
                            budget_source=selection.budget_source, input_limit_tokens=selection.input_limit_tokens,
                            request_policy=ZenRequestPolicy(coordinator, scope),
-                           connection_revision=CONNECTION_REVISION,
+                           connection_revision=selection.connection_revision,
                            http_session=http_session,
                            transport_options={"body_idle_timeout": 30.0, "opener": open_zen_request,
                                               "request_id_headers": ("X-OpenCode-Log-Id",)})

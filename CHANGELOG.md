@@ -4,6 +4,22 @@
 
 ## Unreleased
 
+- Implement external-control design v0.3 on the shared window-independent service:
+  durable delegation, desktop-visible source/refinement messages, bounded observation,
+  independent candidate reviews, CLI/JSONL RPC and optional official-SDK MCP.
+  Reuse canonical admission and task checkpoints; remove the HTTP global owner and
+  obsolete submit/SSE paths rather than preserve test compatibility.
+- Encode bounded public events once, isolate slow subscribers, preserve terminal
+  replay state and Research details, and keep uncertain delivery in the composer.
+  Serialize SQLite cold initialization, including the WAL transition, with an OS lease.
+- Add immutable runtime validation and supervised drain/switch/health/rollback for
+  unchanged dependencies/schema, preserving browser sessions and task database facts.
+- Discover Zen model addresses/protocols directly from the official directory with
+  ETag/cache and per-run endpoint revisions; remove the `/models` dependency and
+  avoid executable forwarding. Keep the optional connector removable.
+  Current verification and remaining scope are in TEST_REPORT.md; v0.3 names the
+  control design, not a change to the package version.
+
 - Make concurrency and subprocess regressions deterministic: replace sleep-based
   scheduling, output, worker, file-lock, and shell Stop assertions with events,
   explicit release points, and direct state reconciliation. Bring durable recovery

@@ -12,6 +12,7 @@ from playwright.sync_api import expect, sync_playwright
 from codey.app import server
 from codey.app.context import AppContext
 from codey.app.shell_approval_state import restore_pending_shell_approvals
+from tests.http_context import attach_public_events
 from tests.support.shell_approval import seed_requested_approval
 from tests.test_ui_inplace_render import _goto_restored_ui
 
@@ -34,8 +35,9 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
         },
         base_revision=0,
     )
-    monkeypatch.setattr(server, "STATE", ctx)
+    monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+    close_events = attach_public_events(httpd)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
@@ -125,6 +127,7 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
             finally:
                 browser.close()
     finally:
+        close_events()
         httpd.shutdown()
         httpd.server_close()
         thread.join(5)

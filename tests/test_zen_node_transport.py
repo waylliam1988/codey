@@ -36,7 +36,7 @@ def test_fetch_uses_shared_tool_parser_and_releases_process(monkeypatch, stream)
         return proc
     monkeypatch.setattr(node_http.subprocess, "Popen", launch)
     with reply_service([reply]) as (url, requests):
-        monkeypatch.setattr(node_http, "ZEN_BASE_URL", url)
+        monkeypatch.setattr(node_http, "validate_generation_url", lambda value: url if value.startswith(url + "/") else (_ for _ in ()).throw(ValueError("destination")))
         body = generate(url + "/chat/completions", {}, {}, timeout=5, observe=lambda **_: None,
                         transport_options={"opener": node_http.open_request})
     assert body["choices"][0]["message"]["tool_calls"][0]["id"] == "c1"
@@ -47,7 +47,7 @@ def test_fetch_uses_shared_tool_parser_and_releases_process(monkeypatch, stream)
 @pytest.mark.parametrize("mode", ["headers", "error_silent"])
 def test_fetch_stop_interrupts_headers_and_rejection_without_resend(monkeypatch, mode):
     with service(mode) as (url, requests, _, received):
-        monkeypatch.setattr(node_http, "ZEN_BASE_URL", url)
+        monkeypatch.setattr(node_http, "validate_generation_url", lambda value: url if value.startswith(url + "/") else (_ for _ in ()).throw(ValueError("destination")))
         provider = ApiProvider(url, "fixture", timeout=5, transport_options={"opener": node_http.open_request})
         errors = []
         def send():
@@ -68,7 +68,7 @@ def test_fetch_stop_interrupts_headers_and_rejection_without_resend(monkeypatch,
 
 def test_fetch_complete_rejection_keeps_service_type(monkeypatch):
     with service("slow_error") as (url, requests, _, _):
-        monkeypatch.setattr(node_http, "ZEN_BASE_URL", url)
+        monkeypatch.setattr(node_http, "validate_generation_url", lambda value: url if value.startswith(url + "/") else (_ for _ in ()).throw(ValueError("destination")))
         with pytest.raises(GenerationRejectedError) as error:
             generate(url + "/chat/completions", {}, {}, timeout=5, observe=lambda **_: None,
                      transport_options={"opener": node_http.open_request})
@@ -84,7 +84,7 @@ def test_fetch_connection_refused_is_proven_not_submitted(monkeypatch):
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     url = f"http://127.0.0.1:{port}/v1"
-    monkeypatch.setattr(node_http, "ZEN_BASE_URL", url)
+    monkeypatch.setattr(node_http, "validate_generation_url", lambda value: url if value.startswith(url + "/") else (_ for _ in ()).throw(ValueError("destination")))
     control = AttemptControl()
     request = urllib.request.Request(url + "/chat/completions", data=b"{}", method="POST")
     with pytest.raises(GenerationNotSentError) as error:
@@ -103,7 +103,7 @@ def test_stop_before_async_submission_receipt_is_unknown_when_peer_received_post
         return frame
     monkeypatch.setattr(node_http.NodeResponse, "frame", delayed_frame)
     with service("headers") as (url, requests, _, received):
-        monkeypatch.setattr(node_http, "ZEN_BASE_URL", url)
+        monkeypatch.setattr(node_http, "validate_generation_url", lambda value: url if value.startswith(url + "/") else (_ for _ in ()).throw(ValueError("destination")))
         provider = ApiProvider(url, "fixture", timeout=5, transport_options={"opener": node_http.open_request})
         errors = []
         def send():

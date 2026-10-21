@@ -27,7 +27,7 @@ def test_packaged_image_preview_and_local_failure_keep_the_answer_readable(tmp_p
     )
     ctx.save_ui_state({"active_id": "images", "projects": [{"id": "p", "path": str(project), "name": "Images"}],
         "sessions": [{"id": "images", "title": "Image preview", "projectId": "p"}]}, base_revision=0)
-    monkeypatch.setattr(server, "STATE", ctx)
+    monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -115,7 +115,7 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
         },
         base_revision=0,
     )
-    monkeypatch.setattr(server, "STATE", ctx)
+    monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()

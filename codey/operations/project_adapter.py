@@ -76,8 +76,8 @@ def _project_context(request: AgentRequest) -> str:
 
 
 def _project_ghost_sources(request: AgentRequest) -> tuple[Any, ...]:
-    from codey.workspace.context_admission import request_scope, sources_from_values
     from codey.policies.permissions import allows_context_source, profile_for_name
+    from codey.workspace.context_admission import request_scope, sources_from_values
 
     profile = profile_for_name(request.permission_profile)
     if not bool(getattr(request, "admit_hints", True)):

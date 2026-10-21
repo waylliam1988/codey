@@ -13,7 +13,10 @@ import json
 import re
 import threading
 from collections.abc import Callable, Mapping
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from codey.runtime.core.api_selection import ApiRunSelection
 
 Submit = Callable[[dict[str, Any]], tuple[int, dict[str, Any]]]
 
@@ -53,7 +56,7 @@ class DurableConversationInputQueue:
         if status == "cancelled" or task.phase == "cancelled":
             return "cancelled"
         if status == "failed" or task.phase == "failed":
-            return "unconfirmed"
+            return "completed"
         if raw in {"paused", "cancelled"}:
             return str(raw)
         if raw == "queued":
@@ -62,8 +65,7 @@ class DurableConversationInputQueue:
             return "submitted"
         return "submitted" if raw == "placed" else "queued"
 
-    @classmethod
-    def _item_for_task(cls, task: Any) -> dict[str, Any] | None:
+    def _item_for_task(self, task: Any) -> dict[str, Any] | None:
         state = task.state
         if not isinstance(state, Mapping):
             return None
@@ -71,12 +73,12 @@ class DurableConversationInputQueue:
         request = state.get("input_request")
         if not isinstance(identity, str) or not identity or not isinstance(request, Mapping):
             return None
-        item_state = cls._state_for_task(task)
+        item_state = self._state_for_task(task)
         normalized = _jsonable(dict(request))
         if not isinstance(normalized, dict):
             return None
         request = cast(dict[str, Any], normalized)
-        return {
+        item = {
             "schema_version": 1,
             "id": identity,
             "request": copy.deepcopy(request),
@@ -86,6 +88,11 @@ class DurableConversationInputQueue:
             "consumed_by_run_id": state.get("consumed_by_task_id", ""),
             "entry_id": state.get("input_entry_id", ""),
         }
+        if str(task.status) == "failed":
+            reason = self.durable.submission(task.submission_id).reason or "Task failed"
+            item["terminal"] = {"type": "task_done", "session_id": task.conversation_id,
+                                "run_id": task.task_id, "stop_reason": "error", "summary": reason}
+        return item
 
     def _items(self, session_id: str = "") -> builtins.list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
@@ -109,7 +116,7 @@ class DurableConversationInputQueue:
         with self.lock:
             return self._items(session_id)
 
-    def create(self, identity: str, request: dict[str, Any]) -> dict[str, Any]:
+    def create(self, identity: str, request: dict[str, Any], *, model_selection: ApiRunSelection | None = None) -> dict[str, Any]:
         if not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", identity):
             raise ValueError("invalid input identity")
         if not request.get("session_id") or not request.get("run_id"):
@@ -124,11 +131,7 @@ class DurableConversationInputQueue:
 
         provider_id = str(request.get("provider") or "")
         raw_selection = request.get("model_selection")
-        selection = (
-            capture_provider_selection(provider_id, raw_selection)
-            if raw_selection is not None
-            else None
-        )
+        selection = model_selection or capture_provider_selection(provider_id, raw_selection)
         admitted_request = copy.deepcopy(request)
         if selection is not None:
             admitted_request["model_selection"] = selection.to_payload()

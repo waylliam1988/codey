@@ -163,7 +163,7 @@ class PostBodyCoercionTests(unittest.TestCase):
         handler._send_json = lambda status, payload: sent.append((status, payload))  # type: ignore[method-assign]
         handler._request_origin_allowed = lambda: True  # type: ignore[method-assign]
         broken = SimpleNamespace()
-        with mock.patch.object(server_module, "STATE", broken):
+        with mock.patch.object(server_module.CodeyHTTPServer, "app_context", broken):
             handler.do_POST()
         self.assertTrue(sent)
         self.assertEqual(sent[0][0], 500)
@@ -539,18 +539,14 @@ class WorkerBusyMappingTests(unittest.TestCase):
         self.assertEqual(status, 500)
 
     def test_submit_task_keeps_durable_admission_when_worker_queue_is_full(self) -> None:
-        from codey.app import server as server_module
         from codey.app import task_submit as task_submit_module
         from codey.app.context import AppContext
 
         with tempfile.TemporaryDirectory() as td:
             state = AppContext(Path(td))
             try:
-                with (
-                    mock.patch.object(server_module, "STATE", state),
-                    mock.patch.object(task_submit_module, "submit_browser_task", return_value=False),
-                ):
-                    run_id = server_module._submit_task("s", None, "do it", 3, False, "qwen", "auto")
+                with mock.patch.object(task_submit_module, "submit_browser_task", return_value=False):
+                    run_id = task_submit_module.submit_task("s", None, "do it", 3, False, "qwen", "auto", get_state=lambda: state)
                 self.assertIsNotNone(run_id)
                 # Admission claims the durable scheduler slot before handing
                 # off to the worker queue.  A full queue leaves the task in

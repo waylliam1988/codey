@@ -8,14 +8,16 @@ import pytest
 from codey.providers import api_transport
 from codey.providers.zen import connection
 from codey.providers.zen.catalog import ZenModel
+from codey.providers.zen.identity import ZEN_BASE_URL, revision_for_endpoint
 from codey.runtime.core.api_selection import ApiRunSelection
 
 
 def zen_provider(monkeypatch, protocol, stream=False):
     monkeypatch.setattr(connection, "catalog", lambda: SimpleNamespace(
-        require=lambda *a, **k: ZenModel("fixture", "Fixture", protocol, 32768, 8192),
+        require=lambda *a, **k: ZenModel("fixture", "Fixture", protocol, 32768, 8192, ZEN_BASE_URL),
+        require_cached=lambda *a, **k: ZenModel("fixture", "Fixture", protocol, 32768, 8192, ZEN_BASE_URL),
         access=SimpleNamespace(record_plain_success=lambda *a: None)))
-    return connection.open_selection(ApiRunSelection("zen", connection.CONNECTION_REVISION, "fixture", protocol, True,
+    return connection.open_selection(ApiRunSelection("zen", revision_for_endpoint(ZEN_BASE_URL), "fixture", protocol, True,
                                                      stream=stream, tool_choice="auto", output_tokens=8192))
 
 

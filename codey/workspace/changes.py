@@ -1151,7 +1151,20 @@ def _resolve_git_root(root: Path) -> tuple[Path | None, dict[str, Any] | None]:
             "diff": "",
             "reason": GIT_REASON_FAILED,
         }
-    return Path(top.stdout.strip()).resolve(), None
+    git_root = Path(top.stdout.strip()).resolve()
+    if root != git_root:
+        # An ignored scratch workspace inside a repository owns snapshots;
+        # returning the enclosing repository would expose unrelated changes
+        # while hiding the actual scratch files from its completion evidence.
+        try:
+            ignored = _run_git(git_root, ["check-ignore", "-q", "--", root.relative_to(git_root).as_posix()])
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return None, _git_failed_payload()
+        if ignored.returncode == 0:
+            return None, {"ok": False, "error": "workspace is ignored by enclosing repository", "files": [], "diff": "", "reason": GIT_REASON_NOT_REPO}
+        if ignored.returncode != 1:
+            return None, _git_failed_payload()
+    return git_root, None
 
 
 def _load_git_status_files(git_root: Path) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None]:
