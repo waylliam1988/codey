@@ -36,9 +36,10 @@ def test_ghost_continuity_does_not_hide_unexpected_projection_errors() -> None:
 
 def test_ghost_experiences_still_fails_closed_for_corrupt_observation_storage() -> None:
     state = SimpleNamespace(
-        ghost_inbox=SimpleNamespace(learning_enabled=lambda: True),
+        ghost_inbox=SimpleNamespace(control_enabled=lambda _name, **_kwargs: True),
         ghost_observations=SimpleNamespace(
             retrieve=mock.Mock(side_effect=OSError("observations unavailable")),
         ),
     )
     assert ghost_context.ghost_experiences(state, session_id="s", query="hello") == ""
+    state.ghost_observations.retrieve.assert_called_once()

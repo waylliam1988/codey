@@ -83,8 +83,8 @@ class LearningSwitchFailClosedTests(unittest.TestCase):
     def test_settlement_skips_write_on_settings_error(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = GhostObservationStore(Path(td))
-            inbox = mock.Mock()
-            inbox.learning_enabled.side_effect = ValueError("settings corrupt")
+            inbox = mock.Mock(spec=GhostInboxStore)
+            inbox.control_enabled.side_effect = ValueError("settings corrupt")
             state = SimpleNamespace(
                 ghost_inbox=inbox,
                 ghost_observations=store,
@@ -110,8 +110,8 @@ class LearningSwitchFailClosedTests(unittest.TestCase):
                 user_text="hi", assistant_text="hello",
                 stop_reason="done", provider_id="local",
             )
-            inbox = mock.Mock()
-            inbox.learning_enabled.side_effect = ValueError("settings corrupt")
+            inbox = mock.Mock(spec=GhostInboxStore)
+            inbox.control_enabled.side_effect = ValueError("settings corrupt")
             state = SimpleNamespace(ghost_inbox=inbox, ghost_observations=store)
             with mock.patch.object(
                 store, "read_committed",
@@ -182,7 +182,7 @@ class LearningSwitchFailClosedTests(unittest.TestCase):
             self.assertEqual(spy_read.call_count, 0)
             # 3) background learning must stay off.
             self.assertFalse(
-                ghost_post_turn._ghost_learning_enabled(state)
+                ghost_post_turn._ghost_accept_events_enabled(state)
             )
             try:
                 inbox.learning_enabled()

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import threading
+from contextlib import closing
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from codey.agents.request import AgentRequest
+from codey.app.context import AppContext
 from codey.operations.project_adapter import _project_context, _project_ghost_sources
 from codey.operations.task_loop import (
     KernelExecutionDeps,
@@ -25,6 +27,7 @@ from codey.runs.trace import RunTraceStore
 from codey.utils.refs import digest_text
 from codey.workspace.context_admission import request_scope
 from codey.workspace.context_epoch import context_epoch_id
+from tests.test_chat_workspace_tools_and_answer_completion import execute_frame, workspace_frame
 
 
 @pytest.fixture
@@ -189,3 +192,31 @@ def test_scope_identity_does_not_alias_long_shared_prefixes(kind):
     assert scope("a") != scope("b")
     assert scope("a") == scope("a")
     assert len(scope("a")) <= 160
+
+
+@pytest.mark.parametrize("control", ["enabled", "disabled", "scoped_error"])
+def test_scoped_hint_control_reaches_entry_api_http(tmp_path, capture_endpoint, monkeypatch, control):
+    endpoint, payloads = capture_endpoint
+    hint = "Synthetic reviewed preference"
+    monkeypatch.setattr("codey.operations.ghost_context.ghost_directive",
+                        lambda *args, **kwargs: SimpleNamespace(text=hint))
+    calls = []
+
+    def read(name, **scope):
+        if name == "admit_hints":
+            calls.append(scope)
+            if control == "scoped_error" and scope:
+                raise TypeError("scoped read failed")
+            return control != "disabled"
+        return True
+
+    provider = ApiProvider(endpoint, "synthetic-admission", native_tools=True, timeout=5,
+                           temperature=0, output_tokens=128)
+    frame = workspace_frame("", provider)
+    with closing(AppContext(tmp_path / "state")) as state:
+        monkeypatch.setattr(state.ghost_inbox, "control_enabled", read)
+        result, _ = execute_frame(frame, state)
+    assert result.event["stop_reason"] == "done", result.event
+    assert len(payloads) == 1
+    assert (hint in json.dumps(payloads[0])) == (control == "enabled")
+    assert calls == [{"project": "", "session_id": frame.request.session_id}]

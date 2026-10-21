@@ -605,8 +605,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         emitted_events: list[dict] = []
         state.emit = lambda event: emitted_events.append(event)
 
-        with patch("codey.operations.ghost_post_turn._ghost_learning_enabled", return_value=True), \
-             patch(
+        with patch(
                  "codey.operations.task_run.recover_effects_for_resume",
                  return_value=ResumeRecoveryResult(ok=False),
              ):
@@ -634,6 +633,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
     def test_recovered_tool_outcomes_skip_work_claim(self) -> None:
         state = server.AppContext()
+        emitted_events: list[dict] = []
+        state.emit = emitted_events.append
         run_id = "run-recovered-skip-claim-1"
         state.durable.admit_input(
             conversation_id=self.session_id, request_id=run_id, task_id=run_id,
@@ -755,7 +756,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             )
 
         mock_claim.assert_not_called()
-        self.assertEqual(len(seen_requests), 1)
+        self.assertEqual(len(seen_requests), 1, emitted_events)
         recovered = seen_requests[0].recovered_tool_outcomes
         self.assertEqual(len(recovered), 1)
         self.assertEqual(recovered[0].call.name, "read")
