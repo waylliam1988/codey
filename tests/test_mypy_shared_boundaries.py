@@ -91,6 +91,22 @@ def test_worker_process_group_adapter_is_clean_on_linux_stubs() -> None:
     assert "Module has no attribute \"CREATE_NEW_PROCESS_GROUP\"" not in output
 
 
+def test_control_and_release_windows_adapters_are_clean_on_linux_stubs() -> None:
+    output = _mypy(
+        "codey/durable/process.py",
+        "codey/launcher/runner.py",
+        "codey/launcher/releases.py",
+        "codey/control/client.py",
+        follow_imports="skip",
+        platform="linux",
+    )
+    assert "Module has no attribute \"WinDLL\"" not in output
+    assert "Module has no attribute \"WinError\"" not in output
+    assert "Module has no attribute \"get_last_error\"" not in output
+    assert "Module has no attribute \"CREATE_NO_WINDOW\"" not in output
+    assert "Returning Any from function declared to return \"bool\"" not in output
+
+
 def test_kernel_and_evidence_boundaries_are_clean() -> None:
     output = _mypy(
         "codey/operations/task_loop.py",

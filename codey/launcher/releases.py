@@ -13,7 +13,12 @@ import time
 import tomllib
 from contextlib import closing
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if os.name == "nt" or TYPE_CHECKING:
+    # CREATE_NO_WINDOW is a Windows-only subprocess constant and is absent
+    # from Linux typeshed.
+    _windows_subprocess: Any = subprocess
 
 from codey.control.protocol import ControlError, fingerprint
 from codey.storage.file_lock import acquire_lease
@@ -95,7 +100,7 @@ def _verification(directory: Path, manifest: dict[str, Any], commands: list[list
             try:
                 done = subprocess.run(argv, cwd=manifest["validation_source"], stdin=subprocess.DEVNULL,
                                       stdout=output, stderr=subprocess.STDOUT, timeout=60,
-                                      creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                                      creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
                 result.update(state="settled", exit_code=done.returncode)
             except subprocess.TimeoutExpired:
                 result.update(state="timeout", exit_code=None)
@@ -210,7 +215,7 @@ def activate(service: Any, args: dict[str, Any]) -> dict[str, Any]:
         with (home / "launcher" / (identity + ".log")).open("ab") as output:
             subprocess.Popen([sys.executable, str(launcher), str(home), identity], cwd=home,
                              stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
-                             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                             creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         return {"upgrade_id": identity, "phase": "accepted"}
 
 

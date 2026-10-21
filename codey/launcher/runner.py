@@ -18,7 +18,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if os.name == "nt" or TYPE_CHECKING:
+    # CREATE_NO_WINDOW is a Windows-only subprocess constant and is absent
+    # from Linux typeshed.
+    _windows_subprocess: Any = subprocess
 
 TERMINAL = frozenset({"active", "rolled_back", "recovery_required", "aborted"})
 
@@ -101,7 +106,7 @@ def launch(home: Path, journal: dict[str, Any], release: dict[str, Any], deadlin
     with (home / "launcher" / (journal["upgrade_id"] + "-startup.log")).open("ab") as output:
         child = subprocess.Popen(argv, cwd=release["source"], stdin=subprocess.DEVNULL,
                                  stdout=output, stderr=subprocess.STDOUT,
-                                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                                 creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     while time.time() < deadline:
         if child.poll() is not None:
             raise RuntimeError(f"Release exited during startup ({child.returncode})")

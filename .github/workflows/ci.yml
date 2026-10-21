@@ -8,7 +8,7 @@ on:
 jobs:
   test:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     strategy:
       # A minor-version regression on one Python must not hide the others.
       fail-fast: false

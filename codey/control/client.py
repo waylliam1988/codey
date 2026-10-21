@@ -10,11 +10,16 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from codey.control.protocol import MAX_FRAME_BYTES, PROTOCOL_VERSION, ControlError, validate_command
 from codey.storage.local_store import DEFAULT_STATE_HOME, read_json_strict
+
+if os.name == "nt" or TYPE_CHECKING:
+    # CREATE_NO_WINDOW is a Windows-only subprocess constant and is absent
+    # from Linux typeshed.
+    _windows_subprocess: Any = subprocess
 
 
 class ControlClient:
@@ -106,7 +111,7 @@ def ensure_service(home: Path, *, port: int = 0, allowed_roots: tuple[Path, ...]
     with log.open("ab") as stream:
         child = subprocess.Popen(args, cwd=source, stdin=subprocess.DEVNULL,
                                  stdout=stream, stderr=stream,
-                                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                                 creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         try:

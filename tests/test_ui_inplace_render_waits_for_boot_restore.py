@@ -51,7 +51,9 @@ def test_dom_harness_does_not_start_before_delayed_state_restore(ui_browser, mon
         rendering._goto_restored_ui(page, url)
         assert page.evaluate("window.__inPlaceRestoreDone === true"), "DOM tests started before state restoration"
         assert page.evaluate("UiState.current().active_id") == "restored"
-        page.evaluate("appendMessageNode(document.getElementById('chat'), "
+        # Add through the application model so a late history reconciliation
+        # cannot erase a DOM-only node after boot restoration completes.
+        page.evaluate("addToSession('restored', "
                       "{type:'asst', text:'| Name | Result |\\n| --- | --- |\\n| sample | OK |'})")
         assert page.locator("#chat table").count() == 1
     finally:
