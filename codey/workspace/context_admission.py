@@ -7,9 +7,9 @@ the resulting ContextEpoch.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
+from datetime import UTC, datetime
 
 from codey.workspace.context_epoch import (
     PROVIDER_TURN_ADMISSION,
@@ -75,8 +75,8 @@ def admit_ghost_context(
     rejected: list[GhostAdmissionRejection] = []
     seen_keys: set[str] = set()
     expected_scope = str(request_scope or "").strip()
-    effective_as_of = _timestamp(as_of) if as_of else datetime.now(timezone.utc)
-    if as_of and effective_as_of is None:
+    effective_as_of = _timestamp(as_of) if as_of else datetime.now(UTC)
+    if effective_as_of is None:
         raise ValueError("as_of must be an ISO-8601 timestamp")
     for source in sources:
         key = str(source.key or "").strip()
@@ -183,8 +183,8 @@ def _timestamp(value: object) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 __all__ = [

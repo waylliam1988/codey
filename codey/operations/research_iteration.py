@@ -144,8 +144,8 @@ def run_research_iteration(
         )
     provider.new_chat()
     from codey.operations.provider_session import ObservedProvider
-    from codey.workspace.context_admission import request_scope, source_from_value
     from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
+    from codey.workspace.context_admission import request_scope, source_from_value
     from codey.workspace.context_epoch import context_epoch_id
 
     def observe_send(name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
@@ -216,7 +216,7 @@ def run_research_iteration(
                 user_task=task,
                 ghost_sources=(topic_source,) if topic_source is not None else (),
                 admit_hints=ghost_control_enabled(
-                    getattr(deps, "state", None), "admit_hints", project=project, session_id=session_id,
+                    deps.state, "admit_hints", project=project, session_id=session_id,
                 ),
                 stop_flag=stop_flag,
             ),

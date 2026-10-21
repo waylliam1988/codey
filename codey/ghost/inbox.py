@@ -511,7 +511,8 @@ class GhostInboxStore:
             changed = bool(scoped.get("user")) or any(
                 settings.get(name) is not True for name in GHOST_CONTROL_NAMES
             ) or settings.get("learning_enabled") is not True
-            scoped["user"] = {}
+            user_scope: dict[str, object] = {}
+            scoped["user"] = user_scope
             settings["learning_enabled"] = True
             for name in GHOST_CONTROL_NAMES:
                 settings[name] = True

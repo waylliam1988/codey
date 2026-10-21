@@ -32,12 +32,11 @@ def ghost_control_enabled(
     *,
     project: str = "",
     session_id: str = "",
-    default: bool = True,
 ) -> bool:
     """Read an independent Ghost control and fail closed on bad settings."""
     inbox = getattr(state, "ghost_inbox", None)
     if inbox is None:
-        return default
+        return False
     try:
         reader = getattr(inbox, "control_enabled", None)
         if callable(reader):
