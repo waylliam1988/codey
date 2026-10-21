@@ -1,0 +1,2076 @@
+{
+  "schema": "ghost_payload_admission_placement_v1",
+  "config": {
+    "suite": "final_payload_placement_20261021_fixed",
+    "model": "synthetic-payload-placement",
+    "endpoint": "ephemeral loopback HTTP",
+    "commit": "996605eaa16f58fba234a29b6b98d6c485d9d150",
+    "placements": [
+      "kernel",
+      "preparation",
+      "attempt"
+    ],
+    "cases": [
+      "enabled",
+      "disabled_initially",
+      "lease_expiry",
+      "lease_revoke",
+      "wire_rewrite",
+      "retry_expiry",
+      "compaction_enabled",
+      "compaction_lease_expiry",
+      "unicode_enabled",
+      "unicode_compaction"
+    ],
+    "protocols": [
+      "openai-completions",
+      "openai-responses"
+    ],
+    "cells": 60,
+    "reps": 1,
+    "context": 65536,
+    "reserve": 8192,
+    "keep_recent": 12000,
+    "output": 128,
+    "temperature": 0,
+    "timeout": 5,
+    "max_turns": 1,
+    "counter": "fixed pressure fixture; not real tokenizer",
+    "production_changes": false,
+    "candidate": "same validator moved; kernel predicate replaced, not stacked"
+  },
+  "rows": [
+    {
+      "protocol": "openai-completions",
+      "placement": "kernel",
+      "case": "enabled",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dd003f609caff03f"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "preparation",
+      "case": "enabled",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:dd003f609caff03f",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dd003f609caff03f"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "attempt",
+      "case": "enabled",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:dd003f609caff03f",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dd003f609caff03f"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "kernel",
+      "case": "disabled_initially",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": false,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:5189c8560a6266f7"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "preparation",
+      "case": "disabled_initially",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:5189c8560a6266f7",
+          "accepted": 0
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": false,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:5189c8560a6266f7"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "attempt",
+      "case": "disabled_initially",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:5189c8560a6266f7",
+          "accepted": 0
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": false,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:5189c8560a6266f7"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "kernel",
+      "case": "lease_expiry",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dd003f609caff03f"
+        }
+      ],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "preparation",
+      "case": "lease_expiry",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:dd003f609caff03f",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dd003f609caff03f"
+        }
+      ],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "attempt",
+      "case": "lease_expiry",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:02+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:dd003f609caff03f",
+          "reason": "Ghost context admission rejected: ghost_directive:expired"
+        }
+      ],
+      "wire": [],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "kernel",
+      "case": "lease_revoke",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dd003f609caff03f"
+        }
+      ],
+      "transitions": [
+        "revoked_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "preparation",
+      "case": "lease_revoke",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:dd003f609caff03f",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dd003f609caff03f"
+        }
+      ],
+      "transitions": [
+        "revoked_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "attempt",
+      "case": "lease_revoke",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:dd003f609caff03f",
+          "reason": "Ghost context admission rejected: ghost_directive:hints_disabled"
+        }
+      ],
+      "wire": [],
+      "transitions": [
+        "revoked_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "kernel",
+      "case": "wire_rewrite",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 1,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": false,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": true,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:61a33b606d8d4552"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "preparation",
+      "case": "wire_rewrite",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:61a33b606d8d4552",
+          "reason": "Ghost context admission rejected: ghost_directive:not_in_provider_payload"
+        }
+      ],
+      "wire": [],
+      "transitions": [],
+      "lease_acquires": 0,
+      "lease_releases": 0,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "attempt",
+      "case": "wire_rewrite",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:61a33b606d8d4552",
+          "reason": "Ghost context admission rejected: ghost_directive:not_in_provider_payload"
+        }
+      ],
+      "wire": [],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "kernel",
+      "case": "retry_expiry",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 503,
+          "payload_epoch": "ctx_epoch:dd003f609caff03f"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dd003f609caff03f"
+        }
+      ],
+      "transitions": [
+        "expired_before_retry"
+      ],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "preparation",
+      "case": "retry_expiry",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:dd003f609caff03f",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 503,
+          "payload_epoch": "ctx_epoch:dd003f609caff03f"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dd003f609caff03f"
+        }
+      ],
+      "transitions": [
+        "expired_before_retry"
+      ],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "attempt",
+      "case": "retry_expiry",
+      "stop_reason": "provider_failure",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:dd003f609caff03f",
+          "accepted": 1
+        },
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:02+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:dd003f609caff03f",
+          "reason": "Ghost context admission rejected: ghost_directive:expired"
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 503,
+          "payload_epoch": "ctx_epoch:dd003f609caff03f"
+        }
+      ],
+      "transitions": [
+        "expired_before_retry"
+      ],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "kernel",
+      "case": "compaction_enabled",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "compaction",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:45312e82f7a60e9a"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:e789e9976cbe858c"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": [
+        {
+          "kind": "work_state",
+          "committed": true
+        }
+      ]
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "preparation",
+      "case": "compaction_enabled",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "compaction",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:45312e82f7a60e9a",
+          "accepted": 1
+        },
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:e789e9976cbe858c",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "compaction",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:45312e82f7a60e9a"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:e789e9976cbe858c"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": [
+        {
+          "kind": "work_state",
+          "committed": true
+        }
+      ]
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "attempt",
+      "case": "compaction_enabled",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "compaction",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:45312e82f7a60e9a",
+          "accepted": 1
+        },
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:e789e9976cbe858c",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "compaction",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:45312e82f7a60e9a"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:e789e9976cbe858c"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": [
+        {
+          "kind": "work_state",
+          "committed": true
+        }
+      ]
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "kernel",
+      "case": "compaction_lease_expiry",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 2,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "compaction",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:45312e82f7a60e9a"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:e789e9976cbe858c"
+        }
+      ],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": [
+        {
+          "kind": "work_state",
+          "committed": true
+        }
+      ]
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "preparation",
+      "case": "compaction_lease_expiry",
+      "stop_reason": "provider_failure",
+      "requests": 1,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "compaction",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:45312e82f7a60e9a",
+          "accepted": 1
+        },
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:02+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:e789e9976cbe858c",
+          "reason": "Ghost context admission rejected: ghost_directive:expired"
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "compaction",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:45312e82f7a60e9a"
+        }
+      ],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": [
+        {
+          "kind": "work_state",
+          "committed": false
+        }
+      ]
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "attempt",
+      "case": "compaction_lease_expiry",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "compaction",
+          "at": "2040-01-01T00:00:02+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:45312e82f7a60e9a",
+          "reason": "Ghost context admission rejected: ghost_directive:expired"
+        }
+      ],
+      "wire": [],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "kernel",
+      "case": "unicode_enabled",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:12938257ff751f2f"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "preparation",
+      "case": "unicode_enabled",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:12938257ff751f2f",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:12938257ff751f2f"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "attempt",
+      "case": "unicode_enabled",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:12938257ff751f2f",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:12938257ff751f2f"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "kernel",
+      "case": "unicode_compaction",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "compaction",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:0ffa08bed537fba0"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:c629a967f4b6ce3f"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": [
+        {
+          "kind": "work_state",
+          "committed": true
+        }
+      ]
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "preparation",
+      "case": "unicode_compaction",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": true,
+      "gates": [
+        {
+          "purpose": "compaction",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:0ffa08bed537fba0",
+          "reason": "Ghost context admission rejected: ghost_directive:not_in_provider_payload"
+        }
+      ],
+      "wire": [],
+      "transitions": [],
+      "lease_acquires": 0,
+      "lease_releases": 0,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-completions",
+      "placement": "attempt",
+      "case": "unicode_compaction",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": true,
+      "gates": [
+        {
+          "purpose": "compaction",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:0ffa08bed537fba0",
+          "reason": "Ghost context admission rejected: ghost_directive:not_in_provider_payload"
+        }
+      ],
+      "wire": [],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "kernel",
+      "case": "enabled",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "preparation",
+      "case": "enabled",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "attempt",
+      "case": "enabled",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "kernel",
+      "case": "disabled_initially",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": false,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:2dbb9976bb5bcbdb"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "preparation",
+      "case": "disabled_initially",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:2dbb9976bb5bcbdb",
+          "accepted": 0
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": false,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:2dbb9976bb5bcbdb"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "attempt",
+      "case": "disabled_initially",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:2dbb9976bb5bcbdb",
+          "accepted": 0
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": false,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:2dbb9976bb5bcbdb"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "kernel",
+      "case": "lease_expiry",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a"
+        }
+      ],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "preparation",
+      "case": "lease_expiry",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a"
+        }
+      ],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "attempt",
+      "case": "lease_expiry",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:02+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a",
+          "reason": "Ghost context admission rejected: ghost_directive:expired"
+        }
+      ],
+      "wire": [],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "kernel",
+      "case": "lease_revoke",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a"
+        }
+      ],
+      "transitions": [
+        "revoked_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "preparation",
+      "case": "lease_revoke",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a"
+        }
+      ],
+      "transitions": [
+        "revoked_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "attempt",
+      "case": "lease_revoke",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a",
+          "reason": "Ghost context admission rejected: ghost_directive:hints_disabled"
+        }
+      ],
+      "wire": [],
+      "transitions": [
+        "revoked_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "kernel",
+      "case": "wire_rewrite",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 1,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": false,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": true,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:3d6e5d154ae4a472"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "preparation",
+      "case": "wire_rewrite",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:3d6e5d154ae4a472",
+          "reason": "Ghost context admission rejected: ghost_directive:not_in_provider_payload"
+        }
+      ],
+      "wire": [],
+      "transitions": [],
+      "lease_acquires": 0,
+      "lease_releases": 0,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "attempt",
+      "case": "wire_rewrite",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:3d6e5d154ae4a472",
+          "reason": "Ghost context admission rejected: ghost_directive:not_in_provider_payload"
+        }
+      ],
+      "wire": [],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "kernel",
+      "case": "retry_expiry",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 503,
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a"
+        }
+      ],
+      "transitions": [
+        "expired_before_retry"
+      ],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "preparation",
+      "case": "retry_expiry",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 503,
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a"
+        }
+      ],
+      "transitions": [
+        "expired_before_retry"
+      ],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "attempt",
+      "case": "retry_expiry",
+      "stop_reason": "provider_failure",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a",
+          "accepted": 1
+        },
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:02+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a",
+          "reason": "Ghost context admission rejected: ghost_directive:expired"
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 503,
+          "payload_epoch": "ctx_epoch:bd03650e3d12cb6a"
+        }
+      ],
+      "transitions": [
+        "expired_before_retry"
+      ],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "kernel",
+      "case": "compaction_enabled",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "compaction",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dad2a2dafe154d31"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:c3b9c093fc122f88"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": [
+        {
+          "kind": "work_state",
+          "committed": true
+        }
+      ]
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "preparation",
+      "case": "compaction_enabled",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "compaction",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:dad2a2dafe154d31",
+          "accepted": 1
+        },
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:c3b9c093fc122f88",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "compaction",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dad2a2dafe154d31"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:c3b9c093fc122f88"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": [
+        {
+          "kind": "work_state",
+          "committed": true
+        }
+      ]
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "attempt",
+      "case": "compaction_enabled",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "compaction",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:dad2a2dafe154d31",
+          "accepted": 1
+        },
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:c3b9c093fc122f88",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "compaction",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dad2a2dafe154d31"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:c3b9c093fc122f88"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": [
+        {
+          "kind": "work_state",
+          "committed": true
+        }
+      ]
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "kernel",
+      "case": "compaction_lease_expiry",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 2,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "compaction",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dad2a2dafe154d31"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:c3b9c093fc122f88"
+        }
+      ],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": [
+        {
+          "kind": "work_state",
+          "committed": true
+        }
+      ]
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "preparation",
+      "case": "compaction_lease_expiry",
+      "stop_reason": "provider_failure",
+      "requests": 1,
+      "unsafe_source_requests": 1,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "compaction",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:dad2a2dafe154d31",
+          "accepted": 1
+        },
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:02+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:c3b9c093fc122f88",
+          "reason": "Ghost context admission rejected: ghost_directive:expired"
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "compaction",
+          "source_visible": true,
+          "stale": true,
+          "unsafe_source_sent": true,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:dad2a2dafe154d31"
+        }
+      ],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": [
+        {
+          "kind": "work_state",
+          "committed": false
+        }
+      ]
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "attempt",
+      "case": "compaction_lease_expiry",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "compaction",
+          "at": "2040-01-01T00:00:02+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:dad2a2dafe154d31",
+          "reason": "Ghost context admission rejected: ghost_directive:expired"
+        }
+      ],
+      "wire": [],
+      "transitions": [
+        "expired_at_first_lease"
+      ],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "kernel",
+      "case": "unicode_enabled",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:1540427e7319704e"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "preparation",
+      "case": "unicode_enabled",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:1540427e7319704e",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:1540427e7319704e"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "attempt",
+      "case": "unicode_enabled",
+      "stop_reason": "done",
+      "requests": 1,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [
+        {
+          "purpose": "conversation",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "accept",
+          "payload_epoch": "ctx_epoch:1540427e7319704e",
+          "accepted": 1
+        }
+      ],
+      "wire": [
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:1540427e7319704e"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "kernel",
+      "case": "unicode_compaction",
+      "stop_reason": "done",
+      "requests": 2,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": false,
+      "gates": [],
+      "wire": [
+        {
+          "purpose": "compaction",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:b0a3d2d68c307956"
+        },
+        {
+          "purpose": "conversation",
+          "source_visible": true,
+          "stale": false,
+          "unsafe_source_sent": false,
+          "rewritten_sent": false,
+          "http_status": 200,
+          "payload_epoch": "ctx_epoch:f1b0baf690098d3b"
+        }
+      ],
+      "transitions": [],
+      "lease_acquires": 2,
+      "lease_releases": 2,
+      "compaction_diagnostics": [
+        {
+          "kind": "work_state",
+          "committed": true
+        }
+      ]
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "preparation",
+      "case": "unicode_compaction",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": true,
+      "gates": [
+        {
+          "purpose": "compaction",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:b0a3d2d68c307956",
+          "reason": "Ghost context admission rejected: ghost_directive:not_in_provider_payload"
+        }
+      ],
+      "wire": [],
+      "transitions": [],
+      "lease_acquires": 0,
+      "lease_releases": 0,
+      "compaction_diagnostics": []
+    },
+    {
+      "protocol": "openai-responses",
+      "placement": "attempt",
+      "case": "unicode_compaction",
+      "stop_reason": "provider_failure",
+      "requests": 0,
+      "unsafe_source_requests": 0,
+      "rewritten_requests": 0,
+      "healthy_control_blocked": true,
+      "gates": [
+        {
+          "purpose": "compaction",
+          "at": "2040-01-01T00:00:00+00:00",
+          "decision": "reject",
+          "payload_epoch": "ctx_epoch:b0a3d2d68c307956",
+          "reason": "Ghost context admission rejected: ghost_directive:not_in_provider_payload"
+        }
+      ],
+      "wire": [],
+      "transitions": [],
+      "lease_acquires": 1,
+      "lease_releases": 1,
+      "compaction_diagnostics": []
+    }
+  ],
+  "decision": "EXPERIMENT_ONLY",
+  "model_behavior_score": null
+}
