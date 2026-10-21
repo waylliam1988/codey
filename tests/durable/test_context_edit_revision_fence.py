@@ -117,3 +117,47 @@ def test_committed_range_edit_is_the_same_authority_after_sqlite_restart(tmp_pat
         assert restarted.commit_sequence() == result.sequence
     finally:
         restarted.close()
+
+
+@pytest.mark.parametrize("during_commit", [False, True])
+def test_head_identity_refuses_delete_and_recreate_at_the_same_revision(session, monkeypatch, during_commit):
+    durable, original = session
+    captured_head, captured_revision = durable.head("chat")
+    store_commit = durable.store.commit
+    competing = DurableSession(durable.store)
+
+    def recreate():
+        competing.delete_conversation("chat")
+        competing.create_conversation("chat")
+        competing.append_message("chat", "user_message", {"text": "new conversation"})
+        competing.append_message("chat", "assistant_message", {"text": "new answer"})
+        assert durable.head("chat")[1] == captured_revision
+
+    if during_commit:
+        def commit(mutation):
+            if mutation.submission is not None:
+                recreate()
+            return store_commit(mutation)
+        monkeypatch.setattr(durable.store, "commit", commit)
+    else:
+        recreate()
+    with pytest.raises(CommitConflict):
+        write_summary(durable, original, captured_revision, expected_head=captured_head)
+    assert not any(entry.kind == "context_edit" for entry in durable.entries("chat"))
+    assert "new conversation" in str(durable.context_snapshot("chat", token_budget=100).messages)
+
+
+def test_head_identity_is_part_of_idempotency_and_checked_after_an_exact_retry(session):
+    durable, original = session
+    captured_head, captured_revision = durable.head("chat")
+    first = write_summary(durable, original, captured_revision, expected_head=captured_head)
+    assert write_summary(durable, original, captured_revision, expected_head=captured_head) == first
+    with pytest.raises(IdempotencyConflict):
+        write_summary(durable, original, captured_revision, expected_head=original.entry_id)
+
+
+@pytest.mark.parametrize("head", [False, "", 1])
+def test_invalid_expected_head_is_not_coerced(session, head):
+    durable, original = session
+    with pytest.raises(ValueError, match="expected head"):
+        write_summary(durable, original, durable.head("chat")[1], expected_head=head)

@@ -199,26 +199,13 @@ def admit_write(
     head: str | None = None,
     placement: SubmissionPlacement | str = SubmissionPlacement.PLACED,
     expected_revision: int | None = None,
+    expected_head: str | None = None,
 ) -> CommitResult:
     """Durably admit one passive entry write without creating a task."""
-    if not kind or kind.startswith("pi."):
-        raise ValueError("write kind must be non-empty and outside the reserved pi namespace")
-    if not isinstance(data, Mapping):
-        raise ValueError("write data must be an object")
-    if type(display_only) is not bool:
-        raise ValueError("display_only must be boolean")
-    normalized_model, normalized_edits = normalize_passive_fields(model, edits)
+    normalized_model, normalized_edits = _validate_write_fields(kind, data, display_only, model, edits, head)
     head_target = head
-    if head_target is not None and (not isinstance(head_target, str) or not head_target):
-        raise ValueError("head must be 'self' or a non-empty entry ID")
-    if display_only and (normalized_model is not None or normalized_edits is not None or head_target is not None):
-        raise ValueError("display-only writes cannot carry context metadata")
     placement = SubmissionPlacement(placement)
-    if expected_revision is not None:
-        if type(expected_revision) is not int or expected_revision < 0:
-            raise ValueError("expected revision must be a non-negative integer")
-        if placement is not SubmissionPlacement.PLACED:
-            raise ValueError("a revision-fenced write must be placed immediately")
+    _validate_write_fence(placement, expected_revision, expected_head)
     content: dict[str, object] = {"kind": kind, "data": dict(data), "display_only": display_only}
     if normalized_model is not None:
         content["model"] = normalized_model
@@ -238,6 +225,8 @@ def admit_write(
     }
     if expected_revision is not None:
         identity["expected_revision"] = expected_revision
+    if expected_head is not None:
+        identity["expected_head"] = expected_head
     fingerprint = _fingerprint(identity)
     existing = session.store.submission_result_for_request(conversation_id, request_id, fingerprint)
     if existing is not None:
@@ -250,6 +239,8 @@ def admit_write(
         creation = CreateConversation()
     if expected_revision is not None and revision != expected_revision:
         raise CommitConflict("conversation revision changed")
+    if expected_head is not None and current_head != expected_head:
+        raise CommitConflict("conversation head changed")
     stale = False
     if head_target is not None and head_target != "self":
         if creation is not None:
@@ -258,6 +249,8 @@ def admit_write(
             stale = head_target not in {
                 entry.entry_id for entry in session.context(conversation_id)
             }
+    if stale and expected_revision is not None:
+        raise CommitConflict("a revision-fenced write cannot be queued for a stale head")
     entry = None
     if placement is SubmissionPlacement.PLACED and not stale:
         payload: dict[str, object] = {"data": dict(data), "display_only": display_only}
@@ -299,6 +292,37 @@ def admit_write(
         submission=submission,
         create_conversation=creation,
     ))
+
+
+def _validate_write_fields(
+    kind: str, data: Mapping[str, object], display_only: bool,
+    model: Mapping[str, object] | None, edits: Sequence[Mapping[str, object]] | None, head: str | None,
+) -> tuple[dict[str, object] | None, list[dict[str, object]] | None]:
+    if not kind or kind.startswith("pi."):
+        raise ValueError("write kind must be non-empty and outside the reserved pi namespace")
+    if not isinstance(data, Mapping):
+        raise ValueError("write data must be an object")
+    if type(display_only) is not bool:
+        raise ValueError("display_only must be boolean")
+    normalized_model, normalized_edits = normalize_passive_fields(model, edits)
+    if head is not None and (not isinstance(head, str) or not head):
+        raise ValueError("head must be 'self' or a non-empty entry ID")
+    if display_only and (normalized_model is not None or normalized_edits is not None or head is not None):
+        raise ValueError("display-only writes cannot carry context metadata")
+    return normalized_model, normalized_edits
+
+
+def _validate_write_fence(placement: SubmissionPlacement, revision: int | None, head: str | None) -> None:
+    if revision is not None:
+        if type(revision) is not int or revision < 0:
+            raise ValueError("expected revision must be a non-negative integer")
+        if placement is not SubmissionPlacement.PLACED:
+            raise ValueError("a revision-fenced write must be placed immediately")
+    if head is not None:
+        if not isinstance(head, str) or not head:
+            raise ValueError("expected head must be a non-empty entry ID")
+        if revision is None:
+            raise ValueError("expected head requires an expected revision")
 
 
 def normalize_passive_fields(

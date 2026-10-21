@@ -632,6 +632,7 @@ class DurableSession:
         head: str | None = None,
         placement: SubmissionPlacement | str = SubmissionPlacement.PLACED,
         expected_revision: int | None = None,
+        expected_head: str | None = None,
     ) -> CommitResult:
         return admission.admit_write(
             self,
@@ -645,6 +646,7 @@ class DurableSession:
             head=head,
             placement=placement,
             expected_revision=expected_revision,
+            expected_head=expected_head,
         )
 
     @_mutation_line
