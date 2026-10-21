@@ -151,6 +151,7 @@ def test_head_identity_is_part_of_idempotency_and_checked_after_an_exact_retry(s
     durable, original = session
     captured_head, captured_revision = durable.head("chat")
     first = write_summary(durable, original, captured_revision, expected_head=captured_head)
+    durable.append_message("chat", "user_message", {"text": "later tail"})
     assert write_summary(durable, original, captured_revision, expected_head=captured_head) == first
     with pytest.raises(IdempotencyConflict):
         write_summary(durable, original, captured_revision, expected_head=original.entry_id)
@@ -161,3 +162,31 @@ def test_invalid_expected_head_is_not_coerced(session, head):
     durable, original = session
     with pytest.raises(ValueError, match="expected head"):
         write_summary(durable, original, durable.head("chat")[1], expected_head=head)
+
+
+def test_expected_head_cannot_silently_omit_the_revision_check(session):
+    durable, original = session
+    before = durable.commit_sequence()
+    with pytest.raises(ValueError, match="expected revision"):
+        write_summary(durable, original, None, expected_head=durable.head("chat")[0])
+    assert durable.commit_sequence() == before
+
+
+def test_fenced_write_cannot_turn_a_stale_head_marker_into_a_queued_write(session):
+    durable, original = session
+    head, revision = durable.head("chat")
+    before = durable.commit_sequence()
+    with pytest.raises(CommitConflict, match="cannot be queued"):
+        write_summary(durable, original, revision, expected_head=head, head="missing-entry")
+    assert durable.commit_sequence() == before
+
+
+def test_a_deleted_source_is_not_recreated_by_a_derived_write(session):
+    durable, original = session
+    head, revision = durable.head("chat")
+    durable.delete_conversation("chat")
+    before = durable.commit_sequence()
+    with pytest.raises(CommitConflict):
+        write_summary(durable, original, revision, expected_head=head)
+    assert not durable.has_conversation("chat")
+    assert durable.commit_sequence() == before
