@@ -6,7 +6,7 @@
 - 开始日期：2026-10-21
 - 最后更新：2026-10-21
 - 关联 Roadmap 验收门：0.6.2 scope 与四个开关
-- 实验 commit：`496247fc` (`feat(ghost): add independent control gates`); scoped projection/send gate `89622a8c`; lifecycle/expiry fixture `c3701ab4`; expiry trace `e8127019`; scoped export fixture `44fb29cf`; scoped health fix `91fe542f`; architecture audits `a7797877`, `84473e15`; follow-up boundary fix `6f18485e`
+- 实验 commit：`496247fc` (`feat(ghost): add independent control gates`); scoped projection/send gate `89622a8c`; lifecycle/expiry fixture `c3701ab4`; expiry trace `e8127019`; scoped export fixture `44fb29cf`; scoped health fix `91fe542f`; admit gate propagation `85efe9fb`; architecture audits `a7797877`, `84473e15`; follow-up boundary fix `6f18485e`
 - 生产合并结论：`SHADOW_ONLY`
 
 ## 本次目标
@@ -60,6 +60,12 @@ python -m pytest tests/test_learning_switch_fail_closed.py -q
 
 结果：controls/admission `15 passed`（最新 scoped export fixture 单独 `11 passed`）；
 kernel transport 全集 `1002 passed`。
+
+```powershell
+python -m pytest tests/test_kernel_legacy_parity.py -q
+```
+
+结果：`694 passed`；无 state 的 research parity fixture 保持旧的 admit 默认行为。
 
 ## 实验配置
 
