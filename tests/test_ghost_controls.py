@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
 
 from codey.ghost.control_surface import GhostControlSurface
+from codey.ghost import _common
 from codey.ghost.inbox import GhostInboxStore
 from codey.operations import ghost_context
 from codey.operations import ghost_post_turn
@@ -151,3 +152,24 @@ def test_control_surface_exposes_and_changes_one_control(tmp_path: Path) -> None
     assert changed["ok"] is True
     assert surface.inbox is not None
     assert surface.inbox.control_enabled("accept_events") is False
+
+
+def test_control_surface_scoped_action_and_export_are_replayable(tmp_path: Path) -> None:
+    surface = GhostControlSurface.from_state_home(tmp_path)
+    code, changed = surface.dispatch_action({
+        "action": "set_control",
+        "control": "retrieve_projections",
+        "enabled": False,
+        "scope": "project",
+        "project": "P:/scoped",
+    })
+    assert code == 200
+    assert changed["scope"] == "project"
+    assert surface.inbox is not None
+    assert not surface.inbox.control_enabled("retrieve_projections", project="P:/scoped")
+    exported = surface.export_state()
+    settings = exported["inbox"]["settings"]
+    project_ref = _common.normalize_project("P:/scoped")
+    assert settings["control_scopes"]["project"][project_ref]["retrieve_projections"] is False
+    assert surface.inbox.delete_scope("project", project="P:/scoped") == 0
+    assert surface.inbox.control_enabled("retrieve_projections", project="P:/scoped")
