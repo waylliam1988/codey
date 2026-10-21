@@ -181,7 +181,7 @@ def probe(directory, project, *, protocol, placement, case):
             values = list(strings(payload))
             auxiliary = any(value.startswith("Write terse work-state bullets:") for value in values)
             pressure = any("fixture-source:" in value for value in values) and not auxiliary
-            return RequestContextCount(60000 if pressure else 40, "placement_pressure_fixture")
+            return RequestContextCount(60000 if pressure else 40, "estimated")
 
         def configure(payload):
             if case == "wire_rewrite":
