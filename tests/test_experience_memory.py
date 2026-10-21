@@ -259,6 +259,7 @@ class SettlementCommitOrderTests(unittest.TestCase):
             frame = SimpleNamespace(
                 run_id="r1",
                 task_kind="chat",
+                project_text="",
                 request=TaskSubmission("s", None, "你是谁", 8, False, "local"),
             )
             work = SimpleNamespace(claimed_work_item=None, operation=None, ledger=None)
@@ -292,6 +293,7 @@ class SettlementCommitOrderTests(unittest.TestCase):
             frame = SimpleNamespace(
                 run_id="r1",
                 task_kind="project",
+                project_text="/repo",
                 request=TaskSubmission("s", "/repo", "fix it", 8, False, "local"),
             )
             work = SimpleNamespace(claimed_work_item=None, operation=None, ledger=None)
@@ -321,6 +323,7 @@ class SettlementCommitOrderTests(unittest.TestCase):
             frame = SimpleNamespace(
                 run_id="r1",
                 task_kind="research",
+                project_text="",
                 request=TaskSubmission("s", None, "research x", 8, False, "local"),
             )
             work = SimpleNamespace(claimed_work_item=None, operation=None, ledger=None)
@@ -349,6 +352,7 @@ class SettlementCommitOrderTests(unittest.TestCase):
                 frame = SimpleNamespace(
                     run_id="r1",
                     task_kind="chat",
+                    project_text="",
                     request=TaskSubmission("s", None, "hi", 8, False, "local"),
                 )
                 work = SimpleNamespace(claimed_work_item=None, operation=None, ledger=None)
