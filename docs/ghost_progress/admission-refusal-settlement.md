@@ -80,5 +80,7 @@ python -m pytest tests/test_provider_not_sent_settlement.py tests/test_native_de
 收益是明确迁移必须使用已有 prep 错误契约，无须新增 provider/Ghost 兼容异常分类器。
 当前 adapter 仅实验代码，不是生产收益合并；未测模型成本/延迟，无生产回滚需求。
 本轮不证明完整 native tool delivery 重试、跨 run 恢复、canonical lineage 或 web 远端历史。
-下一步先复用 ContextLedger/checkpoint 来源关系，保证派生项不增加 origin 预算；将表示与来源契约
-一起接入单一 final-attempt validator，再验证真实 entry/native delivery/恢复、精确 wire trace 和回滚。
+来源宿主建议已由 [Protocol Source Lifetime](protocol-source-lifetime.md) 的真实 task/restart 矩阵修正：
+生产 ContextLedger 是内存视图，恢复 authority 是 durable SQLite；不要为 Ghost 另持久化 journal。
+下一步沿真实 live view/checkpoint 变换保留来源，保证派生项不增加 origin 预算；
+表示与来源契约接入单一 final-attempt validator 后，再验证 native delivery/恢复、精确 wire trace 和回滚。

@@ -14,6 +14,7 @@
 | `summarize.py` | 从本地原始数据导出无回复 metrics，或独立复算随目录保存的快照 |
 | `scope_authority_smoke.py`、`scope_authority_report.py` | 真实 planning builder/kernel/ApiProvider 的 on/off 结构 smoke、baseline/candidate payload 摘要与脱敏报告，不作 language 晋级 |
 | `history_expiry_probe.py` | 固定 text/native 响应及显式时间，复现后续 HTTP history 的过期 hint 重发；保留负结果，不接生产 guard |
+| `protocol_source_lifetime.py`、`protocol_source_lifetime_report.py` | 真实 task/planner/window/HTTP/SQLite 的两任务生命周期矩阵及重复 export 消融；报告可从脱敏指标独立复算，warm 泄漏仍未修 |
 | [reports/](reports/) | 历史报告、合成偏好 directive 快照、parity/audit 与脱敏测量 |
 | `artifacts/ghost_memory_routing/`（仓库根目录下） | 完整本地归档、原始 JSONL、隔离 state、生成报告；已被根目录 `/artifacts/` 规则忽略 |
 

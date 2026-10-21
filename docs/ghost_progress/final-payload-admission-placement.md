@@ -134,9 +134,12 @@ python -m pytest tests/test_context_compaction_transactions_and_lifecycle.py tes
 
 ## 后续实现约束（未实现）
 
-优先复用现有 ContextLedger journal 与 compaction checkpoint 的 source/item_digest 关系，
-让 origin ref/digest、scope、expiry 和预算随 canonical source 与派生项保留；不新增 Ghost
-数据库、平行 history 或中央可变 manager。生产 metadata 必须由 renderer/codec 产生并在 wire
+2026-10-21 的 [Protocol Source Lifetime](protocol-source-lifetime.md) 修正此前 journal 宿主建议：
+生产 ContextLedger 是内存协议视图，磁盘工厂只有测试消费者；真正 restart authority 是 durable SQLite。
+实际矩阵中 canonical entries/context 不含原始 hint，warm history 和 exporter/handoff 才保留它。
+应在真实协议视图及 compaction 变换上研究来源，保留 origin ref/digest、scope、expiry 和预算；
+不能把 journal 假定为生产 canonical source，也不新增 Ghost 数据库、平行 history 或中央可变 manager。
+生产 metadata 必须由 renderer/codec 产生并在 wire
 剥离，不能由模型声称来源。分块、lossless encoding、summary 和恢复均要继承来源。
 
 派生项不能通过换 key 获得一份新预算；同一 origin 的当前文本与摘要必须按明确的预算契约
