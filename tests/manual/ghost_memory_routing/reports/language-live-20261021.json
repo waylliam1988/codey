@@ -1,0 +1,26 @@
+{
+  "schema": "ghost_language_live_eval_v1",
+  "config": {
+    "suite": "language_live_20261021",
+    "commit": "3d79ca9c985da899ff4f6274091fdb80ab4cbe7d",
+    "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+    "endpoint": "http://127.0.0.1:5001/v1",
+    "context": 262144,
+    "reserve": 32768,
+    "keep_recent": 32000,
+    "timeout_run_seconds": 120,
+    "tasks": 20,
+    "cells": ["lang_on_d2", "lang_off_d2"],
+    "reps": 1,
+    "judge": "language response judge; cjk_ratio threshold",
+    "raw_text_committed": false,
+    "latency_measured": false,
+    "usage_measured": false
+  },
+  "cells": {
+    "lang_on_d2": {"runs": 20, "done": 20, "judge_passed": 20, "judge_failed": 0, "chars_avg": 596.2, "stop_reasons": ["done"]},
+    "lang_off_d2": {"runs": 20, "done": 20, "judge_passed": 0, "judge_failed": 20, "chars_avg": 1118.9, "stop_reasons": ["done"]}
+  },
+  "decision": "CONDITIONAL_CANDIDATE",
+  "limitation": "single model/config and language-only on/off; no second model, command cells, cost/latency, or default-enable decision"
+}

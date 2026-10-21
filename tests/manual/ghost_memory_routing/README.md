@@ -32,6 +32,8 @@
 `reports/attempt-gate-revocation-20261021.json` 记录当前唯一 Attempt Gate 在 loopback
 HTTP 上对过期和首轮后撤回的闭合验证；它们不包含 live 模型行为评分，也不替代完整
 repair/resume/compaction acceptance。
+`reports/language-live-20261021.md` 记录当前 commit 的 modelA language 20/20 on/off
+矩阵；它是单模型条件候选，不是跨模型或默认启用结论。
 数字保留为历史文件标识；长期路线使用实验名称和具体行为描述。
 
 归档迁入日期为 2026-10-19。原目录共 1,491 文件、48,217,898 字节，迁移时逐文件
