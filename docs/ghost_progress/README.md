@@ -25,7 +25,7 @@
 | Attempt Gate lifecycle acceptance | `EXPERIMENT_COMPLETE` | 生产 ApiProvider 的 native follow-up、错误 receipt、恢复上下文、compaction auxiliary 和 terminal receipt 均验证统一 gate 边界；仍是 fixture 离线证据 | [实验记录](attempt-gate-lifecycle-acceptance.md) |
 | Language Live Evaluation 2026-10-21 | `EXPERIMENT_COMPLETE`（单模型条件候选） | 当前 modelA/config 的 language on/off 为 20/20 对 0/20；仅 `SHADOW_ONLY`，不代表跨模型或默认晋级 | [实验记录](language-live-evaluation-20261021.md) |
 | 0.6.2 scope 与四个开关 | `INCOMPLETE` | scoped 读取/写入故障关闭及 Attempt Gate 的首轮后撤回已验证；尚缺 reset manifest、runtime 并发矩阵和完整 acceptance battery | [进度记录](independent-controls.md) |
-| Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（未接入生产） | 纯状态机已验证 operation id、tombstone digest、store 状态、幂等 replay 和 fail-closed 冲突；SQLite/七 store 接线仍未完成 | [实验记录](deletion-manifest-candidate.md) |
+| Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（未接入生产 store 调度） | `89e0cfd8` 已把 manifest/event stream 持久化到 GhostSQLite，并验证重启、幂等、blocked 保留和 schema upgrade；七 store 调度、tombstone/rebuild 与并发恢复仍未完成 | [实验记录](deletion-manifest-candidate.md) |
 | Research parity state contract | `EXPERIMENT_COMPLETE` | research 生产依赖显式携带 state；缺失 Ghost control fail closed；不改变默认 prompt | [进度记录](research-state-contract.md) |
 | 0.6.3 冲突生命周期与持久删除 | `NOT STARTED` | supersede、tombstone、删除/rebuild 零复活 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.4 确定性 replay 与显式时间 | `NOT STARTED` | 不依赖 wall clock，projection digest 可复现 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
