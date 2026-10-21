@@ -14,7 +14,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
-GHOST_SCHEMA_VERSION = 1
+GHOST_SCHEMA_VERSION = 2
 
 
 class GhostSchemaVersionError(RuntimeError):
@@ -154,6 +154,21 @@ class GhostSQLite:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL CHECK(json_valid(value))
                 ) STRICT;
+                CREATE TABLE IF NOT EXISTS ghost_deletion_manifests (
+                    operation_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    manifest TEXT NOT NULL CHECK(json_valid(manifest)),
+                    updated_at TEXT NOT NULL
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS ghost_deletion_manifest_events (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    operation_id TEXT NOT NULL REFERENCES ghost_deletion_manifests(operation_id) ON DELETE CASCADE,
+                    event_id TEXT NOT NULL,
+                    payload TEXT NOT NULL CHECK(json_valid(payload)),
+                    UNIQUE(operation_id, event_id)
+                ) STRICT;
+                CREATE INDEX IF NOT EXISTS ghost_deletion_manifest_event_order
+                    ON ghost_deletion_manifest_events(operation_id, sequence);
                 """
             )
             version = int(database.execute("PRAGMA user_version").fetchone()[0])

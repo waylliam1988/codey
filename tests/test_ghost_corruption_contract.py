@@ -18,7 +18,7 @@ class GhostSQLiteContractTests(unittest.TestCase):
             path = Path(td) / "ghost.sqlite3"
             database = sqlite3.connect(path)
             try:
-                database.execute("PRAGMA user_version=2")
+                database.execute("PRAGMA user_version=3")
                 database.commit()
             finally:
                 database.close()

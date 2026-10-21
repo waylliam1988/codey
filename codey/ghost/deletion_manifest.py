@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
 MANIFEST_SCHEMA_VERSION = 1
@@ -233,13 +233,19 @@ def apply_store_event(manifest: DeletionManifest, event: Mapping[str, object]) -
     updated = tuple(
         replace(item, status=status, detail=detail) if item.store == store else item for item in manifest.stores
     )
-    overall = MANIFEST_BLOCKED if status == STORE_BLOCKED else MANIFEST_PENDING
-    if all(item.status == STORE_COMPLETED for item in updated):
+    # A blocked store remains a durable terminal fact for this operation. A
+    # later retry may complete other pending stores, but it must not erase the
+    # blocked state or make a partially applied delete look complete.
+    if any(item.status == STORE_BLOCKED for item in updated):
+        overall = MANIFEST_BLOCKED
+    elif all(item.status == STORE_COMPLETED for item in updated):
         overall = MANIFEST_COMPLETED
+    else:
+        overall = MANIFEST_PENDING
     return replace(manifest, stores=updated, status=overall)
 
 
-def replay(events: list[Mapping[str, object]]) -> DeletionManifest:
+def replay(events: Sequence[Mapping[str, object]]) -> DeletionManifest:
     """Rebuild a manifest from its event log and fail closed on corruption."""
     if not events:
         raise DeletionManifestError("deletion manifest event log is empty")

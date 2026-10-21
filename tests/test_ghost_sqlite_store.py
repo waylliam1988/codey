@@ -83,3 +83,19 @@ def test_observation_scope_mutations_are_sqlite_transactions(tmp_path: Path) -> 
 
     store.reset_all()
     assert store.read_all() == ()
+
+
+def test_schema_v1_database_is_upgraded_with_deletion_manifest_tables(tmp_path: Path) -> None:
+    database_path = tmp_path / "ghost.sqlite3"
+    with sqlite3.connect(database_path) as database:
+        database.execute("PRAGMA user_version=1")
+    from codey.ghost.sqlite import GHOST_SCHEMA_VERSION, GhostSQLite
+
+    GhostSQLite(tmp_path)
+    with sqlite3.connect(database_path) as database:
+        assert database.execute("PRAGMA user_version").fetchone() == (GHOST_SCHEMA_VERSION,)
+        names = {
+            row[0] for row in database.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'ghost_deletion_manifest%'")
+        }
+    assert names == {"ghost_deletion_manifests", "ghost_deletion_manifest_events"}

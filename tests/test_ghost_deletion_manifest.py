@@ -14,6 +14,8 @@ from codey.ghost.deletion_manifest import (
     started_event,
     store_event,
 )
+from codey.ghost.deletion_manifest_store import DeletionManifestStore
+from codey.ghost.sqlite import GhostSQLite
 
 
 def _manifest():
@@ -61,6 +63,8 @@ def test_blocked_store_is_terminal_and_replayable() -> None:
     blocked = replay(events)
     assert blocked.status == MANIFEST_BLOCKED
     assert blocked.store("continuity").detail == "disk full"
+    progressed = apply_store_event(blocked, store_event(blocked, "inbox", STORE_COMPLETED))
+    assert progressed.status == MANIFEST_BLOCKED
     with pytest.raises(DeletionManifestError, match="conflicting transition"):
         apply_store_event(blocked, store_event(blocked, "continuity", STORE_COMPLETED))
 
@@ -77,3 +81,36 @@ def test_completed_manifest_cannot_contain_pending_store() -> None:
     manifest = _manifest()
     with pytest.raises(DeletionManifestError, match="unfinished"):
         type(manifest)(**{**manifest.__dict__, "status": MANIFEST_COMPLETED})
+
+
+def test_manifest_store_survives_restart_and_idempotent_retry(tmp_path) -> None:
+    manifest = _manifest()
+    first = DeletionManifestStore(GhostSQLite(tmp_path))
+    assert first.start(manifest).to_payload() == manifest.to_payload()
+    event = store_event(manifest, "inbox", STORE_COMPLETED)
+    assert first.append(event).store("inbox").status == STORE_COMPLETED
+    assert first.append(event).store("inbox").status == STORE_COMPLETED
+
+    restarted = DeletionManifestStore(GhostSQLite(tmp_path))
+    current = restarted.get(manifest.operation_id)
+    assert current.store("inbox").status == STORE_COMPLETED
+    assert len(restarted.events(manifest.operation_id)) == 2
+
+
+def test_manifest_store_rejects_operation_reuse_and_corrupts_closed_state(tmp_path) -> None:
+    store = DeletionManifestStore(GhostSQLite(tmp_path))
+    manifest = _manifest()
+    store.start(manifest)
+    different = new_manifest(
+        operation_id=manifest.operation_id, action="reset_all", scope="all",
+        requested_at=manifest.requested_at, retention_class="purge", stores=("inbox",),
+    )
+    with pytest.raises(DeletionManifestError, match="different manifest"):
+        store.start(different)
+    with GhostSQLite(tmp_path).connection() as database:
+        database.execute(
+            "UPDATE ghost_deletion_manifests SET manifest=? WHERE operation_id=?",
+            ('{"schema_version":1}', manifest.operation_id),
+        )
+    with pytest.raises(DeletionManifestError, match="manifest stores"):
+        store.get(manifest.operation_id)
