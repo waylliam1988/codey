@@ -241,7 +241,8 @@ def probe(directory: Path, *, protocol: str, lifetime: str, revoke: bool, handof
             if handoff_source == "canonical_edit":
                 # Reuse the actual durable range-edit writer. The proposal
                 # summarizes canonical entries, never the Ghost-bearing view.
-                # A production binding/fence is deliberately not claimed.
+                # The existing writer atomically fences the captured revision
+                # and head; a metadata-only check before admission is insufficient.
                 head = state.durable.head(SESSION)
                 tail_input = state.durable.task(f"source-run-{CHECKPOINT_PRELUDE_TASKS}").state["input_entry_id"]
                 path = list(state.durable.context(SESSION))
@@ -254,8 +255,6 @@ def probe(directory: Path, *, protocol: str, lifetime: str, revoke: bool, handof
                 if contains(messages) or WORK_FACT not in encode(messages):
                     raise RuntimeError("canonical summary source is contaminated or missing the fact")
                 summary = provider._summarize_context(provider._codec.encode_context(messages), time.monotonic() + 5)
-                if state.durable.head(SESSION) != head:
-                    raise RuntimeError("canonical source changed during summary; no edit submitted")
                 edits = [{"target": source_entries[0].entry_id, "action": "replace",
                           "messages": [{"role": "assistant", "content": summary}]}]
                 edits += [{"target": entry.entry_id, "action": "omit"} for entry in source_entries[1:]]
@@ -264,7 +263,8 @@ def probe(directory: Path, *, protocol: str, lifetime: str, revoke: bool, handof
                     data={"experiment": "checkpoint-unification", "source_digest": fingerprint(messages),
                           "source_entry_ids": [entry.entry_id for entry in source_entries],
                           "captured_revision": head[1]},
-                    model={"provider_id": PROVIDER, "model_id": MODEL}, edits=edits, display_only=False)
+                    model={"provider_id": PROVIDER, "model_id": MODEL}, edits=edits, display_only=False,
+                    expected_revision=head[1], expected_head=head[0])
                 submission = state.durable.store.submission(str(result.submission_id))
                 if str(submission.status) != "done":
                     raise RuntimeError("canonical context edit did not commit immediately")
