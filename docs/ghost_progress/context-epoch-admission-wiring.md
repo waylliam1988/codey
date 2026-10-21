@@ -18,7 +18,8 @@
 ## 实际改动
 
 - 新增中性的 `codey/workspace/context_admission.py`，定义 Ghost context source、scope、预算、
-  byte-presence 校验、拒绝原因和 ContextEpoch projection；`codey/ghost/admission.py` 仅保留兼容导出。
+  byte-presence 校验、拒绝原因和 ContextEpoch projection；旧 `codey/ghost/admission.py` 兼容导出
+  已被删除，不恢复重复准入或兼容层。
 - `KernelTransportDeps` 携带 Ghost source metadata；shared kernel 在首次 provider-send 前 fail closed，
   后续 repair/tool turns 只记录实际仍在 payload 中的 source。
 - task entry 用 `PromptEnvelope` 组装 Ghost sections；project adapter 和 research iteration 传递相应 source metadata。
@@ -68,6 +69,11 @@
 
 ## 下一步
 
-1. 增加真实 provider-send capture/fault-injection harness，验证 outbound bytes、trace sections 和 epoch record 完全一致。
-2. 继续 0.6.2：四个独立开关的 scope、过期、禁用、重启并发和 provider payload 路径；当前控制面实验记录见 `independent-controls.md`。
-3. 继续把 modelA admission smoke 与完整 language on/off 评估分开，不能把 20/20 smoke 写成晋级收益。
+1. 请求 scope 子实验已完成：真实 ApiProvider HTTP capture 覆盖 text/native、scope/expiry/budget/disable、
+   trace 故障和完整身份，合法 on/off 的实际 KoboldCpp payload 与基线相同。
+   `3d013af1` 仅合并请求 scope 安全修复，详见 [Provider Send Scope Authority](provider-send-scope-authority.md)。
+2. 新阻塞已复现：第二次真实 payload 的旧 history 重发过期 hint，native tool-results 路径跳过
+   当前 kernel gate；text 的后续 rejected 也未阻止历史重发。见 [负结果](provider-history-expiry.md)。
+   优先确定完整 payload/history 的统一 admission 宿主，不通过重复 validator 或静默删历史遮盖缺口。
+3. 随后继续四个独立开关的真实 runtime scope、expiry、禁用和恢复矩阵，见 `independent-controls.md`。
+   modelA admission smoke 与完整 language on/off 评估仍分开，不能把结构 smoke 写成语言收益。

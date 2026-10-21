@@ -1,0 +1,89 @@
+{
+  "schema": "ghost_scope_authority_smoke_metrics_v1",
+  "config": {
+    "suite": "scope_authority_20261021",
+    "endpoint": "http://127.0.0.1:5001/v1",
+    "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+    "context": 262144,
+    "reserve": 32768,
+    "keep_recent": 32000,
+    "output_tokens": 256,
+    "temperature": 0,
+    "thinking_enabled": false,
+    "native_tools": true,
+    "timeout_seconds": 180,
+    "max_attempts": 1,
+    "tasks": 1,
+    "cells": [
+      "on",
+      "off"
+    ],
+    "reps": 1,
+    "production_entry": "project_adapter.run",
+    "profile": "planning_readonly",
+    "policy_grants": [
+      "control"
+    ],
+    "max_turns": 1
+  },
+  "completed": 4,
+  "expected": 4,
+  "comparisons": [
+    {
+      "cell": "on",
+      "baseline": {
+        "cell": "on",
+        "stop_reason": "done",
+        "requests": 1,
+        "seconds": 1.461,
+        "prompt_chars": 1176,
+        "prompt_sha256": "107c2a103b5f4a394181858389ad7a2317234b23cd6321615468fd4dbfa5f231",
+        "request_sha256": "88b01b11740db6198c2f3f1b822bc3efd1f66d3c216b73ba95392c478a55482d",
+        "hint_present": true
+      },
+      "candidate": {
+        "cell": "on",
+        "stop_reason": "done",
+        "requests": 1,
+        "seconds": 0.914,
+        "prompt_chars": 1176,
+        "prompt_sha256": "107c2a103b5f4a394181858389ad7a2317234b23cd6321615468fd4dbfa5f231",
+        "request_sha256": "88b01b11740db6198c2f3f1b822bc3efd1f66d3c216b73ba95392c478a55482d",
+        "hint_present": true
+      },
+      "prompt_identical": true,
+      "request_identical": true
+    },
+    {
+      "cell": "off",
+      "baseline": {
+        "cell": "off",
+        "stop_reason": "done",
+        "requests": 1,
+        "seconds": 0.642,
+        "prompt_chars": 1151,
+        "prompt_sha256": "a8eef35af1db4bdaad9abb207605bc9330c9ff1479e39d2a4ca91bd546df9ca0",
+        "request_sha256": "251617b25e6febb6dd2ece5bb09ae802c73f45ffba5ef78c454b3047fbe9640e",
+        "hint_present": false
+      },
+      "candidate": {
+        "cell": "off",
+        "stop_reason": "done",
+        "requests": 1,
+        "seconds": 0.684,
+        "prompt_chars": 1151,
+        "prompt_sha256": "a8eef35af1db4bdaad9abb207605bc9330c9ff1479e39d2a4ca91bd546df9ca0",
+        "request_sha256": "251617b25e6febb6dd2ece5bb09ae802c73f45ffba5ef78c454b3047fbe9640e",
+        "hint_present": false
+      },
+      "prompt_identical": true,
+      "request_identical": true
+    }
+  ],
+  "limits": [
+    "structural smoke only",
+    "one model, one task, one repetition per cell",
+    "no language efficacy or latency improvement claim",
+    "provider usage unavailable; no zero imputation"
+  ]
+}

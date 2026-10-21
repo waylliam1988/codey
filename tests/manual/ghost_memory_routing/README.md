@@ -12,6 +12,8 @@
 | `round3.py` | 分层收益排序与冲突替换消融；新近/生产/空白数据复用前一个实验 |
 | `round4.py` | 语言/命令 on/off、当前请求覆盖、预算压力及离线生命周期检查 |
 | `summarize.py` | 从本地原始数据导出无回复 metrics，或独立复算随目录保存的快照 |
+| `scope_authority_smoke.py`、`scope_authority_report.py` | 真实 planning builder/kernel/ApiProvider 的 on/off 结构 smoke、baseline/candidate payload 摘要与脱敏报告，不作 language 晋级 |
+| `history_expiry_probe.py` | 固定 text/native 响应及显式时间，复现后续 HTTP history 的过期 hint 重发；保留负结果，不接生产 guard |
 | [reports/](reports/) | 历史报告、合成偏好 directive 快照、parity/audit 与脱敏测量 |
 | `artifacts/ghost_memory_routing/`（仓库根目录下） | 完整本地归档、原始 JSONL、隔离 state、生成报告；已被根目录 `/artifacts/` 规则忽略 |
 
@@ -21,6 +23,8 @@
 完整性规则和 `PROMOTE-MATCHED` rank 映射由 `evaluation_contract.py` 固定。
 `reports/REPORT4-admission-live.md` 是 0.6.1 真实 runtime/provider-send smoke 的脱敏报告；
 它只覆盖 admission smoke suite，不构成 language 晋级对照。
+`reports/scope-authority.md` 记录请求作用域安全修复及新 live payload parity；
+`reports/history-expiry.md` 记录完整 history 仍有 expiry 缺口，不能把初次准入通过当作完整发送验收。
 数字保留为历史文件标识；长期路线使用实验名称和具体行为描述。
 
 归档迁入日期为 2026-10-19。原目录共 1,491 文件、48,217,898 字节，迁移时逐文件
