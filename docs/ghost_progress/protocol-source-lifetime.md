@@ -108,6 +108,8 @@ payload_bytes 包含各臂不同 fixture 路径，只作诊断，不能计为隔
 
 先测 compaction checkpoint / durable replay 裁剪是否有只能从 export 恢复的工作状态，再决定
 重复 handoff 删除的生产边界；不能仅凭两个 markers 保留就全局删除 exporter。
+后续 [Canonical Checkpoint Unification](canonical-checkpoint-unification.md) 已在 48 cell 矩阵中
+验证窄预算会丢事实，故仅删除 exporter 不晋级；canonical-only 范围摘要是新的统一候选。
 warm history 的 metadata 应依附真实 live protocol view/变换，origin 不获得重复预算；
 不新建 persistence root、不把 Ghost hint 写作 canonical user fact、不叠加第二个 admission。
 按用户最新目标，持久会话事实继续以 durable SQLite 为唯一 authority；协议视图只承担发送表示，

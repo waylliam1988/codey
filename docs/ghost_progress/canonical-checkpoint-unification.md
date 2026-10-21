@@ -4,7 +4,8 @@
 - 状态：INCOMPLETE
 - 负责人：Codex
 - 日期：2026-10-21
-- 实验 commit：随实验脚本提交；正式矩阵后补完整 hash。
+- 实验 commit：`ec89d516983e8407ef9879be190f1cd6a9946559`（实验实现）、
+  `0760ed08cfc8799af2e61e8afe686e51162e494f`（48 cell 指标、严格复算、破坏证据测试）。
 - 关联 Roadmap 验收门：0.6.1 / 来源、恢复、撤回
 - 生产合并结论：EXPERIMENT_ONLY
 
@@ -50,7 +51,35 @@ setup 初次 8192 window 不足以容纳单个构造请求，0 HTTP 即 overflow
 
 ## 验证命令和结果
 
-正式六个 suite、回归和结果待本阶段补充。Ruff 通过。
+正式六个 suite 为 checkpoint_{full,trim}_{base,drop,edit}_20261021。48/48 完整，288 个任务、
+288 次主 HTTP、160 次辅助 HTTP；576 项 task provider effect 成功结算。辅助请求尚未接入
+同一 recorded effect 契约，不能将其结算数计入 576。
+
+| 预算 | 实验臂 | reopen 事实 | restart 事实 | reopen / restart 撤回后 hint |
+|---|---|---:|---:|---:|
+| 宽 | baseline | 4/4 | 4/4 | 2/2、0/2 |
+| 宽 | 删除 export | 4/4 | 4/4 | 0/2、0/2 |
+| 宽 | canonical edit | 4/4 | 4/4 | 0/2、0/2 |
+| 窄 | baseline | 4/4 | 0/4 | 2/2、0/2 |
+| 窄 | 删除 export | 0/4 | 0/4 | 0/2、0/2 |
+| 窄 | canonical edit | 4/4 | 4/4 | 0/2、0/2 |
+
+所有 healthy on 均 2/2。复算器要求每项都先产生含事实的已接受 checkpoint，并验证宽预算
+replay 含事实、窄预算不含；缺此条件、缺 off、缺 ack、缺 cells、源含 hint 或 commit 不匹配均拒绝。
+canonical 输入和摘要均无注入 hint，durable entries 同样无注入 hint。直接删除 export 的候选
+已被窄预算负结果否定；不合并。统一候选暂保持 INCOMPLETE，等待生产来源与事务消费者。
+
+```powershell
+python tests/manual/ghost_memory_routing/checkpoint_unification_report.py
+python -m pytest tests/test_ghost_checkpoint_unification_report.py tests/test_ghost_protocol_source_lifetime_report.py tests/durable/test_context.py tests/durable/test_inbox_placement.py tests/durable/test_fork_ancestry.py tests/durable/test_branch_revision_cas.py tests/durable/test_generation_boundary_commit.py tests/durable/test_provider_context_authority.py tests/durable/test_provider_sink_generation_boundary.py tests/test_conversation_resume_reuses_bound_window.py tests/test_context_compaction_transactions_and_lifecycle.py tests/test_compaction_source_encoding_and_summary_contract.py tests/test_compaction_source_reduction_and_packing.py tests/test_api_fresh_transport_recovers_facts_without_old_calls.py -q --tb=short
+python -m ruff check tests/manual/ghost_memory_routing/protocol_source_lifetime.py tests/manual/ghost_memory_routing/checkpoint_unification_report.py tests/test_ghost_checkpoint_unification_report.py
+```
+
+结果：122 passed (6.95s)，Ruff/diff clean。完整六组重跑命令与样本限制见
+[报告](../../tests/manual/ghost_memory_routing/reports/checkpoint-unification.md)，
+[脱敏复算摘要](../../tests/manual/ghost_memory_routing/reports/checkpoint-unification-summary.json)。
+生产类型检查沿用 Protocol Source Lifetime 的 mypy/Pyrefly/ty 结果，本阶段未修改生产源码；
+开始生产候选后重新检查。
 
 ## 当前生产边界
 
@@ -69,6 +98,7 @@ canonical_edit 暂只验证重新打开的窗口，warm 窗口不自动消费新
 
 ## 下一步
 
-完成宽/窄预算 × 三臂 × 两协议 × reopen/restart × on/off 矩阵；严格保留信息丢失和泄漏负结果。
-随后沿既有 durable 事务补齐 source binding、提交 fence 和 live/replay 一致性，再考虑唯一
-provider-send gate 的迁移。World Model 保持 SHADOW，不为统一增加第二套历史。
+48 cell 矩阵已完整，负结果保留。用户已明确授权开始统一生产修改与必要/扩大测试；
+先在隔离候选工作树沿既有 durable 事务补齐 source binding、提交 fence、失败/分支/重复提交测试，
+再接 live/replay 消费者和唯一 provider-send gate。候选无生产消费者或证据不完整时不合并主分支。
+World Model 保持 SHADOW，不为统一增加第二套历史。
