@@ -4,29 +4,15 @@ from typing import Any
 
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
 from codey.utils.refs import digest_text
-from codey.workspace.context_admission import GhostContextSource, admit_ghost_context
+from codey.workspace.context_admission import GhostAdmissionResult
 
 
 def record_outbound(
     trace: Any,
     prompt: str,
     *,
-    native: bool,
-    pending_reply: Any,
-    pending_results: Any,
-    ghost_sources: tuple[GhostContextSource, ...] = (),
-    require_ghost_sources: bool = False,
-    admit_hints: bool = True,
+    admission: GhostAdmissionResult,
 ) -> None:
-    if pending_reply is not None or (native and pending_results is not None):
-        return
-    admission = admit_ghost_context(
-        prompt,
-        ghost_sources,
-        request_scope=(ghost_sources[0].scope if ghost_sources else ""),
-        require_all=require_ghost_sources,
-        admit_hints=admit_hints,
-    )
     if trace is not None and admission.accepted:
         FailOpenPromptTrace(trace).call(
             "record_context_sources",

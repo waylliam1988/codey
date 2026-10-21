@@ -354,6 +354,7 @@ def _run_entry_kernel(  # noqa: PLR0915
     writer_stack: ExitStack,
 ) -> ModeOutcome:
     from codey.operations.task_loop import run_task_kernel
+    from codey.workspace.context_admission import request_scope
     request = frame.request
     kind = _task_kind(task_kind or frame.task_kind)
     if not frame.project_text and kind == "chat":
@@ -465,6 +466,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                     delivered=delivered or None,
                     start_turn=max(resume_start, session.turn + 1) if continuation_followup else resume_start,
                     context_text="\n\n".join(part for part in (context_text, continuation_followup) if part),
+                    context_scope=request_scope(request.project, request.session_id),
                     ghost_sources=ghost_sources,
                     admit_hints=admit_hints,
                     initial_results=initial_results or None,

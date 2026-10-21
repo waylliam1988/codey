@@ -214,6 +214,7 @@ def run_research_iteration(
                 effect_scope="research:1",
                 provider_id=provider_id,
                 user_task=task,
+                context_scope=request_scope(project, session_id),
                 ghost_sources=(topic_source,) if topic_source is not None else (),
                 admit_hints=ghost_control_enabled(
                     deps.state, "admit_hints", project=project, session_id=session_id,

@@ -36,6 +36,7 @@ from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult, TurnFinish, tools_from_specs
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.workspace.coding_context import render_coding_context
+from codey.workspace.context_admission import GhostContextSource, admit_ghost_context
 
 if TYPE_CHECKING:  # Annotations only; the loop never re-exports TaskSession.
     from codey.operations.task_session import TaskSession
@@ -69,7 +70,10 @@ class KernelTransportDeps:
     provider_id: object = ""
     user_task: object = ""
     context_text: str = ""
-    ghost_sources: tuple[Any, ...] = ()
+    # Logical request authority, independent of an automatically allocated
+    # execution workspace. Unscoped standalone requests use "request".
+    context_scope: str = "request"
+    ghost_sources: tuple[GhostContextSource, ...] = ()
     admit_hints: bool = True
     stop_flag: Any = None
     stagnant_turns: int | None = None
@@ -159,8 +163,8 @@ class _KernelStartup:
 def _receive_turn_plan(
     session: TaskSession, provider: Any, state: _ProviderTurnState, snapshot: Any, native_tools: Any,
     *, native: bool, provider_id: object, turn: int, stop_flag: Any, on_event: Any, window_ref: Any = None,
-    stagnant_turns: int | None, propagate_provider_failure: bool, trace_recorder: Any,
-    ghost_sources: tuple[Any, ...] = (), require_ghost_sources: bool = False,
+    stagnant_turns: int | None, propagate_provider_failure: bool, trace_recorder: Any, context_scope: str,
+    ghost_sources: tuple[GhostContextSource, ...] = (), require_ghost_sources: bool = False,
     admit_hints: bool = True,
 ) -> _ReceivedPlan | KernelResult | None:
     """Receive once; cancellation, truncation and protocol repair precede execution.
@@ -170,17 +174,18 @@ def _receive_turn_plan(
     """
     try:
         if state.pending_reply is None:
-            from codey.operations.kernel_prompt import working_context
-
             update = getattr(provider, "set_working_context", None)
             if callable(update):
-                update(working_context(session))
+                update(_prompt.working_context(session))
             refs = getattr(provider, "set_result_refs", None)
             if callable(refs):
                 refs(tuple(session._memory_results))
-        record_outbound(trace_recorder, state.prompt, native=native, pending_reply=state.pending_reply,
-                        pending_results=state.pending_messages, ghost_sources=ghost_sources,
-                        require_ghost_sources=require_ghost_sources, admit_hints=admit_hints)
+        if state.pending_reply is None and not (native and state.pending_messages is not None):
+            admission = admit_ghost_context(
+                state.prompt, ghost_sources, request_scope=context_scope,
+                require_all=require_ghost_sources, admit_hints=admit_hints,
+            )
+            record_outbound(trace_recorder, state.prompt, admission=admission)
         reply, state.pending_reply, state.pending_messages = _transport.send_kernel_reply(
             provider, native, state.prompt, native_tools, state.pending_reply, state.pending_messages,
             window_ref,
@@ -679,7 +684,8 @@ def run_task_kernel(
             stop_flag=stop_flag, on_event=on_event, stagnant_turns=stagnant_turns,
             propagate_provider_failure=propagate_provider_failure,
             trace_recorder=observation.trace_recorder,
-            ghost_sources=tuple(transport.ghost_sources or ()), require_ghost_sources=(turn == resume_start),
+            ghost_sources=transport.ghost_sources, require_ghost_sources=(turn == resume_start),
+            context_scope=transport.context_scope,
             admit_hints=transport.admit_hints,
             window_ref=window_ref,
         )

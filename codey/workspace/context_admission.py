@@ -11,6 +11,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from codey.utils.refs import digest_text
 from codey.workspace.context_epoch import (
     PROVIDER_TURN_ADMISSION,
     ContextAdmission,
@@ -57,7 +58,7 @@ def admit_ghost_context(
     prompt: str,
     sources: Iterable[GhostContextSource] = (),
     *,
-    request_scope: str = "",
+    request_scope: str,
     require_all: bool = False,
     admit_hints: bool = True,
     as_of: str | None = None,
@@ -87,6 +88,9 @@ def admit_ghost_context(
             rejected.append(GhostAdmissionRejection(key or "<empty>", "invalid_or_duplicate_key"))
             continue
         seen_keys.add(key)
+        if not expected_scope:
+            rejected.append(GhostAdmissionRejection(key, "missing_request_scope"))
+            continue
         if not admit_hints:
             rejected.append(GhostAdmissionRejection(key, "hints_disabled"))
             continue
@@ -104,7 +108,7 @@ def admit_ghost_context(
         if budget <= 0 or len(text) > budget:
             rejected.append(GhostAdmissionRejection(key, "over_budget"))
             continue
-        if expected_scope and scope not in {expected_scope, "user", "global"}:
+        if scope not in {expected_scope, "user", "global"}:
             rejected.append(GhostAdmissionRejection(key, "scope_mismatch"))
             continue
         if not scope:
@@ -129,13 +133,13 @@ def admit_ghost_context(
 
 
 def request_scope(project: object = "", session_id: object = "") -> str:
-    """Return a bounded scope identity shared by one task's Ghost sources."""
+    """Bind a bounded identity to the complete project/session, never a prefix."""
     project_text = str(project or "").strip()
     if project_text:
-        return f"project:{project_text[:140]}"
+        return f"project:{digest_text(project_text)}"
     session_text = str(session_id or "").strip()
     if session_text:
-        return f"session:{session_text[:140]}"
+        return f"session:{digest_text(session_text)}"
     return "request"
 
 

@@ -80,7 +80,7 @@ def _project_ghost_sources(request: AgentRequest) -> tuple[Any, ...]:
     from codey.workspace.context_admission import request_scope, sources_from_values
 
     profile = profile_for_name(request.permission_profile)
-    if not bool(getattr(request, "admit_hints", True)):
+    if not request.admit_hints:
         return ()
     return sources_from_values(
         directive=(request.ghost_directive
@@ -187,6 +187,7 @@ def _wrap_provider_with_sink(request: AgentRequest, provider: Any) -> tuple[Any,
 def run(request: AgentRequest) -> RunResult:
     from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
+    from codey.workspace.context_admission import request_scope
 
     task_kind, policy = _task_kind_and_policy(request)
     _require_write_permission(task_kind, policy, request)
@@ -265,6 +266,7 @@ def run(request: AgentRequest) -> RunResult:
                 provider_id=request.provider_id,
                 user_task=request.task,
                 context_text=_project_context(request),
+                context_scope=request_scope(request.project, request.session_id),
                 ghost_sources=_project_ghost_sources(request),
                 stop_flag=request.stop_flag,
                 stagnant_turns=request.stagnant_turns,
