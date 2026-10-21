@@ -38,6 +38,7 @@ def probe(directory: Path, *, native: bool, mode: str) -> dict:
     payloads, transitions, errors = [], [], []
     session_id = "revocation-probe"
     with closing(AppContext(directory / "state")) as state:
+        reader = state.ghost_inbox.control_enabled
         if mode == "disabled_initially" and not state.ghost_inbox.set_control(
             "admit_hints", False, scope="session", session_id=session_id,
         ):
@@ -52,7 +53,7 @@ def probe(directory: Path, *, native: bool, mode: str) -> dict:
                 first = len(payloads) == 1
                 if first and mode == "disabled_after_first":
                     ok = state.ghost_inbox.set_control("admit_hints", False, scope="session", session_id=session_id)
-                    effective = state.ghost_inbox.control_enabled(
+                    effective = reader(
                         "admit_hints", project=str(project), session_id=session_id,
                     )
                     transitions.append({"after_request": 1, "write_ok": ok, "effective_enabled": effective})
@@ -82,7 +83,6 @@ def probe(directory: Path, *, native: bool, mode: str) -> dict:
                          ConversationContext(), True, "", "", None, "", False, set(), 0)
         events = []
         reads = []
-        reader = state.ghost_inbox.control_enabled
 
         def read_control(name, **scope):
             value = reader(name, **scope)
