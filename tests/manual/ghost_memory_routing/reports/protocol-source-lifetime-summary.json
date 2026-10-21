@@ -1,0 +1,65 @@
+{
+  "schema": "ghost_protocol_source_lifetime_summary_v1",
+  "decision": "EXPERIMENT_ONLY",
+  "candidate_status": "INCOMPLETE",
+  "cells_per_arm": 16,
+  "tasks_per_arm": 32,
+  "http_per_arm": 32,
+  "settled_effects_per_arm": 64,
+  "all_second_tasks_retain_prior_task_and_result_markers": true,
+  "durable_entries_with_hint": 0,
+  "durable_contexts_with_hint": 0,
+  "rows": [
+    {
+      "lifetime": "warm",
+      "revoked_cells_per_arm": 2,
+      "on_cells_per_arm": 2,
+      "baseline_revoked_hint_sent": 2,
+      "baseline_healthy_hint_sent": 2,
+      "baseline_revoked_handoff_has_hint": 0,
+      "durable_replay_revoked_hint_sent": 2,
+      "durable_replay_healthy_hint_sent": 2,
+      "durable_replay_revoked_handoff_has_hint": 0
+    },
+    {
+      "lifetime": "window_reopen",
+      "revoked_cells_per_arm": 2,
+      "on_cells_per_arm": 2,
+      "baseline_revoked_hint_sent": 2,
+      "baseline_healthy_hint_sent": 2,
+      "baseline_revoked_handoff_has_hint": 2,
+      "durable_replay_revoked_hint_sent": 0,
+      "durable_replay_healthy_hint_sent": 2,
+      "durable_replay_revoked_handoff_has_hint": 0
+    },
+    {
+      "lifetime": "fresh_provider",
+      "revoked_cells_per_arm": 2,
+      "on_cells_per_arm": 2,
+      "baseline_revoked_hint_sent": 0,
+      "baseline_healthy_hint_sent": 2,
+      "baseline_revoked_handoff_has_hint": 0,
+      "durable_replay_revoked_hint_sent": 0,
+      "durable_replay_healthy_hint_sent": 2,
+      "durable_replay_revoked_handoff_has_hint": 0
+    },
+    {
+      "lifetime": "app_restart",
+      "revoked_cells_per_arm": 2,
+      "on_cells_per_arm": 2,
+      "baseline_revoked_hint_sent": 0,
+      "baseline_healthy_hint_sent": 2,
+      "baseline_revoked_handoff_has_hint": 0,
+      "durable_replay_revoked_hint_sent": 0,
+      "durable_replay_healthy_hint_sent": 2,
+      "durable_replay_revoked_handoff_has_hint": 0
+    }
+  ],
+  "limits": [
+    "one deterministic repetition per cell; no live model",
+    "window_reopen is registry invalidation, not token-pressure rollover",
+    "prior markers do not establish arbitrary checkpoint/compaction semantic parity",
+    "serialized byte sizes include different fixture paths; no isolated token/cost/latency claim",
+    "warm history still resends revoked hints; no production merge"
+  ]
+}
