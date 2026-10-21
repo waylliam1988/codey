@@ -219,6 +219,32 @@ def test_shared_chat_preserves_local_context_without_additional_inference(tmp_pa
     assert len(provider.requests) == 1
 
 
+@pytest.mark.parametrize("control", ["enabled", "disabled", "scoped_error"])
+def test_shared_chat_hint_admission_never_downgrades_scoped_read(tmp_path, monkeypatch, control):
+    hint = "Synthetic reviewed preference"
+    monkeypatch.setattr("codey.operations.ghost_context.ghost_directive",
+                        lambda *args, **kwargs: SimpleNamespace(text=hint))
+    calls = []
+
+    def read(name, **scope):
+        if name == "admit_hints":
+            calls.append(scope)
+            if control == "scoped_error" and scope:
+                raise TypeError("scoped read failed")
+            return control != "disabled"
+        return True
+
+    provider = NativeConversation(AssistantTurn(text="Hello!"))
+    frame = workspace_frame("", provider)
+    with closing(AppContext(tmp_path / "state")) as state:
+        monkeypatch.setattr(state.ghost_inbox, "control_enabled", read)
+        result, _ = execute_frame(frame, state)
+    assert result.event["stop_reason"] == "done"
+    assert len(provider.requests) == 1
+    assert (hint in provider.requests[0][0]) == (control == "enabled")
+    assert calls == [{"project": "", "session_id": frame.request.session_id}]
+
+
 def test_chat_with_attached_folder_receives_existing_project_instructions(tmp_path):
     root = tmp_path / "project"
     root.mkdir()
