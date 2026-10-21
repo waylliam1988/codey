@@ -13,8 +13,9 @@ REPORTS = Path(__file__).parent / "manual" / "ghost_memory_routing" / "reports"
 
 
 @pytest.mark.parametrize("damage", ["missing_off", "duplicate", "no_checkpoint", "no_trim", "tainted_source", "no_ack", "wrong_commit"])
-def test_corrupt_checkpoint_evidence_is_incomplete(damage):
-    matrices = {(budget, arm): json.loads((REPORTS / f"checkpoint-{budget}-{arm}-metrics.json").read_text(encoding="utf-8"))
+@pytest.mark.parametrize("reports", [REPORTS, REPORTS / "canonical-fenced-replay-20261021"], ids=["original", "fenced"])
+def test_corrupt_checkpoint_evidence_is_incomplete(damage, reports):
+    matrices = {(budget, arm): json.loads((reports / f"checkpoint-{budget}-{arm}-metrics.json").read_text(encoding="utf-8"))
                 for budget, arm in product(("full", "trim"), ("base", "drop", "edit"))}
     summarize(matrices)
     matrix = matrices["trim", "edit"]
@@ -34,3 +35,12 @@ def test_corrupt_checkpoint_evidence_is_incomplete(damage):
         matrix["config"]["commit"] = "different-implementation"
     with pytest.raises(ValueError, match="INCOMPLETE"):
         summarize(matrices)
+
+
+def test_source_fence_and_folding_preserve_the_frozen_observation_matrix():
+    observations = []
+    for reports in (REPORTS, REPORTS / "canonical-fenced-replay-20261021"):
+        matrices = {(budget, arm): json.loads((reports / f"checkpoint-{budget}-{arm}-metrics.json").read_text(encoding="utf-8"))
+                    for budget, arm in product(("full", "trim"), ("base", "drop", "edit"))}
+        observations.append(summarize(matrices))
+    assert observations[0] == observations[1]

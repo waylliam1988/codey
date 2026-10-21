@@ -1,0 +1,2894 @@
+{
+  "schema": "ghost_checkpoint_handoff_lifetime_v1",
+  "config": {
+    "suite": "canonical_fenced_trim_edit_20261021",
+    "model": "synthetic-source-lifetime",
+    "endpoint": "ephemeral loopback HTTP",
+    "commit": "887074582e2262a84e7cf7b171dfa295f5176df3",
+    "protocols": [
+      "openai-completions",
+      "openai-responses"
+    ],
+    "lifetimes": [
+      "window_reopen",
+      "app_restart"
+    ],
+    "handoff_source": "canonical_edit",
+    "checkpoint_mode": "trimmed_replay",
+    "cells": 8,
+    "tasks_per_cell": 6,
+    "reps": 1,
+    "on_off": "enabled prelude; enabled versus actual scoped disable before final task",
+    "context": 16384,
+    "reserve": 2048,
+    "keep_recent": 1000,
+    "output_tokens": 128,
+    "temperature": 0,
+    "timeout_seconds": 5,
+    "max_turns": 1,
+    "hypothesis": "warm history and exported handoff retain hints absent from durable replay",
+    "fixture": "fixed directive producer and non-echoing native done response; production gates unchanged",
+    "counter": "ceil(serialized_chars/4), estimated",
+    "summary": "carry fact/hint markers only if present in source"
+  },
+  "rows": [
+    {
+      "protocol": "openai-completions",
+      "lifetime": "window_reopen",
+      "revoke": false,
+      "handoff_source": "canonical_edit",
+      "first": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": true,
+        "payload_bytes": 49381,
+        "prior_task_sent": true,
+        "prior_result_sent": false,
+        "fact_sent": true
+      },
+      "second": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": true,
+        "payload_bytes": 28942,
+        "prior_task_sent": false,
+        "prior_result_sent": true,
+        "fact_sent": true
+      },
+      "plans": [
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 0,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": 0
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 5,
+          "handoff_has_fact": false,
+          "replay_has_fact": true,
+          "replay_omitted_entries": 11
+        }
+      ],
+      "checkpoints": [
+        {
+          "label": "after_task_1",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 4,
+          "durable_entries": 5,
+          "durable_digest": "029e919cf7f0857f563c369b5cbbdd7857edfb61407e95151b6f9c99e26ef671",
+          "transport_digest": "235e2fc4f6b382eddbcb65aa470c08fd3c0b65de77ed9e64bfeb2ccad5f27165",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 0
+        },
+        {
+          "label": "after_task_2",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 8,
+          "durable_entries": 10,
+          "durable_digest": "f05e8aeb3bf76606559a8bfb847d4a6f59d60f1766284e9186ee49bb7c485dc2",
+          "transport_digest": "1a36abbdacbe48779a4bfe73c15f28cc45e87b0c52487803e1428c862df4d795",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 1
+        },
+        {
+          "label": "after_task_3",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 12,
+          "durable_entries": 15,
+          "durable_digest": "cc697b44ff7d11ab5004a5c4543f7f8d1326d97b484d45e8f1ba5ac54c999c96",
+          "transport_digest": "6e7fe6b58ed0afe7001c5f8727f745c228e01d5be6130e71705cb0841e2ef813",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 1,
+          "accepted_checkpoints": 2
+        },
+        {
+          "label": "after_task_4",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 16,
+          "durable_entries": 20,
+          "durable_digest": "14963427c0d4bd8aa634041b218348373e4129a5b43381b75f1a922a6f53297b",
+          "transport_digest": "19db50836a1cae737286b0c5ef09f48959783ed21ff14f6aa351406cfdc6845d",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 4,
+          "accepted_checkpoints": 3
+        },
+        {
+          "label": "after_task_5",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "11a691d75798e75f05ec095e6f665a739a8253b1bfc0b7f5becdbb8ead9fcecc",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "accepted_checkpoint_before_lifecycle",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "5a1ea79dc39d3480201f3e398ff57548597dc901b1286421f92dc9fd275bc00d",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 5
+        },
+        {
+          "label": "after_canonical_range_edit",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "5a1ea79dc39d3480201f3e398ff57548597dc901b1286421f92dc9fd275bc00d",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 5
+        },
+        {
+          "label": "before_task_6",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "5a1ea79dc39d3480201f3e398ff57548597dc901b1286421f92dc9fd275bc00d",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 5
+        },
+        {
+          "label": "after_task_6",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 9,
+          "durable_entries": 31,
+          "durable_digest": "dbe9066573fc73b7e75e14ba854e2f40e5632f29e7deb63fbd1a0c020f98a145",
+          "transport_digest": "4bd1ce40cfbee51b4df08245dcc3df8cd0881249fa1a3bd1fa944cac1fb7eb6a",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 5
+        }
+      ],
+      "checkpoint_mode": "trimmed_replay",
+      "middle": [
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 51930,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52339,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52748,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52953,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        }
+      ],
+      "final_task_index": 6,
+      "summary_sources": [
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": false,
+          "has_hint": false
+        },
+        {
+          "has_fact": true,
+          "has_hint": false
+        }
+      ],
+      "auxiliary_http": 6,
+      "total_http": 12,
+      "canonical_edit": {
+        "source_entries": 12,
+        "source_has_hint": false,
+        "source_has_fact": true,
+        "summary_has_hint": false,
+        "summary_has_fact": true,
+        "source_digest": "c4cea9884db4d4f9fe81e98a9885bbc78c36705203db0d8933fab94307ee1cea",
+        "status": "done"
+      },
+      "revoked_hint_resent": false,
+      "window_changed": true
+    },
+    {
+      "protocol": "openai-completions",
+      "lifetime": "window_reopen",
+      "revoke": true,
+      "handoff_source": "canonical_edit",
+      "first": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": true,
+        "payload_bytes": 49389,
+        "prior_task_sent": true,
+        "prior_result_sent": false,
+        "fact_sent": true
+      },
+      "second": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": false,
+        "payload_bytes": 26315,
+        "prior_task_sent": false,
+        "prior_result_sent": true,
+        "fact_sent": true
+      },
+      "plans": [
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 0,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": 0
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 5,
+          "handoff_has_fact": false,
+          "replay_has_fact": true,
+          "replay_omitted_entries": 11
+        }
+      ],
+      "checkpoints": [
+        {
+          "label": "after_task_1",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 4,
+          "durable_entries": 5,
+          "durable_digest": "029e919cf7f0857f563c369b5cbbdd7857edfb61407e95151b6f9c99e26ef671",
+          "transport_digest": "42612f59d9ac5f96c45829395e6187c9830b2f9c940986015e94884c670dad09",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 0
+        },
+        {
+          "label": "after_task_2",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 8,
+          "durable_entries": 10,
+          "durable_digest": "f05e8aeb3bf76606559a8bfb847d4a6f59d60f1766284e9186ee49bb7c485dc2",
+          "transport_digest": "81ff1605abd1afc4fe9e81c27cb7ff077b70fb5b6f14e957ba4c08b8869c6b4d",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 1
+        },
+        {
+          "label": "after_task_3",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 12,
+          "durable_entries": 15,
+          "durable_digest": "cc697b44ff7d11ab5004a5c4543f7f8d1326d97b484d45e8f1ba5ac54c999c96",
+          "transport_digest": "e0bdd21c5edfc3ff13ea02388379ac70a634cacfd322e59c9af4b24bb018ad1b",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 1,
+          "accepted_checkpoints": 2
+        },
+        {
+          "label": "after_task_4",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 16,
+          "durable_entries": 20,
+          "durable_digest": "14963427c0d4bd8aa634041b218348373e4129a5b43381b75f1a922a6f53297b",
+          "transport_digest": "5eb5abedf04986c8f0c11edebff9a648c1cdc625799abaa27f00e9039a669bb8",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 4,
+          "accepted_checkpoints": 3
+        },
+        {
+          "label": "after_task_5",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "5e62b0f9c433683d922b39dd4a023eda5624ff5425a1bb8544d05a61e262202f",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "accepted_checkpoint_before_lifecycle",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "b46cada96118c7aa27b19e76b9b98cfdd138524111fc71e939cb6c62cfedc14e",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 5
+        },
+        {
+          "label": "after_canonical_range_edit",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "b46cada96118c7aa27b19e76b9b98cfdd138524111fc71e939cb6c62cfedc14e",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 5
+        },
+        {
+          "label": "before_task_6",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "b46cada96118c7aa27b19e76b9b98cfdd138524111fc71e939cb6c62cfedc14e",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 5
+        },
+        {
+          "label": "after_task_6",
+          "transport_has_hint": false,
+          "export_has_hint": false,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 9,
+          "durable_entries": 31,
+          "durable_digest": "dbe9066573fc73b7e75e14ba854e2f40e5632f29e7deb63fbd1a0c020f98a145",
+          "transport_digest": "04c04ff66b2c1879b7c24db2bb227e82045b674c1fa482b7851e811517572508",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 5
+        }
+      ],
+      "checkpoint_mode": "trimmed_replay",
+      "middle": [
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 51938,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52347,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52756,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52961,
+          "prior_task_sent": false,
+          "prior_result_sent": true,
+          "fact_sent": true
+        }
+      ],
+      "final_task_index": 6,
+      "summary_sources": [
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": false,
+          "has_hint": false
+        },
+        {
+          "has_fact": true,
+          "has_hint": false
+        }
+      ],
+      "auxiliary_http": 6,
+      "total_http": 12,
+      "canonical_edit": {
+        "source_entries": 12,
+        "source_has_hint": false,
+        "source_has_fact": true,
+        "summary_has_hint": false,
+        "summary_has_fact": true,
+        "source_digest": "c4cea9884db4d4f9fe81e98a9885bbc78c36705203db0d8933fab94307ee1cea",
+        "status": "done"
+      },
+      "revoked_hint_resent": false,
+      "window_changed": true
+    },
+    {
+      "protocol": "openai-completions",
+      "lifetime": "app_restart",
+      "revoke": false,
+      "handoff_source": "canonical_edit",
+      "first": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": true,
+        "payload_bytes": 49377,
+        "prior_task_sent": true,
+        "prior_result_sent": false,
+        "fact_sent": true
+      },
+      "second": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": true,
+        "payload_bytes": 28936,
+        "prior_task_sent": false,
+        "prior_result_sent": true,
+        "fact_sent": true
+      },
+      "plans": [
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 0,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": 0
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 5,
+          "handoff_has_fact": false,
+          "replay_has_fact": true,
+          "replay_omitted_entries": 11
+        }
+      ],
+      "checkpoints": [
+        {
+          "label": "after_task_1",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 4,
+          "durable_entries": 5,
+          "durable_digest": "029e919cf7f0857f563c369b5cbbdd7857edfb61407e95151b6f9c99e26ef671",
+          "transport_digest": "48c1ddc9bb81a5a1da89b384ee441934facf6b7f21f97be8178d3b47f316ae1e",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 0
+        },
+        {
+          "label": "after_task_2",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 8,
+          "durable_entries": 10,
+          "durable_digest": "f05e8aeb3bf76606559a8bfb847d4a6f59d60f1766284e9186ee49bb7c485dc2",
+          "transport_digest": "7afb1a72b183497bebc8ce18b5106a030638ba9882fd9a3f1423633cf24329d8",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 1
+        },
+        {
+          "label": "after_task_3",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 12,
+          "durable_entries": 15,
+          "durable_digest": "cc697b44ff7d11ab5004a5c4543f7f8d1326d97b484d45e8f1ba5ac54c999c96",
+          "transport_digest": "63e2b64c9d233ad4438f8dd30cd955cf76c36aca0532f455928eb4e4c3809aa1",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 1,
+          "accepted_checkpoints": 2
+        },
+        {
+          "label": "after_task_4",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 16,
+          "durable_entries": 20,
+          "durable_digest": "14963427c0d4bd8aa634041b218348373e4129a5b43381b75f1a922a6f53297b",
+          "transport_digest": "93365a58b455786e9524433418227201291585fba4f9e2179822e9d84b2d877e",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 4,
+          "accepted_checkpoints": 3
+        },
+        {
+          "label": "after_task_5",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "5145c8ce2d14338030ee0da3e9aca4515ca3c1a703a10cc2d1e9a0f77048581d",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "accepted_checkpoint_before_lifecycle",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "88e252e3683edae45db5366d4e15388932031deb25c5ffc7c9a0ce131fca2ea2",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 5
+        },
+        {
+          "label": "after_canonical_range_edit",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "88e252e3683edae45db5366d4e15388932031deb25c5ffc7c9a0ce131fca2ea2",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 5
+        },
+        {
+          "label": "before_task_6",
+          "transport_has_hint": false,
+          "export_has_hint": false,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "transport_has_fact": false,
+          "export_has_fact": false,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 0
+        },
+        {
+          "label": "after_task_6",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 9,
+          "durable_entries": 31,
+          "durable_digest": "dbe9066573fc73b7e75e14ba854e2f40e5632f29e7deb63fbd1a0c020f98a145",
+          "transport_digest": "433a9168deba52ab70242fee69b66c5380d83b0a2bb2e3a46443e0ce292f6683",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 0
+        }
+      ],
+      "checkpoint_mode": "trimmed_replay",
+      "middle": [
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 51926,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52335,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52744,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52949,
+          "prior_task_sent": false,
+          "prior_result_sent": true,
+          "fact_sent": true
+        }
+      ],
+      "final_task_index": 6,
+      "summary_sources": [
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": false,
+          "has_hint": false
+        },
+        {
+          "has_fact": true,
+          "has_hint": false
+        }
+      ],
+      "auxiliary_http": 6,
+      "total_http": 12,
+      "canonical_edit": {
+        "source_entries": 12,
+        "source_has_hint": false,
+        "source_has_fact": true,
+        "summary_has_hint": false,
+        "summary_has_fact": true,
+        "source_digest": "c4cea9884db4d4f9fe81e98a9885bbc78c36705203db0d8933fab94307ee1cea",
+        "status": "done"
+      },
+      "revoked_hint_resent": false,
+      "window_changed": true
+    },
+    {
+      "protocol": "openai-completions",
+      "lifetime": "app_restart",
+      "revoke": true,
+      "handoff_source": "canonical_edit",
+      "first": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": true,
+        "payload_bytes": 49385,
+        "prior_task_sent": true,
+        "prior_result_sent": false,
+        "fact_sent": true
+      },
+      "second": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": false,
+        "payload_bytes": 26309,
+        "prior_task_sent": false,
+        "prior_result_sent": true,
+        "fact_sent": true
+      },
+      "plans": [
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 0,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": 0
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 5,
+          "handoff_has_fact": false,
+          "replay_has_fact": true,
+          "replay_omitted_entries": 11
+        }
+      ],
+      "checkpoints": [
+        {
+          "label": "after_task_1",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 4,
+          "durable_entries": 5,
+          "durable_digest": "029e919cf7f0857f563c369b5cbbdd7857edfb61407e95151b6f9c99e26ef671",
+          "transport_digest": "231b34c149f789e7c9858f5e3244a2e99578dde0a9d7f8a403a3c70bb745732e",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 0
+        },
+        {
+          "label": "after_task_2",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 8,
+          "durable_entries": 10,
+          "durable_digest": "f05e8aeb3bf76606559a8bfb847d4a6f59d60f1766284e9186ee49bb7c485dc2",
+          "transport_digest": "6be9c796b98556f83d42f15abc562edf5ac8ad8ca26f8c3cc58d22d2e98904d0",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 1
+        },
+        {
+          "label": "after_task_3",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 12,
+          "durable_entries": 15,
+          "durable_digest": "cc697b44ff7d11ab5004a5c4543f7f8d1326d97b484d45e8f1ba5ac54c999c96",
+          "transport_digest": "886f85f5132e69266b6d6aed9a4f915c3789b76c26cd0959b46585d185caa7ba",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 1,
+          "accepted_checkpoints": 2
+        },
+        {
+          "label": "after_task_4",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 16,
+          "durable_entries": 20,
+          "durable_digest": "14963427c0d4bd8aa634041b218348373e4129a5b43381b75f1a922a6f53297b",
+          "transport_digest": "e5780252d12fc1a2700da2962a27f2bcbbd74935e7a8519c9358c5ff778189c1",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 4,
+          "accepted_checkpoints": 3
+        },
+        {
+          "label": "after_task_5",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "e9e62bae09306e61be5b138e7c6b1a7f1373ffd5c03890a5e2569496014c0334",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "accepted_checkpoint_before_lifecycle",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "5d1bcce589acd30fac43566bf94585d9c050a57d00d5c0c11c4aa7828b9393be",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 5
+        },
+        {
+          "label": "after_canonical_range_edit",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "5d1bcce589acd30fac43566bf94585d9c050a57d00d5c0c11c4aa7828b9393be",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 5
+        },
+        {
+          "label": "before_task_6",
+          "transport_has_hint": false,
+          "export_has_hint": false,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "transport_has_fact": false,
+          "export_has_fact": false,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 0
+        },
+        {
+          "label": "after_task_6",
+          "transport_has_hint": false,
+          "export_has_hint": false,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 9,
+          "durable_entries": 31,
+          "durable_digest": "dbe9066573fc73b7e75e14ba854e2f40e5632f29e7deb63fbd1a0c020f98a145",
+          "transport_digest": "92904b0f0d28c24c7efb6bfd818608388676ea8b26d1d7c8a435be0357c48570",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 0
+        }
+      ],
+      "checkpoint_mode": "trimmed_replay",
+      "middle": [
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 51934,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52343,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52752,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52957,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        }
+      ],
+      "final_task_index": 6,
+      "summary_sources": [
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": false,
+          "has_hint": false
+        },
+        {
+          "has_fact": true,
+          "has_hint": false
+        }
+      ],
+      "auxiliary_http": 6,
+      "total_http": 12,
+      "canonical_edit": {
+        "source_entries": 12,
+        "source_has_hint": false,
+        "source_has_fact": true,
+        "summary_has_hint": false,
+        "summary_has_fact": true,
+        "source_digest": "c4cea9884db4d4f9fe81e98a9885bbc78c36705203db0d8933fab94307ee1cea",
+        "status": "done"
+      },
+      "revoked_hint_resent": false,
+      "window_changed": true
+    },
+    {
+      "protocol": "openai-responses",
+      "lifetime": "window_reopen",
+      "revoke": false,
+      "handoff_source": "canonical_edit",
+      "first": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": true,
+        "payload_bytes": 49456,
+        "prior_task_sent": true,
+        "prior_result_sent": false,
+        "fact_sent": true
+      },
+      "second": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": true,
+        "payload_bytes": 28982,
+        "prior_task_sent": false,
+        "prior_result_sent": true,
+        "fact_sent": true
+      },
+      "plans": [
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 0,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": 0
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 5,
+          "handoff_has_fact": false,
+          "replay_has_fact": true,
+          "replay_omitted_entries": 11
+        }
+      ],
+      "checkpoints": [
+        {
+          "label": "after_task_1",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 4,
+          "durable_entries": 5,
+          "durable_digest": "029e919cf7f0857f563c369b5cbbdd7857edfb61407e95151b6f9c99e26ef671",
+          "transport_digest": "c89320c49cbd6f4aa4b6c78b85e4b85f149c696fef94796ffa976a17ca5e55df",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 0
+        },
+        {
+          "label": "after_task_2",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 8,
+          "durable_entries": 10,
+          "durable_digest": "f05e8aeb3bf76606559a8bfb847d4a6f59d60f1766284e9186ee49bb7c485dc2",
+          "transport_digest": "88ca7cd727516d7b7bb420c909ae506f256648c20cfa33e7c6979c583b3cc72c",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 1
+        },
+        {
+          "label": "after_task_3",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 12,
+          "durable_entries": 15,
+          "durable_digest": "cc697b44ff7d11ab5004a5c4543f7f8d1326d97b484d45e8f1ba5ac54c999c96",
+          "transport_digest": "311fda6ccad03f4835c4393fd5861f79d9aa120343ade8bf2d1f5b707897c088",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 1,
+          "accepted_checkpoints": 2
+        },
+        {
+          "label": "after_task_4",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 16,
+          "durable_entries": 20,
+          "durable_digest": "14963427c0d4bd8aa634041b218348373e4129a5b43381b75f1a922a6f53297b",
+          "transport_digest": "0325e1c50bf313b35d8e8702e9dad26db1f7da5ad4bc2622759325ecd45fb1fb",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 4,
+          "accepted_checkpoints": 3
+        },
+        {
+          "label": "after_task_5",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "4fc0771dd0928faf5a2429cfe9e3a5f90379f1d7d58c63b3501cb9a2e941c8fa",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "accepted_checkpoint_before_lifecycle",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "4fc0771dd0928faf5a2429cfe9e3a5f90379f1d7d58c63b3501cb9a2e941c8fa",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "after_canonical_range_edit",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "4fc0771dd0928faf5a2429cfe9e3a5f90379f1d7d58c63b3501cb9a2e941c8fa",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "before_task_6",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "4fc0771dd0928faf5a2429cfe9e3a5f90379f1d7d58c63b3501cb9a2e941c8fa",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "after_task_6",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 9,
+          "durable_entries": 31,
+          "durable_digest": "4e287b31789fbe07a437330320b9cc35ced1a946a53829491bb2879de47109e9",
+          "transport_digest": "effe1606c81b59720871251a95b7d63a61f92140e1fbadede30736e1e09fcc67",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 4
+        }
+      ],
+      "checkpoint_mode": "trimmed_replay",
+      "middle": [
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 51957,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52366,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52775,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52980,
+          "prior_task_sent": false,
+          "prior_result_sent": true,
+          "fact_sent": true
+        }
+      ],
+      "final_task_index": 6,
+      "summary_sources": [
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": false
+        }
+      ],
+      "auxiliary_http": 5,
+      "total_http": 11,
+      "canonical_edit": {
+        "source_entries": 12,
+        "source_has_hint": false,
+        "source_has_fact": true,
+        "summary_has_hint": false,
+        "summary_has_fact": true,
+        "source_digest": "c4cea9884db4d4f9fe81e98a9885bbc78c36705203db0d8933fab94307ee1cea",
+        "status": "done"
+      },
+      "revoked_hint_resent": false,
+      "window_changed": true
+    },
+    {
+      "protocol": "openai-responses",
+      "lifetime": "window_reopen",
+      "revoke": true,
+      "handoff_source": "canonical_edit",
+      "first": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": true,
+        "payload_bytes": 49464,
+        "prior_task_sent": true,
+        "prior_result_sent": false,
+        "fact_sent": true
+      },
+      "second": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": false,
+        "payload_bytes": 26355,
+        "prior_task_sent": false,
+        "prior_result_sent": true,
+        "fact_sent": true
+      },
+      "plans": [
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 0,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": 0
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 5,
+          "handoff_has_fact": false,
+          "replay_has_fact": true,
+          "replay_omitted_entries": 11
+        }
+      ],
+      "checkpoints": [
+        {
+          "label": "after_task_1",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 4,
+          "durable_entries": 5,
+          "durable_digest": "029e919cf7f0857f563c369b5cbbdd7857edfb61407e95151b6f9c99e26ef671",
+          "transport_digest": "5a1494f199bbbfc837a827a53fa5df6d2a8c400aad02cad1466513841e77bc06",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 0
+        },
+        {
+          "label": "after_task_2",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 8,
+          "durable_entries": 10,
+          "durable_digest": "f05e8aeb3bf76606559a8bfb847d4a6f59d60f1766284e9186ee49bb7c485dc2",
+          "transport_digest": "523cebab936140512792f5269722df9098f619664d48e88978685273b8478828",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 1
+        },
+        {
+          "label": "after_task_3",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 12,
+          "durable_entries": 15,
+          "durable_digest": "cc697b44ff7d11ab5004a5c4543f7f8d1326d97b484d45e8f1ba5ac54c999c96",
+          "transport_digest": "7e9ee41b70643a99ac396e8bc0a634d7a93a4653562f3ec5c19136fc67d03f59",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 1,
+          "accepted_checkpoints": 2
+        },
+        {
+          "label": "after_task_4",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 16,
+          "durable_entries": 20,
+          "durable_digest": "14963427c0d4bd8aa634041b218348373e4129a5b43381b75f1a922a6f53297b",
+          "transport_digest": "da5b6571e1947a03f30aef99b0488f9b9e5e8be70b3a46a046ff40f009cf0ed2",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 4,
+          "accepted_checkpoints": 3
+        },
+        {
+          "label": "after_task_5",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "be212120c299c316a64b702a4888109a4d205c503ee76477c6fbcfe3a10e3ebe",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "accepted_checkpoint_before_lifecycle",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "be212120c299c316a64b702a4888109a4d205c503ee76477c6fbcfe3a10e3ebe",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "after_canonical_range_edit",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "be212120c299c316a64b702a4888109a4d205c503ee76477c6fbcfe3a10e3ebe",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "before_task_6",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "be212120c299c316a64b702a4888109a4d205c503ee76477c6fbcfe3a10e3ebe",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "after_task_6",
+          "transport_has_hint": false,
+          "export_has_hint": false,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 9,
+          "durable_entries": 31,
+          "durable_digest": "4e287b31789fbe07a437330320b9cc35ced1a946a53829491bb2879de47109e9",
+          "transport_digest": "1116301c889ea07ff685ddc6f9224f34f9fc7ec001fa62dc1fd2121093cd34e5",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 4
+        }
+      ],
+      "checkpoint_mode": "trimmed_replay",
+      "middle": [
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 51965,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52374,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52783,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52988,
+          "prior_task_sent": false,
+          "prior_result_sent": true,
+          "fact_sent": true
+        }
+      ],
+      "final_task_index": 6,
+      "summary_sources": [
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": false
+        }
+      ],
+      "auxiliary_http": 5,
+      "total_http": 11,
+      "canonical_edit": {
+        "source_entries": 12,
+        "source_has_hint": false,
+        "source_has_fact": true,
+        "summary_has_hint": false,
+        "summary_has_fact": true,
+        "source_digest": "c4cea9884db4d4f9fe81e98a9885bbc78c36705203db0d8933fab94307ee1cea",
+        "status": "done"
+      },
+      "revoked_hint_resent": false,
+      "window_changed": true
+    },
+    {
+      "protocol": "openai-responses",
+      "lifetime": "app_restart",
+      "revoke": false,
+      "handoff_source": "canonical_edit",
+      "first": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": true,
+        "payload_bytes": 49452,
+        "prior_task_sent": true,
+        "prior_result_sent": false,
+        "fact_sent": true
+      },
+      "second": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": true,
+        "payload_bytes": 28976,
+        "prior_task_sent": false,
+        "prior_result_sent": true,
+        "fact_sent": true
+      },
+      "plans": [
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 0,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": 0
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 5,
+          "handoff_has_fact": false,
+          "replay_has_fact": true,
+          "replay_omitted_entries": 11
+        }
+      ],
+      "checkpoints": [
+        {
+          "label": "after_task_1",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 4,
+          "durable_entries": 5,
+          "durable_digest": "029e919cf7f0857f563c369b5cbbdd7857edfb61407e95151b6f9c99e26ef671",
+          "transport_digest": "ab85a1803d308aed2300770d7f228486c5af386e27fdc11b2d328c13c5f42536",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 0
+        },
+        {
+          "label": "after_task_2",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 8,
+          "durable_entries": 10,
+          "durable_digest": "f05e8aeb3bf76606559a8bfb847d4a6f59d60f1766284e9186ee49bb7c485dc2",
+          "transport_digest": "07e608e2eb1f7171ea531ee97487f54424090412e3afbf1f42af1a79961e3767",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 1
+        },
+        {
+          "label": "after_task_3",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 12,
+          "durable_entries": 15,
+          "durable_digest": "cc697b44ff7d11ab5004a5c4543f7f8d1326d97b484d45e8f1ba5ac54c999c96",
+          "transport_digest": "cec6da34085a3f804080704fe2555027479678f5cab504575f3ab0cd776b4a90",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 1,
+          "accepted_checkpoints": 2
+        },
+        {
+          "label": "after_task_4",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 16,
+          "durable_entries": 20,
+          "durable_digest": "14963427c0d4bd8aa634041b218348373e4129a5b43381b75f1a922a6f53297b",
+          "transport_digest": "5580bd6bd4678e374cef0164e0599169032401ffa9eaf4bd83d10c81e1713d3d",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 4,
+          "accepted_checkpoints": 3
+        },
+        {
+          "label": "after_task_5",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "dcfe4feca3e33724e34fdff2fad8d444000d04e5b4c0d0dfc1156a14a52948fa",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "accepted_checkpoint_before_lifecycle",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "dcfe4feca3e33724e34fdff2fad8d444000d04e5b4c0d0dfc1156a14a52948fa",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "after_canonical_range_edit",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "dcfe4feca3e33724e34fdff2fad8d444000d04e5b4c0d0dfc1156a14a52948fa",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "before_task_6",
+          "transport_has_hint": false,
+          "export_has_hint": false,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "transport_has_fact": false,
+          "export_has_fact": false,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 0
+        },
+        {
+          "label": "after_task_6",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 9,
+          "durable_entries": 31,
+          "durable_digest": "4e287b31789fbe07a437330320b9cc35ced1a946a53829491bb2879de47109e9",
+          "transport_digest": "5a0aece6e38bf517415c070dbe5b6b03fc6e17812304ed0bf00ad162f478aab0",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 0
+        }
+      ],
+      "checkpoint_mode": "trimmed_replay",
+      "middle": [
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 51953,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52362,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52771,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52976,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        }
+      ],
+      "final_task_index": 6,
+      "summary_sources": [
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": false
+        }
+      ],
+      "auxiliary_http": 5,
+      "total_http": 11,
+      "canonical_edit": {
+        "source_entries": 12,
+        "source_has_hint": false,
+        "source_has_fact": true,
+        "summary_has_hint": false,
+        "summary_has_fact": true,
+        "source_digest": "c4cea9884db4d4f9fe81e98a9885bbc78c36705203db0d8933fab94307ee1cea",
+        "status": "done"
+      },
+      "revoked_hint_resent": false,
+      "window_changed": true
+    },
+    {
+      "protocol": "openai-responses",
+      "lifetime": "app_restart",
+      "revoke": true,
+      "handoff_source": "canonical_edit",
+      "first": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": true,
+        "payload_bytes": 49460,
+        "prior_task_sent": true,
+        "prior_result_sent": false,
+        "fact_sent": true
+      },
+      "second": {
+        "http": 1,
+        "stop_reason": "done",
+        "provider_settlements": 2,
+        "settled_methods": [
+          "acknowledge_tool_results",
+          "send_turn"
+        ],
+        "hint_sent": false,
+        "payload_bytes": 26349,
+        "prior_task_sent": false,
+        "prior_result_sent": true,
+        "fact_sent": true
+      },
+      "plans": [
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 0,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": 0
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": false,
+          "action": "ReuseWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": null,
+          "handoff_has_fact": false,
+          "replay_has_fact": false,
+          "replay_omitted_entries": null
+        },
+        {
+          "fresh_chat": true,
+          "action": "OpenWindow",
+          "handoff_has_hint": false,
+          "replay_has_hint": false,
+          "replay_messages": 5,
+          "handoff_has_fact": false,
+          "replay_has_fact": true,
+          "replay_omitted_entries": 11
+        }
+      ],
+      "checkpoints": [
+        {
+          "label": "after_task_1",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 4,
+          "durable_entries": 5,
+          "durable_digest": "029e919cf7f0857f563c369b5cbbdd7857edfb61407e95151b6f9c99e26ef671",
+          "transport_digest": "bafe36e991609e9af93d78850a57bf2afdebfe25f6e00938bc75b60c39533cde",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 0
+        },
+        {
+          "label": "after_task_2",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 8,
+          "durable_entries": 10,
+          "durable_digest": "f05e8aeb3bf76606559a8bfb847d4a6f59d60f1766284e9186ee49bb7c485dc2",
+          "transport_digest": "2a04c56267f8820d72bd73fc96ec8a5f8b2eb199bd64d5f234cdcd2fb6fae11f",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 0,
+          "accepted_checkpoints": 1
+        },
+        {
+          "label": "after_task_3",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 12,
+          "durable_entries": 15,
+          "durable_digest": "cc697b44ff7d11ab5004a5c4543f7f8d1326d97b484d45e8f1ba5ac54c999c96",
+          "transport_digest": "9878d31ae55b78f4da04012b4566f4a0f17790470651c3d8130aa14e2e0a0198",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 1,
+          "accepted_checkpoints": 2
+        },
+        {
+          "label": "after_task_4",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 16,
+          "durable_entries": 20,
+          "durable_digest": "14963427c0d4bd8aa634041b218348373e4129a5b43381b75f1a922a6f53297b",
+          "transport_digest": "267ca8f22129dec3986ea47b3822beb0c26fb3cf04c133e1c9287ec81a30d22a",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 4,
+          "accepted_checkpoints": 3
+        },
+        {
+          "label": "after_task_5",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "611d0c75890618bba98989a355f0cf48fd91d95264069d0287707b16922f5597",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "accepted_checkpoint_before_lifecycle",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 20,
+          "durable_entries": 25,
+          "durable_digest": "33448405a61b91daca7328328efeb74f4059703ef220079c24c9443366657657",
+          "transport_digest": "611d0c75890618bba98989a355f0cf48fd91d95264069d0287707b16922f5597",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": false,
+          "bounded_replay_omitted_entries": 7,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "after_canonical_range_edit",
+          "transport_has_hint": true,
+          "export_has_hint": true,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "611d0c75890618bba98989a355f0cf48fd91d95264069d0287707b16922f5597",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 4
+        },
+        {
+          "label": "before_task_6",
+          "transport_has_hint": false,
+          "export_has_hint": false,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 5,
+          "durable_entries": 26,
+          "durable_digest": "e7ff5ffba99458cd9dd8124989eaa8e044c413755c13e1b139edc816bc61bd0a",
+          "transport_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "transport_has_fact": false,
+          "export_has_fact": false,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 0
+        },
+        {
+          "label": "after_task_6",
+          "transport_has_hint": false,
+          "export_has_hint": false,
+          "durable_context_has_hint": false,
+          "durable_entries_has_hint": false,
+          "conversation_snapshot_has_hint": false,
+          "durable_messages": 9,
+          "durable_entries": 31,
+          "durable_digest": "4e287b31789fbe07a437330320b9cc35ced1a946a53829491bb2879de47109e9",
+          "transport_digest": "d201b84081f590dbda9130ecbc07a4ddc1bc8f411f02f109b195623dc30cb46f",
+          "transport_has_fact": true,
+          "export_has_fact": true,
+          "durable_entries_has_fact": true,
+          "bounded_replay_has_fact": true,
+          "bounded_replay_omitted_entries": 11,
+          "accepted_checkpoints": 0
+        }
+      ],
+      "checkpoint_mode": "trimmed_replay",
+      "middle": [
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 51961,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52370,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52779,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        },
+        {
+          "http": 1,
+          "stop_reason": "done",
+          "provider_settlements": 2,
+          "settled_methods": [
+            "acknowledge_tool_results",
+            "send_turn"
+          ],
+          "hint_sent": true,
+          "payload_bytes": 52984,
+          "prior_task_sent": true,
+          "prior_result_sent": true,
+          "fact_sent": true
+        }
+      ],
+      "final_task_index": 6,
+      "summary_sources": [
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": true
+        },
+        {
+          "has_fact": true,
+          "has_hint": false
+        }
+      ],
+      "auxiliary_http": 5,
+      "total_http": 11,
+      "canonical_edit": {
+        "source_entries": 12,
+        "source_has_hint": false,
+        "source_has_fact": true,
+        "summary_has_hint": false,
+        "summary_has_fact": true,
+        "source_digest": "c4cea9884db4d4f9fe81e98a9885bbc78c36705203db0d8933fab94307ee1cea",
+        "status": "done"
+      },
+      "revoked_hint_resent": false,
+      "window_changed": true
+    }
+  ],
+  "decision": "EXPERIMENT_ONLY",
+  "model_behavior_score": null
+}

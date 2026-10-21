@@ -1,0 +1,150 @@
+{
+  "schema": "ghost_checkpoint_unification_summary_v1",
+  "decision": "EXPERIMENT_ONLY",
+  "status": "INCOMPLETE",
+  "cells": 48,
+  "tasks": 288,
+  "main_http": 288,
+  "auxiliary_http": 160,
+  "settled_task_effects": 576,
+  "rows": [
+    {
+      "budget": "full",
+      "arm": "baseline",
+      "lifetime": "window_reopen",
+      "cells": 4,
+      "facts_sent": 4,
+      "revoked_hint_sent": 2,
+      "healthy_hint_sent": 2,
+      "main_http": 24,
+      "auxiliary_http": 4
+    },
+    {
+      "budget": "full",
+      "arm": "baseline",
+      "lifetime": "app_restart",
+      "cells": 4,
+      "facts_sent": 4,
+      "revoked_hint_sent": 0,
+      "healthy_hint_sent": 2,
+      "main_http": 24,
+      "auxiliary_http": 4
+    },
+    {
+      "budget": "full",
+      "arm": "durable_replay",
+      "lifetime": "window_reopen",
+      "cells": 4,
+      "facts_sent": 4,
+      "revoked_hint_sent": 0,
+      "healthy_hint_sent": 2,
+      "main_http": 24,
+      "auxiliary_http": 4
+    },
+    {
+      "budget": "full",
+      "arm": "durable_replay",
+      "lifetime": "app_restart",
+      "cells": 4,
+      "facts_sent": 4,
+      "revoked_hint_sent": 0,
+      "healthy_hint_sent": 2,
+      "main_http": 24,
+      "auxiliary_http": 4
+    },
+    {
+      "budget": "full",
+      "arm": "canonical_edit",
+      "lifetime": "window_reopen",
+      "cells": 4,
+      "facts_sent": 4,
+      "revoked_hint_sent": 0,
+      "healthy_hint_sent": 2,
+      "main_http": 24,
+      "auxiliary_http": 8
+    },
+    {
+      "budget": "full",
+      "arm": "canonical_edit",
+      "lifetime": "app_restart",
+      "cells": 4,
+      "facts_sent": 4,
+      "revoked_hint_sent": 0,
+      "healthy_hint_sent": 2,
+      "main_http": 24,
+      "auxiliary_http": 8
+    },
+    {
+      "budget": "trim",
+      "arm": "baseline",
+      "lifetime": "window_reopen",
+      "cells": 4,
+      "facts_sent": 4,
+      "revoked_hint_sent": 2,
+      "healthy_hint_sent": 2,
+      "main_http": 24,
+      "auxiliary_http": 22
+    },
+    {
+      "budget": "trim",
+      "arm": "baseline",
+      "lifetime": "app_restart",
+      "cells": 4,
+      "facts_sent": 0,
+      "revoked_hint_sent": 0,
+      "healthy_hint_sent": 2,
+      "main_http": 24,
+      "auxiliary_http": 22
+    },
+    {
+      "budget": "trim",
+      "arm": "durable_replay",
+      "lifetime": "window_reopen",
+      "cells": 4,
+      "facts_sent": 0,
+      "revoked_hint_sent": 0,
+      "healthy_hint_sent": 2,
+      "main_http": 24,
+      "auxiliary_http": 18
+    },
+    {
+      "budget": "trim",
+      "arm": "durable_replay",
+      "lifetime": "app_restart",
+      "cells": 4,
+      "facts_sent": 0,
+      "revoked_hint_sent": 0,
+      "healthy_hint_sent": 2,
+      "main_http": 24,
+      "auxiliary_http": 22
+    },
+    {
+      "budget": "trim",
+      "arm": "canonical_edit",
+      "lifetime": "window_reopen",
+      "cells": 4,
+      "facts_sent": 4,
+      "revoked_hint_sent": 0,
+      "healthy_hint_sent": 2,
+      "main_http": 24,
+      "auxiliary_http": 22
+    },
+    {
+      "budget": "trim",
+      "arm": "canonical_edit",
+      "lifetime": "app_restart",
+      "cells": 4,
+      "facts_sent": 4,
+      "revoked_hint_sent": 0,
+      "healthy_hint_sent": 2,
+      "main_http": 24,
+      "auxiliary_http": 22
+    }
+  ],
+  "production_gaps": [
+    "atomic source fence and queued/branch/delete behavior",
+    "warm consumption of canonical edits and native pending delivery",
+    "single semantic compaction producer and recorded auxiliary effects",
+    "live model safety/semantic/cost evidence; no production merge"
+  ]
+}
