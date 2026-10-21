@@ -1,11 +1,20 @@
 """Committed range transforms fold in order without rewriting their source facts."""
 from __future__ import annotations
 
+import json
 from contextlib import closing
+from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 
+from codey.agents.handoff import ConversationContext
 from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.operations.conversation_plan import build_conversation_plan
+from codey.operations.conversation_window import activate_window
+from codey.providers.api_provider import ApiProvider
+from codey.providers.base import ProviderToolDefinition
+from codey.providers.token_accounting import RequestContextCount
 
 
 @pytest.fixture(params=["memory", "sqlite"])
@@ -105,3 +114,47 @@ def test_nested_checkpoint_and_new_tail_rebuild_identically_after_restart(tmp_pa
             {"role": "assistant", "content": "retained early fact and decision"},
             {"role": "user", "content": "latest constraint"},
             {"role": "assistant", "content": "new incremental answer"})
+
+
+@pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
+def test_folded_checkpoint_and_native_tail_reach_the_actual_codec_attempt(session, monkeypatch, protocol):
+    from codey.providers import api_transport
+
+    first, _, _ = seed(session)
+    edit(session, "nested-summary", [replacement(f"{first.entry_id}:replacement:0", "retained early fact and decision")])
+    session.append_message("chat", "tool_call", {"tool_calls": [
+        {"id": "tail-call", "type": "function", "function": {"name": "read", "arguments": "{}"}}]})
+    session.append_message("chat", "tool_result", {"call_id": "tail-call", "content": "latest receipt"})
+    provider = ApiProvider("http://localhost:9/v1", "fixture", api_protocol=protocol, native_tools=True)
+    counted, sent = [], []
+
+    def count(payload, *, deadline):
+        counted.append(json.loads(json.dumps(payload)))
+        return RequestContextCount(100, "tokenizer")
+
+    class Response(BytesIO):
+        headers = {"Content-Type": "application/json"}
+
+    def send(request, timeout):
+        sent.append(json.loads(request.data))
+        body = ({"choices": [{"finish_reason": "stop", "message": {"content": "answer"}}]}
+                if protocol == "openai-completions" else {"status": "completed", "output": [
+                    {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "answer"}]}]})
+        return Response(json.dumps(body).encode())
+
+    provider.request_counter = count
+    monkeypatch.setattr(api_transport, "open_request", send)
+    state = SimpleNamespace(durable=session, provider_session_changed=lambda *_: False)
+    plan = build_conversation_plan(state=state, session_id="chat", provider_id="local", provider=provider,
+        conversation=ConversationContext(), task_kind="chat", project=None, task="next", continue_task=False,
+        trace=None, pure=True)
+    activate_window(provider, plan.window_action)
+    assert provider.send_turn("next", [ProviderToolDefinition("read", "read file", {})]).text == "answer"
+    assert counted[-1] == sent[0]
+    items = sent[0]["messages" if protocol == "openai-completions" else "input"]
+    assert items[0] == {"role": "assistant", "content": "retained early fact and decision"}
+    assert items[1] == {"role": "user", "content": "latest constraint"}
+    assert items[-1] == {"role": "user", "content": "next"}
+    assert json.dumps(items).count("tail-call") == 2
+    assert "old execution result" not in json.dumps(items)
+    provider.close()

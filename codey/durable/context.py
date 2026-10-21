@@ -364,8 +364,17 @@ def _find_tool_result(
 
 
 def _apply_context_edits(entries: Sequence[EntryDraft]) -> tuple[EntryDraft, ...]:
-    edits: dict[str, Mapping[str, object]] = {}
+    # Fold in path order: a later checkpoint may edit the view produced by an
+    # earlier one. Each immutable source retains its position and an editable
+    # replacement tree; editing the original anchor replaces that whole tree.
+    originals: dict[str, EntryDraft] = {}
+    views: dict[str, list[EntryDraft]] = {}
+    roots: dict[str, str] = {}
     for entry in entries:
+        if entry.kind != "context_edit":
+            originals[entry.entry_id] = entry
+            views[entry.entry_id] = [entry]
+            roots[entry.entry_id] = entry.entry_id
         payload = thaw_json(entry.payload)
         if not isinstance(payload, Mapping):
             continue
@@ -383,34 +392,36 @@ def _apply_context_edits(entries: Sequence[EntryDraft]) -> tuple[EntryDraft, ...
                 raise ValueError("context edit target is required")
             if action not in {"omit", "replace"}:
                 raise ValueError(f"unknown context edit action: {action!r}")
-            edits[target] = raw_edit
+            root = roots.get(target)
+            if root is None:
+                continue
+            current = views[root]
+            if target in originals:
+                source, start, end = originals[target], 0, len(current)
+            else:
+                start = next((i for i, item in enumerate(current) if item.entry_id == target), -1)
+                if start < 0:
+                    continue
+                source, end = current[start], start + 1
+            replacement = _context_replacement(source, raw_edit) if action == "replace" else []
+            current[start:end] = replacement
+            roots.update((item.entry_id, root) for item in replacement)
+    return tuple(item for view in views.values() for item in view)
 
+
+def _context_replacement(source: EntryDraft, edit: Mapping[str, object]) -> list[EntryDraft]:
+    messages = edit.get("messages")
+    if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)):
+        raise ValueError("replacement context messages must be a list")
     result: list[EntryDraft] = []
-    for entry in entries:
-        if entry.kind == "context_edit":
-            continue
-        edit = edits.get(entry.entry_id)
-        if edit is None:
-            result.append(entry)
-            continue
-        if edit.get("action") == "omit":
-            continue
-        messages = edit.get("messages")
-        if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)):
-            raise ValueError("replacement context messages must be a list")
-        for index, message in enumerate(messages):
-            if not isinstance(message, Mapping):
-                raise ValueError("replacement context message must be an object")
-            result.append(
-                EntryDraft(
-                    f"{entry.entry_id}:replacement:{index}",
-                    entry.conversation_id,
-                    entry.parent_id,
-                    _kind_for_message(message),
-                    _payload_for_message(message),
-                )
-            )
-    return tuple(result)
+    for index, message in enumerate(messages):
+        if not isinstance(message, Mapping):
+            raise ValueError("replacement context message must be an object")
+        result.append(EntryDraft(
+            f"{source.entry_id}:replacement:{index}", source.conversation_id, source.parent_id,
+            _kind_for_message(message), _payload_for_message(message),
+        ))
+    return result
 
 
 def _kind_for_message(message: Mapping[str, object]) -> str:
