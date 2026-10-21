@@ -649,7 +649,14 @@ def test_default_research_iteration_uses_shared_turn_kernel() -> None:
         ledger=ResearchLedger(), created_ids=[], updated_ids=[],
         links_created=0, sources_read=set(), search_result_urls=set(),
     )
-    deps = SimpleNamespace(knowledge_store=object(), managed_outputs=None, run_research_advisors=None)
+    deps = SimpleNamespace(
+        state=SimpleNamespace(
+            ghost_inbox=SimpleNamespace(
+                control_enabled=lambda _name, **_kwargs: True,
+            ),
+        ),
+        knowledge_store=object(), managed_outputs=None, run_research_advisors=None,
+    )
     provider = SimpleNamespace(new_chat=lambda: None)
     with patch("codey.operations.task_loop.run_task_kernel", return_value=KernelResult(
         False, "unfinished", 1, "max_turns",
@@ -728,7 +735,14 @@ def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> 
 
     store = KnowledgeStore(tmp_path / "knowledge")
     iteration = run_research_iteration(
-        SimpleNamespace(knowledge_store=store), provider=Provider(), session_id="s",
+        SimpleNamespace(
+            state=SimpleNamespace(
+                ghost_inbox=SimpleNamespace(
+                    control_enabled=lambda _name, **_kwargs: True,
+                ),
+            ),
+            knowledge_store=store,
+        ), provider=Provider(), session_id="s",
         project="", task="pipeline question", max_turns=5,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
         run_id="run-1", chat_handoff="", trace_recorder=None, search=Search(),
@@ -1118,8 +1132,15 @@ def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) ->
 
     store = KnowledgeStore(tmp_path / "knowledge")
     iteration = run_research_iteration(
-        SimpleNamespace(knowledge_store=store, runtime_mutations=line,
-                        durable=durable, state=SimpleNamespace(durable=durable)),
+        SimpleNamespace(
+            state=SimpleNamespace(
+                durable=durable,
+                ghost_inbox=SimpleNamespace(
+                    control_enabled=lambda _name, **_kwargs: True,
+                ),
+            ),
+            knowledge_store=store, runtime_mutations=line,
+        ),
         provider=Provider(), session_id="s", project="", task="q", max_turns=1,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
         run_id="r", chat_handoff="", trace_recorder=None, search=Search(),

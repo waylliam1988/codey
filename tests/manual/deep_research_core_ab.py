@@ -620,6 +620,11 @@ class ProbeResearchIteration(ResearchIteration):
                 return None
 
         deps = type("ProbeDeps", (), {
+            "state": type("ProbeState", (), {
+                "ghost_inbox": type("ProbeGhostInbox", (), {
+                    "control_enabled": staticmethod(lambda _name, **_kwargs: True),
+                })(),
+            })(),
             "knowledge_store": self.store,
             "managed_outputs": None,
             "runtime_mutations": None,

@@ -36,7 +36,12 @@ def test_vector_retrieval_uses_native_sqlite_vec_and_preserves_scope_and_budget(
     append(store, "other", "database locking")
     append(store, "foreign", "cat secrets", session="another")
     append(store, "failed", "cat failed operation", reason="error")
-    state = SimpleNamespace(ghost_observations=store, ghost_inbox=None)
+    state = SimpleNamespace(
+        ghost_observations=store,
+        ghost_inbox=SimpleNamespace(
+            control_enabled=lambda _name, **_kwargs: True,
+        ),
+    )
 
     context = ghost_experiences(state, query="feline care", session_id="s", max_items=1, budget_chars=400)
     assert "cat feeding routine" in context
@@ -111,7 +116,13 @@ def test_configured_endpoint_is_used_by_the_production_retrieval_path(tmp_path: 
     try:
         store = GhostObservationStore(tmp_path)
         append(store, "one", "cat routine")
-        rendered = ghost_experiences(SimpleNamespace(ghost_observations=store, ghost_inbox=None),
+        rendered = ghost_experiences(
+            SimpleNamespace(
+                ghost_observations=store,
+                ghost_inbox=SimpleNamespace(
+                    control_enabled=lambda _name, **_kwargs: True,
+                ),
+            ),
                                      query="feline care", session_id="s")
         assert "cat routine" in rendered
         assert len(requests) == 2

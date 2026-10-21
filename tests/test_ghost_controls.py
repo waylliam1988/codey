@@ -12,6 +12,10 @@ from codey.operations import ghost_post_turn
 from codey.workspace.context_admission import GhostContextSource, admit_ghost_context
 
 
+def test_missing_ghost_inbox_fails_closed() -> None:
+    assert not ghost_context.ghost_control_enabled(SimpleNamespace(), "admit_hints")
+
+
 def test_independent_controls_are_persisted_without_cross_toggle(tmp_path: Path) -> None:
     inbox = GhostInboxStore(tmp_path)
     assert inbox.controls() == {

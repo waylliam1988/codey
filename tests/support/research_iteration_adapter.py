@@ -121,6 +121,11 @@ class ResearchIteration:
         intro = self._intro(question)
         extension = intro.removeprefix(str(question)).strip()
         deps = SimpleNamespace(
+            state=SimpleNamespace(
+                ghost_inbox=SimpleNamespace(
+                    control_enabled=lambda _name, **_kwargs: True,
+                ),
+            ),
             knowledge_store=self.store,
             managed_outputs=self.managed_outputs,
             runtime_mutations=None,

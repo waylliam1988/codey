@@ -61,7 +61,14 @@ def test_research_iteration_supplies_guidance_through_actual_shared_kernel():
     tools = SimpleNamespace(ledger=ResearchLedger(), created_ids=[], updated_ids=[],
                             links_created=0, sources_read=set(), search_result_urls=set())
     result = run_research_iteration(
-        SimpleNamespace(knowledge_store=object(), managed_outputs=None, run_research_advisors=None),
+        SimpleNamespace(
+            state=SimpleNamespace(
+                ghost_inbox=SimpleNamespace(
+                    control_enabled=lambda _name, **_kwargs: True,
+                ),
+            ),
+            knowledge_store=object(), managed_outputs=None, run_research_advisors=None,
+        ),
         provider=provider, session_id="s", project="", task="research question", max_turns=1,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek", run_id="r",
         chat_handoff="", trace_recorder=None, search=object(), tools=tools,

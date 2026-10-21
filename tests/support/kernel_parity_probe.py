@@ -284,6 +284,14 @@ def research_loop(case, legacy):
     provider.stop_flag = flag
     with tempfile.TemporaryDirectory(prefix="codey-parity-research-") as td:
         store = KnowledgeStore(Path(td) / "knowledge")
+        # Production TaskRunDeps always carries state.  Keep parity's old
+        # admit behavior explicit in the fixture instead of relying on a
+        # missing-state fallback in production code.
+        state = SimpleNamespace(
+            ghost_inbox=SimpleNamespace(
+                control_enabled=lambda _name, **_kwargs: True,
+            ),
+        )
         try:
             with (
                 native_tools_mode(case.get("native")),
@@ -301,7 +309,7 @@ def research_loop(case, legacy):
                 else:
                     from codey.operations.research_iteration import run_research_iteration
 
-                    iteration = run_research_iteration(SimpleNamespace(knowledge_store=store), provider=provider,
+                    iteration = run_research_iteration(SimpleNamespace(state=state, knowledge_store=store), provider=provider,
                         session_id="s", project="", task="How is helium obtained?", max_turns=case.get("max_turns", 6),
                         on_event=lambda _e: None, stop_flag=flag, provider_id="local", run_id=case["id"], chat_handoff="",
                         trace_recorder=None, search=Search())

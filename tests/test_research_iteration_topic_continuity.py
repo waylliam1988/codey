@@ -134,6 +134,11 @@ def test_continuity_appears_in_prompt_via_new_entry() -> None:
         store = KnowledgeStore(Path(td) / "knowledge")
         provider = _CaptureProvider(['{"tool":"done","args":{"summary":"done"}}'])
         deps = SimpleNamespace(
+            state=SimpleNamespace(
+                ghost_inbox=SimpleNamespace(
+                    control_enabled=lambda _name, **_kwargs: True,
+                ),
+            ),
             knowledge_store=store,
             search_factory=lambda: (lambda *a, **k: ""),
             managed_outputs=None,

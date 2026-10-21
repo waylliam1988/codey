@@ -9,7 +9,10 @@ from codey.operations import ghost_context
 
 
 def test_ghost_directive_does_not_hide_unexpected_projection_errors() -> None:
-    state = SimpleNamespace(ghost_hebbian=object())
+    state = SimpleNamespace(
+        ghost_inbox=SimpleNamespace(control_enabled=lambda _name, **_kwargs: True),
+        ghost_hebbian=object(),
+    )
     with mock.patch.object(
         ghost_context,
         "build_ghost_directive",
@@ -19,7 +22,10 @@ def test_ghost_directive_does_not_hide_unexpected_projection_errors() -> None:
 
 
 def test_ghost_continuity_does_not_hide_unexpected_projection_errors() -> None:
-    state = SimpleNamespace(ghost_continuity=object())
+    state = SimpleNamespace(
+        ghost_inbox=SimpleNamespace(control_enabled=lambda _name, **_kwargs: True),
+        ghost_continuity=object(),
+    )
     with mock.patch.object(
         ghost_context,
         "build_ghost_continuity",
