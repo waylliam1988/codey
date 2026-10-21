@@ -102,3 +102,14 @@ canonical_edit 暂只验证重新打开的窗口，warm 窗口不自动消费新
 先在隔离候选工作树沿既有 durable 事务补齐 source binding、提交 fence、失败/分支/重复提交测试，
 再接 live/replay 消费者和唯一 provider-send gate。候选无生产消费者或证据不完整时不合并主分支。
 World Model 保持 SHADOW，不为统一增加第二套历史。
+
+## 2026-10-21 来源事务与顺序折叠后续
+
+已在隔离候选 `ghost/canonical-context` 修改既有 durable writer 与 snapshot folding，
+没有合并候选源码到 master。42-cell 来源事务对照复现“同 ID 删除重建复用 revision”的反例，
+因此仅 revision 不足以绑定来源；候选加入 head 身份条件，复用 store CAS / parent chain，
+不加另一套 admission 或 writer。二次 checkpoint 的 replace / omit 静默失效也已复现并修复。
+
+来源 fence 37 项、折叠 17 项通过；扩大回归 648 passed / 5 既有 skip，三种类型检查通过。
+实际默认 compaction / warm 消费、完整范围与读取切点、辅助 effect 和最终 attempt gate 尚未闭环。
+该阶段不能当作整体生产晋级，详情见 [来源提交进度](canonical-context-source-commit.md)。

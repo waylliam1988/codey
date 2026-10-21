@@ -16,6 +16,7 @@
 | `history_expiry_probe.py` | 固定 text/native 响应及显式时间，复现后续 HTTP history 的过期 hint 重发；保留负结果，不接生产 guard |
 | `protocol_source_lifetime.py`、`protocol_source_lifetime_report.py` | 真实 task/planner/window/HTTP/SQLite 的两任务生命周期矩阵及重复 export 消融；报告可从脱敏指标独立复算，warm 泄漏仍未修 |
 | `protocol_source_lifetime.py --checkpoint ...`、`checkpoint_unification_report.py` | 六任务真实压缩/预算裁剪/恢复矩阵；仅删 export 的信息丢失负结果与 canonical context_edit 统一候选，独立 schema 和严格完整性复算 |
+| `canonical_source_fence.py`、`canonical_source_fence_report.py` | 42-cell 来源事务三臂对照；实际 task / 辅助 HTTP 后注入追加、分支、编辑与删除重建；runner 需候选分支，脱敏报告可在 master 复算，不计作模型行为分数 |
 | [reports/](reports/) | 历史报告、合成偏好 directive 快照、parity/audit 与脱敏测量 |
 | `artifacts/ghost_memory_routing/`（仓库根目录下） | 完整本地归档、原始 JSONL、隔离 state、生成报告；已被根目录 `/artifacts/` 规则忽略 |
 
