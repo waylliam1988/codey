@@ -2375,7 +2375,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # barrier with the live kernel; keep the cohesive loop just above
             # the previous warning ceiling until a whole semantic owner can
             # move without duplicating its boundary.
-            "operations/task_loop.py": 1125,
+            # Kernel transport carries the explicit Ghost admit_hints gate.
+            "operations/task_loop.py": 1135,
             # LF/CRLF line-boundary note (was a one-line overclaim).
             # PLR split 2026-09-26: 1381 lines after search_files scan split.
             "toolchain/runtime.py": 1440,
