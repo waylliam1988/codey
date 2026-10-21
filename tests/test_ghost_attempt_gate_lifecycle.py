@@ -9,10 +9,20 @@ from typing import Any
 import pytest
 
 from codey.operations.kernel_transport import repair_native_dangling
+from codey.operations.task_loop import (
+    KernelExecutionDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
 from codey.providers import api_transport
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolCall, ProviderToolDefinition, ProviderToolResult
 from codey.providers.error_classification import RequestPrepError
+from codey.runtime.core.models import ToolCall, ToolResult
+from codey.workspace.context_admission import request_scope, sources_from_values
 
 PROTOCOLS = ("openai-completions", "openai-responses")
 READ = ProviderToolDefinition("read", "Read a file", {"type": "object"})
@@ -162,5 +172,75 @@ def test_terminal_receipt_does_not_claim_a_physical_attempt(monkeypatch: pytest.
         before = len(calls)
         provider.acknowledge_tool_results([ProviderToolResult("call-3", "not executed")], [READ])
         assert len(calls) == before
+    finally:
+        provider.close()
+
+
+@pytest.mark.parametrize("revoke_after_first", [False, True], ids=["enabled", "revoked"])
+def test_kernel_native_followup_uses_the_same_gate(monkeypatch: pytest.MonkeyPatch,
+                                                   tmp_path: Any,
+                                                   revoke_after_first: bool) -> None:
+    """The shared task kernel cannot bypass the provider gate on native follow-up."""
+    provider = ApiProvider("http://fixture.invalid/v1", "fixture", native_tools=True)
+    source = sources_from_values(
+        directive="Keep the saved preference visible.",
+        scope=request_scope(tmp_path, "kernel-session"),
+    )[0]
+    read_call = ProviderToolCall("read-1", "read_file", {"path": "note.txt"})
+    done_call = ProviderToolCall("done-1", "done", {"summary": "finished"})
+    replies = iter([_reply("openai-completions", call=read_call), _reply("openai-completions", call=done_call)])
+    physical_payloads: list[dict[str, object]] = []
+
+    def generate(_endpoint: str, payload: dict[str, object], *_args: object, **_kwargs: Any) -> dict[str, object]:
+        physical_payloads.append(copy.deepcopy(payload))
+        return next(replies)
+
+    gate_calls = 0
+
+    def admit(_client: ApiProvider, _payload: dict[str, object]) -> None:
+        nonlocal gate_calls
+        gate_calls += 1
+        if revoke_after_first and gate_calls == 2:
+            raise ValueError("kernel hint revoked")
+
+    def read_file(call: ToolCall) -> ToolResult:
+        return ToolResult(ok=True, call=call, model_text="saved note")
+
+    monkeypatch.setattr(api_transport, "generate", generate)
+    session = TaskSession(
+        policy=TaskPolicy(grants=frozenset({"project.read", "control"})),
+        task_kind="project",
+        project=str(tmp_path),
+        max_turns=3,
+    )
+    provider.bind_attempt_gate(None)
+    try:
+        result = run_task_kernel(
+            session,
+            request=KernelRunRequest(
+                transport=KernelTransportDeps(
+                    provider=provider,
+                    context_text=source.text,
+                    context_scope=source.scope,
+                    ghost_sources=(source,),
+                    attempt_gate=admit,
+                    run_id="kernel-run",
+                    provider_id="fixture",
+                ),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": read_file},
+                    project_path=tmp_path,
+                    session_id="kernel-session",
+                ),
+            ),
+        )
+        assert gate_calls == (2 if not revoke_after_first else 2)
+        assert len(physical_payloads) == (2 if not revoke_after_first else 1)
+        if revoke_after_first:
+            assert result.stop_reason == "provider_failure"
+        else:
+            assert result.stop_reason == "done"
+            assert result.completed
+            assert "Keep the saved preference visible." in repr(physical_payloads[0])
     finally:
         provider.close()
