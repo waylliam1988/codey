@@ -22,6 +22,7 @@
 | Canonical Context Source Commit | `EXPERIMENT_ONLY` / `INCOMPLETE` | 隔离候选补齐 head + revision 来源事务与顺序折叠；42 cell 否定仅 revision 的删除重建安全，扩大回归 648 passed / 5 既有 skip；默认 compaction / warm / attempt gate 仍待接 | [候选源码、负结果与复现](canonical-context-source-commit.md) |
 | Canonical Context Production Wiring | `INCOMPLETE`（生产代码已在本地 master） | `3d025cce`：durable context_edit、Responses 来源映射、cutoff folding、唯一 physical Attempt Gate、dispatch binding 已进入本地 master；代码验证通过，但完整 0.6.1 acceptance 仍缺 | [生产接线与边界](canonical-context-production-wiring.md) |
 | Attempt Gate history / revocation closure | `EXPERIMENT_COMPLETE`（限定边界） | 当前 Attempt Gate 在 4 项 expiry 与 6 项撤回 loopback 对照中均于 HTTP 前闭合；完整 0.6.1/0.6.2 仍未完成 | [实验记录](attempt-gate-history-revocation-closure.md) |
+| Attempt Gate lifecycle acceptance | `EXPERIMENT_COMPLETE` | 生产 ApiProvider 的 native follow-up、错误 receipt、恢复上下文、compaction auxiliary 和 terminal receipt 均验证统一 gate 边界；仍是 fixture 离线证据 | [实验记录](attempt-gate-lifecycle-acceptance.md) |
 | Language Live Evaluation 2026-10-21 | `EXPERIMENT_COMPLETE`（单模型条件候选） | 当前 modelA/config 的 language on/off 为 20/20 对 0/20；仅 `SHADOW_ONLY`，不代表跨模型或默认晋级 | [实验记录](language-live-evaluation-20261021.md) |
 | 0.6.2 scope 与四个开关 | `INCOMPLETE` | scoped 读取/写入故障关闭及 Attempt Gate 的首轮后撤回已验证；尚缺 reset manifest、runtime 并发矩阵和完整 acceptance battery | [进度记录](independent-controls.md) |
 | Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（未接入生产） | 纯状态机已验证 operation id、tombstone digest、store 状态、幂等 replay 和 fail-closed 冲突；SQLite/七 store 接线仍未完成 | [实验记录](deletion-manifest-candidate.md) |
