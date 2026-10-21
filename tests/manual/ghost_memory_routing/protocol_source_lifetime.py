@@ -44,7 +44,7 @@ def fingerprint(value):
     return hashlib.sha256(encode(value).encode()).hexdigest()
 
 
-def probe(directory: Path, *, protocol: str, lifetime: str, revoke: bool) -> dict:
+def probe(directory: Path, *, protocol: str, lifetime: str, revoke: bool, handoff_source: str) -> dict:
     directory.mkdir(parents=True, exist_ok=False)
     project = directory / "project"
     project.mkdir()
@@ -117,9 +117,19 @@ def probe(directory: Path, *, protocol: str, lifetime: str, revoke: bool) -> dic
             input=StartTask(f"Say task {index} is complete."), intent="chat", run_id=f"source-run-{index}")
         deps = build_task_deps(state, connect_provider=lambda _provider_id: provider)
         start = len(payloads)
-        with patch("codey.operations.ghost_context.ghost_directive", return_value=SimpleNamespace(text=HINT)), \
-             patch("codey.operations.task_phases.dispatch.plan_conversation", measured_plan):
-            run_task_submission(deps, request)
+        def production_submission():
+            with patch("codey.operations.ghost_context.ghost_directive", return_value=SimpleNamespace(text=HINT)), \
+                 patch("codey.operations.task_phases.dispatch.plan_conversation", measured_plan):
+                run_task_submission(deps, request)
+
+        if handoff_source == "durable_replay":
+            # Candidate ablation only: the real planner still selects/replays
+            # canonical SQLite context. Omit this additional export of its
+            # transient protocol view; do not filter text or modify admission.
+            with patch.object(provider, "export_work_state", return_value=""):
+                production_submission()
+        else:
+            production_submission()
         terminal = [event for event in events if event.get("type") == "task_done"
                     and event.get("run_id") == request.run_id]
         if len(terminal) != 1 or terminal[0].get("stop_reason") != "done" or len(payloads) != start + 1:
@@ -130,9 +140,14 @@ def probe(directory: Path, *, protocol: str, lifetime: str, revoke: bool) -> dic
                 or any(effect.settlement is None or effect.settlement.status != "ok" for effect in sends)):
             raise RuntimeError(f"missing actual successful provider settlement: {sends!r}")
         snapshot(f"after_task_{index}")
+        if index == 2 and ("Say task 1 is complete." not in encode(payloads[-1])
+                           or "Synthetic task completed." not in encode(payloads[-1])):
+            raise RuntimeError("second payload lost the prior canonical task/result markers")
         return {"http": len(payloads) - start, "stop_reason": terminal[0]["stop_reason"],
                 "provider_settlements": len(sends), "settled_methods": sorted(effect.intent.display_ref for effect in sends),
-                "hint_sent": contains(payloads[-1])}
+                "hint_sent": contains(payloads[-1]), "payload_bytes": len(encode(payloads[-1]).encode()),
+                "prior_task_sent": "Say task 1 is complete." in encode(payloads[-1]),
+                "prior_result_sent": "Synthetic task completed." in encode(payloads[-1])}
 
     try:
         first = submit(1)
@@ -165,7 +180,7 @@ def probe(directory: Path, *, protocol: str, lifetime: str, revoke: bool) -> dic
             raise RuntimeError("lifecycle failed to open a distinct window")
         if not revoke and not second["hint_sent"]:
             raise RuntimeError("healthy on control lost current hint")
-        return {"protocol": protocol, "lifetime": lifetime, "revoke": revoke,
+        return {"protocol": protocol, "lifetime": lifetime, "revoke": revoke, "handoff_source": handoff_source,
                 "first": first, "second": second, "plans": plans, "checkpoints": checkpoints,
                 "revoked_hint_resent": revoke and second["hint_sent"],
                 "window_changed": provider.window_ref != old_window}
@@ -188,6 +203,7 @@ def main():
     parser.add_argument("--metrics-out", type=Path)
     parser.add_argument("--lifetime", choices=LIFETIMES, nargs="+", default=LIFETIMES)
     parser.add_argument("--protocol", choices=PROTOCOLS, nargs="+", default=PROTOCOLS)
+    parser.add_argument("--handoff-source", choices=("baseline", "durable_replay"), default="baseline")
     args = parser.parse_args()
     if Path(args.suite).name != args.suite or args.suite in {".", ".."}:
         parser.error("suite must be a directory name")
@@ -197,6 +213,7 @@ def main():
                 "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
                 "command": subprocess.list2cmdline(sys.argv), "started_at": datetime.now(UTC).isoformat(),
                 "protocols": list(args.protocol), "lifetimes": list(args.lifetime),
+                "handoff_source": args.handoff_source,
                 "cells": len(args.protocol) * len(args.lifetime) * 2, "tasks_per_cell": 2, "reps": 1,
                 "on_off": "enabled first task; enabled versus actual scoped disable before second",
                 "context": 65536, "reserve": 8192, "keep_recent": 12000, "output_tokens": 128,
@@ -210,14 +227,15 @@ def main():
             for revoke in (False, True):
                 cell = f"{protocol}-{lifetime}-{'revoke' if revoke else 'on'}"
                 try:
-                    row = probe(root / cell, protocol=protocol, lifetime=lifetime, revoke=revoke)
+                    row = probe(root / cell, protocol=protocol, lifetime=lifetime, revoke=revoke,
+                                handoff_source=args.handoff_source)
                 except Exception as exc:
                     (root / "failure.json").write_text(encode({"cell": cell, "error": repr(exc),
                         "at": datetime.now(UTC).isoformat()}), encoding="utf-8")
                     raise
                 rows.append(row)
                 print(encode(row), flush=True)
-    metrics = {"schema": "ghost_protocol_source_lifetime_v1", "config": {
+    metrics = {"schema": "ghost_protocol_source_lifetime_v2", "config": {
         key: value for key, value in manifest.items() if key not in {"command", "started_at"}},
         "rows": rows, "decision": "EXPERIMENT_ONLY", "model_behavior_score": None}
     (root / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
