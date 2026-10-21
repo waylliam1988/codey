@@ -20,6 +20,7 @@
 | Protocol Source Lifetime | `EXPERIMENT_ONLY` / `INCOMPLETE` | `603f01f` / `36566995`：真实 task/restart 证明 hint 不在 durable context；去掉重复 export 的消融将 reopen 撤回泄漏 2/2→0/2，warm 仍 2/2；checkpoint 语义待验，不加第二套 journal | [归属、消融与复现](protocol-source-lifetime.md) |
 | Canonical Checkpoint Unification | `EXPERIMENT_ONLY` / `INCOMPLETE` | `ec89d516` / `0760ed08`：48 cell 证明仅删 export 在窄预算会丢事实；canonical-only 摘要→既有 context_edit 保留事实且无撤回泄漏，生产事务/消费者待接 | [统一实验与生产边界](canonical-checkpoint-unification.md) |
 | Canonical Context Source Commit | `EXPERIMENT_ONLY` / `INCOMPLETE` | 隔离候选补齐 head + revision 来源事务与顺序折叠；42 cell 否定仅 revision 的删除重建安全，扩大回归 648 passed / 5 既有 skip；默认 compaction / warm / attempt gate 仍待接 | [候选源码、负结果与复现](canonical-context-source-commit.md) |
+| Canonical Context Production Wiring | `INCOMPLETE`（候选生产 commit） | `3d025cce`：durable context_edit、Responses 来源映射、cutoff folding、唯一 physical Attempt Gate、dispatch binding 已接入候选；669 passed / 5 skipped，主分支晋级待复核 | [生产候选与边界](canonical-context-production-wiring.md) |
 | 0.6.2 scope 与四个开关 | `INCOMPLETE` | scoped 读取/写入故障关闭已修复；运行中撤回仍有真实 HTTP 缺口，尚缺 reset manifest、runtime 并发矩阵与完整 acceptance battery | [进度记录](independent-controls.md) |
 | Research parity state contract | `EXPERIMENT_COMPLETE` | research 生产依赖显式携带 state；缺失 Ghost control fail closed；不改变默认 prompt | [进度记录](research-state-contract.md) |
 | 0.6.3 冲突生命周期与持久删除 | `NOT STARTED` | supersede、tombstone、删除/rebuild 零复活 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
