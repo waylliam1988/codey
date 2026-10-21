@@ -18,7 +18,7 @@ class _State:
             sync_from_sources=mock.Mock(side_effect=RuntimeError("secret path")),
         )
         self.ghost_hebbian = None
-        self.ghost_inbox = None
+        self.ghost_inbox = SimpleNamespace(control_enabled=mock.Mock(return_value=True))
 
     def emit(self, event: dict[str, object]) -> None:
         self.events.append(dict(event))
@@ -52,6 +52,10 @@ class GhostPostTurnTests(unittest.TestCase):
             },
         )
 
+        state.ghost_continuity.sync_from_sources.assert_called_once()
+        state.ghost_inbox.control_enabled.assert_called_once_with(
+            "accept_events", project="", session_id="session-1",
+        )
         self.assertEqual(len(state.events), 1)
         warning = state.events[0]
         self.assertEqual(warning["type"], "ghost_post_turn_warning")
