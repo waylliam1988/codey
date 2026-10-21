@@ -21,6 +21,7 @@ from codey.agents.request import AgentRequest  # noqa: E402
 from codey.app.context import AppContext  # noqa: E402
 from codey.operations.ghost_context import ghost_control_enabled  # noqa: E402
 from codey.operations.project_adapter import _project_context, _project_ghost_sources  # noqa: E402
+from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider  # noqa: E402
 from codey.operations.task_loop import (  # noqa: E402
     KernelExecutionDeps,
     KernelRunRequest,
@@ -31,7 +32,9 @@ from codey.operations.task_session import TaskSession  # noqa: E402
 from codey.policies.task_policy import TaskPolicy  # noqa: E402
 from codey.providers.api_provider import ApiProvider  # noqa: E402
 from codey.providers.api_request_policy import LocalRequestPolicy, RequestLease, RetryDirective  # noqa: E402
+from codey.providers.error_classification import RequestPrepError  # noqa: E402
 from codey.providers.token_accounting import RequestContextCount  # noqa: E402
+from codey.runtime.effects.effect_records import RuntimeEffectStore  # noqa: E402
 from codey.utils.refs import digest_text  # noqa: E402
 from codey.workspace.context_admission import GhostAdmissionResult, admit_ghost_context, request_scope  # noqa: E402
 from codey.workspace.context_epoch import ContextEpoch, context_epoch_id  # noqa: E402
@@ -67,7 +70,7 @@ def replace_hint(value, hint):
     return value
 
 
-def probe(directory, project, *, protocol, placement, case):
+def probe(directory, project, *, protocol, placement, case, durable_effects=False, refusal_type="ghost_error"):
     directory.mkdir(parents=True, exist_ok=False)
     hint = UNICODE_HINT if case.startswith("unicode") else ASCII_HINT
     compacting = "compaction" in case
@@ -245,6 +248,8 @@ def probe(directory, project, *, protocol, placement, case):
                 )
             except ValueError as exc:
                 event.update(decision="reject", reason=str(exc))
+                if refusal_type == "request_prep":
+                    raise RequestPrepError(str(exc)) from exc
                 raise
             event.update(decision="accept", accepted=len(admission.accepted))
 
@@ -264,6 +269,26 @@ def probe(directory, project, *, protocol, placement, case):
             return GhostAdmissionResult(ContextEpoch(epoch_id=context_epoch_id(prompt)))
 
         try:
+            runtime_provider = provider
+            run_id = "placement-run"
+            if durable_effects:
+                durable = state.durable
+                durable.admit_input(
+                    conversation_id=session_id, request_id=run_id, task_id=run_id, text=request.task,
+                    provider_snapshot={"provider_id": "local", "model_id": provider.model},
+                    task_state={"task_kind": "project"},
+                )
+                durable.start_task(run_id, state={"task_kind": "project"})
+                durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={"task_kind": "project"})
+                durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={"task_kind": "project"})
+                state.runtime_mutations.accept_operation(
+                    session_id=session_id, run_id=run_id, project=str(project), provider_id="local",
+                    turn_budget=1, max_repair_rounds=1, task_kind="project",
+                )
+                state.runtime_mutations.mark_writer_running(session_id, run_id, provider_id="local")
+                runtime_provider = KernelRecordedProvider(provider, KernelEffectSink(
+                    state.runtime_mutations, session_id=session_id, run_id=run_id, provider_id="local", durable=durable,
+                ))
             with ExitStack() as stack:
                 stack.enter_context(patch("codey.workspace.context_admission.datetime", Clock))
                 if placement != "kernel":
@@ -276,7 +301,7 @@ def probe(directory, project, *, protocol, placement, case):
                 result = run_task_kernel(
                     TaskSession(policy=TaskPolicy(frozenset({"control"})), max_turns=1, coding_context_enabled=False),
                     request=KernelRunRequest(
-                        transport=KernelTransportDeps(provider=provider, context_text=_project_context(current_request),
+                        transport=KernelTransportDeps(provider=runtime_provider, context_text=_project_context(current_request),
                             user_task=request.task, ghost_sources=() if case == "history_only_compaction" else sources,
                             admit_hints=enabled,
                             context_scope=request_scope(project, session_id)),
@@ -294,6 +319,14 @@ def probe(directory, project, *, protocol, placement, case):
                               "unicode_compaction", "history_only_compaction"}
             if placement == "kernel" and stable and result.stop_reason != "done":
                 raise RuntimeError("baseline healthy control failed")
+            effects = []
+            if durable_effects:
+                rows = [row for row in RuntimeEffectStore(durable=state.durable).load_effects(session_id, run_id)
+                        if row.intent.effect_category == "provider_send"]
+                if not rows or any(row.settlement is None for row in rows):
+                    raise RuntimeError("probe did not close real durable provider intent")
+                effects = [{"sent_state": row.settlement.sent_state, "status": row.settlement.status,
+                            "error_code": row.settlement.error_code} for row in rows]
             return {"protocol": protocol, "placement": placement, "case": case,
                     "stop_reason": result.stop_reason, "requests": len(payloads),
                     "unsafe_source_requests": sum(row["unsafe_source_sent"] for row in wire_rows),
@@ -301,6 +334,7 @@ def probe(directory, project, *, protocol, placement, case):
                     "healthy_control_blocked": stable and result.stop_reason != "done",
                     "gates": gates, "wire": wire_rows, "transitions": transitions,
                     "lease_acquires": policy.acquires, "lease_releases": policy.releases,
+                    "durable_effects": effects, "refusal_type": refusal_type,
                     "compaction_diagnostics": [{key: row.get(key) for key in ("kind", "committed")}
                                                for row in provider._compaction.diagnostics]}
         finally:
@@ -318,6 +352,9 @@ def main():
     parser.add_argument("--metrics-out", type=Path)
     parser.add_argument("--placement", choices=(*PLACEMENTS, DECLARED_PLACEMENT), nargs="+", default=PLACEMENTS)
     parser.add_argument("--include-history-only", action="store_true")
+    parser.add_argument("--case", choices=CASES, nargs="+")
+    parser.add_argument("--durable", action="store_true")
+    parser.add_argument("--refusal-type", choices=("ghost_error", "request_prep"), default="ghost_error")
     args = parser.parse_args()
     if Path(args.suite).name != args.suite or args.suite in {".", ".."}:
         parser.error("suite must be a directory name")
@@ -325,7 +362,9 @@ def main():
     root.mkdir(parents=True, exist_ok=False)
     project = root / "shared-project"
     project.mkdir()
-    selected_cases = (*CASES, "history_only_compaction") if args.include_history_only else CASES
+    selected_cases = tuple(args.case) if args.case else CASES
+    if args.include_history_only:
+        selected_cases = (*selected_cases, "history_only_compaction")
     manifest = {"suite": args.suite, "model": "synthetic-payload-placement", "endpoint": "ephemeral loopback HTTP",
                 "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
                 "started_at": datetime.now(UTC).isoformat(), "command": subprocess.list2cmdline(sys.argv),
@@ -334,6 +373,7 @@ def main():
                 "cells": len(selected_cases) * len(args.placement) * 2, "reps": 1,
                 "context": 65536, "reserve": 8192, "keep_recent": 12000, "output": 128, "temperature": 0,
                 "timeout": 5, "max_turns": 1, "counter": "fixed pressure fixture; not real tokenizer",
+                "durable": args.durable, "refusal_type": args.refusal_type,
                 "production_changes": False, "candidate": "same validator moved; kernel predicate replaced, not stacked"}
     (root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     rows = []
@@ -342,7 +382,8 @@ def main():
             for placement in args.placement:
                 cell = f"{protocol}-{case}-{placement}"
                 try:
-                    row = probe(root / cell, project, protocol=protocol, placement=placement, case=case)
+                    row = probe(root / cell, project, protocol=protocol, placement=placement, case=case,
+                                durable_effects=args.durable, refusal_type=args.refusal_type)
                 except Exception as exc:
                     (root / "failure.json").write_text(json.dumps({"cell": cell, "error": str(exc),
                         "at": datetime.now(UTC).isoformat()}), encoding="utf-8")
