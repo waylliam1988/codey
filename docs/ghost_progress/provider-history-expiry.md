@@ -1,12 +1,12 @@
 # Ghost 实验：Provider History Expiry
 
 - 实验名称：Provider History Expiry
-- 状态：INCOMPLETE
+- 状态：EXPERIMENT_COMPLETE（负结果基线与当前 Attempt Gate 闭合均已记录）
 - 负责人：Codex
 - 开始 / 更新日期：2026-10-21
 - 关联 Roadmap 验收门：0.6.1，生命周期前置
-- 实验 commit：`bf7f1b8f`（探针、脱敏指标与负结果报告）；基线生产代码 `3d013af1`
-- 生产合并结论：EXPERIMENT_ONLY
+- 实验 commit：`bf7f1b8f`（负结果探针）；闭合生产 commit `3d025cce`；当前复验 commit `bfac20d8`
+- 生产合并结论：PRODUCTION_MERGED（仅当前 Attempt Gate 的 expiry 边界）
 
 ## 目标和假设
 
@@ -49,18 +49,30 @@ python -m ruff check tests/manual/ghost_memory_routing/history_expiry_probe.py
 - 是否经过真实 provider-send：是，ApiProvider → loopback HTTP；无 live 模型。
 - 是否改变默认 prompt：否。
 - 支持模型 / 任务 / 配置：固定响应、两个协议的 expiry 边界，不作模型推广。
-- 生产合并结论：EXPERIMENT_ONLY。
+- 生产合并结论：`PRODUCTION_MERGED`，仅表示当前唯一 Attempt Gate 已在 loopback HTTP
+  上闭合本实验的 expiry 缺口；不表示 0.6.1 整体验收完成。
+
+## 当前 commit 上的闭合复验
+
+`bfac20d8` 上使用新 suite `ghost_history_expiry_repro_20261021` 重跑同一四项结构探针：
+不过期 text/native 各发送两次并保留 hint；过期 text/native 各只发送一次，第二次请求在
+HTTP 前以 `provider_failure` 拒绝，`expired_hint_sent=false`。脱敏指标见
+[attempt-gate-history-expiry-20261021.json](../../tests/manual/ghost_memory_routing/reports/attempt-gate-history-expiry-20261021.json)。
+
+该复验经过真实 provider-send loopback 边界，未调用 KoboldCpp，不包含模型收益、成本或延迟
+结论。原始旧负结果仍保留，说明本次修复解决的是已验证的当前 Attempt Gate 路径。
 
 ## 未完成或阻塞 / 下一步
 
-当前缺口阻止完整 0.6.1 验收，但不否定已独立验证的 scope 安全修复。下一实验需要确定完整
+完整 0.6.1 仍有缺口。下一实验需要覆盖完整
 payload/history 的单一准入宿主，包括 tool-result、repair、native receipt、resume、compaction 和禁用。
 ApiProvider 的 `_admit_request` 可见 codec 构建和 compaction 后的真实 payload；现有 request policy
 只接收 target/deadline，不接收 payload，不能直接把它当作 Ghost admission 已完成。
 网页 provider 的远端 history 可见性也必须明确，不能伪称看到了完整历史。
 先验证失败关闭及恢复语义，不为消除红灯而丢弃历史、添加第二个 Ghost validator 或插入重复 callback。
-本次不合并 history 生产实现；World Model 继续 SHADOW。
+当前 Attempt Gate 已合并到本地 master，但完整 history acceptance 仍未完成；World Model
+继续 SHADOW。
 
-后续 [Provider Control Revocation](provider-control-revocation.md) 已用实际 task entry、真实
-GhostInboxStore session 控制及 HTTP 完成六项对照：首轮后关闭两项均重发 hint，初始关闭两项
-均无 hint。这与 expiry 缺口共同约束最终 payload gate，不能只重新读取 entry 开关而保留旧 history 漏洞。
+后续 [Provider Control Revocation](provider-control-revocation.md) 的旧负结果与当前 Attempt
+Gate 闭合复验均已保留；两项共同约束完整 payload gate，不能只重新读取 entry 开关而保留旧
+history 漏洞。

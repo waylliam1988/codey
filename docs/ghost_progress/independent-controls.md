@@ -109,9 +109,9 @@ control 缺失拒绝。不得恢复该 fallback。
 
 1. 为四个控制补充 expiry、scope delete/export/reset 和 control projection replay
    fixture。
-2. 初始 `admit_hints` 关闭和 scoped 读取失败的实际 entry→HTTP 已验证；优先修复运行中关闭
-   后的历史重发。与 history expiry 一起研究最终 payload 的唯一 gate，覆盖正常发送、native
-   results/repair/receipt/resume/compaction，保留拒绝后的恢复语义，再测成本/延迟。
+2. 初始 `admit_hints` 关闭、scoped 读取失败和首轮后关闭的实际 entry→HTTP 已验证；当前
+   Attempt Gate 已拒绝历史重发。下一步覆盖正常发送、native results/repair/receipt/resume/
+   compaction，保留拒绝后的恢复语义，再测成本/延迟。
 3. 保持 0.6.2 `INCOMPLETE`，完成后再决定是否进入更窄的 shadow runtime。
 4. World Model 继续保持 shadow：只研究 bounded event/prediction review 和
    projection admission，不进入默认 prompt。

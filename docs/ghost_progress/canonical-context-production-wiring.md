@@ -2,7 +2,7 @@
 
 实验名称：Canonical Context Production Wiring
 
-状态：INCOMPLETE（候选生产 commit，待主分支晋级）
+状态：INCOMPLETE（生产代码已进入本地 master；完整验收仍待完成）
 
 负责人：Codex
 
@@ -48,7 +48,23 @@ python -m ruff check codey tests/test_provider_attempt_gate.py tests/test_provid
 - 是否经过真实 provider-send：是，loopback HTTP、native/Completions/Responses、恢复路径均经过生产 builder/kernel/provider-send；不是 live 模型行为证据。
 - 是否改变默认 prompt：否。仅改变恢复事实来源、来源绑定和发送前 gate。
 - 支持的模型 / 任务 / 配置：ApiProvider 的 Completions/Responses；有 Ghost sources 的 shared task kernel；无 source 的 provider 保留原 kernel admission。
-- 生产合并结论：候选为 `PRODUCTION_MERGED` 语义已验证，当前分支状态仍记为 `INCOMPLETE`，待主分支晋级。
+- 生产合并结论：`PRODUCTION_MERGED`（仅本记录覆盖的 durable context / Attempt Gate 接线）；整体 0.6.1 仍为 `INCOMPLETE`。
+
+## 当前 commit 上的后续边界验证
+
+在 `bfac20d8` 上重跑了两个此前的负结果探针。它们都经过真实 task entry、builder、kernel、
+ApiProvider 和临时 loopback HTTP；没有调用 KoboldCpp，也没有模型行为评分。
+
+- `history_expiry_probe.py --suite ghost_history_expiry_repro_20261021`：text/native ×
+  不过期/过期共 4 cell；不过期两项各发送 2 次，过期两项均在第二次 HTTP 前以
+  `provider_failure` 拒绝，`expired_hint_sent=false`。
+- `control_revocation_probe.py --suite ghost_control_revocation_repro_20261021`：
+  text/native × enabled/disabled_initially/disabled_after_first 共 6 cell；初始关闭不发送
+  hint，首轮后关闭两项均在第二次 HTTP 前明确拒绝，`revoked_hint_resent=false`。
+
+脱敏指标保存在 [history expiry](../../tests/manual/ghost_memory_routing/reports/attempt-gate-history-expiry-20261021.json)
+和 [control revocation](../../tests/manual/ghost_memory_routing/reports/attempt-gate-revocation-20261021.json)。
+这证明当前 Attempt Gate 闭合了这两个具体 loopback 缺口，不等于完整 0.6.1 通过。
 
 ## 收益、限制和阴性结果
 
@@ -58,11 +74,12 @@ python -m ruff check codey tests/test_provider_attempt_gate.py tests/test_provid
 
 ## 未完成或阻塞
 
-- 候选源码尚未合入主分支；主分支晋级前需复核工作区并保留实验/生产 commit 分离。
+- 远端 `origin/master` 尚未与当前本地 `master` 同步；本记录只声明本地 master 已包含 `3d025cce`。
+- 仍缺 repair、receipt、resume、compaction、并发 scope、完整 live/off 和成本/延迟证据。
 - World Model 仍为 `SHADOW`，没有第二套历史、默认 prompt 或生产消费者。
 
 ## 下一步
 
-- 在主分支复核并晋级本生产 commit；保留回滚点。
+- 继续补齐真实 provider payload 的 repair、receipt、resume、compaction 和 scope acceptance；保留回滚点。
 - 运行 KoboldCpp live smoke 时先记录 endpoint、model ID、context、suite、配置；故障只归档，不重试污染样本。
 - 继续研究 command/World Model，仅在有明确生产消费者和真实 send/admission/recovery 证据后晋级。

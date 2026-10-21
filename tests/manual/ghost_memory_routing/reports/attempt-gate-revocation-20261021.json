@@ -1,0 +1,208 @@
+{
+  "schema": "ghost_control_revocation_probe_v1",
+  "config": {
+    "suite": "ghost_control_revocation_repro_20261021",
+    "model": "synthetic-control-revocation",
+    "endpoint": "ephemeral loopback HTTP",
+    "commit": "bfac20d8da57afc78d0c2e20aabd7a19c8a8c7ab",
+    "task": "read_fixture_then_done",
+    "cells": 6,
+    "reps": 1,
+    "protocols": [
+      "text",
+      "native"
+    ],
+    "controls": [
+      "enabled",
+      "disabled_initially",
+      "disabled_after_first"
+    ],
+    "context": 32768,
+    "reserve": 8192,
+    "keep_recent": 12000,
+    "output_tokens": 128,
+    "temperature": 0.3,
+    "timeout_seconds": 5,
+    "max_turns": 2,
+    "candidate": "fixed synthetic directive fixture; real scoped GhostInboxStore authority",
+    "hypothesis": "session disable after first generation does not prevent historical hint resends"
+  },
+  "rows": [
+    {
+      "native": false,
+      "mode": "enabled",
+      "requests": 2,
+      "stop_reason": "done",
+      "first_payload_has_hint": true,
+      "second_payload_has_hint": true,
+      "explicit_revocation_rejection": false,
+      "revoked_hint_resent": false,
+      "control_transitions": [],
+      "admit_hints_reads": [
+        {
+          "request_count": 0,
+          "enabled": true,
+          "project_matches": true,
+          "session_matches": true
+        },
+        {
+          "request_count": 0,
+          "enabled": true,
+          "project_matches": true,
+          "session_matches": true
+        },
+        {
+          "request_count": 1,
+          "enabled": true,
+          "project_matches": true,
+          "session_matches": true
+        }
+      ]
+    },
+    {
+      "native": false,
+      "mode": "disabled_initially",
+      "requests": 2,
+      "stop_reason": "done",
+      "first_payload_has_hint": false,
+      "second_payload_has_hint": false,
+      "explicit_revocation_rejection": false,
+      "revoked_hint_resent": false,
+      "control_transitions": [],
+      "admit_hints_reads": [
+        {
+          "request_count": 0,
+          "enabled": false,
+          "project_matches": true,
+          "session_matches": true
+        }
+      ]
+    },
+    {
+      "native": false,
+      "mode": "disabled_after_first",
+      "requests": 1,
+      "stop_reason": "provider_failure",
+      "first_payload_has_hint": true,
+      "second_payload_has_hint": false,
+      "explicit_revocation_rejection": true,
+      "revoked_hint_resent": false,
+      "control_transitions": [
+        {
+          "after_request": 1,
+          "write_ok": true,
+          "effective_enabled": false
+        }
+      ],
+      "admit_hints_reads": [
+        {
+          "request_count": 0,
+          "enabled": true,
+          "project_matches": true,
+          "session_matches": true
+        },
+        {
+          "request_count": 0,
+          "enabled": true,
+          "project_matches": true,
+          "session_matches": true
+        },
+        {
+          "request_count": 1,
+          "enabled": false,
+          "project_matches": true,
+          "session_matches": true
+        }
+      ]
+    },
+    {
+      "native": true,
+      "mode": "enabled",
+      "requests": 2,
+      "stop_reason": "done",
+      "first_payload_has_hint": true,
+      "second_payload_has_hint": true,
+      "explicit_revocation_rejection": false,
+      "revoked_hint_resent": false,
+      "control_transitions": [],
+      "admit_hints_reads": [
+        {
+          "request_count": 0,
+          "enabled": true,
+          "project_matches": true,
+          "session_matches": true
+        },
+        {
+          "request_count": 0,
+          "enabled": true,
+          "project_matches": true,
+          "session_matches": true
+        },
+        {
+          "request_count": 1,
+          "enabled": true,
+          "project_matches": true,
+          "session_matches": true
+        }
+      ]
+    },
+    {
+      "native": true,
+      "mode": "disabled_initially",
+      "requests": 2,
+      "stop_reason": "done",
+      "first_payload_has_hint": false,
+      "second_payload_has_hint": false,
+      "explicit_revocation_rejection": false,
+      "revoked_hint_resent": false,
+      "control_transitions": [],
+      "admit_hints_reads": [
+        {
+          "request_count": 0,
+          "enabled": false,
+          "project_matches": true,
+          "session_matches": true
+        }
+      ]
+    },
+    {
+      "native": true,
+      "mode": "disabled_after_first",
+      "requests": 1,
+      "stop_reason": "provider_failure",
+      "first_payload_has_hint": true,
+      "second_payload_has_hint": false,
+      "explicit_revocation_rejection": true,
+      "revoked_hint_resent": false,
+      "control_transitions": [
+        {
+          "after_request": 1,
+          "write_ok": true,
+          "effective_enabled": false
+        }
+      ],
+      "admit_hints_reads": [
+        {
+          "request_count": 0,
+          "enabled": true,
+          "project_matches": true,
+          "session_matches": true
+        },
+        {
+          "request_count": 0,
+          "enabled": true,
+          "project_matches": true,
+          "session_matches": true
+        },
+        {
+          "request_count": 1,
+          "enabled": false,
+          "project_matches": true,
+          "session_matches": true
+        }
+      ]
+    }
+  ],
+  "decision": "EXPERIMENT_ONLY",
+  "model_behavior_score": null
+}

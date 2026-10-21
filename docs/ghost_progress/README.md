@@ -10,18 +10,19 @@
 |---|---|---|---|
 | 历史 memory-routing 归档 | `EXPERIMENT_COMPLETE` | 脚本、脱敏测量、报告和来源摘要已提交；这是实验基线，不是生产晋级 | [实验目录](../../tests/manual/ghost_memory_routing/README.md) |
 | 0.6.0 评估冻结与所有权审计 | `EXPERIMENT_COMPLETE` | modelA 单模型 pilot 的矩阵、完整性规则、rank 映射和 admission 所有权已冻结；不改变默认 prompt | [进度记录](frozen-evaluation-ownership-audit.md) |
-| 0.6.1 Context Epoch admission | `INCOMPLETE` | 请求 scope 的真实 HTTP capture/故障注入及 live on/off 已验证；后续 provider history 会重发过期 hint，完整发送矩阵仍缺口 | [进度记录](context-epoch-admission-wiring.md) |
+| 0.6.1 Context Epoch admission | `INCOMPLETE` | 请求 scope、过期和首轮后撤回已在当前 Attempt Gate 上完成 loopback HTTP 拒绝；完整 provider/send 矩阵、repair/resume/compaction 边界和 live/off 对照仍缺口 | [进度记录](context-epoch-admission-wiring.md) |
 | Provider Send Scope Authority | `PRODUCTION_MERGED` | `3d013af1` 修复候选自授权、混合 scope 误拒绝与长身份截断别名；有效 on/off 请求 payload 不变 | [子实验](provider-send-scope-authority.md) |
-| Provider History Expiry | `EXPERIMENT_ONLY` / `INCOMPLETE` | `bf7f1b8f`：text/native 的 expiry 两项均在第二次实际 HTTP payload 重发过期 hint；不合并未验证 guard | [负结果与下一步](provider-history-expiry.md) |
+| Provider History Expiry | `EXPERIMENT_COMPLETE`（负结果已由当前 Attempt Gate 闭合） | `bf7f1b8f` 的旧实现负结果保留；`3d025cce` 在当前 commit 上以 text/native × 过期/不过期 4 cell 验证，过期请求在 HTTP 前拒绝 | [负结果与闭合记录](provider-history-expiry.md) |
 | Scoped Control Failure Closure | `PRODUCTION_MERGED` | `34e201dc` 移除 unscoped/learning fallback；缺 authority 不学不写，settlement 尊重项目/会话 deny；实际 entry→HTTP on/off/error 与扩展回归已验证 | [修复与验证](scoped-control-failure-closure.md) |
-| Provider Control Revocation | `EXPERIMENT_ONLY` / `INCOMPLETE` | `c39f0897`：真实 session 控制首轮后关闭，text/native 均在第二次 HTTP 重发 hint；6 项对照完整，不合并未验证 guard | [负结果与报告](provider-control-revocation.md) |
+| Provider Control Revocation | `EXPERIMENT_COMPLETE`（负结果已由当前 Attempt Gate 闭合） | `c39f0897` 的旧实现负结果保留；当前 commit 上 text/native × 开启/初始关闭/首轮后关闭 6 cell 均验证，撤回后第二次请求在 HTTP 前拒绝 | [负结果与闭合记录](provider-control-revocation.md) |
 | Final Payload Admission Placement | `EXPERIMENT_ONLY` / `INCOMPLETE` | 60 项定位 lease/retry/辅助发送时隙；`3b04b8a6` 的独立 66 项证明显式 JSON 表示可修复编码误拒，但 history-only 摘要仍缺来源继承，暂不合并 | [宿主实验](final-payload-admission-placement.md) |
 | Admission Refusal Settlement | `EXPERIMENT_ONLY` / `INCOMPLETE` | `b1a78723`：8 项真实 durable 对照，0 HTTP 的 GhostError 被记为 MAYBE_SENT；已有 prep 契约为 NOT_SENT，尚未证明完整 native 恢复 | [拒绝与恢复边界](admission-refusal-settlement.md) |
 | Protocol Source Lifetime | `EXPERIMENT_ONLY` / `INCOMPLETE` | `603f01f` / `36566995`：真实 task/restart 证明 hint 不在 durable context；去掉重复 export 的消融将 reopen 撤回泄漏 2/2→0/2，warm 仍 2/2；checkpoint 语义待验，不加第二套 journal | [归属、消融与复现](protocol-source-lifetime.md) |
 | Canonical Checkpoint Unification | `EXPERIMENT_ONLY` / `INCOMPLETE` | `ec89d516` / `0760ed08`：48 cell 证明仅删 export 在窄预算会丢事实；canonical-only 摘要→既有 context_edit 保留事实且无撤回泄漏，生产事务/消费者待接 | [统一实验与生产边界](canonical-checkpoint-unification.md) |
 | Canonical Context Source Commit | `EXPERIMENT_ONLY` / `INCOMPLETE` | 隔离候选补齐 head + revision 来源事务与顺序折叠；42 cell 否定仅 revision 的删除重建安全，扩大回归 648 passed / 5 既有 skip；默认 compaction / warm / attempt gate 仍待接 | [候选源码、负结果与复现](canonical-context-source-commit.md) |
-| Canonical Context Production Wiring | `INCOMPLETE`（候选生产 commit） | `3d025cce`：durable context_edit、Responses 来源映射、cutoff folding、唯一 physical Attempt Gate、dispatch binding 已接入候选；669 passed / 5 skipped，主分支晋级待复核 | [生产候选与边界](canonical-context-production-wiring.md) |
-| 0.6.2 scope 与四个开关 | `INCOMPLETE` | scoped 读取/写入故障关闭已修复；运行中撤回仍有真实 HTTP 缺口，尚缺 reset manifest、runtime 并发矩阵与完整 acceptance battery | [进度记录](independent-controls.md) |
+| Canonical Context Production Wiring | `INCOMPLETE`（生产代码已在本地 master） | `3d025cce`：durable context_edit、Responses 来源映射、cutoff folding、唯一 physical Attempt Gate、dispatch binding 已进入本地 master；代码验证通过，但完整 0.6.1 acceptance 仍缺 | [生产接线与边界](canonical-context-production-wiring.md) |
+| Attempt Gate history / revocation closure | `EXPERIMENT_COMPLETE`（限定边界） | 当前 Attempt Gate 在 4 项 expiry 与 6 项撤回 loopback 对照中均于 HTTP 前闭合；完整 0.6.1/0.6.2 仍未完成 | [实验记录](attempt-gate-history-revocation-closure.md) |
+| 0.6.2 scope 与四个开关 | `INCOMPLETE` | scoped 读取/写入故障关闭及 Attempt Gate 的首轮后撤回已验证；尚缺 reset manifest、runtime 并发矩阵和完整 acceptance battery | [进度记录](independent-controls.md) |
 | Research parity state contract | `EXPERIMENT_COMPLETE` | research 生产依赖显式携带 state；缺失 Ghost control fail closed；不改变默认 prompt | [进度记录](research-state-contract.md) |
 | 0.6.3 冲突生命周期与持久删除 | `NOT STARTED` | supersede、tombstone、删除/rebuild 零复活 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.4 确定性 replay 与显式时间 | `NOT STARTED` | 不依赖 wall clock，projection digest 可复现 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |

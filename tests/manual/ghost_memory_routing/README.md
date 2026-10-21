@@ -28,6 +28,10 @@
 它只覆盖 admission smoke suite，不构成 language 晋级对照。
 `reports/scope-authority.md` 记录请求作用域安全修复及新 live payload parity；
 `reports/history-expiry.md` 记录完整 history 仍有 expiry 缺口，不能把初次准入通过当作完整发送验收。
+`reports/attempt-gate-history-expiry-20261021.json` 和
+`reports/attempt-gate-revocation-20261021.json` 记录当前唯一 Attempt Gate 在 loopback
+HTTP 上对过期和首轮后撤回的闭合验证；它们不包含 live 模型行为评分，也不替代完整
+repair/resume/compaction acceptance。
 数字保留为历史文件标识；长期路线使用实验名称和具体行为描述。
 
 归档迁入日期为 2026-10-19。原目录共 1,491 文件、48,217,898 字节，迁移时逐文件
