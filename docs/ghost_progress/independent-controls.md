@@ -6,7 +6,7 @@
 - 开始日期：2026-10-21
 - 最后更新：2026-10-21
 - 关联 Roadmap 验收门：0.6.2 scope 与四个开关
-- 实验 commit：`496247fc` (`feat(ghost): add independent control gates`); scoped projection/send gate `89622a8c`; lifecycle/expiry fixture `c3701ab4`; expiry trace `e8127019`; architecture audits `a7797877`, `84473e15`; follow-up boundary fix `6f18485e`
+- 实验 commit：`496247fc` (`feat(ghost): add independent control gates`); scoped projection/send gate `89622a8c`; lifecycle/expiry fixture `c3701ab4`; expiry trace `e8127019`; scoped export fixture `44fb29cf`; scoped health fix `91fe542f`; architecture audits `a7797877`, `84473e15`; follow-up boundary fix `6f18485e`
 - 生产合并结论：`SHADOW_ONLY`
 
 ## 本次目标
@@ -58,14 +58,15 @@ python -m pytest tests/test_ghost_controls.py tests/test_ghost_context_admission
 python -m pytest tests/test_learning_switch_fail_closed.py -q
 ```
 
-结果：controls/admission `15 passed`；kernel transport 全集 `1002 passed`。
+结果：controls/admission `15 passed`（最新 scoped export fixture 单独 `11 passed`）；
+kernel transport 全集 `1002 passed`。
 
 ## 实验配置
 
 - 模型 / suite / endpoint：无模型；离线临时 state fixture；无 endpoint
 - tasks / cells / reps：四个控制各 1 个独立开关案例；legacy 全关/恢复案例 1；
   user/project/session inheritance 1；restart/concurrent writers 1；
-  retrieval/maintenance boundary 1；admission on/off provider capture 1；control surface 1
+  retrieval/maintenance boundary 1；admission on/off provider capture 1；control surface/export 1
 - on/off 对照：单控制切换与其它控制保持开启；legacy `disable_updates` 作为
   全关兼容对照；admission `admit_hints=True/False`
 
@@ -73,8 +74,8 @@ python -m pytest tests/test_learning_switch_fail_closed.py -q
 
 - 四个控制可独立写入和读取；旧 settings 可以继续读取。
 - retrieval、maintenance、admission 和 event acceptance 已在代码边界接线；
-  scope inheritance、restart/concurrent settings、expiry 和真实 kernel provider
-  capture 已有 deterministic evidence。
+  scope inheritance、restart/concurrent settings、expiry、export/delete 和真实 kernel
+  provider capture 已有 deterministic evidence。
 - 仍尚未完成 scope export/reset 的控制 manifest、并发 runtime
   请求矩阵、成本/延迟测量和完整 0.6.2 acceptance battery。
 - 本实验没有 live/offline 模型行为对照，也没有证明任何 language 或 command
