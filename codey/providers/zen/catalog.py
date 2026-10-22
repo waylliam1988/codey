@@ -15,6 +15,7 @@ from codey.providers.api_transport import NoGenerationRedirect
 from codey.providers.zen.access import ZenAccessObservations
 from codey.providers.zen.declarations import TRANSPORT_CONTRACT
 from codey.providers.zen.identity import CONNECTION_REVISION, ZenIdentity, validate_endpoint
+from codey.runtime.core.reasoning import normalize_efforts
 from codey.storage.local_store import StoreCorruption, read_json_strict, write_json_atomic
 
 DIRECTORY_URL = "https://models.opencode.ai/api.json"
@@ -91,9 +92,13 @@ def parse_models(directory: object) -> tuple[ZenModel, ...]:
         if not isinstance(options, list):
             continue
         thinking_toggle = any(isinstance(option, dict) and option.get("type") == "toggle" for option in options)
-        efforts = tuple(value for option in options if isinstance(option, dict) and option.get("type") == "effort"
-                        and isinstance(option.get("values"), list) for value in option["values"]
-                        if isinstance(value, str) and value in {"minimal", "low", "medium", "high", "xhigh", "max"})
+        efforts = normalize_efforts(
+            value
+            for option in options
+            if isinstance(option, dict) and option.get("type") == "effort"
+            and isinstance(option.get("values"), list)
+            for value in option["values"]
+        )
         result.append(ZenModel(identity, str(model.get("name") or identity), protocol, context, output, api, efforts,
                                input_limit, thinking_toggle))
     return tuple(sorted(result, key=lambda model: model.id))

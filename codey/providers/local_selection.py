@@ -10,6 +10,7 @@ from dataclasses import replace
 from typing import Any
 
 from codey.providers.local_config import LocalProviderConfig, load_local_config, select_local_target
+from codey.runtime.core.reasoning import REASONING_EFFORTS
 
 
 def thinking_options_from_metadata(props: object, version: object, model: str) -> list[str]:
@@ -85,7 +86,7 @@ def capture_local_run_config(selection: object) -> LocalProviderConfig:
     if thinking is not None and type(thinking) is not bool:
         raise ValueError("thinking must be true, false, or null")
     effort = selection.get("effort")
-    if effort is not None and (not isinstance(effort, str) or effort not in {"off", "minimal", "low", "medium", "high", "max"}):
+    if effort is not None and (not isinstance(effort, str) or effort not in REASONING_EFFORTS):
         raise ValueError("unsupported thinking effort")
     return replace(saved, base_url=base, model=model.strip(), api_key=target.api_key,
                    thinking_enabled=effort != "off" if effort is not None else thinking,

@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 from typing import Any
 
+from codey.runtime.core.reasoning import REASONING_EFFORTS
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -187,10 +188,10 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
             entry["titleRenamed"] = True
         selection = item.get("modelSelection")
         if isinstance(selection, dict):
-            allowed = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
+            allowed = REASONING_EFFORTS
             effort = selection.get("effort")
             if not isinstance(effort, str) or effort not in allowed:
-                effort = "off" if selection.get("thinking") is False else "high" if selection.get("thinking") is True else None
+                effort = None
             history = selection.get("efforts")
             efforts = {str(key)[:1000]: value for key, value in list(history.items())[:50] if isinstance(value, str) and value in allowed} if isinstance(history, dict) else dict[str, str]()
             entry["modelSelection"] = {

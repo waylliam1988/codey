@@ -79,6 +79,17 @@ def test_thinking_options_are_explicit_and_not_sent_to_every_endpoint(monkeypatc
     assert sent[1]["chat_template_kwargs"] == {"enable_thinking": True}
 
 
+def test_effort_wire_selection_does_not_emit_a_second_thinking_control() -> None:
+    from codey.providers import api_chat
+    from codey.providers.api_codec import GenerationSettings
+
+    payload = api_chat.build_payload([], None, GenerationSettings(
+        "zen-fixture", False, 0.0, None, "high", "auto", None,
+    ))
+    assert payload["reasoning_effort"] == "high"
+    assert "chat_template_kwargs" not in payload
+
+
 def test_reasoning_counts_toward_the_next_request_context_budget() -> None:
     from codey.providers.api_metering import estimate_request
 

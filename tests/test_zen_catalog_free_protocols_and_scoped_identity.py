@@ -38,6 +38,19 @@ def test_catalog_preserves_boolean_reasoning_toggle_capability():
     assert model.to_payload()["thinking_toggle"] is True
 
 
+def test_catalog_preserves_toggle_and_effort_capabilities_together_and_deduplicates_efforts():
+    listing = directory()
+    listing["opencode"]["models"]["chat-free"]["reasoning_options"] = [
+        {"type": "toggle"},
+        {"type": "effort", "values": ["low", "high", "low", "budget_tokens", "max"]},
+    ]
+
+    model = next(model for model in parse_models(listing) if model.id == "chat-free")
+
+    assert model.thinking_toggle is True
+    assert model.efforts == ("low", "high", "max")
+
+
 def test_catalog_accepts_current_inference_api_destination():
     listing = directory()
     listing["opencode"]["api"] = "https://opencode.ai/inference/openai/v1"
@@ -158,3 +171,21 @@ def test_zen_toggle_selection_becomes_explicit_thinking_flag(monkeypatch):
 
     assert enabled.thinking_enabled is True and enabled.reasoning_effort is None
     assert disabled.thinking_enabled is False and disabled.reasoning_effort is None
+
+
+def test_zen_toggle_and_effort_model_compiles_effort_axis_without_thinking_flag(monkeypatch):
+    from codey.providers.zen import connection
+    from codey.providers.zen.catalog import ZenModel
+
+    monkeypatch.setattr(connection, "catalog", lambda: SimpleNamespace(
+        require=lambda _: ZenModel("combined", "Combined", "openai-completions", 32768, 8192,
+                                   "https://opencode.ai/inference/openai/v1",
+                                   efforts=("low", "high", "max"), thinking_toggle=True)))
+
+    default = connection.capture_selection({"model": "combined"})
+    high = connection.capture_selection({"model": "combined", "effort": "high"})
+
+    assert default.reasoning_effort is None and default.thinking_enabled is None
+    assert high.reasoning_effort == "high" and high.thinking_enabled is None
+    with pytest.raises(ValueError, match="standalone thinking toggle"):
+        connection.capture_selection({"model": "combined", "thinking": True})

@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from codey.runtime.core.reasoning import REASONING_EFFORTS
+
 
 @dataclass(frozen=True)
 class ApiRunSelection:
@@ -38,7 +40,7 @@ class ApiRunSelection:
             raise ValueError("API capability flags must be booleans")
         if self.thinking_enabled is not None and type(self.thinking_enabled) is not bool:
             raise ValueError("thinking flag must be boolean")
-        if self.reasoning_effort is not None and self.reasoning_effort not in {"off", "minimal", "low", "medium", "high", "xhigh", "max"}:
+        if self.reasoning_effort is not None and self.reasoning_effort not in REASONING_EFFORTS:
             raise ValueError("unsupported reasoning effort")
         if self.tool_choice not in {"auto", "required"}:
             raise ValueError("unsupported tool choice")

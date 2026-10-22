@@ -62,6 +62,26 @@ def test_boolean_reasoning_model_exposes_on_off_control_and_sends_thinking_flag(
                                                "effort": None, "thinking": True}}
 
 
+def test_toggle_and_effort_model_exposes_default_and_efforts(page):  # noqa: F811 -- imported pytest fixture
+    page.evaluate("""() => ProviderUI.applyConfig({default:'deepseek',providers:[
+      {id:'deepseek',label:'DeepSeek'},{id:'zen',label:'OpenCode Zen'}]})""")
+    payload = {"id": "zen", "label": "OpenCode Zen", "models": [
+        {"id": "combined-fixture", "name": "Combined", "protocol": "openai-completions",
+         "efforts": ["low", "high", "max"], "thinking_toggle": True},
+    ]}
+    select_connection_models(page, payload)
+    page.locator("#provider-button").click()
+    page.locator('[data-model="combined-fixture"]').click()
+
+    expect(page.locator("#effort-name")).to_have_text("Default")
+    page.locator("#effort-button").click()
+    expect(page.get_by_role("button", name="Thinking effort: Low", exact=True)).to_be_visible()
+    page.get_by_role("button", name="Thinking effort: High", exact=True).click()
+    selection = page.evaluate("ProviderUI.runSelection(UiState.current().sessions[0], 'zen')")
+    assert selection == {"model_selection": {"connection_id": "zen", "base_url": "", "model": "combined-fixture",
+                                               "effort": "high"}}
+
+
 def test_removed_connection_stays_readable_and_cannot_silently_send_to_default(page):  # noqa: F811 -- imported pytest fixture
     durable = page.codey_context.durable
     if durable.has_conversation("a"):

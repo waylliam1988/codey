@@ -21,6 +21,7 @@ from codey.providers.zen.reliability import ZenRequestPolicy, ZenResourcesRegist
 from codey.providers.zen.usage import configure_usage, parser_for
 from codey.runtime.core import cancellation
 from codey.runtime.core.api_selection import ApiRunSelection
+from codey.runtime.core.reasoning import compile_selection
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
 _CATALOG: ZenCatalog | None = None
@@ -244,16 +245,16 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
     if not isinstance(selection, dict) or not isinstance(selection.get("model"), str):
         raise ValueError("Zen model selection must be an object with a model")
     model = directory.require(selection["model"])
-    effort = selection.get("effort")
-    if effort is not None and effort not in model.efforts:
-        raise ValueError("selected Zen model does not advertise this reasoning effort")
-    thinking = selection.get("thinking")
-    if thinking is not None and type(thinking) is not bool:
-        raise ValueError("Zen thinking must be true, false, or null")
-    if thinking is not None and not model.thinking_toggle:
-        raise ValueError("selected Zen model does not advertise a thinking toggle")
-    if effort is not None and model.thinking_toggle:
-        raise ValueError("selected Zen toggle model does not advertise reasoning efforts")
+    # OpenCode's effort axis is authoritative when a model advertises both a
+    # toggle and effort values. This compiles to one wire control, matching
+    # its Default/Low/High/Max variants and avoiding enable_thinking=true plus
+    # reasoning_effort=X being interpreted differently by provider adapters.
+    effort, thinking = compile_selection(
+        efforts=model.efforts,
+        toggle=model.thinking_toggle,
+        effort=selection.get("effort"),
+        thinking=selection.get("thinking"),
+    )
     reserve = min(8192, model.context // 4)
     return ApiRunSelection("zen", revision_for_endpoint(model.api), model.id, model.protocol, True, model.context,
                            reserve, min(12000, model.context - reserve), reasoning_effort=effort,

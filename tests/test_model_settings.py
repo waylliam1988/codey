@@ -104,6 +104,19 @@ def test_session_selection_survives_backend_state_roundtrip(tmp_path):
     assert store.load()["sessions"][0]["modelSelection"] == {"connection_id":"local", "base_url":selection["base_url"],"model":"chosen","effort":"off","efforts":{}}
 
 
+def test_ui_state_does_not_infer_an_effort_from_a_toggle(tmp_path):
+    from codey.storage.ui_state_store import UiStateStore
+
+    store = UiStateStore(tmp_path)
+    store.save({"active_id": "a", "sessions": [{"id": "a", "modelSelection": {
+        "connection_id": "zen", "model": "combined", "thinking": True,
+    }}], "projects": []}, base_revision=0)
+
+    selection = store.load()["sessions"][0]["modelSelection"]
+    assert selection["thinking"] is True
+    assert selection["effort"] is None
+
+
 def test_runtime_connect_uses_snapshot_and_rejects_unknown_thinking_control():
     from codey.providers.local_discovery import LocalEndpoint
 

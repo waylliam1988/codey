@@ -49,7 +49,7 @@ export interface ProviderUiApi {
       base_url?: string;
       model?: string;
       effort?: string | null;
-      thinking?: boolean;
+      thinking?: boolean | null;
     };
   };
   applyLocalMetadata(local: unknown): void;
@@ -505,9 +505,15 @@ export interface ProviderUiApi {
   function thinkingOptions(s: Session | undefined = deps.activeSession?.(), id = currentProviderId()): string[] {
     const selection = sessionSelection(s, id);
     const model = apiModels[id]?.models?.find((item) => item.id === selection.model);
-    return model?.thinking_toggle ? ['off', 'on'] : model?.efforts || [];
+    if (model?.efforts?.length) {
+      return model.efforts.includes('off')
+        ? ['off', ...model.efforts.filter((value) => value !== 'off')]
+        : ['default', ...model.efforts];
+    }
+    return model?.thinking_toggle ? ['off', 'on'] : [];
   }
   const effortLabels: Record<string, string> = {
+    default: 'Default',
     off: 'Off',
     on: 'On',
     minimal: 'Mini',
@@ -521,17 +527,15 @@ export interface ProviderUiApi {
     const selection = sessionSelection(s, id),
       options = thinkingOptions(s, id);
     const model = apiModels[id]?.models?.find((item) => item.id === selection.model);
-    const selected = model?.thinking_toggle
-      ? selection.thinking === true
-        ? 'on'
-        : 'off'
-      : selection.effort || undefined;
+    const selected = model?.efforts?.length
+      ? selection.effort || 'default'
+      : model?.thinking_toggle
+        ? selection.thinking === true
+          ? 'on'
+          : 'off'
+        : selection.effort || undefined;
     const normalized = selected || '';
-    return options.includes(normalized)
-      ? normalized
-      : options.includes('high')
-        ? 'high'
-        : options.find((value) => value !== 'off') || 'off';
+    return options.includes(normalized) ? normalized : options[0] || '';
   }
   function closeEffortMenu(restoreFocus = false) {
     const menu = $('effort-menu');
@@ -550,10 +554,8 @@ export interface ProviderUiApi {
     button.disabled = $<HTMLButtonElement>('provider-button').disabled;
     const label = effortLabels[value] || value;
     $('effort-name').textContent = label;
-    const toggle = apiModels[currentProviderId()]?.models?.find(
-      (item) => item.id === sessionSelection().model,
-    )?.thinking_toggle;
-    button.setAttribute('aria-label', (toggle ? 'Thinking: ' : 'Thinking effort: ') + label);
+    const model = apiModels[currentProviderId()]?.models?.find((item) => item.id === sessionSelection().model);
+    button.setAttribute('aria-label', (model?.efforts?.length ? 'Thinking effort: ' : 'Thinking: ') + label);
     const menu = $('effort-menu');
     const signature = JSON.stringify([sessionSelection().base_url, sessionSelection().model, options, value]);
     if (menu.dataset.signature === signature) return;
@@ -567,23 +569,31 @@ export interface ProviderUiApi {
       row.className = 'provider-action';
       row.dataset.effort = option;
       row.textContent = effortLabels[option] || option;
-      const toggle = apiModels[currentProviderId()]?.models?.find(
-        (item) => item.id === sessionSelection().model,
-      )?.thinking_toggle;
-      row.setAttribute('aria-label', (toggle ? 'Thinking: ' : 'Thinking effort: ') + row.textContent);
+      const model = apiModels[currentProviderId()]?.models?.find((item) => item.id === sessionSelection().model);
+      row.setAttribute('aria-label', (model?.efforts?.length ? 'Thinking effort: ' : 'Thinking: ') + row.textContent);
       row.setAttribute('aria-pressed', String(value === option));
       row.onclick = () => {
         const s = deps.activeSession();
         if (!s || $<HTMLButtonElement>('provider-button').disabled) return;
         const selection = sessionSelection(s);
         const model = apiModels[currentProviderId()]?.models?.find((item) => item.id === selection.model);
-        s.modelSelection = model?.thinking_toggle
-          ? { ...selection, thinking: option === 'on', effort: null }
-          : {
+        s.modelSelection = model?.efforts?.length
+          ? {
               ...selection,
-              effort: option,
-              efforts: selection.model ? { ...selection.efforts, [selection.model]: option } : selection.efforts,
-            };
+              effort: option === 'default' ? null : option,
+              thinking: null,
+              efforts:
+                selection.model && option !== 'default'
+                  ? { ...selection.efforts, [selection.model]: option }
+                  : selection.efforts,
+            }
+          : model?.thinking_toggle
+            ? { ...selection, thinking: option === 'on', effort: null }
+            : {
+                ...selection,
+                effort: option,
+                efforts: selection.model ? { ...selection.efforts, [selection.model]: option } : selection.efforts,
+              };
         deps.persistActiveNow();
         syncProviderUI(currentProviderId());
         closeEffortMenu(true);
@@ -646,6 +656,19 @@ export interface ProviderUiApi {
     if (!apiModels[provider] && !selection.model) return {};
     const options = thinkingOptions(s, provider);
     const model = apiModels[provider]?.models?.find((item) => item.id === selection.model);
+    if (model?.efforts?.length) {
+      const effort = selectedEffort(s, provider);
+      return selection.model
+        ? {
+            model_selection: {
+              connection_id: provider,
+              base_url: selection.base_url,
+              model: selection.model,
+              effort: effort === 'default' ? null : effort,
+            },
+          }
+        : {};
+    }
     if (model?.thinking_toggle) {
       return selection.model
         ? {
