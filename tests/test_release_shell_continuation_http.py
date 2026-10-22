@@ -136,3 +136,17 @@ def test_remembered_run_approval_automatically_resumes_next_task(protocol, tmp_p
                     pytest.fail(f'remembered task did not finish: {ctx.shell_approval_workflow.list_statuses()}')
                 assert ctx.shell_approval_workflow.for_source('remembered-chat', run_id)['execution'] == 'settled'
             assert len(requests) == 4 and not errors
+
+
+@pytest.mark.parametrize('protocol', ['openai-completions', 'openai-responses'])
+def test_zen_wrapper_restores_approved_call_before_native_continuation(protocol, tmp_path, monkeypatch):
+    from codey.providers import local_connection
+    from codey.providers.zen.connection import ZenProvider
+
+    original = local_connection.open_selection
+    monkeypatch.setattr(local_connection, 'open_selection', lambda selection: ZenProvider(original(selection)))
+    with model_peer(protocol, 'shell_approve') as (url, requests, errors):
+        target = GateTarget(url, 'shell-fixture', 32768, 8192, 12000, api_protocol=protocol, request_timeout=5)
+        proof = run_shell_case('shell_approve', target, tmp_path)
+        assert proof['stop_reason'] == 'done'
+        assert len(requests) == 2 and not errors

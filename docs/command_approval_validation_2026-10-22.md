@@ -46,3 +46,16 @@ MCP 实测发现：本仓库 `artifacts/external-control-live/state/..server.loc
 本仓库新增 `.codey/config.json`，使用现有 `scan.ignored_paths` 精确排除 `artifacts` 目录，
 与本仓库已有 Git 忽略范围一致。没有跳过源文件扫描，也没有停止另一项服务；
 实际完整 fingerprint 扫描随后成功。
+
+Codey 已通过桌面服务的 MCP 任务自行执行 `git add` 和 `git commit`，生成
+`900185a81fc62f916ce312467f4d422e2199a6b7`，外部 Git 观察确认提交存在且工作树干净。
+提交任务误用了要求源文件改动的 `project` intent，后续独立验收改用 `auto`。
+
+继续实测时发现 Zen 的审批续跑缺陷：适配器只通过 `__getattr__` 转发能力，
+没有在具体类型上声明 `bind_context` / `load_durable_context`，使窗口规划不能发现它们。
+批准后的命令已经执行，后续模型请求却因调用 ID 配对不完整而失败。
+新增带真实 Zen 包装层、本机模型 HTTP 端点和实际进程执行的双协议回归，
+先复现两例失败，修复显式能力声明后两例通过，同时核对原会话和调用身份。
+补跑 Zen 相关测试、原生审批 HTTP 回归和可拆除性测试：119 passed；
+Ruff、mypy、Pyrefly、ty 再次通过。
+最新代码另行启动隔离 Codey 服务进行 MCP 重测，没有切换现有桌面服务的 release。

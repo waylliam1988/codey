@@ -85,6 +85,15 @@ class ZenProvider:
         self.abandon_inflight()
         return self.runtime.reset_window(expected_ref)
 
+    def load_durable_context(self, messages: list[dict[str, Any]], *,
+                             source_entry_ids: tuple[str, ...] = ()) -> None:
+        # Window planning discovers this capability on the concrete type.
+        # __getattr__ forwarding alone cannot declare a cold replay window.
+        self.runtime.load_durable_context(messages, source_entry_ids=source_entry_ids)
+
+    def bind_context(self, session_id: str) -> None:
+        self.runtime.bind_context(session_id)
+
     def close(self) -> None:
         with self._state_lock:
             self._generation += 1
