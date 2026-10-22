@@ -1,0 +1,26 @@
+{
+  "schema": "ghost_deletion_manifest_multiprocess_v1",
+  "config": {
+    "suite": "deletion_manifest_multiprocess_20261022",
+    "commit": "1418ed90bee0cf9ae2181c3bb6a9c354671a3ca1",
+    "model": null,
+    "endpoint": null,
+    "workers": 7,
+    "reps": 8,
+    "operation": "same delete_scope manifest with one distinct store event per worker",
+    "cold_start": true,
+    "provider_send": false
+  },
+  "rows": [
+    {"rep": 1, "workers": 7, "process_errors": 0, "final_status": "completed", "event_count": 8},
+    {"rep": 2, "workers": 7, "process_errors": 0, "final_status": "completed", "event_count": 8},
+    {"rep": 3, "workers": 7, "process_errors": 0, "final_status": "completed", "event_count": 8},
+    {"rep": 4, "workers": 7, "process_errors": 0, "final_status": "completed", "event_count": 8},
+    {"rep": 5, "workers": 7, "process_errors": 0, "final_status": "completed", "event_count": 8},
+    {"rep": 6, "workers": 7, "process_errors": 0, "final_status": "completed", "event_count": 8},
+    {"rep": 7, "workers": 7, "process_errors": 0, "final_status": "completed", "event_count": 8},
+    {"rep": 8, "workers": 7, "process_errors": 0, "final_status": "completed", "event_count": 8}
+  ],
+  "decision": "EXPERIMENT_ONLY",
+  "model_behavior_score": null
+}
