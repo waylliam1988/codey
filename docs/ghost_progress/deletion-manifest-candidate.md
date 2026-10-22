@@ -32,6 +32,9 @@ scope、requested time、retention class、tombstone digest 和每个 store 的�
 - 新增 [Deletion Manifest Failure Recovery](deletion-manifest-failure-recovery.md)：七个真实
   store 各自注入一次失败，覆盖重启、pending-only resume、新 operation recovery 和 rebuild；
   协调器改为只使用 durable manifest 的 project/session scope。
+- 新增 [Deletion Manifest Reset Recovery](deletion-manifest-reset-recovery.md)：`reset_all` 的
+  七 store failure、重启、pending-only resume、新 operation recovery 和 rebuild 均通过，
+  仍未接入默认 control surface。
 
 ## 验证命令和结果
 
@@ -44,7 +47,7 @@ pyrefly check codey/ghost/deletion_manifest.py codey/ghost/deletion_manifest_sto
 ty check codey/ghost/deletion_manifest.py codey/ghost/deletion_manifest_store.py codey/ghost/sqlite.py
 ```
 
-结果：manifest/coordinator 专项与七 store failure recovery `17 passed`；含控制面、SQLite、图和损坏契约的受影响回归 `76 passed`；目标文件 mypy、Pyrefly
+结果：manifest/coordinator 与 delete/reset failure recovery `25 passed`；上一轮含控制面、SQLite、图和损坏契约的受影响回归 `76 passed`；目标文件 mypy、Pyrefly
 （0 errors）、ty 和 Ruff 全部通过。没有把 manifest 调度接入七个生产 store。
 
 ## 实验配置
@@ -64,12 +67,12 @@ ty check codey/ghost/deletion_manifest.py codey/ghost/deletion_manifest_store.py
 
 - 已持久化到 GhostSQLite，并能跨新的 `GhostSQLite` 实例恢复；协调器已能绑定七类现有 store
   的 delete/reset 方法，但尚未接入 control surface 默认调度入口。
-- 七个 store 的失败、重启、pending-only resume、新 operation recovery 和部分 rebuild 已验证；
-  尚未证明所有领域 event replay/rebuild 和 reset_all failure 中 tombstone 永久过滤，也没有
-  多进程 runtime acceptance。
+- 七个 store 的 delete/reset 失败、重启、pending-only resume、新 operation recovery 和部分
+  rebuild 已验证；尚未证明所有领域 event replay/rebuild 中 tombstone 永久过滤，也没有多进程
+  runtime acceptance。
 
 ## 下一步
 
-下一步在不改变默认 control surface 行为的前提下，加入 reset_all failure 和多进程 runtime
-acceptance；只有所有 tombstone/replay 零复活和并发恢复证据成立后，才评估是否新增生产调度
-入口，当前继续保持 `EXPERIMENT_ONLY`。
+下一步在不改变默认 control surface 行为的前提下，加入 manifest 并发冷启动和混合 delete/reset
+runtime acceptance；只有所有 tombstone/replay 零复活和并发恢复证据成立后，才评估是否新增
+生产调度入口，当前继续保持 `EXPERIMENT_ONLY`。
