@@ -404,7 +404,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("setStatus('Could not add project', 'err')", HTML)
         self.assertIn("Run this command?", UI_SOURCE)
         self.assertIn("Decision could not be confirmed", UI_SOURCE)
-        self.assertIn("approvalController.submit(id, approved)", HTML)
+        self.assertIn("approvalController.submit(id, approved, scope)", HTML)
         self.assertNotIn("Failed to pick folder", HTML)
         self.assertNotIn("Shell approval failed", HTML)
         self.assertNotIn("approveShell", HTML)
@@ -533,8 +533,19 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("className = 'activity-row command-summary'", _source("command_card"))
         self.assertIn("createIconSvg('copy')", RENDER_JS)
         self.assertNotIn("Result available", RENDER_JS)
-        self.assertNotIn("content: '›'", STYLE_SOURCE)
-        self.assertNotIn("content: '⌄'", STYLE_SOURCE)
+        # Keep the glyph check scoped to activity-row styles. Other UI
+        # disclosures may intentionally use a textual fallback arrow.
+        tool_activity_css = APP_CSS[
+            APP_CSS.index("/* ---------- tool line ---------- */") : APP_CSS.index(
+                "/* ---------- status rows (done / pause / limit / error / changes) ---------- */"
+            )
+        ]
+        command_activity_css = APP_CSS[
+            APP_CSS.index(".command-card {") : APP_CSS.index(".command-panel {")
+        ]
+        activity_css = tool_activity_css + command_activity_css
+        self.assertNotIn("content: '›'", activity_css)
+        self.assertNotIn("content: '⌄'", activity_css)
 
 
     def test_streaming_events_stay_debounced_while_user_actions_flush(self) -> None:
@@ -748,6 +759,18 @@ global.document = {
 };
 global.localStorage = { getItem: () => null, setItem: () => {} };
 global.__TEST_BRIDGE__ = true;
+// ProviderUI refreshes catalogs with a long-lived browser timer. Keep this
+// Node harness finite while retaining explicit interval lifecycle semantics.
+const intervals = [];
+global.setInterval = (callback, delay) => {
+  const handle = { callback, delay };
+  intervals.push(handle);
+  return handle;
+};
+global.clearInterval = (handle) => {
+  const index = intervals.indexOf(handle);
+  if (index >= 0) intervals.splice(index, 1);
+};
     global.window = {__TEST_BRIDGE__:true, addEventListener:()=>{}, Settings:{init:()=>{}, open:()=>{}, close:()=>{}}, Requests:{refreshActions:()=>{}}};
 global.navigator = {};
 global.HTMLElement = function HTMLElement() {};
