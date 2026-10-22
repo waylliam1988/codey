@@ -1,0 +1,41 @@
+{
+  "schema": "ghost_deletion_manifest_failure_recovery_v1",
+  "config": {
+    "suite": "deletion_manifest_failure_recovery_20261022",
+    "commit": "a92db8c97e046d409c76479a9a912559e993856f",
+    "model": null,
+    "endpoint": null,
+    "tasks": [
+      "seed seven Ghost stores",
+      "inject one store failure",
+      "restart and resume pending stores",
+      "recover with a new operation",
+      "rebuild projections"
+    ],
+    "stores": [
+      "inbox",
+      "hebbian",
+      "continuity",
+      "sleep",
+      "work_queue",
+      "affinity",
+      "observations"
+    ],
+    "cells": 7,
+    "reps": 1,
+    "on_off": "one injected failure per cell; no injected failure on explicit recovery operation",
+    "scope": "project",
+    "provider_send": false
+  },
+  "rows": [
+    {"failed_store": "inbox", "first_status": "blocked", "resume_retries_failed_store": false, "recovery_status": "completed", "replay_resurrected": false},
+    {"failed_store": "hebbian", "first_status": "blocked", "resume_retries_failed_store": false, "recovery_status": "completed", "replay_resurrected": false},
+    {"failed_store": "continuity", "first_status": "blocked", "resume_retries_failed_store": false, "recovery_status": "completed", "replay_resurrected": false},
+    {"failed_store": "sleep", "first_status": "blocked", "resume_retries_failed_store": false, "recovery_status": "completed", "replay_resurrected": false},
+    {"failed_store": "work_queue", "first_status": "blocked", "resume_retries_failed_store": false, "recovery_status": "completed", "replay_resurrected": false},
+    {"failed_store": "affinity", "first_status": "blocked", "resume_retries_failed_store": false, "recovery_status": "completed", "replay_resurrected": false},
+    {"failed_store": "observations", "first_status": "blocked", "resume_retries_failed_store": false, "recovery_status": "completed", "replay_resurrected": false}
+  ],
+  "decision": "EXPERIMENT_ONLY",
+  "model_behavior_score": null
+}
