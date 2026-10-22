@@ -170,6 +170,42 @@ def _build_targets(
     return targets
 
 
+def _build_reset_targets(
+    surface: GhostControlSurface,
+    failing: str,
+    calls: list[str],
+    injected: list[bool],
+) -> dict[str, DeletionTarget]:
+    stores: dict[str, Any] = {
+        "inbox": surface.inbox,
+        "hebbian": surface.hebbian,
+        "continuity": surface.continuity,
+        "sleep": surface.sleep,
+        "work_queue": surface.work_queue,
+        "affinity": surface.affinity,
+        "observations": surface.observations,
+    }
+    assert all(store is not None for store in stores.values())
+    targets: dict[str, DeletionTarget] = {}
+    for name, store in stores.items():
+        assert store is not None
+
+        def delete_scope(*_args: object, name: str = name, **_kwargs: object) -> object:
+            raise AssertionError(f"reset_all must not call delete_scope for {name}")
+
+        def reset_all(name: str = name, store: Any = store) -> object:
+            calls.append(name)
+            if name == failing and not injected[0]:
+                injected[0] = True
+                raise OSError(f"injected {name} reset failure")
+            if name == "inbox":
+                return store.reset_all(preserve_settings=True)
+            return store.reset_all()
+
+        targets[name] = DeletionTarget(delete_scope=delete_scope, reset_all=reset_all)
+    return targets
+
+
 def _manifest(operation_id: str, project: str) -> DeletionManifest:
     return new_manifest(
         operation_id=operation_id,
@@ -272,3 +308,82 @@ def test_real_store_failure_restart_and_new_operation_recovery(tmp_path: Path, f
     assert rebuilt.work_queue.rebuild_from_events()
     assert rebuilt.affinity.rebuild_from_events()
     _assert_no_project_data(rebuilt, project)
+
+
+@pytest.mark.parametrize("failing", GHOST_STORE_NAMES)
+def test_real_store_reset_failure_restart_and_new_operation_recovery(
+    tmp_path: Path, failing: str,
+) -> None:
+    surface = _seed_all_stores(tmp_path)
+    observations = surface.observations
+    assert observations is not None
+    calls: list[str] = []
+    injected = [False]
+    coordinator = DeletionManifestCoordinator(
+        DeletionManifestStore(observations.database),
+        _build_reset_targets(surface, failing, calls, injected),
+    )
+    manifest = new_manifest(
+        operation_id=f"reset-{failing}",
+        action="reset_all",
+        scope="all",
+        requested_at="2026-10-22T00:00:00Z",
+        retention_class="purge",
+        stores=GHOST_STORE_NAMES,
+    )
+
+    blocked = coordinator.run(manifest)
+    assert blocked.status == MANIFEST_BLOCKED
+    assert blocked.store(failing).status == STORE_BLOCKED
+    assert all(
+        blocked.store(name).status == STORE_COMPLETED
+        for name in GHOST_STORE_NAMES[: GHOST_STORE_NAMES.index(failing)]
+    )
+    assert all(
+        blocked.store(name).status == STORE_PENDING
+        for name in GHOST_STORE_NAMES[GHOST_STORE_NAMES.index(failing) + 1 :]
+    )
+
+    first_call_count = len(calls)
+    restarted_surface = GhostControlSurface.from_state_home(tmp_path)
+    restarted_observations = restarted_surface.observations
+    assert restarted_observations is not None
+    resumed = DeletionManifestCoordinator(
+        DeletionManifestStore(restarted_observations.database),
+        _build_reset_targets(restarted_surface, failing, calls, injected),
+    ).run(manifest)
+    assert resumed.status == MANIFEST_BLOCKED
+    assert resumed.store(failing).status == STORE_BLOCKED
+    assert calls.count(failing) == 1
+    assert tuple(calls[first_call_count:]) == GHOST_STORE_NAMES[GHOST_STORE_NAMES.index(failing) + 1 :]
+
+    recovered_surface = GhostControlSurface.from_state_home(tmp_path)
+    recovered_observations = recovered_surface.observations
+    assert recovered_observations is not None
+    retry = DeletionManifestCoordinator(
+        DeletionManifestStore(recovered_observations.database),
+        _build_reset_targets(recovered_surface, "", [], [False]),
+    ).run(
+        new_manifest(
+            operation_id=f"reset-retry-{failing}",
+            action="reset_all",
+            scope="all",
+            requested_at="2026-10-22T00:00:00Z",
+            retention_class="purge",
+            stores=GHOST_STORE_NAMES,
+        )
+    )
+    assert retry.status == MANIFEST_COMPLETED
+    assert all(retry.store(name).status == STORE_COMPLETED for name in GHOST_STORE_NAMES)
+
+    rebuilt = GhostControlSurface.from_state_home(tmp_path)
+    _assert_no_project_data(rebuilt, str(tmp_path / PROJECT))
+    assert rebuilt.hebbian is not None
+    assert rebuilt.continuity is not None
+    assert rebuilt.work_queue is not None
+    assert rebuilt.affinity is not None
+    assert rebuilt.hebbian.rebuild_from_events()
+    assert rebuilt.continuity.rebuild_from_events()
+    assert rebuilt.work_queue.rebuild_from_events()
+    assert rebuilt.affinity.rebuild_from_events()
+    _assert_no_project_data(rebuilt, str(tmp_path / PROJECT))
