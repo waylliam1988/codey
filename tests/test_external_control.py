@@ -14,16 +14,16 @@ from pathlib import Path
 import pytest
 
 from codey.app.public_event_feed import FeedOverflow, PublicEventFeed
-from codey.app.service import LocalService
 from codey.control.client import ControlClient
 from codey.control.protocol import ControlError
+from tests.release_helpers import start_local_service
 
 
 @pytest.fixture
 def service(tmp_path: Path):
     root = tmp_path / "project"
     root.mkdir()
-    runtime = LocalService(tmp_path / "state", allowed_roots=(root,), verify_only=True).start()
+    runtime = start_local_service(tmp_path / "state", allowed_roots=(root,), verify_only=True)
     # Admission contract tests deliberately leave the unique scheduler stopped.
     # Real dispatch and process transitions have separate live/process tests.
     runtime.verify_only = False
@@ -144,11 +144,11 @@ def test_config_is_recovered_without_the_ui_cache(tmp_path: Path) -> None:
     home = tmp_path / "state"
     project = tmp_path / "project"
     project.mkdir()
-    runtime = LocalService(home, allowed_roots=(project,)).start()
+    runtime = start_local_service(home, allowed_roots=(project,))
     config = create(ControlClient(home), project)
     runtime.close()
     (home / "ui-state.json").unlink()
-    successor = LocalService(home, allowed_roots=(project,)).start()
+    successor = start_local_service(home, allowed_roots=(project,))
     try:
         assert ControlClient(home).call("get_control", {"conversation_id": config["conversation_id"]}) == config
         assert config["conversation_id"] in {item["id"] for item in successor.ctx.load_ui_state()["sessions"]}

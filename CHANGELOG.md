@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+- Make local startup materialize and validate the current immutable release before
+  launching or activating the service. Serialize concurrent desktop startups,
+  rebuild and publish stale source frontends, require an explicit release identity
+  in `LocalService`, and verify health against the activated release before marking
+  it active.
+- Serialize model-preference reads with catalog/settings writes so concurrent
+  session startup cannot observe a Windows sharing violation during atomic replacement.
+- Record the completed Windows full-suite verification: **9486 passed, 59 skipped**
+  in **3105.06s (0:51:45)**.
+
 - Implement external-control design v0.3 on the shared window-independent service:
   durable delegation, desktop-visible source/refinement messages, bounded observation,
   independent candidate reviews, CLI/JSONL RPC and optional official-SDK MCP.

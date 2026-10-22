@@ -97,7 +97,10 @@ def _admit_durable_tool_recovery(
             provider_snapshot={"provider_id": provider_id},
             task_state={"task": task, "provider_id": provider_id},
         )
-    if state.durable.task(run_id).phase == "accepted":
+    # AppContext starts the durable scheduler.  It may claim the admitted
+    # task between admission and this recovery setup; claiming is only needed
+    # while the task is still pending.
+    if state.durable.task(run_id).status.value == "pending":
         state.durable.claim_task(run_id)
     state.durable.start_task(run_id, state={"task_kind": task_kind})
     state.durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={"task_kind": task_kind})

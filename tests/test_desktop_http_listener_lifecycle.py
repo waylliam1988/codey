@@ -6,13 +6,13 @@ from unittest import mock
 import pytest
 
 from codey.app.desktop import open_desktop
-from codey.app.service import LocalService
 from codey.control.client import ControlClient
 from codey.storage.file_lock import LockTimeout, acquire_lease
+from tests.release_helpers import start_local_service
 
 
 def test_desktop_exit_keeps_shared_service_and_lease(tmp_path):
-    runtime = LocalService(tmp_path).start()
+    runtime = start_local_service(tmp_path)
     try:
         client = ControlClient(tmp_path, operator=True)
         view = mock.Mock()
@@ -42,7 +42,7 @@ def test_http_thread_start_failure_releases_the_listener_and_lease(tmp_path, mon
 
     monkeypatch.setattr(server, "CodeyHTTPServer", construct)
     with mock.patch("threading.Thread.start", side_effect=RuntimeError("thread unavailable")), pytest.raises(RuntimeError, match="thread unavailable"):
-        LocalService(tmp_path).start()
+        start_local_service(tmp_path)
     assert instances[0].socket.fileno() == -1
     with acquire_lease(tmp_path / ".server.lock"):
         pass

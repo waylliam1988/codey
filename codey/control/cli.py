@@ -26,7 +26,7 @@ def register(subparsers: Any) -> None:
     serve.add_argument("--port", type=int, default=0)
     serve.add_argument("--allow-project", action="append", default=[])
     serve.add_argument("--verify-only", action="store_true", help=argparse.SUPPRESS)
-    serve.add_argument("--release-id", default="source", help=argparse.SUPPRESS)
+    serve.add_argument("--release-id", default="", help=argparse.SUPPRESS)
     serve.set_defaults(func=run_serve)
     for name in ("rpc", "mcp"):
         parser = subparsers.add_parser(name, parents=[common], help=f"serve the {name.upper()} stdio control adapter")

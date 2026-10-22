@@ -34,7 +34,7 @@ def credentials(home: Path) -> dict[str, Any]:
 
 class LocalService:
     def __init__(self, home: Path, *, port: int = 0, allowed_roots: tuple[Path, ...] = (),
-                 verify_only: bool = False, release_id: str = "source") -> None:
+                 verify_only: bool = False, release_id: str = "") -> None:
         self.home = home.expanduser().resolve()
         self.port = port
         self.allowed_roots = allowed_roots
@@ -62,10 +62,8 @@ class LocalService:
         self.home.mkdir(parents=True, exist_ok=True)
         self.lease = acquire_lease(self.home / ".server.lock", timeout_seconds=0.0)
         try:
-            if self.release_id == "source":
-                from codey.launcher.releases import bootstrap
-
-                self.release_id = bootstrap(self.home)["release_id"]
+            if not self.release_id or self.release_id == "source":
+                raise ValueError("LocalService requires an immutable release_id")
             self._secrets = credentials(self.home)
             self.ctx = AppContext(self.home, start_scheduler=False)
             sibling_probe.bind_provider_handlers(self.ctx)

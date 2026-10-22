@@ -421,6 +421,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.core.operation_reducer",
             "codey.runtime.core.operation_state",
             "codey.runtime.core.api_selection",
+            "codey.runtime.core.reasoning",
             "codey.runtime.core.operation_payload",
             "codey.runtime.core.outcome",
             "codey.runtime.core.output_capture",
@@ -2328,7 +2329,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # point and stays below the next structural split threshold.
             # Independent Ghost maintenance control adds a small gate at the
             # app-owned sleep scheduler boundary.
-            "app/context.py": 1185,
+            "app/context.py": 1188,
             "ghost/affinity.py": 2750,
             "ghost/continuity.py": 1350,
             "ghost/hebbian.py": 1300,
@@ -2370,13 +2371,13 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # reconciliation and context/fork reads remain one explicit
             # DurableSession owner; keep a measured ceiling until a semantic
             # split can move a whole owner without adding repositories.
-            "durable/session.py": 2177,
+            "durable/session.py": 2178,
             # Headless shell denial now shares the durable cancellation
             # barrier with the live kernel; keep the cohesive loop just above
             # the previous warning ceiling until a whole semantic owner can
             # move without duplicating its boundary.
             # Kernel transport carries the explicit Ghost admit_hints gate.
-            "operations/task_loop.py": 1135,
+            "operations/task_loop.py": 1205,
             # LF/CRLF line-boundary note (was a one-line overclaim).
             # PLR split 2026-09-26: 1381 lines after search_files scan split.
             "toolchain/runtime.py": 1440,

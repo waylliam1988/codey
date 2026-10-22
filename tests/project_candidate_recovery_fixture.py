@@ -135,6 +135,11 @@ def scenario(tmp_path, *, kind='stagnant', source=GOOD, fault='', max_turns=20,
     runner = replace(_runner(state, writer),
                      collect_changes=lambda *a, **k: _changes('names.py'), run_review=reviewer)
     denials = (fault.removeprefix('deny_'),) if fault.startswith('deny_') else ()
+    if denied_probe:
+        # Arbitrary commands now enter the explicit approval workflow. This
+        # fixture exercises a pre-execution refusal, so make that boundary
+        # explicit instead of leaving the approval capability available.
+        denials = (*denials, 'shell.approval')
     with mock.patch.object(state, 'get_provider', return_value=ScriptedProvider([])):
         run_task_submission(runner, TaskSubmission('s', str(project), task, max_turns, False, 'deepseek',
                                                   intent='project', denied_capabilities=denials))

@@ -250,7 +250,8 @@ def test_local_model_title_and_connection_dot_survive_online_and_offline_reload(
                          base_url=base_url if connected or remembered else '', models=[model] if connected else [])
             page.reload()
             expect(page.locator('#provider-button')).to_be_enabled(timeout=15000)
-            expect(page.locator('#provider-name')).to_have_text(expected)
+            title = expected if connected or remembered else expected + ' · Unavailable'
+            expect(page.locator('#provider-name')).to_have_text(title)
             expect(page.locator('#provider-dot')).to_have_class('dot ok' if connected else 'dot ')
             assert page.evaluate("UiState.current().sessions[0].modelSelection") == selection
             expect(page.locator('#effort-chooser')).to_be_hidden()
@@ -290,7 +291,7 @@ def test_actual_model_and_supported_thinking_are_per_chat_and_sent_to_runtime(pa
     page.locator("#provider-button").click()
     page.locator('.provider-item[data-provider="local"]').first.click()
     expect(page.locator("#provider-name")).to_have_text("Gemma4 12B")
-    expect(page.locator("#effort-name")).to_have_text("High")
+    expect(page.locator("#effort-name")).to_have_text("Off")
     for selector in ("#provider-button", "#effort-button", "#provider-menu .provider-item"):
         assert page.locator(selector).evaluate_all("rows => rows.every(row => !row.hasAttribute('title'))")
     page.locator("#effort-button").click()
@@ -331,7 +332,7 @@ def test_actual_model_and_supported_thinking_are_per_chat_and_sent_to_runtime(pa
     assert requests[0]["model_selection"] == {"connection_id":"local","base_url":local["base_url"],"model":local["model"],"effort":"medium"}
 
 
-@pytest.mark.parametrize(('old', 'expected'), [('off','Off'),('high','High'),(None,'High')])
+@pytest.mark.parametrize(('old', 'expected'), [('off','Off'),('high','High'),(None,'Off')])
 def test_saved_effort_selection_remains_per_chat(page, old, expected):
     local = model_settings_route(page)
     apply_model_metadata(page, local)

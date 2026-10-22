@@ -14,6 +14,7 @@ import pytest
 from codey.control.client import ControlClient
 from codey.control.protocol import ControlError
 from codey.launcher.releases import read_upgrade
+from tests.release_helpers import release_manifest, start_local_service
 
 
 def wait_for(predicate, timeout=30):
@@ -34,7 +35,9 @@ def running_service(tmp_path):
     home = tmp_path / "state"
     home.mkdir()
     log = (home / "service-test.log").open("wb")
-    process = subprocess.Popen([sys.executable, "-m", "codey", "serve", "--state-home", str(home)],
+    manifest = release_manifest(home)
+    process = subprocess.Popen([sys.executable, "-m", "codey", "serve", "--state-home", str(home),
+                                "--release-id", manifest["release_id"]], cwd=manifest["source"],
                                stdout=log, stderr=log,
                                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     client = ControlClient(home, operator=True)
@@ -54,9 +57,8 @@ def running_service(tmp_path):
 
 
 def test_verification_mode_blocks_all_admissions(tmp_path):
-    from codey.app.service import LocalService
 
-    runtime = LocalService(tmp_path, verify_only=True).start()
+    runtime = start_local_service(tmp_path, verify_only=True)
     try:
         client = ControlClient(tmp_path, operator=True)
         assert client.call("get_health")["status"] == "verifying"
@@ -71,15 +73,14 @@ def test_verification_mode_blocks_all_admissions(tmp_path):
 
 
 def test_browser_session_survives_service_replacement_but_bootstrap_does_not(tmp_path):
-    from codey.app.service import LocalService
 
-    first = LocalService(tmp_path, verify_only=True).start()
+    first = start_local_service(tmp_path, verify_only=True)
     port = first.port
     bootstrap = first.httpd.operator_auth.issue_bootstrap()
     cookie = first.httpd.operator_auth.exchange(bootstrap)
     unused_bootstrap = first.httpd.operator_auth.issue_bootstrap()
     first.close()
-    successor = LocalService(tmp_path, port=port, verify_only=True).start()
+    successor = start_local_service(tmp_path, port=port, verify_only=True)
     try:
         assert successor.httpd.operator_auth.authenticated(cookie)
         assert successor.httpd.operator_auth.exchange(unused_bootstrap) is None

@@ -2,6 +2,16 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Complete suite (2026-10-22)
+
+The complete Windows pytest run passed with **9486 passed and 59 skipped** in
+**3105.06s (0:51:45)**. The skips are intentional legacy or environment-gated
+contracts; pytest completed without failures.
+
+This run includes the immutable local-release startup path, frontend
+materialization, concurrent startup serialization, model-preference read/write
+locking, and the real multi-session browser regressions.
+
 ## Zen catalog lifecycle (2026-10-22)
 
 Deprecated directory entries are filtered on disk-cache load, fresh discovery

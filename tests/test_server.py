@@ -4342,13 +4342,11 @@ class SessionThreadingTests(unittest.TestCase):
             (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
         )
 
+        fake_time = SimpleNamespace(monotonic=mock.Mock(side_effect=[100.0, 101.0, 105.0, 110.0]))
         with (
             mock.patch.object(sibling_probe, "borrow_open_provider", return_value=helper),
-            mock.patch.object(
-                task_submit.time,
-                "monotonic",
-                side_effect=[100.0, 101.0, 105.0, 110.0],
-            ),
+            mock.patch.object(task_submit, "time", fake_time),
+            mock.patch.object(sibling_probe, "time", fake_time),
         ):
             selected = sibling_probe.handle_profile_doctor(state, request)
 

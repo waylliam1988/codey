@@ -10,11 +10,14 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from codey.control.protocol import MAX_FRAME_BYTES, PROTOCOL_VERSION, ControlError, validate_command
-from codey.storage.local_store import DEFAULT_STATE_HOME, read_json_strict
+from codey.launcher.releases import activate, ensure_frontend, prepare, snapshot
+from codey.storage.file_lock import acquire_lease
+from codey.storage.local_store import DEFAULT_STATE_HOME, read_json_strict, write_json_atomic
 
 if os.name == "nt" or TYPE_CHECKING:
     # CREATE_NO_WINDOW is a Windows-only subprocess constant and is absent
@@ -83,42 +86,111 @@ class ControlClient:
         return self._request(operation, {"expected_instance_id": self.discover()["instance_id"]}, lifecycle=True)
 
 
-def ensure_service(home: Path, *, port: int = 0, allowed_roots: tuple[Path, ...] = ()) -> ControlClient:
-    client = ControlClient(home, operator=True)
-    try:
-        client.call("get_health")
-        return client
-    except ControlError as exc:
-        if exc.code not in {"NOT_FOUND", "OUTCOME_UNKNOWN"}:
-            raise
-    home = home.expanduser().resolve()
-    home.mkdir(parents=True, exist_ok=True)
-    args = [sys.executable, "-m", "codey", "serve", "--state-home", str(home), "--port", str(port)]
+def _current_source() -> Path:
     source = Path(__file__).resolve().parents[2]
-    active = read_json_strict(home / "active-release.json")
-    if active:
-        from codey.launcher.releases import release_path, runtime_digest
+    if not (source / "pyproject.toml").is_file():
+        raise ControlError("RUNTIME_NOT_FOUND", "Current Codey source tree is unavailable")
+    return source
 
-        source = release_path(home, str(active.get("release_id") or "")) / "source"
-        if str(source) != active.get("source") or runtime_digest(source) != active.get("candidate_digest"):
-            raise ControlError("REVISION_CONFLICT", "Committed runtime changed; inspect release evidence before restarting")
-        args.extend(["--release-id", active["release_id"]])
+
+def _materialize_current_release(home: Path) -> dict[str, Any]:
+    source = _current_source()
+    with acquire_lease(home / "release-preparation"):
+        ensure_frontend(source)
+        return snapshot(home, source)
+
+
+def _launch_release(client: ControlClient, home: Path, release: dict[str, Any], *, port: int,
+                    allowed_roots: tuple[Path, ...]) -> ControlClient:
+    args = [sys.executable, "-m", "codey", "serve", "--state-home", str(home), "--port", str(port),
+            "--release-id", release["release_id"]]
     for root in allowed_roots or (Path.cwd(),):
         args.extend(["--allow-project", str(root.resolve())])
     log = home / "service-startup.log"
     if log.exists() and log.stat().st_size > MAX_FRAME_BYTES:
         log.replace(home / "service-startup.previous.log")
     with log.open("ab") as stream:
-        child = subprocess.Popen(args, cwd=source, stdin=subprocess.DEVNULL,
+        child = subprocess.Popen(args, cwd=release["source"], stdin=subprocess.DEVNULL,
                                  stdout=stream, stderr=stream,
                                  creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         try:
-            client.call("get_health")
-            return client
+            health = client.call("get_health")
+            if health.get("release_id") == release["release_id"] and health.get("status") == "ready":
+                write_json_atomic(home / "active-release.json", release, mode=0o600)
+                return client
         except ControlError:
             if child.poll() not in (None, 0):
                 raise ControlError("STARTUP_FAILED", "Codey service failed; inspect service-startup.log") from None
         time.sleep(0.1)
+    if child.poll() is None:
+        child.terminate()
     raise ControlError("STARTUP_FAILED", "Codey service did not become ready within the startup deadline")
+
+
+def _activate_current_release(client: ControlClient, home: Path, current: dict[str, Any],
+                              health: dict[str, Any], *, allowed_roots: tuple[Path, ...]) -> ControlClient:
+    digest = current["candidate_digest"]
+    # Automatic transitions are owned by the current launcher process. The
+    # service on the port may be an older release and must not be asked to
+    # execute preparation code from its own snapshot.
+    coordinator = SimpleNamespace(
+        ctx=SimpleNamespace(state_home=home),
+        instance_id=health["instance_id"],
+        allowed_roots=allowed_roots,
+    )
+    candidate = prepare(coordinator, {"request_id": "auto-local-prepare-" + digest[:32],
+                                     "source": str(_current_source())})
+    if candidate.get("release_id") != current.get("release_id") or candidate.get("candidate_digest") != digest:
+        raise ControlError("REVISION_CONFLICT", "Current source changed while the release was being prepared")
+    activation = activate(coordinator, {
+        "request_id": "auto-activate-" + digest[:32],
+        "candidate_release": candidate["release_id"],
+        "candidate_digest": candidate["candidate_digest"],
+        "expected_instance_id": health["instance_id"],
+    })
+    upgrade_id = activation["upgrade_id"]
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        try:
+            status = client.call("get_upgrade", {"upgrade_id": upgrade_id})
+        except ControlError as exc:
+            if exc.code == "NOT_FOUND":
+                time.sleep(0.1)
+                continue
+            raise
+        phase = status.get("phase")
+        if phase in {"rolled_back", "recovery_required", "aborted"}:
+            raise ControlError("UPGRADE_FAILED", "Codey could not activate the current release", details=status)
+        if phase == "active":
+            try:
+                ready = client.call("get_health")
+                if ready.get("release_id") == current["release_id"] and ready.get("status") == "ready":
+                    return client
+            except ControlError:
+                pass
+        time.sleep(0.1)
+    raise ControlError("UPGRADE_FAILED", "Codey release activation did not settle", details={"upgrade_id": upgrade_id})
+
+
+def ensure_service(home: Path, *, port: int = 0, allowed_roots: tuple[Path, ...] = ()) -> ControlClient:
+    home = home.expanduser().resolve()
+    home.mkdir(parents=True, exist_ok=True)
+    # Serialize the complete materialize/handshake/cutover sequence so two
+    # desktop launches cannot prepare or activate competing candidates.
+    with acquire_lease(home / "startup.lock", timeout_seconds=90):
+        current = _materialize_current_release(home)
+        client = ControlClient(home, operator=True)
+        try:
+            health = client.call("get_health")
+        except ControlError as exc:
+            if exc.code not in {"NOT_FOUND", "OUTCOME_UNKNOWN"}:
+                raise
+            return _launch_release(client, home, current, port=port, allowed_roots=allowed_roots)
+        if health.get("release_id") == current["release_id"]:
+            if health.get("status") == "ready":
+                write_json_atomic(home / "active-release.json", current, mode=0o600)
+                return client
+            raise ControlError("STARTUP_FAILED", "Codey service has the requested release but is not ready")
+        return _activate_current_release(client, home, current, health, allowed_roots=allowed_roots)

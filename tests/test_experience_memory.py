@@ -238,7 +238,9 @@ class SettlementCommitOrderTests(unittest.TestCase):
         store = GhostObservationStore(state_home)
 
         class _State:
-            ghost_inbox = None
+            ghost_inbox = SimpleNamespace(
+                control_enabled=lambda _name, **_scope: True,
+            )
 
             def __init__(self) -> None:
                 self.ghost_observations = store

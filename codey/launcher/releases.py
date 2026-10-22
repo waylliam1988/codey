@@ -76,12 +76,47 @@ def snapshot(home: Path, source: Path) -> dict[str, Any]:
     return {"release_id": identity, "candidate_digest": digest, "source": str(target), "created_at": time.time()}
 
 
-def bootstrap(home: Path) -> dict[str, Any]:
-    """Capture the booted source before tasks can edit it, for honest rollback."""
-    with acquire_lease(home / "release-preparation"):
-        manifest = snapshot(home, Path(__file__).resolve().parents[2])
-        write_json_atomic(home / "active-release.json", manifest, mode=0o600)
-        return manifest
+def ensure_frontend(source: Path) -> None:
+    """Materialize the generated frontend before the runtime is snapshotted.
+
+    Installed packages contain the already-published ``codey/web`` tree and do
+    not necessarily contain Node or the frontend sources. A source checkout,
+    however, must update that tree automatically when its frontend inputs
+    changed. The publish script remains the single owner of the generated
+    tree and its source hash.
+    """
+    frontend = source / "frontend"
+    if not frontend.is_dir():
+        return
+    publish = source / "tools" / "publish_frontend.py"
+    if not publish.is_file():
+        raise ControlError("FRONTEND_BUILD_FAILED", "Frontend sources exist but the publisher is unavailable")
+
+    def run(argv: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(argv, cwd=source, stdin=subprocess.DEVNULL,
+                                  capture_output=True, text=True, encoding="utf-8",
+                                  timeout=timeout, check=False,
+                                  creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ControlError("FRONTEND_BUILD_FAILED", "Frontend build process could not be started or completed",
+                               details={"command": argv, "error": str(exc)[:1000]}) from exc
+
+    check = run([sys.executable, "-m", "tools.publish_frontend", "--check"], timeout=60)
+    if check.returncode == 0:
+        return
+    build = run(["npm", "run", "build"], timeout=300)
+    if build.returncode != 0:
+        raise ControlError("FRONTEND_BUILD_FAILED", "Frontend build failed",
+                           details={"command": ["npm", "run", "build"],
+                                    "stdout": (build.stdout or "")[-4000:],
+                                    "stderr": (build.stderr or "")[-4000:]})
+    publish_result = run([sys.executable, "-m", "tools.publish_frontend"], timeout=60)
+    if publish_result.returncode != 0:
+        raise ControlError("FRONTEND_BUILD_FAILED", "Frontend publication failed",
+                           details={"command": [sys.executable, "-m", "tools.publish_frontend"],
+                                    "stdout": (publish_result.stdout or "")[-4000:],
+                                    "stderr": (publish_result.stderr or "")[-4000:]})
 
 
 def _dependencies(source: Path) -> object:
@@ -160,7 +195,8 @@ def prepare(service: Any, args: dict[str, Any]) -> dict[str, Any]:
             before = runner.schema(probe)
             _verification(directory, manifest, [[sys.executable, "-c",
                 "import sys; from pathlib import Path; from codey.app.service import LocalService; "
-                "s=LocalService(Path(sys.argv[1]),verify_only=True); s.start(); s.close()", str(probe)]])
+                "s=LocalService(Path(sys.argv[1]),verify_only=True,release_id=sys.argv[2]); s.start(); s.close()",
+                str(probe), manifest["release_id"]]])
             if runner.schema(probe) != before:
                 raise ControlError("SCHEMA_MISMATCH", "Automatic activation requires a backward-compatible unchanged schema")
             if runtime_digest(Path(manifest["source"])) != manifest["candidate_digest"]:

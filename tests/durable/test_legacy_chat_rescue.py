@@ -121,9 +121,10 @@ def test_history_projection_encodes_nested_immutable_payloads_as_json(tmp_path: 
 
 def test_startup_failure_never_announces_ui_ready(tmp_path: Path, monkeypatch, capsys) -> None:
     from codey.app.context import AppContext
-    from codey.app.service import LocalService
 
     monkeypatch.setattr(AppContext, "__init__", Mock(side_effect=SchemaVersionError("newer schema")))
     with pytest.raises(SchemaVersionError):
-        LocalService(tmp_path).start()
+        from tests.release_helpers import start_local_service
+
+        start_local_service(tmp_path)
     assert "UI ready" not in capsys.readouterr().out

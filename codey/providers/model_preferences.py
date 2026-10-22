@@ -62,7 +62,12 @@ class ModelPreferences:
         self.path = Path(state_home or DEFAULT_STATE_HOME) / "model-preferences.json"
 
     def _read(self) -> dict[str, Any]:
-        raw = read_json_strict(self.path)
+        # Readers must share the same sidecar lock as catalog/settings writers.
+        # On Windows, an atomic replacement can otherwise race a concurrent
+        # open/stat and surface as PermissionError to a task starting in a
+        # different session.
+        with with_file_lock(self.path):
+            raw = read_json_strict(self.path)
         if raw is None:
             return {"revision": 0, "sources": default_sources(), "catalogs": {}}
         if (
