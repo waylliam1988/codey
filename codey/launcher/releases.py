@@ -60,9 +60,10 @@ def runtime_digest(root: Path) -> str:
     return fingerprint(rows)
 
 
-def snapshot(home: Path, source: Path) -> dict[str, Any]:
+def snapshot(home: Path, source: Path, *, identity_suffix: str = "") -> dict[str, Any]:
     digest = runtime_digest(source)
-    identity = "release_" + digest[:32]
+    suffix = ("_" + identity_suffix) if identity_suffix else ""
+    identity = "release_" + digest[:32] + suffix
     directory = release_path(home, identity)
     target = directory / "source"
     if not target.exists():
@@ -157,11 +158,20 @@ def prepare(service: Any, args: dict[str, Any]) -> dict[str, Any]:
             if "result" not in old:
                 raise ControlError("OUTCOME_UNKNOWN", "Validation already started; inspect its manifest rather than replaying commands")
             return dict(old["result"])
-        manifest = snapshot(home, Path(args["source"]).expanduser().resolve())
+        source = Path(args["source"]).expanduser().resolve()
+        manifest = snapshot(home, source)
         directory = release_path(home, manifest["release_id"])
         previous = read_json_strict(directory / "manifest.json")
         if previous and previous.get("status") == "validating":
-            raise ControlError("OUTCOME_UNKNOWN", "An interrupted validation needs a new candidate; it is never silently replayed")
+            # A digest normally names one immutable candidate. If validation
+            # was interrupted, derive a fresh identity so recovery never
+            # replays the old request or mutates its evidence directory.
+            recovery_suffix = fingerprint(args["request_id"] + ":recovery")[:16]
+            manifest = snapshot(home, source, identity_suffix=recovery_suffix)
+            directory = release_path(home, manifest["release_id"])
+            previous = read_json_strict(directory / "manifest.json")
+            if previous and previous.get("status") == "validating":
+                raise ControlError("OUTCOME_UNKNOWN", "A recovery validation is already in progress; inspect its manifest")
         current = read_json_strict(home / "active-release.json")
         if not current or _dependencies(Path(manifest["source"])) != _dependencies(Path(current["source"])):
             raise ControlError("DEPENDENCY_MISMATCH", "Automatic activation requires the same runtime dependencies")

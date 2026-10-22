@@ -9,6 +9,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -140,9 +141,16 @@ def _activate_current_release(client: ControlClient, home: Path, current: dict[s
         instance_id=health["instance_id"],
         allowed_roots=allowed_roots,
     )
-    candidate = prepare(coordinator, {"request_id": "auto-local-prepare-" + digest[:32],
-                                     "source": str(_current_source())})
-    if candidate.get("release_id") != current.get("release_id") or candidate.get("candidate_digest") != digest:
+    prepare_args = {"request_id": "auto-local-prepare-" + digest[:32],
+                    "source": str(_current_source())}
+    try:
+        candidate = prepare(coordinator, prepare_args)
+    except ControlError as exc:
+        if exc.code != "OUTCOME_UNKNOWN":
+            raise
+        prepare_args["request_id"] = prepare_args["request_id"] + "-recovery-" + uuid.uuid4().hex
+        candidate = prepare(coordinator, prepare_args)
+    if candidate.get("candidate_digest") != digest:
         raise ControlError("REVISION_CONFLICT", "Current source changed while the release was being prepared")
     activation = activate(coordinator, {
         "request_id": "auto-activate-" + digest[:32],

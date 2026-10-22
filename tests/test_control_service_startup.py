@@ -63,6 +63,35 @@ def test_ensure_service_switches_a_stale_running_release(tmp_path, monkeypatch):
     assert [item[0] for item in calls] == ["get_health", "get_upgrade", "get_health"]
 
 
+def test_ensure_service_retries_interrupted_validation_with_fresh_request(tmp_path, monkeypatch):
+    current = {"release_id": "release_" + "b" * 32, "candidate_digest": "b" * 64,
+               "source": str(tmp_path / "releases" / ("release_" + "b" * 32) / "source")}
+    prepare_calls = []
+    responses = iter([
+        {"release_id": "release_" + "a" * 32, "instance_id": "old-instance", "status": "ready"},
+        {"phase": "active"},
+        {"release_id": current["release_id"], "status": "ready"},
+    ])
+
+    monkeypatch.setattr("codey.control.client._materialize_current_release", lambda home: current)
+    monkeypatch.setattr("codey.control.client._current_source", lambda: Path.cwd())
+
+    def prepare(service, args):
+        prepare_calls.append(dict(args))
+        if len(prepare_calls) == 1:
+            raise ControlError("OUTCOME_UNKNOWN", "interrupted")
+        return current
+
+    monkeypatch.setattr("codey.control.client.prepare", prepare)
+    monkeypatch.setattr("codey.control.client.activate", lambda service, args: {
+        "upgrade_id": "upgrade_" + "c" * 32, "phase": "accepted"})
+    monkeypatch.setattr(ControlClient, "call", lambda self, operation, params=None: next(responses))
+
+    ensure_service(tmp_path)
+    assert len(prepare_calls) == 2
+    assert prepare_calls[1]["request_id"].startswith(prepare_calls[0]["request_id"] + "-recovery-")
+
+
 def test_local_service_rejects_source_runtime(tmp_path):
     from codey.app.service import LocalService
 
