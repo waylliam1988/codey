@@ -230,26 +230,16 @@ class ApprovalEffectiveProfileTests(unittest.TestCase):
 
         policy = _project_policy()
         self.assertTrue(policy.allows("shell.approval"))
-        captured: dict = {}
         approvals: list = []
+        import tempfile
 
-        def fake_evaluate(call, *, project, permission_profile,
-                          approval_available=False, phase="writer"):
-            captured["profile"] = permission_profile
-            decision = SimpleNamespace(decision="ask_user")
-            return decision, SimpleNamespace()
-
-        with mock.patch("codey.agents.tool_execution.evaluate_tool_call_policy_for",
-                        fake_evaluate), mock.patch(
-                            "codey.agents.tool_execution.policy_asks_user",
-                            lambda d: True):
+        with tempfile.TemporaryDirectory() as project:
             result = kernel._approval_stop(
-                [self._shell_call()], project_path="E:/tmp",
+                [self._shell_call()], project_path=project,
                 on_shell_request=approvals.append,
                 turn=2, run_id="r", intent_sink=None,
                 policy=policy, permission_profile="research",
             )
-        self.assertEqual(captured.get("profile"), "coding_writer")
         self.assertIsNotNone(result)
         self.assertEqual(result.stop_reason, "approval")
         self.assertEqual(len(approvals), 1)

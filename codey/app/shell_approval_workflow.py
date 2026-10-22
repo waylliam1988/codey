@@ -228,6 +228,9 @@ class ShellApprovalWorkflow:
         histories = list(_durable_approval_histories(self.ctx).values())
         for facts in histories:
             last = facts[-1]
+            if last.kind == "requested":
+                self.apply_remembered(last.session_id, last.source_run_id)
+                continue
             if last.kind == "continuation_started":
                 # A started continuation is already owned by its durable task.
                 # Missing or malformed ownership is unknown and must not be
@@ -249,7 +252,40 @@ class ShellApprovalWorkflow:
             }:
                 self._schedule(facts[0].approval_id)
 
-    def accept(self, approval_id: str, approved: bool, _submit: Submit) -> tuple[int, dict[str, Any]]:
+    def apply_remembered(self, session_id: str, run_id: str) -> None:
+        """Called after the original task is parked, never before its checkpoint."""
+        for state in self.list_statuses(session_id=session_id):
+            if state["source_run_id"] != run_id or state["decision"] != "pending":
+                continue
+            facts = self._facts(state["id"])
+            pending = self._pending(facts[0]) if facts else None
+            try:
+                rule = self.ctx.command_permissions.matching(pending) if pending else None
+            except (OSError, ValueError):
+                logger.warning("Saved permissions unavailable; requesting explicit approval")
+                continue
+            if rule:
+                # The task thread still owns its old attempt context after
+                # parking. Commit the approval on the independent worker,
+                # just like an HTTP decision, rather than using a stale token.
+                self._schedule(state["id"])
+
+    def _accept_remembered(self, approval_id: str, pending: dict[str, Any]) -> bool:
+        try:
+            rule = self.ctx.command_permissions.matching(pending)
+            if rule is None:
+                return False
+            code, _ = self.accept(approval_id, True, None, remembered_rule_id=rule["id"])
+            return code == 202
+        except (OSError, ValueError):
+            logger.warning("Saved permissions unavailable; requesting explicit approval")
+            return False
+
+    def accept(self, approval_id: str, approved: bool, _submit: Submit | None, *, scope: str = "once",
+               remembered_rule_id: str = "") -> tuple[int, dict[str, Any]]:
+        if not isinstance(scope, str) or scope not in {"once", "session", "project"} or (not approved and scope != "once"):
+            return 400, {"error": "Invalid approval scope"}
+        remember_error = ""
         with self.ctx._shell_spawn_gate:
             facts = self._facts(approval_id)
             if not facts:
@@ -266,6 +302,17 @@ class ShellApprovalWorkflow:
                 pending = self._pending(facts[0])
                 if pending is None:
                     return 409, {**state, "code": "command_unavailable", "error": "approval command unavailable"}
+                if remembered_rule_id:
+                    try:
+                        rule = self.ctx.command_permissions.matching(pending)
+                    except (OSError, ValueError):
+                        return 409, {**state, "error": "Saved permissions unavailable; explicit approval required"}
+                    if rule is None or rule["id"] != remembered_rule_id:
+                        return 409, {**state, "code": "permission_revoked", "error": "Saved permission was revoked"}
+                from codey.storage.command_permissions import project_rule_available
+
+                if scope == "project" and not project_rule_available(str(pending.get("command") or "")):
+                    return 400, {"error": "This command supports one-time or exact session approval only"}
                 # Keep the UI projection intact until the verdict is durable.
                 if not _claim_decision_fact(
                     self.ctx,
@@ -276,11 +323,16 @@ class ShellApprovalWorkflow:
                     return 409, {"code": "decision_conflict", "error": "approval already decided"}
                 with self.ctx.lock:
                     self.ctx.approvals.pop_shell(approval_id)
+                if scope != "once":
+                    try:
+                        self.ctx.command_permissions.remember(pending, scope)
+                    except (OSError, ValueError):
+                        remember_error = "Command allowed once, but permission could not be saved."
         self._schedule(approval_id)
         accepted_state = self.status(approval_id)
         assert accepted_state is not None
         self.ctx.emit(dict(accepted_state))
-        return 202, dict(accepted_state)
+        return 202, {**accepted_state, **({"remember_error": remember_error} if remember_error else {})}
 
     def retry(self, approval_id: str, _submit: Submit) -> tuple[int, dict[str, Any]]:
         state = self.status(approval_id)
@@ -429,6 +481,11 @@ class ShellApprovalWorkflow:
         pending = self._pending(first)
         if pending is None:
             return
+        if last.kind == "requested":
+            if not self._accept_remembered(approval_id, pending):
+                return
+            facts = self._facts(approval_id)
+            first, last = facts[0], facts[-1]
         if last.kind == "approved":
             if self._closing or self.ctx.shutdown_requested() or getattr(getattr(self.ctx, "control_service", None), "draining", False):
                 return
@@ -484,6 +541,7 @@ class ShellApprovalWorkflow:
                     "approved": True,
                     **shell_command_event_fields(pending),
                     "cwd": pending["cwd"],
+                    "project": pending.get("project", ""),
                     "status": "running",
                     "output": "",
                     "exit_code": None,
@@ -514,6 +572,7 @@ class ShellApprovalWorkflow:
                 "approved": approved,
                 **shell_command_event_fields(pending),
                 "cwd": pending["cwd"],
+                "project": pending.get("project", ""),
                 "status": result.get("status", "exit"),
                 "output": result.get("output") or result.get("error") or "",
                 "exit_code": result.get("exit_code"),

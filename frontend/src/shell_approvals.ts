@@ -83,7 +83,13 @@ export function createApprovalController(deps: ApprovalDeps) {
       deps.changed(session.id);
       return;
     }
-    session.messages = session.messages.filter((m) => m.type !== 'shell_request' || m.id !== state.id);
+    if (request)
+      Object.assign(request, {
+        type: 'shell_result',
+        approved: state.decision === 'allow',
+        shellStatus: state.decision === 'deny' ? 'denied' : state.execution,
+        executionId: state.execution_id,
+      });
     const message = {
       type: 'shell_approval_status',
       id: state.id,
@@ -102,6 +108,7 @@ export function createApprovalController(deps: ApprovalDeps) {
         runId: state.run_id,
         command: request.command,
         cwd: request.cwd,
+        project: request.project,
         approved: true,
         shellStatus: 'running',
         executionId: state.execution_id,
@@ -134,7 +141,7 @@ export function createApprovalController(deps: ApprovalDeps) {
     }
   }
 
-  async function submit(id: string, approved: boolean) {
+  async function submit(id: string, approved: boolean, scope = 'once') {
     if (!id || inFlight.has(id) || stateFor(id)) return;
     inFlight.add(id);
     submission(id, 'sending');
@@ -142,11 +149,28 @@ export function createApprovalController(deps: ApprovalDeps) {
       const response = await deps.fetch('/api/shell_approval', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, approved }),
+        body: JSON.stringify({ id, approved, ...(scope !== 'once' ? { scope } : {}) }),
       });
       const data = await response.json();
+      if (response.status === 400 && data.error) {
+        const session = find(id);
+        const request = session?.messages.find((m) => m.type === 'shell_request' && m.id === id);
+        if (request && session) {
+          delete request.approvalSubmission;
+          request.approvalError = String(data.error);
+          deps.changed(session.id);
+        }
+        return;
+      }
       if (data.type === 'shell_approval_status') apply(data);
       else await refresh(id);
+      if (data.remember_error) {
+        const session = find(id);
+        if (session) {
+          session.messages.push({ type: 'info', text: String(data.remember_error) });
+          deps.changed(session.id);
+        }
+      }
     } catch {
       await refresh(id);
     } finally {

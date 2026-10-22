@@ -295,8 +295,8 @@ const renderApi = (function () {
     result.textContent = m.pending
       ? m.activity || m.result || 'Working'
       : m.error
-        ? m.failure?.code === 'policy.approval_required' || /command_not_allowed/.test(m.result || '')
-          ? 'This command requires approval'
+        ? ['run', 'shell'].includes(m.toolName || m.kind || '')
+          ? 'Command blocked or failed'
           : 'Tool failed'
         : '';
     if (!m.pending && !m.error && m.preview) {

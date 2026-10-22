@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import sys
 import threading
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect, sync_playwright
@@ -17,13 +18,15 @@ from tests.support.shell_approval import seed_requested_approval
 from tests.test_ui_inplace_render import _goto_restored_ui
 
 
-@pytest.mark.parametrize("approved", [True, False])
-def test_response_loss_and_retries_preserve_original_task_and_single_execution(tmp_path, monkeypatch, approved):
+@pytest.mark.parametrize("approved,scope", [(True, 'once'), (False, 'once'), (True, 'session'), (True, 'project')])
+def test_response_loss_and_retries_preserve_original_task_and_single_execution(tmp_path, monkeypatch, approved, scope):
     # Observe the durable wakeup before a model worker consumes it. The
     # scheduler's execution of that checkpoint is covered by the HTTP gate.
     ctx = AppContext(tmp_path, start_scheduler=False)
     script = "from pathlib import Path\nwith Path('executions').open('a') as f: f.write('executed\\n')\nprint('BROWSER_SHELL_RESULT')"
     command = f'"{sys.executable}" -c "import base64;exec(base64.b64decode(\'{base64.b64encode(script.encode()).decode()}\'))"'
+    if scope == 'project':
+        command = 'python -m unittest discover -v'
     seed_requested_approval(ctx, command=command)
     original_task = ctx.durable.task("source")
     restore_pending_shell_approvals(ctx)
@@ -59,6 +62,8 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
                         route.continue_()
 
                 page.route("**/api/shell_approval", drop_response)
+                if scope in {'session', 'project'}:
+                    page.get_by_text('Allow and remember…', exact=True).click()
                 with (
                     page.expect_response(
                         lambda response: response.request.method == "POST"
@@ -69,13 +74,16 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
                         and "/api/shell_approval?id=approval" in response.url
                     ) as checked_response,
                 ):
-                    page.get_by_role("button", name="Allow once" if approved else "Deny", exact=True).click()
+                    choice = ('Remember exact command in this project' if scope == 'project'
+                              else 'Allow same command in this chat' if scope == 'session'
+                              else 'Allow once' if approved else 'Deny')
+                    page.get_by_role("button", name=choice, exact=True).click()
                 assert lost_response.value.status == 502
                 assert checked_response.value.status == 200
                 expect(page.get_by_role("button", name="Allow once", exact=True)).to_have_count(0)
                 expect(page.get_by_role("button", name="Deny", exact=True)).to_have_count(0)
                 expect(page.locator(".shell-stdout")).to_contain_text(
-                    "BROWSER_SHELL_RESULT" if approved else "Denied by user"
+                    'Ran 0 tests' if scope == 'project' else "BROWSER_SHELL_RESULT" if approved else "Denied by user"
                 )
                 assert ctx.shell_approval_workflow.wait(5)
                 status = ctx.shell_approval_workflow.status("approval")
@@ -119,11 +127,30 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
                 assert ctx.shell_approval_workflow.wait(5)
                 assert ctx.durable.task(original_task.task_id) == task
                 assert len(ctx.durable.tasks()) == 1
-                if approved:
+                if approved and scope != 'project':
                     assert (tmp_path / "executions").read_text().splitlines() == ["executed"]
                 else:
                     assert not (tmp_path / "executions").exists()
                 assert not errors
+                if scope in {'session', 'project'}:
+                    assert len(ctx.command_permissions.list_rules(session_id='session', project=str(tmp_path))) == 1
+                    if scope == 'project':
+                        assert ctx.command_permissions.matching({'project': str(tmp_path), 'session_id': 'other-chat',
+                                                                 'command': command, 'cwd': '.'})
+                    page.locator('.command-card > details > summary').click()
+                    page.get_by_role('button', name='Saved permissions', exact=True).click()
+                    dialog = page.get_by_role('dialog')
+                    expect(dialog).to_contain_text('This project · Exact command' if scope == 'project' else 'This chat · Exact command')
+                    output = Path('.e2e-artifacts/command-permissions')
+                    output.mkdir(parents=True, exist_ok=True)
+                    page.screenshot(path=str(output / f'{scope}-permissions.png'), full_page=True)
+                    dialog.get_by_role('button', name='Revoke', exact=True).click()
+                    expect(dialog).to_contain_text('No saved permissions')
+                    assert ctx.command_permissions.list_rules(session_id='session', project=str(tmp_path)) == []
+                    dialog.get_by_role('button', name='Close', exact=True).click()
+                    page.locator('#btn-settings').click()
+                    page.get_by_role('button', name='Saved command permissions', exact=True).click()
+                    expect(page.get_by_role('dialog', name='Saved command permissions')).to_contain_text('No saved permissions')
             finally:
                 browser.close()
     finally:

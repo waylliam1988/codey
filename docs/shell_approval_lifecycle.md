@@ -6,6 +6,34 @@ shell or the model. The command artifact is verified before accepting a decision
 
 ## State and identity
 
+Non-allowlisted singleton `run` calls enter the same approval workflow as
+`shell`, after checking the task grant, effective project profile and path
+policy. Hard denials and unavailable approval channels do not create waiting
+cards. Unsupported Windows heredoc syntax is rejected with a compatibility
+explanation before approval. The command is never rewritten after consent.
+The immutable artifact preserves the original tool name, arguments and call
+ID through execution, native delivery and recovery. An approved arbitrary
+command does not become trusted verification merely because it used `run`.
+
+`run.output_tail_lines` bounds the displayed/model output while retaining the
+actual process exit code and existing output capture. The command card can
+also toggle the last 40 retained lines without changing the copied output.
+
+Approval choices are once, exact command in this conversation, and (for
+narrowly supported simple commands) exact command in this project. Grants
+bind canonical project/cwd, shell and an environment fingerprint. Compound
+commands and inline scripts cannot create project rules. Rules live in the
+user state directory, never in repository-controlled configuration. Settings
+and command cards expose the saved rules and revocation. Revocation and the
+final remembered-grant check share the spawn gate. Corrupt/unavailable rule
+storage falls back to explicit approval. Automatic acceptance happens on an
+independent approval worker after the task is parked, so it cannot reuse a
+released task-attempt token. Every execution still requires a durable claim.
+
+Mixed tool batches retain ordinary per-tool execution and refusal; commands
+requiring approval must be submitted alone so earlier effects cannot be
+silently skipped or replayed.
+
 The fact journal binds every approval to its session, source run and verified command
 artifact. Native call IDs, protocol windows, workspace attachment and API model
 selection are reconstructed from that source, rather than from the current UI.

@@ -202,13 +202,14 @@ TOOL_DEFINITIONS = (
         examples=(
             '{"tool":"run","args":{"command":"python -m unittest","path":"."}}',
         ),
-        description="Run an allowed test, build, lint, or check command.",
+        description="Run a test, build, lint, or check. Use output_tail_lines to limit displayed output instead of a shell pipe. Other commands request user approval when available.",
         output_facts=("command_verified",),
         render_hint="run",
         repair_hint="run",
         parameters=(
             ("command", {"type": "string"}),
             ("path", {"type": "string"}),
+            ("output_tail_lines", {"type": "integer", "minimum": 1, "maximum": 2000}),
         ),
         required=("command",),
         category="coding",

@@ -363,11 +363,14 @@ def run_command_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
     try:
         canonical_run_command(subject.project, subject.path or ".", command)
     except RunCommandPolicyError as exc:
+        from codey.policies.command_approval import shell_compatibility_error
+
+        compatibility_error = shell_compatibility_error(command) if exc.reason_code == "command_not_allowed" else ""
         return ActionPolicyDecision.deny(
             subject,
             guard_id="run_command_guard",
-            reason_code=exc.reason_code,
-            display=exc.display,
+            reason_code="shell_syntax_unsupported" if compatibility_error else exc.reason_code,
+            display=compatibility_error or exc.display,
         )
     return None
 
@@ -381,6 +384,14 @@ def shell_approval_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
             guard_id="shell_approval_guard",
             reason_code="command_required",
             display="command required",
+        )
+    from codey.policies.command_approval import shell_compatibility_error
+
+    compatibility_error = shell_compatibility_error(subject.command)
+    if compatibility_error:
+        return ActionPolicyDecision.deny(
+            subject, guard_id="shell_approval_guard", reason_code="shell_syntax_unsupported",
+            display=compatibility_error,
         )
     if not subject.approval_available:
         return ActionPolicyDecision.deny(

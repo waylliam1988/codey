@@ -77,9 +77,10 @@ it.each([false, true])('reconciles the approval response without SSE: approved=%
   expect(url).toBe('/api/shell_approval');
   expect(options?.method).toBe('POST');
   expect(JSON.parse(String(options?.body))).toEqual({ id: 'approval-1', approved });
-  expect(session.messages).toHaveLength(1);
-  expect(session.messages[0]?.type).toBe('shell_approval_status');
-  expect(session.messages[0]?.approval).toEqual(state);
+  expect(session.messages).toHaveLength(2);
+  expect(session.messages[0]?.type).toBe('shell_result');
+  expect(session.messages[0]?.command).toBe('echo approved');
+  expect(session.messages[1]?.approval).toEqual(state);
   expect(controller.decided('approval-1')).toBe(true);
   expect(changed).toHaveBeenCalledWith('session');
 });

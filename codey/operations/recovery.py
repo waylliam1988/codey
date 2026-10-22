@@ -120,12 +120,14 @@ def _recover_shell_approval(
     matching = tuple(effect for effect in effects
                      if effect.category == EFFECT_CATEGORY_TOOL_CALL
                      and effect.intent.get("call_id") == call_id)
-    if len(matching) != 1 or matching[0].intent.get("tool_name") != "shell":
-        raise ValueError("shell approval does not identify one original shell tool call")
+    tool_name = str(payload.get("tool_name") or "shell")
+    if len(matching) != 1 or matching[0].intent.get("tool_name") != tool_name or tool_name not in {"run", "shell"}:
+        raise ValueError("shell approval does not identify one original command tool call")
     effect = matching[0]
     if effect.settlement is not None:
         return
-    call = ToolCall("shell", {"command": payload["command"], "path": payload["cwd"]}, call_id=call_id)
+    call = ToolCall(tool_name, dict(payload["tool_args"]) if isinstance(payload.get("tool_args"), dict)
+                    else {"command": payload["command"], "path": payload["cwd"]}, call_id=call_id)
     if compute_args_digest(call.args) != effect.args_digest:
         raise ValueError("shell approval arguments differ from original tool call")
     mutations = _runtime_mutations(deps)

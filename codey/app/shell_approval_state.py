@@ -137,6 +137,8 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
 
     command_fields = shell_command_payload(payload["command"])
     pending: dict[str, Any] = {
+        "tool_name": str(payload.get("tool_name") or "shell"),
+        "tool_args": payload.get("tool_args"),
         "approval_id": fact.approval_id,
         "id": fact.approval_id,
         "session_id": fact.session_id,
@@ -171,6 +173,7 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
         ][:8],
     }
     pending["ui_event"] = {
+        "tool_name": pending["tool_name"],
         "type": "shell_request",
         "run_id": fact.source_run_id,
         "session_id": fact.session_id,
@@ -186,6 +189,9 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
     }
     if pending["call_id"]:
         pending["ui_event"]["call_id"] = pending["call_id"]
+    from codey.storage.command_permissions import project_rule_available
+
+    pending["ui_event"]["project_rule_available"] = project_rule_available(payload["command"])
     source_selection = _source_api_selection(ctx, fact.session_id, fact.source_run_id)
     if source_selection is not None:
         pending["_api_selection"] = source_selection
@@ -371,6 +377,8 @@ def resolve_shell_approval(ctx: Any, approval_id: str) -> dict[str, Any] | None:
         return None
     return {
         "call_id": str(command.get("call_id") or ""),
+        "tool_name": str(command.get("tool_name") or "shell"),
+        "tool_args": command.get("tool_args"),
         "command": str(command.get("command") or ""),
         "cwd": str(command.get("cwd") or "."),
         "model_text": str(result.get("output") or result.get("error") or ""),

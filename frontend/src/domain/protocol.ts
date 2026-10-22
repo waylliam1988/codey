@@ -90,6 +90,7 @@ export type ServerEvent = {
   risk_label?: string;
   risk_title?: string;
   risk_detail?: string;
+  project_rule_available?: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {

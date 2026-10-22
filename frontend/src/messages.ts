@@ -7,13 +7,14 @@ import { artifactRow, decorateDeliverables } from './artifacts';
 import type { Message, UiDeps } from './types/domain';
 import { finalAnswerMarkdown } from './answer_copy';
 import { iconButton } from './icon_button';
+import { permissionsButton } from './command_permissions';
 interface MessagesDeps extends UiDeps {
   openDocument(sessionId: string, ref: DocumentRef): void;
   statusRow(prefix: string, text: string, options?: Record<string, unknown>): HTMLElement;
   currentProjectPath(): string;
   openChangesDrawer(project: string, path?: string): unknown;
   attachCurrentChatToPickedProject(): unknown;
-  approveCommand(id: string, approved: boolean): unknown;
+  approveCommand(id: string, approved: boolean, scope?: string): unknown;
   continueTask(sessionId: string): unknown;
   resumeTeaching(id: string, sessionId: string): unknown;
   getActiveId(): string;
@@ -268,6 +269,7 @@ export interface MessagesApi {
       const title = document.createElement('div');
       title.className = 'sc-title';
       title.textContent = 'Run this command?';
+      card.dataset.status = 'pending';
       const meta = document.createElement('div');
       meta.className = 'sc-meta';
       if (m.cwd) meta.textContent = m.cwd;
@@ -286,6 +288,8 @@ export interface MessagesApi {
         m.commandTruncated && commandHash ? `Command preview truncated · full sha256 ${commandHash}` : '';
       const error = document.createElement('div');
       error.className = 'sc-error';
+      error.textContent = m.approvalError || '';
+      error.hidden = !m.approvalError;
       error.hidden = true;
       const actions = document.createElement('div');
       actions.className = 'shell-actions';
@@ -322,10 +326,29 @@ export interface MessagesApi {
       approve.onclick = () => approveCommand(m.id || '', true);
       deny.onclick = () => approveCommand(m.id || '', false);
       actions.append(deny, approve);
+      const scopes = document.createElement('details');
+      const scopeTitle = document.createElement('summary');
+      scopeTitle.textContent = 'Allow and remember…';
+      scopes.append(scopeTitle);
+      const explanation = document.createElement('p');
+      explanation.textContent = 'Matches this exact command and working directory. Other commands still need approval.';
+      scopes.append(explanation);
+      for (const [scope, label] of [
+        ['session', 'Allow same command in this chat'],
+        ...(m.projectRuleAvailable ? [['project', 'Remember exact command in this project']] : []),
+      ]) {
+        const button = document.createElement('button');
+        button.className = 'text-btn';
+        button.textContent = label;
+        button.disabled = !!m.approvalSubmission;
+        button.onclick = () => approveCommand(m.id || '', true, scope);
+        scopes.append(button);
+      }
+      scopes.append(permissionsButton(m.sessionId || activeId, m.project || ''));
       commandBody.append(commandLabel, cmd);
       if (meta.textContent) commandBody.append(meta);
       if (commandIntegrity.textContent) commandBody.append(commandIntegrity);
-      card.append(title, commandBody, error, actions);
+      card.append(title, commandBody, error, actions, scopes);
       div.appendChild(card);
       chat.appendChild(div);
     } else if (m.type === 'shell_approval_status' && m.approval) {
@@ -333,6 +356,8 @@ export interface MessagesApi {
       // Successful continuation is an internal transition; the shell result
       // and the resumed answer already provide the user-facing evidence.
       if (state.continuation === 'started') return;
+      if (!['failed', 'unavailable', 'cancelled'].includes(state.continuation) && state.execution !== 'uncertain')
+        return;
       const actions =
         state.continuation === 'failed' && state.execution !== 'uncertain'
           ? [

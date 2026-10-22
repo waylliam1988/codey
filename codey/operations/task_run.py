@@ -616,8 +616,10 @@ def _shell_redelivery_rows(payloads: Any) -> tuple[Any, ...]:
             exit_code=exit_code, truncated=truncated,
         )
         rows.append(RecoveredToolOutcome(
-            call=ToolCall(name="shell", args={"command": item.get("command", ""),
-                                              "path": item.get("cwd", ".")}, call_id=call_id),
+            call=ToolCall(name=str(item.get("tool_name") or "shell"),
+                          args=(dict(item["tool_args"]) if isinstance(item.get("tool_args"), dict)
+                                else {"command": item.get("command", ""), "path": item.get("cwd", ".")}),
+                          call_id=call_id),
             outcome=outcome, turn=0, tool_index=index, effect_id="", redelivered=True,
             window_ref=(ProtocolWindowRef.from_payload(item["window_ref"])
                         if isinstance(item.get("window_ref"), dict) else None),

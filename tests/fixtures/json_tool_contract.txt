@@ -71,7 +71,7 @@ runtime_name: run
 aliases: -
 read_only: false
 parallel_safe: false
-description: Run an allowed test, build, lint, or check command.
+description: Run a test, build, lint, or check. Use output_tail_lines to limit displayed output instead of a shell pipe. Other commands request user approval when available.
 examples:
 - {"tool":"run","args":{"command":"python -m unittest","path":"."}}
 
@@ -119,7 +119,7 @@ examples:
     Create a new file with content, or edit an existing file with exact replacements. Up to 8 replacements are validated together and written atomically. Include surrounding lines and the target text together in old_string of the same replacement so it matches one location uniquely. Preserve those surrounding lines in new_string. Separate replacement objects do not scope one another.
 
   {"tool":"run","args":{"command":"python -m unittest","path":"."}}
-    Run an allowed test, build, lint, or check command.
+    Run a test, build, lint, or check. Use output_tail_lines to limit displayed output instead of a shell pipe. Other commands request user approval when available.
 
   {"tool":"shell","args":{"command":"git status --short","path":"."}}
     Ask the user to approve a necessary non-allowlisted command.

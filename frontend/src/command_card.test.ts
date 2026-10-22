@@ -2,6 +2,26 @@ import { expect, it, vi } from 'vitest';
 import { commandCard } from './command_card';
 import './render';
 
+it('tails retained output without changing status or copied output', () => {
+  const text = Array.from({ length: 80 }, (_, i) => String(i)).join('\n') + '\n';
+  const copy = vi.fn().mockResolvedValue(true);
+  const card = commandCard(
+    { type: 'shell_result', approved: true, shellStatus: 'exit', exitCode: 7, output: text },
+    copy,
+  );
+  const tail = Array.from(card.querySelectorAll('button')).find(
+    (button) => button.textContent === 'Show last 40 lines',
+  )!;
+  tail.click();
+  expect(card.querySelector('.shell-stdout')?.textContent?.split('\n')).toHaveLength(40);
+  expect(card.querySelector('.shell-stdout')?.textContent).toMatch(/^40\n/);
+  expect(card.querySelector('.command-status')?.textContent).toContain('exit 7');
+  (card.querySelector('[aria-label="Copy output"]') as HTMLButtonElement).click();
+  expect(copy).toHaveBeenCalledWith(text);
+  tail.click();
+  expect(card.querySelector('.shell-stdout')?.textContent).toBe(text);
+});
+
 it('uses the shared activity-row disclosure with a trailing chevron', () => {
   const card = commandCard(
     { type: 'shell_result', command: 'python probe.py', approved: true, shellStatus: 'exit', exitCode: 0 },

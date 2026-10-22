@@ -104,6 +104,7 @@ _RULE_RUN_VERIFICATION = (
     "    npm test, npm run build, go test ./..., cargo test, ruff check, or mypy.",
     "  - run commands must be simple. No pipes, redirects, chaining, tail/head, or",
     "    shell-only syntax.",
+    "  - To display only the last N lines, set output_tail_lines on run; do not add a pipe.",
 )
 _RULE_NEVER_CLAIM = (
     "  - Never claim a command, test, build, lint, or shell result unless it appeared",

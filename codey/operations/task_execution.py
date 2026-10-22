@@ -249,7 +249,13 @@ class ExecutionDelegate:
             return ProjectPolicyCheck(True, f"policy error: {exc}", False)
         if decision is not None and policy_denied(decision):
             reason = str(getattr(decision, "reason", "") or getattr(decision, "reason_code", "") or "denied")
-            return ProjectPolicyCheck(True, f"project guard denied {call.name}: {reason}; {decision.display}", False, reason)
+            display = decision.display
+            if reason == "command_not_allowed" and not self.session.policy.allows("shell.approval"):
+                display = ("This task mode cannot request shell approval. Use an interactive coding task "
+                           "with command approvals enabled, or use an allowed verification command.")
+            elif reason == "command_not_allowed":
+                display += " Submit this command on its own in an interactive task to request approval."
+            return ProjectPolicyCheck(True, f"project guard denied {call.name}: {reason}; {display}", False, reason)
         try:
             if (call.name or "") == "shell" and policy_asks_user(decision):
                 return ProjectPolicyCheck(True, "shell requires user approval", True)
@@ -293,12 +299,20 @@ class ExecutionDelegate:
                 ok = outcome.ok if type(getattr(outcome, "ok", None)) is bool else False
                 return result, ok, None
             if name == "run":
+                from dataclasses import replace
+
+                from codey.toolchain.command_output import output_tail, tail_lines
+
+                tail = tail_lines((call.args or {}).get("output_tail_lines"))
                 outcome = self.tool_fns.execute_run_command(
                     project_path, str((call.args or {}).get("path", ".") or "."),
                     str((call.args or {}).get("command", "") or ""),
                     permission_profile=self._project_permission_profile(), phase="writer",
                     tool_id=str(getattr(call, "call_id", "") or ""),
                 )
+                if tail is not None:
+                    outcome = replace(outcome, model_text=f"Exit code: {outcome.exit_code}\n" + output_tail(outcome.model_text, tail),
+                                      presentation={**outcome.presentation, "output_tail_lines": tail})
                 result = _tool_result(call, outcome)
                 ok = outcome.ok if type(getattr(outcome, "ok", None)) is bool else False
                 return result, ok, getattr(outcome, "exit_code", None)

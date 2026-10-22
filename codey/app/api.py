@@ -737,7 +737,9 @@ def shell_approval_response(
     approved = body.get("approved")
     if type(approved) is not bool:
         return 400, {"error": "approved must be a boolean"}
-    response: tuple[int, dict[str, Any]] = ctx.shell_approval_workflow.accept(approval_id, approved, submit_task_after_slot_release)
+    response: tuple[int, dict[str, Any]] = ctx.shell_approval_workflow.accept(
+        approval_id, approved, submit_task_after_slot_release, scope=body.get("scope", "once"),
+    )
     return response
 
 

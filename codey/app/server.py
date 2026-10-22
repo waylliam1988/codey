@@ -186,6 +186,23 @@ def _shell_approval_status_route(ctx: AppContext, query: dict[str, list[str]]) -
     )}
 
 
+def _command_permissions_route(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+    return 200, {"rules": ctx.command_permissions.list_rules(
+        session_id=str((query.get("session_id") or [""])[0]),
+        project=str((query.get("project") or [""])[0]),
+        all_scopes=(query.get("all") or [""])[0] == "1",
+    )}
+
+
+def _revoke_command_permission(ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    rule_id = body.get("id")
+    if not isinstance(rule_id, str) or not rule_id:
+        return 400, {"error": "permission id required"}
+    with ctx._shell_spawn_gate:
+        ctx.command_permissions.revoke(rule_id)
+    return 200, {"ok": True}
+
+
 def _continuation_for(ctx: AppContext) -> Callable[..., Any]:
     return partial(task_submit.submit_task_after_slot_release, get_state=lambda: ctx)
 
@@ -258,6 +275,7 @@ _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, d
     "/api/model_settings": lambda ctx, _query: model_settings.settings_response(ctx),
     "/api/state": lambda ctx, _query: (200, ctx.run_state_payload()),
     "/api/shell_approval": lambda ctx, query: _shell_approval_status_route(ctx, query),
+    "/api/command_permissions": _command_permissions_route,
     "/api/ui_state": lambda ctx, _query: app_api.ui_state_response(ctx),
     "/api/providers": lambda ctx, _query: app_api.providers_response(ctx),
     "/api/provider_catalog": lambda _ctx, _query: app_api.provider_catalog_response(),
@@ -293,6 +311,7 @@ _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[s
     "/api/documents/read": document_response,
     "/api/changes/restore": app_api.restore_changes_response,
     "/api/shell_approval": _shell_approval_route,
+    "/api/command_permissions/revoke": _revoke_command_permission,
     "/api/shell_approval/retry": lambda ctx, body: ctx.shell_approval_workflow.retry(
         str(body.get("id") or ""), _continuation_for(ctx),
     ),

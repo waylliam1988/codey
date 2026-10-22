@@ -76,14 +76,24 @@ def shell_result_row(pending: dict[str, Any], result: dict[str, Any], *, approve
     command = str(pending.get("command") or "")
     cwd = str(pending.get("cwd") or ".")
     text = shell_result_content(command=command, result=result, approved=approved)
+    if pending.get("tool_name") == "run" and approved:
+        from codey.toolchain.command_output import output_tail, tail_lines
+
+        args = pending.get("tool_args")
+        count = tail_lines(args.get("output_tail_lines")) if isinstance(args, dict) else None
+        text = shell_result_content(
+            command=command, result={**result, "output": output_tail(str(result.get("output") or ""), count)},
+            approved=approved,
+        )
     exit_code = result.get("exit_code")
     exit_code = exit_code if type(exit_code) is int else None
     ok = approved and result.get("ok") is True and result.get("status") != "denied"
     if not approved:
         ok = False
     call = ToolCall(
-        name="shell",
-        args={"command": command, "path": cwd},
+        name=str(pending.get("tool_name") or "shell"),
+        args=(dict(pending["tool_args"]) if isinstance(pending.get("tool_args"), dict)
+              else {"command": command, "path": cwd}),
         call_id=call_id,
     )
     outcome = ToolOutcome(
@@ -114,6 +124,8 @@ def shell_result_payload(row: Any) -> dict[str, object] | None:
         window_ref = getattr(row, "window_ref", None)
         return {
             "call_id": str(getattr(call, "call_id", "") or ""),
+            "tool_name": str(getattr(call, "name", "") or "shell"),
+            "tool_args": dict(getattr(call, "args", {}) or {}),
             "command": str((getattr(call, "args", {}) or {}).get("command") or ""),
             "cwd": str((getattr(call, "args", {}) or {}).get("path") or "."),
             "model_text": str(getattr(outcome, "model_text", "") or ""),

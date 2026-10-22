@@ -36,7 +36,7 @@ Available tools:
     Create a new file with content, or edit an existing file with exact replacements. Up to 8 replacements are validated together and written atomically. Include surrounding lines and the target text together in old_string of the same replacement so it matches one location uniquely. Preserve those surrounding lines in new_string. Separate replacement objects do not scope one another.
 
   {"tool":"run","args":{"command":"python -m unittest","path":"."}}
-    Run an allowed test, build, lint, or check command.
+    Run a test, build, lint, or check. Use output_tail_lines to limit displayed output instead of a shell pipe. Other commands request user approval when available.
 
   {"tool":"shell","args":{"command":"git status --short","path":"."}}
     Ask the user to approve a necessary non-allowlisted command.
@@ -72,6 +72,7 @@ Rules:
     npm test, npm run build, go test ./..., cargo test, ruff check, or mypy.
   - run commands must be simple. No pipes, redirects, chaining, tail/head, or
     shell-only syntax.
+  - To display only the last N lines, set output_tail_lines on run; do not add a pipe.
   - Use edit for source/content changes. Do not use run or shell to directly
     edit project files. Use shell only for necessary user-approved setup,
     dependency installation, external-source retrieval, publishing, or other

@@ -64,14 +64,14 @@ def add_pending_approval(ctx, approval_id: str, pending: dict[str, object]) -> N
     ctx.add_pending_shell_approval(approval_id, row)
 
 
-def seed_requested_approval(ctx, approval_id="approval", *, continue_after=True, command="echo approval"):
+def seed_requested_approval(ctx, approval_id="approval", *, continue_after=True, command="echo approval", source_run_id="source"):
     # Approval lifecycle facts belong to the admitted durable task.  The
     # JSONL store is only an audit projection and must not be enough to make a
     # shell request executable in tests or production.
-    admit_shell_task(ctx, session_id="session", run_id="source", task="shell approval source")
+    admit_shell_task(ctx, session_id="session", run_id=source_run_id, task="shell approval source")
     artifact = ctx.managed_outputs.write_json_artifact(
         session_id="session",
-        run_id="source",
+        run_id=source_run_id,
         payload={
             "command": command,
             "cwd": ".",
@@ -84,7 +84,7 @@ def seed_requested_approval(ctx, approval_id="approval", *, continue_after=True,
         },
     )
     fact = ShellApprovalFact(
-        approval_id, "session", "source", "requested", command_ref=artifact.handle, command_digest=artifact.sha256
+        approval_id, "session", source_run_id, "requested", command_ref=artifact.handle, command_digest=artifact.sha256
     )
     ctx.record_shell_approval_fact(fact)
     return fact

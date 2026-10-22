@@ -45,6 +45,9 @@ def _payload_shell_request(common: dict[str, object], event: dict[str, Any]) -> 
         **common,
         "id": clip_event_text(event.get("id") or "", 80),
         "cwd": clip_event_text(event.get("cwd") or ".", 240),
+        "project": clip_event_text(event.get("project") or "", 4096),
+        "project_rule_available": event.get("project_rule_available") is True,
+        "tool_name": clip_event_text(event.get("tool_name") or "shell", 80),
         **command_fields,
         "deferred_tool_count": _int_or_zero(event.get("deferred_tool_count")),
     }

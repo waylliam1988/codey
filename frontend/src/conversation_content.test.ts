@@ -79,7 +79,8 @@ describe('conversation content contract', () => {
   it('separates an actionable command denial from its original error', () => {
     const result = 'ERROR: project guard denied run: command_not_allowed; use shell with user approval';
     const host = window.Render.standaloneToolEl({ kind: 'run', command: 'python test.py', result, error: true });
-    expect(host.querySelector('summary')?.textContent).toContain('requires approval');
+    expect(host.querySelector('summary')?.textContent).not.toContain('requires approval');
+    expect(host.querySelector('summary')?.textContent).toContain('blocked');
     expect(host.querySelector('pre')?.textContent).toBe(result);
   });
 });

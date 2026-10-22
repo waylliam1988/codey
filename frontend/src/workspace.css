@@ -1,3 +1,19 @@
+.command-permissions-dialog {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  max-height: 80vh;
+  overflow: auto;
+}
+.command-permissions-dialog pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.command-permissions-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
 body.workspace-open {
   grid-template-columns: auto minmax(320px, 1fr) var(--workspace-width, 480px);
 }

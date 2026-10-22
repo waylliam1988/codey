@@ -35,7 +35,12 @@ it('shows the approved compact approval layout without a reason section', () => 
   expect(chat.querySelector('.sc-meta')?.textContent).toBe('E:/Selfie - 副本');
   expect(chat.textContent).not.toMatch(/Reason|May read or change files/);
   const buttons = chat.querySelectorAll('button');
-  expect(Array.from(buttons, (button) => button.textContent)).toEqual(['Deny', 'Allow once']);
+  expect(Array.from(buttons, (button) => button.textContent)).toEqual([
+    'Deny',
+    'Allow once',
+    'Allow same command in this chat',
+    'Saved permissions',
+  ]);
   buttons[1].click();
   expect(submit).toHaveBeenCalledExactlyOnceWith('approval', true);
 });
@@ -43,7 +48,7 @@ it('shows the approved compact approval layout without a reason section', () => 
 it('does not render a placeholder working directory when it is unavailable', () => {
   const chat = render({ cwd: undefined });
   expect(chat.querySelector('.sc-meta')).toBeNull();
-  expect(chat.textContent).not.toContain('.');
+  expect(chat.querySelector('.sc-meta')).toBeNull();
 });
 
 it('locks both choices and places submission progress inside the primary button', () => {
@@ -62,4 +67,14 @@ it('preserves uncertain-decision recovery and truncated-command identity', () =>
   const check = Array.from(chat.querySelectorAll('button')).find((button) => button.textContent === 'Check status')!;
   check.click();
   expect(refresh).toHaveBeenCalledExactlyOnceWith('approval');
+});
+
+it('offers an explicit project rule only when the server permits it', () => {
+  const chat = render({ projectRuleAvailable: true });
+  const project = Array.from(chat.querySelectorAll('button')).find((button) =>
+    button.textContent?.startsWith('Remember exact'),
+  )!;
+  project.click();
+  expect(submit).toHaveBeenCalledExactlyOnceWith('approval', true, 'project');
+  expect(chat.textContent).toContain('exact command and working directory');
 });

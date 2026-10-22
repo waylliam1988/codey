@@ -108,6 +108,8 @@ export interface Message extends importToolDisplay {
   type: string;
   approval?: ApprovalState;
   approvalSubmission?: 'sending' | 'checking' | 'unconfirmed';
+  approvalError?: string;
+  projectRuleAvailable?: boolean;
   id?: string;
   text?: string;
   sessionId?: string;

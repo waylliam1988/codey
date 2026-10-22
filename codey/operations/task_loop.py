@@ -353,8 +353,8 @@ def _approval_stop(
     if on_shell_request is None or project_path is None:
         return None
     from codey.agents.shell_approval import ShellApprovalRequest, deferred_tool_call_from_call
-    from codey.agents.tool_execution import evaluate_tool_call_policy_for, policy_asks_user
     from codey.operations.task_execution import effective_project_profile
+    from codey.policies.command_approval import approval_call
 
     try:
         allows_shell = bool(policy.allows("shell.approval")) if policy is not None else False
@@ -366,17 +366,15 @@ def _approval_stop(
         return None
     effective_profile = effective_project_profile(permission_profile)
     for index, call in enumerate(calls):
-        if call.name != "shell":
+        if call.name == "run" and len(calls) > 1:
+            # Do not park a whole batch and silently skip earlier effects.
+            # Normal execution returns a refusal for this command; the model
+            # can submit it alone without replaying successful siblings.
             continue
-        decision, _replay = evaluate_tool_call_policy_for(
-            call,
-            project=project_path,
-            permission_profile=effective_profile,
-            approval_available=True,
-            phase="writer",
-        )
-        if not policy_asks_user(decision):
-            return None
+        if call.name == "run" and not policy.allows("project.verify"):
+            continue
+        if approval_call(call, project=project_path, permission_profile=effective_profile) is None:
+            continue
         deferred = tuple(
             deferred_tool_call_from_call(item, tool_index=offset)
             for offset, item in enumerate(calls[index + 1 :], start=index + 1)
@@ -399,6 +397,8 @@ def _approval_stop(
                 turn=turn,
                 tool_index=index,
                 window_ref=window_ref,
+                tool_name=call.name,
+                tool_args=dict(call.args),
             )
         )
         return KernelResult(False, "shell command requires approval", turn, "approval")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.protocol_window import ProtocolWindowRef
@@ -55,6 +55,8 @@ class ShellApprovalRequest:
     turn: int = 0
     tool_index: int = 0
     window_ref: ProtocolWindowRef | None = None
+    tool_name: str = "shell"
+    tool_args: dict[str, object] = field(default_factory=dict)
 
     def to_payload(self) -> dict[str, object]:
         deferred = tuple(self.deferred_calls[:MAX_DEFERRED_TOOL_CALLS])
@@ -121,6 +123,8 @@ def build_shell_approval_pending(
     )
     deferred_tool_calls = [item.to_payload() for item in approval.deferred_calls]
     pending: dict[str, object] = {
+        "tool_name": approval.tool_name,
+        "tool_args": approval.tool_args or {"command": approval.command, "path": cwd_rel},
         "id": approval_id,
         "session_id": session_id,
         "project": project,
@@ -156,6 +160,7 @@ def build_shell_approval_pending(
     if approval.window_ref is not None:
         pending["window_ref"] = approval.window_ref.to_payload()
     ui_event: dict[str, object] = {
+        "tool_name": approval.tool_name,
         "type": "shell_request",
         "run_id": run_id,
         "session_id": session_id,
@@ -170,6 +175,9 @@ def build_shell_approval_pending(
         "deferred_tool_count": len(approval.deferred_calls),
         "deferred_tool_calls": deferred_tool_calls,
     }
+    from codey.storage.command_permissions import project_rule_available
+
+    ui_event["project_rule_available"] = project_rule_available(approval.command)
     if "call_id" in pending:
         ui_event["call_id"] = pending["call_id"]
     pending["ui_event"] = ui_event

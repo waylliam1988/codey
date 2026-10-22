@@ -13,6 +13,7 @@ import { terminalAnswerMessage } from './terminal_answer';
 import type { QueuedInput } from './input_outbox';
 import { UserQuestions, type UserQuestion } from './user_questions';
 import { createApprovalController } from './shell_approvals';
+import { showCommandPermissions } from './command_permissions';
 import { runtime } from './runtime';
 import './operator_auth';
 import './render';
@@ -131,6 +132,7 @@ interface ServerEventData {
   risk_label: string;
   risk_title: string;
   risk_detail: string;
+  project_rule_available?: boolean;
   approved: boolean;
   exit_code: number;
   last_shell_result: ServerEventData;
@@ -293,7 +295,17 @@ const commandPalette = new CommandPalette(() => [
   { id: 'search-conversation', label: 'Search this conversation', run: () => runtime.ConversationUI.searchHistory() },
   { id: 'new-chat', label: 'New chat', run: () => $('btn-new-chat').click() },
   { id: 'settings', label: 'Settings', run: () => $('btn-settings').click() },
+  {
+    id: 'command-permissions',
+    label: 'Saved command permissions',
+    run: () => {
+      void showCommandPermissions('', '', true);
+    },
+  },
 ]);
+$('btn-command-permissions')?.addEventListener('click', () => {
+  void showCommandPermissions('', '', true);
+});
 document.body.append(commandPalette.element);
 document.addEventListener('keydown', (event) => {
   if (
@@ -1515,6 +1527,9 @@ function handleServerEvent(raw: unknown) {
   }
   if (data.type === 'shell_request') {
     if (approvalController.decided(data.id || '')) return;
+    const isNew = !sessions
+      .find((session) => session.id === sid)
+      ?.messages.some((message) => message.id === data.id && message.type === 'shell_request');
     addToSession(sid, {
       type: 'shell_request',
       id: data.id,
@@ -1527,13 +1542,20 @@ function handleServerEvent(raw: unknown) {
       riskLabel: data.risk_label,
       riskTitle: data.risk_title,
       riskDetail: data.risk_detail,
+      projectRuleAvailable: data.project_rule_available,
+      sessionId: sid,
       runId,
       eventKey: `shell:${data.id}`,
     });
+    if (sid === activeId && isNew)
+      requestAnimationFrame(() => {
+        const card = document.querySelector<HTMLElement>(`[data-approval-id="${CSS.escape(data.id || '')}"]`);
+        card?.scrollIntoView({ block: 'center' });
+        card?.focus({ preventScroll: true });
+      });
     return;
   }
   if (data.type === 'shell_result') {
-    removeShellRequest(sid, data.id);
     addToSession(sid, {
       type: 'shell_result',
       id: data.id,
@@ -1544,6 +1566,7 @@ function handleServerEvent(raw: unknown) {
       commandChars: data.command_chars,
       commandTruncated: !!data.command_truncated,
       cwd: data.cwd,
+      project: data.project,
       output: data.output,
       outputTruncated: !!data.truncated,
       exitCode: data.exit_code,
@@ -1681,7 +1704,15 @@ function addToSession(sid: string, m: Message) {
     if (duplicate) return true;
   }
   if (m.type === 'shell_result' && m.id) {
-    const replaced = replaceSessionMessage(sid, (item) => item.type === 'shell_result' && item.id === m.id, m);
+    const s = sessions.find((item) => item.id === sid);
+    const replaced = replaceSessionMessage(
+      sid,
+      (item) => ['shell_request', 'shell_result'].includes(item.type) && item.id === m.id,
+      {
+        ...s?.messages.find((item) => item.id === m.id && ['shell_request', 'shell_result'].includes(item.type)),
+        ...m,
+      },
+    );
     if (replaced) return true;
   }
   if (m.type === 'asst' && !m.streamId && m.runId && m.text) {
@@ -1979,8 +2010,8 @@ const approvalController = createApprovalController({
 });
 runtime.ShellApprovals = approvalController;
 
-async function approveCommand(id: string, approved: boolean) {
-  await approvalController.submit(id, approved);
+async function approveCommand(id: string, approved: boolean, scope = 'once') {
+  await approvalController.submit(id, approved, scope);
   // The approval response/SSE event is authoritative for this card. A full
   // state snapshot can involve unrelated run work, so keep it off the click
   // path and let it reconcile in the background.

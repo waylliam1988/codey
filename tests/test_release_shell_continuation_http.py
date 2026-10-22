@@ -3,17 +3,25 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
 from tools.local_model_gate_attempts import GateTarget
-from tools.local_model_gate_shell import SHELL_CASES, probe_command, run_shell_case
+from tools.local_model_gate_shell import (
+    SHELL_CASES,
+    GateHTTPClient,
+    gate_application,
+    probe_command,
+    run_shell_case,
+    wait_for_run,
+)
 
 
 @contextmanager
-def model_peer(protocol, case):
+def model_peer(protocol, case, tool_name="shell", repeat=False):
     requests = []
     errors = []
 
@@ -38,22 +46,27 @@ def model_peer(protocol, case):
                 requests.append(body)
                 assert body["model"] == "shell-fixture"
                 items = body.get("input", body.get("messages"))
-                if len(requests) == 1:
-                    name, call_id, args = "shell", "original-shell-call", {"command": probe_command(case), "path": "."}
+                expected_id = f"original-shell-call-{(len(requests) - 1) // 2}" if repeat else "original-shell-call"
+                if len(requests) == 1 or (repeat and len(requests) % 2 == 1):
+                    name, call_id, args = tool_name, expected_id, {"command": probe_command(case), "path": "."}
                 else:
-                    assert len(requests) == 2, "unexpected new generation/retry"
+                    assert repeat or len(requests) == 2, "unexpected new generation/retry"
                     if protocol == "openai-responses":
                         calls = [item for item in items if item.get("type") == "function_call"]
                         results = [item for item in items if item.get("type") == "function_call_output"]
-                        assert [item["call_id"] for item in calls] == ["original-shell-call"]
-                        assert [item["call_id"] for item in results] == ["original-shell-call"]
-                        content = results[0]["output"]
+                        if not repeat:
+                            assert len(calls) == len(results) == 1
+                        assert calls[-1]["call_id"] == results[-1]["call_id"] == expected_id
+                        assert calls[-1]["name"] == tool_name
+                        content = results[-1]["output"]
                     else:
                         calls = [call for item in items for call in item.get("tool_calls", [])]
                         results = [item for item in items if item.get("role") == "tool"]
-                        assert [item["id"] for item in calls] == ["original-shell-call"]
-                        assert [item["tool_call_id"] for item in results] == ["original-shell-call"]
-                        content = results[0]["content"]
+                        if not repeat:
+                            assert len(calls) == len(results) == 1
+                        assert calls[-1]["id"] == results[-1]["tool_call_id"] == expected_id
+                        assert calls[-1]["function"]["name"] == tool_name
+                        content = results[-1]["content"]
                     assert ("Denied by user" if case == "shell_deny" else "SHELL_GATE_RESULT") in content
                     name, call_id, args = "done", "done-call", {"summary": "Shell result received; " + content}
                 if protocol == "openai-responses":
@@ -80,8 +93,9 @@ def model_peer(protocol, case):
 
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
 @pytest.mark.parametrize("case", SHELL_CASES)
-def test_http_approval_returns_original_result_without_another_user_message(tmp_path, protocol, case):
-    with model_peer(protocol, case) as (url, requests, errors):
+@pytest.mark.parametrize("tool_name", ["shell", "run"])
+def test_http_approval_returns_original_result_without_another_user_message(tmp_path, protocol, case, tool_name):
+    with model_peer(protocol, case, tool_name) as (url, requests, errors):
         target = GateTarget(url, "shell-fixture", 32768, 8192, 12000,
                             api_protocol=protocol, request_timeout=10)
         proof = run_shell_case(case, target, tmp_path)
@@ -93,3 +107,32 @@ def test_http_approval_returns_original_result_without_another_user_message(tmp_
     # second task identity or synthetic user submission is created.
     assert proof["source_run_id"] == proof["continuation_run_id"]
     assert "Shell result received" in proof["summary"]
+
+
+@pytest.mark.parametrize('protocol', ['openai-completions', 'openai-responses'])
+def test_remembered_run_approval_automatically_resumes_next_task(protocol, tmp_path):
+    with model_peer(protocol, 'shell_approve', 'run', repeat=True) as (url, requests, errors):
+        target = GateTarget(url, 'shell-fixture', 32768, 8192, 12000, api_protocol=protocol, request_timeout=10)
+        with gate_application(target, tmp_path) as (httpd, ctx, events):
+            client = GateHTTPClient(httpd)
+            for attempt in range(2):
+                submitted = client.post('/api/run', {
+                    'session_id': 'remembered-chat', 'input': {'kind': 'start_task', 'text': 'Run the same harmless command'},
+                    'provider': 'local', 'model_selection': {'model': target.model, 'base_url': url},
+                    'intent': 'chat', 'max_turns': 6,
+                })
+                run_id = submitted['run_id']
+                if attempt == 0:
+                    assert wait_for_run(client, run_id, 10)['stop_reason'] == 'approval'
+                    approval_id = next(iter(ctx.pending_shell_approvals()))
+                    client.post('/api/shell_approval', {'id': approval_id, 'approved': True, 'scope': 'session'})
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    if any(event.get('type') == 'task_done' and event.get('run_id') == run_id
+                           and event.get('stop_reason') == 'done' for event in events) and not ctx.is_busy():
+                        break
+                    time.sleep(.02)
+                else:
+                    pytest.fail(f'remembered task did not finish: {ctx.shell_approval_workflow.list_statuses()}')
+                assert ctx.shell_approval_workflow.for_source('remembered-chat', run_id)['execution'] == 'settled'
+            assert len(requests) == 4 and not errors

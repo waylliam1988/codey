@@ -1,6 +1,7 @@
 import { iconButton } from './icon_button';
 import type { Message } from './types/domain';
 import { mergeOutputSnapshot, type ExecutionSnapshot } from './execution_output';
+import { permissionsButton } from './command_permissions';
 
 type Copy = (text: string) => Promise<boolean>;
 
@@ -16,6 +17,7 @@ function copyButton(label: string, text: string, copy: Copy): HTMLButtonElement 
 export function commandCard(message: Message, copy: Copy): HTMLElement {
   const card = document.createElement('div');
   card.className = 'msg shell command-card';
+  if (message.id) card.dataset.approvalId = message.id;
   const details = document.createElement('details');
   const summary = document.createElement('summary');
   summary.className = 'activity-row command-summary';
@@ -30,18 +32,29 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
   };
   const status = message.shellStatus || '';
   const running = status === 'running';
+  const queued = status === 'queued';
   const failure = Object.hasOwn(failures, status) ? failures[status] : undefined;
   const completed = message.approved === true && message.shellStatus === 'exit' && Number.isInteger(exit);
   const success = completed && exit === 0;
-  card.dataset.status = running ? 'running' : success ? 'success' : failure || completed ? 'failed' : 'unknown';
-  const result = running
-    ? 'Command running'
-    : failure ||
-      (!message.approved
-        ? 'Denied'
-        : completed
-          ? `Command ${success ? 'completed' : 'failed'} · exit ${exit}`
-          : 'Result status unknown');
+  card.dataset.status = running
+    ? 'running'
+    : queued
+      ? 'queued'
+      : success
+        ? 'success'
+        : failure || completed
+          ? 'failed'
+          : 'unknown';
+  const result = queued
+    ? 'Allowed; command queued'
+    : running
+      ? 'Command running'
+      : failure ||
+        (!message.approved
+          ? 'Denied'
+          : completed
+            ? `Command ${success ? 'completed' : 'failed'} · exit ${exit}`
+            : 'Result status unknown');
   const dot = document.createElement('span');
   dot.className = 'activity-dot';
   dot.textContent = '·';
@@ -109,6 +122,24 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
   settlement.className = 'command-status';
   settlement.textContent = success ? '✓ Succeeded' : result;
   panel.append(command, output, settlement);
+  const tail = document.createElement('button');
+  tail.className = 'text-btn';
+  tail.textContent = 'Show last 40 lines';
+  let showingTail = false;
+  tail.onclick = () => {
+    showingTail = !showingTail;
+    const text = message.output || '';
+    stdoutText.textContent = showingTail
+      ? text
+          .replace(/\r?\n$/, '')
+          .split(/\r?\n/)
+          .slice(-40)
+          .join('\n')
+      : text;
+    tail.textContent = showingTail ? 'Show retained output' : 'Show last 40 lines';
+  };
+  if (!running && message.output) panel.append(tail);
+  if (message.id) panel.append(permissionsButton(message.sessionId || '', message.project || ''));
   details.append(panel);
   card.append(details);
   if (running && message.executionId) {

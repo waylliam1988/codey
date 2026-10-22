@@ -484,6 +484,10 @@ def _finish_mode_outcome(
             status=obs_status,
         )
     deps.state.finish_run(frame.run_id, event)
+    if event.get("stop_reason") == "approval":
+        workflow = getattr(deps.state, "shell_approval_workflow", None)
+        if workflow is not None:
+            workflow.apply_remembered(frame.request.session_id, frame.run_id)
     run_ghost_post_turn(
         ghost_deps,
         frame,

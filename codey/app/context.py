@@ -159,6 +159,9 @@ class AppContext(GhostStoreAccessors):
         self.input_queue = self.conversation_runtime.inputs
         self.user_questions = self.conversation_runtime.questions
         self.execution_outputs = ExecutionOutputStore(runtime_state_home)
+        from codey.storage.command_permissions import CommandPermissionStore
+
+        self.command_permissions = CommandPermissionStore(runtime_state_home)
         self.shell_approval_records = ShellApprovalRecordStore(runtime_state_home)
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
