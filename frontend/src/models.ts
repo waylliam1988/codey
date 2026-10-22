@@ -9,10 +9,18 @@ import type { ModelSource, ModelState } from './types/domain';
   function snapshot(): ModelState {
     return structuredClone(state);
   }
+  function catalogTime(source: ModelSource): number {
+    return source.checked_at ?? source.updated_at ?? 0;
+  }
   function applySettings(data: ModelState): void {
     if (!data?.preferences || !Array.isArray(data.sources)) throw new Error('Model settings unavailable');
     if (data.preferences.revision < state.preferences.revision) return;
-    state = structuredClone(data);
+    const next = structuredClone(data);
+    next.sources = next.sources.map((source) => {
+      const current = state.sources.find((item) => item.id === source.id);
+      return current && catalogTime(current) > catalogTime(source) ? structuredClone(current) : source;
+    });
+    state = next;
     listeners.forEach((listener) => listener());
   }
   async function load(): Promise<ModelState> {
@@ -38,6 +46,7 @@ import type { ModelSource, ModelState } from './types/domain';
   function reason(provider: string, model = ''): string {
     const source = sourceFor(provider);
     if (!source) return 'Unavailable';
+    if (source.id !== 'websites' && !source.models.some((entry) => entry.id === model)) return 'Unavailable';
     const choice = state.preferences.sources[source.id];
     return choice?.enabled && choice.models.includes(source.id === 'websites' ? provider : model) ? '' : 'Disabled';
   }
@@ -57,6 +66,7 @@ import type { ModelSource, ModelState } from './types/domain';
   function observeCatalog(source: ModelSource): void {
     const index = state.sources.findIndex((item) => item.id === source.id);
     if (index < 0) return;
+    if (catalogTime(source) < catalogTime(state.sources[index])) return;
     state.sources[index] = { ...state.sources[index], ...source };
     listeners.forEach((listener) => listener());
   }
@@ -69,6 +79,9 @@ import type { ModelSource, ModelState } from './types/domain';
     connections,
     hasAny,
     observeCatalog,
-    subscribe: (listener: () => void) => listeners.add(listener),
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
   };
 })();

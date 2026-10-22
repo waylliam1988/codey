@@ -106,7 +106,8 @@ class ModelPreferences:
         # Only display/capability facts are stored. Never persist credentials or headers.
         clean = {
             key: copy.deepcopy(payload[key])
-            for key in ("id", "label", "models", "base_url", "default_model", "connected", "error", "stale")
+            for key in ("id", "label", "models", "base_url", "default_model", "connected", "error", "stale",
+                        "updated_at", "checked_at")
             if key in payload
         }
         clean["models"] = [
@@ -116,6 +117,10 @@ class ModelPreferences:
                 if key in model
             }
             for model in payload.get("models", [])
+        ]
+        clean["unavailable_models"] = [
+            {key: copy.deepcopy(model[key]) for key in ("id", "name", "status") if key in model}
+            for model in payload.get("unavailable_models", [])
         ]
         with with_file_lock(self.path):
             value = self._read()

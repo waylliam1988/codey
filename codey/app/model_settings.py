@@ -35,6 +35,8 @@ def models_in_use(ctx: Any) -> list[dict[str, str]]:
 
 
 def settings_response(ctx: Any) -> tuple[int, dict[str, Any]]:
+    from codey.providers.api_connections import connection_for
+
     store = preferences_for(ctx)
     sources: list[dict[str, Any]] = [
         {
@@ -44,8 +46,10 @@ def settings_response(ctx: Any) -> tuple[int, dict[str, Any]]:
         }
     ]
     for key, (label, _) in API_CONNECTIONS.items():
+        cached_payload = getattr(connection_for(key), "cached_model_payload", None)
+        facts = cached_payload() if callable(cached_payload) else store.catalog(key)
         sources.append(
-            {**store.catalog(key), "id": key, "label": label, "discoverable": True, "connection_editor": key == "local"}
+            {**facts, "id": key, "label": label, "discoverable": True, "connection_editor": key == "local"}
         )
     # This is a read-only settings snapshot.  Do not hold the application
     # lifecycle lock while collecting it: a running model or shell task may
@@ -83,11 +87,24 @@ def discover_response(ctx: Any, body: object) -> tuple[int, dict[str, Any]]:
     source = body.get("source") if isinstance(body, dict) else None
     if source not in API_CONNECTIONS:
         return 400, {"ok": False, "error": "model source unavailable"}
+    force = body.get("force", True) if isinstance(body, dict) else True
+    if type(force) is not bool:
+        return 400, {"ok": False, "error": "force must be true or false"}
     from codey.providers.api_connections import connection_for
 
     try:
-        payload = connection_for(source).model_payload()
-        preferences_for(ctx).observe_catalog(payload)
+        connector = connection_for(source)
+        store = preferences_for(ctx)
+        if not force and not store.enabled(source):
+            cached = getattr(connector, "cached_model_payload", None)
+            payload = cached() if callable(cached) else store.catalog(source)
+            return 200, {"ok": True, "source": payload}
+        refresh = getattr(connector, "refresh_models", None)
+        payload = refresh(force=force) if callable(refresh) else connector.model_payload()
+        store.observe_catalog(payload)
+        coordinator = getattr(ctx, "connection_status", None)
+        if coordinator is not None:
+            coordinator.observe_catalog(source, payload)
     except (OSError, ValueError, RuntimeError) as exc:
         return 400, {"ok": False, "error": str(exc)}
     return 200, {"ok": True, "source": payload}

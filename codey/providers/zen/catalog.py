@@ -18,6 +18,7 @@ from codey.providers.zen.identity import CONNECTION_REVISION, ZenIdentity, valid
 from codey.storage.local_store import StoreCorruption, read_json_strict, write_json_atomic
 
 DIRECTORY_URL = "https://models.opencode.ai/api.json"
+CACHE_TTL_S = 5 * 60
 PROTOCOLS = {"@ai-sdk/openai": "openai-responses", "@ai-sdk/openai-compatible": "openai-completions"}
 
 
@@ -63,6 +64,8 @@ def parse_models(directory: object) -> tuple[ZenModel, ...]:
     result: list[ZenModel] = []
     for identity, model in models.items():
         if not isinstance(identity, str) or not isinstance(model, dict):
+            continue
+        if model.get("status") == "deprecated":
             continue
         cost = model.get("cost") or {}
         if not isinstance(cost, dict) or any(type(cost.get(key)) not in {int, float} or cost[key] != 0 for key in ("input", "output")):
@@ -127,6 +130,7 @@ class ZenCatalog:
         self.models: tuple[ZenModel, ...] = ()
         self.etag = ""
         self.updated = 0.0
+        self.checked = 0.0
         self.stale = False
         self.error = ""
         self._refresh_version = 0
@@ -138,12 +142,13 @@ class ZenCatalog:
                 self._directory = cache["directory"]
                 self.etag = cache["etag"]
                 self.updated = float(cache["updated"])
+                self.checked = self.updated
         except (StoreCorruption, KeyError, ValueError, TypeError):
             self.stale = True
 
     def refresh(self, *, force: bool = False) -> tuple[ZenModel, ...]:
         with self._lock:
-            if not force and time.time() - self.updated < 60:
+            if not force and time.time() - self.checked < CACHE_TTL_S:
                 return self.models
             old_directory, old_etag = self._directory, self.etag
             self._refresh_version += 1
@@ -160,13 +165,27 @@ class ZenCatalog:
                 write_json_atomic(self.path, {"schema_version": 2, "directory": snapshot,
                                           "etag": etag, "updated": updated})
                 self._directory, self.models, self.etag, self.updated = snapshot, models, etag, updated
+                self.checked = updated
                 self.stale, self.error = False, ""
         except (OSError, ValueError, TypeError, KeyError) as exc:
             with self._lock:
                 if version == self._refresh_version:
                     self.stale, self.error = True, str(exc)[:240]
+                    self.checked = time.time()
         with self._lock:
             return self.models
+
+    def cached_payload(self) -> dict[str, Any]:
+        """Project raw cached facts locally, including names of retired models."""
+        with self._lock:
+            unavailable = [
+                {"id": identity, "name": str(model.get("name") or identity), "status": "deprecated"}
+                for identity, model in self._directory.get("opencode", {}).get("models", {}).items()
+                if isinstance(model, dict) and model.get("status") == "deprecated"
+            ]
+            return {"models": [model.to_payload() for model in self.models], "unavailable_models": unavailable,
+                    "stale": self.stale, "error": self.error, "updated_at": self.updated,
+                    "checked_at": self.checked}
 
     def require_cached(self, model_id: str, *, protocol: str = "") -> ZenModel:
         """Validate a frozen selection without making a request."""
@@ -182,6 +201,8 @@ class ZenCatalog:
             if model.id == model_id and (not protocol or model.protocol == protocol):
                 return model
         model = self._directory.get("opencode", {}).get("models", {}).get(model_id)
+        if isinstance(model, dict) and model.get("status") == "deprecated":
+            raise ValueError("selected Zen model is deprecated and no longer available; choose another model")
         if isinstance(model, dict) and _model_limits(model) is None:
             raise ValueError("selected Zen model is missing valid context and output limits")
         raise ValueError("selected model is not currently listed as a supported free Zen model")

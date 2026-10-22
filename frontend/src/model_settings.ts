@@ -30,6 +30,11 @@ export interface ModelSettingsDeps {
     generation = 0,
     saving = false;
   const autoRefreshes = new Set<string>();
+  const automaticRefreshes = new Map<string, () => Promise<void>>();
+  const catalogSubscriptions: Array<() => void> = [];
+  function unsubscribeCatalogs() {
+    catalogSubscriptions.splice(0).forEach((unsubscribe) => unsubscribe());
+  }
   function $<K extends keyof IdMap>(id: K): IdMap[K];
   function $(id: string): HTMLElement;
   function $(id: string): HTMLElement {
@@ -143,7 +148,15 @@ export interface ModelSettingsDeps {
     };
     const list = document.createElement('div');
     list.className = 'model-source-models';
+    const status = document.createElement('p');
+    status.className = 'settings-hint model-source-status';
+    status.setAttribute('role', 'status');
+    body.appendChild(status);
     body.appendChild(list);
+    const unavailable = document.createElement('details');
+    unavailable.className = 'model-source-unavailable settings-hint';
+    let unavailableSummary: HTMLElement | null = null;
+    const unavailableList = document.createElement('div');
     let rows: ModelRow[] = [];
     function modelRow(model: EditorModel): ModelRow {
       const label = document.createElement('label');
@@ -166,6 +179,7 @@ export interface ModelSettingsDeps {
       return { label, input, model, text };
     }
     function syncModelRows() {
+      list.querySelectorAll('.settings-hint').forEach((node) => node.remove());
       const existing = new Map(rows.map((row: ModelRow) => [row.model.id, row]));
       rows = (source.models || []).map((model: EditorModel) => {
         const row = existing.get(model.id) || modelRow(model);
@@ -195,7 +209,8 @@ export interface ModelSettingsDeps {
     }
     syncModelRows();
     if (source.discoverable) {
-      const refresh = button('Refresh models', async () => {
+      const refresh = button('Refresh models', () => refreshCatalog(true));
+      async function refreshCatalog(force: boolean) {
         const request = generation;
         refresh.disabled = true;
         refresh.textContent = 'Refreshing…';
@@ -204,15 +219,14 @@ export interface ModelSettingsDeps {
           const response = await fetch('/api/model_catalog', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source: source.id }),
+            body: JSON.stringify({ source: source.id, force }),
           });
           const data = await response.json();
           if (request !== generation) return;
           if (!response.ok) throw new Error(data.error || 'Could not refresh models');
+          if (data.source?.id !== source.id || !Array.isArray(data.source.models))
+            throw new Error('Could not refresh models: invalid catalog response');
           runtime.Models.observeCatalog(data.source);
-          Object.assign(source, data.source);
-          syncModelRows();
-          sync();
         } catch (exception) {
           if (request === generation) error(exception instanceof Error ? exception.message : String(exception));
         } finally {
@@ -221,26 +235,51 @@ export interface ModelSettingsDeps {
             refresh.textContent = 'Refresh models';
           }
         }
-      });
+      }
       refresh.classList.add('model-source-refresh');
       actions.appendChild(refresh);
       // Settings should surface immediately from the cached snapshot while
       // the two built-in network-backed catalogs refresh in the background.
       // Optional integrations remain explicit to avoid unexpected requests.
-      if (source.id === 'local' || source.id === 'zen') {
-        const key = `${generation}:${source.id}`;
-        if (!autoRefreshes.has(key)) {
-          autoRefreshes.add(key);
-          queueMicrotask(() => void refresh.click());
-        }
-      }
+      if (source.id === 'local' || source.id === 'zen') automaticRefreshes.set(source.id, () => refreshCatalog(false));
     }
     if (source.connection_editor) body.appendChild($('local-connection-editor'));
     function sync() {
       if (!choice.models.length) choice.enabled = false;
       toggle.checked = choice.enabled;
       toggle.disabled = used(source) || !choice.models.length;
-      count.textContent = choice.models.length + ' selected';
+      const availableIds = new Set(source.models.map((model) => model.id));
+      const missing = choice.models.filter((id) => !availableIds.has(id));
+      count.textContent =
+        choice.models.length -
+        missing.length +
+        ' selected' +
+        (missing.length ? ' · ' + missing.length + ' unavailable' : '');
+      unavailable.hidden = !missing.length;
+      if (missing.length && unavailable.parentElement !== body) body.appendChild(unavailable);
+      if (!missing.length) unavailable.remove();
+      if (missing.length && !unavailableSummary) {
+        unavailableSummary = document.createElement('summary');
+        unavailable.append(unavailableSummary, unavailableList);
+      } else if (!missing.length && unavailableSummary) {
+        unavailable.replaceChildren();
+        unavailableSummary = null;
+      }
+      if (unavailableSummary)
+        unavailableSummary.textContent = missing.length + ' unavailable selection' + (missing.length === 1 ? '' : 's');
+      unavailableList.replaceChildren(
+        ...missing.map((id) => {
+          const model = source.unavailable_models?.find((entry) => entry.id === id);
+          const item = document.createElement('p');
+          item.textContent =
+            (model?.name || id) + (model?.status === 'deprecated' ? ' · No longer available' : ' · Unavailable');
+          return item;
+        }),
+      );
+      status.hidden = !source.stale && !source.error;
+      status.textContent = status.hidden
+        ? ''
+        : 'Could not refresh models; using cached list' + (source.error ? ' · ' + source.error : '');
       section.classList.toggle('source-disabled', !choice.enabled);
       rows.forEach(({ label, input, model }) => {
         input.checked = choice.models.includes(model.id);
@@ -250,10 +289,22 @@ export interface ModelSettingsDeps {
       });
       updateSaveState();
     }
+    catalogSubscriptions.push(
+      runtime.Models.subscribe(() => {
+        if (!draft) return;
+        const latest = runtime.Models.snapshot().sources.find((entry: ModelSource) => entry.id === source.id);
+        if (!latest) return;
+        Object.assign(source, latest);
+        syncModelRows();
+        sync();
+      }),
+    );
     sync();
     return section;
   }
   function render() {
+    unsubscribeCatalogs();
+    automaticRefreshes.clear();
     const list = $('model-source-list');
     const opened = Array.from(list.querySelectorAll<HTMLElement>('.model-source > details[open]'))
       .map((node) => node.parentElement?.dataset.sourceId)
@@ -272,6 +323,9 @@ export interface ModelSettingsDeps {
   }
   async function open() {
     const request = ++generation;
+    unsubscribeCatalogs();
+    autoRefreshes.clear();
+    automaticRefreshes.clear();
     saving = false;
     draft = null;
     $('model-source-list').inert = false;
@@ -306,11 +360,27 @@ export interface ModelSettingsDeps {
         $('model-settings-retry').hidden = false;
       }
     } finally {
-      if (request === generation) $('model-settings-loading').hidden = true;
+      if (request === generation) {
+        $('model-settings-loading').hidden = true;
+        const saved = runtime.Models.snapshot();
+        automaticRefreshes.forEach((refresh, id) => {
+          if (
+            !draft?.preferences.sources[id]?.enabled ||
+            !saved.preferences.sources[id]?.enabled ||
+            autoRefreshes.has(id)
+          )
+            return;
+          autoRefreshes.add(id);
+          void refresh();
+        });
+      }
     }
   }
   function close() {
     generation++;
+    unsubscribeCatalogs();
+    autoRefreshes.clear();
+    automaticRefreshes.clear();
     draft = null;
   }
   async function save() {

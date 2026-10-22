@@ -2,6 +2,33 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Zen catalog lifecycle (2026-10-22)
+
+Deprecated directory entries are filtered on disk-cache load, fresh discovery
+and new admission. Settings projects the raw cached directory locally, including
+names for unavailable selected IDs, without rewriting consent. Manual Refresh
+models bypasses the five-minute TTL and retains ETag validation; automatic
+discovery skips disabled sources and the open UI checks API catalogs hourly.
+Settings, the picker and Send use the same catalog; old chats and staged choices
+survive refresh. Older status/catalog replies cannot restore retired entries.
+
+| Check | Result |
+| --- | --- |
+| Focused Zen/model/connection/frozen regressions | **939 passed, 8561 deselected, 4 subtests; 51.81s** (`pytest tests -k 'zen or connection_status or model_preferences or model_settings or models_projection or api_connection_removal or dynamic_api_model or headless_api_model_selection' --ignore=tests/manual`) |
+| Browser lifecycle, model management, source actions, save/focus and catalog tests | **41 passed; 66.95s** |
+| Additional disabled-discovery/input validation and cold-start checks | **21 passed; 3.80s** (overlaps earlier selections) |
+| Frontend | **42 files / 178 tests passed**; TypeScript, Biome, production build and published metadata passed |
+| Python production static checks | Full-repository Ruff and full-tree mypy (**498 source files**, Python targets 3.11 and 3.12), Pyrefly and ty passed; Pyrefly reports 76 unnecessary-type-conversion warnings outside the modified Python files and 29 suppressions separately from its zero-error gate |
+| Windows native UI | Production backend and pywebview/WebView2, isolated QA profile: real official catalog download and conditional 304; selected retired models hidden from picker, named in Settings; old chat/draft retained and Send disabled; injected metadata outage retained rows/choices; recovery retained staged Beam selection; explicit Save updated picker |
+
+New regressions were observed failing before implementation (five backend and
+five browser cases). Iteration also caught and fixed subscription cleanup,
+disabled-source refresh timing, malformed source responses and empty nested
+disclosure interference with existing focus/layout contracts. Native QA made
+metadata requests only; it did not run inference or change the user's profile.
+Local QA records are under `.e2e-artifacts/zen-catalog-live/`.
+This is a focused regression pass, not a new complete-suite or coverage result.
+
 ## External control v0.3 verification (2026-10-21)
 
 This pass implements the shared local service, delegation/review loop, desktop

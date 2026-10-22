@@ -142,6 +142,8 @@ export interface ProviderUiApi {
     runtime.Settings.init({ $: deps.$, applyLocalMetadata });
     refreshLocalMetadata();
     refreshApiModels();
+    if (catalogRefreshTimer) clearInterval(catalogRefreshTimer);
+    catalogRefreshTimer = setInterval(() => void refreshApiModels(), 60 * 60 * 1000);
   }
 
   function buildProviderMenu() {
@@ -621,10 +623,11 @@ export interface ProviderUiApi {
   }
   let apiModels: Record<string, ProviderConnection> = {},
     apiModelsRequest = 0;
+  let catalogRefreshTimer: ReturnType<typeof setInterval> | null = null;
   function applyApiModels(connections: ProviderConnection[]): void {
     connections.forEach((connection: ProviderConnection) => {
       if (runtime.Models.connections().some((source: ProviderConnection) => source.id === connection.id))
-        apiModels[connection.id] = connection;
+        runtime.Models.observeCatalog(connection);
     });
     buildProviderMenu();
   }

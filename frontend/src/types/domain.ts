@@ -48,7 +48,12 @@ export interface ModelUse {
 }
 export interface ModelSource {
   id: string;
-  models: Array<{ id: string }>;
+  models: Array<{ id: string; name?: string }>;
+  unavailable_models?: Array<{ id: string; name?: string; status?: string }>;
+  stale?: boolean;
+  error?: string;
+  updated_at?: number;
+  checked_at?: number;
 }
 export interface ModelState {
   preferences: { revision: number; sources: Record<string, ModelChoice> };

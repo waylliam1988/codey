@@ -182,6 +182,30 @@ class ConnectionStatusCoordinator:
         self._submit(provider_id, revision, force=force)
         return self._current(provider_id)
 
+    def observe_catalog(self, provider_id: str, payload: dict[str, Any]) -> None:
+        """Publish explicit discovery without letting an older probe replace it."""
+        revision = self._revision(provider_id)
+        models = payload.get("models", [])
+        snapshot = ConnectionSnapshot(
+            provider_id, state="ready" if models else "unavailable",
+            freshness="stale" if payload.get("stale") is True else "fresh", source="api_catalog",
+            checked_at=time.time(), error=str(payload.get("error") or "")[:240],
+            data={"models": models, "payload": payload},
+        )
+        with self._lock:
+            if self._closed:
+                return
+            self._generations[provider_id] = self._generations.get(provider_id, 0) + 1
+            self._futures.pop(provider_id, None)
+            self._revisions[provider_id] = revision
+            self._snapshots[provider_id] = snapshot
+            if snapshot.state == "ready":
+                self._last_good[provider_id] = (revision, snapshot)
+            else:
+                self._last_good.pop(provider_id, None)
+        if self._emit is not None:
+            self._emit({"type": "providers", "providers": [snapshot.payload(self._labels().get(provider_id, provider_id))]})
+
     def snapshot(self) -> dict[str, ConnectionSnapshot]:
         result: dict[str, ConnectionSnapshot] = {}
         for provider_id in tuple(self._provider_ids()):

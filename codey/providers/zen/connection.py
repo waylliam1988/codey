@@ -301,9 +301,18 @@ def open_selection(selection: ApiRunSelection) -> ZenProvider:
 
 
 def model_payload() -> dict[str, Any]:
+    return refresh_models(force=False)
+
+
+def refresh_models(*, force: bool = True) -> dict[str, Any]:
+    catalog().refresh(force=force)
+    return cached_model_payload()
+
+
+def cached_model_payload() -> dict[str, Any]:
     directory = catalog()
-    models = directory.refresh()
-    return {"id": "zen", "label": "OpenCode Zen", "models": [
-                {**model.to_payload(), "review_eligible": directory.access.plain_access(model.id, model.protocol)} for model in models],
-            "stale": directory.stale, "error": directory.error, "source": "https://models.opencode.ai/api.json",
-            "updated_at": directory.updated, "authentication": "public", "qualification": "checked by the service per request"}
+    payload = directory.cached_payload()
+    for model in payload["models"]:
+        model["review_eligible"] = directory.access.plain_access(model["id"], model["protocol"])
+    return {**payload, "id": "zen", "label": "OpenCode Zen", "source": "https://models.opencode.ai/api.json",
+            "authentication": "public", "qualification": "checked by the service per request"}

@@ -14,15 +14,20 @@ renderer marks the refresh action explicitly instead of positioning whichever
 button happens to be last. This also works for an API source without discovery.
 Refresh appears only when the source declares `discoverable`. Websites lists
 registered website connectors, not models discovered inside those websites,
-so it currently needs no Refresh models action. Opening or expanding Settings
-does not request a model catalog or save model preferences.
+so it currently needs no Refresh models action. Settings paints its local
+snapshot immediately, then refreshes enabled built-in catalogs after loading
+preferences. Disabled sources and optional integrations require explicit
+discovery. Expanding a group does not repeat discovery or save preferences.
 
 Save changes is disabled until enablement or selected model-ID sets differ from
 the loaded baseline; reverting those values disables it again. Names, ordering,
 search and expanded groups do not count as preference edits. Catalog refresh
-updates only that source's model rows while keeping staged selections, search,
-disclosures and focus. Missing selected IDs remain in the subset, new models
-remain unchecked, and a removed focused option returns focus to its source row.
+updates that source everywhere while keeping staged selections, search,
+disclosures and focus. Missing selected IDs remain in the subset and appear in
+an expandable unavailable-selection summary; counts separate usable selections
+from unavailable ones. New models remain unchecked, and a removed focused
+option returns focus to its source row. Old chats retain their model name and
+draft, with Send disabled until the user chooses an available enabled model.
 
 `model-preferences.json` contains a revisioned preference snapshot and separate
 non-secret catalog facts. A catalog observation never changes consent or its
@@ -30,8 +35,11 @@ revision. Saves use the file lease and an atomic replacement; stale revisions
 return 409. Removed registrations are excluded when reading the snapshot.
 
 `/api/model_settings` reads local state only. `/api/model_catalog` is explicit
-metadata discovery, including for a disabled source. Automatic API discovery
-skips disabled sources. Disabled Local connection settings read saved values
+metadata discovery, including for a disabled source. Manual discovery defaults
+to `force: true`; automatic requests use `force: false` and skip disabled
+sources. A forced refresh bypasses the local freshness interval while retaining
+conditional HTTP validation. Failed refresh preserves cached rows and reports
+stale/error state in Settings. Disabled Local connection settings read saved values
 without probing. Neither metadata discovery nor connecting settings performs
 inference. Desktop startup no longer warms or opens model websites.
 
@@ -73,9 +81,17 @@ missing usage is unknown. See [token accounting](token-accounting.zh-CN.md).
 ## Removing an optional integration
 
 Zen discovers model API addresses, protocol, limits and explicit zero-cost prices
-directly from `https://models.opencode.ai/api.json`. ETag and a 60-second lazy
-refresh allow approved API paths to change without shipping Codey. Failed refresh
-preserves valid cached facts with stale/error information. There is no second
+directly from `https://models.opencode.ai/api.json`. Models with
+`status: deprecated` are excluded when parsing both cached and fresh directories;
+the settings snapshot uses this local projection to discard obsolete display
+cache rows before any network response. ETag and a five-minute lazy refresh
+allow approved API paths to change without shipping Codey. Desktop startup
+refreshes enabled API sources asynchronously; the open UI also checks hourly.
+Manual discovery publishes its result to the status coordinator so an older
+in-flight status probe cannot restore retired models. Frontend catalog timestamps
+likewise prevent older replies replacing newer facts. Failed refresh preserves
+valid cached facts with stale/error information and backs off automatic retries
+for five minutes; manual retry remains immediate. There is no second
 endpoint-availability index and no dependency on `/models`, OpenCode.exe or its
 credentials. A run freezes its endpoint revision; a changed endpoint rejects its
 old selection rather than silently rerouting it. New trust domains and unsupported
@@ -119,6 +135,7 @@ Current results, full-run failures and focused fixes are maintained in
 [the test report](../TEST_REPORT.md), including TDD and platform limits.
 
 Primary tests: `tests/test_model_preferences.py`,
+`tests/test_zen_catalog_lifecycle.py`, `tests/test_ui_catalog_lifecycle.py`,
 `tests/test_ui_model_management.py`, `tests/test_offline_models_demo.py`,
 `tests/test_ui_settings_save_scopes_and_refresh.py`,
 `tests/test_optional_zen_removal_preserves_local_api.py`. The visual baseline is
