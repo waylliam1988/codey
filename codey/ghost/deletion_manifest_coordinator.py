@@ -47,10 +47,13 @@ class DeletionManifestCoordinator:
     def run(
         self,
         manifest: DeletionManifest,
-        *,
-        project: str = "",
-        session_id: str = "",
     ) -> DeletionManifest:
+        """Apply the durable operation using its manifest scope.
+
+        The manifest is the only source of truth for the operation scope.  A
+        caller must not be able to resume the same operation with a different
+        project or session and accidentally delete another scope.
+        """
         current = self.manifests.start(manifest)
         for name in current.pending_stores:
             target = self.targets[name]
@@ -58,7 +61,11 @@ class DeletionManifestCoordinator:
                 if current.action == "reset_all":
                     result = target.reset_all()
                 else:
-                    result = target.delete_scope(current.scope, project=project, session_id=session_id)
+                    result = target.delete_scope(
+                        current.scope,
+                        project=current.project,
+                        session_id=current.session_id,
+                    )
                 detail = _result_detail(result)
                 current = self.manifests.append(store_event(current, name, "completed", detail=detail))
             except Exception as exc:  # noqa: BLE001 - durable blocked transition

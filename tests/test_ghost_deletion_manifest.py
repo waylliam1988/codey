@@ -148,11 +148,11 @@ def test_coordinator_retries_only_pending_stores_after_a_blocked_store(tmp_path)
         project="P:/demo", requested_at="2026-10-22T00:00:00Z", retention_class="tombstone",
         stores=GHOST_STORE_NAMES,
     )
-    blocked = coordinator.run(manifest, project="P:/demo")
+    blocked = coordinator.run(manifest)
     assert blocked.status == MANIFEST_BLOCKED
     assert calls == ["inbox", "hebbian", "continuity"]
 
-    resumed = coordinator.run(manifest, project="P:/demo")
+    resumed = coordinator.run(manifest)
     assert resumed.status == MANIFEST_BLOCKED
     assert calls == ["inbox", "hebbian", "continuity", "sleep", "work_queue", "affinity", "observations"]
     assert resumed.store("inbox").status == STORE_COMPLETED
@@ -165,6 +165,36 @@ def test_coordinator_requires_exactly_the_existing_seven_store_targets(tmp_path)
     target = DeletionTarget(delete_scope=lambda *_args, **_kwargs: None, reset_all=lambda: None)
     with pytest.raises(ValueError, match="exactly the seven"):
         DeletionManifestCoordinator(store, {name: target for name in GHOST_STORE_NAMES[:-1]})
+
+
+def test_coordinator_uses_persisted_manifest_scope_as_the_only_scope_source(tmp_path) -> None:
+    store = DeletionManifestStore(GhostSQLite(tmp_path))
+    seen: list[tuple[str, str, str]] = []
+
+    def target(name: str) -> DeletionTarget:
+        def delete_scope(scope: str, *, project: str = "", session_id: str = "") -> None:
+            seen.append((name, project, session_id))
+
+        return DeletionTarget(delete_scope=delete_scope, reset_all=lambda: None)
+
+    manifest = new_manifest(
+        operation_id="canonical-scope",
+        action="delete_scope",
+        scope="project",
+        project="P:/canonical",
+        session_id="session-canonical",
+        requested_at="2026-10-22T00:00:00Z",
+        retention_class="tombstone",
+        stores=GHOST_STORE_NAMES,
+    )
+    result = DeletionManifestCoordinator(
+        store, {name: target(name) for name in GHOST_STORE_NAMES},
+    ).run(manifest)
+
+    assert result.status == MANIFEST_COMPLETED
+    assert seen == [
+        (name, "P:/canonical", "session-canonical") for name in GHOST_STORE_NAMES
+    ]
 
 
 def test_coordinator_binds_the_existing_seven_store_reset_methods(tmp_path) -> None:
