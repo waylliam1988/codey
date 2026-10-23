@@ -34,8 +34,9 @@ def test_large_output_follows_until_reader_leaves_and_requires_actual_bottom(pag
     page.evaluate("ConversationUI.captureView();addToSession('a',{type:'asst',text:'do not follow'})")
     assert page.evaluate('ConversationUI.isFollowing()') is False
     page.locator('#back-to-latest').click()
-    assert page.evaluate('ConversationUI.isFollowing()') is True
-    assert page.locator('#chat-area').evaluate('e=>e.scrollHeight-e.clientHeight-e.scrollTop') <= 2
+    # Returning to the latest can refresh deferred durable history first.
+    page.wait_for_function('ConversationUI.isFollowing()')
+    page.wait_for_function("()=>{const e=document.getElementById('chat-area');return e.scrollHeight-e.clientHeight-e.scrollTop<=2}")
 
 
 @pytest.mark.parametrize('key', ['PageUp', 'Home'])

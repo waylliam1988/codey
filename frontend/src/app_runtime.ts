@@ -35,6 +35,7 @@ import './ui_state';
 import './sse';
 import './requests';
 import './composer';
+import { mountCharacterPond } from './character_pond';
 import './conversation_nav';
 import './conversation_ui';
 import './domain/protocol';
@@ -2119,6 +2120,8 @@ document.addEventListener('keydown', (e) => {
 });
 // ============================ boot ============================
 async function boot() {
+  const main = document.querySelector('main');
+  if (main) mountCharacterPond(main);
   await runtime.OperatorAuth.authorize();
   await runtime.ProviderUI.adoptCatalog();
   DEFAULT_PROVIDER = runtime.UiState.DEFAULT_PROVIDER;

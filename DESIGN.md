@@ -95,6 +95,25 @@ Codey is a **local developer and research tool**, not a consumer chat app. The U
 
 When in doubt: remove color, remove chrome, remove copy.
 
+### Empty-chat character pond
+
+The approved decorative exception is a pointer-transparent character pond in the
+main empty new-chat canvas only. Keep the sidebar, model dot, composer shell and
+focus treatment unchanged. Use stable gray-white 11px monospace digits and
+punctuation on a 12px column / 22px row grid. Expanding ripple crests use the
+actual `--ok-dot` green with enough opacity to visibly match the model dot.
+Do not add a glow, frame, click target, or visible controls.
+
+Occasional random ripples expand and decay; pointer movement alone creates a
+gentle wake, including after the preview loses focus. Leaving the canvas stops
+pointer ripples while ambient ripples continue. Pause rendering when hidden,
+unfocused or offscreen; cap frame rate, pixel ratio and concurrent ripples.
+Fade out over 500ms after the first message, then stop rendering and release
+the field data. Re-entering an empty chat restores the effect. This explicitly
+approved ambient effect and its fade ignore the system reduced-motion setting;
+other application motion rules continue to apply. Never intercept typing,
+selection, paste, file dragging, scrolling or clicks.
+
 Icon-only actions (project/chat more menus, new chat, topbar/sidebar controls,
 message Copy, send/stop, document reload/copy/close and Shell Copy) brighten on
 pointer hover without adding an individual button background. Keep full-row

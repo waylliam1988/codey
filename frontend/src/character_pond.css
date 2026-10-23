@@ -1,0 +1,23 @@
+main:has(> .character-pond) {
+  position: relative;
+  isolation: isolate;
+}
+main > .character-pond {
+  position: absolute;
+  inset: 44px 0 0;
+  width: 100%;
+  height: calc(100% - 44px);
+  z-index: -1;
+  pointer-events: none;
+  user-select: none;
+  color: var(--text);
+  --pond-green: var(--ok-dot);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+main.empty-conversation > .character-pond {
+  opacity: 1;
+}
+main.empty-conversation:has(> .character-pond) .composer-wrap {
+  background: transparent;
+}
