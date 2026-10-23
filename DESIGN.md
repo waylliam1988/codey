@@ -555,7 +555,8 @@ commands share the same quiet row treatment. Only an expanded result has a
 rounded `--panel-2` Shell panel with a subtle border. Wrap the command, bound
 scrollable output, and place the actual execution status at the lower right;
 only failure text uses `--err-text`. Command and output have independent Copy
-icons, revealed on panel hover or keyboard-visible focus (always available on
+icons, revealed only by their own command or output section's hover or
+keyboard-visible focus (always available on
 touch). Preserve exact retained text when copying and disclose runner
 truncation explicitly. Do not conflate UI folding with discarded output.
 
