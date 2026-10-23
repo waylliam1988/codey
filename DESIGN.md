@@ -27,6 +27,11 @@ its layout, entries, icons and interactions. Render projects and chats from the
 user's actual state; do not seed extra demo projects, recent items, or comparison
 tasks into it. This applies to the whole sidebar, not just its footer.
 
+Global New chat and Ctrl/Cmd+N create a projectless conversation under CHATS,
+even while a project chat is selected. A project's own New chat action creates
+a conversation in that project. Preserve the selected model and effort when
+starting either kind of chat; projectless messages carry no inherited workspace.
+
 The quiet field focus rule applies to every input, textarea and select, including
 inline renaming, search, file navigation and connection forms. Focus adds no
 outline, outer ring, glow or second border; keep each field's resting border.

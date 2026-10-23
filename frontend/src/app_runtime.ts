@@ -2083,10 +2083,7 @@ function syncResearchUseProjectButton() {
   btn.title = busy ? 'Busy' : !s ? 'No chat' : sessionProject(s) ? 'Already in a project' : '';
 }
 $('research-use-project').onclick = () => attachCurrentChatToPickedProject();
-$('btn-new-chat').onclick = () => {
-  const p = activeProject();
-  newSession(p ? p.id : null);
-};
+$('btn-new-chat').onclick = () => newSession(null);
 $('btn-add-project').onclick = pickProject;
 $('toggle-sidebar').onclick = () => {
   document.body.classList.add('sidebar-collapsed');
@@ -2109,8 +2106,7 @@ document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'n' || e.key === 'N')) {
     if (eventElement(e)?.closest('.rename-input')) return;
     e.preventDefault();
-    const p = activeProject();
-    newSession(p ? p.id : null);
+    newSession(null);
     return;
   }
   if (e.key === 'Escape') {
