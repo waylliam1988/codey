@@ -6,6 +6,46 @@ import './research_runs';
 import type { Session } from './types/domain';
 import { runtime } from './runtime';
 
+it.each(['', ' \n\n ', '[reference]: https://example.com'])(
+  'keeps an empty stream out of layout and reveals later text: %j',
+  (text) => {
+    window.Messages.init({
+      getActiveId: () => 'chat',
+      getRunningSessionId: () => null,
+      currentProjectPath: () => '',
+    } as Parameters<typeof window.Messages.init>[0]);
+    const host = document.createElement('div');
+    const message = { type: 'asst', streamId: 'stream', runId: 'run', finalAnswer: false, text };
+    window.Messages.append(host, message);
+    const node = host.querySelector<HTMLElement>('.msg.asst')!;
+    expect(node.hidden).toBe(true);
+    expect(window.Messages.updateReply(host, { ...message, text: 'Now there is an answer.' })).toBe(true);
+    expect(host.querySelector('.msg.asst')).toBe(node);
+    expect(node.hidden).toBe(false);
+    expect(node.textContent).toContain('Now there is an answer.');
+    window.Messages.updateReply(host, message);
+    expect(node.hidden).toBe(true);
+  },
+);
+
+it('keeps an interrupted stream notice visible even when it has no prose', () => {
+  window.Messages.init({
+    getActiveId: () => 'chat',
+    getRunningSessionId: () => null,
+    currentProjectPath: () => '',
+  } as Parameters<typeof window.Messages.init>[0]);
+  const host = document.createElement('div');
+  window.Messages.append(host, {
+    type: 'asst',
+    streamId: 'stream',
+    runId: 'run',
+    text: '',
+    streamState: 'interrupted',
+  });
+  expect(host.querySelector<HTMLElement>('.msg.asst')?.hidden).toBe(false);
+  expect(host.querySelector('.reply-stream-note')).not.toBeNull();
+});
+
 it('orders message actions as copy, edit and fork and opens the message-local flow', () => {
   const open = vi.fn();
   runtime.ChatFork = { open };

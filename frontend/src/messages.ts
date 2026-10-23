@@ -50,6 +50,11 @@ export interface MessagesApi {
     }
     note.textContent = 'Response interrupted · partial text retained';
   }
+  function replyVisibility(node: HTMLElement, body: HTMLElement, message: Message): void {
+    // Keep the stream identity mounted for later updates without reserving
+    // message margins for empty/tool-only responses or Markdown references.
+    node.hidden = body.children.length === 0 && !body.textContent?.trim() && message.streamState !== 'interrupted';
+  }
   function append(chat: HTMLElement, m: Message): void {
     if (!runtime.Process.append(chat, m, appendContent)) appendContent(chat, m);
   }
@@ -242,6 +247,7 @@ export interface MessagesApi {
       }
       answerActions(div, m);
       streamStatus(div, m);
+      replyVisibility(div, body, m);
       chat.appendChild(div);
     } else if (m.type === 'tool') {
       if (isFoldableTool(m)) {
@@ -502,6 +508,7 @@ export interface MessagesApi {
     const body = node?.querySelector<HTMLElement>('.body');
     if (!node || !body) return false;
     runtime.Render.updateMarkdown(body, message.text || '');
+    replyVisibility(node, body, message);
     streamStatus(node, message);
     if (message.finalAnswer && !node.querySelector('.msg-copy')) {
       const sessionId = message.sessionId || deps.getActiveId();

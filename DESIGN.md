@@ -880,6 +880,13 @@ completion, stop the spinner and use `Worked`. Keep failed-request Details and
 Retry controls available in their existing recovery row. A tool failure alone
 does not terminate the request's progress.
 
+Use `Connecting` and `Running` without trailing ellipses in the top status.
+Collapsed Work ends 6px before the first visible answer block, consistently
+across live output and restored history. Empty assistant stream placeholders
+(including whitespace and Markdown reference definitions without visible content)
+keep their stream identity but occupy no layout space or message margins. Reveal
+the same node when visible content arrives; retain meaningful interruption notices.
+
 Shell approvals use one rounded neutral card outside the process disclosure.
 Approval cards, expanded command panels and the composer share the single
 `--panel-radius: 10px` token. Keep the approval title at 13px, weight 500, so it

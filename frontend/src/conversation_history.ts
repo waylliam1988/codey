@@ -19,7 +19,12 @@ export function reconcileHistory(current: Message[], items: HistoryResult['items
   const streamingRuns = new Set(
     current
       .filter(
-        (message) => message.type === 'asst' && message.streamId && message.runId && message.finalAnswer === false,
+        (message) =>
+          message.type === 'asst' &&
+          message.streamId &&
+          message.runId &&
+          message.finalAnswer === false &&
+          !!message.text?.trim(),
       )
       .map((message) => message.runId as string),
   );

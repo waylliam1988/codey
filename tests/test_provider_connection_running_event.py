@@ -45,7 +45,7 @@ def test_connection_event_stream_agrees_with_authoritative_state(tmp_path, monke
         context.close()
 
 
-@pytest.mark.parametrize("status,text,kind", [("connecting", "Connecting…", "warn"),
+@pytest.mark.parametrize("status,text,kind", [("connecting", "Connecting", "warn"),
                                                ("running", "Running", "run")])
 @pytest.mark.parametrize("scope", ["unlinked", "current", "previous", "settled"])
 def test_replayed_connection_status_keeps_running_display(status, text, kind, scope):
@@ -70,7 +70,7 @@ const assert = require('node:assert/strict');
 let runningRunId = 'run';
 const calls = [];
 const setStatus = (...args) => calls.push(args);
-const window = {};
+const window = {ConversationUI: {acceptsRun: () => true}};
 """ + sse + requests + "\nwindow.Sse.init({setStatus});\n" + source + f"""
 const sessions = {json.dumps(sessions)};
 window.Requests.init({{getSessions: () => sessions}});

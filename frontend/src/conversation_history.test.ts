@@ -157,3 +157,11 @@ it('does not duplicate a streamed answer when its durable entry arrives first', 
     ),
   ).toEqual([{ id: 'entry-user', type: 'user', runId: 'run-1', text: 'request', entryId: 'entry-user' }, streamed]);
 });
+
+it('does not let empty tool-turn streams suppress the restored final answer', () => {
+  const rows = reconcileHistory(
+    [{ type: 'asst', runId: 'run', streamId: 'tool-turn', text: '\n\n', finalAnswer: false, streamState: 'complete' }],
+    [{ id: 'answer', type: 'asst', runId: 'run', text: 'The final answer.' }],
+  );
+  expect(rows.find((row) => row.entryId === 'answer')?.text).toBe('The final answer.');
+});
