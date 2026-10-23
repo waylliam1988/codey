@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 
 from codey.control.protocol import MAX_FRAME_BYTES, PROTOCOL_VERSION, ControlError, fingerprint, validate_command
 from codey.launcher.releases import activate, ensure_frontend, prepare, snapshot
+from codey.launcher.startup import startup_stage
 from codey.storage.file_lock import acquire_lease
 from codey.storage.local_store import DEFAULT_STATE_HOME, read_json_strict, write_json_atomic
 
@@ -97,8 +98,10 @@ def _current_source() -> Path:
 def _materialize_current_release(home: Path) -> dict[str, Any]:
     source = _current_source()
     with acquire_lease(home / "release-preparation"):
-        ensure_frontend(source)
-        return snapshot(home, source)
+        with startup_stage("frontend.check"):
+            ensure_frontend(source)
+        with startup_stage("release.snapshot"):
+            return snapshot(home, source)
 
 
 def _launch_release(client: ControlClient, home: Path, release: dict[str, Any], *, port: int,
@@ -141,10 +144,13 @@ def _activate_current_release(client: ControlClient, home: Path, current: dict[s
         instance_id=health["instance_id"],
         allowed_roots=allowed_roots,
     )
-    prepare_args = {"request_id": "auto-local-prepare-" + digest[:32],
+    # This is a new preparation attempt, not a replay of old database evidence.
+    # Static checks have their own environment-bound cache; state preflight runs again.
+    prepare_args = {"request_id": "auto-local-prepare-" + uuid.uuid4().hex,
                     "source": str(_current_source())}
     try:
-        candidate = prepare(coordinator, prepare_args)
+        with startup_stage("release.prepare"):
+            candidate = prepare(coordinator, prepare_args)
     except ControlError as exc:
         if exc.code != "OUTCOME_UNKNOWN":
             raise
@@ -161,9 +167,12 @@ def _activate_current_release(client: ControlClient, home: Path, current: dict[s
         "candidate_digest": candidate["candidate_digest"],
         "expected_instance_id": health["instance_id"],
     }
-    # Idempotency belongs to this candidate and source service instance, not
-    # just the source digest. Keep the same identity for an identical retry.
-    activation_args["request_id"] = "auto-activate-" + fingerprint(activation_args)[:32]
+    # Each new preparation owns one activation attempt. Replaying that exact
+    # activation request still observes its original journal; a user retry
+    # after an aborted cutover gets a new attempt, not the old failed result.
+    activation_args["request_id"] = "auto-activate-" + fingerprint({
+        **activation_args, "preparation_request_id": prepare_args["request_id"],
+    })[:32]
     activation = activate(coordinator, activation_args)
     upgrade_id = activation["upgrade_id"]
     deadline = time.monotonic() + 90
@@ -194,18 +203,23 @@ def ensure_service(home: Path, *, port: int = 0, allowed_roots: tuple[Path, ...]
     home.mkdir(parents=True, exist_ok=True)
     # Serialize the complete materialize/handshake/cutover sequence so two
     # desktop launches cannot prepare or activate competing candidates.
-    with acquire_lease(home / "startup.lock", timeout_seconds=90):
+    with startup_stage("startup.lock"):
+        lease = acquire_lease(home / "startup.lock", timeout_seconds=90)
+    with lease:
         current = _materialize_current_release(home)
         client = ControlClient(home, operator=True)
         try:
-            health = client.call("get_health")
+            with startup_stage("service.health"):
+                health = client.call("get_health")
         except ControlError as exc:
             if exc.code not in {"NOT_FOUND", "OUTCOME_UNKNOWN"}:
                 raise
-            return _launch_release(client, home, current, port=port, allowed_roots=allowed_roots)
+            with startup_stage("service.launch"):
+                return _launch_release(client, home, current, port=port, allowed_roots=allowed_roots)
         if health.get("release_id") == current["release_id"]:
             if health.get("status") == "ready":
                 write_json_atomic(home / "active-release.json", current, mode=0o600)
                 return client
             raise ControlError("STARTUP_FAILED", "Codey service has the requested release but is not ready")
-        return _activate_current_release(client, home, current, health, allowed_roots=allowed_roots)
+        with startup_stage("service.activate"):
+            return _activate_current_release(client, home, current, health, allowed_roots=allowed_roots)

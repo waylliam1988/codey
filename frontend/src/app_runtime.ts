@@ -11,6 +11,7 @@ import { iconButton } from './icon_button';
 import './workspace.css';
 import { hydrateDocumentContent } from './document_content';
 import { streamMessage, finalStreamMessage } from './reply_stream';
+import { reportDesktopFailure, reportDesktopReady } from './desktop_ready';
 import { FrameCoalescer } from './frame_coalescer';
 import { terminalAnswerMessage } from './terminal_answer';
 import {
@@ -2347,6 +2348,7 @@ async function boot() {
   runtime.Composer.setReady();
   syncResearchUseProjectButton();
   connectEvents();
+  reportDesktopReady();
 }
 
 // Transitional test bridge is opt-in so the shipped page does not expose
@@ -2399,4 +2401,8 @@ if (testBridgeWindow.__TEST_BRIDGE__)
       },
     },
   });
-boot().catch((error) => setStatus(error.message, 'warn'));
+boot().catch((error) => {
+  const message = error instanceof Error ? error.message : String(error);
+  setStatus(message, 'warn');
+  reportDesktopFailure(message);
+});

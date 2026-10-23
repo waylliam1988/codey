@@ -881,6 +881,12 @@ Retry controls available in their existing recovery row. A tool failure alone
 does not terminate the request's progress.
 
 Use `Connecting` and `Running` without trailing ellipses in the top status.
+Desktop launch shows a quiet `Starting Codey` state in the same window while the
+shared service prepares. Show the current stage in restrained secondary text;
+failure shows its reason and an English `Retry` action without opening a second
+window. Service readiness navigates that window to the normal interface. Startup
+observations distinguish window display from actual interface readiness; see
+[desktop startup](docs/startup.md) for validation and timing boundaries.
 Collapsed Work ends 6px before the first visible answer block, consistently
 across live output and restored history. Empty assistant stream placeholders
 (including whitespace and Markdown reference definitions without visible content)

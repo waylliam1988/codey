@@ -2,6 +2,32 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Desktop startup (2026-10-23)
+
+The native desktop now creates its startup window before shared-service work.
+The same window navigates to the application; startup and interface boot failures
+retain an English reason and Retry. Static validation evidence is reusable only
+for matching runtime, interpreter, dependency and validation-rule fingerprints.
+Each new preparation still backs up the current databases and runs the isolated
+service preflight. Existing startup serialization, activation journals and rollback
+remain authoritative.
+
+| Check | Result |
+| --- | --- |
+| Python focused regressions | **145 passed, 24 subtests; 159.49s** across release control/materialization, real listener lifecycle, activation journals, frontend build, startup/cache/fingerprint boundaries, chat edit/Stop/Continue and cold-start cleanup |
+| Frontend | **48 files / 261 tests passed**; TypeScript, Biome, production build and published metadata passed |
+| Python static checks | Repository Ruff passed; full-tree mypy (**508 source files**), Pyrefly and ty passed for Python targets **3.11, 3.12 and 3.13**; Pyrefly reports **80 existing warnings and 29 suppressions**, separately from its zero-error gate |
+| Startup boundaries | Cache corruption, environment/rule/source invalidation, failed/mutating validators, optional-cache write failure, fresh database evidence on cache hits, single-flight Retry, concurrent service attachment, close during startup and stale frontend readiness callbacks covered |
+| Window verification | Fake native lifecycle verifies window creation/loading precedes service preparation; headless Chromium verifies English status, safe error text and Retry in the same document; the user's desktop was not operated |
+
+An isolated real preparation sample took **12.454s** without static evidence and
+**10.044s** with a cache hit. The cached attempt skipped compilation/CLI execution
+but still copied and checked the candidate and ran a fresh database preflight.
+These samples measure preparation only, under concurrent test load; they do not
+measure native first paint, cutover or full application readiness. New bounded
+startup timing logs distinguish those phases on subsequent desktop launches.
+This section is focused verification, not a rerun of the historical complete suite.
+
 ## Complete suite (2026-10-22)
 
 The complete Windows pytest run passed with **9486 passed and 59 skipped** in

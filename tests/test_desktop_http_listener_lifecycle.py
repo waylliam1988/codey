@@ -15,8 +15,8 @@ def test_desktop_exit_keeps_shared_service_and_lease(tmp_path):
     runtime = start_local_service(tmp_path)
     try:
         client = ControlClient(tmp_path, operator=True)
-        view = mock.Mock()
-        with mock.patch("codey.app.desktop.ensure_service", return_value=client), mock.patch.dict(sys.modules, {"webview": view}):
+        view = mock.MagicMock()
+        with mock.patch("codey.app.desktop_startup.ensure_service", return_value=client), mock.patch.dict(sys.modules, {"webview": view}):
             open_desktop(tmp_path, port=0)
         assert client.call("get_health")["status"] == "ready"
         assert runtime.httpd.socket.fileno() >= 0

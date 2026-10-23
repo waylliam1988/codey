@@ -25,6 +25,7 @@ BUILD_INPUTS = (
     "frontend/package-lock.json",
     "frontend/tsconfig.json",
     "frontend/vite.config.ts",
+    "tools/publish_frontend.py",
 )
 
 
@@ -104,7 +105,8 @@ def _source_digest() -> str:
         digest.update(relative.encode())
         digest.update(path.read_bytes())
     for path in sorted((ROOT / "frontend" / "src").rglob("*")):
-        if path.is_file():
+        if path.is_file() and not any(path.name.endswith(f".{kind}.{suffix}")
+                                      for kind in ("test", "spec") for suffix in ("ts", "tsx", "js", "jsx")):
             digest.update(path.relative_to(ROOT).as_posix().encode())
             digest.update(path.read_bytes())
     for path in sorted((ROOT / "frontend" / "public").rglob("*")):

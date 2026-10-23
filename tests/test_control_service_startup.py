@@ -113,7 +113,7 @@ def test_relaunch_reuses_ready_recovery_release(tmp_path, monkeypatch):
     assert _activate_current_release(client, tmp_path, current, health, allowed_roots=()) is client
 
 
-def test_activation_identity_tracks_instance_and_recovery_candidate(tmp_path, monkeypatch):
+def test_new_preparation_attempts_have_new_activation_identities(tmp_path, monkeypatch):
     current = {"release_id": "release_original", "candidate_digest": "b" * 64}
     candidate = {**current, "release_id": "release_original_recovery"}
     monkeypatch.setattr("codey.control.client.prepare", lambda service, args: dict(candidate))
@@ -136,6 +136,31 @@ def test_activation_identity_tracks_instance_and_recovery_candidate(tmp_path, mo
     _activate_current_release(client, tmp_path, current,
                               {"instance_id": "second", "release_id": "old", "status": "ready"},
                               allowed_roots=())
-    assert activations[0] == activations[1]
+    assert activations[0]["request_id"] != activations[1]["request_id"]
     assert activations[1]["request_id"] != activations[2]["request_id"]
     assert activations[2]["request_id"] != activations[3]["request_id"]
+
+
+def test_concurrent_desktop_attaches_share_one_service_launch(tmp_path, monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    current = {"release_id": "release_test", "candidate_digest": "digest", "source": str(tmp_path / "source")}
+    ready, barrier, launches = threading.Event(), threading.Barrier(2), []
+    monkeypatch.setattr("codey.control.client._materialize_current_release", lambda home: dict(current))
+    def health(self, operation, params=None):
+        if not ready.is_set():
+            raise ControlError("NOT_FOUND", "not started")
+        return {"release_id": current["release_id"], "status": "ready"}
+    def launch(client, *args, **kwargs):
+        launches.append(True)
+        ready.set()
+        return client
+    monkeypatch.setattr(ControlClient, "call", health)
+    monkeypatch.setattr("codey.control.client._launch_release", launch)
+    def attach():
+        barrier.wait(timeout=5)
+        return ensure_service(tmp_path)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(attach) for _ in range(2)]
+        assert all(isinstance(future.result(timeout=10), ControlClient) for future in futures)
+    assert len(launches) == 1

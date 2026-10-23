@@ -21,6 +21,8 @@ if os.name == "nt" or TYPE_CHECKING:
     _windows_subprocess: Any = subprocess
 
 from codey.control.protocol import ControlError, fingerprint
+from codey.launcher.startup import startup_stage
+from codey.launcher.validation_cache import cached_checks, save_checks, validation_key
 from codey.storage.file_lock import acquire_lease
 from codey.storage.local_store import read_json_strict, write_json_atomic
 
@@ -134,15 +136,45 @@ def _verification(directory: Path, manifest: dict[str, Any], commands: list[list
         write_json_atomic(directory / "manifest.json", manifest, mode=0o600)
         with (directory / f"validation-{len(results)}.log").open("wb") as output:
             try:
-                done = subprocess.run(argv, cwd=manifest["validation_source"], stdin=subprocess.DEVNULL,
-                                      stdout=output, stderr=subprocess.STDOUT, timeout=60,
-                                      creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                started = time.perf_counter()
+                with startup_stage("validation.command"):
+                    done = subprocess.run(argv, cwd=manifest["validation_source"], stdin=subprocess.DEVNULL,
+                                          stdout=output, stderr=subprocess.STDOUT, timeout=60,
+                                          creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
                 result.update(state="settled", exit_code=done.returncode)
             except subprocess.TimeoutExpired:
                 result.update(state="timeout", exit_code=None)
+            finally:
+                result.update(finished_at=time.time(), elapsed_seconds=time.perf_counter() - started)
         write_json_atomic(directory / "manifest.json", manifest, mode=0o600)
         if result["state"] != "settled" or result["exit_code"] != 0:
             raise ControlError("VALIDATION_FAILED", "Candidate validation failed; inspect release validation logs")
+
+
+def _static_commands() -> list[list[str]]:
+    return [[sys.executable, "-m", "compileall", "-q", "codey"], [sys.executable, "-m", "codey", "--help"]]
+
+
+def _static_verification(home: Path, directory: Path, manifest: dict[str, Any]) -> None:
+    commands = _static_commands()
+    with startup_stage("validation.static"):
+        key = validation_key(manifest["candidate_digest"], commands)
+        rows = cached_checks(home, key, commands)
+        if rows is None:
+            _verification(directory, manifest, commands)
+        else:
+            manifest["verification"].extend(rows)
+        if runtime_digest(Path(manifest["validation_source"])) != manifest["candidate_digest"]:
+            raise ControlError("REVISION_CONFLICT", "Validation modified its isolated runtime copy")
+        if validation_key(manifest["candidate_digest"], commands) != key:
+            raise ControlError("DEPENDENCY_MISMATCH", "Validation environment changed during the check")
+        if rows is None:
+            try:
+                with startup_stage("validation.cache_write"):
+                    save_checks(home, key, commands, manifest["verification"][:len(commands)])
+            except OSError:
+                pass  # Optional evidence cache; the checks above have still succeeded.
+        manifest["static_validation_key"] = key
 
 
 def prepare(service: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -183,30 +215,32 @@ def prepare(service: Any, args: dict[str, Any]) -> dict[str, Any]:
         manifest.update(status="validating", verification=[], validation_source=str(validation_source))
         write_json_atomic(directory / "manifest.json", manifest, mode=0o600)
         write_json_atomic(receipt, {"fingerprint": fingerprint(args), "status": "validating"}, mode=0o600)
-        defaults = [[sys.executable, "-m", "compileall", "-q", "codey"], [sys.executable, "-m", "codey", "--help"]]
         try:
             validation_source.mkdir(parents=True)
             for original in runtime_files(Path(manifest["source"])):
                 destination = validation_source / original.relative_to(manifest["source"])
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(original, destination)
-            _verification(directory, manifest, defaults + commands)
+            _static_verification(home, directory, manifest)
+            _verification(directory, manifest, commands)
             if runtime_digest(validation_source) != manifest["candidate_digest"]:
                 raise ControlError("REVISION_CONFLICT", "Validation modified its isolated runtime copy")
             # Only SQLite's backup API is used. The original remains live; this
             # copy is evidence and preflight input, never a rollback overwrite.
             probe = check_dir / "state"
             probe.mkdir(exist_ok=True)
-            for database in home.glob("*.sqlite3"):
-                with closing(sqlite3.connect(database)) as source_db, closing(sqlite3.connect(probe / database.name)) as destination_db:
-                    source_db.backup(destination_db)
+            with startup_stage("validation.database_backup"):
+                for database in home.glob("*.sqlite3"):
+                    with closing(sqlite3.connect(database)) as source_db, closing(sqlite3.connect(probe / database.name)) as destination_db:
+                        source_db.backup(destination_db)
             from codey.launcher import runner
 
             before = runner.schema(probe)
-            _verification(directory, manifest, [[sys.executable, "-c",
-                "import sys; from pathlib import Path; from codey.app.service import LocalService; "
-                "s=LocalService(Path(sys.argv[1]),verify_only=True,release_id=sys.argv[2]); s.start(); s.close()",
-                str(probe), manifest["release_id"]]])
+            with startup_stage("validation.database_preflight"):
+                _verification(directory, manifest, [[sys.executable, "-c",
+                    "import sys; from pathlib import Path; from codey.app.service import LocalService; "
+                    "s=LocalService(Path(sys.argv[1]),verify_only=True,release_id=sys.argv[2]); s.start(); s.close()",
+                    str(probe), manifest["release_id"]]])
             if runner.schema(probe) != before:
                 raise ControlError("SCHEMA_MISMATCH", "Automatic activation requires a backward-compatible unchanged schema")
             if runtime_digest(Path(manifest["source"])) != manifest["candidate_digest"]:
@@ -242,6 +276,8 @@ def activate(service: Any, args: dict[str, Any]) -> dict[str, Any]:
             raise ControlError("VALIDATION_FAILED", "Activation requires the validated candidate digest")
         if runtime_digest(Path(manifest["source"])) != args["candidate_digest"]:
             raise ControlError("REVISION_CONFLICT", "Candidate runtime changed after validation")
+        if manifest.get("static_validation_key") != validation_key(args["candidate_digest"], _static_commands()):
+            raise ControlError("DEPENDENCY_MISMATCH", "Validation environment changed; prepare the candidate again")
         timeout = args.get("timeout_seconds", 60)
         if not 5 <= timeout <= 300:
             raise ControlError("INVALID_ARGUMENT", "Upgrade timeout must be between 5 and 300 seconds")
