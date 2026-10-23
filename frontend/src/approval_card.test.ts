@@ -32,15 +32,13 @@ it('shows the approved compact approval layout without a reason section', () => 
   const chat = render();
   expect(chat.querySelector('.sc-title')?.textContent).toBe('Run this command?');
   expect(chat.querySelector('.shell-command')?.textContent).toBe('python -m pytest --collect-only');
-  expect(chat.querySelector('.sc-meta')?.textContent).toBe('E:/Selfie - 副本');
+  expect(chat.querySelector('.sc-meta')?.textContent).toBe('Working directory · E:/Selfie - 副本');
   expect(chat.textContent).not.toMatch(/Reason|May read or change files/);
   const buttons = chat.querySelectorAll('button');
-  expect(Array.from(buttons, (button) => button.textContent)).toEqual([
-    'Deny',
-    'Allow once',
-    'Allow same command in this chat',
-    'Saved permissions',
-  ]);
+  expect(Array.from(buttons, (button) => button.textContent).filter((text) => text === 'Allow once')).toHaveLength(1);
+  expect(chat.querySelector('.approval-options')?.textContent).not.toContain('Allow once');
+  expect(chat.querySelector('.approval-options')?.textContent).toContain('Allow exact command in this chat');
+  expect(chat.textContent).not.toContain('Saved permissions');
   buttons[1].click();
   expect(submit).toHaveBeenCalledExactlyOnceWith('approval', true);
 });
@@ -54,7 +52,7 @@ it('does not render a placeholder working directory when it is unavailable', () 
 it('locks both choices and places submission progress inside the primary button', () => {
   const chat = render({ approvalSubmission: 'sending' });
   expect(Array.from(chat.querySelectorAll('button')).every((button) => button.disabled)).toBe(true);
-  const allow = chat.querySelector('.shell-actions button:last-child')!;
+  const allow = chat.querySelector('.approval-allow')!;
   expect(allow.textContent).toBe('Submitting…');
   expect(allow.querySelector('.spinner')).not.toBeNull();
   expect(chat.querySelector('.sc-error')?.textContent).toBe('');
@@ -72,9 +70,15 @@ it('preserves uncertain-decision recovery and truncated-command identity', () =>
 it('offers an explicit project rule only when the server permits it', () => {
   const chat = render({ projectRuleAvailable: true });
   const project = Array.from(chat.querySelectorAll('button')).find((button) =>
-    button.textContent?.startsWith('Remember exact'),
+    button.textContent?.startsWith('Allow exact command in this project'),
   )!;
   project.click();
   expect(submit).toHaveBeenCalledExactlyOnceWith('approval', true, 'project');
-  expect(chat.textContent).toContain('exact command and working directory');
+  expect(chat.textContent).toContain('Same command and working directory');
+});
+
+it('shows a rejected scope error in the original card', () => {
+  const chat = render({ approvalError: 'Invalid approval scope' });
+  expect(chat.querySelector<HTMLElement>('.sc-error')?.hidden).toBe(false);
+  expect(chat.querySelector('.sc-error')?.textContent).toBe('Invalid approval scope');
 });

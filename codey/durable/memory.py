@@ -272,8 +272,8 @@ class MemoryDurableStore:
                 update.reason,
                 update.detail,
                 current.record.placement if update.placement is None else update.placement,
-                current.record.mode,
-                current.record.content,
+                current.record.mode if update.mode is None else update.mode,
+                current.record.content if update.content is None else update.content,
             ),
             placed_entry,
             current.result,
@@ -379,6 +379,13 @@ class MemoryDurableStore:
             current.status != update.status and not valid_submission_transition(current.status, update.status)
         ):
             raise CommitConflict("submission status changed")
+        if (update.content is not None or update.mode is not None) and (
+                    current.status is not SubmissionStatus.QUEUED
+                    or current.placement is not SubmissionPlacement.QUEUED
+                    or current.input_entry_id is not None or current.mode == "write"
+                    or update.status is not SubmissionStatus.QUEUED
+                    or update.input_entry_id is not None or update.placement is not None):
+            raise CommitConflict("only queued user inputs can be revised")
         if update.answer_entry_id is not None and update.answer_entry_id not in {entry.entry_id for entry in entries}:
             raise CommitConflict("answer entry must be part of the same commit")
         if update.input_entry_id is not None and update.input_entry_id not in {entry.entry_id for entry in entries}:

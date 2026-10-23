@@ -47,6 +47,7 @@ export class InputOutbox {
   private session = '';
   private storageError = '';
   private checking = new Set<string>();
+  private editing = new Map<string, { text: string; revision: number }>();
   constructor(
     readonly element: HTMLElement,
     private deps: OutboxDeps,
@@ -192,7 +193,11 @@ export class InputOutbox {
       this.render();
     }
   }
-  private async action(item: QueuedInput, action: 'edit' | 'remove' | 'resume'): Promise<void> {
+  private async action(
+    item: QueuedInput,
+    action: 'edit' | 'remove' | 'resume' | 'steer',
+    text?: string,
+  ): Promise<void> {
     if (this.checking.has(item.id)) return;
     if (item.rejected) {
       this.items.delete(item.id);
@@ -208,27 +213,63 @@ export class InputOutbox {
       const response = await fetch('/api/inputs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: action === 'edit' ? 'remove' : action, id: item.id, revision: item.revision }),
+        body: JSON.stringify({
+          action,
+          id: item.id,
+          revision: action === 'edit' ? this.editing.get(item.id)?.revision : item.revision,
+          ...(action === 'edit' ? { text } : {}),
+        }),
       });
       const data = await response.json();
       if (!response.ok || !inputRecord(data.item)) throw new Error(data.error || 'Input could not be changed');
+      if (action === 'edit') this.editing.delete(item.id);
       this.apply(data.item);
-      if (action === 'edit') this.deps.edit(item.request.session_id, item.request.task);
     } catch (error) {
-      item.error = error instanceof Error ? error.message : 'Input could not be changed';
+      // Check the same identity after an uncertain response. Never resubmit
+      // the message as a new task; keep any unsaved edit available.
+      this.checking.delete(item.id);
+      await this.check(item.id);
+      const current = this.items.get(item.id);
+      if (current) {
+        if (action === 'edit' && current.request.task === text && current.revision > item.revision)
+          this.editing.delete(item.id);
+        else if (
+          (action === 'steer' && current.request.input_mode === 'steer') ||
+          (action === 'remove' && current.state === 'cancelled')
+        )
+          delete current.error;
+        else {
+          current.error = error instanceof Error ? error.message : 'Input could not be changed';
+          const edit = this.editing.get(item.id);
+          if (edit && current.state === 'queued') edit.revision = current.revision;
+        }
+      }
     } finally {
       this.checking.delete(item.id);
       this.render();
     }
   }
   private render(): void {
+    const focused =
+      document.activeElement instanceof HTMLTextAreaElement && this.element.contains(document.activeElement)
+        ? {
+            id: document.activeElement.closest<HTMLElement>('[data-input-id]')?.dataset.inputId,
+            start: document.activeElement.selectionStart,
+            end: document.activeElement.selectionEnd,
+          }
+        : undefined;
     this.element.replaceChildren();
     if (this.storageError) {
       this.element.textContent = this.storageError;
+      this.element.hidden = false;
       return;
     }
     for (const item of this.items.values()) {
-      if (item.request.session_id !== this.session || ['submitted', 'completed', 'cancelled'].includes(item.state))
+      const edit = this.editing.get(item.id);
+      if (
+        item.request.session_id !== this.session ||
+        (!edit && ['submitted', 'completed', 'cancelled', 'consumed'].includes(item.state))
+      )
         continue;
       const row = document.createElement('div');
       row.className = 'pending-input';
@@ -236,17 +277,19 @@ export class InputOutbox {
       label.className = 'pending-input-state';
       label.textContent = this.checking.has(item.id)
         ? 'Checking…'
-        : (
-            {
-              queued: item.request.input_mode === 'steer' ? 'Queued · steer at next boundary' : 'Queued · next turn',
-              consumed: 'Applied · current task',
-              sending: 'Queuing…',
-              dispatching: 'Sending…',
-              unconfirmed: 'Delivery unconfirmed',
-              paused: 'Paused · not sent',
-              failed: 'Not sent',
-            } as Record<string, string>
-          )[item.state] || item.state;
+        : edit && item.state !== 'queued' && !item.rejected
+          ? 'Message already received. Your unsaved edit is retained.'
+          : (
+              {
+                queued: item.request.input_mode === 'steer' ? 'Steer at next boundary' : 'Next turn',
+                consumed: 'Applied · current task',
+                sending: 'Queuing…',
+                dispatching: 'Sending…',
+                unconfirmed: 'Delivery unconfirmed',
+                paused: 'Paused · not sent',
+                failed: 'Not sent',
+              } as Record<string, string>
+            )[item.state] || item.state;
       const text = document.createElement('div');
       text.className = 'pending-input-text';
       text.textContent = item.request.task;
@@ -258,23 +301,63 @@ export class InputOutbox {
           : ['queued', 'paused', 'failed'].includes(item.state)
             ? [
                 ...(item.state === 'paused' ? [['resume', 'Resume'] as [string, string]] : []),
-                ['edit', 'Return to draft'],
-                ['remove', 'Remove'],
+                ['edit', item.rejected ? 'Return to draft' : 'Edit queued message'],
+                ['remove', 'Delete queued message'],
+                ...(item.state === 'queued' && item.request.input_mode !== 'steer'
+                  ? [['steer', 'Steer'] as [string, string]]
+                  : []),
               ]
             : [];
-      for (const [action, title] of choices) {
+      for (const [action, title] of edit
+        ? [
+            ['save', 'Save'],
+            ['cancel-edit', 'Cancel'],
+            ...(item.state !== 'queued' ? [['restore', 'Return to draft']] : []),
+          ]
+        : choices) {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'link-btn';
+        button.className = 'pending-input-action';
         button.dataset.action = action;
-        button.textContent = title;
-        button.disabled = this.checking.has(item.id);
-        button.onclick = () =>
-          action === 'check' ? this.check(item.id) : this.action(item, action as 'edit' | 'remove' | 'resume');
+        button.setAttribute('aria-label', title);
+        button.title = title;
+        if (!edit && !item.rejected && (action === 'edit' || action === 'remove'))
+          button.append(createIconSvg(action === 'edit' ? 'edit' : 'trash'));
+        else button.textContent = title;
+        button.disabled = this.checking.has(item.id) || (action === 'save' && item.state !== 'queued');
+        button.onclick = () => {
+          if (action === 'edit' && !item.rejected) {
+            this.editing.set(item.id, { text: item.request.task, revision: item.revision });
+            this.render();
+            Array.from(this.element.querySelectorAll<HTMLElement>('[data-input-id]'))
+              .find((row) => row.dataset.inputId === item.id)
+              ?.querySelector('textarea')
+              ?.focus();
+          } else if (action === 'cancel-edit' || action === 'restore') {
+            if (action === 'restore' && edit) this.deps.edit(item.request.session_id, edit.text);
+            this.editing.delete(item.id);
+            this.render();
+          } else if (action === 'save' && edit) {
+            if (edit.text.trim()) void this.action(item, 'edit', edit.text.trim());
+          } else if (action === 'check') void this.check(item.id);
+          else void this.action(item, action as 'edit' | 'remove' | 'resume' | 'steer');
+        };
         actions.append(button);
       }
-      row.append(label);
-      if (item.state !== 'unconfirmed') row.append(text);
+      row.dataset.inputId = item.id;
+      if (item.state !== 'queued' || item.request.input_mode === 'steer' || edit) row.append(label);
+      else row.setAttribute('aria-label', 'Queued for the next turn');
+      if (edit) {
+        const input = document.createElement('textarea');
+        input.className = 'pending-input-editor';
+        input.setAttribute('aria-label', 'Edit queued message');
+        input.value = edit.text;
+        input.disabled = this.checking.has(item.id);
+        input.oninput = () => {
+          edit.text = input.value;
+        };
+        row.append(input);
+      } else if (item.state !== 'unconfirmed') row.append(text);
       row.append(actions);
       if (item.error) {
         const details = document.createElement('details'),
@@ -288,5 +371,13 @@ export class InputOutbox {
       this.element.append(row);
     }
     this.element.hidden = !this.element.childNodes.length;
+    if (focused?.id) {
+      const editor = Array.from(this.element.querySelectorAll<HTMLElement>('[data-input-id]'))
+        .find((row) => row.dataset.inputId === focused.id)
+        ?.querySelector('textarea');
+      editor?.focus();
+      editor?.setSelectionRange(focused.start, focused.end);
+    }
   }
 }
+import { createIconSvg } from './icon_button';

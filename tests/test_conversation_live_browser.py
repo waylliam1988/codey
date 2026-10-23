@@ -135,14 +135,19 @@ def test_real_steer_is_consumed_by_the_current_task_without_a_second_run(tmp_pat
                 send(page, '只读分析，不要修改文件。')
                 expect(page.locator('.msg.asst .body').first).to_contain_text('第一段已经到达。')
                 active = ctx.active_run_for(session_id='live').run_id
-                page.locator('#input-mode').select_option('steer')
                 send(page, '请把当前回答改成简短中文。不要运行工具。')
-                expect(page.locator('.pending-inputs')).to_contain_text('steer at next boundary')
+                page.locator('.pending-inputs [data-action="edit"]').click()
+                page.locator('.pending-input-editor').fill('请把当前回答改成简短中文。不要运行工具。补充：只回答一句。')
+                page.locator('.pending-inputs [data-action="save"]').click()
+                expect(page.locator('.pending-input-text')).to_contain_text('只回答一句')
+                page.locator('.pending-inputs [data-action="steer"]').click()
+                expect(page.locator('.pending-inputs')).to_contain_text('Steer at next boundary')
                 release.set()
-                expect(page.locator('.pending-inputs')).to_contain_text('Applied · current task')
+                expect(page.locator('.pending-inputs')).to_be_hidden()
                 expect(page.locator('.spinner:visible')).to_have_count(0, timeout=20000)
                 assert len(requests) == 2
                 assert '请把当前回答改成简短中文' in json.dumps(requests[1], ensure_ascii=False)
+                assert '只回答一句' in json.dumps(requests[1], ensure_ascii=False)
                 receipt = ctx.input_queue.list('live')[0]
                 assert receipt['state'] == 'consumed'
                 assert receipt['consumed_by_run_id'] == active
@@ -150,7 +155,7 @@ def test_real_steer_is_consumed_by_the_current_task_without_a_second_run(tmp_pat
                 starts = [event for event in events if event.get('type') == 'task_start']
                 assert [event['run_id'] for event in starts] == [active]
                 page.reload()
-                expect(page.locator('.pending-inputs')).to_contain_text('Applied · current task')
+                expect(page.locator('.pending-inputs')).to_be_hidden()
                 assert not peer_errors and not errors
             finally:
                 release.set()
@@ -243,7 +248,7 @@ def test_real_stream_and_queued_input_keep_one_answer_and_survive_reload(tmp_pat
                 stable = first.locator("p").first.element_handle()
                 expect(page.locator(".process-summary .spinner")).to_have_count(1)
                 send(page, "只读：下一轮补充说明，不要修改文件。")
-                expect(page.locator(".pending-inputs")).to_contain_text("Queued")
+                expect(page.locator('.pending-inputs [aria-label="Queued for the next turn"]')).to_have_count(1)
                 assert len(requests) == 1
                 release.set()
                 expect(first).to_contain_text("完整回答")

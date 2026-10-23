@@ -109,6 +109,9 @@ export interface Message extends importToolDisplay {
   approval?: ApprovalState;
   approvalSubmission?: 'sending' | 'checking' | 'unconfirmed';
   approvalError?: string;
+  permissionScope?: 'session' | 'project';
+  permissionSaveScope?: 'session' | 'project';
+  permissionSaveError?: string;
   projectRuleAvailable?: boolean;
   id?: string;
   text?: string;

@@ -2,6 +2,7 @@ import { iconButton } from './icon_button';
 import type { Message } from './types/domain';
 import { mergeOutputSnapshot, type ExecutionSnapshot } from './execution_output';
 import { permissionsButton } from './command_permissions';
+import { runtime } from './runtime';
 
 type Copy = (text: string) => Promise<boolean>;
 
@@ -139,9 +140,31 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
     tail.textContent = showingTail ? 'Show retained output' : 'Show last 40 lines';
   };
   if (!running && message.output) panel.append(tail);
-  if (message.id) panel.append(permissionsButton(message.sessionId || '', message.project || ''));
+  if (message.id && !message.permissionScope && !message.permissionSaveError)
+    panel.append(permissionsButton(message.sessionId || '', message.project || ''));
   details.append(panel);
   card.append(details);
+  if (message.permissionSaveError || message.permissionScope) {
+    const notice = document.createElement('div');
+    notice.className = 'command-permission-note';
+    notice.setAttribute('role', 'status');
+    notice.textContent = message.permissionSaveError
+      ? `Allowed once. ${message.permissionSaveError}`
+      : `Exact command allowed in this ${message.permissionScope === 'project' ? 'project' : 'chat'}.`;
+    if (message.permissionSaveError && message.permissionSaveScope) {
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'link-btn';
+      retry.textContent = 'Retry saving';
+      retry.onclick = () => {
+        retry.disabled = true;
+        void runtime.ShellApprovals.remember(message.id || '', message.permissionSaveScope!);
+      };
+      notice.append(' ', retry);
+    }
+    notice.append(' ', permissionsButton(message.sessionId || '', message.project || ''));
+    card.append(notice);
+  }
   if (running && message.executionId) {
     const outputCopy = output.querySelector('button') as HTMLButtonElement | null;
     let latest: ExecutionSnapshot = { revision: -1, execution_state: 'running', stdout: '', stderr: '' };

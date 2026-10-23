@@ -78,13 +78,20 @@ class DurableConversationInputQueue:
         if not isinstance(normalized, dict):
             return None
         request = cast(dict[str, Any], normalized)
+        origin = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
+        # Admission identity remains immutable; queued revisions are projected
+        # from the same task/submission that placement will consume.
+        if isinstance(state.get("input_text"), str):
+            request["task"] = state["input_text"]
+        if state.get("input_mode") in {"steer", "follow_up"}:
+            request["input_mode"] = state["input_mode"]
         item = {
             "schema_version": 1,
             "id": identity,
             "request": copy.deepcopy(request),
             "state": item_state,
             "revision": int(task.revision),
-            "origin": hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest(),
+            "origin": origin,
             "consumed_by_run_id": state.get("consumed_by_task_id", ""),
             "entry_id": state.get("input_entry_id", ""),
         }
@@ -214,7 +221,31 @@ class DurableConversationInputQueue:
         return None
 
     def edit(self, identity: str, revision: int, text: str) -> dict[str, Any]:
-        raise ValueError("durable input entries are immutable; submit a new request")
+        return self._revise(identity, revision, text=text)
+
+    def steer(self, identity: str, revision: int) -> dict[str, Any]:
+        return self._revise(identity, revision, mode="steer")
+
+    def _revise(self, identity: str, revision: int, *, text: str | None = None,
+                mode: str | None = None) -> dict[str, Any]:
+        from codey.durable.errors import CommitConflict
+
+        with self.lock:
+            item = self.get(identity)
+            if item is None:
+                raise ValueError("input not found")
+            try:
+                self.durable.revise_queued_input(
+                    str(item["request"]["run_id"]), expected_revision=revision, text=text, mode=mode,
+                )
+            except CommitConflict as exc:
+                raise ValueError(str(exc)) from exc
+            updated = self.get(identity)
+        if updated is None:
+            raise RuntimeError("input revision did not produce a projection")
+        self.emit({"type": "conversation_input", "session_id": item["request"]["session_id"], "input": updated})
+        self.wake.set()
+        return updated
 
     def remove(self, identity: str, revision: int) -> dict[str, Any]:
         with self.lock:

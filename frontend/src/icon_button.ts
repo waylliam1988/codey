@@ -1,6 +1,18 @@
 import { messageIcons } from './message_icons';
-export type Icon = 'copy' | 'edit' | 'reload' | 'close' | 'expand' | 'dock' | 'workspace' | 'branch';
+export type Icon =
+  | 'copy'
+  | 'edit'
+  | 'reload'
+  | 'close'
+  | 'expand'
+  | 'dock'
+  | 'workspace'
+  | 'branch'
+  | 'chevron-down'
+  | 'trash';
 const paths: Record<Icon, string> = {
+  'chevron-down': 'm6 9 6 6 6-6',
+  trash: 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7',
   copy: '',
   edit: '',
   reload: 'M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7l-3-3',

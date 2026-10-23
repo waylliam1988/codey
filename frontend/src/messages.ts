@@ -7,7 +7,7 @@ import { artifactRow, decorateDeliverables } from './artifacts';
 import type { Message, UiDeps } from './types/domain';
 import { finalAnswerMarkdown } from './answer_copy';
 import { createIconSvg, iconButton } from './icon_button';
-import { permissionsButton } from './command_permissions';
+import { approvalRequest } from './approval_request';
 interface MessagesDeps extends UiDeps {
   openDocument(sessionId: string, ref: DocumentRef): void;
   statusRow(prefix: string, text: string, options?: Record<string, unknown>): HTMLElement;
@@ -255,97 +255,7 @@ export interface MessagesApi {
       }
       chat.appendChild(div);
     } else if (m.type === 'shell_request') {
-      const div = document.createElement('div');
-      div.className = 'msg shell';
-      const card = document.createElement('div');
-      card.className = 'shell-card';
-      card.dataset.approvalId = m.id;
-      card.tabIndex = -1;
-      const title = document.createElement('div');
-      title.className = 'sc-title';
-      title.textContent = 'Run this command?';
-      card.dataset.status = 'pending';
-      const meta = document.createElement('div');
-      meta.className = 'sc-meta';
-      if (m.cwd) meta.textContent = m.cwd;
-      const commandBody = document.createElement('div');
-      commandBody.className = 'sc-command-body';
-      const commandLabel = document.createElement('div');
-      commandLabel.className = 'sc-command-label';
-      commandLabel.textContent = 'Shell';
-      const cmd = document.createElement('pre');
-      cmd.className = 'shell-command';
-      cmd.textContent = m.command || '';
-      const commandHash = m.commandSha256 || '';
-      const commandIntegrity = document.createElement('div');
-      commandIntegrity.className = 'sc-note';
-      commandIntegrity.textContent =
-        m.commandTruncated && commandHash ? `Command preview truncated · full sha256 ${commandHash}` : '';
-      const error = document.createElement('div');
-      error.className = 'sc-error';
-      error.textContent = m.approvalError || '';
-      error.hidden = !m.approvalError;
-      error.hidden = true;
-      const actions = document.createElement('div');
-      actions.className = 'shell-actions';
-      const deny = document.createElement('button');
-      deny.type = 'button';
-      deny.className = 'text-btn';
-      deny.textContent = 'Deny';
-      const approve = document.createElement('button');
-      approve.type = 'button';
-      approve.className = 'text-btn approval-allow';
-      const submitting = m.approvalSubmission === 'sending';
-      approve.textContent = submitting ? 'Submitting…' : 'Allow once';
-      if (submitting) {
-        const spinner = document.createElement('span');
-        spinner.className = 'spinner';
-        spinner.setAttribute('aria-hidden', 'true');
-        approve.prepend(spinner);
-        approve.setAttribute('aria-busy', 'true');
-      }
-      approve.disabled = deny.disabled = !!m.approvalSubmission;
-      if (m.approvalSubmission && !submitting) {
-        error.hidden = false;
-        error.textContent =
-          m.approvalSubmission === 'checking' ? 'Confirming approval status…' : 'Decision could not be confirmed';
-        if (m.approvalSubmission === 'unconfirmed') {
-          const check = document.createElement('button');
-          check.type = 'button';
-          check.className = 'text-btn';
-          check.textContent = 'Check status';
-          check.onclick = () => runtime.ShellApprovals.refresh(m.id || '');
-          actions.append(check);
-        }
-      }
-      approve.onclick = () => approveCommand(m.id || '', true);
-      deny.onclick = () => approveCommand(m.id || '', false);
-      actions.append(deny, approve);
-      const scopes = document.createElement('details');
-      const scopeTitle = document.createElement('summary');
-      scopeTitle.textContent = 'Allow and remember…';
-      scopes.append(scopeTitle);
-      const explanation = document.createElement('p');
-      explanation.textContent = 'Matches this exact command and working directory. Other commands still need approval.';
-      scopes.append(explanation);
-      for (const [scope, label] of [
-        ['session', 'Allow same command in this chat'],
-        ...(m.projectRuleAvailable ? [['project', 'Remember exact command in this project']] : []),
-      ]) {
-        const button = document.createElement('button');
-        button.className = 'text-btn';
-        button.textContent = label;
-        button.disabled = !!m.approvalSubmission;
-        button.onclick = () => approveCommand(m.id || '', true, scope);
-        scopes.append(button);
-      }
-      scopes.append(permissionsButton(m.sessionId || activeId, m.project || ''));
-      commandBody.append(commandLabel, cmd);
-      if (meta.textContent) commandBody.append(meta);
-      if (commandIntegrity.textContent) commandBody.append(commandIntegrity);
-      card.append(title, commandBody, error, actions, scopes);
-      div.appendChild(card);
-      chat.appendChild(div);
+      chat.append(approvalRequest(m, approveCommand));
     } else if (m.type === 'shell_approval_status' && m.approval) {
       const state = m.approval;
       // Successful continuation is an internal transition; the shell result

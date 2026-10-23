@@ -13,6 +13,24 @@ const validStatus = {
   revision: 3,
 } satisfies ApprovalState;
 
+it('retries permission saving through the grant endpoint without another approval', async () => {
+  const session = {
+    id: 'session',
+    messages: [
+      { type: 'shell_result', id: 'approval', permissionSaveError: 'Disk full', permissionSaveScope: 'session' },
+    ],
+  } as Session;
+  const fetch = vi
+    .fn()
+    .mockResolvedValue({ ok: true, json: async () => ({ ...validStatus, permission_scope: 'session' }) });
+  const controller = createApprovalController({ sessions: () => [session], changed: vi.fn(), fetch });
+  await controller.remember('approval', 'session');
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch.mock.calls[0][0]).toBe('/api/shell_approval/remember');
+  expect(session.messages[0].permissionScope).toBe('session');
+  expect(session.messages[0].permissionSaveError).toBeUndefined();
+});
+
 it('rejects an unknown execution state', () => {
   expect(() =>
     decodeApprovalState({

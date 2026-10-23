@@ -327,12 +327,33 @@ class ShellApprovalWorkflow:
                     try:
                         self.ctx.command_permissions.remember(pending, scope)
                     except (OSError, ValueError):
-                        remember_error = "Command allowed once, but permission could not be saved."
+                        remember_error = "Permission could not be saved."
         self._schedule(approval_id)
         accepted_state = self.status(approval_id)
         assert accepted_state is not None
         self.ctx.emit(dict(accepted_state))
-        return 202, {**accepted_state, **({"remember_error": remember_error} if remember_error else {})}
+        return 202, {**accepted_state, **({"remember_error": remember_error, "remember_scope": scope}
+                     if remember_error else {"permission_scope": scope} if scope != "once" else {})}
+
+    def remember(self, approval_id: str, scope: str) -> tuple[int, dict[str, Any]]:
+        """Retry grant persistence only; never schedule another execution."""
+        if scope not in {"session", "project"}:
+            return 400, {"error": "Invalid approval scope"}
+        with self.ctx._shell_spawn_gate:
+            facts = self._facts(approval_id)
+            if not facts:
+                return 404, {"error": "approval not found"}
+            state = self._status(facts)
+            if state["decision"] != "allow":
+                return 409, {"error": "Command has not been allowed"}
+            pending = self._pending(facts[0])
+            if pending is None:
+                return 409, {"error": "Approval command unavailable"}
+            try:
+                self.ctx.command_permissions.remember(pending, scope)
+            except (OSError, ValueError):
+                return 200, {**state, "remember_error": "Permission could not be saved.", "remember_scope": scope}
+            return 200, {**state, "permission_scope": scope}
 
     def retry(self, approval_id: str, _submit: Submit) -> tuple[int, dict[str, Any]]:
         state = self.status(approval_id)

@@ -465,10 +465,18 @@ class SubmissionUpdate:
     detail: Mapping[str, object] | None = None
     input_entry_id: str | None = None
     placement: SubmissionPlacement | str | None = None
+    content: Mapping[str, object] | None = None
+    mode: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "expected_status", SubmissionStatus(self.expected_status))
         object.__setattr__(self, "status", SubmissionStatus(self.status))
+        if self.mode is not None and self.mode not in {"steer", "follow_up"}:
+            raise ValueError("invalid queued input mode")
+        if self.content is not None:
+            content = cast(dict[str, object], thaw_json(self.content))
+            _validate_json(content)
+            object.__setattr__(self, "content", _freeze_json(content))
         if self.expected_status != self.status and not valid_submission_transition(self.expected_status, self.status):
             raise ValueError(
                 f"invalid submission transition: {self.expected_status} -> {self.status}"
@@ -928,6 +936,18 @@ def _validate_mutation_submissions(mutation: DurableMutation) -> None:
         raise ValueError("submission IDs must be unique within a mutation")
     if any(update.conversation_id != mutation.conversation_id for update in all_updates):
         raise ValueError("submission update belongs to another conversation")
+    tasks = ((mutation.task,) if mutation.task is not None else ()) + mutation.task_updates
+    for update in all_updates:
+        if update.content is None and update.mode is None:
+            continue
+        task = next((task for task in tasks if task.submission_id == update.submission_id), None)
+        if (task is None or task.phase != "accepted" or task.status is not TaskStatus.PENDING
+                or task.state.get("input_state") != "queued" or task.attempt_token):
+            raise ValueError("queued input revision requires its pending task in the same commit")
+        if update.content is not None and update.content.get("text") != task.state.get("input_text"):
+            raise ValueError("queued input text must match its task")
+        if update.mode is not None and update.mode != task.state.get("input_mode"):
+            raise ValueError("queued input mode must match its task")
 
 
 EXECUTION_STATE_KEYS = (

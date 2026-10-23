@@ -110,6 +110,31 @@ def test_corrupt_saved_rules_fail_closed(tmp_path):
         store.matching({'command': 'echo x', 'project': str(tmp_path), 'session_id': 'a'})
 
 
+def test_retry_saving_a_grant_never_executes_the_command_again(tmp_path, monkeypatch):
+    from codey.app import shell_service
+
+    ctx = AppContext(tmp_path, start_scheduler=False)
+    executed = Mock(return_value={'ok': True, 'status': 'exit', 'output': 'ok', 'exit_code': 0})
+    monkeypatch.setattr(shell_service, 'execute_shell_ticket', executed)
+    save = ctx.command_permissions.remember
+    monkeypatch.setattr(ctx.command_permissions, 'remember', Mock(side_effect=OSError('disk unavailable')))
+    try:
+        seed_requested_approval(ctx, continue_after=False)
+        assert ctx.shell_approval_workflow.remember('approval', 'session')[0] == 409
+        code, response = ctx.shell_approval_workflow.accept('approval', True, Mock(), scope='session')
+        assert code == 202 and response['remember_error'] and response['remember_scope'] == 'session'
+        assert ctx.shell_approval_workflow.wait(5)
+        assert executed.call_count == 1
+        monkeypatch.setattr(ctx.command_permissions, 'remember', save)
+        for _ in range(2):
+            code, response = ctx.shell_approval_workflow.remember('approval', 'session')
+            assert code == 200 and response['permission_scope'] == 'session'
+        assert len(ctx.command_permissions.list_rules(session_id='session')) == 1
+        assert executed.call_count == 1
+    finally:
+        ctx.close()
+
+
 def test_live_public_events_preserve_permission_scope_and_result_project(tmp_path):
     from codey.agents.shell_approval import shell_command_payload
     from codey.app.public_event_feed import PublicEventFeed

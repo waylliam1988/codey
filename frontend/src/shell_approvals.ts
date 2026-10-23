@@ -65,7 +65,9 @@ export function createApprovalController(deps: ApprovalDeps) {
     deps
       .sessions()
       .find((s) =>
-        s.messages.some((m) => (m.type === 'shell_request' || m.type === 'shell_approval_status') && m.id === id),
+        s.messages.some(
+          (m) => ['shell_request', 'shell_result', 'shell_approval_status'].includes(m.type) && m.id === id,
+        ),
       );
   const stateFor = (id: string) =>
     find(id)?.messages.find((m) => m.type === 'shell_approval_status' && m.id === id)?.approval;
@@ -99,7 +101,14 @@ export function createApprovalController(deps: ApprovalDeps) {
     };
     const index = session.messages.findIndex((m) => m.type === message.type && m.id === state.id);
     if (index >= 0) session.messages[index] = message;
-    else session.messages.push(message);
+    else {
+      const answer = session.messages.findIndex(
+        (m) =>
+          m.type === 'asst' && m.runId === state.run_id && m.contentRole !== 'commentary' && m.finalAnswer !== false,
+      );
+      if (answer >= 0) session.messages.splice(answer, 0, message);
+      else session.messages.push(message);
+    }
     if (request && state.execution === 'running') {
       const running = {
         type: 'shell_result',
@@ -125,6 +134,7 @@ export function createApprovalController(deps: ApprovalDeps) {
     const session = find(id);
     const request = session?.messages.find((m) => m.type === 'shell_request' && m.id === id);
     if (request && session) {
+      if (value === 'sending') delete request.approvalError;
       request.approvalSubmission = value;
       deps.changed(session.id);
     }
@@ -164,15 +174,48 @@ export function createApprovalController(deps: ApprovalDeps) {
       }
       if (data.type === 'shell_approval_status') apply(data);
       else await refresh(id);
-      if (data.remember_error) {
-        const session = find(id);
-        if (session) {
-          session.messages.push({ type: 'info', text: String(data.remember_error) });
-          deps.changed(session.id);
-        }
-      }
+      permissionResult(id, data);
     } catch {
       await refresh(id);
+    } finally {
+      inFlight.delete(id);
+    }
+  }
+
+  function permissionResult(id: string, data: Record<string, unknown>) {
+    const session = find(id);
+    const command = session?.messages.find((m) => ['shell_request', 'shell_result'].includes(m.type) && m.id === id);
+    if (!command || !session) return;
+    if (data.remember_error) {
+      command.permissionSaveError = String(data.remember_error);
+      command.permissionSaveScope = data.remember_scope === 'project' ? 'project' : 'session';
+    } else if (data.permission_scope === 'session' || data.permission_scope === 'project') {
+      command.permissionScope = data.permission_scope;
+      delete command.permissionSaveError;
+      delete command.permissionSaveScope;
+    }
+    deps.changed(session.id);
+  }
+
+  async function remember(id: string, scope: 'session' | 'project') {
+    if (inFlight.has(id)) return;
+    inFlight.add(id);
+    try {
+      const response = await deps.fetch('/api/shell_approval/remember', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, scope }),
+      });
+      const data = await response.json();
+      permissionResult(
+        id,
+        response.ok ? data : { remember_error: data.error || 'Permission could not be saved.', remember_scope: scope },
+      );
+    } catch {
+      permissionResult(id, {
+        remember_error: 'Saving could not be confirmed. Check saved permissions before retrying.',
+        remember_scope: scope,
+      });
     } finally {
       inFlight.delete(id);
     }
@@ -217,5 +260,5 @@ export function createApprovalController(deps: ApprovalDeps) {
     return true;
   }
 
-  return { apply, submit, retry, refresh, continueSession, decided: (id: string) => !!stateFor(id) };
+  return { apply, submit, retry, refresh, remember, continueSession, decided: (id: string) => !!stateFor(id) };
 }

@@ -21,6 +21,8 @@ export interface ProcessApi {
   restore(chat: HTMLElement, saved?: ProcessSnapshot[]): void;
 }
 export interface ProcessToolRecord {
+  finalAnswer?: boolean;
+  contentRole?: 'commentary' | 'final';
   preview?: ToolPreview;
   result?: string;
   elapsedMs?: number;
@@ -84,7 +86,12 @@ export interface ProcessToolRecord {
   function ensure(chat: HTMLElement, id: string): ProcessBlock {
     let block = find(chat, id);
     if (block) return block;
-    const recent = Array.from(chat.children)
+    const children = Array.from(chat.children);
+    const answer = children.find(
+      (node) => node instanceof HTMLElement && node.classList.contains('asst') && node.dataset.runId === id,
+    );
+    const recent = children
+      .slice(0, answer ? children.indexOf(answer) + 1 : undefined)
       .filter((node): node is ProcessBlock => node instanceof HTMLElement)
       .reverse();
     const userIndex = recent.findIndex((node) => node.classList.contains('user'));
@@ -125,7 +132,7 @@ export interface ProcessToolRecord {
     approvalStatus.hidden = true;
     group.append(head, body);
     block.append(label, approvalStatus, group, alerts);
-    chat.append(block);
+    chat.insertBefore(block, answer || null);
     block._process = {
       state: 'running',
       explicitState: false,
@@ -398,6 +405,18 @@ export interface ProcessToolRecord {
               : 'Resuming task';
         summary(block);
       } else if (approval.continuation === 'not_required') state(block, 'done');
+      else if (approval.continuation === 'started' && !['done', 'failed', 'stopped'].includes(block._process.state))
+        state(block, 'running');
+    }
+    if (
+      block &&
+      m.type === 'asst' &&
+      m.finalAnswer === true &&
+      m.contentRole !== 'commentary' &&
+      (!m.streamId || m.streamState === 'complete') &&
+      ['running', 'sending', 'approval'].includes(block._process.state)
+    ) {
+      state(block, 'done');
     }
     if (
       block &&
@@ -407,8 +426,9 @@ export interface ProcessToolRecord {
     ) {
       state(block, m.type === 'err' ? 'failed' : 'done', false);
     }
+    const previous = chat.lastElementChild;
     render(chat, m);
-    const node = chat.lastElementChild;
+    const node = chat.lastElementChild !== previous ? chat.lastElementChild : null;
     if (node && m.runId) node.setAttribute('data-run-id', m.runId);
     if (block && !block.hidden && m.type === 'asst' && node) node.classList.add('continued-answer');
     return true;

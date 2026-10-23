@@ -47,6 +47,21 @@ Worktree setup has factual pending, error and retry states; block sending until
 the backend confirms readiness. Details and verification scope are recorded in
 `docs/uiux_message_fork_2026-10-23.md`.
 
+The steering and approval revision places pending messages above the composer
+input, with inline Edit, Delete and Steer actions. Sending while a task runs
+queues the next turn by default; remove the delivery-mode selector beside the
+model. Steer promotes the existing receipt at a generation boundary, preserving
+its identity and preventing a second provider task. Editing retains unsaved text
+if placement wins the race; settled receipts disappear from the pending strip.
+
+Command approval uses a compact Deny action and an Allow once split button.
+The dropdown contains only extended scopes: Allow exact command in this chat,
+and Allow exact command in this project when supported. Do not repeat Allow once
+in the dropdown. Saved permission management is separate from pending decisions.
+Show save failures beside the original command; Retry saving must never execute
+the command again. Merge process records with their owning turn above its final
+answer, and clear Waiting for approval after execution and continuation advance.
+
 ---
 
 ## 1. Design intent

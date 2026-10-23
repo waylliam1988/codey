@@ -1,5 +1,64 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+it('clears stale approval after execution settled and continuation started', async () => {
+  await import('./process');
+  const chat = document.createElement('div');
+  window.Process.append(chat, { type: 'shell_request', runId: 'approved' }, vi.fn());
+  window.Process.append(
+    chat,
+    {
+      type: 'shell_approval_status',
+      runId: 'approved',
+      approval: { decision: 'allow', execution: 'settled', continuation: 'started' },
+    },
+    vi.fn(),
+  );
+  expect(chat.querySelector<HTMLElement>('.process-approval-status')?.hidden).toBe(true);
+  expect(chat.querySelector('.process-title')?.textContent).not.toContain('Waiting for approval');
+  window.Process.append(chat, { type: 'run_state', runId: 'approved', state: 'done' }, vi.fn());
+  expect(chat.querySelector('.process-title')?.textContent).toBe('Worked');
+});
+
+it('inserts a late process record before its already mounted answer', async () => {
+  await import('./process');
+  const chat = document.createElement('div');
+  chat.innerHTML = '<div class="msg asst" data-run-id="late">Answer</div>';
+  window.Process.append(chat, { type: 'run_state', runId: 'late', state: 'done' }, vi.fn());
+  expect(chat.firstElementChild?.classList.contains('process-block')).toBe(true);
+  expect(chat.lastElementChild?.textContent).toBe('Answer');
+});
+
+it('settles reconstructed progress from the authoritative final answer', async () => {
+  await import('./process');
+  const chat = document.createElement('div');
+  window.Process.append(chat, { type: 'shell_request', runId: 'restored' }, vi.fn());
+  window.Process.append(
+    chat,
+    {
+      type: 'asst',
+      runId: 'restored',
+      finalAnswer: true,
+      contentRole: 'final',
+      text: 'Finished',
+    },
+    vi.fn(),
+  );
+  expect(chat.querySelector('.process-title')?.textContent).toBe('Worked');
+  expect(chat.querySelector('.spinner')).toBeNull();
+});
+
+it('keeps a late older process out of the newer turn', async () => {
+  await import('./process');
+  const chat = document.createElement('div');
+  chat.innerHTML =
+    '<div class="msg user">Old question</div><div class="msg asst" data-run-id="old">Old answer</div><div class="msg user">New question</div>';
+  window.Process.append(chat, { type: 'run_state', runId: 'new', state: 'running' }, vi.fn());
+  window.Process.append(chat, { type: 'run_state', runId: 'old', state: 'done' }, vi.fn());
+  expect(chat.querySelectorAll('.process-block')).toHaveLength(2);
+  expect(chat.children[1].getAttribute('data-run-id')).toBe('old');
+  expect(chat.querySelector('[data-run-id="new"] .process-title')?.textContent).toContain('Working');
+});
+
 it('shows approval as a static status and restores disclosure when execution resumes', async () => {
   await import('./process');
   const chat = document.createElement('div');

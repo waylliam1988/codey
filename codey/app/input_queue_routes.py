@@ -101,6 +101,8 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
                 if not isinstance(body.get("text"), str):
                     raise ValueError("input text required")
                 item = ctx.input_queue.edit(identity, revision, body["text"])
+            elif action == "steer":
+                item = ctx.input_queue.steer(identity, revision)
             elif action == "remove":
                 item = ctx.input_queue.remove(identity, revision)
             elif action == "resume":

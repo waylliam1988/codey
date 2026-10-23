@@ -324,6 +324,9 @@ _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[s
     "/api/documents/read": document_response,
     "/api/changes/restore": app_api.restore_changes_response,
     "/api/shell_approval": _shell_approval_route,
+    "/api/shell_approval/remember": lambda ctx, body: ctx.shell_approval_workflow.remember(
+        str(body.get("id") or ""), str(body.get("scope") or ""),
+    ),
     "/api/command_permissions/revoke": _revoke_command_permission,
     "/api/shell_approval/retry": lambda ctx, body: ctx.shell_approval_workflow.retry(
         str(body.get("id") or ""), _continuation_for(ctx),

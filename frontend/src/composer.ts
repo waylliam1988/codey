@@ -64,8 +64,6 @@ export interface ComposerApi {
   let sendingSessionId = '';
   let ready = false;
   let outbox: InputOutbox;
-  const inputModes = new Map<string, 'steer' | 'follow_up'>();
-  let inputMode: HTMLSelectElement | null = null;
 
   function liveDefaultProvider() {
     return runtime.UiState.DEFAULT_PROVIDER;
@@ -92,33 +90,14 @@ export interface ComposerApi {
     PROVIDERS = deps.PROVIDERS || [];
     if (!outbox) {
       const element = document.createElement('div');
-      $('task').before(element);
+      const box = $('task').closest('.composer-box');
+      (box || $('task')).before(element);
       outbox = new InputOutbox(element, {
         accepted: (request, revision) => clearDraftIfUnchanged(request.session_id, request.task, revision),
         edit: (session, text) => recallMessage(session, text),
         changed: () => updateSend(),
         observe: (input) => deps.observeQueuedInput(input),
       });
-    }
-    if (!inputMode) {
-      inputMode = document.createElement('select');
-      inputMode.id = 'input-mode';
-      inputMode.className = 'input-mode';
-      inputMode.setAttribute('aria-label', 'Message delivery');
-      for (const [value, text] of [
-        ['follow_up', 'Next turn'],
-        ['steer', 'Steer current task'],
-      ]) {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = text;
-        inputMode.append(option);
-      }
-      inputMode.onchange = () => {
-        inputModes.set(activeId(), inputMode!.value as 'steer' | 'follow_up');
-        updateSend();
-      };
-      $('send-hint').before(inputMode);
     }
     bindHandlers();
     syncSession();
@@ -200,12 +179,6 @@ export interface ComposerApi {
     const running = isRunningForSession(activeId());
     const anotherSessionRunning = !!ownerSessionId && !running;
     const sendingCurrent = sendingSessionId === activeId();
-    const mode = inputModes.get(activeId()) || 'follow_up';
-    if (inputMode) {
-      inputMode.hidden = !running;
-      inputMode.disabled = sendingCurrent;
-      inputMode.value = mode;
-    }
     const awaitingAnswer = !!runtime.UserQuestions?.pending(activeId());
     const task = $<HTMLTextAreaElement>('task');
     const send = $<HTMLButtonElement>('send');
@@ -225,23 +198,12 @@ export interface ComposerApi {
         ? 'Sending…'
         : running
           ? has
-            ? mode === 'steer'
-              ? 'Steer at boundary'
-              : 'Send next turn'
+            ? 'Send next turn'
             : 'Stop'
           : anotherSessionRunning
             ? 'Enter'
             : 'Enter';
-    send.setAttribute(
-      'aria-label',
-      sendingCurrent
-        ? 'Sending message'
-        : running
-          ? mode === 'steer'
-            ? 'Steer current task'
-            : 'Queue message'
-          : 'Send message',
-    );
+    send.setAttribute('aria-label', sendingCurrent ? 'Sending message' : running ? 'Queue message' : 'Send message');
     const owner = deps.findSession(ownerSessionId);
     stop.setAttribute('aria-label', owner ? 'Stop ' + owner.title : 'Stop');
     stop.title = owner ? 'Stop ' + owner.title : 'Stop';
@@ -524,7 +486,7 @@ export interface ComposerApi {
           task,
           provider,
           intent: deps.currentIntentForSession(sessionId),
-          input_mode: inputModes.get(sessionId) || 'follow_up',
+          input_mode: 'follow_up',
           ...runtime.ProviderUI.runSelection(deps.findSession(sessionId), provider),
         };
         await outbox.enqueue(request, revision);

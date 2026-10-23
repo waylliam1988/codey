@@ -554,6 +554,45 @@ class DurableSession:
         return tuple(self.store.tasks())
 
     @_mutation_line
+    def revise_queued_input(
+        self, task_id: str, *, expected_revision: int, text: str | None = None,
+        mode: str | None = None,
+    ) -> CommitResult:
+        """Revise unplaced input and its task projection in one fenced commit."""
+        current = self.store.task(task_id)
+        if current.revision != expected_revision:
+            raise CommitConflict("input revision conflict")
+        submission = self.store.submission(current.submission_id)
+        if (current.status is not TaskStatus.PENDING or current.phase != "accepted"
+                or current.state.get("input_state") != "queued" or current.attempt_token
+                or submission.placement is not SubmissionPlacement.QUEUED
+                or submission.status is not SubmissionStatus.QUEUED):
+            raise CommitConflict("input is already placed or settled")
+        if text is not None and (not isinstance(text, str) or not 0 < len(text.strip()) <= 64_000):
+            raise ValueError("invalid input text")
+        if mode is not None and mode not in {"steer", "follow_up"}:
+            raise ValueError("invalid input mode")
+        state = dict(current.state)
+        request = state.get("input_request")
+        if not isinstance(request, Mapping):
+            raise CommitConflict("queued input request unavailable")
+        content = dict(submission.content or {})
+        if text is not None:
+            content["text"] = state["input_text"] = state["task"] = text
+        if mode is not None:
+            state["input_mode"] = mode
+        _head, revision = self.store.head(current.conversation_id)
+        return self._commit(DurableMutation(
+            conversation_id=current.conversation_id, expected_revision=revision,
+            task=replace(current, revision=current.revision + 1, state=state),
+            submission_update=SubmissionUpdate(
+                submission_id=submission.submission_id, conversation_id=current.conversation_id,
+                expected_status=submission.status, status=submission.status,
+                content=content if text is not None else None, mode=mode,
+            ),
+        ))
+
+    @_mutation_line
     def update_task_state(
         self,
         task_id: str,

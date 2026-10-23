@@ -63,7 +63,7 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
 
                 page.route("**/api/shell_approval", drop_response)
                 if scope in {'session', 'project'}:
-                    page.get_by_text('Allow and remember…', exact=True).click()
+                    page.locator('.approval-options > summary').click()
                 with (
                     page.expect_response(
                         lambda response: response.request.method == "POST"
@@ -74,8 +74,8 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
                         and "/api/shell_approval?id=approval" in response.url
                     ) as checked_response,
                 ):
-                    choice = ('Remember exact command in this project' if scope == 'project'
-                              else 'Allow same command in this chat' if scope == 'session'
+                    choice = ('Allow exact command in this project' if scope == 'project'
+                              else 'Allow exact command in this chat' if scope == 'session'
                               else 'Allow once' if approved else 'Deny')
                     page.get_by_role("button", name=choice, exact=True).click()
                 assert lost_response.value.status == 502

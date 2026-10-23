@@ -2,6 +2,31 @@ import { expect, it } from 'vitest';
 import { reconcileHistory } from './conversation_history';
 import type { Message } from './types/domain';
 
+it('keeps approval and execution records above their final answer and before the next turn', () => {
+  const rows = reconcileHistory(
+    [
+      { type: 'shell_result', id: 'approval', runId: 'one' },
+      { type: 'shell_approval_status', id: 'approval', runId: 'one' },
+      { type: 'run_state', runId: 'one', state: 'done' },
+    ],
+    [
+      { id: 'u1', type: 'user', runId: 'one' },
+      { id: 'a1', type: 'asst', runId: 'one', text: 'first answer' },
+      { id: 'u2', type: 'user', runId: 'two' },
+      { id: 'a2', type: 'asst', runId: 'two', text: 'second answer' },
+    ],
+  );
+  expect(rows.map((row) => row.type)).toEqual([
+    'user',
+    'shell_result',
+    'shell_approval_status',
+    'run_state',
+    'asst',
+    'user',
+    'asst',
+  ]);
+});
+
 it('reconciles live entries using task identity while preserving identical messages from different inputs', () => {
   const rows = reconcileHistory(
     [

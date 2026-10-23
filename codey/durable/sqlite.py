@@ -803,7 +803,7 @@ def _validate_submission_update(
     if update is None:
         return
     row = database.execute(
-        "SELECT conversation_id, status, placement, entry_id AS input_entry_id FROM submissions WHERE id=?",
+        "SELECT conversation_id, status, placement, mode, entry_id AS input_entry_id FROM submissions WHERE id=?",
         (update.submission_id,),
     ).fetchone()
     if row is None or str(row["conversation_id"]) != update.conversation_id:
@@ -813,6 +813,12 @@ def _validate_submission_update(
         current != update.status and not valid_submission_transition(current, update.status)
     ):
         raise CommitConflict("submission status changed")
+    if (update.content is not None or update.mode is not None) and (
+                current is not SubmissionStatus.QUEUED or row["placement"] != "queued"
+                or row["input_entry_id"] is not None or row["mode"] == "write"
+                or update.status is not SubmissionStatus.QUEUED
+                or update.input_entry_id is not None or update.placement is not None):
+        raise CommitConflict("only queued user inputs can be revised")
     if update.answer_entry_id is not None and update.answer_entry_id not in {entry.entry_id for entry in entries}:
         raise CommitConflict("answer entry must be part of the same commit")
     if update.input_entry_id is not None and update.input_entry_id not in {entry.entry_id for entry in entries}:
@@ -928,7 +934,7 @@ def _write_submission_update(
     if update is None:
         return
     cursor = database.execute(
-        "UPDATE submissions SET status=?, answer_entry_id=?, reason=?, detail=?, entry_id=COALESCE(?, entry_id), placement=COALESCE(?, placement) "
+        "UPDATE submissions SET status=?, answer_entry_id=?, reason=?, detail=?, entry_id=COALESCE(?, entry_id), placement=COALESCE(?, placement), content=COALESCE(?, content), mode=COALESCE(?, mode) "
         "WHERE id=? AND conversation_id=? AND status=?",
         (
             update.status.value,
@@ -937,6 +943,8 @@ def _write_submission_update(
             None if update.detail is None else _encode(update.detail),
             update.input_entry_id,
             None if update.placement is None else SubmissionPlacement(update.placement).value,
+            None if update.content is None else _encode(update.content),
+            update.mode,
             update.submission_id,
             update.conversation_id,
             update.expected_status.value,

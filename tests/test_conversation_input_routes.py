@@ -32,6 +32,26 @@ def test_input_route_rejects_unknown_modes(tmp_path):
         ctx.close()
 
 
+def test_queued_edit_and_steer_use_the_same_fenced_receipt(tmp_path):
+    ctx = AppContext(tmp_path, start_scheduler=False)
+    try:
+        ctx.save_ui_state({'active_id': 'chat', 'projects': [], 'sessions': [{'id': 'chat', 'title': 'Chat'}]}, base_revision=0)
+        ctx.durable.admit_input(conversation_id='chat', request_id='active', task_id='active', text='current', provider_snapshot={})
+        ctx.durable.start_task('active', state={})
+        status, body = routes.input_action_response(ctx, {'action': 'create', 'id': 'one', 'request': {
+            'session_id': 'chat', 'run_id': 'run_one', 'task': 'original', 'provider': 'local',
+        }})
+        assert status == 202 and body['item']['state'] == 'queued'
+        status, body = routes.input_action_response(ctx, {'action': 'edit', 'id': 'one', 'revision': body['item']['revision'], 'text': 'edited'})
+        assert status == 202 and body['item']['request']['task'] == 'edited'
+        status, body = routes.input_action_response(ctx, {'action': 'steer', 'id': 'one', 'revision': body['item']['revision']})
+        assert status == 202 and body['item']['request']['input_mode'] == 'steer'
+        ctx.durable.commit_generation_boundary('chat', task_id='active', at='post_tools')
+        assert ctx.input_queue.get('one')['state'] == 'consumed'
+    finally:
+        ctx.close()
+
+
 def test_status_query_returns_the_durable_record_without_resubmitting(tmp_path, monkeypatch):
     # Admission is durable before any worker runs. A directly placeable input
     # is already submitted in the durable projection even while the scheduler

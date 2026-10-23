@@ -36,7 +36,27 @@ export function reconcileHistory(current: Message[], items: HistoryResult['items
       return !message.runId || !turns.has(`asst:${message.runId}`);
     return true;
   });
-  return [...visibleCommitted, ...live];
+  // Transient process/approval records belong to their turn, even when the
+  // durable final answer arrives before its corresponding live events.
+  const before = new Map<Message, Message[]>();
+  const after = new Map<Message, Message[]>();
+  const tail: Message[] = [];
+  for (const message of live) {
+    const sameRun = message.runId ? visibleCommitted.filter((row) => row.runId === message.runId) : [];
+    const final = sameRun.find(
+      (row) => row.type === 'asst' && row.contentRole !== 'commentary' && row.finalAnswer !== false,
+    );
+    const anchor = final || sameRun.at(-1);
+    if (!anchor || message.type === 'user') {
+      tail.push(message);
+      continue;
+    }
+    const slots = final ? before : after;
+    const bucket = slots.get(anchor) || [];
+    bucket.push(message);
+    slots.set(anchor, bucket);
+  }
+  return visibleCommitted.flatMap((row) => [...(before.get(row) || []), row, ...(after.get(row) || [])]).concat(tail);
 }
 
 /** In-memory projection cache. It never saves conversation content. */
