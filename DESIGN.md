@@ -35,6 +35,18 @@ Message actions sit outside the message surface, in a row below it. User bubble
 fill belongs only to the message body, never to its edit/copy row. Keep the body,
 gap and actions in one continuous hover region so reaching a button does not hide it.
 
+The 2026-10-23 message action revision uses Copy, Edit, then Fork for user
+messages and Copy then Fork for settled assistant answers. Use the approved
+copy, pencil and thin branching-arrow vectors. Fork opens the compact
+`Fork chat from here` destination dialog directly; it does not open History.
+Offer `Fork in this workspace` (or `Fork in this worktree`) and `Fork in a new
+worktree` for supported Git projects. Without Git, fork in the current directory.
+Retain the complete selected turn, focus the new chat's composer when ready,
+and show a `Continued from chat` source link at the inherited-history boundary.
+Worktree setup has factual pending, error and retry states; block sending until
+the backend confirms readiness. Details and verification scope are recorded in
+`docs/uiux_message_fork_2026-10-23.md`.
+
 ---
 
 ## 1. Design intent

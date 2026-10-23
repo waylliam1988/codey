@@ -75,6 +75,9 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
             session = next((session for session in state["sessions"] if session["id"] == request.get("session_id")), None)
             if session is None:
                 raise ValueError("session not found")
+            from codey.app.fork_workspaces import ensure_workspace_ready
+
+            ensure_workspace_ready(ctx, str(session['id']))
             project = next((project for project in state["projects"] if project["id"] == session.get("projectId")), None)
             expected = str(Path(project["path"]).resolve()) if project else ""
             actual = str(Path(request["project"]).resolve()) if request.get("project") else ""

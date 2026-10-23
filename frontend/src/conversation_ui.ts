@@ -543,6 +543,7 @@ export interface ConversationUiDeps {
       chat.prepend(notice);
     }
     shownId = s.id;
+    void runtime.ChatFork?.showOrigin(s.id);
     runtime.UserQuestions?.syncViews(chat);
     following = follow;
     if (changing) scrollIntent = null;

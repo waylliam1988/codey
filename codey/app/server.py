@@ -44,7 +44,12 @@ from codey.app import model_settings
 from codey.app import provider_services as provider_services
 from codey.app import task_submit as task_submit
 from codey.app.context import AppContext
-from codey.app.conversation_routes import conversation_action_response, conversation_tree_response
+from codey.app.conversation_routes import (
+    conversation_action_response,
+    conversation_tree_response,
+    fork_response,
+    retry_fork_response,
+)
 from codey.app.documents import document_response
 from codey.app.http_plumbing import (
     WEB_DIR,
@@ -171,6 +176,12 @@ def _pick_folder_response(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, 
 
 
 def _run_submit_route(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    from codey.app.fork_workspaces import ensure_workspace_ready
+
+    try:
+        ensure_workspace_ready(_ctx, str(body.get('session_id') or ''))
+    except ValueError as error:
+        return 409, {'ok': False, 'error': str(error)}
     submit = partial(task_submit.submit_task, get_state=lambda: _ctx)
     response: tuple[int, dict[str, Any]] = app_api.run_submit_response(body, submit, ctx=_ctx)
     return response
@@ -268,6 +279,7 @@ def _execution_output_route(ctx: AppContext, execution_id: str, query: dict[str,
 
 
 _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, dict[str, Any]]]] = {
+    "/api/conversation_fork": fork_response,
     "/api/conversation_tree": conversation_tree_response,
     "/api/workflows": workflow_history_response,
     "/api/inputs": inputs_response,
@@ -290,6 +302,7 @@ _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, d
 
 
 _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[str, Any]]]] = {
+    "/api/conversation_fork/retry": retry_fork_response,
     "/api/conversation_tree/action": conversation_action_response,
     "/api/workflows/fork": workflow_fork_response,
     "/api/inputs": input_action_response,

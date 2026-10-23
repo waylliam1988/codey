@@ -1,6 +1,8 @@
-export type Icon = 'copy' | 'reload' | 'close' | 'expand' | 'dock' | 'workspace' | 'branch';
+import { messageIcons } from './message_icons';
+export type Icon = 'copy' | 'edit' | 'reload' | 'close' | 'expand' | 'dock' | 'workspace' | 'branch';
 const paths: Record<Icon, string> = {
   copy: '',
+  edit: '',
   reload: 'M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7l-3-3',
   close: 'm6 6 12 12M18 6 6 18',
   expand: 'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5',
@@ -22,16 +24,12 @@ export function createIconSvg(icon: Icon, className = ''): SVGSVGElement {
   svg.setAttribute('aria-hidden', 'true');
   svg.setAttribute('focusable', 'false');
   if (className) svg.classList.add(className);
-  if (icon === 'copy') {
-    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', '8');
-    rect.setAttribute('y', '8');
-    rect.setAttribute('width', '11');
-    rect.setAttribute('height', '11');
-    rect.setAttribute('rx', '2');
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', 'M5 15V7a2 2 0 0 1 2-2h8');
-    svg.append(rect, path);
+  if (messageIcons[icon]) {
+    svg.classList.add('filled-icon');
+    svg.setAttribute('viewBox', messageIcons[icon].viewBox);
+    svg.setAttribute('fill', 'currentColor');
+    svg.setAttribute('stroke', 'none');
+    svg.innerHTML = messageIcons[icon].body;
   } else {
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', paths[icon]);

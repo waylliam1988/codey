@@ -151,7 +151,7 @@ export interface ComposerApi {
     outbox?.setSession(activeId());
     if (!deps) return;
     if (draftSession === deps.activeSession()) {
-      $<HTMLTextAreaElement>('task').disabled = !ready;
+      $<HTMLTextAreaElement>('task').disabled = !ready || !!runtime.ChatFork?.isBlocked(activeId());
       updateSend();
       return;
     }
@@ -160,7 +160,7 @@ export interface ComposerApi {
     if (!draftSession) return;
     // The textarea is scoped to the active session. A run in another session
     // must never leave the newly selected chat's input disabled.
-    $<HTMLTextAreaElement>('task').disabled = !ready;
+    $<HTMLTextAreaElement>('task').disabled = !ready || !!runtime.ChatFork?.isBlocked(activeId());
     const draft = draftSession.draft;
     if ($<HTMLTextAreaElement>('task').value !== draft.text) $<HTMLTextAreaElement>('task').value = draft.text;
     $<HTMLTextAreaElement>('task').setSelectionRange(draft.start, draft.end, draft.direction);

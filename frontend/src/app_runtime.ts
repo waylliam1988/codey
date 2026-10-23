@@ -2,6 +2,8 @@ import { DocumentPane, type DocumentRef } from './document_pane';
 import { Workspace } from './workspace';
 import { RecordedPanels } from './recorded_panels';
 import { HistoryPanel } from './history_panel';
+import { ChatFork } from './chat_fork';
+import './chat_fork.css';
 import { mergeForkState } from './fork_state';
 import { CommandPalette } from './command_palette';
 import { iconButton } from './icon_button';
@@ -211,24 +213,43 @@ workspace.register('review', 'Review', recordedPanels.review, (target) => {
   void recordedPanels.showReview(target);
 });
 workspace.register('outputs', 'Output', recordedPanels.outputs, () => recordedPanels.showOutputs());
+function adoptChatFork(
+  result: { session_id: string; state: Record<string, unknown> },
+  baseline: Record<string, unknown>,
+  followIntent = true,
+): void {
+  runtime.Composer.captureDraft();
+  const current = runtime.UiState.current();
+  const follow = followIntent && current.active_id === baseline.active_id;
+  const state = mergeForkState(result.state, baseline, current);
+  runtime.UiState.apply(state);
+  runtime.UiState.cache();
+  if (follow) switchSession(result.session_id);
+  else {
+    renderSidebar();
+    renderChat();
+    persistActive();
+  }
+}
+const chatFork = new ChatFork({
+  activeId: () => activeId,
+  isWorktree: (id) => !!sessions.find((session) => session.id === id)?.projectId?.startsWith('worktree_fork_'),
+  workspaceChanged: () => runtime.Composer.syncSession(),
+  originRendered: () => {
+    if (runtime.ConversationUI.isFollowing()) runtime.ConversationUI.scrollChat();
+    runtime.ConversationUI.captureView();
+  },
+  saved: () => runtime.UiState.ensureSaved(),
+  state: () => runtime.UiState.current(),
+  adopt: adoptChatFork,
+  switchSession,
+});
+runtime.ChatFork = chatFork;
 const historyPanel = new HistoryPanel({
   session: activeSession,
   switchSession,
   changed: (id) => runtime.ConversationUI.refreshHistory(id),
-  adoptFork: (result, baseline) => {
-    runtime.Composer.captureDraft();
-    const current = runtime.UiState.current();
-    const follow = current.active_id === baseline.active_id;
-    const state = mergeForkState(result.state, baseline, current);
-    runtime.UiState.apply(state);
-    runtime.UiState.cache();
-    if (follow) switchSession(result.session_id);
-    else {
-      renderSidebar();
-      renderChat();
-      persistActive();
-    }
-  },
+  adoptFork: adoptChatFork,
 });
 workspace.register('history', 'History', historyPanel.element, (target) => {
   void historyPanel.show(target);

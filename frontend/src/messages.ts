@@ -6,7 +6,7 @@ import { hydrateDocumentContent } from './document_content';
 import { artifactRow, decorateDeliverables } from './artifacts';
 import type { Message, UiDeps } from './types/domain';
 import { finalAnswerMarkdown } from './answer_copy';
-import { iconButton } from './icon_button';
+import { createIconSvg, iconButton } from './icon_button';
 import { permissionsButton } from './command_permissions';
 interface MessagesDeps extends UiDeps {
   openDocument(sessionId: string, ref: DocumentRef): void;
@@ -82,17 +82,14 @@ export interface MessagesApi {
       edit.className = 'msg-edit';
       edit.setAttribute('aria-label', 'Edit message');
       edit.title = 'Edit message';
+      edit.append(createIconSvg('edit'));
       edit.onclick = () => beginMessageEdit(div, body, actions, m, activeId);
       const copy = div.querySelector('.msg-copy'),
         feedback = div.querySelector('.copy-feedback');
-      actions.append(edit);
       if (copy) actions.append(copy);
+      actions.append(edit);
       if (m.entryId)
-        actions.append(
-          iconButton('Branch from this message', 'branch', () =>
-            runtime.Workspace?.select('history', { entryId: m.entryId }),
-          ),
-        );
+        actions.append(iconButton('Fork chat from here', 'branch', () => runtime.ChatFork?.open(activeId, m.entryId)));
       if (feedback) actions.append(feedback);
       div.append(actions);
       chat.appendChild(div);
@@ -154,9 +151,7 @@ export interface MessagesApi {
           feedback = div.querySelector('.copy-feedback');
         if (copy) actions.append(copy);
         actions.append(
-          iconButton('Branch from this message', 'branch', () =>
-            runtime.Workspace?.select('history', { entryId: m.entryId }),
-          ),
+          iconButton('Fork chat from here', 'branch', () => runtime.ChatFork?.open(m.sessionId || activeId, m.entryId)),
         );
         if (feedback) actions.append(feedback);
         div.append(actions);

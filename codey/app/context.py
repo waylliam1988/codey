@@ -87,6 +87,7 @@ class AppContext(GhostStoreAccessors):
             assert self._ephemeral_runtime_home is not None
             runtime_state_home = Path(self._ephemeral_runtime_home.name)
         self.lock = threading.Lock()
+        self.fork_request_lock = threading.Lock()
         # Spawn gate: Stop's generation bump and the executor's final
         # check+Popen both hold it (never self.lock: re-entrant deadlock).
         self._shell_spawn_gate = threading.Lock()
@@ -1088,6 +1089,9 @@ class AppContext(GhostStoreAccessors):
 
     def _wait_background_workers(self) -> bool:
         try:
+            forks = getattr(self, 'fork_workspaces', None)
+            if forks is not None and not forks.close():
+                return False
             return self.shell_approval_workflow.close() and self.ghost_sleep_daemon.wait(timeout=2.0)
         except Exception:
             logger.exception("Background worker cleanup failed")

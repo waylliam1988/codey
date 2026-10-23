@@ -387,6 +387,7 @@
   .msg-copy svg {
     width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.5;
   }
+  .msg-copy svg.filled-icon { stroke: none; fill: currentColor; }
 
   /* ---------- assistant markdown (monochrome, no highlighting) ---------- */
   .msg .body.md { white-space: normal; }
@@ -468,6 +469,7 @@
     transition: background .12s, color .12s, opacity .12s;
   }
   .code-copy svg, .icon-action svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .code-copy svg.filled-icon, .icon-action svg.filled-icon { fill: currentColor; stroke: none; }
   .md-code:hover .code-copy,
   .md-code:focus-within .code-copy { opacity: 1; }
   .code-copy:hover,
@@ -1536,7 +1538,7 @@
   .message-actions { display: flex; gap: 8px; align-items: center; }
   .message-actions > .msg-copy:is(.copy-pending, .copied, .copy-failed) { opacity: 1; pointer-events: auto; }
   .msg-edit { width: 26px; height: 26px; margin-top: 8px; border: 0; padding: 0; background: transparent; color: var(--muted); opacity: 0; pointer-events: none; cursor: pointer; display: grid; place-items: center; }
-  .msg-edit::before { content: ''; width: 14px; height: 14px; background: currentColor; mask: url('/assets/new-chat.svg') center / contain no-repeat; }
+  .msg-edit svg { width: 16px; height: 16px; }
   .msg:hover > .message-actions > button, .msg:has(:focus-visible) > .message-actions > button { opacity: 1; pointer-events: auto; }
   .msg-edit:hover { color: var(--text); }
   .msg-edit-editor { max-width: 680px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px 8px; }

@@ -4,6 +4,27 @@ import './process';
 import './messages';
 import './research_runs';
 import type { Session } from './types/domain';
+import { runtime } from './runtime';
+
+it('orders message actions as copy, edit and fork and opens the message-local flow', () => {
+  const open = vi.fn();
+  runtime.ChatFork = { open };
+  window.Messages.init({ getActiveId: () => 'chat', getRunningSessionId: () => null } as Parameters<
+    typeof window.Messages.init
+  >[0]);
+  const host = document.createElement('div');
+  window.Messages.append(host, { type: 'user', id: 'u', entryId: 'entry', text: 'Question' });
+  const actions = [...host.querySelectorAll<HTMLButtonElement>('.message-actions button')];
+  expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual([
+    'Copy message',
+    'Edit message',
+    'Fork chat from here',
+  ]);
+  expect(actions[1].querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 21 21');
+  expect(actions[2].querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 16 16');
+  actions[2].click();
+  expect(open).toHaveBeenCalledWith('chat', 'entry');
+});
 
 it('edits a user message inline and submits the edited text', async () => {
   const editMessage = vi.fn().mockResolvedValue(true);
