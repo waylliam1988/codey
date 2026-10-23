@@ -56,7 +56,7 @@ def test_title_click_selects_original_and_enter_saves_both_names_and_reload(page
     expect(title_button(page)).to_have_text("检查缓存问题")
     expect(title_button(page)).to_be_focused()
     expect(page.locator(".session-item.active .session-title")).to_have_text("检查缓存问题")
-    page.wait_for_function("JSON.parse(localStorage.getItem('codey:sessions'))[0].title === '检查缓存问题'")
+    page.wait_for_function("JSON.parse(localStorage.getItem('codey:ui-cache')).state.sessions[0].title === '检查缓存问题'")
     assert len(writes) == 1
     assert writes[0]["sessions"][0]["title"] == "检查缓存问题"
     assert page.locator(".topbar").bounding_box() == bar

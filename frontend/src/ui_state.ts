@@ -1,4 +1,5 @@
 import { runtime } from './runtime';
+import { mergeUiState, sameUiContent, type UiSnapshot } from './ui_state_merge';
 import type { Draft, Message, Project, ResearchRun, Session, UiDeps } from './types/domain';
 type Loose = Record<string, unknown>;
 export interface UiStateApi {
@@ -9,7 +10,6 @@ export interface UiStateApi {
   PROVIDERS: string[];
   setProviders(ids: string[], labels: Record<string, string> | null, defaultId?: string): void;
   setDefaultProvider(id: string): void;
-  setRecommended(id: unknown): void;
   uid(): string;
   defaultSession(projectId?: string | null, provider?: string | null): Session;
   hydrateSessionIndexes(session: Session): Session;
@@ -19,12 +19,10 @@ export interface UiStateApi {
   pathName(path: string): string;
   pathKey(path: string): string;
   apply(state: Loose): void;
+  accept(state: Loose): void;
   current(): Loose;
   cache(): void;
   cached(): Loose;
-  hasMeaningful(state: Loose): boolean;
-  hasStored(state: Loose): boolean;
-  isNewer(a: Loose, b: Loose): boolean;
   markDirty(): void;
   flush(): void;
   persist(): void;
@@ -43,13 +41,13 @@ export interface UiStateApi {
   }
 
   let deps: UiDeps = {};
+  const LS_CACHE = 'codey:ui-cache';
   const LS_SESSIONS = 'codey:sessions';
   const LS_ACTIVE = 'codey:active';
   const LS_PROJECTS = 'codey:projects';
   const LS_UI_UPDATED = 'codey:ui-updated';
   const LS_UI_REVISION = 'codey:ui-revision';
   let DEFAULT_PROVIDER: string = 'deepseek';
-  let RECOMMENDED_PROVIDER = '';
   let PROVIDER_LABELS: Record<string, string> = {
     deepseek: 'DeepSeek',
     mimo: 'MiMo',
@@ -125,12 +123,6 @@ export interface UiStateApi {
   function setRevision(value: number): void {
     if (deps.setRevision) deps.setRevision(value);
   }
-  function isDirtySinceBoot(): boolean {
-    return !!(deps.isDirtySinceBoot && deps.isDirtySinceBoot());
-  }
-  function setDirtySinceBoot(value: boolean): void {
-    if (deps.setDirtySinceBoot) deps.setDirtySinceBoot(value);
-  }
 
   function uid() {
     return Math.random().toString(36).slice(2, 10);
@@ -147,24 +139,20 @@ export interface UiStateApi {
       localStorage.setItem(key, value);
     } catch {}
   }
-  function saveSessions(arr: Session[]): void {
-    safeLocalSet(LS_SESSIONS, JSON.stringify(sessionMetadata(arr)));
-  }
   function sessionMetadata(arr: Session[]) {
     return arr.map(({ messages: _messages, ...metadata }) => metadata);
   }
-  function saveProjects(arr: Project[]): void {
-    safeLocalSet(LS_PROJECTS, JSON.stringify(arr));
-  }
-  function setRecommended(id: unknown): void {
-    // Backend cold-start hint for brand-new sessions only; stored sessions
-    // keep their own provider and never read this.
-    const key = String(id || '').trim();
-    if (key && PROVIDER_LABELS[key]) RECOMMENDED_PROVIDER = key;
-  }
   function defaultSession(projectId: string | null = null, provider: string | null = null) {
-    const resolved = provider || RECOMMENDED_PROVIDER || DEFAULT_PROVIDER;
+    const previous = deps.activeSession?.();
+    const candidate = provider || previous?.provider || '';
+    const selection = previous?.provider === candidate ? previous.modelSelection : undefined;
+    const enabled = runtime.Models?.allows(candidate, selection?.model);
+    const connection = runtime.Models?.connections().some((source: { id: string }) => source.id === candidate);
+    const resolved = enabled || connection ? candidate : '';
     return hydrateSessionIndexes({
+      ...(selection?.model && enabled
+        ? { modelSelection: { ...selection, efforts: { ...(selection.efforts || {}) } } }
+        : {}),
       id: uid(),
       title: 'New chat',
       draft: normalizeDraft(),
@@ -306,10 +294,7 @@ export interface UiStateApi {
           : [],
         createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
         projectId: typeof item.projectId === 'string' ? item.projectId : null,
-        provider:
-          typeof item.provider === 'string' && item.provider.trim() && item.provider.length <= 100
-            ? item.provider
-            : DEFAULT_PROVIDER,
+        provider: typeof item.provider === 'string' && item.provider.length <= 100 ? item.provider : '',
         research: item.research === true,
         ...(isRecord(item.modelSelection)
           ? {
@@ -368,12 +353,16 @@ export interface UiStateApi {
     nextSessions = nextSessions.map((session) => {
       const current = currentSessions.get(session.id);
       if (!current) return session;
-      return hydrateSessionIndexes({
-        ...session,
+      // Keep the identity held by the composer and the history repository.
+      // Metadata acknowledgement must not detach the currently edited draft.
+      if (!session.modelSelection) delete current.modelSelection;
+      if (!session.titleRenamed) delete current.titleRenamed;
+      const facts = {
         messages: current.messages,
         terminalRuns: current.terminalRuns,
         researchRuns: current.researchRuns,
-      });
+      };
+      return ensureSessionIndexes(Object.assign(current, session, facts));
     });
     const nextProjects = normalizeProjects(state && state.projects);
     let nextActiveId = state && state.active_id ? String(state.active_id) : '';
@@ -388,8 +377,6 @@ export interface UiStateApi {
     setActiveId(nextActiveId);
     setUpdatedAt(Number((state && state.updated_at) || 0) || 0);
     setRevision(Number((state && state.revision) || 0) || 0);
-    serverRevision = Number((state && state.revision) || 0) || 0;
-    syncConflict = false;
   }
   function currentUiState() {
     return {
@@ -401,127 +388,145 @@ export interface UiStateApi {
     };
   }
   function cacheUiState() {
-    saveSessions(getSessions());
-    saveProjects(getProjects());
-    safeLocalSet(LS_ACTIVE, getActiveId());
-    safeLocalSet(LS_UI_UPDATED, String(getUpdatedAt()));
-    safeLocalSet(LS_UI_REVISION, String(getRevision()));
+    // One atomic localStorage value binds pending edits to their exact confirmed base.
+    safeLocalSet(LS_CACHE, JSON.stringify({ schema: 1, state: currentUiState(), confirmed }));
   }
   function cachedUiState(): Loose {
-    return {
+    const cached = loadJson(LS_CACHE, null);
+    if (isRecord(cached) && cached.schema === 1 && isSnapshot(cached.state)) {
+      confirmed = isSnapshot(cached.confirmed) ? asSnapshot(cached.confirmed) : null;
+      return cached.state;
+    }
+    // One-time migration of existing installations, never a second live cache writer.
+    confirmed = null;
+    const previous = {
       active_id: localStorage.getItem(LS_ACTIVE) || '',
       sessions: loadJson(LS_SESSIONS, []),
       projects: loadJson(LS_PROJECTS, []),
       updated_at: Number(localStorage.getItem(LS_UI_UPDATED) || 0) || 0,
       revision: Number(localStorage.getItem(LS_UI_REVISION) || 0) || 0,
     };
+    const envelope = JSON.stringify({ schema: 1, state: previous, confirmed: null });
+    safeLocalSet(LS_CACHE, envelope);
+    try {
+      if (localStorage.getItem(LS_CACHE) === envelope)
+        for (const key of [LS_SESSIONS, LS_PROJECTS, LS_ACTIVE, LS_UI_UPDATED, LS_UI_REVISION])
+          localStorage.removeItem(key);
+    } catch {
+      /* Storage is optional; do not discard unmigrated drafts. */
+    }
+    return previous;
   }
-  function uiStateVersion(state: Loose): [number, number] {
-    return [Number((state && state.updated_at) || 0) || 0, Number((state && state.revision) || 0) || 0];
-  }
-  function isUiStateNewer(a: Loose, b: Loose): boolean {
-    const av = uiStateVersion(a);
-    const bv = uiStateVersion(b);
-    return av[0] > bv[0] || (av[0] === bv[0] && av[1] > bv[1]);
-  }
-  function hasStoredUiState(state: Loose): boolean {
-    return !!(
-      state &&
-      ((Array.isArray(state.sessions) && state.sessions.length) ||
-        (Array.isArray(state.projects) && state.projects.length) ||
-        state.active_id)
-    );
-  }
-  function hasMeaningfulUiState(state: Loose): boolean {
-    if (!state) return false;
-    if (Array.isArray(state.projects) && state.projects.length) return true;
-    if (!Array.isArray(state.sessions)) return false;
-    return state.sessions.some(
-      (s) =>
-        (s.draft && typeof s.draft.text === 'string' && s.draft.text.length) ||
-        (Array.isArray(s.messages) && s.messages.length) ||
-        (Array.isArray(s.terminalRuns) && s.terminalRuns.length) ||
-        (s.title && s.title !== 'New chat'),
-    );
-  }
-  let saveInFlight = false;
+  const asSnapshot = (state: Loose): UiSnapshot => ({
+    ...state,
+    sessions: Array.isArray(state.sessions) ? state.sessions : [],
+    projects: Array.isArray(state.projects) ? state.projects : [],
+  });
+  let confirmed: UiSnapshot | null = null;
   let savePromise: Promise<boolean> | null = null;
-  let saveQueued = false;
-  let serverRevision: number | null = null;
-  let syncConflict = false;
-  function saveNotice(status: string): void {
-    const notice = document.getElementById('ui-save-notice');
-    const retry = document.getElementById('ui-save-retry');
-    if (!notice || !retry) return;
-    const saving = status === 'saving';
-    // Retain keyboard focus while Retry is unavailable; return it only if the
-    // disappearing status still owns focus, never after the user has moved on.
-    if (status === 'saved' && notice.contains(document.activeElement)) {
-      document.getElementById('task')?.focus({ preventScroll: true });
-    }
-    notice.hidden = status === 'saved';
-    const message = document.getElementById('ui-save-message');
-    const detail = document.getElementById('ui-save-detail');
-    if (message) message.textContent = saving ? 'Saving…' : 'Not saved';
-    if (detail) detail.textContent = saving ? 'Saving local changes' : 'Could not save local changes';
-    retry.setAttribute('aria-disabled', String(saving));
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let failures = 0;
+  function acknowledge(state: Loose): void {
+    confirmed = structuredClone(asSnapshot(state));
+    setRevision(Number(state.revision || 0));
   }
-
-  function saveUiStateToServer() {
-    if (syncConflict) return;
-    if (saveInFlight) {
-      saveQueued = true;
-      return;
+  function repaint(): void {
+    deps.renderSidebar?.();
+    deps.renderChat?.();
+    deps.updateComposerContext?.();
+    if (deps.currentProviderId) deps.syncProviderUI?.(deps.currentProviderId());
+  }
+  function accept(state: Loose): void {
+    if (confirmed && Number(state.revision || 0) < Number(confirmed.revision || 0)) return;
+    const current = asSnapshot(currentUiState());
+    const merged = confirmed ? mergeUiState(confirmed, current, asSnapshot(state)) : asSnapshot(state);
+    applyUiState(merged);
+    acknowledge(state);
+    cacheUiState();
+    repaint();
+  }
+  function saveNotice(failed: boolean): void {
+    const notice = document.getElementById('ui-save-notice');
+    if (!notice) return;
+    if (!failed && notice.contains(document.activeElement))
+      document.getElementById('task')?.focus({ preventScroll: true });
+    notice.hidden = !failed;
+    const message = document.getElementById('ui-save-message');
+    if (message) message.textContent = 'Draft changes couldn’t be saved';
+  }
+  function isSnapshot(value: unknown): value is UiSnapshot {
+    return (
+      isRecord(value) &&
+      Array.isArray(value.sessions) &&
+      Array.isArray(value.projects) &&
+      typeof value.active_id === 'string' &&
+      Number.isSafeInteger(value.revision) &&
+      Number(value.revision) >= 0
+    );
+  }
+  async function readServer(): Promise<Loose> {
+    const response = await fetch('/api/ui_state', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error('Could not load chat settings');
+    const state = (await response.json()).state;
+    if (!isSnapshot(state)) throw new Error('Invalid chat settings response');
+    return state;
+  }
+  function saveUiStateToServer(): Promise<boolean> {
+    if (savePromise) return savePromise;
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
     }
-    saveInFlight = true;
-    saveQueued = false;
-    // Routine saves stay silent. Only an already-visible failure gets progress.
-    if (!document.getElementById('ui-save-notice')?.hidden) saveNotice('saving');
-    const base = serverRevision === null ? getRevision() : serverRevision;
-    savePromise = fetch('/api/ui_state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ state: currentUiState(), base_revision: base }),
-    })
-      .then(async (r) => {
-        const data = await r.json();
-        if (r.ok) {
-          const next = Number((data && data.revision) || 0) || 0;
-          if (next) {
-            serverRevision = next;
-            setRevision(next);
+    savePromise = (async () => {
+      try {
+        if (!confirmed) accept(await readServer());
+        // Bounded conflict reconciliation; a hot competing writer cannot spin forever.
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const sent = structuredClone(asSnapshot(currentUiState()));
+          const response = await fetch('/api/ui_state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ state: sent, base_revision: confirmed!.revision || 0 }),
+            signal: AbortSignal.timeout(10000),
+          });
+          const data = await response.json();
+          if (response.status === 409) {
+            accept(await readServer());
+            continue;
           }
-          syncConflict = false;
-          if (!saveQueued && uiStatePersistTimer === null) saveNotice('saved');
-          return true;
-        }
-        if (r.status === 409) {
-          const current = Number((data && data.revision) || 0) || 0;
-          if (current) serverRevision = current;
-          if (!syncConflict) {
-            syncConflict = true;
-            saveNotice('failed');
+          if (!response.ok || !Number.isSafeInteger(data.revision) || data.revision < 0)
+            throw new Error('Could not save chat settings');
+          const remote = asSnapshot({ ...sent, revision: data.revision });
+          // The request only acknowledges its captured edits, never edits made while it was in flight.
+          if (Number(remote.revision || 0) >= Number(confirmed!.revision || 0)) {
+            const pending = mergeUiState(sent, asSnapshot(currentUiState()), remote);
+            applyUiState(pending);
+            acknowledge(remote);
           }
-          return false;
+          cacheUiState();
+          if (sameUiContent(asSnapshot(currentUiState()), confirmed!)) {
+            failures = 0;
+            saveNotice(false);
+            return true;
+          }
         }
-        // Other failures: keep local content, do not pretend success.
-        saveNotice('failed');
+        throw new Error('Chat settings are changing in another window');
+      } catch {
+        failures++;
+        saveNotice(failures >= 3 && getSessions().some((session) => !!session.draft.text));
+        retryTimer = setTimeout(
+          () => {
+            retryTimer = null;
+            void saveUiStateToServer();
+          },
+          Math.min(30000, 1000 * 2 ** failures),
+        );
         return false;
-      })
-      .catch(() => {
-        saveNotice('failed');
-        return false;
-      })
-      .finally(() => {
-        saveInFlight = false;
+      } finally {
         savePromise = null;
-        if (saveQueued && !syncConflict) {
-          saveQueued = false;
-          saveUiStateToServer();
-        } else {
-          saveQueued = false;
-        }
-      });
+      }
+    })();
+    return savePromise;
   }
 
   let uiStatePersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -529,8 +534,6 @@ export interface UiStateApi {
 
   function markUiStateDirty() {
     setUpdatedAt(Math.max(Date.now(), getUpdatedAt()));
-    setRevision(getRevision() + 1);
-    setDirtySinceBoot(true);
   }
 
   function flushUiState() {
@@ -542,10 +545,9 @@ export interface UiStateApi {
     saveUiStateToServer();
   }
   async function ensureSaved(): Promise<boolean> {
-    if (syncConflict) return false;
     flushUiState();
     while (savePromise) if (!(await savePromise)) return false;
-    return !syncConflict;
+    return true;
   }
 
   function persistActive() {
@@ -597,12 +599,13 @@ export interface UiStateApi {
 
   function bindUiStatePagehide(): void {
     const retry = document.getElementById('ui-save-retry');
-    if (!retry) return;
-    retry.onclick = () => {
-      if (saveInFlight) return;
-      syncConflict = false;
-      flushUiState();
-    };
+    window.addEventListener('online', () => {
+      void saveUiStateToServer();
+    });
+    if (retry)
+      retry.onclick = () => {
+        flushUiState();
+      };
     window.addEventListener('pagehide', () => {
       runtime.Composer.captureDraft();
       if (uiStatePersistTimer !== null) {
@@ -610,8 +613,8 @@ export interface UiStateApi {
         uiStatePersistTimer = null;
       }
       cacheUiState();
-      if (syncConflict) return;
-      const base = serverRevision === null ? getRevision() : serverRevision;
+      if (!confirmed || savePromise) return;
+      const base = confirmed.revision || 0;
       const payload = JSON.stringify({ state: currentUiState(), base_revision: base });
       try {
         if (navigator.sendBeacon) {
@@ -624,47 +627,35 @@ export interface UiStateApi {
   }
 
   async function refreshInventory(): Promise<void> {
-    const response = await fetch('/api/ui_state', { cache: 'no-store' });
-    if (!response.ok) return;
-    const data = await response.json();
-    const current = currentUiState();
-    const existing = new Map(getSessions().map((session) => [session.id, session]));
-    // Inventory is authoritative; local drafts, live messages and the reader's
-    // current selection survive a conversation created by another client.
-    const sessions = normalizeSessions(data.state.sessions).map((session) => {
-      const local = existing.get(session.id);
-      return local ? { ...session, draft: local.draft, messages: local.messages } : session;
-    });
-    applyUiState({ ...data.state, sessions, active_id: current.active_id });
-    cacheUiState();
-    deps.renderSidebar?.();
-    deps.renderChat?.();
-    deps.updateComposerContext?.();
+    accept(await readServer());
   }
 
   async function restoreUiStateFromServer() {
     try {
-      const r = await fetch('/api/ui_state', { cache: 'no-store' });
-      if (!r.ok) return;
-      const data = await r.json();
-      if (!hasStoredUiState(data.state)) {
-        saveUiStateToServer();
-        return;
-      }
-      if (
-        ((deps.bootHadMeaningfulUiState && deps.bootHadMeaningfulUiState()) || isDirtySinceBoot()) &&
-        isUiStateNewer(currentUiState(), data.state)
-      ) {
-        saveUiStateToServer();
-        return;
-      }
-      applyUiState(data.state);
+      const local = asSnapshot(currentUiState());
+      const remote = asSnapshot(await readServer());
+      // A fresh boot can attach to a reset store; old cache revisions cannot fence that store.
+      if (confirmed && Number(remote.revision || 0) < Number(confirmed.revision || 0)) confirmed = null;
+      if (!confirmed) {
+        // Without a confirmed base, old cache rows cannot establish new conversations.
+        // Recover drafts only for identities that still exist on the server.
+        const cached = new Map(local.sessions.map((row) => [row.id, row]));
+        const recovered = {
+          ...remote,
+          sessions: remote.sessions.map((row) => {
+            const draft = cached.get(row.id)?.draft;
+            return isRecord(draft) && typeof draft.text === 'string' && draft.text ? { ...row, draft } : row;
+          }),
+        };
+        applyUiState(recovered);
+        acknowledge(remote);
+      } else accept(remote);
       cacheUiState();
-      if (deps.renderSidebar) deps.renderSidebar();
-      if (deps.renderChat) deps.renderChat();
-      if (deps.updateComposerContext) deps.updateComposerContext();
-      if (deps.syncProviderUI && deps.currentProviderId) deps.syncProviderUI(deps.currentProviderId());
-    } catch {}
+      repaint();
+      void saveUiStateToServer();
+    } catch {
+      void saveUiStateToServer();
+    }
   }
 
   runtime.UiState = {
@@ -675,7 +666,6 @@ export interface UiStateApi {
     PROVIDERS,
     setProviders,
     setDefaultProvider,
-    setRecommended,
     uid,
     defaultSession,
     hydrateSessionIndexes,
@@ -685,12 +675,10 @@ export interface UiStateApi {
     pathName,
     pathKey,
     apply: applyUiState,
+    accept,
     current: currentUiState,
     cache: cacheUiState,
     cached: cachedUiState,
-    hasMeaningful: hasMeaningfulUiState,
-    hasStored: hasStoredUiState,
-    isNewer: isUiStateNewer,
     markDirty: markUiStateDirty,
     flush: flushUiState,
     persist: persistActive,

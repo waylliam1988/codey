@@ -59,6 +59,7 @@ export interface ProcessToolRecord {
   'use strict';
 
   type ProcessStatus =
+    | 'unknown'
     | 'sending'
     | 'running'
     | 'done'
@@ -73,7 +74,7 @@ export interface ProcessToolRecord {
   type ToolRecord = ProcessToolRecord;
   interface ProcessState {
     state: ProcessStatus;
-    explicitState: boolean;
+    source: 'inferred' | 'workflow' | 'checkpoint';
     tools: Map<string, ToolRecord>;
     reasoning: Set<string>;
     warnings: Set<string>;
@@ -140,8 +141,8 @@ export interface ProcessToolRecord {
     block.append(label, approvalStatus, group, alerts);
     chat.insertBefore(block, answer || null);
     block._process = {
-      state: 'running',
-      explicitState: false,
+      state: 'unknown',
+      source: 'inferred',
       tools: new Map(),
       reasoning: new Set(),
       warnings: new Set(),
@@ -190,6 +191,7 @@ export interface ProcessToolRecord {
       .reverse()
       .find((m) => m.pending);
     const titles = {
+      unknown: 'Work',
       sending: 'Sending…',
       running: 'Working',
       done: 'Worked',
@@ -218,7 +220,11 @@ export interface ProcessToolRecord {
     const title = block.querySelector<HTMLElement>('.process-title');
     if (title)
       title.textContent =
-        !state.requestObserved && !state.explicitState && !tools.length && !state.reasoning.size && state.warnings.size
+        !state.requestObserved &&
+        state.source === 'inferred' &&
+        !tools.length &&
+        !state.reasoning.size &&
+        state.warnings.size
           ? 'Activity'
           : text;
     const head = block.querySelector<HTMLElement>('.process-summary')!;
@@ -240,7 +246,11 @@ export interface ProcessToolRecord {
       head.prepend(spinner);
     } else if (!spinning) spinner?.remove();
     block.hidden =
-      !state.requestObserved && !state.explicitState && !tools.length && !state.reasoning.size && !state.warnings.size;
+      !state.requestObserved &&
+      state.source === 'inferred' &&
+      !tools.length &&
+      !state.reasoning.size &&
+      !state.warnings.size;
   }
   function thinking(block: ProcessBlock, text: unknown, step: string | number | undefined): void {
     if (typeof text !== 'string' || !text.trim()) return;
@@ -342,7 +352,7 @@ export interface ProcessToolRecord {
   function state(block: ProcessBlock, value: ProcessStatus, explicit = true): void {
     block._process.state = value;
     block._process.activity = undefined;
-    if (explicit) block._process.explicitState = true;
+    if (explicit && block._process.source !== 'checkpoint') block._process.source = 'workflow';
     const group = block.querySelector<HTMLDetailsElement>('.process-group');
     if (group && value !== 'running' && !block._process.touched) group.open = false;
     summary(block);
@@ -354,8 +364,9 @@ export interface ProcessToolRecord {
       const block = pending ? ensure(chat, m.runId) : existing;
       if (block) {
         block._process.requestObserved = true;
-        if (pending && !existing) block._process.explicitState = false;
-        if (pending && (!existing || !block._process.explicitState)) state(block, m.state as ProcessStatus, false);
+        if (pending && !existing) block._process.source = 'inferred';
+        if (pending && (!existing || block._process.source === 'inferred'))
+          state(block, m.state as ProcessStatus, false);
         else if (!pending && ['sending', 'running'].includes(block._process.state))
           state(block, m.state === 'paused' ? 'blocked' : (m.state as ProcessStatus), false);
         summary(block);
@@ -405,7 +416,7 @@ export interface ProcessToolRecord {
       if (block._process.state === 'approval') state(block, 'running', false);
       if (
         Array.from(chat.querySelectorAll<HTMLElement>('.asst')).some((node) => node.dataset.runId === m.runId) &&
-        !block._process.explicitState
+        block._process.source === 'inferred'
       )
         state(block, 'done', false);
       summary(block);
@@ -418,6 +429,7 @@ export interface ProcessToolRecord {
       if (m.type === 'turn' || m.type === 'thinking') thinking(block, m.reasoning || m.text, step);
       if (m.type === 'tool' || m.type === 'tool_pending') tool(block, m);
       else if (m.type === 'run_state' && m.state) {
+        block._process.source = 'checkpoint';
         if (m.elapsedMs !== undefined) block._process.elapsedMs = m.elapsedMs;
         state(block, m.state as ProcessStatus);
       }
@@ -457,6 +469,7 @@ export interface ProcessToolRecord {
     }
     if (
       block &&
+      block._process.source !== 'checkpoint' &&
       m.type === 'asst' &&
       m.finalAnswer === true &&
       m.contentRole !== 'commentary' &&
@@ -468,7 +481,7 @@ export interface ProcessToolRecord {
     if (
       block &&
       !m.streamId &&
-      !block._process.explicitState &&
+      block._process.source === 'inferred' &&
       ['asst', 'err', 'done', 'research_done'].includes(m.type ?? '')
     ) {
       state(block, m.type === 'err' ? 'failed' : 'done', false);

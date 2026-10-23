@@ -775,10 +775,11 @@ def new_chat_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, An
     if failures:
         return 200, {
             "ok": True,
+            "state": ctx.load_ui_state(),
             "warnings": [f"Failed to purge store {k}: {v}" for k, v in failures.items()],
             "unpurged_stores": list(failures.keys()),
         }
-    return 200, {"ok": True}
+    return 200, {"ok": True, "state": ctx.load_ui_state()}
 
 
 def stop_response(ctx: Any, body: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:

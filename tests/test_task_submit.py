@@ -7,6 +7,7 @@ from unittest import mock
 
 from codey.app import task_submit
 from codey.app.provider_registry import ProviderRegistry
+from codey.app.run_registry import RunRegistry
 from codey.durable import DurableSession, MemoryDurableStore
 from tests import http_context
 
@@ -25,7 +26,7 @@ class _FakeState:
         self.reserved = reserved
         self.released: list[str] = []
         self.expired: list[str] = []
-        self.run_registry = SimpleNamespace(stop_flag=SimpleNamespace(is_set=lambda: False))
+        self.run_registry = RunRegistry()
 
     def admit_and_claim(self, session_id: str, run_id: str, task: str) -> None:
         self.durable.admit_input(

@@ -14,6 +14,19 @@ it('does not mark the task complete when an incremental answer first appears', (
   expect(chat.querySelector('.spinner')).not.toBeNull();
 });
 
+it('does not let an answer override an authoritative running checkpoint', () => {
+  const chat = document.createElement('div');
+  window.Process.append(chat, { type: 'run_state', runId: 'r', state: 'running' }, () => {});
+  window.Process.append(
+    chat,
+    { type: 'asst', runId: 'r', finalAnswer: true, streamState: 'complete', text: 'Answer' },
+    () => {},
+  );
+  expect(chat.querySelector('.process-title')?.textContent).toContain('Working');
+  window.Process.append(chat, { type: 'run_state', runId: 'r', state: 'done' }, () => {});
+  expect(chat.querySelector('.process-title')?.textContent).toContain('Worked');
+});
+
 it('uses settled run time and restores an individually opened tool result', () => {
   const chat = document.createElement('div');
   const tool = { type: 'tool', kind: 'read', path: 'a.py', result: 'saved output', runId: 'r', toolKey: 'r:1:0' };

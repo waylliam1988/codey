@@ -351,5 +351,21 @@ class UiStateStoreTests(unittest.TestCase):
             })
 
 
+    def test_deleted_identities_cannot_be_recreated_after_lost_acknowledgement(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = UiStateStore(directory)
+            store.save({'active_id':'lost','sessions':[{'id':'lost'}],
+                        'projects':[{'id':'project','path':'E:/project'}]}, base_revision=0)
+            # Creation succeeded, but its client never received that response.
+            deleted = store.forget_session('lost')
+            current = store.save({**deleted, 'projects':[]}, base_revision=deleted['revision'])
+            reopened = UiStateStore(directory)
+            self.assertEqual(reopened.load()['deleted_ids'], {'sessions':['lost'],'projects':['project']})
+            for field, row in [('sessions', {'id':'lost'}), ('projects', {'id':'project','path':'E:/project'})]:
+                with self.assertRaises(UiStateConflict):
+                    reopened.save({**current, field:[row], 'deleted_ids':{}}, base_revision=current['revision'])
+            self.assertEqual(reopened.load()['revision'], current['revision'])
+
+
 if __name__ == "__main__":
     unittest.main()

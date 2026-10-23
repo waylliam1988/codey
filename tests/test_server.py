@@ -7381,13 +7381,19 @@ class UiLaunchTests(unittest.TestCase):
         from codey.app.desktop import open_desktop
         client = mock.Mock()
         client.lifecycle.return_value = {"url": "http://127.0.0.1:43210/#codey_bootstrap=test"}
-        view = mock.Mock()
-        with mock.patch("codey.app.desktop.ensure_service", return_value=client) as ensure, mock.patch.dict("sys.modules", {"webview": view}):
-            open_desktop(Path("state"), port=0)
-        ensure.assert_called_once_with(Path("state"), port=0)
+        view = mock.MagicMock()
+        view.start.side_effect = lambda **kwargs: view.create_window.call_args.kwargs['js_api']._startup.start()
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            with mock.patch("codey.app.desktop_startup.ensure_service", return_value=client) as ensure, mock.patch.dict("sys.modules", {"webview": view}):
+                open_desktop(home, port=0)
+            ensure.assert_called_once_with(home, port=0)
         view.create_window.assert_called_once()
+        self.assertIn('Starting Codey', view.create_window.call_args.kwargs['html'])
         view.start.assert_called_once()
         client.lifecycle.assert_called_once_with("desktop_url")
+        view.create_window.return_value.load_url.assert_called_once()
+
 
 
 if __name__ == "__main__":

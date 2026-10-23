@@ -297,9 +297,6 @@ export interface UiDeps {
   setUpdatedAt?: (value: number) => void;
   getRevision?: () => number;
   setRevision?: (value: number) => void;
-  isDirtySinceBoot?: () => boolean;
-  setDirtySinceBoot?: (value: boolean) => void;
-  bootHadMeaningfulUiState?: () => boolean;
   renderSidebar?: () => void;
   renderChat?: () => void;
   updateComposerContext?: () => void;

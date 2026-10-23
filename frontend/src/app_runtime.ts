@@ -1,3 +1,4 @@
+import type { HistoryTask } from './history_repository';
 import { mergeCommandResult } from './command_result';
 import { DocumentPane, type DocumentRef } from './document_pane';
 import { Workspace } from './workspace';
@@ -5,7 +6,6 @@ import { RecordedPanels } from './recorded_panels';
 import { HistoryPanel } from './history_panel';
 import { ChatFork } from './chat_fork';
 import './chat_fork.css';
-import { mergeForkState } from './fork_state';
 import { CommandPalette } from './command_palette';
 import { iconButton } from './icon_button';
 import './workspace.css';
@@ -231,9 +231,7 @@ function adoptChatFork(
   runtime.Composer.captureDraft();
   const current = runtime.UiState.current();
   const follow = followIntent && current.active_id === baseline.active_id;
-  const state = mergeForkState(result.state, baseline, current);
-  runtime.UiState.apply(state);
-  runtime.UiState.cache();
+  runtime.UiState.accept(result.state);
   if (follow) switchSession(result.session_id);
   else {
     renderSidebar();
@@ -405,7 +403,6 @@ let projects: Project[] = [];
 let activeId = '';
 let uiStateUpdatedAt = 0;
 let uiStateRevision = 0;
-let uiStateDirtySinceBoot = false;
 
 const {
   uid,
@@ -416,9 +413,6 @@ const {
   current: currentUiState,
   cache: cacheUiState,
   cached: cachedUiState,
-  hasMeaningful: hasMeaningfulUiState,
-  hasStored: hasStoredUiState,
-  isNewer: isUiStateNewer,
   flush: flushUiState,
 } = runtime.UiState;
 const persistActive = runtime.UiState.persist;
@@ -427,7 +421,6 @@ const bindUiStatePagehide = runtime.UiState.bindPagehide;
 const restoreUiStateFromServer = runtime.UiState.restoreFromServer;
 
 const bootCachedState = cachedUiState();
-const bootHadMeaningfulUiState = hasMeaningfulUiState(bootCachedState);
 
 runtime.UiState.init({
   getSessions: () => sessions,
@@ -450,11 +443,7 @@ runtime.UiState.init({
   setRevision: (value: number) => {
     uiStateRevision = value;
   },
-  isDirtySinceBoot: () => uiStateDirtySinceBoot,
-  setDirtySinceBoot: (value: boolean) => {
-    uiStateDirtySinceBoot = !!value;
-  },
-  bootHadMeaningfulUiState: () => bootHadMeaningfulUiState,
+  activeSession,
   renderSidebar,
   renderChat,
   updateComposerContext,
@@ -483,7 +472,7 @@ function currentProjectPath() {
 }
 function currentProviderId() {
   const s = activeSession();
-  return s?.provider || liveDefaultProvider();
+  return s ? s.provider : liveDefaultProvider();
 }
 // Provider picker UI lives in the provider_ui module.
 function syncProviderUI(providerId: string) {
@@ -892,10 +881,6 @@ function openProject(projectId: string) {
 function newSession(projectId: string | null = null) {
   const provider = currentProviderId();
   const s = defaultSession(projectId, provider);
-  const previous = activeSession()?.modelSelection;
-  if (previous?.connection_id === provider) {
-    s.modelSelection = { ...previous!, efforts: { ...(previous!.efforts || {}) } };
-  }
   sessions.unshift(s);
   activeId = s.id;
   persistActiveNow();
@@ -904,20 +889,17 @@ function newSession(projectId: string | null = null) {
   renderChat();
   runtime.Composer.syncSession();
   runtime.Composer.updateSend();
-  fetch('/api/new_chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: s.id }),
-  }).catch(() => {});
 }
-async function forgetSessionState(id: string): Promise<boolean> {
+async function forgetSessionState(id: string, preserveUi = false): Promise<boolean> {
   try {
     const response = await fetch('/api/new_chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: id, preserve_ui: false }),
+      body: JSON.stringify({ session_id: id, preserve_ui: preserveUi }),
     });
-    return response.ok;
+    if (!response.ok) return false;
+    runtime.UiState.accept((await response.json()).state);
+    return true;
   } catch {
     return false;
   }
@@ -950,9 +932,10 @@ function renameSession(id: string) {
   focusRenameInput();
 }
 async function clearMessages(id: string): Promise<void> {
+  if (!(await forgetSessionState(id, true))) return;
   const s = sessions.find((x) => x.id === id);
   if (!s) return;
-  if (!(await forgetSessionState(id))) return;
+  runtime.ConversationUI.forget(id);
   s.messages = [];
   s.terminalRuns = [];
   s.researchRuns = [];
@@ -1225,11 +1208,22 @@ function setStatus(text: string, kind: string) {
 const sseEventKey = (data: ServerEvent, fallback = '') => runtime.Sse.eventKey(data, fallback);
 const runLifecycle = new RunLifecycleProjection();
 
-function applyLifecycle(data: ServerEvent, source: LifecycleInput['source'], active?: boolean): boolean {
-  if (data.run_id && runtime.ConversationUI.acceptsRun?.(data.session_id || '', data.run_id) === false) return false;
+function applyLifecycle(
+  data: ServerEvent,
+  source: LifecycleInput['source'],
+  active?: boolean,
+  historySessionId?: string,
+): boolean {
+  if (
+    data.run_id &&
+    runtime.ConversationUI.acceptsRun?.(historySessionId || data.session_id || '', data.run_id) === false
+  )
+    return false;
   const runId = data.run_id || '',
     sessionId = data.session_id || '';
-  const session = sessions.find((item) => item.id === sessionId);
+  const owner = sessions.find((item) => item.id === sessionId);
+  const display = historySessionId ? sessions.find((item) => item.id === historySessionId) : owner;
+  const session = owner || display;
   if (!session || !runId) return false;
   if (session.terminalRuns?.includes(runId)) runLifecycle.restoreTerminal(sessionId, runId);
   const request = runtime.Requests.forRun(sessionId, runId);
@@ -1263,7 +1257,10 @@ function applyLifecycle(data: ServerEvent, source: LifecycleInput['source'], act
   if (view.active) turnIdForRun(sessionId, runId);
   if (view.active) runtime.Composer.observeRun?.(sessionId, runId);
   runtime.Requests.projectLifecycle(data as ServerEventData, view.state);
-  if (view.state !== 'idle') recordRunState(sessionId, runId, view.state, data);
+  if (view.state !== 'idle') {
+    if (owner) recordRunState(sessionId, runId, view.state, data);
+    if (display && display !== owner) recordRunState(display.id, runId, view.active ? 'unknown' : view.state, data);
+  }
   if (data.type === 'task_done') data.stop_reason = view.state;
   persistActive();
   if (activeRuns.size) runtime.Sse.displayRunStatus('running');
@@ -1704,19 +1701,27 @@ function markResearchRestoreAvailability(runIds: unknown) {
   }
 }
 
-function applyRunState(data: RunState) {
-  const owners = new Map((data.active_runs || []).map((run) => [run.run_id, run.session_id]));
-  if (data.busy && data.run_id && data.session_id) owners.set(data.run_id, data.session_id);
-  const versioned = new Set<string>();
-  for (const row of data.task_states || []) {
-    versioned.add(row.run_id);
+function projectTaskStates(
+  tasks: HistoryTask[],
+  owners: Map<string, string> = activeRuns,
+  historySessionId?: string,
+): void {
+  for (const row of tasks) {
     const state = lifecycleState(row.task_status, row.stop_reason, 'idle');
     applyLifecycle(
       { ...row, type: state === 'running' ? 'task_start' : 'task_done' },
       'snapshot',
       state === 'running' || (owners.has(row.run_id) && ['approval', 'question', 'waiting'].includes(state)),
+      historySessionId,
     );
   }
+}
+
+function applyRunState(data: RunState) {
+  const owners = new Map((data.active_runs || []).map((run) => [run.run_id, run.session_id]));
+  if (data.busy && data.run_id && data.session_id) owners.set(data.run_id, data.session_id);
+  const versioned = new Set((data.task_states || []).map((row) => row.run_id));
+  projectTaskStates(data.task_states || [], owners);
   // Compatibility for older servers and admission-only test adapters. Actual
   // task revisions always win over this unversioned registry projection.
   for (const [runId, sessionId] of owners)
@@ -2312,6 +2317,7 @@ async function boot() {
     getSessions: () => sessions,
   });
   runtime.ConversationUI.init({
+    projectTasks: (tasks: HistoryTask[], sessionId: string) => projectTaskStates(tasks, activeRuns, sessionId),
     activeSession,
     activeProject,
     getSessions: () => sessions,

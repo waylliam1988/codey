@@ -106,19 +106,23 @@ def test_send_admission_does_not_wait_for_slow_state_reconciliation(page):
 
 
 @pytest.mark.parametrize("status", [500, 409])
-def test_save_failure_and_retry_keep_current_input_without_reloading_or_running(page, status):
+def test_save_failure_recovers_without_reloading_or_running(page, status):
     calls = []
     def save(route):
+        if route.request.method == 'GET':
+            route.fulfill(json={'state':page.codey_context.load_ui_state()})
+            return
         calls.append(route.request.method)
-        route.fulfill(status=status, json={"revision": 9})
+        base = route.request.post_data_json['base_revision']
+        route.fulfill(status=status if len(calls)==1 else 200,
+                      json={'ok':len(calls)>1,'revision':base+1})
     page.route("**/api/ui_state", save)
     page.locator("#task").fill("must stay")
-    page.evaluate("UiState.flush()")
-    expect(page.get_by_role("button", name="Retry", exact=True)).to_be_visible()
-    page.route("**/api/ui_state", lambda route: route.fulfill(json={"ok": True, "revision": 10}))
-    page.get_by_role("button", name="Retry", exact=True).click()
+    page.evaluate("UiState.ensureSaved()")
+    assert page.evaluate("UiState.ensureSaved()") is True
     expect(page.locator("#task")).to_have_value("must stay")
     expect(page.locator("#ui-save-notice")).to_be_hidden()
+    assert page.locator('.msg.user').count() == 0
     assert set(calls) == {"POST"}
 
 
@@ -174,41 +178,27 @@ def test_new_browser_context_restores_draft_from_real_http_storage(page, ui_brow
         context.close()
 
 
-def test_conflict_blocks_automatic_overwrite_until_explicit_retry(page):
-    calls = []
-    page.route('**/api/ui_state', lambda r: (calls.append(r.request.method), r.fulfill(status=409,json={'revision':9})))
-    page.locator('#task').fill('First edit')
-    page.evaluate('UiState.flush()')
-    expect(page.locator('#ui-save-notice')).to_be_visible()
-    first = len(calls)
-    page.locator('#task').fill('New edit after conflict')
-    page.evaluate('UiState.flush()')
-    page.evaluate('()=>new Promise(resolve=>setTimeout(resolve,0))')
-    assert len(calls) == first
-    expect(page.locator('#task')).to_have_value('New edit after conflict')
-
-
-def test_malformed_success_response_is_not_reported_as_saved(page):
+def test_transient_malformed_save_response_retains_draft_without_immediate_warning(page):
     page.route('**/api/ui_state', lambda r:r.fulfill(body='{broken',content_type='application/json'))
     page.locator('#task').fill('Still unsaved')
-    page.evaluate('UiState.flush()')
-    expect(page.locator('#ui-save-notice')).to_be_visible()
+    assert page.evaluate('UiState.ensureSaved()') is False
+    expect(page.locator('#ui-save-notice')).to_be_hidden()
     expect(page.locator('#task')).to_have_value('Still unsaved')
 
 
-def test_pagehide_after_conflict_caches_draft_without_beacon_overwrite(page):
-    page.route('**/api/ui_state', lambda r:r.fulfill(status=409,json={'revision':9}))
+def test_pagehide_during_save_caches_draft_without_duplicate_beacon(page):
+    pending = []
+    page.route('**/api/ui_state', lambda route: pending.append(route))
     page.locator('#task').fill('Keep this local draft')
     page.evaluate('UiState.flush()')
-    expect(page.locator('#ui-save-notice')).to_be_visible()
     sent = page.evaluate("""() => {
       const beacons=[];navigator.sendBeacon=(url,body)=>{beacons.push(url);return true;};
       dispatchEvent(new PageTransitionEvent('pagehide'));
       return beacons;
     }""")
     assert sent == []
-    page.reload()
-    expect(page.locator('#task')).to_have_value('Keep this local draft')
+    assert 'Keep this local draft' in page.evaluate("localStorage.getItem('codey:ui-cache')")
+    pending[0].fulfill(status=503,json={'error':'offline'})
 
 
 def test_cached_draft_cannot_send_before_initial_server_restore_finishes(page):

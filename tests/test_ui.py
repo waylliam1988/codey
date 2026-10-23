@@ -168,7 +168,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
 
     def test_context_handoff_stays_hidden(self) -> None:
-        self.assertIn("JSON.stringify({ session_id: s.id })", HTML)
+        self.assertNotIn("fetch(\'/api/new_chat\'", APP_RUNTIME_SOURCE[APP_RUNTIME_SOURCE.index("function newSession("):APP_RUNTIME_SOURCE.index("async function forgetSessionState(")])
         self.assertNotIn("/compact", HTML)
         self.assertNotIn("context limit", HTML.lower().split("<dialog")[0])
         self.assertNotIn("context compression", HTML.lower())
@@ -308,7 +308,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("commandTruncated: !!data.command_truncated", HTML)
 
     def test_provider_status_is_quiet_and_refreshes_on_menu_open(self) -> None:
-        open_block = PROVIDER_UI_JS[PROVIDER_UI_JS.index("function openMenu()"):PROVIDER_UI_JS.index("function applyRecommended")]
+        open_block = PROVIDER_UI_JS[PROVIDER_UI_JS.index("function openMenu()"):PROVIDER_UI_JS.index("function applyProviderConfig")]
         self.assertIn("refreshProviderStatus();", open_block)
         self.assertIn("if (data.type === 'providers')", HTML)
         self.assertIn("applyProviderStatus(data.providers)", HTML)
@@ -580,7 +580,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("persistActiveNow();", HTML[switch_start:switch_end])
 
         new_start = HTML.index("function newSession(projectId = null)")
-        new_end = HTML.index("async function forgetSessionState(id)", new_start)
+        new_end = HTML.index("async function forgetSessionState(", new_start)
         self.assertIn("persistActiveNow();", HTML[new_start:new_end])
 
         prov_start = COMPOSER_JS.index("function setActiveProvider(id)")

@@ -25,6 +25,7 @@ from codey.durable.model import (
     EntryDraft,
     thaw_json,
 )
+from codey.durable.task_projection import task_lifecycle
 
 
 def entries(session: Any, conversation_id: str) -> tuple[EntryDraft, ...]:
@@ -103,6 +104,7 @@ def history_page(
         "snapshot_revision": revision,
         "inactive_run_ids": inactive_runs,
         "items": items,
+        "task_states": [task_lifecycle(session.store.task(run)) for run in sorted({entry.by_task_id for entry in selected if entry.by_task_id})],
         "before_cursor": cursor,
         "has_more": has_more,
     }
@@ -188,6 +190,7 @@ def history_window(session: Any, conversation_id: str, entry_id: str, *, limit: 
         'schema_version': 1, 'session_id': conversation_id, 'epoch': session.database_id,
         'snapshot_revision': revision,
         'items': [_history_item(entry, start + index + 1) for index, entry in enumerate(selected)],
+        'task_states': [task_lifecycle(session.store.task(run)) for run in sorted({entry.by_task_id for entry in selected if entry.by_task_id})],
         'has_more': start > 0, 'has_after': end < len(path),
         'before_cursor': _encode_history_cursor(conversation_id, selected[0].entry_id, path[-1].entry_id, revision) if start else None,
     }

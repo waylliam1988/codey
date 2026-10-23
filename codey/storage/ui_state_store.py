@@ -232,13 +232,22 @@ def _clean_projects(value: object) -> list[dict[str, Any]]:
 def _clean_payload(payload: object) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return _empty_state()
-    return {
+    clean: dict[str, Any] = {
         "active_id": _str(payload.get("active_id")),
         "sessions": _clean_sessions(payload.get("sessions")),
         "projects": _clean_projects(payload.get("projects")),
         "updated_at": _int(payload.get("updated_at")),
         "revision": _int(payload.get("revision")),
     }
+
+    deleted = payload.get("deleted_ids")
+    if isinstance(deleted, dict):
+        clean["deleted_ids"] = {
+            kind: sorted({_str(value) for value in deleted.get(kind, []) if isinstance(value, str) and value})
+            if isinstance(deleted.get(kind), list) else list[str]()
+            for kind in ("sessions", "projects")
+        }
+    return clean
 
 
 class UiStateConflict(ValueError):
@@ -295,12 +304,22 @@ class UiStateStore:
         clean = _clean_payload(state)
         current = self._current()
         current_revision = _int(current.get("revision"))
+        deleted = {kind: set(current.get("deleted_ids", {}).get(kind, [])) for kind in ("sessions", "projects")}
+        if any(row["id"] in deleted[kind] for kind in deleted for row in clean[kind]):
+            raise UiStateConflict(current_revision)
         if type(base_revision) is not int or base_revision != current_revision:
             if _content_equal(clean, current):
                 return current
             raise UiStateConflict(current_revision)
         if _content_equal(clean, current):
             return current
+        for kind in deleted:
+            deleted[kind].update({row["id"] for row in current[kind]} - {row["id"] for row in clean[kind]})
+        # Server-owned deletion identities share this one atomic metadata commit.
+        # A lost creation acknowledgement cannot turn a later deletion into a new addition.
+        clean.pop("deleted_ids", None)
+        if any(deleted.values()):
+            clean["deleted_ids"] = {kind: sorted(values) for kind, values in deleted.items()}
         clean["updated_at"] = max(_int(clean.get("updated_at")), _int(current.get("updated_at")))
         clean["revision"] = current_revision + 1
         write_json_atomic(
@@ -324,9 +343,12 @@ class UiStateStore:
         current = self._current()
         old_sessions = current.get("sessions", [])
         sessions = [s for s in old_sessions if isinstance(s, dict) and str(s.get("id") or "") != target]
-        if len(sessions) == len(old_sessions):
+        deleted = {kind: set(current.get("deleted_ids", {}).get(kind, [])) for kind in ("sessions", "projects")}
+        if len(sessions) == len(old_sessions) and target in deleted["sessions"]:
             return current
+        deleted["sessions"].add(target)
         clean = dict(current)
+        clean["deleted_ids"] = {kind: sorted(values) for kind, values in deleted.items()}
         clean["sessions"] = sessions
         if clean.get("active_id") == target:
             clean["active_id"] = str(sessions[-1].get("id") or "") if sessions else ""

@@ -44,15 +44,18 @@ def publish_inventory(ctx: Any) -> None:
 
 
 def import_ui(ctx: Any) -> None:
-    """Idempotently adopt legacy/empty UI sessions without changing history."""
+    """Idempotently adopt configured UI sessions without changing history."""
     state = ctx.load_ui_state()
     projects = {item["id"]: item["path"] for item in state["projects"]}
     with ctx.durable.control_line():
         for item in state["sessions"]:
+            # An unconfigured empty chat has no execution configuration to import.
+            if not item.get("provider"):
+                continue
             if control.latest(ctx.durable, item["id"]) is not None:
                 continue
             config = {"conversation_id": item["id"], "title": item.get("title") or "Chat",
-                      "provider": item.get("provider") or "deepseek", "project": projects.get(item.get("projectId"), ""),
+                      "provider": item["provider"], "project": projects.get(item.get("projectId"), ""),
                       "model_selection": item.get("modelSelection", {}), "created_at": time.time(),
                       "mode": "manual", "controller_actor_id": "", "created_by": "user", "control_generation": 0,
                       "expires_at": 0, "max_revisions": 3, "root_request_id": "", "max_seconds": 1800}

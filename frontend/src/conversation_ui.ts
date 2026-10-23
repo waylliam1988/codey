@@ -1,3 +1,4 @@
+import type { HistoryTask } from './history_repository';
 import { runtime } from './runtime';
 import { nestedOwnsScroll } from './scroll_owner';
 import type { Message, Project, Session } from './types/domain';
@@ -36,6 +37,7 @@ export interface ConversationUiApi {
   menusClosed(restore?: boolean): void;
 }
 export interface ConversationUiDeps {
+  projectTasks(tasks: HistoryTask[], sessionId: string): void;
   activeSession(): Session | undefined;
   activeProject(): Project | null | undefined;
   getSessions(): Session[];
@@ -176,7 +178,8 @@ export interface ConversationUiDeps {
     }
     searchPanel.open();
   }
-  const history = new ConversationHistory((session, revealEarlier) => {
+  const history = new ConversationHistory((session, revealEarlier, tasks) => {
+    if (tasks) deps.projectTasks(tasks, session.id);
     runtime.UiState?.hydrateSessionIndexes(session);
     if (revealEarlier) {
       // A mounted history window prepends its older entries in-place after

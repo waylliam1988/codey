@@ -340,7 +340,7 @@ def test_current_attempt_can_receive_its_answer_after_terminal_state(page):
     expect(page.locator(".msg.asst")).to_contain_text("Final answer")
 
 
-def test_prior_attempt_still_releases_global_busy_state_after_retry_admission_refusal(page):
+def test_terminal_attempt_cannot_be_revived_by_stale_busy_snapshot_after_retry_refusal(page):
     calls, state = backend(page)
     first = send(page, calls)
     finish(page, state, first)
@@ -348,7 +348,7 @@ def test_prior_attempt_still_releases_global_busy_state_after_retry_admission_re
     state.update(busy=True, run_id=first, session_id="a")
     page.route("**/api/run", lambda route: route.fulfill(status=409, json={"error": "busy"}))
     retry(page)
-    assert page.evaluate("runningRunId") == first
+    assert page.evaluate("runningRunId") is None
     finish(page, state, first, "Earlier execution finished", "done")
     assert page.evaluate("runningRunId") is None
     expect(page.get_by_role("button", name="Retry", exact=True)).to_be_enabled()

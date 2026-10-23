@@ -9,7 +9,14 @@ from tests.test_ui_workflow import ui_browser as ui_browser
 
 
 def append_message(page, kind="asst", text="A message to copy."):
-    page.evaluate("([kind,text]) => addToSession('a',{type:kind,text})", [kind, text])
+    if kind == 'user' and hasattr(page, 'codey_context'):
+        durable = page.codey_context.durable
+        if not durable.has_conversation('a'):
+            durable.create_conversation('a')
+        durable.append_message('a', 'user_message', {'text': text})
+        page.evaluate("ConversationUI.refreshHistory('a')")
+    else:
+        page.evaluate("([kind,text]) => addToSession('a',{type:kind,text})", [kind, text])
     messages = page.locator(f".msg.{kind}")
     return messages.nth(messages.count() - 1)
 
@@ -92,6 +99,9 @@ def test_keyboard_tab_reveals_copy_and_enter_copies_without_hover(page, kind):
         expect(message.locator('.msg-edit')).to_be_focused()
         expect_opacity(copy, 1)
         page.keyboard.press('Tab')
+        expect(message.get_by_role('button', name='Fork chat from here', exact=True)).to_be_focused()
+        expect_opacity(copy, 1)
+        page.keyboard.press('Tab')
     expect_opacity(copy, 0)
 
 
@@ -158,13 +168,13 @@ def test_copy_remains_visible_and_tappable_without_hover(ui_browser, kind):
     touch = browser.new_page(has_touch=True, is_mobile=True, viewport={"width": 480, "height": 800})
     try:
         touch.add_init_script("window.__TEST_BRIDGE__ = true; window.EventSource = class { static OPEN = 1; readyState = 1; close() {} };")
-        state = {"active_id": "a", "projects": [], "sessions": [{"id": "a", "title": "Touch", "provider": "deepseek", "messages": []}]}
+        state = {"active_id": "a", "revision": 1, "projects": [], "sessions": [{"id": "a", "title": "Touch", "provider": "deepseek", "messages": []}]}
 
         def api(route):
             path = route.request.url.split("/api/")[-1].split("?")[0]
             data = {"ok": True}
             if path == "ui_state":
-                data = {"state": state}
+                data = {"state": state} if route.request.method == 'GET' else {'ok':True,'revision':1}
             elif path in {"provider_catalog", "providers"}:
                 data = {"default": "deepseek", "providers": [{"id": "deepseek", "label": "DeepSeek", "available": False}]}
             route.fulfill(json=data)

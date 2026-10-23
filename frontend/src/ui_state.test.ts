@@ -30,6 +30,7 @@ describe('ui state persistence boundary', () => {
       getRevision: () => 0,
       setRevision: () => undefined,
     });
+    window.UiState.accept({ sessions: [], projects: [], active_id: '', revision: 0 });
   });
 
   it('ignores malformed persisted entries without throwing', () => {
@@ -85,7 +86,7 @@ describe('ui state persistence boundary', () => {
     const current = window.UiState.current();
     expect((current.sessions as object[])[0]).not.toHaveProperty('messages');
     window.UiState.cache();
-    expect(localStorage.getItem('codey:sessions')).not.toContain('secret transcript');
+    expect(localStorage.getItem('codey:ui-cache')).not.toContain('secret transcript');
     window.UiState.apply({ sessions: [{ id: 's1', title: 'Chat', draft: session.draft }] });
     expect(window.__testSessions[0]).toMatchObject({
       messages: [{ type: 'user', text: 'secret transcript' }],

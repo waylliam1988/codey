@@ -2,6 +2,42 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## UI state and task history (2026-10-23)
+
+Empty-chat creation preserves an enabled explicit model selection and independent
+thinking preferences, otherwise exposing `Choose model`. Directory order and
+connection defaults cannot implicitly select a disabled model. UI metadata uses
+one versioned synchronization entry point and a single atomic local cache envelope.
+Conflicts reconcile pending edits, and server-owned deletion identities prevent
+resurrection even after a creation response was lost. Clear-history preserves the
+session and draft. Generic `Not saved` feedback is removed; transient errors retry
+silently, while sustained draft failures name the affected draft explicitly.
+
+History pages and focused windows read task checkpoint versions from the existing
+durable store. They use the same lifecycle projection as live events. Tool history
+alone cannot imply an active task; an answer cannot override a Running checkpoint.
+Inherited fork history never assigns a source task's Stop ownership to the child.
+No task runtime, task store or persistent lifecycle display-event copy was added.
+See [ownership and synchronization](docs/ui-state-and-history.md).
+
+| Check | Result |
+| --- | --- |
+| Backend, history, metadata, edit and control regressions | **135 passed, 6 subtests; 56.62s** |
+| Complete server test module | **208 passed; 205.01s** |
+| Core shipped-page browser chains | **115 passed; 153.11s** (deletion, drafts, choices, restart/history, Stop, Continue, edit, reading and settings) |
+| Expanded UI failure regressions and related coverage | **77 passed; 106.73s** (overlaps the core UI selections) |
+| Frontend | **50 files / 272 tests passed**; TypeScript, Biome, production build and published metadata passed |
+| Python static checks | Repository Ruff and full-tree mypy (**509 source files**), Pyrefly and ty passed for **3.11, 3.12 and 3.13**; Pyrefly retains **80 existing warnings and 29 suppressions**, with zero errors |
+
+Regression cases include deleting the last chat, model disabling, clearing history,
+concurrent fields, edits during acknowledgement, stale mutation responses, cache
+migration, reconnect, a lost creation response followed by remote deletion, failed
+and cancelled task recovery, unowned checkpoint cancellation, stale lifecycle events,
+fork ancestry, and final-answer/checkpoint ordering. Expanded tests use real metadata
+stores and valid durable message identities instead of production compatibility hooks.
+The previous full-suite result below remains historical; this work did not rerun
+all repository tests or measure coverage. Native UI was not operated.
+
 ## Desktop startup (2026-10-23)
 
 The native desktop now creates its startup window before shared-service work.

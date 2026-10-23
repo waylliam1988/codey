@@ -13,7 +13,7 @@ def test_dom_harness_does_not_start_before_delayed_state_restore(ui_browser, mon
     page = browser.new_page()
     pending = []
     waiting_for_restore = False
-    state = {"active_id": "restored", "projects": [], "sessions": [
+    state = {"active_id": "restored", "revision": 1, "projects": [], "sessions": [
         {"id": "restored", "title": "Restored", "provider": "deepseek", "messages": []}]}
 
     def hold_restore(route):
@@ -23,7 +23,7 @@ def test_dom_harness_does_not_start_before_delayed_state_restore(ui_browser, mon
             else:
                 pending.append(route)
         else:
-            route.fulfill(json={"ok": True})
+            route.fulfill(json={"ok": True, "revision": 2})
 
     page.route("**/api/ui_state", hold_restore)
     real_goto = page.goto

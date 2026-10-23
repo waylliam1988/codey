@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { mergeForkState } from './fork_state';
+import { mergeUiState } from './ui_state_merge';
 
 it('preserves drafts and renamed projects changed during admission without dropping a saved new branch', () => {
   const baseline = {
@@ -20,13 +20,13 @@ it('preserves drafts and renamed projects changed during admission without dropp
     sessions: [{ id: 'fork', title: 'Fork' }, ...baseline.sessions],
     projects: baseline.projects,
   };
-  const result = mergeForkState(server, baseline, current);
+  const result = mergeUiState(baseline, current, server);
   expect(result.active_id).toBe('b');
   expect(result.revision).toBe(9);
   expect(result.sessions).toEqual([
-    { id: 'fork', title: 'Fork' },
     { id: 'a', title: 'Old', draft: { text: 'typing' } },
     { id: 'b', title: 'Local new chat' },
+    { id: 'fork', title: 'Fork' },
   ]);
   expect(result.projects).toEqual([{ id: 'p', name: 'New project' }]);
 });

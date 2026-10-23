@@ -270,12 +270,6 @@ export interface ProviderUiApi {
     // Legacy form retained for callers without an immediate probe: refreshProviderStatus();
   }
 
-  function applyRecommended(data: unknown) {
-    if (isRecord(data) && data.recommended && runtime.UiState && typeof runtime.UiState.setRecommended === 'function') {
-      runtime.UiState.setRecommended(data.recommended);
-    }
-  }
-
   function applyProviderConfig(data: unknown) {
     let catalog;
     try {
@@ -309,11 +303,9 @@ export interface ProviderUiApi {
     }
     const defaultId = catalog.defaultProvider;
     if (!changed && defaultId && defaultId !== DEFAULT_PROVIDER && labels[defaultId]) changed = true;
-    applyRecommended(catalog.recommendedProvider ? { recommended: catalog.recommendedProvider } : {});
     if (!changed) return false;
     runtime.UiState.setProviders(ids, labels, defaultId);
     DEFAULT_PROVIDER = runtime.UiState.DEFAULT_PROVIDER;
-    applyRecommended(catalog.recommendedProvider ? { recommended: catalog.recommendedProvider } : {});
     providerStatus = Object.fromEntries(PROVIDERS.map((id) => [id, !!providerStatus[id]]));
     providerState = Object.fromEntries(PROVIDERS.map((id) => [id, providerState[id] || 'unknown']));
     providerUpdatedAt = Object.fromEntries(PROVIDERS.map((id) => [id, providerUpdatedAt[id] || 0]));
@@ -354,11 +346,12 @@ export interface ProviderUiApi {
     return state === 'ready' || state === 'stale' ? 'ok' : state === 'checking' ? 'checking' : '';
   }
   function syncProviderUI(providerId: string): void {
-    const id = providerId || DEFAULT_PROVIDER;
+    const id = providerId;
     const selection = sessionSelection();
     const reason = runtime.Models.reason(id, selection.model);
     $('provider-name').textContent =
-      (selection.model ? modelTitle(selection.model, id) : providerLabel(id)) + (reason ? ' · ' + reason : '');
+      (selection.model ? modelTitle(selection.model, id) : !id || apiModels[id] ? 'Choose model' : providerLabel(id)) +
+      (id && reason && (selection.model || !apiModels[id]) ? ' · ' + reason : '');
     const staleConnection =
       id === 'local' && selection.base_url && localMetadata.base_url && selection.base_url !== localMetadata.base_url;
     $('provider-button').setAttribute(
@@ -478,7 +471,7 @@ export interface ProviderUiApi {
         : {
             connection_id: id,
             base_url: connection.base_url || '',
-            model: connection.default_model || connection.models?.[0]?.id || '',
+            model: '',
             efforts: {},
           };
     return {

@@ -1,3 +1,5 @@
+import type { RunState } from './types/domain';
+export type HistoryTask = NonNullable<RunState['task_states']>[number];
 export interface HistoryPage {
   schema_version: 1;
   session_id: string;
@@ -8,6 +10,7 @@ export interface HistoryPage {
   has_more: boolean;
   has_after?: boolean;
   inactive_run_ids?: string[];
+  task_states?: HistoryTask[];
 }
 
 export interface HistoryResult {
@@ -18,6 +21,7 @@ export interface HistoryResult {
   revision: number;
   hasAfter?: boolean;
   inactiveRuns?: string[];
+  taskStates?: HistoryTask[];
 }
 
 class HistorySnapshotChanged extends Error {}
@@ -71,6 +75,7 @@ export class HistoryRepository {
       cursor: page.before_cursor || null,
       epoch: page.epoch,
       revision: page.snapshot_revision,
+      taskStates: page.task_states,
       inactiveRuns: page.inactive_run_ids,
     };
     return this.page;
@@ -98,6 +103,7 @@ export class HistoryRepository {
         cursor: page.before_cursor || null,
         epoch: page.epoch,
         revision: page.snapshot_revision,
+        taskStates: page.task_states,
         hasAfter: previous.hasAfter,
       };
       return this.page;
@@ -135,6 +141,7 @@ export class HistoryRepository {
       cursor: page.before_cursor || null,
       epoch: page.epoch,
       revision: page.snapshot_revision,
+      taskStates: page.task_states,
       hasAfter: page.has_after === true,
     };
     return this.page;
@@ -166,6 +173,21 @@ export class HistoryRepository {
       !data.items.every(
         (item) => item && typeof item === 'object' && typeof item.id === 'string' && item.id.length > 0,
       ) ||
+      (data.task_states !== undefined &&
+        (!Array.isArray(data.task_states) ||
+          !data.task_states.every(
+            (task) =>
+              task &&
+              typeof task.session_id === 'string' &&
+              task.session_id.length > 0 &&
+              typeof task.run_id === 'string' &&
+              task.run_id.length > 0 &&
+              Number.isSafeInteger(task.task_revision) &&
+              task.task_revision >= 0 &&
+              ['pending', 'running', 'waiting', 'completing', 'completed', 'failed', 'cancelled'].includes(
+                task.task_status,
+              ),
+          ))) ||
       typeof data.has_more !== 'boolean' ||
       (data.has_more && (typeof data.before_cursor !== 'string' || !data.before_cursor))
     )

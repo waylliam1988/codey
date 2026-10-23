@@ -11,8 +11,10 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect, sync_playwright
 
+from codey.app import api as app_api
 from codey.app import server
 from codey.app.http_plumbing import resolve_web_asset, send_index
+from codey.storage.ui_state_store import UiStateStore
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -43,6 +45,16 @@ def page(ui_browser):
     browser, url = ui_browser
     app_context = server.CodeyHTTPServer.app_context
     assert app_context is not None
+    # Each page begins with independent task facts, not leftovers from another test's mocked worker.
+    for active in app_context.active_runs():
+        app_context.request_stop(active.run_id)
+        app_context.release_run(active.run_id)
+    for task in app_context.durable.pending_tasks():
+        if task.conversation_id in {'a', 'b'}:
+            app_context.durable.cancel_task(task.task_id)
+    for scope in ('a', 'b'):
+        if app_context.durable.has_conversation(scope):
+            app_context.durable.delete_conversation(scope)
     page = browser.new_page(viewport={"width": 1280, "height": 800})
     boot_errors = []
     page.on("pageerror", lambda error: boot_errors.append(str(error)))
@@ -69,6 +81,10 @@ def page(ui_browser):
         {"id": "a", "title": "Alpha", "provider": "deepseek", "messages": []},
         {"id": "b", "title": "Beta", "provider": "mimo", "messages": []}], "projects": []}
 
+    app_context.ui_state_store.path.unlink(missing_ok=True)
+    app_context.ui_state_store = UiStateStore(app_context.ui_state_store.path.parent)
+    app_context.save_ui_state(ui_state, base_revision=0)
+
     def api(route):
         parsed = urlsplit(route.request.url)
         path = parsed.path.split("/api/")[-1]
@@ -77,8 +93,17 @@ def page(ui_browser):
             data = {"providers": catalog, "default": "deepseek"}
         elif path == "model_settings":
             data = model_management_payload()
-        elif path == "ui_state" and route.request.method == "GET":
-            data = {"state": ui_state}
+        elif path == "ui_state":
+            if route.request.method == "GET":
+                data = {"state": app_context.load_ui_state()}
+            else:
+                status, data = app_api.save_ui_state_response(app_context, route.request.post_data_json)
+                route.fulfill(status=status, json=data)
+                return
+        elif path == "new_chat":
+            status, data = app_api.new_chat_response(app_context, route.request.post_data_json)
+            route.fulfill(status=status, json=data)
+            return
         elif path.startswith("sessions/") and path.endswith("/messages"):
             session_id = path.split("/")[1]
             query = parse_qs(parsed.query)
@@ -233,7 +258,7 @@ def test_local_model_title_and_connection_dot_survive_online_and_offline_reload(
     saved = LocalProviderConfig(base_url=base_url, model=model, display_name=display_name) if remembered else LocalProviderConfig()
     local = {'connected': True, 'base_url': base_url, 'model': model, 'models': [model]}
     page.route('**/api/model_settings', lambda route: route.fulfill(json=model_management_payload(api_connection_payload({'model': model, 'base_url': base_url}))))
-    page.route('**/api/ui_state', lambda route: route.fulfill(json={'ok': True, 'state': state}))
+    page.codey_context.save_ui_state(state, base_revision=page.codey_context.load_ui_state()['revision'])
     page.route('**/api/local_provider', lambda route: route.fulfill(json=api.local_provider_response()[1]))
     page.route('**/api/api_models', lambda route: route.fulfill(json={'connections': [api_connection_payload(api.local_provider_response()[1]['local'])]}))
     # Prevent unrelated availability refreshes from claiming the offline model is up.
@@ -767,7 +792,7 @@ def test_reading_position_and_back_to_latest(page):
     page.evaluate("addToSession('a', {type:'asst',text:'New output'})")
     expect(page.get_by_role("button", name="Back to latest", exact=True)).to_be_visible()
     page.get_by_role("button", name="Back to latest", exact=True).click()
-    assert page.locator("#chat-area").evaluate("e => e.scrollHeight - e.scrollTop - e.clientHeight") < 4
+    page.wait_for_function("() => { const area=document.getElementById('chat-area'); return area.scrollHeight-area.scrollTop-area.clientHeight < 4; }")
 
 
 def test_search_and_inspection_scope_close_on_chat_switch(page):

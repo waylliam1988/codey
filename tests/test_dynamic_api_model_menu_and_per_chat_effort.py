@@ -90,7 +90,7 @@ def test_removed_connection_stays_readable_and_cannot_silently_send_to_default(p
     durable.append_message("a", "assistant_message", {"text": "Stored answer"})
     state = {"active_id": "a", "projects": [], "sessions": [{"id": "a", "provider": "retired-api", "title": "Old chat",
              "modelSelection": {"connection_id": "retired-api", "model": "old-model", "efforts": {}}}]}
-    page.route("**/api/ui_state", lambda route: route.fulfill(json={"state": state}))
+    page.codey_context.save_ui_state(state, base_revision=page.codey_context.load_ui_state()['revision'])
     requests = []
     page.route("**/api/run", lambda route: (requests.append(route.request.post_data_json), route.fulfill(status=400, json={"error": "unsupported provider"})))
     try:

@@ -121,7 +121,7 @@ export class RunLifecycleProjection {
 
 export function lifecycleState(status: string | undefined, reason: string | undefined, fallback: string): string {
   if (status === 'cancelled') return 'stopped';
-  if (status === 'failed') return reason && !isRunSuspension(reason) && reason !== 'done' ? reason : 'error';
+  if (status === 'failed') return 'error';
   if (status === 'completed') return reason === 'max_turns' ? reason : 'done';
   if (status === 'waiting') return isRunSuspension(reason) ? reason! : 'waiting';
   if (status === 'running' || status === 'pending' || status === 'completing') return 'running';

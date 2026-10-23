@@ -793,11 +793,11 @@
   .ctx-folder { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ctx-research, .ctx-sep { flex-shrink: 0; }
   .ui-save-notice {
-    display: flex; align-items: baseline; gap: 4px; flex-shrink: 0;
+    display: flex; align-items: baseline; gap: 4px; flex-shrink: 1; min-width: 0; max-width: 55%;
     color: var(--text-dim); padding: 1px 4px; white-space: nowrap;
   }
-  .ui-save-notice .link-btn { font: inherit; }
-  .ui-save-notice .link-btn[aria-disabled="true"] { color: var(--faint); cursor: default; }
+  .ui-save-notice .link-btn { font: inherit; flex-shrink: 0; }
+  #ui-save-message { overflow: hidden; text-overflow: ellipsis; }
   .ui-save-detail {
     position: absolute; width: 1px; height: 1px; padding: 0; border: 0;
     overflow: hidden; clip-path: inset(50%); white-space: nowrap;

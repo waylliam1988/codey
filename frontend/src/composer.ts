@@ -207,9 +207,13 @@ export interface ComposerApi {
     const selection = runtime.ProviderUI.runSelection(deps.activeSession(), currentProviderId()).model_selection;
     const reason = runtime.Models.reason(currentProviderId(), selection?.model);
     const notice = $('model-notice');
-    notice.hidden = !reason;
+    const unselected =
+      !currentProviderId() ||
+      (!selection?.model &&
+        runtime.Models.connections().some((source: { id: string }) => source.id === currentProviderId()));
+    notice.hidden = !reason || unselected;
     notice.replaceChildren();
-    if (reason) {
+    if (reason && !unselected) {
       notice.append(
         runtime.Models.hasAny()
           ? 'This model is ' + reason.toLowerCase() + '. Choose another model or enable it in '
@@ -573,7 +577,13 @@ export interface ComposerApi {
       if (isRunningForSession(sessionId)) {
         if (outbox.blocked(sessionId)) return;
         updateSend();
-        if (!(await runtime.UiState.ensureSaved())) return;
+        if (!(await runtime.UiState.ensureSaved())) {
+          deps.addToSession(sessionId, {
+            type: 'err',
+            text: 'Could not save chat settings. Your message was not sent. Try again.',
+          });
+          return;
+        }
         const request: QueuedRequest = {
           session_id: sessionId,
           run_id: 'run_' + crypto.randomUUID().replaceAll('-', ''),

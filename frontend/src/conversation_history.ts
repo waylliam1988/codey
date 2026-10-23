@@ -1,4 +1,4 @@
-import { HistoryRepository, type HistoryResult } from './history_repository';
+import { HistoryRepository, type HistoryResult, type HistoryTask } from './history_repository';
 import type { Message, Session } from './types/domain';
 
 /** Durable entry identity replaces a live projection; message text is never an identity. */
@@ -98,7 +98,7 @@ export class ConversationHistory {
     }
   }
 
-  constructor(private changed: (session: Session, revealEarlier?: boolean) => void) {}
+  constructor(private changed: (session: Session, revealEarlier?: boolean, tasks?: HistoryTask[]) => void) {}
 
   ensure(session: Session): void {
     if (this.sessions.get(session.id) !== session) void this.refresh(session);
@@ -129,7 +129,7 @@ export class ConversationHistory {
     if (!page || this.requests.get(session.id) !== request) return false;
     session.messages = reconcileHistory(session.messages, page.items);
     this.errors.delete(session.id);
-    this.changed(session);
+    this.changed(session, false, page.taskStates);
     return true;
   }
 
@@ -154,7 +154,7 @@ export class ConversationHistory {
       if (this.requests.get(session.id) !== request) return;
       this.errors.add(session.id);
     }
-    this.changed(session);
+    this.changed(session, false, repository.current?.taskStates);
   }
 
   async earlier(session: Session): Promise<void> {
@@ -168,7 +168,7 @@ export class ConversationHistory {
     } catch {
       this.errors.add(session.id);
     }
-    this.changed(session, true);
+    this.changed(session, true, repository?.current?.taskStates);
   }
 
   forget(id: string): void {
