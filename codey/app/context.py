@@ -33,6 +33,7 @@ from codey.app.knowledge_indexer import KnowledgeIndexer
 from codey.app.provider_registry import ProviderRegistry
 from codey.app.run_registry import RunRegistry, RunSnapshot
 from codey.app.runtime_adapters import DurableRuntimeAdapters
+from codey.app.task_abort import abort_task_resources
 from codey.durable.model import (
     CommitResult,
     DurableMutation,
@@ -203,32 +204,7 @@ class AppContext(GhostStoreAccessors):
         return dispatch_durable_task(checkpoint, state=self)
 
     def _abort_durable_task(self, checkpoint: TaskCheckpoint, _invocation: object) -> None:
-        """Drive the durable cancel barrier into live provider and shell work."""
-        run_id = str(checkpoint.task_id or "")
-        if not run_id:
-            return
-        # Provider transports and shell waits observe this exact run-scoped
-        # event through their cancellation scopes.  The durable scheduler owns
-        # the checkpoint transition; this handler only interrupts live work.
-        self.run_registry.request_stop(run_id)
-        provider = self._active_providers.get(run_id)
-        abandon = getattr(provider, "abandon_inflight", None)
-        if callable(abandon):
-            try:
-                abandon()
-            except Exception as exc:
-                logger.debug("provider abort cleanup failed for %s: %s", run_id, exc)
-        events: tuple[dict[str, Any], ...] = ()
-        with self._shell_spawn_gate, self.lock:
-            expire = getattr(self, "_expire_shell_results_locked", None)
-            if callable(expire):
-                events = tuple(expire(run_id=run_id))
-            workflow = getattr(self, "shell_approval_workflow", None)
-            cancel_queued = getattr(workflow, "cancel_queued", None)
-            if callable(cancel_queued):
-                cancel_queued(checkpoint.conversation_id)
-        for event in events:
-            self.record_shell_result(event)
+        abort_task_resources(self, checkpoint)
 
     def register_active_provider(self, run_id: str, provider: object) -> None:
         """Register the raw provider transport for a live durable run."""

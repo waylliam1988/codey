@@ -24,7 +24,7 @@ const handled = [], applied = [], pending = [], sources = [];
 class EventSource { constructor(url) {this.url=url; sources.push(this);} }
 EventSource.OPEN=1;
 const window = {};
-    const context = vm.createContext({window, EventSource, URLSearchParams, setTimeout, clearTimeout,
+    const context = vm.createContext({window, EventSource, URLSearchParams, AbortSignal, setTimeout, clearTimeout,
       fetch: () => new Promise(resolve => pending.push(resolve)),
       decodeServerEvent: value => value, decodeRunState: value => value});
 vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
@@ -51,6 +51,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   } else {
     const first = window.Sse.reconcileRunState();
     for(let i=1;i<=101;i++) emit(i,{type:'tool'});
+    assert.equal(pending.length,1,'state reconciliation must issue a request');
     pending.shift()({ok:true,json:async()=>({n:1})});
     await first; await tick();
     assert.equal(handled.length,0,'incomplete buffered sequence must not be presented as complete');

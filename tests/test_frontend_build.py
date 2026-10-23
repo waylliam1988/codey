@@ -1,11 +1,42 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from codey.app import http_plumbing
 from tools import publish_frontend
+
+
+@pytest.mark.parametrize("fault", ["source", "changed", "missing", "extra"])
+def test_publish_check_reports_mismatch_without_accepting_stale_output(tmp_path, monkeypatch, capsys, fault):
+    web = tmp_path / "web"
+    web.mkdir()
+    asset = web / "index.html"
+    asset.write_bytes(b"first\r\nsecond")
+    files = publish_frontend._files(web)
+    metadata = {"schema": 1, "source_sha256": "current", "files": files}
+    monkeypatch.setattr(publish_frontend, "WEB", web)
+    monkeypatch.setattr(publish_frontend, "_metadata", lambda _files: metadata)
+    recorded = {**metadata, "source_sha256": "stale"} if fault == "source" else metadata
+    (web / "frontend-build.json").write_text(json.dumps(recorded), encoding="utf-8")
+    if fault == "changed":
+        # Source normalization must not weaken exact output-byte checks.
+        asset.write_bytes(b"first\nsecond")
+    elif fault == "missing":
+        asset.unlink()
+    elif fault == "extra":
+        (web / "unexpected.txt").write_text("extra", encoding="utf-8")
+    assert not publish_frontend._check(files)
+    error = capsys.readouterr().err
+    assert {
+        "source": "source fingerprint differs",
+        "changed": "Changed published frontend files: index.html",
+        "missing": "Missing published frontend files: index.html",
+        "extra": "Extra published frontend files: unexpected.txt",
+    }[fault] in error
+    assert "python -m tools.publish_frontend" in error
 
 
 def test_candidate_frontend_root_contains_only_publishable_runtime_files(tmp_path: Path) -> None:

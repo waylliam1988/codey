@@ -77,11 +77,16 @@ def test_context_and_effort_keep_hover_active_keyboard_and_disabled_hierarchy(pa
     assert_readable(effort)
 
     page.evaluate("applyRunState({busy:true,run_id:'readability-run',session_id:'a'})")
-    for selector in ("#ctx-folder", "#effort-button"):
-        control = page.locator(selector)
-        expect(control).to_be_disabled()
-        expect(control).to_have_css("color", "rgb(107, 107, 107)")
-        expect(control).to_have_css("opacity", "0.55")
+    folder = page.locator("#ctx-folder")
+    expect(folder).to_be_disabled()
+    expect(folder).to_have_css("color", "rgb(107, 107, 107)")
+    expect(folder).to_have_css("opacity", "0.55")
+    # Model and effort are draft choices; the accepted task owns its snapshot.
+    expect(effort).to_be_enabled()
+    assert_readable(effort)
+    effort.click()
+    expect(effort).to_have_attribute("aria-expanded", "true")
+    page.keyboard.press("Escape")
     expect(research).to_be_disabled()
     expect(research).to_have_css("color", "rgb(230, 230, 230)")
     expect(research).to_have_css("opacity", "0.55")

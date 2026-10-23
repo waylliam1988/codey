@@ -2,6 +2,66 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Frontend publication fingerprint (2026-10-23)
+
+The CI publication mismatch was reproduced from the committed source bytes.
+The publisher had mixed LF/CRLF locally, while Git stored LF; the old metadata
+hashed the local bytes and therefore failed on a fresh checkout. Text build
+inputs now fingerprint CRLF as LF. Binary inputs and published assets still
+use exact bytes, so normalization cannot accept modified runtime output.
+Publication checks now report stale metadata, source fingerprints and missing,
+extra or changed files instead of exiting silently.
+
+The production rebuild changed only the metadata source fingerprint, with no
+JS/CSS asset changes. Publication validation passed both locally and against
+temporary LF-normalized source inputs. The frontend build/typecheck, shipped
+JavaScript syntax (54 files), Ruff and 64 focused publication, UI architecture
+and CI configuration tests passed. Full-suite and actual remote CI results
+remain outside this local verification.
+
+## Linux CI runner compatibility (2026-10-23)
+
+The supplied Linux CI log failed before tests: Playwright 1.58.0 could not
+install Chromium on the Ubuntu 26.04 environment selected by ubuntu-latest.
+The Linux job now pins ubuntu-24.04, retaining the hashed Python dependencies
+and browser installation checks. All 14 existing CI configuration tests passed.
+Actual Linux browser installation remains to be verified by the next CI run.
+
+## Full-suite failure triage (2026-10-23)
+
+Reviewed the supplied **14 failed / 9681 passed / 59 skipped** run. Twelve
+failures used outdated UI/prompt contracts or incomplete test hosts: exact main
+class matching, the old search button, direct access inside collapsed process
+groups, the former busy-effort rule, copy-button hover styling, prompt hashes,
+and a Node VM missing the browser AbortSignal API. Raw document/workspace HTTP
+fixtures now attach and close the explicit public event feed used by the service.
+Tests exercise current user navigation and retain streaming, single-execution,
+permission revocation, history recovery and accessibility assertions.
+
+Historical prompt comparison reproduced both the original initial-prompt hash
+and its replacement: the difference is the external-fact evidence paragraph
+introduced in 2fbb6fb3. Result and repair hashes remain unchanged.
+
+The scheduler timeout reproduced under repeated Windows SQLite startup. In 100
+instrumented cycles every task dispatched exactly once; three exceeded 2 seconds
+(maximum 2.59 seconds), including delays inside start_task's commit. The restart
+test retains exact dispatch/ownership checks, uses a 10-second eventual-progress
+window and reports checkpoint/in-flight/blocking state on failure. This evidence
+does not indicate a lost scheduler wakeup.
+
+The remaining architecture failure was actual file growth. Approval CAS folding
+and physical abort cleanup moved to cohesive helpers without changing commit,
+locking or cancellation behavior. Existing file-size ceilings remain intact;
+no legacy write path, compatibility projection or runtime fallback was added.
+
+Validation: **651 passed, 5 skipped, 405 subtests** for durable, architecture,
+effect-sandwich and current regressions; **26 passed** for the final focused
+SSE/prompt/readability/approval/live-browser selection; **3 passed** for streaming
+and workspace browser checks; **1 passed** for the document/command preview.
+Selections overlap. Ruff, mypy (511 production files), Pyrefly and ty passed;
+Pyrefly retains 80 warnings and 29 suppressions with zero errors. The full
+repository suite and Linux validation were not rerun locally.
+
 ## Recovery and startup review follow-up (2026-10-23)
 
 First contact and retries now use the same UI acceptance rule. Cached revisions

@@ -1,4 +1,4 @@
-"""Fixed production prompt surfaces remain unchanged for this runtime fix."""
+"""Reviewed production prompt baselines, including external-fact evidence guidance."""
 
 from __future__ import annotations
 
@@ -65,7 +65,9 @@ def test_initial_result_and_repair_prompt_surfaces_have_frozen_hashes() -> None:
     )
     repair = kernel_prompt._repair_prompt("invalid_args", contract_text=contract, native=False)
 
-    assert _sha256(initial) == "21cae739ba9e757b4c21e225689a8484c86f6d345c748268dfb14619fbae550b"
+    assert "obtain actual source data using the authorized tools" in initial
+    assert "not evidence that the host has no network access" in initial
+    assert _sha256(initial) == "c56b7f57796bc20e5ec1b896e682904de23ac951e714818c257977532bca381f"
     assert _sha256(result) == "591c80828028a2103608e4d5a081bfd484d6d0fb755950c423cf8241b9876522"
     assert _sha256(repair) == "98200f1379c53fc3d9c08cbca01c32e88181fb6aec1d32f5a341b3c51b03739c"
 
@@ -90,7 +92,7 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> Non
     assert result.stop_reason == "done"
     assert len(provider.prompts) == 1
     prompt = provider.prompts[0].replace(str(project), "<PROJECT>")
-    # The admitted control vocabulary now includes ask_user. The fixed done,
-    # result and repair surfaces above remain independently frozen.
+    # Includes ask_user and the reviewed external-fact evidence guidance from
+    # 2fbb6fb3. Result and repair surfaces remain independently frozen.
     assert "ask_user" in prompt
-    assert _sha256(prompt) == "f49bf0a004e4fea8d69e2240df3041e42bd8fec30095299764a501819e07d346"
+    assert _sha256(prompt) == "aea42a1ed71d4455b39a39c3d98c980f9011c651d40f90ca1f2671553f28cbb8"

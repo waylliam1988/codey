@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -27,6 +28,7 @@ BUILD_INPUTS = (
     "frontend/vite.config.ts",
     "tools/publish_frontend.py",
 )
+TEXT_INPUT_SUFFIXES = frozenset({".html", ".json", ".ts", ".tsx", ".js", ".jsx", ".css", ".svg", ".py"})
 
 
 def _sha256(path: Path) -> str:
@@ -98,21 +100,29 @@ def _validate_dist() -> dict[str, str]:
     return _files(DIST)
 
 
+def _source_bytes(path: Path) -> bytes:
+    data = path.read_bytes()
+    # Git checks out these text inputs as LF. Fingerprints must also survive
+    # publication from an editor that wrote CRLF or mixed line endings.
+    # Compiled assets and binary source inputs still use their exact bytes.
+    return data.replace(b"\r\n", b"\n") if path.suffix in TEXT_INPUT_SUFFIXES else data
+
+
 def _source_digest() -> str:
     digest = hashlib.sha256()
     for relative in BUILD_INPUTS:
         path = ROOT / relative
         digest.update(relative.encode())
-        digest.update(path.read_bytes())
+        digest.update(_source_bytes(path))
     for path in sorted((ROOT / "frontend" / "src").rglob("*")):
         if path.is_file() and not any(path.name.endswith(f".{kind}.{suffix}")
                                       for kind in ("test", "spec") for suffix in ("ts", "tsx", "js", "jsx")):
             digest.update(path.relative_to(ROOT).as_posix().encode())
-            digest.update(path.read_bytes())
+            digest.update(_source_bytes(path))
     for path in sorted((ROOT / "frontend" / "public").rglob("*")):
         if path.is_file():
             digest.update(path.relative_to(ROOT).as_posix().encode())
-            digest.update(path.read_bytes())
+            digest.update(_source_bytes(path))
     return digest.hexdigest()
 
 
@@ -122,19 +132,33 @@ def _metadata(files: dict[str, str]) -> dict[str, object]:
 
 def _check(files: dict[str, str]) -> bool:
     current = _files(WEB) if WEB.is_dir() else {}
-    expected = dict(files)
-    expected["frontend-build.json"] = "__metadata__"
     metadata = WEB / "frontend-build.json"
     if not metadata.is_file():
+        print("Published frontend metadata is missing; run python -m tools.publish_frontend.", file=sys.stderr)
         return False
     try:
         recorded = json.loads(metadata.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        print(f"Published frontend metadata cannot be read: {exc}", file=sys.stderr)
         return False
-    if recorded != _metadata(files):
-        return False
+    expected = _metadata(files)
+    matches = recorded == expected
+    if not matches:
+        if isinstance(recorded, dict) and recorded.get("source_sha256") != expected["source_sha256"]:
+            print("Published frontend source fingerprint differs from the current build inputs.", file=sys.stderr)
+        else:
+            print("Published frontend metadata differs from the current build.", file=sys.stderr)
     current.pop("frontend-build.json", None)
-    return current == files
+    missing = sorted(files.keys() - current.keys())
+    extra = sorted(current.keys() - files.keys())
+    changed = sorted(name for name in current.keys() & files.keys() if current[name] != files[name])
+    for label, names in (("Missing", missing), ("Extra", extra), ("Changed", changed)):
+        if names:
+            print(f"{label} published frontend files: {', '.join(names)}", file=sys.stderr)
+    if not matches or current != files:
+        print("Rebuild with npm run build in frontend/, then run python -m tools.publish_frontend.", file=sys.stderr)
+        return False
+    return True
 
 
 def _publish(files: dict[str, str]) -> None:

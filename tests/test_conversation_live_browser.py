@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from contextlib import contextmanager
@@ -237,7 +238,7 @@ def test_real_stream_and_queued_input_keep_one_answer_and_survive_reload(tmp_pat
             browser, page, errors = open_live(pw, httpd)
             try:
                 expect(page.locator('#chat')).to_be_empty()
-                expect(page.locator('main')).to_have_class('empty-conversation')
+                expect(page.locator('main')).to_have_class(re.compile(r'\bempty-conversation\b'))
                 initial_top = page.locator('.composer-wrap').bounding_box()['y']
                 assert 450 < initial_top < 750
                 send(page, "只读分析项目，先给我一段说明。不要修改文件，不要运行命令。")

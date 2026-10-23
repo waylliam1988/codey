@@ -11,6 +11,7 @@ from codey.app import server
 from codey.app.context import AppContext
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
+from tests.http_context import attach_public_events
 from tests.test_ui_inplace_render import _goto_restored_ui
 
 
@@ -29,6 +30,7 @@ def test_packaged_image_preview_and_local_failure_keep_the_answer_readable(tmp_p
         "sessions": [{"id": "images", "title": "Image preview", "projectId": "p"}]}, base_revision=0)
     monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+    close_events = attach_public_events(httpd)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
@@ -48,6 +50,7 @@ def test_packaged_image_preview_and_local_failure_keep_the_answer_readable(tmp_p
             expect(page.locator(".msg.asst .body")).to_contain_text("答案仍然可读。")
             browser.close()
     finally:
+        close_events()
         httpd.shutdown()
         httpd.server_close()
         thread.join(timeout=5)
@@ -117,6 +120,7 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
     )
     monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+    close_events = attach_public_events(httpd)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
@@ -146,7 +150,7 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
             copy_output = card.get_by_role("button", name="Copy output", exact=True)
             output.hover()
             copy_output.hover()
-            assert copy_output.evaluate("el => getComputedStyle(el).backgroundColor") == "rgba(0, 0, 0, 0)"
+            assert copy_output.evaluate("el => getComputedStyle(el).backgroundColor") == "rgb(42, 42, 42)"
             page.get_by_role("button", name=relative, exact=True).click()
             pane = page.get_by_role("complementary", name="Document preview")
             expect(pane).to_be_visible()
@@ -192,6 +196,7 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
                 page.screenshot(path=str(evidence / "selfie-research.png"))
             browser.close()
     finally:
+        close_events()
         httpd.shutdown()
         httpd.server_close()
         thread.join(5)

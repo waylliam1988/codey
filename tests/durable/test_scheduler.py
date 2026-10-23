@@ -140,8 +140,16 @@ def test_scheduler_reopens_and_dispatches_accepted_tasks_once(tmp_path: Path) ->
     scheduler = DurableTaskScheduler(restarted, dispatch, retry_interval=0.01)
     scheduler.start()
     try:
-        assert done.wait(2)
-        assert _wait_for(lambda: scheduler.in_flight == ())
+        # This checks eventual dispatch and exact ownership, not a 2 s storage
+        # SLA. Windows SQLite commits exceeded that window in repeated runs
+        # even though the callback ran once and reached provider_prepared.
+        assert done.wait(10), {
+            "dispatched": dispatched,
+            "checkpoint": restarted.task("task-1"),
+            "in_flight": scheduler.in_flight,
+            "blocked": scheduler.blocked_tasks,
+        }
+        assert _wait_for(lambda: scheduler.in_flight == (), timeout=10)
         assert dispatched == ["task-1"]
     finally:
         scheduler.close()

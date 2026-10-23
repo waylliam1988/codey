@@ -137,6 +137,8 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
                     if scope == 'project':
                         assert ctx.command_permissions.matching({'project': str(tmp_path), 'session_id': 'other-chat',
                                                                  'command': command, 'cwd': '.'})
+                    process = page.locator('.process-block').filter(has=page.locator('.command-card'))
+                    process.locator('.process-summary').click()
                     page.locator('.command-card > details > summary').click()
                     page.get_by_role('button', name='Saved permissions', exact=True).click()
                     dialog = page.get_by_role('dialog')

@@ -1,6 +1,7 @@
 """Real packaged UI and Codey HTTP endpoints; no injected messages or event handlers."""
 from __future__ import annotations
 
+import re
 import threading
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from playwright.sync_api import expect, sync_playwright
 
 from codey.app import server
 from codey.app.context import AppContext
+from tests.http_context import attach_public_events
 
 
 def test_workspace_files_history_search_branches_and_layout_restore(tmp_path, monkeypatch):
@@ -26,6 +28,7 @@ def test_workspace_files_history_search_branches_and_layout_restore(tmp_path, mo
     ctx.save_ui_state({'active_id': 'chat', 'projects': [{'id': 'p', 'name': 'Codey', 'path': str(project), 'expanded': True}], 'sessions': [{'id': 'chat', 'title': 'Workspace test', 'projectId': 'p'}, {'id': 'other', 'title': 'Other chat', 'projectId': 'p'}]}, base_revision=0)
     monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(('127.0.0.1', 0), server.Handler)
+    close_events = attach_public_events(httpd)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     output = Path('.e2e-artifacts/uiux-implementation')
@@ -100,7 +103,7 @@ def test_workspace_files_history_search_branches_and_layout_restore(tmp_path, mo
                 page.locator('#show-sidebar').click()
             page.locator('#btn-new-chat').click()
             expect(page.locator('#chat')).to_be_empty()
-            expect(page.locator('main')).to_have_class('empty-conversation')
+            expect(page.locator('main')).to_have_class(re.compile(r'\bempty-conversation\b'))
             border = page.locator('.composer-box').evaluate('el => getComputedStyle(el).borderColor')
             page.locator('#task').click()
             assert page.locator('#task').evaluate('el => getComputedStyle(el).outlineStyle') == 'none'
@@ -108,6 +111,7 @@ def test_workspace_files_history_search_branches_and_layout_restore(tmp_path, mo
             page.screenshot(path=str(output / 'home-1440.png'))
             browser.close()
     finally:
+        close_events()
         httpd.shutdown()
         httpd.server_close()
         thread.join(5)
