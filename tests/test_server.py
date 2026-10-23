@@ -7382,7 +7382,12 @@ class UiLaunchTests(unittest.TestCase):
         client = mock.Mock()
         client.lifecycle.return_value = {"url": "http://127.0.0.1:43210/#codey_bootstrap=test"}
         view = mock.MagicMock()
-        view.start.side_effect = lambda **kwargs: view.create_window.call_args.kwargs['js_api']._startup.start()
+        def event_loop(**kwargs):
+            startup = view.create_window.call_args.kwargs['js_api']._startup
+            startup.shown()
+            kwargs['func']()
+            startup.ui_ready(startup._trace.identity)
+        view.start.side_effect = event_loop
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
             with mock.patch("codey.app.desktop_startup.ensure_service", return_value=client) as ensure, mock.patch.dict("sys.modules", {"webview": view}):

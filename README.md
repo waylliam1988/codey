@@ -40,6 +40,11 @@ Install dependencies:
 pip install -e .
 ```
 
+Release wheels can be installed with `pip install path/to/codey.whl`. They contain
+the published frontend and runtime inventory; launching an installed wheel needs
+neither the source checkout nor Node. Source development automatically refreshes
+those publication artifacts at launch.
+
 Start Codey:
 
 ```powershell

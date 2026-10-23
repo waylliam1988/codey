@@ -116,7 +116,7 @@
     "assets/codey-vWnoumZV.js": "db6d1d901167b29d78b971ac684b675cebccf4ebcaebcadcfd3ed28387dcd204",
     "assets/codey-wmV3F-nl.js": "a370d05097c8dc4339dd855d7104f0dbb5ff5524c6418022cb84168b79a2b924",
     "assets/desktop-startup.css": "a03ad44b36ac2cd8de0215ce169c5d57e566ab1008c5b4f88f68dc1208b28a1a",
-    "assets/desktop-startup.js": "09fc94973ae0aebfdc96725513f36fbd43db1373ffc37f90c3a5da6fc9602e6c",
+    "assets/desktop-startup.js": "729f06bf842f915dd737936d819343c45f97cf7b5a21bdeb837b0baeca455d36",
     "assets/document.svg": "a1175c3d2806c301c455677844e6f8d990aaebd931512346bfc6e5348e346673",
     "assets/index-BAPr00jn.css": "73d0ea3a6bf7ab965875f5be1417a854a3c852c2f7ef973da8dfe412f317c20b",
     "assets/new-chat.svg": "3d2a02cf5320962f8cbebbdedfbf4b9001e8d220d700ff474847ffe9973abd28",
@@ -127,5 +127,5 @@
     "index.html": "2c8bfc5c6a82d3e16d42696143a032f2198ff7289f08a64d61779faf8bdf832b"
   },
   "schema": 1,
-  "source_sha256": "e4c10f5dfa219301d689062b4f22ef814d8c5f8a25e469948d92d00a9432393d"
+  "source_sha256": "4e207886f26f1af383bdf1adc9db3b94ca9a945ef263b87a64893027340baa1a"
 }

@@ -10,7 +10,6 @@ import sqlite3
 import subprocess
 import sys
 import time
-import tomllib
 from contextlib import closing
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -21,6 +20,7 @@ if os.name == "nt" or TYPE_CHECKING:
     _windows_subprocess: Any = subprocess
 
 from codey.control.protocol import ControlError, fingerprint
+from codey.launcher.runtime import dependencies, runtime_files
 from codey.launcher.startup import startup_stage
 from codey.launcher.validation_cache import cached_checks, save_checks, validation_key
 from codey.storage.file_lock import acquire_lease
@@ -31,21 +31,6 @@ def release_path(home: Path, identity: str) -> Path:
     if not re.fullmatch(r"[a-z0-9_-]{1,80}", identity):
         raise ControlError("INVALID_ARGUMENT", "Invalid release identity")
     return home / "releases" / identity
-
-
-def runtime_files(root: Path) -> list[Path]:
-    files = [root / "pyproject.toml"]
-    for directory, dirs, names in os.walk(root / "codey", followlinks=False):
-        for name in dirs:
-            if Path(directory, name).is_symlink():
-                raise ControlError("INVALID_ARGUMENT", "Runtime snapshot cannot contain symbolic links")
-        dirs[:] = sorted(name for name in dirs if name != "__pycache__")
-        files.extend(Path(directory, name) for name in sorted(names) if not name.endswith((".pyc", ".log")))
-    if not (root / "codey" / "__main__.py").is_file() or not (root / "codey" / "web" / "index.html").is_file():
-        raise ControlError("INVALID_ARGUMENT", "Release requires Codey runtime and a built desktop frontend")
-    if len(files) > 10_000:
-        raise ControlError("INVALID_ARGUMENT", "Runtime snapshot has too many files")
-    return sorted(files)
 
 
 def runtime_digest(root: Path) -> str:
@@ -120,12 +105,6 @@ def ensure_frontend(source: Path) -> None:
                            details={"command": [sys.executable, "-m", "tools.publish_frontend"],
                                     "stdout": (publish_result.stdout or "")[-4000:],
                                     "stderr": (publish_result.stderr or "")[-4000:]})
-
-
-def _dependencies(source: Path) -> object:
-    data = tomllib.loads((source / "pyproject.toml").read_text(encoding="utf-8"))
-    project = data["project"]
-    return [project.get("requires-python"), project.get("dependencies"), project.get("optional-dependencies", {}).get("mcp")]
 
 
 def _verification(directory: Path, manifest: dict[str, Any], commands: list[list[str]]) -> None:
@@ -205,7 +184,7 @@ def prepare(service: Any, args: dict[str, Any]) -> dict[str, Any]:
             if previous and previous.get("status") == "validating":
                 raise ControlError("OUTCOME_UNKNOWN", "A recovery validation is already in progress; inspect its manifest")
         current = read_json_strict(home / "active-release.json")
-        if not current or _dependencies(Path(manifest["source"])) != _dependencies(Path(current["source"])):
+        if not current or dependencies(Path(manifest["source"])) != dependencies(Path(current["source"])):
             raise ControlError("DEPENDENCY_MISMATCH", "Automatic activation requires the same runtime dependencies")
         commands = args.get("verification", [])
         if len(commands) > 8 or any(not isinstance(row, list) or not row or not all(isinstance(word, str) and word for word in row) for row in commands):

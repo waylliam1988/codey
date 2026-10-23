@@ -90,16 +90,18 @@ class ControlClient:
 
 def _current_source() -> Path:
     source = Path(__file__).resolve().parents[2]
-    if not (source / "pyproject.toml").is_file():
-        raise ControlError("RUNTIME_NOT_FOUND", "Current Codey source tree is unavailable")
     return source
 
 
 def _materialize_current_release(home: Path) -> dict[str, Any]:
     source = _current_source()
     with acquire_lease(home / "release-preparation"):
-        with startup_stage("frontend.check"):
-            ensure_frontend(source)
+        if (source / "tools/publish_runtime.py").is_file() and (source / "pyproject.toml").is_file():
+            # Development publication only; wheels already carry this artifact.
+            from tools.publish_runtime import publish_runtime
+            with startup_stage("frontend.check"):
+                ensure_frontend(source)
+            publish_runtime(source, source / "pyproject.toml")
         with startup_stage("release.snapshot"):
             return snapshot(home, source)
 

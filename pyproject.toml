@@ -1,6 +1,7 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+build-backend = "tools.build_runtime"
+backend-path = ["."]
 
 [project]
 name = "codey"
@@ -38,6 +39,7 @@ exclude = ["tests*", "tools*"]
 
 [tool.setuptools.package-data]
 codey = [
+    "runtime.json",
     "web/index.html",
     "web/icon.ico",
     "web/assets/*.css",
@@ -51,6 +53,9 @@ codey = [
 "codey.providers" = ["profiles.json"]
 "*" = ["*.mjs"]
 "codey.research" = ["search_profiles.json"]
+
+[tool.setuptools.cmdclass]
+build_py = "tools.build_runtime.BuildRuntime"
 
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider"

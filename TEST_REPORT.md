@@ -2,6 +2,38 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Installed runtime and independent native startup (2026-10-23)
+
+Source publication and wheel construction now produce the same `codey/runtime.json`
+contract. Installed startup, snapshot hashing, dependency comparison and validation
+copies consume that descriptor instead of a repository `pyproject.toml`. The source
+archive retains its frontend/test inputs and includes its in-tree build backend;
+obsolete wheel build files are removed before publication. No legacy-runtime
+reader or data migration branch was added; this transition is tested with fresh state.
+
+Native service preparation starts from the host's background callback, independently
+of `loaded` or synchronous JS feedback. The coordinator joins service readiness and
+host visibility. Deadline phase tokens, one preparation gate and attempt identity
+cover close, retry, delayed callbacks and timer-thread failure. Feedback is embedded
+as escaped text in the startup document; presentation does not hold the service gate.
+Older pytest assumptions were updated to this contract.
+
+Verification selections (overlap): **96 release/startup/runtime/ownership tests passed
+(165.64s)**; **236 server and UI tests passed (244.32s)** including Stop, Continue,
+approval recovery and native launch integration; **50 frontend files / 277 tests
+passed**. Real wheel install in an isolated environment outside the checkout passed
+cold start, same-instance reconnect, upgrade and cold restart. Source-archive build
+also passed (**2 installation/archive tests, 144.32s**); the final complete source
+archive was checked again after preserving its frontend CSS and pytest inputs
+(**1 passed, 45.43s**). Additional startup/inventory/cache failure cases passed.
+
+A real hidden WebView2 window, real isolated service and full application reached
+`desktop.interface_ready` with no coordinator `loaded` callback in **10.24s** under
+concurrent test load. This is a cold-start functional sample, not a speed comparison.
+The user's prior idle local service was cold-switched to the new descriptor format.
+Repository Ruff, production mypy/Pyrefly/ty, TypeScript, Biome, published frontend
+metadata and production build were checked. No full repository coverage run was made.
+
 ## Frontend publication fingerprint (2026-10-23)
 
 The CI publication mismatch was reproduced from the committed source bytes.

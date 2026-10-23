@@ -21,4 +21,4 @@ def open_desktop(home: Path, *, port: int = 5173) -> None:
         window.events.shown += startup.shown
         window.events.loaded += startup.loaded
         window.events.closed += startup.close
-    webview.start(private_mode=False, storage_path=str(home / "webview"))
+    webview.start(func=startup.start, private_mode=False, storage_path=str(home / "webview"))

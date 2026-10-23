@@ -903,11 +903,18 @@ failure shows its reason and an English `Retry` action without opening a second
 window. Service readiness navigates that window to the normal interface, where
 the pond covers restoration and fades out on interface readiness.
 The standalone startup script detects module loading failures. One native
-readiness deadline covers a missing script or stalled document; ready, failure
+deadline mechanism bounds initial host display and then application readiness.
+The shared service starts independently of `loaded` events or synchronous native
+JavaScript execution. Navigation requires service readiness and a shown host;
+feedback is embedded in the startup document. Ready, failure
 and close settle the same attempt and cancel that deadline. Old callbacks cannot
-settle a newer attempt. Startup
+settle a newer attempt or a later phase of the same attempt. Startup
 observations distinguish window display from actual interface readiness; see
 [desktop startup](docs/startup.md) for validation and timing boundaries.
+Checkouts and installed wheels use the same published `codey/runtime.json`
+contract for versions, dependencies and runtime file inventory. Repository build
+configuration is not a launch dependency. The format transition uses fresh state,
+without legacy snapshot readers or data migration branches.
 Collapsed Work ends 6px before the first visible answer block, consistently
 across live output and restored history. Empty assistant stream placeholders
 (including whitespace and Markdown reference definitions without visible content)

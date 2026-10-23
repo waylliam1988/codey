@@ -6,10 +6,12 @@ include frontend/package.json frontend/package-lock.json frontend/.npmrc
 include frontend/tsconfig.json frontend/vite.config.ts
 include frontend/biome.json frontend/vitest.config.ts
 include frontend/index.html
-recursive-include frontend/src *.ts
+recursive-include frontend/src *.ts *.css
 recursive-include frontend/public *.ico *.css *.svg
 include tools/frontend_source.py tools/frontend_source.mjs tools/publish_frontend.py
 recursive-include tests *.py
 recursive-include tests/fixtures/protocol *.json
 prune frontend/node_modules
 prune frontend/dist
+include codey/runtime.json
+include tools/__init__.py tools/build_runtime.py tools/publish_runtime.py

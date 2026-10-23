@@ -4,7 +4,9 @@ The desktop creates one window with a character pond before attaching
 to the shared service. The existing startup lock, immutable release snapshots,
 service instance lease, upgrade journal and rollback coordinator still own startup
 and cutover. The page does not start a task runtime or maintain service facts.
-Once the service is ready, that same window navigates to its single-use launch URL.
+Service preparation runs in the native host's background callback, independently
+of document loading and JavaScript bridge initialization. Once both the service
+and the shown host are ready, that same window navigates to its single-use launch URL.
 The packaged startup asset uses the same animation source as the empty-chat pond.
 It covers frontend restoration and fades out only after application boot completes.
 Normal startup has no progress copy; phase details belong in the timing log.
@@ -17,12 +19,31 @@ already admitted independent upgrade remains governed by its journal and recover
 The standalone startup script observes main-module and dependency load errors
 without importing the main application. A single native 30-second readiness
 deadline also covers a failed startup script or a document that never reports
-readiness. Error, ready and close converge on the same attempt-fenced completion
-path, which cancels the deadline. Late callbacks cannot settle a newer attempt.
+readiness. The same deadline mechanism bounds initial host display and then
+application readiness; phase tokens prevent an expired host timer from settling
+a later navigation in the same attempt. Error, ready and close cancel the active
+deadline. Loaded events are diagnostic only. Feedback is embedded in the startup
+document instead of synchronous native `evaluate_js` calls. Late callbacks cannot
+settle a newer attempt, and native presentation does not hold the preparation gate.
 There is no additional service/task runtime and no progress callback channel;
 stage measurements are recorded directly in the startup log.
 
 ## Inputs and validation
+
+`codey/runtime.json` is the sole runtime contract for checkouts, source archives,
+wheels, snapshots and validation copies. It records version, dependency constraints
+and the exact package-file inventory. Runtime execution never needs a repository
+`pyproject.toml`; that file is consumed only during publication. Both the development
+launcher and the wheel build use the same publisher/inventory policy. Reused wheel
+build directories discard obsolete files before publication. Missing descriptors,
+missing files and unpublished extra files are rejected. There is no legacy-snapshot
+reader or data migration path; testing and this format transition use fresh state.
+
+After manually publishing frontend assets in a checkout, run
+`python -m tools.publish_runtime` before snapshot tests. Normal development launch
+does both publication steps automatically. Installed wheels execute neither build
+step and need no Node installation. The source archive includes its build backend
+and the frontend CSS required to rebuild it.
 
 The frontend publisher excludes only explicit `.test` / `.spec` files with
 JavaScript or TypeScript extensions under `frontend/src`. Production files,

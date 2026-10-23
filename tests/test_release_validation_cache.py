@@ -8,6 +8,7 @@ import pytest
 from codey.control.protocol import ControlError
 from codey.launcher import releases, validation_cache
 from codey.storage.local_store import write_json_atomic
+from tools.publish_runtime import publish_runtime
 
 
 @pytest.fixture
@@ -17,6 +18,7 @@ def preparation(tmp_path, monkeypatch):
     (source / "codey/web/index.html").write_text("built")
     (source / "codey/__main__.py").write_text("print('Codey')\n")
     (source / "pyproject.toml").write_text('[project]\nname="codey"\nrequires-python=">=3.11"\ndependencies=[]\n')
+    publish_runtime(source, source / "pyproject.toml", version="test")
     home = tmp_path / "state"
     active = releases.snapshot(home, source)
     write_json_atomic(home / "active-release.json", active)

@@ -26,12 +26,20 @@ if (
   document.body.append(surface);
   const dispose = mountCharacterPond(surface);
   const native = window as Window & {
-    pywebview?: { api?: { retry(): Promise<unknown> } };
+    pywebview?: { api?: { retry(): Promise<boolean> } };
     codeyStartup?: (data: { error: string }) => void;
   };
   retry.onclick = () => {
     retry.disabled = true;
-    void native.pywebview?.api?.retry();
+    void native.pywebview?.api
+      ?.retry()
+      .then((accepted) => {
+        if (accepted) native.codeyStartup?.({ error: '' });
+        else retry.disabled = false;
+      })
+      .catch(() => {
+        retry.disabled = false;
+      });
   };
   native.codeyStartup = (data) => {
     error.textContent = data.error;
