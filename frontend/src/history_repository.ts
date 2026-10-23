@@ -18,14 +18,24 @@ export interface HistoryResult {
   hasAfter?: boolean;
 }
 
+class HistorySnapshotChanged extends Error {}
+
 export class HistoryRepository {
   private session = '';
   private generation = 0;
   private page: HistoryResult | null = null;
   private loading = false;
+  private loadingLatest = false;
 
   get current(): HistoryResult | null {
     return this.page;
+  }
+
+  cancelLatest(): void {
+    if (!this.loadingLatest || !this.page) return;
+    this.generation++;
+    this.loadingLatest = false;
+    this.loading = false;
   }
 
   invalidate(): void {
@@ -45,7 +55,13 @@ export class HistoryRepository {
     this.switchSession(sessionId);
     const generation = ++this.generation;
     this.loading = false;
-    const page = await this.fetchPage(sessionId, '');
+    this.loadingLatest = true;
+    let page: HistoryPage;
+    try {
+      page = await this.fetchPage(sessionId, '');
+    } finally {
+      if (generation === this.generation) this.loadingLatest = false;
+    }
     if (generation !== this.generation || this.session !== sessionId) return null;
     this.page = {
       items: dedupe(page.items),
@@ -59,7 +75,7 @@ export class HistoryRepository {
 
   async loadEarlier(sessionId: string): Promise<HistoryResult | null> {
     if (sessionId !== this.session) return null;
-    if (!this.page?.hasMore || !this.page.cursor || this.loading) return this.page;
+    if (!this.page?.hasMore || !this.page.cursor || this.loading) return null;
     const generation = this.generation;
     const previous = this.page;
     this.loading = true;
@@ -68,8 +84,13 @@ export class HistoryRepository {
       if (generation !== this.generation || this.session !== sessionId) return null;
       if (page.epoch !== previous.epoch || page.snapshot_revision !== previous.revision)
         return await this.loadLatest(sessionId);
+      if (page.has_more && page.before_cursor === previous.cursor)
+        throw new Error('Conversation history did not advance');
+      const items = dedupe([...page.items, ...previous.items]);
+      if (page.has_more && items.length <= previous.items.length)
+        throw new Error('Conversation history did not advance');
       this.page = {
-        items: dedupe([...page.items, ...previous.items]),
+        items,
         hasMore: page.has_more,
         cursor: page.before_cursor || null,
         epoch: page.epoch,
@@ -77,6 +98,10 @@ export class HistoryRepository {
         hasAfter: previous.hasAfter,
       };
       return this.page;
+    } catch (error) {
+      if (error instanceof HistorySnapshotChanged && generation === this.generation)
+        return await this.loadLatest(sessionId);
+      throw error;
     } finally {
       if (generation === this.generation) this.loading = false;
     }
@@ -86,6 +111,7 @@ export class HistoryRepository {
     if (!query.trim()) return [];
     const response = await fetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/messages/search?q=${encodeURIComponent(query.trim().slice(0, 200))}`,
+      { signal: AbortSignal.timeout(15000) },
     );
     if (response.status === 404) return [];
     if (!response.ok) throw new Error('Could not search conversation history');
@@ -115,8 +141,16 @@ export class HistoryRepository {
     const url = target
       ? `/api/conversation_tree?${new URLSearchParams({ session_id: sessionId, entry_id: target })}`
       : `/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=100${cursor ? `&before=${encodeURIComponent(cursor)}` : ''}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('Could not load conversation history');
+    const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      if (
+        failure.error === 'history snapshot changed' ||
+        failure.error === 'cursor does not belong to current conversation path'
+      )
+        throw new HistorySnapshotChanged('Conversation history changed');
+      throw new Error('Could not load conversation history');
+    }
     const data = (await response.json()) as Partial<HistoryPage>;
     if (
       data.schema_version !== 1 ||

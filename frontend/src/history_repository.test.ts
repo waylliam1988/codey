@@ -142,4 +142,36 @@ describe('HistoryRepository', () => {
       { message_id: 'm1', excerpt: 'cache' },
     ]);
   });
+
+  it('stops a non-advancing cursor instead of repeatedly loading the same page', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply('same', 1, true)));
+    const repo = new HistoryRepository();
+    await repo.loadLatest('s1');
+    await expect(repo.loadEarlier('s1')).rejects.toThrow('did not advance');
+  });
+
+  it('cancels an in-flight tail refresh when the reader moves up, retaining loaded ancestors', async () => {
+    let release!: (value: ReturnType<typeof reply>) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(reply('tail', 1, true))
+        .mockResolvedValueOnce(reply('ancestor'))
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              release = resolve;
+            }),
+        ),
+    );
+    const repo = new HistoryRepository();
+    await repo.loadLatest('s1');
+    await repo.loadEarlier('s1');
+    const refresh = repo.loadLatest('s1');
+    repo.cancelLatest();
+    release(reply('new-tail', 2));
+    expect(await refresh).toBeNull();
+    expect(repo.current?.items.map((item) => item.id)).toEqual(['ancestor', 'tail']);
+  });
 });

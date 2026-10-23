@@ -32,6 +32,15 @@ even while a project chat is selected. A project's own New chat action creates
 a conversation in that project. Preserve the selected model and effort when
 starting either kind of chat; projectless messages carry no inherited workspace.
 
+Conversation history loads automatically when the reader scrolls toward the
+top. Do not show permanent Load earlier messages, Show all for find or Search
+this conversation links above the transcript. Ctrl/Cmd+F and the command menu
+open the existing conversation search; the file pane retains its own find action.
+An upward wheel, touch or keyboard gesture stops following immediately, including
+during thinking and tool updates. Preserve the reading anchor while prepending;
+resume following only on an explicit return to the latest messages. Older pages
+use a pinned ancestry snapshot, with bounded requests and explicit retry on failure.
+
 The quiet field focus rule applies to every input, textarea and select, including
 inline renaming, search, file navigation and connection forms. Focus adds no
 outline, outer ring, glow or second border; keep each field's resting border.

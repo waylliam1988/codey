@@ -93,9 +93,8 @@ it('can load an earlier durable page when the mounted page starts at zero', asyn
   );
   runtime.ConversationUI.renderChat();
   await vi.waitFor(() => expect(session.messages).toHaveLength(100));
-  const button = document.querySelector<HTMLButtonElement>('[data-load-history]');
-  expect(button).not.toBeNull();
-  button!.click();
+  expect(document.querySelector('[data-history-sentinel]')).not.toBeNull();
+  document.getElementById('chat-area')!.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true }));
   await vi.waitFor(() => expect(session.messages).toHaveLength(101));
   expect(document.getElementById('chat')!.textContent).toContain('ancestor');
 });
@@ -136,4 +135,49 @@ it('refreshes from a replayed durable commit without an active run', async () =>
     entry_ids: ['answer'],
   });
   expect(document.getElementById('chat')!.textContent).toContain('committed answer');
+});
+
+it('defers live commit refreshes while the reader is above the latest reply', async () => {
+  const fetcher = vi.fn().mockResolvedValue(
+    response([
+      { id: 'old', type: 'user', text: 'Earlier question' },
+      { id: 'answer', type: 'asst', text: 'Earlier answer' },
+    ]),
+  );
+  vi.stubGlobal('fetch', fetcher);
+  runtime.ConversationUI.renderChat();
+  await vi.waitFor(() => expect(session.messages).toHaveLength(2));
+  const anchor = document.getElementById('chat')!.lastElementChild;
+  runtime.ConversationUI.stopFollowing();
+  await runtime.ConversationUI.observeCommit({
+    type: 'durable_commit',
+    session_id: session.id,
+    kind: 'mutation',
+    commit_seq: 8,
+    entry_ids: ['tool-result'],
+  });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(document.getElementById('chat')!.lastElementChild).toBe(anchor);
+  expect(runtime.ConversationUI.isFollowing()).toBe(false);
+});
+
+it('honors an upward user scroll even when a tool update changes the content height in the same frame', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response([{ id: 'old', type: 'user', text: 'Question' }])));
+  const area = document.getElementById('chat-area')!;
+  let height = 1000;
+  Object.defineProperties(area, {
+    scrollHeight: { get: () => height, configurable: true },
+    clientHeight: { value: 300, configurable: true },
+  });
+  runtime.ConversationUI.renderChat();
+  await vi.waitFor(() => expect(session.messages).toHaveLength(1));
+  area.scrollTop = 700;
+  area.dispatchEvent(new Event('scroll'));
+  area.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true }));
+  height = 1200;
+  area.scrollTop = 500;
+  area.dispatchEvent(new Event('scroll'));
+  runtime.ConversationUI.scrollChat(false);
+  expect(area.scrollTop).toBe(500);
+  expect(runtime.ConversationUI.isFollowing()).toBe(false);
 });

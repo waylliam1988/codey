@@ -16,6 +16,7 @@ it('keeps conversation following while reading the middle of command output', ()
   );
   runtime.ConversationNav = { init() {} };
   runtime.ConversationUI.init({
+    activeSession: () => undefined,
     getActiveId: () => 'chat',
     getSessions: () => [],
     getProjects: () => [],

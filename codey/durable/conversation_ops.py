@@ -71,12 +71,19 @@ def history_page(
     limit = max(1, min(200, int(limit)))
     path = [entry for entry in context(session, conversation_id)
             if entry.kind not in {"context_snapshot", "control_config", "control_receipt"}]
+    _head, revision = session.store.head(conversation_id)
     boundary = len(path)
     if before:
         decoded_cursor = _decode_history_cursor(before)
         if decoded_cursor[0] != conversation_id:
             raise ValueError("invalid conversation cursor")
         positions = {entry.entry_id: index for index, entry in enumerate(path)}
+        if decoded_cursor[2] is not None:
+            if decoded_cursor[2] not in positions:
+                raise ValueError("history snapshot changed")
+            path = path[:positions[decoded_cursor[2]] + 1]
+            positions = {entry.entry_id: index for index, entry in enumerate(path)}
+            revision = decoded_cursor[3] if decoded_cursor[3] is not None else revision
         if decoded_cursor[1] not in positions:
             raise ValueError("cursor does not belong to current conversation path")
         boundary = positions[decoded_cursor[1]]
@@ -84,8 +91,8 @@ def history_page(
     selected = path[start:boundary]
     items = [_history_item(entry, start + index + 1) for index, entry in enumerate(selected)]
     has_more = start > 0
-    cursor = _encode_history_cursor(conversation_id, selected[0].entry_id) if has_more and selected else None
-    _head, revision = session.store.head(conversation_id)
+    cursor = _encode_history_cursor(conversation_id, selected[0].entry_id,
+                                    path[-1].entry_id, revision) if has_more and selected else None
     return {
         "schema_version": 1,
         "session_id": conversation_id,
@@ -130,7 +137,8 @@ def search_history(
 def history_window(session: Any, conversation_id: str, entry_id: str, *, limit: int = 100,
                    leaf_id: str | None = None) -> dict[str, object]:
     """Read a bounded window on one validated ancestry path without moving its head."""
-    path = [entry for entry in context(session, conversation_id, leaf_id=leaf_id) if entry.kind != 'context_snapshot']
+    path = [entry for entry in context(session, conversation_id, leaf_id=leaf_id)
+            if entry.kind not in {"context_snapshot", "control_config", "control_receipt"}]
     position = next((index for index, entry in enumerate(path) if entry.entry_id == entry_id), None)
     if position is None:
         raise KeyError('entry is not on this conversation path')
@@ -138,12 +146,13 @@ def history_window(session: Any, conversation_id: str, entry_id: str, *, limit: 
     start = max(0, position - limit // 2)
     end = min(len(path), start + limit)
     selected = path[start:end]
+    revision = session.store.head(conversation_id)[1]
     return {
         'schema_version': 1, 'session_id': conversation_id, 'epoch': session.database_id,
-        'snapshot_revision': session.store.head(conversation_id)[1],
+        'snapshot_revision': revision,
         'items': [_history_item(entry, start + index + 1) for index, entry in enumerate(selected)],
         'has_more': start > 0, 'has_after': end < len(path),
-        'before_cursor': _encode_history_cursor(conversation_id, selected[0].entry_id) if start else None,
+        'before_cursor': _encode_history_cursor(conversation_id, selected[0].entry_id, path[-1].entry_id, revision) if start else None,
     }
 
 
@@ -432,18 +441,22 @@ def _history_item(entry: EntryDraft, ordinal: int) -> dict[str, object]:
     return item
 
 
-def _encode_history_cursor(conversation_id: str, entry_id: str) -> str:
-    raw = json.dumps({"s": conversation_id, "e": entry_id}, separators=(",", ":")).encode("utf-8")
+def _encode_history_cursor(conversation_id: str, entry_id: str, head: str | None = None,
+                           revision: int | None = None) -> str:
+    raw = json.dumps({"s": conversation_id, "e": entry_id, "h": head, "r": revision}, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def _decode_history_cursor(value: str) -> tuple[str, str]:
+def _decode_history_cursor(value: str) -> tuple[str, str, str | None, int | None]:
     try:
         raw = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
         payload = json.loads(raw)
         if not isinstance(payload, dict) or not isinstance(payload.get("s"), str) or not isinstance(payload.get("e"), str):
             raise ValueError
-        return payload["s"], payload["e"]
+        head, revision = payload.get("h"), payload.get("r")
+        if head is not None and (not isinstance(head, str) or not head or type(revision) is not int or revision < 0):
+            raise ValueError
+        return payload["s"], payload["e"], head, revision
     except Exception as exc:
         raise ValueError("invalid conversation cursor") from exc
 

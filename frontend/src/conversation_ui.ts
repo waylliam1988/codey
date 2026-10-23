@@ -4,6 +4,7 @@ import type { Message, Project, Session } from './types/domain';
 import type { ProcessSnapshot } from './process';
 import { ConversationSearch } from './conversation_search';
 import { ConversationHistory } from './conversation_history';
+import { iconButton } from './icon_button';
 import type { ServerEvent } from './domain/protocol';
 export interface ConversationUiApi {
   init(deps: ConversationUiDeps): void;
@@ -95,6 +96,10 @@ export interface ConversationUiDeps {
   const forcedHistoryRefresh = new Set<string>();
   const views = new Map<string, ViewState>();
   const historyStarts = new Map<string, number>();
+  const loadingHistory = new Map<string, symbol>();
+  const deferredHistory = new Set<string>();
+  let historyObserver: IntersectionObserver | undefined;
+  let userScrollPending = false;
   let searchPanel: ConversationSearch | null = null;
   const focusRendering = new Map<string, symbol>();
   let searchOrigin: { session: string; entry: string; offset: number; scroll: number; following: boolean } | null =
@@ -263,11 +268,15 @@ export interface ConversationUiDeps {
   function stopFollowing() {
     following = false;
     scrollIntent = 'history';
+    userScrollPending = true;
+    history.pauseRefresh(shownId);
+    if (shownId) deferredHistory.add(shownId);
     captureView();
     updateLatest();
   }
   function backToLatest() {
-    if (history.hasAfter(deps.getActiveId())) {
+    userScrollPending = false;
+    if (history.hasAfter(deps.getActiveId()) || deferredHistory.has(deps.getActiveId())) {
       void refreshHistory(deps.getActiveId()).then(() => {
         following = true;
         scrollChat();
@@ -560,6 +569,10 @@ export interface ConversationUiDeps {
   async function refreshHistory(sessionId: string, force = true, background = false): Promise<void> {
     const session = deps?.getSessions().find((item) => item.id === sessionId);
     if (!session) return;
+    if (background && sessionId === shownId && (!following || loadingHistory.has(sessionId))) {
+      deferredHistory.add(sessionId);
+      return;
+    }
     if (
       background &&
       searchPanel &&
@@ -569,6 +582,7 @@ export interface ConversationUiDeps {
     )
       return;
     if (force) forcedHistoryRefresh.add(sessionId);
+    deferredHistory.delete(sessionId);
     await history.refresh(session);
   }
   async function observeCommit(event: ServerEvent): Promise<void> {
@@ -591,77 +605,99 @@ export interface ConversationUiDeps {
     return index;
   }
   function addHistoryLoader(chat: HTMLElement, session: Session, start: number): void {
-    if (!start && !history.hasMore(session.id) && !history.hasAfter(session.id)) return;
+    historyObserver?.disconnect();
+    chat.querySelector(':scope > [data-history-sentinel]')?.remove();
+    if (!start && !history.hasMore(session.id)) return;
     const loader = document.createElement('div');
     loader.className = 'history-loader';
-    const earlier = document.createElement('button'),
-      all = document.createElement('button'),
-      searchButton = document.createElement('button');
-    earlier.type = all.type = 'button';
-    earlier.className = all.className = 'link-btn';
-    earlier.textContent = 'Load earlier messages';
-    earlier.dataset.loadHistory = '';
-    all.textContent = 'Show all for find';
-    all.dataset.showAllHistory = '';
-    searchButton.type = 'button';
-    searchButton.className = 'link-btn';
-    searchButton.textContent = 'Search this conversation';
-    searchButton.dataset.searchHistory = '';
-    const load = async (everything: boolean) => {
-      if (deps.activeSession() !== session) return;
-      if (start === 0) {
-        following = false;
-        scrollIntent = 'history';
-        const previousLength = session.messages.length;
-        await history.earlier(session, everything);
-        if (deps.activeSession() !== session) return;
-        const added = session.messages.length - previousLength;
-        if (added <= 0) return;
-        const anchor = loader.nextElementSibling;
-        const top = anchor?.getBoundingClientRect().top;
-        const prefix = document.createElement('div');
-        for (const message of session.messages.slice(0, added)) deps.appendMessageNode(prefix, message);
-        loader.remove();
-        chat.prepend(...prefix.childNodes);
-        historyStarts.set(session.id, 0);
-        addHistoryLoader(chat, session, 0);
-        following = false;
-        scrollIntent = 'history';
-        if (anchor && top !== undefined) setScroll($('chat-area').scrollTop + anchor.getBoundingClientRect().top - top);
+    loader.dataset.historySentinel = '';
+    loader.setAttribute('role', 'status');
+    loader.setAttribute('aria-live', 'polite');
+    if (loadingHistory.has(session.id)) {
+      const spinner = document.createElement('span');
+      spinner.className = 'spinner';
+      spinner.setAttribute('aria-label', 'Loading earlier messages');
+      loader.append(spinner);
+    } else if (history.failed(session.id)) {
+      loader.append(
+        iconButton('Retry loading earlier messages', 'reload', () => {
+          void loadEarlier(true);
+        }),
+      );
+    }
+    chat.prepend(loader);
+    historyObserver?.observe(loader);
+  }
+
+  async function loadEarlier(retry = false): Promise<void> {
+    const session = deps.activeSession();
+    if (!session || session.id !== shownId || loadingHistory.has(session.id) || (history.failed(session.id) && !retry))
+      return;
+    const start = historyStarts.get(session.id) || 0;
+    if (!start && !history.hasMore(session.id)) return;
+    const request = Symbol();
+    loadingHistory.set(session.id, request);
+    const chat = $('chat');
+    following = false;
+    scrollIntent = 'history';
+    addHistoryLoader(chat, session, start);
+    try {
+      let prefix: Message[];
+      let next = 0;
+      if (start) {
+        next = historyBoundary(session.messages, Math.max(0, start - HISTORY_BATCH));
+        prefix = session.messages.slice(next, start);
+      } else {
+        const first = session.messages[0];
+        await history.earlier(session);
+        if (deps.activeSession() !== session || loadingHistory.get(session.id) !== request) return;
+        const index = session.messages.findIndex((message) => sameMessage(first, message));
+        if (index < 0) {
+          views.delete(session.id);
+          renderChat(true);
+          return;
+        }
+        prefix = session.messages.slice(0, index);
+      }
+      if (deps.activeSession() !== session || loadingHistory.get(session.id) !== request) return;
+      const areaTop = $('chat-area').getBoundingClientRect().top;
+      const anchor = Array.from(chat.children).find(
+        (node) =>
+          !(node instanceof HTMLElement && node.hasAttribute('data-history-sentinel')) &&
+          node.getBoundingClientRect().bottom > areaTop,
+      );
+      const top = anchor?.getBoundingClientRect().top;
+      const fragment = document.createElement('div');
+      for (const message of prefix) {
+        const previous = fragment.lastElementChild;
+        deps.appendMessageNode(fragment, message);
+        if (
+          message.entryId &&
+          previous !== fragment.lastElementChild &&
+          fragment.lastElementChild instanceof HTMLElement
+        )
+          fragment.lastElementChild.dataset.entryId = message.entryId;
+      }
+      chat.querySelector(':scope > [data-history-sentinel]')?.remove();
+      chat.prepend(...fragment.childNodes);
+      historyStarts.set(session.id, next);
+      if (anchor?.isConnected && top !== undefined)
+        setScroll($('chat-area').scrollTop + anchor.getBoundingClientRect().top - top);
+      captureView();
+    } finally {
+      if (loadingHistory.get(session.id) === request) loadingHistory.delete(session.id);
+      if (deps.activeSession() === session) {
+        addHistoryLoader(chat, session, historyStarts.get(session.id) || 0);
         captureView();
         updateLatest();
-        return;
       }
-      const anchor = loader.nextElementSibling;
-      const top = anchor?.getBoundingClientRect().top;
-      const next = everything ? 0 : historyBoundary(session.messages, Math.max(0, start - HISTORY_BATCH));
-      const prefix = document.createElement('div');
-      for (const message of session.messages.slice(next, start)) deps.appendMessageNode(prefix, message);
-      loader.remove();
-      chat.prepend(...prefix.childNodes);
-      historyStarts.set(session.id, next);
-      addHistoryLoader(chat, session, next);
-      if (next || history.hasMore(session.id)) chat.prepend(chat.lastElementChild!);
-      following = false;
-      scrollIntent = 'history';
-      if (anchor && top !== undefined) setScroll($('chat-area').scrollTop + anchor.getBoundingClientRect().top - top);
-      captureView();
-      updateLatest();
-    };
-    earlier.onclick = () => load(false);
-    all.onclick = async () => {
-      await load(true);
-      if (history.hasMore(session.id)) await history.earlier(session, true);
-    };
-    searchButton.onclick = searchHistory;
-    loader.append(earlier, all, searchButton);
-    chat.append(loader);
+    }
   }
 
   function scrollChat(capture = true) {
     document.querySelector('main')?.classList.toggle('empty-conversation', !deps.activeSession()?.messages.length);
     if (following) setScroll($('chat-area').scrollHeight);
-    else restoreReading(views.get(shownId));
+    else if (!userScrollPending && !scrollbarHeld) restoreReading(views.get(shownId));
     if (capture) captureView();
     updateLatest();
     updateNotice();
@@ -702,6 +738,8 @@ export interface ConversationUiDeps {
     historyRendered.delete(id);
     forcedHistoryRefresh.delete(id);
     historyStarts.delete(id);
+    loadingHistory.delete(id);
+    deferredHistory.delete(id);
     history.forget(id);
   }
 
@@ -1070,13 +1108,27 @@ export interface ConversationUiDeps {
       }
     });
     const area = $('chat-area');
+    historyObserver?.disconnect();
+    if (typeof IntersectionObserver !== 'undefined') {
+      historyObserver = new IntersectionObserver(
+        (entries) => {
+          if (!following && entries.some((entry) => entry.isIntersecting)) void loadEarlier();
+        },
+        { root: area, rootMargin: '100px 0px 0px 0px' },
+      );
+    }
     area.addEventListener(
       'wheel',
       (e) => {
         if (e.shiftKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
         if (nestedOwnsScroll(e.target, area, e.deltaY)) return;
-        if (e.deltaY < 0) stopFollowing();
-        else scrollIntent = 'latest';
+        if (e.deltaY < 0) {
+          stopFollowing();
+          if (area.scrollTop < 100) void loadEarlier();
+        } else {
+          scrollIntent = 'latest';
+          userScrollPending = true;
+        }
       },
       { passive: true },
     );
@@ -1092,7 +1144,11 @@ export interface ConversationUiDeps {
       )
         return;
       if (['ArrowUp', 'PageUp', 'Home'].includes(e.key) || (e.key === ' ' && e.shiftKey)) stopFollowing();
-      else if (['ArrowDown', 'PageDown', 'End', ' '].includes(e.key)) scrollIntent = 'latest';
+      else if (['ArrowDown', 'PageDown', 'End', ' '].includes(e.key)) {
+        scrollIntent = 'latest';
+        userScrollPending = true;
+      }
+      if (scrollIntent === 'history' && area.scrollTop < 100) void loadEarlier();
     });
     area.addEventListener('pointerdown', (e) => {
       const rect = area.getBoundingClientRect();
@@ -1133,14 +1189,19 @@ export interface ConversationUiDeps {
       (e) => {
         const y = e.touches[0]?.clientY;
         if (touchY !== undefined && y !== undefined && y > touchY) stopFollowing();
-        else if (touchY !== undefined && y !== undefined && y < touchY) scrollIntent = 'latest';
+        else if (touchY !== undefined && y !== undefined && y < touchY) {
+          scrollIntent = 'latest';
+          userScrollPending = true;
+        }
         touchY = y;
       },
       { passive: true },
     );
     area.addEventListener('scroll', () => {
       const view = views.get(shownId);
-      if (view && view.height !== area.scrollHeight) {
+      const userMoved = (userScrollPending || scrollbarHeld) && Math.abs(area.scrollTop - scrollOffset) > 0.5;
+      if (userMoved) userScrollPending = false;
+      if (!userMoved && !userScrollPending && view && view.height !== area.scrollHeight) {
         if (following) setScroll(area.scrollHeight);
         else restoreReading(view);
       } else if (area.scrollTop > scrollOffset && isAtLatest() && (scrollIntent === 'latest' || scrollbarHeld)) {
@@ -1150,6 +1211,7 @@ export interface ConversationUiDeps {
       scrollOffset = area.scrollTop;
       captureView();
       updateLatest();
+      if (!following && scrollIntent === 'history' && area.scrollTop < 100) void loadEarlier();
     });
     new ResizeObserver(() => {
       if (shownId) scrollChat();
@@ -1160,6 +1222,16 @@ export interface ConversationUiDeps {
       (e) => {
         if (e.isComposing || e.keyCode === 229) return;
         const target = e.target instanceof Element ? e.target : null;
+        if (
+          (e.ctrlKey || e.metaKey) &&
+          e.key.toLowerCase() === 'f' &&
+          !target?.closest('.document-pane,[role="dialog"]')
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+          searchHistory();
+          return;
+        }
         const menu = target?.closest('.ctx-menu.open');
         if (menu && ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Escape'].includes(e.key)) {
           e.preventDefault();

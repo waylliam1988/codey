@@ -83,6 +83,10 @@ export class ConversationHistory {
     return this.repositories.get(id)?.current?.hasAfter === true;
   }
 
+  pauseRefresh(id: string): void {
+    this.repositories.get(id)?.cancelLatest();
+  }
+
   async focus(session: Session, entryId: string): Promise<boolean> {
     const repository = this.repositories.get(session.id) || new HistoryRepository();
     this.repositories.set(session.id, repository);
@@ -120,16 +124,13 @@ export class ConversationHistory {
     this.changed(session);
   }
 
-  async earlier(session: Session, all = false): Promise<void> {
+  async earlier(session: Session): Promise<void> {
     const repository = this.repositories.get(session.id);
     if (!repository) return;
     try {
-      let page: HistoryResult | null;
-      do {
-        page = await repository.loadEarlier(session.id);
-        if (!page || this.sessions.get(session.id) !== session) return;
-        session.messages = reconcileHistory(session.messages, page.items);
-      } while (all && page.hasMore);
+      const page = await repository.loadEarlier(session.id);
+      if (!page || this.sessions.get(session.id) !== session) return;
+      session.messages = reconcileHistory(session.messages, page.items);
       this.errors.delete(session.id);
     } catch {
       this.errors.add(session.id);

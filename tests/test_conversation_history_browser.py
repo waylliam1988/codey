@@ -35,16 +35,38 @@ def test_packaged_history_prepends_without_remounting_visible_messages(tmp_path,
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page_errors = []
+            page.on('pageerror', lambda error: page_errors.append(str(error)))
+            older_requests = []
+
+            def append_while_loading(route):
+                if 'before=' in route.request.url:
+                    older_requests.append(route.request.url)
+                    ctx.durable.append_message('history', 'assistant_message', {'text': 'A live update while reading history.'})
+                route.continue_()
+
+            page.route('**/api/sessions/history/messages?*', append_while_loading)
             page.goto(httpd.launch_url(f"http://127.0.0.1:{httpd.server_port}/"))
             expect(page.locator(f'.msg.user[data-message-id="{latest_user_id}"]')).to_be_attached()
             expect(page.locator(".msg.user")).to_have_count(50)
             anchor = page.locator(f'.msg.user[data-message-id="{latest_user_id}"]').element_handle()
-            page.get_by_role("button", name="Load earlier messages", exact=True).click()
+            assert page.get_by_role('button', name='Load earlier messages', exact=True).count() == 0
+            assert page.get_by_role('button', name='Show all for find', exact=True).count() == 0
+            assert page.get_by_role('button', name='Search this conversation', exact=True).count() == 0
+            area = page.locator('#chat-area')
+            area.hover()
+            page.mouse.wheel(0, -100000)
             expect(page.locator(".msg.user")).to_have_count(100)
             assert anchor.evaluate("el => el.isConnected")
-            page.get_by_role("button", name="Show all for find", exact=True).click()
-            expect(page.locator(".msg.user")).to_have_count(200)
+            for expected in (150, 200):
+                area.hover()
+                page.mouse.wheel(0, -100000)
+                expect(page.locator('.msg.user')).to_have_count(expected)
             assert anchor.evaluate("el => el.isConnected")
+            page.keyboard.press('Control+f')
+            expect(page.get_by_role('searchbox', name='Search conversation history')).to_be_visible()
+            assert len(older_requests) == 3
+            assert not page_errors
             browser.close()
     finally:
         httpd.shutdown()

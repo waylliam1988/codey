@@ -51,10 +51,13 @@ it('mounts recent complete turns first and prepends history without replacing th
   const initial = chat.querySelectorAll('.msg.user').length;
   expect(initial).toBeLessThanOrEqual(50);
   const tail = chat.querySelector('[data-message-id="user-199"]');
-  chat.querySelector<HTMLButtonElement>('[data-load-history]')!.click();
+  const area = document.getElementById('chat-area')!;
+  area.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true }));
   expect(chat.querySelectorAll('.msg.user').length).toBeGreaterThan(initial);
   expect(chat.querySelector('[data-message-id="user-199"]')).toBe(tail);
-  chat.querySelector<HTMLButtonElement>('[data-show-all-history]')!.click();
+  area.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true }));
+  area.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true }));
   expect(chat.querySelectorAll('.msg.user')).toHaveLength(200);
+  expect(chat.textContent).not.toMatch(/Load earlier messages|Show all for find|Search this conversation/);
   vi.unstubAllGlobals();
 });
