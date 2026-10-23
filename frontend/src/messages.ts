@@ -16,7 +16,7 @@ interface MessagesDeps extends UiDeps {
   openChangesDrawer(project: string, path?: string): unknown;
   attachCurrentChatToPickedProject(): unknown;
   approveCommand(id: string, approved: boolean, scope?: string): unknown;
-  continueTask(sessionId: string): unknown;
+  continueTask(sessionId: string, sourceRunId: string): unknown;
   resumeTeaching(id: string, sessionId: string): unknown;
   getActiveId(): string;
   getRunningSessionId(): string | null;
@@ -367,21 +367,25 @@ export interface MessagesApi {
       const row = commandCard(m, runtime.Render.copyText);
       approvalViews.set(row, JSON.stringify([m]));
       chat.appendChild(row);
-    } else if (m.type === 'limit') {
+    } else if (m.type === 'limit' || m.type === 'pause') {
+      const limited = m.type === 'limit';
+      const sourceRunId = m.runId;
       chat.appendChild(
-        statusRow('Limit', m.text || 'Turn limit reached', {
-          actions: runtime.RunDetails.actionsForMessage(m, [
-            { label: 'Continue', disabled: !!runningSessionId, onclick: () => continueTask(m.sessionId || activeId) },
-          ]),
-        }),
-      );
-    } else if (m.type === 'pause') {
-      chat.appendChild(
-        statusRow('Paused', m.text || 'No progress for several turns', {
-          actions: runtime.RunDetails.actionsForMessage(m, [
-            { label: 'Continue', disabled: !!runningSessionId, onclick: () => continueTask(m.sessionId || activeId) },
-          ]),
-        }),
+        statusRow(
+          limited ? 'Limit' : 'Paused',
+          m.text || (limited ? 'Turn limit reached' : 'No progress for several turns'),
+          {
+            actions: runtime.RunDetails.actionsForMessage(m, [
+              sourceRunId
+                ? {
+                    label: 'Continue',
+                    disabled: !!runningSessionId,
+                    onclick: () => continueTask(m.sessionId || activeId, sourceRunId),
+                  }
+                : null,
+            ]),
+          },
+        ),
       );
     } else if (m.type === 'teach') {
       chat.appendChild(

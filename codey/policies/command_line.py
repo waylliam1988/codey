@@ -15,8 +15,14 @@ Tokenization failure raises :class:`ValueError`; callers must fail closed
 
 from __future__ import annotations
 
+import os
 import shlex
 import sys
+
+
+def shell_executor() -> str:
+    """Default interpreter used by subprocess shell=True on this host."""
+    return os.environ.get("COMSPEC", "cmd.exe") if os.name == "nt" else "/bin/sh"
 
 
 def _is_windows(platform: str) -> bool:
@@ -45,4 +51,5 @@ def _strip_matching_quotes(token: str) -> str:
 
 __all__ = [
     "split_run_command",
+    "shell_executor",
 ]

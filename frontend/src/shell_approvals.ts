@@ -251,25 +251,5 @@ export function createApprovalController(deps: ApprovalDeps) {
     }
   }
 
-  async function continueSession(sessionId: string) {
-    // Route from authoritative service state, independent of the user's wording.
-    const response = await deps.fetch('/api/state', { cache: 'no-store' });
-    if (!response.ok) throw new Error('Task state unavailable');
-    const data = await response.json();
-    const states = (data.shell_approvals || []).map(decodeApprovalState) as ApprovalState[];
-    states.forEach(apply);
-    const state = states.filter((s) => s.session_id === sessionId).at(-1);
-    if (
-      !state ||
-      state.continuation === 'started' ||
-      state.continuation === 'not_required' ||
-      state.decision === 'cancelled'
-    )
-      return false;
-    if (state.continuation === 'failed' || state.continuation === 'queued') await retry(state.id);
-    else deps.focus?.(state.id);
-    return true;
-  }
-
-  return { apply, submit, retry, refresh, remember, continueSession, decided: (id: string) => !!stateFor(id) };
+  return { apply, submit, retry, refresh, remember, decided: (id: string) => !!stateFor(id) };
 }

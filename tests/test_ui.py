@@ -833,7 +833,6 @@ async function main() {
     runBodies.push({ url, body: JSON.parse(opts.body) });
     return { status: 200, ok: true, json: async () => ({}) };
   };
-  runtime.ShellApprovals = {continueSession: async () => false};
   runtime.Composer.init({
     $: (id) => global.document.getElementById(id),
     PROVIDERS: composerProviders,
@@ -864,21 +863,21 @@ async function main() {
   // A permitted continuation retains its exact provider.
   liveSession.provider = 'mimo';
   runBodies.length = 0;
-  await runtime.Composer.continueTask('s1');
+  await runtime.Composer.continueTask('s1', 'source-run-1');
   const continued = runBodies.find((r) => r.url === '/api/run' && r.body && r.body.input?.kind === 'resume_run');
   if (!continued) throw new Error('continueTask did not POST /api/run with input.kind=resume_run');
   if (continued.body.input.source_run_id !== 'source-run-1') throw new Error('continueTask lost source run id');
   if (continued.body.provider !== 'mimo') throw new Error('continueTask must preserve the stored provider, got ' + continued.body.provider);
-  // A newer approval continuation owns the subsequent Continue action.
+  // Each Continue action supplies the exact run it belongs to.
   liveSession.messages.push({type:'shell_approval_status', approval:{
     continuation:'started', continuation_run_id:'newer-approval-run'}});
   runBodies.length = 0;
-  await runtime.Composer.continueTask('s1');
+  await runtime.Composer.continueTask('s1', 'newer-approval-run');
   if (runBodies[0].body.input.source_run_id !== 'newer-approval-run') throw new Error('newer approval run was lost');
   // Removed connections keep their identity and cannot submit or substitute.
   liveSession.provider = 'removed-id';
   runBodies.length = 0;
-  await runtime.Composer.continueTask('s1');
+  await runtime.Composer.continueTask('s1', 'newer-approval-run');
   if (runBodies.length) throw new Error('removed connection submitted a continuation');
   if (liveSession.provider !== 'removed-id') throw new Error('removed connection identity changed');
   console.log('EXECUTABLE_SHRINK_LIVE_OK');

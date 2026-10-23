@@ -7,7 +7,10 @@ they never send, execute, or hold task state.
 
 from __future__ import annotations
 
+import sys
 from typing import Any
+
+from codey.policies.command_line import shell_executor
 
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolResult
@@ -102,6 +105,18 @@ def kernel_prompt_for_session(
         "Do not claim an environment-wide network or permission failure from a malformed call or one failed endpoint. "
         "Report the specific observed failure and consider a different authorized path."
     )
+    if {"run", "shell"}.intersection(visible_names):
+        parts.append(
+            f"Execution host platform: {sys.platform}. Default command interpreter: {shell_executor()}. "
+            "Use syntax for this interpreter. Do not infer the shell from the user's terminal or workspace path. "
+            + (
+                "Windows commands use cmd.exe syntax, not Bash heredocs (<<EOF) or implicit PowerShell syntax. "
+                "Use python -c for Python snippets; invoke PowerShell explicitly with powershell -NoProfile -Command "
+                "when PowerShell syntax is needed."
+                if sys.platform == "win32" else
+                "Use POSIX /bin/sh syntax; invoke a different interpreter explicitly when its syntax is needed."
+            )
+        )
     if "shell" in visible_names:
         parts.append(
             "When a public URL or API can answer the request, shell can request a bounded noninteractive HTTP command "

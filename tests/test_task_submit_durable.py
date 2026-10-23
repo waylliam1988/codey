@@ -103,3 +103,23 @@ def test_unadmitted_stop_does_not_pause_or_cancel_another_session(tmp_path):
         worker.assert_not_called()
     finally:
         state.close()
+
+
+def test_explicit_resume_of_cancelled_source_admits_one_independent_attempt(tmp_path):
+    from codey.task.model import ResumeRun
+    state=AppContext(tmp_path/'state')
+    try:
+        state.durable.admit_input(conversation_id='session',request_id='source',task_id='source',text='Assess project',provider_snapshot={'provider_id':'deepseek'})
+        state.durable.cancel_task('source',reason='user stopped')
+        instruction='Continue the unfinished task in this conversation using its existing context.'
+        with mock.patch.object(task_submit,'submit_browser_task',return_value=True) as worker:
+            run=task_submit.submit_task('session',None,instruction,8,True,'deepseek',previous_run_id='source',input=ResumeRun('source',instruction),get_state=lambda:state)
+        assert run and run!='source'
+        resumed=state.durable.task(run)
+        assert resumed.state['previous_run_id']=='source'
+        assert resumed.state['input']['source_run_id']=='source'
+        assert not resumed.state.get('cancel_requested')
+        assert str(state.durable.task('source').status)=='cancelled'
+        worker.assert_called_once()
+    finally:
+        state.close()

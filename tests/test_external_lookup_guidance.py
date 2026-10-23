@@ -22,3 +22,18 @@ def test_shell_lookup_guidance_is_capability_driven_not_topic_driven(native):
 def test_codemode_rejection_explains_the_scope_without_executing_network_code():
     with pytest.raises(ValueError, match='not a host network denial'):
         parse_codemode_args({'code': 'return await fetch("https://example.com")'})
+
+
+@pytest.mark.parametrize('native',[False,True])
+@pytest.mark.parametrize('tool',['run','shell'])
+def test_command_guidance_declares_actual_windows_executor(monkeypatch,native,tool):
+    from codey.operations import kernel_prompt
+    monkeypatch.setattr(kernel_prompt.sys,'platform','win32')
+    monkeypatch.setattr(kernel_prompt,'shell_executor',lambda:r'C:\Windows\System32\cmd.exe')
+    session=SimpleNamespace(task_text='Assess project',handoff='',project='workspace')
+    prompt=kernel_prompt_for_session(session,tool_names=(tool,'done'),native=native)
+    assert 'Execution host platform: win32' in prompt
+    assert r'C:\Windows\System32\cmd.exe' in prompt
+    assert 'Bash heredocs' in prompt
+    assert 'python -c' in prompt
+    assert 'invoke PowerShell explicitly' in prompt

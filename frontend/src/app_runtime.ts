@@ -2109,8 +2109,8 @@ function setActiveProvider(id: string) {
 }
 // Provider menu handlers are bound by runtime.ProviderUI.init().
 
-function continueTask(sessionId: string) {
-  return runtime.Composer.continueTask(sessionId);
+function continueTask(sessionId: string, sourceRunId: string) {
+  return runtime.Composer.continueTask(sessionId, sourceRunId);
 }
 $('changes-close').onclick = closeChangesDrawer;
 const researchClose = $('research-close');

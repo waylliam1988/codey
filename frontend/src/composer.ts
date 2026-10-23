@@ -47,7 +47,7 @@ export interface ComposerApi {
   updateSend(): void;
   toggleResearchForActive(): void;
   setActiveProvider(id: string): void;
-  continueTask(sessionId: string): Promise<void>;
+  continueTask(sessionId: string, sourceRunId: string): Promise<void>;
   recallMessage(sessionId: string, text: string): void;
   applyQueuedInput(input: unknown): void;
   queuedInputForRun(runId: string): QueuedInput | undefined;
@@ -652,7 +652,8 @@ export interface ComposerApi {
     return true;
   }
 
-  async function continueTask(sessionId: string) {
+  async function continueTask(sessionId: string, sourceRunId: string) {
+    if (!sourceRunId) return;
     if (runtime.UserQuestions?.pending(sessionId)) {
       runtime.UserQuestions.focus(sessionId);
       return;
@@ -667,27 +668,8 @@ export interface ComposerApi {
       )
     )
       return;
-    if (await runtime.ShellApprovals.continueSession(sessionId)) return;
     const p = deps.sessionProject(s);
-    deps.addToSession(sessionId, { type: 'info', text: 'continue task' });
-    const sourceMessage = [...(Array.isArray(s.messages) ? s.messages : [])]
-      .reverse()
-      .find(
-        (m) =>
-          m &&
-          ((m.type === 'user' && Array.isArray(m.attempts) && m.attempts.length) ||
-            (m.approval?.continuation === 'started' && m.approval.continuation_run_id)),
-      );
-    const sourceRunId = sourceMessage?.approval?.continuation_run_id || sourceMessage?.attempts?.at(-1)?.runId || '';
-    if (!sourceRunId) {
-      deps.addToSession(sessionId, { type: 'err', text: 'No source run is available to resume.', sessionId });
-      return;
-    }
-    const task = [
-      'Continue the unfinished task in this same conversation.',
-      'Use the existing project context and finish the original user request.',
-      'If the work is complete, reply with a JSON done tool call.',
-    ].join(' ');
+    const instruction = 'Continue the unfinished task in this conversation using its existing context.';
     sendingSessionId = sessionId;
     updateSend();
     const admission = {
@@ -705,8 +687,7 @@ export interface ComposerApi {
           session_id: sessionId,
           run_id: admission.runId,
           project: p?.path || null,
-          task,
-          input: { kind: 'resume_run', source_run_id: sourceRunId },
+          input: { kind: 'resume_run', source_run_id: sourceRunId, instruction },
           provider: s.provider || liveDefaultProvider(),
           intent: deps.currentIntentForSession(sessionId),
           ...runtime.ProviderUI.runSelection(s, s.provider || liveDefaultProvider()),
