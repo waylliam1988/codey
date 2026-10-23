@@ -108,3 +108,18 @@ def test_edit_sending_remains_stoppable_without_appending_another_user_message(p
     assert len(pending) == 1 and stops == [pending[0].request.post_data_json["run_id"]]
     expect(page.locator(".msg-edit-input")).to_have_value("Slow edit")
     expect(page.locator(".msg-edit-input")).to_be_enabled()
+
+
+@pytest.mark.parametrize("target_busy", [False, True])
+def test_edit_uses_target_chat_ownership_when_another_chat_is_primary(page, target_busy):
+    seed(page)
+    page.evaluate("""targetBusy => {
+      if(targetBusy) handleServerEvent({type:'task_start',session_id:'a',run_id:'active-a',task_revision:1,task_status:'running'});
+      handleServerEvent({type:'task_start',session_id:'b',run_id:'active-b',task_revision:1,task_status:'running'});
+    }""", target_busy)
+    page.locator(".msg.user .msg-edit").first.click(force=True)
+    expect(page.locator(".msg-edit-input")).to_have_count(0 if target_busy else 1)
+    if not target_busy:
+        expect(page.locator(".msg-edit-input")).to_be_enabled()
+        page.get_by_role("button", name="Cancel", exact=True).click()
+        expect(page.locator(".msg-edit-input")).to_have_count(0)

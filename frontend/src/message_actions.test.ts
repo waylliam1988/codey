@@ -6,6 +6,22 @@ import './research_runs';
 import type { Session } from './types/domain';
 import { runtime } from './runtime';
 
+function editDeps(): Parameters<typeof window.Messages.init>[0] {
+  return {
+    getActiveId: () => 'chat',
+    getRunningSessionId: () => null,
+    isSessionRunning: () => false,
+    openDocument: vi.fn(),
+    statusRow: () => document.createElement('div'),
+    currentProjectPath: () => '',
+    openChangesDrawer: vi.fn(),
+    attachCurrentChatToPickedProject: vi.fn(),
+    approveCommand: vi.fn(),
+    continueTask: vi.fn(),
+    resumeTeaching: vi.fn(),
+  };
+}
+
 it.each(['', ' \n\n ', '[reference]: https://example.com'])(
   'keeps an empty stream out of layout and reveals later text: %j',
   (text) => {
@@ -70,9 +86,9 @@ it('edits a user message inline and submits the edited text', async () => {
   runtime.ConversationUI = { historyRevision: () => 12 } as typeof runtime.ConversationUI;
   const editMessage = vi.fn().mockResolvedValue(true);
   window.Composer = { editMessage } as unknown as typeof window.Composer;
-  window.Messages.init({ getActiveId: () => 'chat', getRunningSessionId: () => null } as Parameters<
-    typeof window.Messages.init
-  >[0]);
+  window.Messages.init({
+    ...editDeps(),
+  } as Parameters<typeof window.Messages.init>[0]);
   const host = document.createElement('div');
   window.Messages.append(host, { type: 'user', id: 'u', entryId: 'entry-u', text: '原始请求' });
   host.querySelector<HTMLButtonElement>('.msg-edit')!.click();
@@ -83,12 +99,35 @@ it('edits a user message inline and submits the edited text', async () => {
   expect(host.querySelector('.msg-edit-input')).not.toBeNull();
 });
 
+it.each([
+  { primary: 'other-chat', busy: false, opens: true },
+  { primary: 'chat', busy: true, opens: false },
+  { primary: 'other-chat', busy: true, opens: false },
+])('scopes editing to the target chat running state: %j', ({ primary, busy, opens }) => {
+  runtime.ConversationUI = { historyRevision: () => 12 } as typeof runtime.ConversationUI;
+  const isSessionRunning = vi.fn((id: string) => id === 'chat' && busy);
+  window.Messages.init({
+    ...editDeps(),
+    getActiveId: () => 'chat',
+    getRunningSessionId: () => primary,
+    isSessionRunning,
+  } as Parameters<typeof window.Messages.init>[0]);
+  const host = document.createElement('div');
+  window.Messages.append(host, { type: 'user', id: 'u', entryId: 'entry-u', sessionId: 'chat', text: 'Original' });
+  host.querySelector<HTMLButtonElement>('.msg-edit')!.click();
+  expect(!!host.querySelector('.msg-edit-input')).toBe(opens);
+  expect(isSessionRunning).toHaveBeenCalledWith('chat');
+});
+
 it('cancels inline message editing without changing the original', () => {
   runtime.ConversationUI = { historyRevision: () => 12 } as typeof runtime.ConversationUI;
   window.Composer = { editMessage: vi.fn() } as unknown as typeof window.Composer;
-  window.Messages.init({ getActiveId: () => 'chat', getRunningSessionId: () => null } as Parameters<
-    typeof window.Messages.init
-  >[0]);
+  window.Messages.init({
+    ...editDeps(),
+    getActiveId: () => 'chat',
+    getRunningSessionId: () => null,
+    isSessionRunning: () => false,
+  } as Parameters<typeof window.Messages.init>[0]);
   const host = document.createElement('div');
   window.Messages.append(host, { type: 'user', id: 'u', entryId: 'entry-u', text: '原始请求' });
   host.querySelector<HTMLButtonElement>('.msg-edit')!.click();
@@ -203,6 +242,7 @@ it('opens the research report belonging to the message run', () => {
     getActiveId: () => 'chat',
     getRunningSessionId: () => null,
     openDocument,
+    isSessionRunning: () => false,
     attachCurrentChatToPickedProject: vi.fn(),
     statusRow: () => document.createElement('div'),
     currentProjectPath: () => '',

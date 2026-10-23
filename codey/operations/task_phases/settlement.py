@@ -7,8 +7,8 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import replace
 from typing import Any
-from codey.durable.events import committed_task_version
 
+from codey.durable.events import committed_task_version
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.ghost_post_turn import (
     GhostTaskPolicyDeps,

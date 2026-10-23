@@ -11,6 +11,56 @@ from codey.durable.errors import IdempotencyConflict
 from codey.task.model import EditUserMessage, StartTask
 
 
+@pytest.mark.parametrize("waiting", [False, True])
+@pytest.mark.parametrize("retain_owner", [False, True])
+def test_repeated_admission_only_releases_its_new_reservation(tmp_path, waiting, retain_owner):
+    state = AppContext(tmp_path / "state", start_scheduler=False)
+    try:
+        with mock.patch.object(task_submit, "submit_browser_task", return_value=True) as worker:
+            def send():
+                return task_submit.submit_task("session", None, "work", 8, False, "deepseek",
+                    run_id="replay", input=StartTask("work"), get_state=lambda: state)
+            assert send() == "replay"
+            if waiting:
+                state.durable.wait_task("replay", state={"stop_reason": "approval"})
+            if not retain_owner:
+                state.release_run("replay")
+            checkpoint = state.durable.task("replay")
+            head = state.durable.store.head("session")
+            assert send() == "replay"
+            assert worker.call_count == 1
+            assert state.durable.task("replay") == checkpoint
+            assert state.durable.store.head("session") == head
+            assert (state.active_run_for(session_id="session") is not None) == retain_owner
+            if not retain_owner:
+                assert state.reserve_run(session_id="session", run_id="next", project=None,
+                                         task="next", provider_id="deepseek") is not None
+    finally:
+        state.close()
+
+
+@pytest.mark.parametrize("retain_owner", [False, True])
+def test_task_parked_during_claim_does_not_leak_a_new_reservation(tmp_path, retain_owner):
+    state = AppContext(tmp_path / "state", start_scheduler=False)
+    try:
+        if retain_owner:
+            state.reserve_run(session_id="session", run_id="race", project=None, task="work", provider_id="deepseek")
+        claim = state.durable.claim_task
+        def park_then_claim(task_id):
+            state.durable.wait_task(task_id, state={"stop_reason": "question"})
+            return claim(task_id)
+        with mock.patch.object(state.durable, "claim_task", side_effect=park_then_claim), mock.patch.object(
+            task_submit, "submit_browser_task",
+        ) as worker:
+            assert task_submit.submit_task("session", None, "work", 8, False, "deepseek", run_id="race",
+                input=StartTask("work"), get_state=lambda: state) == "race"
+        assert str(state.durable.task("race").status) == "waiting"
+        assert (state.active_run_for(session_id="session") is not None) == retain_owner
+        worker.assert_not_called()
+    finally:
+        state.close()
+
+
 def test_submit_commits_input_and_task_before_worker_dispatch(tmp_path: Path) -> None:
     state = AppContext(tmp_path / "state")
     observed: list[tuple[str, tuple[str, ...]]] = []

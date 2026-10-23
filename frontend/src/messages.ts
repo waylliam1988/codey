@@ -20,6 +20,7 @@ interface MessagesDeps extends UiDeps {
   resumeTeaching(id: string, sessionId: string): unknown;
   getActiveId(): string;
   getRunningSessionId(): string | null;
+  isSessionRunning(sessionId: string): boolean;
 }
 export interface MessagesApi {
   init(deps: MessagesDeps): void;
@@ -427,7 +428,7 @@ export interface MessagesApi {
   ): void {
     if (!body || div.classList.contains('editing')) return;
     const revision = runtime.ConversationUI.historyRevision(message.sessionId || activeId);
-    if (!message.entryId || revision === undefined || deps.getRunningSessionId?.()) return;
+    if (!message.entryId || revision === undefined || deps.isSessionRunning(message.sessionId || activeId)) return;
     const editor = document.createElement('div');
     editor.className = 'msg-edit-editor';
     const input = document.createElement('textarea');

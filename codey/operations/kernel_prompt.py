@@ -10,9 +10,8 @@ from __future__ import annotations
 import sys
 from typing import Any
 
-from codey.policies.command_line import shell_executor
-
 from codey.operations.task_session import TaskSession
+from codey.policies.command_line import shell_executor
 from codey.runtime.core.models import ToolResult
 from codey.utils.refs import strict_exit_code, strict_verification_success
 from codey.workspace.coding_context import CodingContext, render_coding_context

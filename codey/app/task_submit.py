@@ -338,12 +338,16 @@ def _claim_admitted_task(state: TaskSubmissionState, reserved: RunSnapshot, *, e
         state.release_run(reserved.run_id)
         return False
     if checkpoint.status != TaskStatus.PENDING:
+        if not existing_reservation:
+            state.release_run(reserved.run_id)
         return False
     try:
         state.durable.claim_task(reserved.run_id)
     except (CommitConflict, ValueError):
         if state.durable.task(reserved.run_id).status == TaskStatus.PENDING:
             raise
+        if not existing_reservation:
+            state.release_run(reserved.run_id)
         return False
     state.durable_scheduler.claim(reserved.run_id)
     return True

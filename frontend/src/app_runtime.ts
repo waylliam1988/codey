@@ -1180,6 +1180,9 @@ document.addEventListener('click', (e) => {
 let runningSessionId: string | null = null;
 let runningRunId: string | null = null;
 const activeRuns = new Map<string, string>();
+function isSessionRunning(sessionId: string): boolean {
+  return [...activeRuns.values()].includes(sessionId);
+}
 let turnCounter = 0;
 const turnIds = new Map<string, string>();
 const replyStreamFrames = new FrameCoalescer<ServerEventData>((key, data) => {
@@ -2271,7 +2274,7 @@ async function boot() {
     getRunningRunId: () => runningRunId,
     getRunningRunIdForSession: (sessionId: string) =>
       [...activeRuns.entries()].find(([, owner]) => owner === sessionId)?.[0] || null,
-    isSessionRunning: (sessionId: string) => [...activeRuns.values()].includes(sessionId),
+    isSessionRunning,
     activeSession,
     findSession: (sessionId: string | null | undefined) =>
       sessionId ? sessions.find((x) => x.id === sessionId) : undefined,
@@ -2294,6 +2297,7 @@ async function boot() {
     observeQueuedInput,
   });
   runtime.Messages.init({
+    isSessionRunning,
     openDocument,
     statusRow,
     currentProjectPath,

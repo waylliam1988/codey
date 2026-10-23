@@ -1,6 +1,7 @@
 """Command grouping and math use the same presentation on live and restored views."""
 import pytest
 from playwright.sync_api import expect
+
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
