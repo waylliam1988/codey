@@ -88,7 +88,7 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
     reconcilePromise = (async () => {
       let snapshot: RunState | null = null;
       try {
-        const response = await fetch('/api/state', { cache: 'no-store' });
+        const response = await fetch('/api/state', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
         if (!response.ok) throw new Error('state unavailable');
         snapshot = decodeRunState(await response.json());
         deps.applyRunState(snapshot);

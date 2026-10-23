@@ -1,3 +1,4 @@
+import { mergeCommandResult } from './command_result';
 import { runtime } from './runtime';
 import type { ApprovalState } from './types/domain';
 import type { ToolPreview } from './render';
@@ -21,6 +22,11 @@ export interface ProcessApi {
   restore(chat: HTMLElement, saved?: ProcessSnapshot[]): void;
 }
 export interface ProcessToolRecord {
+  id?: string;
+  shellStatus?: string;
+  approved?: boolean;
+  exitCode?: number | null;
+  executionId?: string;
   finalAnswer?: boolean;
   contentRole?: 'commentary' | 'final';
   preview?: ToolPreview;
@@ -370,6 +376,42 @@ export interface ProcessToolRecord {
       return true;
     }
     if (!m.runId) return false;
+    if (m.type === 'shell_result') {
+      const block = ensure(chat, m.runId);
+      const key = `approval:${m.id || m.runId}`;
+      m = mergeCommandResult(block._process.tools.get(key), m);
+      const target = block.querySelector<HTMLElement>('.process-body')!;
+      const existing = Array.from(target.querySelectorAll<HTMLElement>('.command-card')).find(
+        (node) => node.dataset.approvalId === m.id,
+      );
+      const open = existing?.querySelector<HTMLDetailsElement>('details')?.open;
+      const fragment = document.createElement('div');
+      render(fragment, m);
+      const card = fragment.firstElementChild;
+      if (card) {
+        const details = card.querySelector<HTMLDetailsElement>('details');
+        if (details && open !== undefined) details.open = open;
+        if (existing) existing.replaceWith(card);
+        else target.append(card);
+      }
+      block._process.tools.set(key, {
+        ...m,
+        toolKey: key,
+        kind: 'shell',
+        pending: ['queued', 'running'].includes(m.shellStatus || ''),
+        error: m.approved !== true || (m.shellStatus === 'exit' && m.exitCode !== 0),
+      });
+      // Results end the approval wait; late results never restart a terminal run.
+      if (block._process.state === 'approval') state(block, 'running', false);
+      if (
+        Array.from(chat.querySelectorAll<HTMLElement>('.asst')).some((node) => node.dataset.runId === m.runId) &&
+        !block._process.explicitState
+      )
+        state(block, 'done', false);
+      summary(block);
+      return true;
+    }
+
     if (['turn', 'thinking', 'tool', 'tool_pending', 'run_state'].includes(m.type ?? '')) {
       const block = ensure(chat, m.runId);
       const step = m.n ?? m.turn;
@@ -387,7 +429,12 @@ export interface ProcessToolRecord {
       : find(chat, m.runId);
     if (block && ['shell_request', 'teach'].includes(m.type ?? '')) state(block, 'approval');
     if (block && m.type === 'user_question') state(block, 'question');
-    if (block && m.type === 'shell_approval_status' && m.approval) {
+    if (
+      block &&
+      m.type === 'shell_approval_status' &&
+      m.approval &&
+      !['done', 'failed', 'error', 'stopped', 'max_turns', 'no_progress'].includes(block._process.state)
+    ) {
       const approval = m.approval;
       if (approval.decision === 'cancelled' || approval.continuation === 'cancelled') state(block, 'stopped');
       else if (['failed', 'unavailable'].includes(approval.continuation) || approval.execution === 'uncertain')

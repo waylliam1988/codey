@@ -202,3 +202,12 @@ class RunRegistryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_scoped_stop_before_admission_rejects_only_that_identity():
+    registry = RunRegistry()
+    registry.request_stop('cancelled')
+    assert registry.reserve(session_id='a', project=None, task='work', provider_id='deepseek', run_id='cancelled') is None
+    accepted = registry.reserve(session_id='b', project=None, task='work', provider_id='deepseek', run_id='other')
+    assert accepted is not None
+    assert not accepted.stop_event.is_set()

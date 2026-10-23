@@ -40,6 +40,7 @@ class RunRegistry:
         self._slot_available.set()
         self._manual_busy = False
         self._active_runs: dict[str, RunSnapshot] = {}
+        self._cancelled_admissions: dict[str, None] = {}
         # Primary presentation snapshot; admission and cancellation use the
         # keyed collection above so different sessions can run concurrently.
         self._active_run: RunSnapshot | None = None
@@ -100,6 +101,10 @@ class RunRegistry:
         with self._lock:
             target = str(run_id or self._current_run_id)
             run = self._active_runs.get(target) if target else None
+            if run_id:
+                self._cancelled_admissions[target] = None
+                while len(self._cancelled_admissions) > 4096:
+                    self._cancelled_admissions.pop(next(iter(self._cancelled_admissions)))
             if run is None:
                 if not run_id:
                     self.stop_flag.set()
@@ -220,6 +225,8 @@ class RunRegistry:
             if abort_if_stopped and self.stop_flag.is_set():
                 return None
             identity = run_id or "run_" + uuid.uuid4().hex
+            if identity in self._cancelled_admissions:
+                return None
             if identity in self._active_runs:
                 return self._active_runs[identity]
             if any(run.session_id == session_id for run in self._active_runs.values()):

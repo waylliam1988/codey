@@ -43,6 +43,9 @@ codey = [
     "web/assets/*.css",
     "web/assets/*.js",
     "web/assets/*.svg",
+    "web/assets/*.woff2",
+    "web/assets/*.woff",
+    "web/assets/*.ttf",
     "web/frontend-build.json",
 ]
 "codey.providers" = ["profiles.json"]

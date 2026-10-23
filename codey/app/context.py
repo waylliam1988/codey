@@ -575,6 +575,14 @@ class AppContext(GhostStoreAccessors):
         abort_targets: tuple[str, ...] = ()
         with self._shell_spawn_gate:
             self.run_registry.request_stop(run_id)
+            target_session = self.run_registry.session_for(run_id) if run_id else ""
+            if run_id and not target_session:
+                with contextlib.suppress(KeyError):
+                    target_session = self.durable.task(run_id).conversation_id
+                if not target_session:
+                    # The registry now rejects this still-unadmitted identity.
+                    # Never turn an unknown scoped Stop into a global cancel.
+                    return
             with self.lock:
                 # Durable cancellation is the barrier for the worker and
                 # scheduler.  The in-memory stop flag only interrupts code;
@@ -594,7 +602,6 @@ class AppContext(GhostStoreAccessors):
                     self.approvals.invalidate_generation()
                     events: tuple[dict[str, Any], ...] = ()
                 else:
-                    target_session = self.run_registry.session_for(run_id) if run_id else ""
                     events = self._expire_shell_results_locked(run_id=run_id) if run_id else self._expire_shell_results_locked()
                     self.shell_approval_workflow.cancel_queued(target_session)
         # Route the durable cancellation through the scheduler's abort line so
@@ -608,8 +615,7 @@ class AppContext(GhostStoreAccessors):
         for event in events:
             self.record_shell_result(event)
         if not self._close_requested:
-            target_session = self.run_registry.session_for(run_id) if run_id else ""
-            if not target_session:
+            if not target_session and not run_id:
                 owner = self.run_registry.current()
                 target_session = owner.session_id if owner is not None else ""
             self.input_queue.pause(target_session)

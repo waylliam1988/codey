@@ -1,3 +1,4 @@
+import { mergeCommandResult } from './command_result';
 import { DocumentPane, type DocumentRef } from './document_pane';
 import { Workspace } from './workspace';
 import { RecordedPanels } from './recorded_panels';
@@ -1254,6 +1255,7 @@ function applyLifecycle(data: ServerEvent, source: LifecycleInput['source'], act
   runningRunId = primary?.[0] ?? null;
   runningSessionId = primary?.[1] ?? null;
   if (view.active) turnIdForRun(sessionId, runId);
+  if (view.active) runtime.Composer.observeRun?.(sessionId, runId);
   runtime.Requests.projectLifecycle(data as ServerEventData, view.state);
   if (view.state !== 'idle') recordRunState(sessionId, runId, view.state, data);
   if (data.type === 'task_done') data.stop_reason = view.state;
@@ -1769,10 +1771,10 @@ function addToSession(sid: string, m: Message) {
     const replaced = replaceSessionMessage(
       sid,
       (item) => ['shell_request', 'shell_result'].includes(item.type) && item.id === m.id,
-      {
-        ...s?.messages.find((item) => item.id === m.id && ['shell_request', 'shell_result'].includes(item.type)),
-        ...m,
-      },
+      mergeCommandResult(
+        s?.messages.find((item) => item.id === m.id && ['shell_request', 'shell_result'].includes(item.type)),
+        m,
+      ),
     );
     if (replaced) return true;
   }
@@ -1878,6 +1880,8 @@ function replaceSessionMessage(sid: string, predicate: (message: Message) => boo
       scrollChat(false);
       return true;
     }
+    if (['shell_result', 'shell_approval_status'].includes(message.type) && runtime.ConversationUI.refreshApprovals())
+      return true;
     if (runtime.Process.replace($('chat'), message)) {
       scrollChat(false);
       return true;
@@ -1916,7 +1920,6 @@ function replaceSessionMessage(sid: string, predicate: (message: Message) => boo
         return true;
       }
     }
-    runtime.ConversationUI.captureView();
     renderChat();
     scrollChat();
   }

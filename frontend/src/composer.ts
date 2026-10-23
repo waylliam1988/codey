@@ -38,6 +38,7 @@ export interface ComposerApi {
   syncSession(): void;
   captureDraft(): void;
   isSending(sessionId?: string): boolean;
+  observeRun(sessionId: string, runId: string): void;
   retryTask(sessionId: string, requestId: string): unknown;
   editMessage(sessionId: string, text: string): Promise<boolean>;
   quoteInReply(sessionId: string, text: string): boolean;
@@ -62,6 +63,52 @@ export interface ComposerApi {
   let handlersBound = false;
   let draftSession: Session | null = null;
   let sendingSessionId = '';
+  const admissions = new Map<string, { runId: string; controller: AbortController; cancelled: boolean }>();
+  function pendingAdmission(sessionId: string) {
+    return deps
+      .findSession(sessionId)
+      ?.messages.flatMap((message) => message.attempts || [])
+      .reverse()
+      .find(
+        (attempt) =>
+          attempt.state === 'sending' ||
+          (attempt.state === 'failed' && attempt.sendFailure === 'admission_unconfirmed'),
+      );
+  }
+  async function stopRun(runId: string) {
+    if (!runId) return;
+    const response = await fetch('/api/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ run_id: runId }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error('Could not confirm Stop');
+  }
+  async function stopCurrent() {
+    const sessionId = activeId();
+    const admission = admissions.get(sessionId);
+    const runId = admission?.runId || deps.getRunningRunIdForSession?.(sessionId) || pendingAdmission(sessionId)?.runId;
+    if (!runId) return;
+    if (admission) {
+      admission.cancelled = true;
+      admission.controller.abort();
+    }
+    try {
+      await stopRun(runId);
+      const attempt = runtime.Requests.forRun(sessionId, runId)?.attempt;
+      if (attempt && ['sending', 'failed'].includes(attempt.state))
+        runtime.Requests.fail(sessionId, runId, '', { state: 'paused', sendFailure: 'cancelled_admission' });
+    } catch {
+      const attempt = runtime.Requests.forRun(sessionId, runId)?.attempt;
+      if (attempt?.state === 'sending')
+        runtime.Requests.fail(sessionId, runId, 'Could not confirm cancellation. Try Stop again when connected.', {
+          sendFailure: 'admission_unconfirmed',
+        });
+    } finally {
+      updateSend();
+    }
+  }
   let ready = false;
   let outbox: InputOutbox;
 
@@ -178,20 +225,27 @@ export interface ComposerApi {
     const ownerSessionId = runningSessionId();
     const running = isRunningForSession(activeId());
     const anotherSessionRunning = !!ownerSessionId && !running;
-    const sendingCurrent = sendingSessionId === activeId();
+    const sendingCurrent = sendingSessionId === activeId() || admissions.has(activeId());
     const awaitingAnswer = !!runtime.UserQuestions?.pending(activeId());
     const task = $<HTMLTextAreaElement>('task');
     const send = $<HTMLButtonElement>('send');
     const stop = $<HTMLButtonElement>('stop');
+    const pendingSend = !!pendingAdmission(activeId());
     send.disabled =
-      task.disabled || !has || !!reason || sendingCurrent || !!outbox?.blocked(activeId()) || awaitingAnswer;
+      task.disabled ||
+      !has ||
+      !!reason ||
+      sendingCurrent ||
+      pendingSend ||
+      !!outbox?.blocked(activeId()) ||
+      awaitingAnswer;
     // A run belongs to its session. Other chats remain usable and can place
     // an input in the outbox while the owner run is still active.
-    send.style.display = running && !has ? 'none' : '';
+    send.style.display = (running || sendingCurrent || pendingSend) && !has ? 'none' : '';
     // Send and Stop share one fixed slot. A different chat's run is opened
     // from the top status bar; it must not put a second action beside Send in
     // the chat that is currently being composed.
-    stop.style.display = running ? '' : 'none';
+    stop.style.display = running || sendingCurrent || pendingSend ? '' : 'none';
     $('send-hint').textContent = awaitingAnswer
       ? 'Answer above'
       : sendingCurrent
@@ -204,11 +258,11 @@ export interface ComposerApi {
             ? 'Enter'
             : 'Enter';
     send.setAttribute('aria-label', sendingCurrent ? 'Sending message' : running ? 'Queue message' : 'Send message');
-    const owner = deps.findSession(ownerSessionId);
+    const owner = deps.findSession(running || sendingCurrent || pendingSend ? activeId() : ownerSessionId);
     stop.setAttribute('aria-label', owner ? 'Stop ' + owner.title : 'Stop');
     stop.title = owner ? 'Stop ' + owner.title : 'Stop';
     const providerButton = $<HTMLButtonElement>('provider-button');
-    providerButton.disabled = task.disabled || running || sendingCurrent;
+    providerButton.disabled = task.disabled || running || sendingCurrent || pendingSend;
     const effortButton = document.getElementById('effort-button');
     if (effortButton instanceof HTMLButtonElement) effortButton.disabled = providerButton.disabled;
     if (runtime.ConversationUI) runtime.ConversationUI.updateNotice();
@@ -391,7 +445,13 @@ export interface ComposerApi {
       onSendRejected?.();
       return false;
     };
-    if (!text || isRunningForSession(sessionId) || (sendingSessionId === sessionId && !preclaimed)) return reject();
+    if (
+      !text ||
+      pendingAdmission(sessionId) ||
+      isRunningForSession(sessionId) ||
+      (sendingSessionId === sessionId && !preclaimed)
+    )
+      return reject();
     const s = deps.findSession(sessionId);
     if (!s) return reject();
     const provider = providerId || s.provider || liveDefaultProvider();
@@ -417,8 +477,11 @@ export interface ComposerApi {
     const runId = started.attempt.runId;
     const project = deps.sessionProjectPath(sessionId);
     const intent = deps.currentIntentForSession(sessionId);
+    const admission = { runId, controller: new AbortController(), cancelled: false };
+    admissions.set(sessionId, admission);
     try {
       const r = await fetch('/api/run', {
+        signal: AbortSignal.any([admission.controller.signal, AbortSignal.timeout(30000)]),
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -431,20 +494,31 @@ export interface ComposerApi {
           ...runtime.ProviderUI.runSelection(s, provider),
         }),
       });
+      if (admission.cancelled) return false;
       if (!r.ok) {
         await reportSendFailure(sessionId, r, runId);
         onSendRejected?.();
         return false;
       }
+      if (admission.cancelled) return false;
       if (typeof onSendStarted === 'function') onSendStarted();
       await deps.acceptRunResponse(r, sessionId);
     } catch {
-      await runtime.Sse.reconcileRunState();
-      // Admission may have succeeded even when the HTTP confirmation raced
-      // with an SSE reconnect. Keep the attempt pending until its own scoped
-      // task_start/task_done arrives instead of showing a transient failure.
+      if (!admission.cancelled) {
+        // An interrupted HTTP confirmation does not prove rejection. Reconcile
+        // without holding the composer, and retain this identity for Stop.
+        if (runtime.Requests.forRun(sessionId, runId)?.attempt.state === 'sending')
+          runtime.Requests.fail(
+            sessionId,
+            runId,
+            'Message delivery could not be confirmed. Check status or stop this request.',
+            { sendFailure: 'admission_unconfirmed' },
+          );
+        void runtime.Sse.reconcileRunState();
+      }
       return false;
     } finally {
+      if (admissions.get(sessionId) === admission) admissions.delete(sessionId);
       if (ownsSending) {
         sendingSessionId = '';
         updateSend();
@@ -583,7 +657,7 @@ export interface ComposerApi {
       runtime.UserQuestions.focus(sessionId);
       return;
     }
-    if (isRunningForSession(sessionId) || sendingSessionId === sessionId) return;
+    if (pendingAdmission(sessionId) || isRunningForSession(sessionId) || sendingSessionId === sessionId) return;
     const s = deps.findSession(sessionId);
     if (!s) return;
     if (
@@ -616,12 +690,20 @@ export interface ComposerApi {
     ].join(' ');
     sendingSessionId = sessionId;
     updateSend();
+    const admission = {
+      runId: 'run_' + crypto.randomUUID().replaceAll('-', ''),
+      controller: new AbortController(),
+      cancelled: false,
+    };
+    admissions.set(sessionId, admission);
     try {
       const r = await fetch('/api/run', {
+        signal: AbortSignal.any([admission.controller.signal, AbortSignal.timeout(30000)]),
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: sessionId,
+          run_id: admission.runId,
           project: p?.path || null,
           task,
           input: { kind: 'resume_run', source_run_id: sourceRunId },
@@ -630,15 +712,17 @@ export interface ComposerApi {
           ...runtime.ProviderUI.runSelection(s, s.provider || liveDefaultProvider()),
         }),
       });
+      if (admission.cancelled) return;
       if (r.status === 409 || !r.ok) {
         await reportSendFailure(sessionId, r);
         return;
       }
-      await deps.acceptRunResponse(r, sessionId);
+      if (!admission.cancelled) await deps.acceptRunResponse(r, sessionId);
     } catch {
-      deps.addSendError(sessionId);
+      if (!admission.cancelled) deps.addSendError(sessionId);
       return;
     } finally {
+      if (admissions.get(sessionId) === admission) admissions.delete(sessionId);
       sendingSessionId = '';
       updateSend();
     }
@@ -681,14 +765,9 @@ export interface ComposerApi {
       target.click();
     });
     $('send').onclick = sendActiveDraft;
-    $('stop').onclick = () =>
-      fetch('/api/stop', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          run_id: deps.getRunningRunIdForSession?.(activeId()) || deps.getRunningRunId?.() || '',
-        }),
-      });
+    $('stop').onclick = () => {
+      void stopCurrent();
+    };
   }
 
   runtime.Composer = {
@@ -699,7 +778,13 @@ export interface ComposerApi {
     },
     syncSession,
     captureDraft,
-    isSending: (sessionId?: string) => !!sendingSessionId && (!sessionId || sendingSessionId === sessionId),
+    observeRun: (sessionId: string, runId: string) => {
+      if (runtime.Requests.forRun(sessionId, runId)?.attempt.sendFailure === 'cancelled_admission')
+        void stopRun(runId).catch(() => {});
+    },
+    isSending: (sessionId?: string) =>
+      (!!sendingSessionId && (!sessionId || sendingSessionId === sessionId)) ||
+      (sessionId ? admissions.has(sessionId) : admissions.size > 0),
     retryTask,
     editMessage,
     quoteInReply,

@@ -1,3 +1,4 @@
+import { mergeCommandResult } from './command_result';
 import type { DocumentRef } from './document_pane';
 import { commandCard } from './command_card';
 import { approvalText } from './shell_approvals';
@@ -106,6 +107,20 @@ export interface MessagesApi {
       );
       const signature = JSON.stringify(records);
       if (approvalViews.get(rows[0]) === signature) {
+        updated = true;
+        continue;
+      }
+      const result = records
+        .filter((message) => message.type === 'shell_result' && message.runId)
+        .reduce<Message | undefined>((previous, message) => mergeCommandResult(previous, message), undefined);
+      if (result) {
+        runtime.Process.append(chat, result, appendContent);
+        for (const message of records) {
+          if (message.type !== 'shell_result') runtime.Process.append(chat, message, () => {});
+        }
+        for (const row of rows) if (!row.closest('.process-block')) row.remove();
+        for (const node of chat.querySelectorAll<HTMLElement>(`[data-approval-id="${CSS.escape(id)}"]`))
+          approvalViews.set(node, signature);
         updated = true;
         continue;
       }

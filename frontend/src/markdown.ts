@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it';
 import taskLists from 'markdown-it-task-lists';
 import katex from 'katex';
+import 'katex/dist/katex.min.css';
 import { parseDocumentLink } from './document_links';
 
 const parser = new MarkdownIt({ html: false, linkify: false, breaks: false }).use(taskLists);
@@ -20,41 +21,84 @@ function mathMarkup(source: string, display: boolean): string {
   }
 }
 
+function escapedAt(source: string, position: number): boolean {
+  let slashes = 0;
+  while (position > 0 && source[--position] === '\\') slashes++;
+  return slashes % 2 === 1;
+}
+function closingMath(source: string, close: string, start: number): number {
+  for (let end = source.indexOf(close, start); end >= 0; end = source.indexOf(close, end + close.length)) {
+    if (!escapedAt(source, end)) return end;
+  }
+  return -1;
+}
 parser.inline.ruler.before('escape', 'math_inline', (state, silent) => {
   const start = state.pos;
-  if (state.src.slice(start, start + 2) !== '\\(') return false;
-  const end = state.src.indexOf('\\)', start + 2);
-  if (end < 0) return false;
+  const dollar = state.src[start] === '$';
+  const display = state.src.startsWith('$$', start) || state.src.startsWith('\\[', start);
+  const open = dollar ? (display ? '$$' : '$') : display ? '\\[' : '\\(';
+  if (!state.src.startsWith(open, start)) return false;
+  const close = dollar ? open : display ? '\\]' : '\\)';
+  const from = start + open.length;
+  if (dollar && !display && (/[\s$]/.test(state.src[from] || ' ') || state.src[start - 1] === '$')) return false;
+  const end = closingMath(state.src, close, from);
+  if (end < 0 || end === from) return false;
+  if (dollar && !display && /^\d[\d.,]*\s+[A-Za-z]/.test(state.src.slice(from, end))) return false;
+  // Currency and unmatched streaming delimiters stay prose. Code spans/fences
+  // remain owned by Markdown's code rules rather than a global replacement.
+  if (
+    dollar &&
+    !display &&
+    (/\s/.test(state.src[end - 1]) ||
+      /[\d$]/.test(state.src[end + 1] || '') ||
+      state.src.slice(from, end).includes('\n'))
+  )
+    return false;
   if (!silent) {
-    const token = state.push('math_inline', 'math', 0);
-    token.content = state.src.slice(start + 2, end);
+    const token = state.push(display ? 'math_display' : 'math_inline', 'math', 0);
+    token.content = state.src.slice(from, end);
   }
-  state.pos = end + 2;
+  state.pos = end + close.length;
   return true;
 });
 parser.renderer.rules.math_inline = (tokens, index) => mathMarkup(tokens[index].content, false);
+parser.renderer.rules.math_display = (tokens, index) => mathMarkup(tokens[index].content, true);
 
-parser.block.ruler.before('fence', 'math_block', (state, startLine, endLine, silent) => {
-  const line = state.getLines(startLine, startLine + 1, state.blkIndent, false).trim();
-  const isDouble = line === '$$' || line.startsWith('\\[');
-  if (!isDouble) return false;
-  let next = startLine + 1;
-  const close = line === '$$' ? '$$' : '\\]';
-  const body: string[] = [];
-  while (next < endLine) {
-    const current = state.getLines(next, next + 1, state.blkIndent, false).trimEnd();
-    if (current === close) break;
-    body.push(current);
-    next++;
-  }
-  if (next >= endLine) return false;
-  if (silent) return true;
-  const token = state.push('math_block', 'math', 0);
-  token.content = body.join('\n');
-  state.line = next + 1;
-  return true;
-});
-parser.renderer.rules.math_block = (tokens, index) => mathMarkup(tokens[index].content, true);
+parser.block.ruler.before(
+  'fence',
+  'math_block',
+  (state, startLine, endLine, silent) => {
+    if (state.sCount[startLine] - state.blkIndent >= 4) return false;
+    const first = state.getLines(startLine, startLine + 1, state.blkIndent, false).trim();
+    const open = first.startsWith('$$') ? '$$' : first.startsWith('\\[') ? '\\[' : '';
+    if (!open) return false;
+    const close = open === '$$' ? '$$' : '\\]';
+    const body: string[] = [];
+    let next = startLine;
+    for (; next < endLine; next++) {
+      const line =
+        next === startLine
+          ? first.slice(open.length)
+          : state.getLines(next, next + 1, state.blkIndent, false).trimEnd();
+      const end = closingMath(line, close, 0);
+      if (end >= 0) {
+        if (line.slice(end + close.length).trim()) return false;
+        body.push(line.slice(0, end));
+        break;
+      }
+      body.push(line);
+    }
+    if (next >= endLine) return false;
+    if (silent) return true;
+    const token = state.push('math_block', 'math', 0);
+    token.content = body.join('\n');
+    token.map = [startLine, next + 1];
+    state.line = next + 1;
+    return true;
+  },
+  { alt: ['paragraph', 'reference', 'blockquote', 'list'] },
+);
+parser.renderer.rules.math_block = (tokens, index) => mathMarkup(tokens[index].content, true) + '\n';
 // Model prose often puts padding before closing **. Treat that padding as
 // outside emphasis; code spans and fenced code are owned by earlier rules.
 parser.inline.ruler.before('emphasis', 'spaced_strong', (state, silent) => {

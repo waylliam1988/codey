@@ -91,3 +91,14 @@ def test_packaged_svg_icon_is_served_with_svg_mime(tmp_path, monkeypatch):
     monkeypatch.setattr(http_plumbing, "WEB_DIR", root)
     assert http_plumbing.resolve_web_asset("/assets/new-chat.svg") == (icon.resolve(), "image/svg+xml")
     assert http_plumbing.resolve_web_asset("/assets/../new-chat.svg") is None
+
+
+@pytest.mark.parametrize('suffix,mime', [('.woff2','font/woff2'),('.woff','font/woff'),('.ttf','font/ttf')])
+def test_packaged_math_font_is_served_with_font_mime(tmp_path, monkeypatch, suffix, mime):
+    root = tmp_path / 'web'
+    (root / 'assets').mkdir(parents=True)
+    font = root / 'assets' / ('KaTeX_Main-Regular' + suffix)
+    font.write_bytes(b'font')
+    monkeypatch.setattr(http_plumbing, 'WEB_DIR', root)
+    assert http_plumbing.resolve_web_asset('/assets/' + font.name) == (font.resolve(), mime)
+    assert http_plumbing.resolve_web_asset('/assets/../' + font.name) is None

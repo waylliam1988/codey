@@ -8,6 +8,7 @@ import { runtime } from './runtime';
 const submit = vi.fn();
 const refresh = vi.fn();
 beforeEach(() => {
+  vi.stubGlobal('CSS', { escape: (value: string) => value });
   submit.mockClear();
   refresh.mockClear();
   runtime.ShellApprovals = { refresh };
@@ -81,4 +82,54 @@ it('shows a rejected scope error in the original card', () => {
   const chat = render({ approvalError: 'Invalid approval scope' });
   expect(chat.querySelector<HTMLElement>('.sc-error')?.hidden).toBe(false);
   expect(chat.querySelector('.sc-error')?.textContent).toBe('Invalid approval scope');
+});
+
+it.each(['before', 'after', 'replace'])('groups approved commands above the answer: %s', (order) => {
+  const chat = document.createElement('div');
+  const request: Message = { type: 'shell_request', id: 'approved', runId: 'run', command: 'curl.exe weather' };
+  const result: Message = {
+    ...request,
+    type: 'shell_result',
+    shellStatus: 'exit',
+    approved: true,
+    exitCode: 0,
+    output: '27 C',
+  };
+  const answer = document.createElement('div');
+  answer.className = 'msg asst';
+  answer.dataset.runId = 'run';
+  answer.textContent = 'The temperature is 27 C';
+  if (order === 'replace') window.Messages.append(chat, request);
+  if (order !== 'before') chat.append(answer);
+  if (order === 'replace') window.Messages.updateApprovals(chat, [result]);
+  else window.Messages.append(chat, result);
+  if (order === 'before') chat.append(answer);
+  expect(chat.querySelectorAll('.command-card')).toHaveLength(1);
+  expect(chat.querySelectorAll(':scope > .command-card, :scope > .shell-card')).toHaveLength(0);
+  expect(chat.querySelector('.process-body .command-excerpt')?.textContent).toBe('curl.exe weather');
+  expect(chat.firstElementChild?.classList.contains('process-block')).toBe(true);
+  expect(chat.lastElementChild).toBe(answer);
+  const details = chat.querySelector<HTMLDetailsElement>('.command-card details')!;
+  details.open = true;
+  window.Messages.updateApprovals(chat, [{ ...result, output: 'Updated output' }]);
+  expect(chat.querySelectorAll('.command-card')).toHaveLength(1);
+  expect(chat.querySelector<HTMLDetailsElement>('.command-card details')?.open).toBe(true);
+  expect(chat.lastElementChild).toBe(answer);
+});
+
+it('settles one approval from mixed live/history result records rather than selecting the first', () => {
+  const chat = render({ runId: 'run' });
+  const running: Message = {
+    type: 'shell_result',
+    id: 'approval',
+    runId: 'run',
+    approved: true,
+    shellStatus: 'running',
+    command: 'curl.exe weather',
+  };
+  const final: Message = { ...running, shellStatus: 'exit', exitCode: 0, output: '27 C' };
+  window.Messages.updateApprovals(chat, [running, final, running]);
+  expect(chat.querySelectorAll('.command-card')).toHaveLength(1);
+  expect(chat.querySelector('.command-card')?.getAttribute('data-status')).toBe('success');
+  expect(chat.querySelector('.shell-stdout')?.textContent).toBe('27 C');
 });

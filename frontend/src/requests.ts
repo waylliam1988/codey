@@ -114,6 +114,7 @@ export interface RequestsDeps {
       ) &&
       !busy() &&
       latest(request).state === 'failed' &&
+      latest(request).sendFailure !== 'admission_unconfirmed' &&
       s.messages.filter((m: Message) => m.type === 'user').at(-1) === request
     );
   }
@@ -288,6 +289,8 @@ export interface RequestsDeps {
     }
     const failed = attempt.state === 'failed';
     const actions: StatusAction[] = [];
+    if (failed && attempt.sendFailure === 'admission_unconfirmed')
+      actions.push({ label: 'Check status', onclick: () => runtime.Sse.reconcileRunState() });
     if (failed) {
       actions.push({
         label: 'Details',

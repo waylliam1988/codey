@@ -1024,3 +1024,15 @@ streaming timer or full-answer Collapse is introduced.
   a dedicated output SSE stream. Read or drain failures preserve the observed
   execution as `unknown` and expose reload/status actions rather than rerunning
   the command.
+
+
+### Command results and mathematical notation
+
+Approved Shell results belong inside the request's existing Work disclosure, above its answer, on live updates and history restoration alike. Pending approval controls stay directly actionable outside the collapsed disclosure; once resolved, replace them with the command result inside Work. Use approval identity to update one command in place, preserving its open state. Late result events must not append a command below an answer or restart a finished task.
+
+The shared Markdown renderer supports inline `$...$` / `\(...\)` and display `$$...$$` / `\[...\]`, including single-line and multiline display content. Keep code, currency, escaped delimiters and incomplete streaming expressions readable. Package KaTeX styles and fonts locally and serve fonts with the proper MIME types. Invalid expressions retain escaped source; rendering must not enable trusted HTML commands.
+
+
+`Sending…` is cancellable. Show Stop throughout HTTP admission, bind it to the client-generated run ID, and abort the pending transport when requested. Admission confirmation times out after 30 seconds; state reconciliation and Stop requests have a 10-second bound. An ambiguous network failure is not a rejected task: retain the request identity, offer Check status and Stop, and disable Retry until its outcome is known. A late acknowledgement must not restore a cancelled send.
+
+The existing run registry rejects an explicitly cancelled identity even when Stop arrived before reservation. If Stop lands between reservation and checkpoint admission, dispatch must observe the reservation's stop signal and route cancellation through the existing durable scheduler before queueing a worker. Unknown scoped Stop must never cancel another conversation's approvals or input queue. The registry gate is transient admission control; admitted task state remains owned by the durable checkpoint. Replayed command start/progress cannot replace a settled result or revive terminal Work state.

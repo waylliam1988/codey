@@ -12,7 +12,7 @@ from tests import http_context
 
 
 def _fake_reserved(run_id="run-1"):
-    return SimpleNamespace(run_id=run_id)
+    return SimpleNamespace(run_id=run_id, stop_event=threading.Event())
 
 
 class _FakeState:

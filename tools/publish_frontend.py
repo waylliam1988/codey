@@ -92,7 +92,7 @@ def _validate_dist() -> dict[str, str]:
             raise SystemExit(f"debug or manifest file cannot be published: {path}")
         if not (path == "index.html" or path == "icon.ico" or path.startswith("assets/")):
             raise SystemExit(f"unexpected production file: {path}")
-        if path.startswith("assets/") and Path(path).suffix not in {".js", ".css", ".svg"}:
+        if path.startswith("assets/") and Path(path).suffix not in {".js", ".css", ".svg", ".woff2", ".woff", ".ttf"}:
             raise SystemExit(f"unsupported production asset type: {path}")
     return _files(DIST)
 

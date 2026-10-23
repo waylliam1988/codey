@@ -282,6 +282,12 @@ def submit_task(
     try:
         from codey.durable.errors import CommitConflict
 
+        # Stop can land after reservation but before the checkpoint exists.
+        # Close that gap using the existing durable scheduler cancellation.
+        if reserved.stop_event.is_set():
+            state.durable_scheduler.abort_task(reserved.run_id, reason="user stopped during admission")
+            state.release_run(reserved.run_id)
+            return reserved_run_id
         try:
             state.durable.claim_task(reserved.run_id)
         except CommitConflict:
