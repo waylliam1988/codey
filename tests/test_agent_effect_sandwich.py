@@ -635,7 +635,10 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(done_events[0].get("stop_reason"), "error")
 
     def test_recovered_tool_outcomes_skip_work_claim(self) -> None:
-        state = server.AppContext()
+        # This test drives the recovery entry directly; the background
+        # scheduler must not dispatch the admitted checkpoint concurrently
+        # while the recovered effect fixture is being assembled.
+        state = server.AppContext(start_scheduler=False)
         emitted_events: list[dict] = []
         state.emit = emitted_events.append
         run_id = "run-recovered-skip-claim-1"
