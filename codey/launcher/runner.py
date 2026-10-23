@@ -44,7 +44,16 @@ def write(path: Path, value: dict[str, Any]) -> None:
         json.dump(value, stream, ensure_ascii=False, allow_nan=False)
         stream.flush()
         os.fsync(stream.fileno())
-    os.replace(temporary, path)
+    for attempt in range(8):
+        try:
+            os.replace(temporary, path)
+            break
+        except PermissionError as exc:
+            # Windows readers can briefly deny replacement of a journal.
+            # A transient sharing failure must not roll back a healthy service.
+            if getattr(exc, "winerror", None) not in {5, 32, 33} or attempt == 7:
+                raise
+            time.sleep(0.01 * 2 ** attempt)
 
 
 def schema(home: Path) -> str:

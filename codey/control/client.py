@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from codey.control.protocol import MAX_FRAME_BYTES, PROTOCOL_VERSION, ControlError, validate_command
+from codey.control.protocol import MAX_FRAME_BYTES, PROTOCOL_VERSION, ControlError, fingerprint, validate_command
 from codey.launcher.releases import activate, ensure_frontend, prepare, snapshot
 from codey.storage.file_lock import acquire_lease
 from codey.storage.local_store import DEFAULT_STATE_HOME, read_json_strict, write_json_atomic
@@ -152,12 +152,19 @@ def _activate_current_release(client: ControlClient, home: Path, current: dict[s
         candidate = prepare(coordinator, prepare_args)
     if candidate.get("candidate_digest") != digest:
         raise ControlError("REVISION_CONFLICT", "Current source changed while the release was being prepared")
-    activation = activate(coordinator, {
-        "request_id": "auto-activate-" + digest[:32],
+    # Interrupted validation can produce a recovery release with the same
+    # digest but a different identity. Reuse it on subsequent desktop opens.
+    if health.get("release_id") == candidate["release_id"] and health.get("status") == "ready":
+        return client
+    activation_args = {
         "candidate_release": candidate["release_id"],
         "candidate_digest": candidate["candidate_digest"],
         "expected_instance_id": health["instance_id"],
-    })
+    }
+    # Idempotency belongs to this candidate and source service instance, not
+    # just the source digest. Keep the same identity for an identical retry.
+    activation_args["request_id"] = "auto-activate-" + fingerprint(activation_args)[:32]
+    activation = activate(coordinator, activation_args)
     upgrade_id = activation["upgrade_id"]
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
@@ -174,7 +181,7 @@ def _activate_current_release(client: ControlClient, home: Path, current: dict[s
         if phase == "active":
             try:
                 ready = client.call("get_health")
-                if ready.get("release_id") == current["release_id"] and ready.get("status") == "ready":
+                if ready.get("release_id") == candidate["release_id"] and ready.get("status") == "ready":
                     return client
             except ControlError:
                 pass

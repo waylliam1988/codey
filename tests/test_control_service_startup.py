@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.control.client import ControlClient, ensure_service
+from codey.control.client import ControlClient, _activate_current_release, ensure_service
 from codey.control.protocol import ControlError
 from codey.launcher.releases import snapshot
 
@@ -97,3 +97,45 @@ def test_local_service_rejects_source_runtime(tmp_path):
 
     with pytest.raises(ValueError, match="immutable release_id"):
         LocalService(tmp_path, release_id="source").start()
+
+
+def test_relaunch_reuses_ready_recovery_release(tmp_path, monkeypatch):
+    current = {"release_id": "release_original", "candidate_digest": "b" * 64}
+    candidate = {**current, "release_id": "release_original_recovery"}
+    monkeypatch.setattr("codey.control.client.prepare", lambda service, args: candidate)
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("A ready recovery release must not be activated again")
+
+    monkeypatch.setattr("codey.control.client.activate", unexpected)
+    client = ControlClient(tmp_path)
+    health = {"release_id": candidate["release_id"], "instance_id": "recovered", "status": "ready"}
+    assert _activate_current_release(client, tmp_path, current, health, allowed_roots=()) is client
+
+
+def test_activation_identity_tracks_instance_and_recovery_candidate(tmp_path, monkeypatch):
+    current = {"release_id": "release_original", "candidate_digest": "b" * 64}
+    candidate = {**current, "release_id": "release_original_recovery"}
+    monkeypatch.setattr("codey.control.client.prepare", lambda service, args: dict(candidate))
+    activations = []
+
+    def activate(service, args):
+        activations.append(dict(args))
+        return {"upgrade_id": "upgrade_test", "phase": "accepted"}
+
+    monkeypatch.setattr("codey.control.client.activate", activate)
+    monkeypatch.setattr(ControlClient, "call", lambda self, operation, params=None:
+                        {"phase": "active"} if operation == "get_upgrade" else
+                        {"release_id": candidate["release_id"], "status": "ready"})
+    client = ControlClient(tmp_path)
+    for instance in ("first", "first", "second"):
+        _activate_current_release(client, tmp_path, current,
+                                  {"instance_id": instance, "release_id": "old", "status": "ready"},
+                                  allowed_roots=())
+    candidate["release_id"] = current["release_id"]
+    _activate_current_release(client, tmp_path, current,
+                              {"instance_id": "second", "release_id": "old", "status": "ready"},
+                              allowed_roots=())
+    assert activations[0] == activations[1]
+    assert activations[1]["request_id"] != activations[2]["request_id"]
+    assert activations[2]["request_id"] != activations[3]["request_id"]
