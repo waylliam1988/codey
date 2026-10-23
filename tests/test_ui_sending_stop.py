@@ -28,6 +28,7 @@ def hold_admission(page):
 
 def test_sending_is_stoppable_and_late_ack_does_not_revive_it(page):
     hold_admission(page)
+    expect(page.locator('#provider-button')).to_be_enabled()
     expect(page.locator('#stop')).to_be_visible()
     page.locator('#stop').click()
     page.wait_for_function('!Composer.isSending()')
@@ -40,6 +41,53 @@ def test_sending_is_stoppable_and_late_ack_does_not_revive_it(page):
     page.evaluate("handleServerEvent({type:'task_start',session_id:'a',run_id:sentRun,mode:'chat'})")
     page.wait_for_function('stopCalls.length === 2')
     assert len(set(page.evaluate('stopCalls'))) == 1
+
+
+def test_model_selection_during_running_does_not_change_submitted_request(page):
+    page.evaluate("""() => {
+      const real=fetch;
+      window.fetch=(url,init) => {
+        if(url==='/api/run') {
+          window.submitted=JSON.parse(init.body);
+          return Promise.resolve(new Response(JSON.stringify({run_id:submitted.run_id})));
+        }
+        return real(url,init);
+      };
+    }""")
+    page.locator('#task').fill('Run with the original model')
+    page.locator('#send').click()
+    page.wait_for_function('!!window.submitted && !Composer.isSending()')
+    page.evaluate("handleServerEvent({type:'task_start',session_id:'a',run_id:submitted.run_id,task_revision:1,task_status:'running'})")
+    expect(page.locator('#provider-button')).to_be_enabled()
+    page.locator('#provider-button').click()
+    page.get_by_role('button', name='MiMo', exact=True).click()
+    expect(page.locator('#provider-name')).to_have_text('MiMo')
+    assert page.evaluate('submitted.provider') == 'deepseek'
+    expect(page.locator('#stop')).to_be_visible()
+
+
+def test_queued_message_captures_model_before_awaiting_metadata_save(page):
+    page.evaluate("""() => {
+      handleServerEvent({type:'task_start',session_id:'a',run_id:'running',task_revision:1,task_status:'running'});
+      UiState.ensureSaved=()=>new Promise(resolve=>{window.saved=resolve});
+      const real=fetch;
+      window.fetch=(url,init)=>{
+        if(String(url).includes('/api/inputs') && init?.method==='POST') {
+          window.queued=JSON.parse(init.body);
+          return Promise.resolve(new Response(JSON.stringify({})));
+        }
+        return real(url,init);
+      };
+    }""")
+    page.locator('#task').fill('Queue using the current model')
+    page.locator('#send').click()
+    page.wait_for_function('!!window.saved')
+    expect(page.locator('#provider-button')).to_be_enabled()
+    page.locator('#provider-button').click()
+    page.get_by_role('button', name='MiMo', exact=True).click()
+    page.evaluate('saved(true)')
+    page.wait_for_function('!!window.queued')
+    assert page.evaluate('queued.request.provider') == 'deepseek'
 
 
 def test_admission_timeout_is_not_infinite_or_automatically_retried(page):

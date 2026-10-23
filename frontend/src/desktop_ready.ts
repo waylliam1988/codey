@@ -14,6 +14,7 @@ function withBridge(action: (api: DesktopApi) => Promise<unknown> | undefined): 
 }
 
 export function reportDesktopReady(): void {
+  window.dispatchEvent(new Event('codey:desktop-ready'));
   withBridge((api) => api.ui_ready?.(startupId));
 }
 

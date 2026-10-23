@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from codey.control.protocol import MAX_FRAME_BYTES, PROTOCOL_VERSION, ControlError, fingerprint, validate_command
-from codey.launcher.releases import activate, ensure_frontend, prepare, snapshot
+from codey.launcher.releases import activate, ensure_frontend, prepare, release_path, runtime_digest, snapshot
 from codey.launcher.startup import startup_stage
 from codey.storage.file_lock import acquire_lease
 from codey.storage.local_store import DEFAULT_STATE_HOME, read_json_strict, write_json_atomic
@@ -136,6 +136,19 @@ def _launch_release(client: ControlClient, home: Path, release: dict[str, Any], 
 def _activate_current_release(client: ControlClient, home: Path, current: dict[str, Any],
                               health: dict[str, Any], *, allowed_roots: tuple[Path, ...]) -> ControlClient:
     digest = current["candidate_digest"]
+    # Recovery snapshots may have a different identity for identical content.
+    # A healthy service already running that content requires no migration.
+    if health.get("status") == "ready":
+        try:
+            running_source = release_path(home, str(health.get("release_id", ""))) / "source"
+            identical = runtime_digest(running_source) == digest
+        except (ControlError, OSError):
+            identical = False
+        if identical:
+            write_json_atomic(home / "active-release.json", {
+                **current, "release_id": health["release_id"], "source": str(running_source),
+            }, mode=0o600)
+            return client
     # Automatic transitions are owned by the current launcher process. The
     # service on the port may be an older release and must not be asked to
     # execute preparation code from its own snapshot.

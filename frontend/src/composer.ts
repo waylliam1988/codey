@@ -266,7 +266,9 @@ export interface ComposerApi {
     stop.setAttribute('aria-label', owner ? 'Stop ' + owner.title : 'Stop');
     stop.title = owner ? 'Stop ' + owner.title : 'Stop';
     const providerButton = $<HTMLButtonElement>('provider-button');
-    providerButton.disabled = task.disabled || running || sendingCurrent || pendingSend;
+    // These are composer choices for the next submission. Each accepted task
+    // owns the selection captured in its request, independent of this draft.
+    providerButton.disabled = task.disabled;
     const effortButton = document.getElementById('effort-button');
     if (effortButton instanceof HTMLButtonElement) effortButton.disabled = providerButton.disabled;
     if (runtime.ConversationUI) runtime.ConversationUI.updateNotice();
@@ -577,13 +579,6 @@ export interface ComposerApi {
       if (isRunningForSession(sessionId)) {
         if (outbox.blocked(sessionId)) return;
         updateSend();
-        if (!(await runtime.UiState.ensureSaved())) {
-          deps.addToSession(sessionId, {
-            type: 'err',
-            text: 'Could not save chat settings. Your message was not sent. Try again.',
-          });
-          return;
-        }
         const request: QueuedRequest = {
           session_id: sessionId,
           run_id: 'run_' + crypto.randomUUID().replaceAll('-', ''),
@@ -594,6 +589,13 @@ export interface ComposerApi {
           input_mode: 'follow_up',
           ...runtime.ProviderUI.runSelection(deps.findSession(sessionId), provider),
         };
+        if (!(await runtime.UiState.ensureSaved())) {
+          deps.addToSession(sessionId, {
+            type: 'err',
+            text: 'Could not save chat settings. Your message was not sent. Try again.',
+          });
+          return;
+        }
         await outbox.enqueue(request, revision);
         return;
       }

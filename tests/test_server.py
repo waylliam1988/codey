@@ -7389,7 +7389,7 @@ class UiLaunchTests(unittest.TestCase):
                 open_desktop(home, port=0)
             ensure.assert_called_once_with(home, port=0)
         view.create_window.assert_called_once()
-        self.assertIn('Starting Codey', view.create_window.call_args.kwargs['html'])
+        self.assertIn('data-desktop-startup', view.create_window.call_args.kwargs['html'])
         view.start.assert_called_once()
         client.lifecycle.assert_called_once_with("desktop_url")
         view.create_window.return_value.load_url.assert_called_once()

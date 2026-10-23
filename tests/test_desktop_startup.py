@@ -110,7 +110,7 @@ def test_window_is_created_and_loaded_before_shared_service_work(tmp_path, monke
     window.events = SimpleNamespace(shown=Event(), loaded=Event(), closed=Event())
     def create(*args, **kwargs):
         order.append("window")
-        assert "Starting Codey" in kwargs["html"]
+        assert "data-desktop-startup" in kwargs["html"]
         assert "url" not in kwargs
         return window
     def ensure(*args, **kwargs):
@@ -160,7 +160,11 @@ def test_failed_frontend_returns_to_startup_and_old_ready_callback_cannot_settle
     startup.start()
     old_id = startup._trace.identity
     startup.ui_failed(old_id, "The interface could not load")
-    assert "Starting Codey" in window.document
+    assert "data-desktop-startup" in window.document
+    assert window.scripts[-1]["error"] == "The interface could not load"
+    startup._initial_loaded = True
+    window.scripts.clear()  # The replacement native document finishes loading later.
+    startup.loaded()
     assert window.scripts[-1]["error"] == "The interface could not load"
     assert startup._begin(retry=True)
     startup._run()
@@ -177,18 +181,22 @@ def test_startup_document_error_is_text_and_retry_remains_in_the_same_page():
         try:
             page = browser.new_page()
             page.set_content(desktop_startup.startup_document())
-            assert page.locator("h1").inner_text() == "Starting Codey"
+            assert page.locator("#desktop-startup").inner_text() == ""
+            assert page.locator(".character-pond").count() == 1
             page.evaluate("""() => {
               window.retryCount=0;window.pywebview={api:{retry(){window.retryCount++}}};
               window.codeyStartup({status:'Could not start Codey',error:'<img src=x> failure'});
             }""")
-            assert page.locator("#error").inner_text() == "<img src=x> failure"
+            assert page.locator("#startup-error").inner_text() == "<img src=x> failure"
             assert page.locator("img").count() == 0
-            page.locator("#retry").click()
+            page.locator("#startup-retry").click()
             assert page.evaluate("retryCount") == 1
-            assert page.locator("#retry").is_disabled()
+            assert page.locator("#startup-retry").is_disabled()
             page.evaluate("window.codeyStartup({status:'Checking the update',error:''})")
-            assert page.locator("#retry").is_hidden()
-            assert page.locator("#status").inner_text() == "Checking the update"
+            assert page.locator("#startup-retry").is_hidden()
+            assert page.locator("#desktop-startup").inner_text() == ""
+            page.evaluate("window.dispatchEvent(new Event('codey:desktop-ready'))")
+            page.wait_for_function("!document.getElementById('desktop-startup')")
+            assert page.locator('.character-pond').count() == 0
         finally:
             browser.close()

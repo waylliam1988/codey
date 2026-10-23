@@ -894,10 +894,14 @@ See [UI state and restored task history](docs/ui-state-and-history.md) for owner
 conflict reconciliation and cache migration boundaries.
 
 Use `Connecting` and `Running` without trailing ellipses in the top status.
-Desktop launch shows a quiet `Starting Codey` state in the same window while the
-shared service prepares. Show the current stage in restrained secondary text;
+Model and effort choices stay available during Sending and Running. They belong
+to the next submission; each submitted or queued request captures its own choices
+before an asynchronous boundary and cannot be changed by later composer edits.
+Desktop launch shows the character pond, without progress copy, in the same window while the
+shared service prepares. Record stages in diagnostics without normal startup text;
 failure shows its reason and an English `Retry` action without opening a second
-window. Service readiness navigates that window to the normal interface. Startup
+window. Service readiness navigates that window to the normal interface, where
+the pond covers restoration and fades out on interface readiness. Startup
 observations distinguish window display from actual interface readiness; see
 [desktop startup](docs/startup.md) for validation and timing boundaries.
 Collapsed Work ends 6px before the first visible answer block, consistently

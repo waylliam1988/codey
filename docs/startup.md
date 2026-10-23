@@ -1,10 +1,13 @@
 # Desktop startup
 
-The desktop creates one window with a quiet English startup page before attaching
+The desktop creates one window with a character pond before attaching
 to the shared service. The existing startup lock, immutable release snapshots,
 service instance lease, upgrade journal and rollback coordinator still own startup
 and cutover. The page does not start a task runtime or maintain service facts.
 Once the service is ready, that same window navigates to its single-use launch URL.
+The packaged startup asset uses the same animation source as the empty-chat pond.
+It covers frontend restoration and fades out only after application boot completes.
+Normal startup has no progress copy; phase details belong in the timing log.
 
 Errors retain the startup page and expose Retry. Concurrent retries cannot spawn
 another preparation in the same window. Closing a window suppresses later page
@@ -26,6 +29,14 @@ Custom verification commands always run for a new preparation request; exact
 request replay still returns the original outcome without repeating commands.
 The isolated validation copy and immutable candidate are checked for mutations.
 Activation rejects validation from a changed environment.
+
+An unchanged, healthy running release attaches directly, without preparation or
+validation. A recovery snapshot with another release ID can also attach directly
+when its on-disk runtime digest matches the current content. Missing or changed
+recovery content goes through normal preparation. Installed packages already ship
+the frontend and do not need Node or development-source frontend checks. Cold
+service startup and changed-release activation remain distinct from a warm attach;
+none of these paths creates another task runtime.
 
 Database evidence is never stored in the static cache. Each new preparation
 backs up the current SQLite databases and runs the service preflight against

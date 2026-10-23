@@ -1,8 +1,8 @@
-main:has(> .character-pond) {
+.pond-surface:has(> .character-pond) {
   position: relative;
   isolation: isolate;
 }
-main > .character-pond {
+.pond-surface > .character-pond {
   position: absolute;
   inset: 44px 0 0;
   width: 100%;
@@ -15,9 +15,9 @@ main > .character-pond {
   opacity: 0;
   transition: opacity 0.5s ease;
 }
-main.empty-conversation > .character-pond {
+.pond-surface.empty-conversation > .character-pond {
   opacity: 1;
 }
-main.empty-conversation:has(> .character-pond) .composer-wrap {
+.pond-surface.empty-conversation:has(> .character-pond) .composer-wrap {
   background: transparent;
 }

@@ -113,6 +113,34 @@ def test_relaunch_reuses_ready_recovery_release(tmp_path, monkeypatch):
     assert _activate_current_release(client, tmp_path, current, health, allowed_roots=()) is client
 
 
+def test_ready_identical_recovery_content_attaches_without_preparation(tmp_path, monkeypatch):
+    current = snapshot(tmp_path, Path.cwd())
+    recovery = snapshot(tmp_path, Path.cwd(), identity_suffix="recovery")
+    client = ControlClient(tmp_path)
+    monkeypatch.setattr("codey.control.client.prepare", lambda *args: pytest.fail("Already running this content"))
+    assert _activate_current_release(client, tmp_path, current, {
+        "release_id": recovery["release_id"], "instance_id": "live", "status": "ready",
+    }, allowed_roots=()) is client
+    assert current["release_id"] != recovery["release_id"]
+    assert json.loads((tmp_path / "active-release.json").read_text())["release_id"] == recovery["release_id"]
+
+
+def test_changed_recovery_content_cannot_skip_preparation(tmp_path, monkeypatch):
+    current = snapshot(tmp_path, Path.cwd())
+    recovery = snapshot(tmp_path, Path.cwd(), identity_suffix="recovery")
+    (Path(recovery["source"]) / "codey" / "__main__.py").write_text("# changed")
+    calls = []
+    def prepare(*args):
+        calls.append(True)
+        raise ControlError("VALIDATION_FAILED", "Changed content needs validation")
+    monkeypatch.setattr("codey.control.client.prepare", prepare)
+    with pytest.raises(ControlError, match="Changed content"):
+        _activate_current_release(ControlClient(tmp_path), tmp_path, current, {
+            "release_id": recovery["release_id"], "instance_id": "live", "status": "ready",
+        }, allowed_roots=())
+    assert calls == [True]
+
+
 def test_new_preparation_attempts_have_new_activation_identities(tmp_path, monkeypatch):
     current = {"release_id": "release_original", "candidate_digest": "b" * 64}
     candidate = {**current, "release_id": "release_original_recovery"}

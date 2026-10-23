@@ -1,0 +1,43 @@
+#desktop-startup {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  opacity: 1;
+  transition: opacity 0.35s ease;
+  font: 14px / 1.6 var(--font-sans);
+}
+#desktop-startup > .character-pond {
+  inset: 0;
+  height: 100%;
+}
+#desktop-startup.revealing {
+  opacity: 0;
+  pointer-events: none;
+}
+#desktop-startup section {
+  max-width: 480px;
+  padding: 32px;
+}
+#startup-error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+}
+#startup-retry {
+  margin-top: 16px;
+  padding: 5px 12px;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+#desktop-startup [hidden] {
+  display: none;
+}

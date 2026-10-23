@@ -10,6 +10,7 @@ interface Ripple {
 
 /** Decorative only: never intercept input or persist animation state. */
 export function mountCharacterPond(main: HTMLElement): () => void {
+  main.classList.add('pond-surface');
   const canvas = document.createElement('canvas');
   canvas.className = 'character-pond';
   canvas.setAttribute('aria-hidden', 'true');

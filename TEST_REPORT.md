@@ -40,6 +40,25 @@ all repository tests or measure coverage. Native UI was not operated.
 
 ## Desktop startup (2026-10-23)
 
+Latest follow-up: normal startup now displays the shared character pond without
+progress copy, covers restoration, and fades out after frontend readiness. Safe
+error text and Retry remain. Healthy recovery snapshots with identical verified
+content attach without another preparation. Composer model/effort controls stay
+enabled after boot, including during Sending and Running; queued requests capture
+their choices before asynchronous metadata saving.
+
+Follow-up verification: **53 browser/startup/Stop/Continue tests passed (73.53s)**,
+**49 release/cache/publisher/startup tests passed (6.68s)**, and **50 frontend files /
+272 tests passed**. These selections overlap. TypeScript, Biome, production build,
+published metadata, repository Ruff and production `codey` mypy/Pyrefly/ty passed.
+Unscoped Pyrefly/ty also inspected tests and reported pre-existing test typing
+errors; those are not zero-error gates. No full-suite or new coverage run was made.
+Native UI was not operated. The latest existing local warm-start log recorded
+**3.09s** from window creation to interface readiness, including **1.02s** for service
+attachment; this is an observed sample, not a promise of instant cold startup.
+
+Earlier startup implementation verification follows:
+
 The native desktop now creates its startup window before shared-service work.
 The same window navigates to the application; startup and interface boot failures
 retain an English reason and Retry. Static validation evidence is reusable only
@@ -54,7 +73,7 @@ remain authoritative.
 | Frontend | **48 files / 261 tests passed**; TypeScript, Biome, production build and published metadata passed |
 | Python static checks | Repository Ruff passed; full-tree mypy (**508 source files**), Pyrefly and ty passed for Python targets **3.11, 3.12 and 3.13**; Pyrefly reports **80 existing warnings and 29 suppressions**, separately from its zero-error gate |
 | Startup boundaries | Cache corruption, environment/rule/source invalidation, failed/mutating validators, optional-cache write failure, fresh database evidence on cache hits, single-flight Retry, concurrent service attachment, close during startup and stale frontend readiness callbacks covered |
-| Window verification | Fake native lifecycle verifies window creation/loading precedes service preparation; headless Chromium verifies English status, safe error text and Retry in the same document; the user's desktop was not operated |
+| Window verification | Fake native lifecycle verifies window creation/loading precedes service preparation; headless Chromium verifies the pond, safe error text and Retry in the same document; the user's desktop was not operated |
 
 An isolated real preparation sample took **12.454s** without static evidence and
 **10.044s** with a cache hit. The cached attempt skipped compilation/CLI execution

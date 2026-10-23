@@ -17,31 +17,14 @@ class DesktopWindow(Protocol):
 
 
 def startup_document() -> str:
-    tokens = (Path(__file__).parents[1] / "web" / "assets" / "tokens.css").read_text(encoding="utf-8")
-    return """<!doctype html><html lang="en"><meta charset="utf-8"><title>Codey</title><style>""" + tokens + """
-    html,body { height:100%; margin:0; background:var(--bg); color:var(--text); font:14px/1.6 var(--font-sans); }
-    body { display:grid; place-items:center; } main { max-width:480px; padding:32px; }
-    h1 { font-size:16px; font-weight:500; margin:0 0 8px; } p { margin:0; color:var(--text-dim); }
-    #error { margin-top:12px; white-space:pre-wrap; overflow-wrap:anywhere; }
-    button { margin-top:16px; padding:5px 12px; font:inherit; color:var(--text); background:var(--panel);
-      border:1px solid var(--border); border-radius:6px; cursor:pointer; }
-    [hidden] { display:none; }
-    </style><main><h1>Starting Codey</h1><p id="status" role="status" aria-live="polite">Preparing the workspace</p>
-    <p id="error" role="alert" hidden></p><button id="retry" hidden onclick="this.disabled=true;window.pywebview.api.retry()">Retry</button></main>
-    <script>window.codeyStartup=function(data){document.getElementById('status').textContent=data.status;
-    const error=document.getElementById('error');error.textContent=data.error;error.hidden=!data.error;
-    const retry=document.getElementById('retry');retry.hidden=!data.error;retry.disabled=false;};</script></html>"""
-
-
-_LABELS = {
-    "startup.lock": "Waiting for Codey", "frontend.check": "Checking the interface",
-    "release.snapshot": "Preparing Codey", "service.health": "Connecting to Codey",
-    "service.launch": "Starting the service", "service.activate": "Updating Codey",
-    "release.prepare": "Checking the update", "validation.static": "Checking the update",
-    "validation.command": "Validating Codey", "validation.database_backup": "Preparing the data check",
-    "validation.cache_write": "Saving the code check",
-    "validation.database_preflight": "Checking the current data", "desktop.navigate": "Opening the workspace",
-}
+    assets = Path(__file__).parents[1] / "web" / "assets"
+    styles = "\n".join((assets / name).read_text(encoding="utf-8")
+                       for name in ("tokens.css", "desktop-startup.css"))
+    script = (assets / "desktop-startup.js").read_text(encoding="utf-8")
+    return ("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>Codey</title><style>"
+            + styles + "html,body{height:100%;margin:0;background:var(--bg)}"
+            + "</style><body data-desktop-startup><script>" + script.replace("</script", "<\\/script")
+            + "</script></body></html>")
 
 
 class DesktopStartup:
@@ -53,6 +36,7 @@ class DesktopStartup:
         self._initial_loaded = False
         self._navigating = False
         self._failed = False
+        self._failure_message = ""
 
     def bind(self, window: DesktopWindow) -> None:
         self._window = window
@@ -67,20 +51,21 @@ class DesktopStartup:
             self._schedule(retry=False)
         elif self._navigating:
             self._trace.record("desktop.document_loaded")
+        elif self._failed:
+            # load_html may finish after the bridge's first error update.
+            self._show(self._failure_message)
 
     def close(self) -> None:
         self._closed.set()
 
-    def _show(self, status: str, error: str = "") -> None:
+    def _show(self, error: str) -> None:
+        self._failure_message = error
         if self._closed.is_set() or self._window is None or self._navigating:
             return
         try:
-            self._window.evaluate_js("window.codeyStartup(" + json.dumps({"status": status, "error": error}) + ")")
+            self._window.evaluate_js("window.codeyStartup(" + json.dumps({"error": error}) + ")")
         except Exception:
             self._trace.record("desktop.status_unavailable", outcome="failed")
-
-    def _progress(self, phase: str) -> None:
-        self._show(_LABELS.get(phase, "Starting Codey"))
 
     def start(self) -> None:
         if not self._begin(retry=False):
@@ -96,7 +81,7 @@ class DesktopStartup:
         if retry:
             self._trace = StartupTrace(self._home)
         self._failed = False
-        self._trace.progress = self._progress
+        self._show("")
         return True
 
     def _run(self) -> None:
@@ -126,7 +111,7 @@ class DesktopStartup:
         self._navigating = False
         self._failed = True
         self._trace.record("desktop.startup_failed", outcome="failed")
-        self._show("Could not start Codey", str(error)[:2000] or "Check startup-timings.jsonl and try again.")
+        self._show(str(error)[:2000] or "Could not start Codey. Try again.")
 
     def _schedule(self, *, retry: bool) -> None:
         if not self._begin(retry=retry):
@@ -151,7 +136,7 @@ class DesktopStartup:
         if self._window is not None:
             try:
                 self._window.load_html(startup_document())
-                self._show("Could not open the workspace", message[:2000])
+                self._show(message[:2000])
             except Exception:
                 self._trace.record("desktop.status_unavailable", outcome="failed")
 
