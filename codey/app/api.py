@@ -131,17 +131,14 @@ def providers_response(ctx: Any) -> tuple[int, dict[str, Any]]:
             if legacy_statuses is not None
             else provider_services.provider_status_payload(ctx)
         )
-        statuses = {str(item.get("id") or ""): item.get("available") is True for item in provider_rows}
     except Exception:
         logger.exception("provider availability probe failed")
-        statuses = dict[str, bool]()
-        provider_rows = provider_services.provider_payload(statuses)
+        provider_rows = provider_services.provider_payload({})
         probe_error = True
     else:
         probe_error = False
     return 200, {
         "default": DEFAULT_PROVIDER_ID,
-        "recommended": provider_services.recommended_default_provider(statuses),
         "providers": provider_rows,
         "probe_error": probe_error,
     }

@@ -392,6 +392,7 @@ export interface UiStateApi {
     safeLocalSet(LS_CACHE, JSON.stringify({ schema: 1, state: currentUiState(), confirmed }));
   }
   function cachedUiState(): Loose {
+    serverObserved = false;
     const cached = loadJson(LS_CACHE, null);
     if (isRecord(cached) && cached.schema === 1 && isSnapshot(cached.state)) {
       confirmed = isSnapshot(cached.confirmed) ? asSnapshot(cached.confirmed) : null;
@@ -423,10 +424,13 @@ export interface UiStateApi {
     projects: Array.isArray(state.projects) ? state.projects : [],
   });
   let confirmed: UiSnapshot | null = null;
+  // A cached watermark is not yet evidence about the current server/store.
+  let serverObserved = false;
   let savePromise: Promise<boolean> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let failures = 0;
   function acknowledge(state: Loose): void {
+    serverObserved = true;
     confirmed = structuredClone(asSnapshot(state));
     setRevision(Number(state.revision || 0));
   }
@@ -437,9 +441,22 @@ export interface UiStateApi {
     if (deps.currentProviderId) deps.syncProviderUI?.(deps.currentProviderId());
   }
   function accept(state: Loose): void {
+    if (!serverObserved && confirmed && Number(state.revision || 0) < Number(confirmed.revision || 0)) confirmed = null;
     if (confirmed && Number(state.revision || 0) < Number(confirmed.revision || 0)) return;
     const current = asSnapshot(currentUiState());
-    const merged = confirmed ? mergeUiState(confirmed, current, asSnapshot(state)) : asSnapshot(state);
+    const remote = asSnapshot(state);
+    const cached = new Map(current.sessions.map((row) => [row.id, row]));
+    // All first-contact paths recover drafts under the same identity rule,
+    // including a retry after an unavailable or reset server.
+    const merged = confirmed
+      ? mergeUiState(confirmed, current, remote)
+      : {
+          ...remote,
+          sessions: remote.sessions.map((row) => {
+            const draft = cached.get(row.id)?.draft;
+            return isRecord(draft) && typeof draft.text === 'string' && draft.text ? { ...row, draft } : row;
+          }),
+        };
     applyUiState(merged);
     acknowledge(state);
     cacheUiState();
@@ -479,7 +496,7 @@ export interface UiStateApi {
     }
     savePromise = (async () => {
       try {
-        if (!confirmed) accept(await readServer());
+        if (!serverObserved) accept(await readServer());
         // Bounded conflict reconciliation; a hot competing writer cannot spin forever.
         for (let attempt = 0; attempt < 5; attempt++) {
           const sent = structuredClone(asSnapshot(currentUiState()));
@@ -632,30 +649,11 @@ export interface UiStateApi {
 
   async function restoreUiStateFromServer() {
     try {
-      const local = asSnapshot(currentUiState());
-      const remote = asSnapshot(await readServer());
-      // A fresh boot can attach to a reset store; old cache revisions cannot fence that store.
-      if (confirmed && Number(remote.revision || 0) < Number(confirmed.revision || 0)) confirmed = null;
-      if (!confirmed) {
-        // Without a confirmed base, old cache rows cannot establish new conversations.
-        // Recover drafts only for identities that still exist on the server.
-        const cached = new Map(local.sessions.map((row) => [row.id, row]));
-        const recovered = {
-          ...remote,
-          sessions: remote.sessions.map((row) => {
-            const draft = cached.get(row.id)?.draft;
-            return isRecord(draft) && typeof draft.text === 'string' && draft.text ? { ...row, draft } : row;
-          }),
-        };
-        applyUiState(recovered);
-        acknowledge(remote);
-      } else accept(remote);
-      cacheUiState();
-      repaint();
-      void saveUiStateToServer();
+      accept(await readServer());
     } catch {
-      void saveUiStateToServer();
+      /* The save path retries first contact through accept as well. */
     }
+    void saveUiStateToServer();
   }
 
   runtime.UiState = {

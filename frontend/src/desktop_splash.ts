@@ -1,5 +1,6 @@
 import { mountCharacterPond } from './character_pond';
 import './desktop_splash.css';
+import { reportDesktopFailure } from './desktop_ready';
 
 // Loaded before application boot. Ordinary browser visits have no splash.
 if (
@@ -38,9 +39,24 @@ if (
     retry.hidden = !data.error;
     retry.disabled = false;
   };
+  // This entry executes before the main module graph. Its failure handling
+  // must not depend on that graph successfully importing or calling boot().
+  const failed = (event: Event) => {
+    if (
+      !(event.target instanceof HTMLScriptElement) &&
+      !(event.target instanceof HTMLLinkElement && event.target.rel === 'modulepreload')
+    )
+      return;
+    window.removeEventListener('error', failed, true);
+    const message = 'Could not load the interface. Retry to reload it.';
+    native.codeyStartup?.({ error: message });
+    reportDesktopFailure(message);
+  };
+  window.addEventListener('error', failed, true);
   window.addEventListener(
     'codey:desktop-ready',
     () => {
+      window.removeEventListener('error', failed, true);
       surface.classList.add('revealing');
       window.setTimeout(() => {
         dispose();

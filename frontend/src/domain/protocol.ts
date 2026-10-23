@@ -5,7 +5,6 @@ export type ProviderCatalog = {
   defaultProvider: string;
 };
 
-export type ProviderConfig = ProviderCatalog & { recommendedProvider?: string };
 export type ProviderStatus = Array<{ id: string; available?: boolean; freshness?: string; state?: string }>;
 
 import type { ChangeFile, ChangeFilePreview, ChangesData, ResearchPayload, RunState } from '../types/domain';
@@ -121,15 +120,6 @@ export function decodeProviderCatalog(value: unknown): ProviderCatalog {
   const defaultId = typeof value.default === 'string' ? value.default : '';
   const defaultProvider = providers.some((provider) => provider.id === defaultId) ? defaultId : providers[0].id;
   return { providers, labels, defaultProvider };
-}
-
-export function decodeProviderConfig(value: unknown): ProviderConfig {
-  const catalog = decodeProviderCatalog(value);
-  const recommendedProvider =
-    isRecord(value) && typeof value.recommended === 'string' && value.recommended.length > 0
-      ? value.recommended
-      : undefined;
-  return { ...catalog, ...(recommendedProvider ? { recommendedProvider } : {}) };
 }
 
 export function decodeProviderStatus(value: unknown): ProviderStatus {

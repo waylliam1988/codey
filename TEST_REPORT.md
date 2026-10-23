@@ -2,6 +2,37 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Recovery and startup review follow-up (2026-10-23)
+
+First contact and retries now use the same UI acceptance rule. Cached revisions
+remain unconfirmed until the current server is observed; missing baselines and
+reset stores recover current drafts only for surviving chat identities. Tests
+cover immediate success, repeated read failure, reset revision, remote deletion
+and typing while restoration is in flight.
+
+One accepted task transition updates all loaded views referencing that task,
+including inherited history whose owner is absent from the sidebar. Stop ownership
+remains with the source. Older events cannot revive settled inherited work.
+
+The standalone pond script catches entry/dependency load failures independently
+of the main module. One native readiness deadline also covers missing startup
+code or a stalled document. Ready, failure and close cancel it through one
+attempt-fenced completion path. Recommendation generation/decoding and unused
+startup progress callbacks were removed rather than retained as compatibility APIs.
+
+Validation: **24 restoration/startup tests passed (31.36s)**, **103 backend,
+provider, release/cache and lifecycle tests passed (54.68s)**, and **50 frontend
+files / 277 tests passed**. The complete server module also passed **208 tests
+(187.27s)**. The wider browser run passed **117 cases**; its new
+legacy-cache case initially seeded storage before pagehide overwrote it. The
+fixture now seeds the next document, and the complete affected 24-case selection
+passes. Browser selections overlap. Stop, admission, approvals, Continue, edit,
+draft saving and workflow regressions were included. Repository Ruff, production
+mypy (**509 source files**), Pyrefly and ty, TypeScript, Biome, production build,
+published metadata and shipped-JavaScript syntax checks passed. Pyrefly retains
+80 existing warnings and 29 suppressions with zero errors. No full repository
+suite or coverage run was made; native UI was not operated.
+
 ## UI state and task history (2026-10-23)
 
 Empty-chat creation preserves an enabled explicit model selection and independent

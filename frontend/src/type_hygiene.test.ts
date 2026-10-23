@@ -94,7 +94,7 @@ describe('frontend type boundary hygiene', () => {
 
   it('routes provider catalog and status boundaries through decoders', () => {
     const provider = readFileSync(join(root, 'provider_ui.ts'), 'utf8');
-    expect(provider).toMatch(/decodeProviderConfig\(data\)/);
+    expect(provider).toMatch(/decodeProviderCatalog\(data\)/);
     expect(provider).toMatch(/decodeProviderStatus\(rawProviders\)/);
     expect(provider).not.toMatch(/function extractCatalog\(/);
   });

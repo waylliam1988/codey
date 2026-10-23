@@ -12,6 +12,11 @@ The browser keeps a confirmed UI snapshot and its current edits. A single
 split cache keys are migrated once and removed only after the envelope is stored.
 An installation with no confirmed baseline can recover a cached draft only for
 a chat identity still present on the server.
+First contact, inventory refresh, conflict recovery and retry use the same
+`accept` entry point. A cached watermark is not a confirmed observation of the
+current server; a reset store is reconciled at first contact, even after an
+outage. Subsequent older responses remain fenced. Draft recovery reads current
+edits at acceptance time, including typing made while the read was in flight.
 
 ## Synchronization
 
@@ -68,4 +73,7 @@ resolve a checkpoint even without a volatile registry owner.
 
 Fork ancestry can include a task owned by another chat. Its history may be shown
 in the child, but an active ancestor is neutral history there; Stop continues to
-belong to the source chat. No task runtime or lifecycle fact is duplicated.
+belong to the source chat. One accepted transition updates every loaded view that
+still references the task, including when its source is absent from the sidebar.
+Retired branches do not receive new display records; old versions cannot revive
+settled history. No subscriber registry, task runtime or lifecycle fact is duplicated.

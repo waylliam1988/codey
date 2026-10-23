@@ -5,7 +5,7 @@ import json
 import os
 import time
 import uuid
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -16,9 +16,8 @@ _trace: ContextVar[StartupTrace | None] = ContextVar("startup_trace", default=No
 
 
 class StartupTrace:
-    def __init__(self, home: Path, progress: Callable[[str], None] | None = None) -> None:
+    def __init__(self, home: Path) -> None:
         self.home = home
-        self.progress = progress
         self.identity = uuid.uuid4().hex
         self.started = time.perf_counter()
 
@@ -51,11 +50,6 @@ class StartupTrace:
 def startup_stage(name: str) -> Generator[None, None, None]:
     trace = _trace.get()
     started = time.perf_counter()
-    if trace and trace.progress:
-        try:
-            trace.progress(name)
-        except Exception:
-            trace.record("desktop.progress_unavailable", outcome="failed")
     try:
         yield
     except BaseException:

@@ -9,6 +9,7 @@ from typing import Protocol
 from codey.control.client import ensure_service
 from codey.launcher.startup import StartupTrace, startup_stage
 
+INTERFACE_READY_SECONDS = 30
 
 class DesktopWindow(Protocol):
     def evaluate_js(self, script: str) -> object: ...
@@ -37,6 +38,8 @@ class DesktopStartup:
         self._navigating = False
         self._failed = False
         self._failure_message = ""
+        self._navigation_lock = threading.Lock()
+        self._ready_timer: threading.Timer | None = None
 
     def bind(self, window: DesktopWindow) -> None:
         self._window = window
@@ -57,6 +60,31 @@ class DesktopStartup:
 
     def close(self) -> None:
         self._closed.set()
+        self._finish_navigation()
+
+    def _start_navigation(self) -> None:
+        with self._navigation_lock:
+            if self._closed.is_set():
+                return
+            self._navigating = True
+            self._ready_timer = threading.Timer(
+                INTERFACE_READY_SECONDS, self.ui_failed,
+                args=(self._trace.identity, "The interface did not become ready. Retry to reload it."),
+            )
+            self._ready_timer.daemon = True
+            self._ready_timer.start()
+
+    def _finish_navigation(self, startup_id: str | None = None) -> bool:
+        with self._navigation_lock:
+            if startup_id is not None and (
+                not self._navigating or startup_id != self._trace.identity or self._closed.is_set()
+            ):
+                return False
+            self._navigating = False
+            if self._ready_timer is not None:
+                self._ready_timer.cancel()
+                self._ready_timer = None
+            return True
 
     def _show(self, error: str) -> None:
         self._failure_message = error
@@ -96,7 +124,7 @@ class DesktopStartup:
                     url = str(client.lifecycle("desktop_url")["url"])
                     url += ("&" if "#" in url else "#") + "codey_startup=" + self._trace.identity
                 with startup_stage("desktop.navigate"):
-                    self._navigating = True
+                    self._start_navigation()
                     if self._window is not None and not self._closed.is_set():
                         self._window.load_url(url)
         except Exception as exc:
@@ -108,7 +136,7 @@ class DesktopStartup:
         self._schedule(retry=True)
 
     def _fail(self, error: Exception) -> None:
-        self._navigating = False
+        self._finish_navigation()
         self._failed = True
         self._trace.record("desktop.startup_failed", outcome="failed")
         self._show(str(error)[:2000] or "Could not start Codey. Try again.")
@@ -123,14 +151,12 @@ class DesktopStartup:
             self._gate.release()
 
     def ui_ready(self, startup_id: str) -> None:
-        if self._navigating and startup_id == self._trace.identity and not self._closed.is_set():
+        if self._finish_navigation(startup_id):
             self._trace.record("desktop.interface_ready")
-            self._navigating = False
 
     def ui_failed(self, startup_id: str, message: str) -> None:
-        if not self._navigating or startup_id != self._trace.identity or self._closed.is_set():
+        if not self._finish_navigation(startup_id):
             return
-        self._navigating = False
         self._failed = True
         self._trace.record("desktop.interface_failed", outcome="failed")
         if self._window is not None:

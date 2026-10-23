@@ -53,16 +53,6 @@ def test_capability_unknown_must_not_be_all_ok() -> None:
     assert fits == ("ok", "ok", "ok")
 
 
-def test_recommended_default_must_not_use_stale_cache() -> None:
-    # TTL staleness within 3s is a known tradeoff, not a deterministic bug
-    # (requires timing). Verify function exists and returns default when empty.
-    from codey.app import provider_services as svc
-
-    assert hasattr(svc, "recommended_default_provider")
-    assert svc.recommended_default_provider({}) == "deepseek"
-    assert svc.recommended_default_provider(None) == "deepseek"
-
-
 def test_run_registry_payload_must_not_expose_stale_provider() -> None:
     # idle payload shows last provider by design (history view for run_state);
     # frontend uses catalog default for new runs. Verify shape, no crash.

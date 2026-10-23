@@ -10,6 +10,24 @@ from codey.control.protocol import ControlError
 from codey.launcher.startup import StartupTrace, startup_stage
 
 
+@pytest.fixture(autouse=True)
+def deadlines(monkeypatch):
+    timers = []
+    class Deadline:
+        def __init__(self, interval, function, args=()):
+            self.interval, self.function, self.args = interval, function, args
+            self.cancelled = False
+            timers.append(self)
+        def start(self):
+            pass
+        def cancel(self):
+            self.cancelled = True
+        def fire(self):
+            self.function(*self.args)
+    monkeypatch.setattr(desktop_startup.threading, 'Timer', Deadline)
+    return timers
+
+
 class Window:
     def __init__(self):
         self.scripts, self.urls = [], []
@@ -46,6 +64,35 @@ def test_success_navigates_the_same_window_and_records_actual_interface_ready(tm
     assert sum(row["stage"] == "desktop.interface_ready" for row in rows) == 1
     assert all(row["elapsed_seconds"] >= 0 and row["since_start_seconds"] >= 0 for row in rows)
     assert all("http" not in json.dumps(row) for row in rows)
+
+
+def test_interface_deadline_recovers_missing_scripts_and_cannot_fail_a_later_attempt(tmp_path, monkeypatch, deadlines):
+    startup, window = controller(tmp_path)
+    monkeypatch.setattr(desktop_startup, 'ensure_service', lambda *args, **kwargs: client())
+    startup.start()
+    old = deadlines[-1]
+    old.fire()
+    assert 'did not become ready' in window.scripts[-1]['error']
+    assert old.cancelled and startup._failed
+    assert startup._begin(retry=True)
+    startup._run()
+    current = deadlines[-1]
+    old.fire()
+    assert startup._navigating and not current.cancelled
+    startup.ui_ready(startup._trace.identity)
+    assert current.cancelled and not startup._navigating
+    current.fire()
+    assert not startup._failed
+
+
+def test_close_cancels_interface_deadline_and_ignores_late_expiry(tmp_path, monkeypatch, deadlines):
+    startup, window = controller(tmp_path)
+    monkeypatch.setattr(desktop_startup, 'ensure_service', lambda *args, **kwargs: client())
+    startup.start()
+    startup.close()
+    assert deadlines[-1].cancelled
+    deadlines[-1].fire()
+    assert not startup._failed
 
 
 def test_failure_retry_is_single_flight_and_keeps_the_same_window(tmp_path, monkeypatch):

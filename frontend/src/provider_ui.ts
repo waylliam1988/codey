@@ -1,6 +1,6 @@
 import { runtime } from './runtime';
 import type { Session } from './types/domain';
-import { decodeProviderConfig, decodeProviderStatus } from './domain/protocol';
+import { decodeProviderCatalog, decodeProviderStatus } from './domain/protocol';
 export interface ProviderModel {
   id: string;
   name?: string;
@@ -273,7 +273,7 @@ export interface ProviderUiApi {
   function applyProviderConfig(data: unknown) {
     let catalog;
     try {
-      catalog = decodeProviderConfig(data);
+      catalog = decodeProviderCatalog(data);
     } catch {
       return false;
     }
@@ -328,7 +328,7 @@ export interface ProviderUiApi {
       const r = await fetch('/api/provider_catalog', { cache: 'no-store' });
       if (!r.ok) return;
       const data = await r.json();
-      const catalog = decodeProviderConfig(data);
+      const catalog = decodeProviderCatalog(data);
       runtime.UiState.setProviders(
         catalog.providers.map((item) => item.id),
         catalog.labels,

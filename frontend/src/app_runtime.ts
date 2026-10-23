@@ -1214,16 +1214,18 @@ function applyLifecycle(
   active?: boolean,
   historySessionId?: string,
 ): boolean {
-  if (
-    data.run_id &&
-    runtime.ConversationUI.acceptsRun?.(historySessionId || data.session_id || '', data.run_id) === false
-  )
+  if (data.run_id && historySessionId && runtime.ConversationUI.acceptsRun(historySessionId, data.run_id) === false)
     return false;
   const runId = data.run_id || '',
     sessionId = data.session_id || '';
-  const owner = sessions.find((item) => item.id === sessionId);
+  const owner = sessions.find((item) => item.id === sessionId && runtime.ConversationUI.acceptsRun(item.id, runId));
   const display = historySessionId ? sessions.find((item) => item.id === historySessionId) : owner;
-  const session = owner || display;
+  const displays = sessions.filter(
+    (item) =>
+      (item === owner || item === display || item.messages.some((message) => message.runId === runId)) &&
+      runtime.ConversationUI.acceptsRun(item.id, runId),
+  );
+  const session = owner || display || displays[0];
   if (!session || !runId) return false;
   if (session.terminalRuns?.includes(runId)) runLifecycle.restoreTerminal(sessionId, runId);
   const request = runtime.Requests.forRun(sessionId, runId);
@@ -1245,10 +1247,14 @@ function applyLifecycle(
   if (!view) return false;
   // Every lifecycle write follows the one transition decision above. These are
   // derived UI indexes; the durable task and its revision remain authoritative.
-  if (view.terminal)
-    session.terminalRuns = [...(session.terminalRuns || []).filter((id) => id !== runId), runId].slice(-32);
-  else if (source === 'snapshot') session.terminalRuns = (session.terminalRuns || []).filter((id) => id !== runId);
-  hydrateSessionIndexes(session);
+  for (const target of displays) {
+    if (view.terminal)
+      target.terminalRuns = [...(target.terminalRuns || []).filter((id) => id !== runId), runId].slice(-32);
+    else if (source === 'snapshot') target.terminalRuns = (target.terminalRuns || []).filter((id) => id !== runId);
+    hydrateSessionIndexes(target);
+    if (view.state !== 'idle')
+      recordRunState(target.id, runId, target === owner || !view.active ? view.state : 'unknown', data);
+  }
   if (view.active) activeRuns.set(runId, sessionId);
   else activeRuns.delete(runId);
   const primary = [...activeRuns.entries()].at(-1);
@@ -1257,10 +1263,6 @@ function applyLifecycle(
   if (view.active) turnIdForRun(sessionId, runId);
   if (view.active) runtime.Composer.observeRun?.(sessionId, runId);
   runtime.Requests.projectLifecycle(data as ServerEventData, view.state);
-  if (view.state !== 'idle') {
-    if (owner) recordRunState(sessionId, runId, view.state, data);
-    if (display && display !== owner) recordRunState(display.id, runId, view.active ? 'unknown' : view.state, data);
-  }
   if (data.type === 'task_done') data.stop_reason = view.state;
   persistActive();
   if (activeRuns.size) runtime.Sse.displayRunStatus('running');

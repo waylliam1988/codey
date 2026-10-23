@@ -11,6 +11,15 @@ from codey.providers.local_connection import connect_local
 from codey.providers.model_preferences import ModelPreferences
 
 
+def test_provider_snapshot_reports_availability_without_choosing_a_model(monkeypatch, tmp_path):
+    from codey.app import api, provider_services
+    rows = [{'id': 'local', 'label': 'Local', 'available': True}]
+    monkeypatch.setattr(provider_services, 'provider_status_payload', lambda ctx: rows)
+    status, payload = api.providers_response(SimpleNamespace(state_home=tmp_path))
+    assert status == 200
+    assert payload == {'default': 'deepseek', 'providers': rows, 'probe_error': False}
+
+
 def test_context_budget_presets() -> None:
     from codey.providers.local_config import context_budget_for_window
 
@@ -499,15 +508,6 @@ def test_discovery_candidates_include_koboldcpp() -> None:
     assert "koboldcpp" in kinds
 
 
-def test_recommended_default_provider() -> None:
-    from codey.app.provider_services import recommended_default_provider
-
-    assert recommended_default_provider({"deepseek": True, "local": True}) == "deepseek"
-    assert recommended_default_provider({"deepseek": False, "local": True}) == "local"
-    assert recommended_default_provider({"deepseek": False, "local": False}) == "deepseek"
-    assert recommended_default_provider({}) == "deepseek"
-
-
 def test_review_policy_gating(monkeypatch) -> None:
     from codey.reviews.review_policy import (
         allow_self_review,
@@ -975,19 +975,6 @@ def test_save_rejects_invalid_env_budget_without_persisting(monkeypatch) -> None
     assert payload["ok"] is False
     assert "environment" in payload["error"]
     monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_WINDOW", raising=False)
-
-
-def test_provider_ui_applies_recommended_before_and_after_catalog() -> None:
-    from tools.frontend_source import frontend_source_text
-
-    text = frontend_source_text("provider_ui")
-    assert "function applyRecommended(data)" in text
-    before = text.index("applyRecommended(catalog.recommendedProvider")
-    after_providers = text.index(
-        "runtime.UiState.setProviders(catalog.providers.map((item) => item.id), catalog.labels, catalog.defaultProvider);"
-    )
-    assert text.count("applyRecommended(catalog.recommendedProvider") == 2
-    assert before < after_providers
 
 
 def test_frontend_source_text_preserves_template_markup_after_type_erasure() -> None:

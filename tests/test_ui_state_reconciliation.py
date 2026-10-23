@@ -89,7 +89,8 @@ def test_clear_history_keeps_session_and_draft_in_canonical_ui_store(page):  # n
 
 
 @pytest.mark.parametrize('status,title', [('failed', 'Failed'), ('running', 'Work')])
-def test_inherited_fork_history_never_assigns_source_task_ownership_to_child(page, status, title):  # noqa: F811
+@pytest.mark.parametrize('owner_loaded', [True, False])
+def test_inherited_fork_history_never_assigns_source_task_ownership_to_child(page, status, title, owner_loaded):  # noqa: F811
     page.route('**/api/sessions/a/messages**', lambda route: route.fulfill(json={
         'schema_version': 1, 'session_id': 'a', 'epoch': 'history', 'snapshot_revision': 1, 'has_more': False,
         'items': [{'id': 'source-user', 'type': 'user', 'text': 'Inherited', 'runId': 'source'},
@@ -99,6 +100,43 @@ def test_inherited_fork_history_never_assigns_source_task_ownership_to_child(pag
     page.evaluate("ConversationUI.refreshHistory('a')")
     expect(page.locator('.process-title')).to_have_text(title + ' · read 1 file')
     expect(page.locator('#stop')).to_be_hidden()
+
+    if status == 'running':
+        if not owner_loaded:
+            page.evaluate("() => {const s=UiState.current();s.sessions=s.sessions.filter(x=>x.id!=='b');UiState.apply(s);}")
+        page.evaluate("handleServerEvent({type:'task_done',session_id:'b',run_id:'source',task_revision:3,task_status:'failed',stop_reason:'provider_failure'})")
+        expect(page.locator('.process-title')).to_have_text('Failed · read 1 file')
+        expect(page.locator('#stop')).to_be_hidden()
+        page.evaluate("handleServerEvent({type:'task_start',session_id:'b',run_id:'source',task_revision:2,task_status:'running'})")
+        expect(page.locator('.process-title')).to_have_text('Failed · read 1 file')
+
+
+def test_legacy_draft_survives_boot_read_failure_and_retry(page):  # noqa: F811
+    baseline = page.evaluate('UiState.current().revision')
+    # Seed the next document after pagehide has atomically cached the old page.
+    page.add_init_script("""(() => {
+      localStorage.removeItem('codey:ui-cache');
+      localStorage.setItem('codey:sessions',JSON.stringify([
+        {id:'a',provider:'deepseek',draft:{text:'RECOVER ME',revision:3}},
+        {id:'deleted',draft:{text:'Do not resurrect'}}
+      ]));
+      localStorage.setItem('codey:active','a');
+    })();""")
+    reads = []
+    def unavailable(route):
+        if route.request.method == 'GET' and len(reads) < 2:
+            reads.append(True)
+            route.fulfill(status=503, json={'error': 'temporarily_unavailable'})
+        else:
+            route.fallback()
+    page.route('**/api/ui_state', unavailable)
+    page.reload()
+    expect(page.locator('#task')).to_have_value('RECOVER ME')
+    page.wait_for_function('revision => UiState.current().revision > revision', arg=baseline)
+    assert page.evaluate('UiState.ensureSaved()') is True
+    saved = page.codey_context.load_ui_state()
+    assert next(row for row in saved['sessions'] if row['id'] == 'a')['draft']['text'] == 'RECOVER ME'
+    assert not any(row['id'] == 'deleted' for row in saved['sessions'])
 
 
 def test_lost_creation_response_then_remote_deletion_cannot_resurrect_chat_on_reload(page):  # noqa: F811

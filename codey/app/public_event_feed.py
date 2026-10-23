@@ -21,7 +21,7 @@ PUBLIC_FIELDS = {
     "conversation_input": frozenset({"type", "session_id", "input"}),
     "user_question": frozenset({"type", "session_id", "run_id", "question", "id", "text", "questions"}),
     "user_question_state": frozenset({"type", "session_id", "question"}),
-    "providers": frozenset({"type", "providers", "default", "recommended", "probe_error"}),
+    "providers": frozenset({"type", "providers", "default", "probe_error"}),
     "shell_result": frozenset({"type", "session_id", "run_id", "id", "command", "command_preview", "command_sha256", "command_chars", "command_truncated", "cwd", "project", "status", "output", "exit_code", "execution_id", "approved", "error", "ok", "truncated", "failure"}),
     "shell_approval_status": frozenset({"type", "session_id", "run_id", "source_run_id", "id", "approval_id", "decision", "execution", "continuation", "execution_id", "continuation_run_id", "revision", "error", "code"}),
     "teach_request": frozenset({"type", "session_id", "run_id", "question", "text", "id", "options"}),

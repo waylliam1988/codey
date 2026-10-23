@@ -136,6 +136,73 @@ it('atomically caches edits with their matching base and migrates old cache only
   expect(JSON.parse(localStorage.getItem('codey:ui-cache')!).confirmed).toBeNull();
 });
 
+it.each([
+  { resetStore: false, failReads: 0 },
+  { resetStore: false, failReads: 2 },
+  { resetStore: true, failReads: 0 },
+  { resetStore: true, failReads: 2 },
+])('uses the same draft recovery: reset=$resetStore, failed reads=$failReads', async ({ resetStore, failReads }) => {
+  localStorage.setItem(
+    'codey:ui-cache',
+    JSON.stringify({
+      schema: 1,
+      state: {
+        ...ui.current(),
+        sessions: [
+          { id: 'a', draft: { text: 'RECOVER ME', revision: 3 } },
+          { id: 'deleted', draft: { text: 'Do not resurrect' } },
+        ],
+      },
+      confirmed: resetStore ? { ...ui.current(), revision: 10 } : null,
+    }),
+  );
+  ui.apply(ui.cached());
+  const remote = { ...ui.current(), revision: 2, sessions: [{ id: 'a', draft: { text: '' } }] };
+  let reads = 0;
+  const posts: any[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url, options) => {
+      if (!options?.method) {
+        if (++reads <= failReads) throw new Error('offline');
+        return { ok: true, json: async () => ({ state: remote }) };
+      }
+      posts.push(JSON.parse(options.body));
+      return { ok: true, json: async () => ({ revision: 3 }) };
+    }),
+  );
+  await ui.restoreFromServer();
+  await vi.advanceTimersByTimeAsync(2000);
+  await ui.ensureSaved();
+  expect(state.sessions.map((s: any) => s.id)).toEqual(['a']);
+  expect(state.sessions[0].draft.text).toBe('RECOVER ME');
+  expect(posts.at(-1).state.sessions[0].draft.text).toBe('RECOVER ME');
+  expect(posts[0].base_revision).toBe(2);
+});
+
+it('recovers the latest draft when typing continues during first contact', async () => {
+  localStorage.setItem('codey:ui-cache', JSON.stringify({ schema: 1, state: ui.current(), confirmed: null }));
+  ui.apply(ui.cached());
+  let resolve!: (value: any) => void;
+  const remote = { ...ui.current(), revision: 2, sessions: [{ id: 'a', draft: { text: '' } }] };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((_url, options) =>
+      options?.method
+        ? Promise.resolve({ ok: true, json: async () => ({ revision: 3 }) })
+        : new Promise((r) => {
+            resolve = r;
+          }),
+    ),
+  );
+  const restoring = ui.restoreFromServer();
+  state.sessions[0].draft.text = 'typed while restoring';
+  resolve({ ok: true, json: async () => ({ state: remote }) });
+  await restoring;
+  expect(await ui.ensureSaved()).toBe(true);
+  expect(state.sessions[0].draft.text).toBe('typed while restoring');
+});
+
 it('ignores an older mutation response after accepting a newer inventory', async () => {
   let resolve!: (value: any) => void;
   let calls = 0;

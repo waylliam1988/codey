@@ -901,7 +901,11 @@ Desktop launch shows the character pond, without progress copy, in the same wind
 shared service prepares. Record stages in diagnostics without normal startup text;
 failure shows its reason and an English `Retry` action without opening a second
 window. Service readiness navigates that window to the normal interface, where
-the pond covers restoration and fades out on interface readiness. Startup
+the pond covers restoration and fades out on interface readiness.
+The standalone startup script detects module loading failures. One native
+readiness deadline covers a missing script or stalled document; ready, failure
+and close settle the same attempt and cancel that deadline. Old callbacks cannot
+settle a newer attempt. Startup
 observations distinguish window display from actual interface readiness; see
 [desktop startup](docs/startup.md) for validation and timing boundaries.
 Collapsed Work ends 6px before the first visible answer block, consistently

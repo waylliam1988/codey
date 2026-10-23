@@ -14,6 +14,14 @@ another preparation in the same window. Closing a window suppresses later page
 updates and navigation; it does not shut down an existing shared service. An
 already admitted independent upgrade remains governed by its journal and recovery.
 
+The standalone startup script observes main-module and dependency load errors
+without importing the main application. A single native 30-second readiness
+deadline also covers a failed startup script or a document that never reports
+readiness. Error, ready and close converge on the same attempt-fenced completion
+path, which cancels the deadline. Late callbacks cannot settle a newer attempt.
+There is no additional service/task runtime and no progress callback channel;
+stage measurements are recorded directly in the startup log.
+
 ## Inputs and validation
 
 The frontend publisher excludes only explicit `.test` / `.spec` files with

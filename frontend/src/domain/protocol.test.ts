@@ -6,7 +6,6 @@ import {
   decodeChangeFilePreview,
   decodeChangesData,
   decodeProviderCatalog,
-  decodeProviderConfig,
   decodeProviderStatus,
   decodeRunState,
   decodeServerEvent,
@@ -120,11 +119,7 @@ describe('protocol decoders', () => {
     expect(decodeServerEvent({ type: 'task_done', exit_code: null }).exit_code).toBeNull();
   });
 
-  it('decodes provider config and rejects malformed status payloads', () => {
-    expect(decodeProviderConfig({ providers: [{ id: 'local', label: 'Local' }], recommended: 'local' })).toMatchObject({
-      defaultProvider: 'local',
-      recommendedProvider: 'local',
-    });
+  it('decodes provider status and rejects malformed payloads', () => {
     expect(decodeProviderStatus([{ id: 'local', available: true, state: 'ready' }])).toEqual([
       { id: 'local', available: true, state: 'ready' },
     ]);
