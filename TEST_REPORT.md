@@ -2,6 +2,61 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Retry isolation and lifecycle contract cleanup (2026-10-23)
+
+Native URL and error-document presentation now retain the initiating startup
+trace. A late exception is logged against that attempt and cannot fail or
+replace a later retry's page or cancel its deadline. Four deterministic threaded
+regressions cover blocked URL/error-document delivery, timeout/retry and a new
+attempt that is either navigating or ready.
+
+The dispatcher always uses its module-owned frame coalescer and active-run map.
+The former sliced-source status test now runs the full published application in
+headless Chromium. Snapshots project durable task states through the existing
+lifecycle transition; owner-registry rows no longer synthesize unversioned starts
+or idle completions, and the older-server cursor fallback was removed. A browser
+regression checks that the registry cannot invent or settle a task independently.
+Required shell-result expiry and approval-queue cancellation are direct calls;
+provider transport abandonment remains optional. Tests verify cancellation order
+and that missing required wiring raises instead of silently skipping cleanup.
+
+Verification: **129 startup/cancellation/provider/UI regressions passed (158.93s)**;
+**50 frontend files / 277 tests passed**; **62 UI architecture/source/SSE checks
+passed**; **26 real wheel/source-archive/runtime/cache tests passed (187.97s)**.
+The broader server/approval/cancellation selection reported **289 passed, 1 skipped,
+1 failed**: an unchanged scheduler-close test exceeded its 2-second dispatch-start
+wait during concurrent runs. Its complete file immediately passed on isolated
+rerun (**2 passed, 1.12s**); this initial timeout is retained here rather than
+reported as an all-green broad run. A subsequent cancellation/lifecycle/approval
+selection including that test also passed (**27 passed, 14.13s**).
+
+Follow-up investigation used independent real SQLite databases: 30 serial and
+160 concurrent scheduler trials all dispatched and closed; 5 exceeded two seconds
+(maximum 4.68s), with timeout stacks in SQLite commit/connection cleanup. In an
+alternating 120-trial comparison, the existing connection-per-operation path had
+4/60 readiness timeouts; holding an idle connection had 1/60. Its p95 readiness
+fell from 2.38s to 0.086s, but COMMIT still took up to 2.70s and final connection
+close remained slow. A subsequent 160-trial FULL/FULL-with-anchor/NORMAL-with-anchor/
+memory control run had no two-second readiness timeouts in any group, confirming
+the intermittent nature rather than establishing a deterministic speed guarantee.
+The existing store opens/closes connections for each operation; last-connection
+WAL cleanup can amplify storage latency while the durable session line is held.
+These results identify a production latency concern, not a reproduced lost-wakeup
+or deadlock, and cannot prove the cause of the original uninstrumented timeout.
+No production connection or durability policy was changed in this patch.
+
+The scheduler readiness test now allows ten seconds and emits scheduler-thread
+identity, liveness and stack on failure without querying the possibly blocked
+store. Its existing two-second cancellation-signal and one-second close/join
+assertions remain intact. The focused startup/abort/lifecycle selection passed
+again (**47 passed, 18.87s**). The complete broader selection was then rerun
+and passed (**290 passed, 1 skipped, 311.87s**).
+
+Repository Ruff, full-production mypy (512 files), Pyrefly (0 errors; 29 suppressed,
+80 existing warnings), ty, TypeScript, Biome, production build, 54 JavaScript syntax
+checks and frontend publication consistency passed. Python type gates explicitly
+targeted 3.11. No complete repository pytest or coverage run was performed.
+
 ## Installed runtime and independent native startup (2026-10-23)
 
 Source publication and wheel construction now produce the same `codey/runtime.json`

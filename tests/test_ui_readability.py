@@ -76,7 +76,7 @@ def test_context_and_effort_keep_hover_active_keyboard_and_disabled_hierarchy(pa
     page.mouse.move(1000, 100)
     assert_readable(effort)
 
-    page.evaluate("applyRunState({busy:true,run_id:'readability-run',session_id:'a'})")
+    page.evaluate("applyRunState({busy:true,run_id:'readability-run',session_id:'a',task_states:[{run_id:'readability-run',session_id:'a',task_revision:1,task_status:'running'}]})")
     folder = page.locator("#ctx-folder")
     expect(folder).to_be_disabled()
     expect(folder).to_have_css("color", "rgb(107, 107, 107)")

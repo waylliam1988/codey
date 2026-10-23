@@ -100,8 +100,10 @@ class DesktopStartup:
 
     def _deliver(self) -> None:
         url: str | None = None
+        trace = self._trace
         try:
             with self._lock:
+                trace = self._trace
                 if self._closed.is_set() or not self._shown or self._window is None:
                     return
                 window = self._window
@@ -117,14 +119,16 @@ class DesktopStartup:
             # Native navigation needs a shown host, not a working JS bridge.
             # Presentation never holds the service preparation gate.
             if url is not None:
-                with self._trace.activate(), startup_stage("desktop.navigate"):
+                with trace.activate(), startup_stage("desktop.navigate"):
                     window.load_url(url)
             elif content is not None:
                 window.load_html(content)
         except Exception as exc:
             with self._lock:
-                self._trace.record("desktop.navigation_failed", outcome="failed")
-                self._fail_locked(self._trace.identity, str(exc) or "Could not open the interface. Retry to reload it.")
+                trace.record("desktop.navigation_failed", outcome="failed")
+                if trace is not self._trace or self._closed.is_set():
+                    return
+                self._fail_locked(trace.identity, str(exc) or "Could not open the interface. Retry to reload it.")
             if url is not None:
                 self._deliver()
 

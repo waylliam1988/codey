@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from codey.durable.model import TaskCheckpoint
 
@@ -28,15 +28,9 @@ def abort_task_resources(ctx: AppContext, checkpoint: TaskCheckpoint) -> None:
             abandon()
         except Exception as exc:
             logger.debug("provider abort cleanup failed for %s: %s", run_id, exc)
-    events: tuple[dict[str, Any], ...] = ()
     with ctx._shell_spawn_gate, ctx.lock:
-        expire = getattr(ctx, "_expire_shell_results_locked", None)
-        if callable(expire):
-            events = tuple(expire(run_id=run_id))
-        workflow = getattr(ctx, "shell_approval_workflow", None)
-        cancel_queued = getattr(workflow, "cancel_queued", None)
-        if callable(cancel_queued):
-            cancel_queued(checkpoint.conversation_id)
+        events = tuple(ctx._expire_shell_results_locked(run_id=run_id))
+        ctx.shell_approval_workflow.cancel_queued(checkpoint.conversation_id)
     for event in events:
         ctx.record_shell_result(event)
 

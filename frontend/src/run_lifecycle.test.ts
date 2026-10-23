@@ -28,11 +28,11 @@ const input = (
   source: LifecycleInput['source'] = 'event',
 ): LifecycleInput => ({ runId: 'r', sessionId: 's', state, revision, source, active: state === 'running' });
 
-it('fences events buffered before an active snapshot, even without task versions', () => {
+it('fences buffered waiting events using the durable task revision', () => {
   const projection = new RunLifecycleProjection();
-  projection.transition({ ...input('approval', undefined), sequence: 20 });
-  projection.transition(input('running', undefined, 'snapshot'));
-  expect(projection.transition({ ...input('approval', undefined), sequence: 20 })).toBeNull();
+  projection.transition({ ...input('approval', 2), sequence: 20 });
+  projection.transition(input('running', 3, 'snapshot'));
+  expect(projection.transition({ ...input('approval', 2), sequence: 20 })).toBeNull();
   expect(projection.transition(input('approval', undefined))).toBeNull();
   expect(projection.current('r')?.active).toBe(true);
 });

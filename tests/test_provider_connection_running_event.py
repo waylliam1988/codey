@@ -1,8 +1,5 @@
 """A successful connection must publish running for SSE replay as well as state."""
 
-import json
-import shutil
-import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -10,7 +7,8 @@ import pytest
 from codey.app import provider_services
 from codey.app.context import AppContext
 from codey.app.headless_runner import HeadlessAppContext
-from tools.frontend_source import frontend_source
+from tests.test_ui_workflow import page as page
+from tests.test_ui_workflow import ui_browser as ui_browser
 
 
 @pytest.mark.parametrize("headless", [False, True])
@@ -48,35 +46,18 @@ def test_connection_event_stream_agrees_with_authoritative_state(tmp_path, monke
 @pytest.mark.parametrize("status,text,kind", [("connecting", "Connecting", "warn"),
                                                ("running", "Running", "run")])
 @pytest.mark.parametrize("scope", ["unlinked", "current", "previous", "settled"])
-def test_replayed_connection_status_keeps_running_display(status, text, kind, scope):
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("Node.js unavailable")
-    html = frontend_source("legacy-runtime")
-    start = html.index("function handleServerEvent(raw,")
-    # Load the dispatcher's real SSE and request-filter dependencies. Only the
-    # DOM rendering branches are outside this status-replay scenario.
-    source = html[start:html.index("if (data.type === 'providers')", start)] + "}\n"
-    sse = frontend_source("sse")
-    requests = frontend_source("requests")
-    sessions = [] if scope == "unlinked" else [{"id": "chat", "messages": [
-        {"type": "user", "id": "request", "attempts": [
-            {"runId": "previous-run", "state": "failed"},
-            {"runId": "run", "state": "done" if scope == "settled" else "running"},
-        ]},
-    ]}]
-    script = """
-const assert = require('node:assert/strict');
-let runningRunId = 'run';
-const calls = [];
-const setStatus = (...args) => calls.push(args);
-const window = {ConversationUI: {acceptsRun: () => true}};
-""" + sse + requests + "\nwindow.Sse.init({setStatus});\n" + source + f"""
-const sessions = {json.dumps(sessions)};
-window.Requests.init({{getSessions: () => sessions}});
-handleServerEvent({{type: 'status', session_id: 'chat',
-  run_id: {json.dumps('previous-run' if scope == 'previous' else 'run')}, status: {json.dumps(status)}}});
-assert.deepEqual(calls, {json.dumps([[text, kind]] if scope in {'unlinked', 'current'} else [])});
-"""
-    result = subprocess.run([node, "-e", script], capture_output=True, text=True, encoding="utf-8", timeout=10)
-    assert result.returncode == 0, result.stderr
+def test_replayed_connection_status_keeps_running_display(page, status, text, kind, scope):
+    page.evaluate("""scope => {
+      handleServerEvent({type:'task_start',session_id:'a',run_id:'run',task_revision:1,task_status:'running'});
+      if (scope !== 'unlinked') activeSession().messages = [{type:'user', id:'request', attempts:[
+        {runId:'previous-run',state:'failed'},
+        {runId:'run',state:scope === 'settled' ? 'done' : 'running'}]}];
+    }""", scope)
+    before = page.locator('#status').text_content()
+    page.evaluate("event => handleServerEvent(event)", {'type':'status', 'session_id':'a',
+                  'run_id':'previous-run' if scope == 'previous' else 'run', 'status':status})
+    if scope in {'unlinked', 'current'}:
+        assert page.locator('#status').text_content() == text
+        assert kind in page.locator('#status').get_attribute('class').split()
+    else:
+        assert page.locator('#status').text_content() == before

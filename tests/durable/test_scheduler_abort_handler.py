@@ -4,6 +4,8 @@ import sys
 import threading
 import time
 
+import pytest
+
 from codey.durable import DurableSession, MemoryDurableStore, TaskStatus
 from codey.durable.scheduler import AbortInvocation, DurableTaskScheduler
 
@@ -150,3 +152,57 @@ def _wait_until(predicate, timeout: float = 2.0) -> bool:
         time.sleep(0.01)
     return predicate()
 
+
+
+def test_abort_cleans_shell_and_approval_resources_without_optional_provider_hook(tmp_path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from codey.app.context import AppContext
+
+    state = AppContext(tmp_path / "state", start_scheduler=False)
+    try:
+        state.durable.admit_input(
+            conversation_id="conversation", request_id="request", task_id="task",
+            text="work", provider_snapshot={"provider_id": "local"},
+        )
+        state.run_registry.reserve(
+            session_id="conversation", project=None, task="work", provider_id="local", run_id="task",
+        )
+        state._active_providers.register("task", SimpleNamespace())
+        events = []
+        result = {"type": "shell_result", "run_id": "task", "id": "pending"}
+
+        def expire(**kwargs):
+            assert state.stop_flag_for("task").is_set()
+            events.append(("expire", kwargs))
+            return (result,)
+
+        monkeypatch.setattr(state, "_expire_shell_results_locked", expire)
+        monkeypatch.setattr(state.shell_approval_workflow, "cancel_queued",
+                            lambda session_id: events.append(("cancel", session_id)))
+        monkeypatch.setattr(state, "record_shell_result", lambda event: events.append(("result", event)))
+        state._abort_durable_task(state.durable.task("task"), object())
+        assert events == [("expire", {"run_id": "task"}), ("cancel", "conversation"), ("result", result)]
+    finally:
+        state._active_providers.unregister("task")
+        state.close()
+
+
+@pytest.mark.parametrize("dependency", ["shell_results", "approval_queue"])
+def test_abort_does_not_silently_skip_missing_required_wiring(tmp_path, dependency) -> None:
+    from unittest.mock import patch
+
+    from codey.app.context import AppContext
+
+    state = AppContext(tmp_path / "state", start_scheduler=False)
+    try:
+        state.durable.admit_input(
+            conversation_id="conversation", request_id="request", task_id="task",
+            text="work", provider_snapshot={"provider_id": "local"},
+        )
+        owner, attribute = ((state, "_expire_shell_results_locked") if dependency == "shell_results"
+                            else (state.shell_approval_workflow, "cancel_queued"))
+        with patch.object(owner, attribute, None), pytest.raises(TypeError):
+            state._abort_durable_task(state.durable.task("task"), object())
+    finally:
+        state.close()

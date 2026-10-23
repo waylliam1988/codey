@@ -342,3 +342,56 @@ def test_embedded_error_cannot_end_the_startup_script():
             assert not page.evaluate('Boolean(window.injected)')
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize("ready", [False, True])
+@pytest.mark.parametrize("presentation", ["navigation", "error_document"])
+def test_late_presentation_error_cannot_fail_retry(tmp_path, monkeypatch, deadlines, ready, presentation):
+    startup, window = controller(tmp_path)
+    monkeypatch.setattr(desktop_startup, "ensure_service", lambda *args, **kwargs: client())
+    entered, release = threading.Event(), threading.Event()
+    original = window.load_url if presentation == "navigation" else window.load_html
+
+    def blocked(value):
+        entered.set()
+        assert release.wait(5)
+        raise RuntimeError("Old presentation failed")
+
+    if presentation == "navigation":
+        window.load_url = blocked
+        worker = threading.Thread(target=startup.start)
+    else:
+        startup.start()
+        window.load_html = blocked
+        worker = threading.Thread(target=lambda: startup.ui_failed(startup._trace.identity, "Initial failure"))
+    worker.start()
+    try:
+        assert entered.wait(2)
+        old_trace = startup._trace
+        if presentation == "navigation":
+            deadlines[-1].fire()
+        assert startup._failed
+        if presentation == "navigation":
+            window.load_url = original
+        else:
+            window.load_html = original
+        window.navigated.clear()
+        assert startup.retry()
+        assert window.navigated.wait(2)
+        if ready:
+            startup.ui_ready(startup._trace.identity)
+        current_deadline = deadlines[-1]
+        rendered_errors = len(window.scripts)
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive()
+    assert startup._trace is not old_trace
+    assert not startup._failed
+    assert startup._navigating is not ready
+    assert current_deadline.cancelled is ready
+    assert len(window.scripts) == rendered_errors
+    rows = [json.loads(row) for row in (tmp_path / "startup-timings.jsonl").read_text().splitlines()]
+    failures = [row for row in rows if row["stage"] == "desktop.navigation_failed"]
+    assert len(failures) == 1
+    assert failures[0]["startup_id"] == old_trace.identity

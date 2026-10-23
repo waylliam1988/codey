@@ -91,17 +91,6 @@ export class RunLifecycleProjection {
         input.sequence <= old.sequence
       )
         return null;
-      // Older servers lack task versions: active snapshots still fence old
-      // parks buffered during reconciliation, including cursor-less parks.
-      if (
-        old.snapshotBarrier &&
-        input.source !== 'snapshot' &&
-        input.revision === undefined &&
-        !terminal &&
-        (input.sequence === undefined || input.sequence <= (old.sequence ?? 0)) &&
-        input.state !== old.state
-      )
-        return null;
       if (input.source === 'admission' && old.source !== 'admission') return null;
     }
     const sameVersion = sameRevision && !migration;

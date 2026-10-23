@@ -3,10 +3,12 @@ import pytest
 from playwright.sync_api import expect
 
 from codey.app import api
-from tests.test_ui_workflow import page, select_connection_models, ui_browser  # noqa: F401
+from tests.test_ui_workflow import page as page
+from tests.test_ui_workflow import select_connection_models
+from tests.test_ui_workflow import ui_browser as ui_browser
 
 
-def test_deleting_last_chat_preserves_enabled_choice_and_saving_continues(page):  # noqa: F811
+def test_deleting_last_chat_preserves_enabled_choice_and_saving_continues(page):
     select_connection_models(page, {'id': 'zen', 'label': 'Zen', 'models': [
         {'id': 'beam-free', 'name': 'Beam Free', 'efforts': []},
         {'id': 'glm', 'name': 'GLM', 'efforts': []},
@@ -28,7 +30,7 @@ def test_deleting_last_chat_preserves_enabled_choice_and_saving_continues(page):
     assert page.codey_context.load_ui_state()['sessions'][0]['draft']['text'] == 'Keep saving after deletion'
 
 
-def test_empty_chat_never_implicitly_selects_a_disabled_catalog_entry(page):  # noqa: F811
+def test_empty_chat_never_implicitly_selects_a_disabled_catalog_entry(page):
     select_connection_models(page, {'id': 'zen', 'label': 'Zen', 'models': [
         {'id': 'disabled', 'name': 'Disabled first', 'efforts': []},
         {'id': 'enabled', 'name': 'Enabled', 'efforts': []},
@@ -39,7 +41,7 @@ def test_empty_chat_never_implicitly_selects_a_disabled_catalog_entry(page):  # 
     expect(page.locator('#model-notice')).not_to_contain_text('This model is disabled')
 
 
-def test_new_chat_does_not_inherit_a_disabled_website_model(page):  # noqa: F811
+def test_new_chat_does_not_inherit_a_disabled_website_model(page):
     page.evaluate("""() => {
       const settings=Models.snapshot();settings.preferences.revision++;
       settings.preferences.sources.websites.models=['mimo'];Models.applySettings(settings);
@@ -53,7 +55,7 @@ def test_new_chat_does_not_inherit_a_disabled_website_model(page):  # noqa: F811
     expect(page.locator('#provider-name')).to_have_text('Choose model')
 
 
-def test_history_restores_failed_checkpoint_and_live_checkpoint_through_same_lifecycle(page):  # noqa: F811
+def test_history_restores_failed_checkpoint_and_live_checkpoint_through_same_lifecycle(page):
     rows = [
         {'id': 'u1', 'type': 'user', 'text': 'First', 'runId': 'old'},
         {'id': 't1', 'type': 'tool_pending', 'kind': 'read', 'path': 'old.py', 'pending': True, 'toolKey': 'old:call', 'runId': 'old'},
@@ -79,7 +81,7 @@ def test_history_restores_failed_checkpoint_and_live_checkpoint_through_same_lif
     expect(page.locator('#stop')).to_be_hidden()
 
 
-def test_clear_history_keeps_session_and_draft_in_canonical_ui_store(page):  # noqa: F811
+def test_clear_history_keeps_session_and_draft_in_canonical_ui_store(page):
     page.locator('#task').fill('Keep my draft')
     assert page.evaluate('UiState.ensureSaved()') is True
     page.evaluate("clearMessages('a')")
@@ -90,7 +92,7 @@ def test_clear_history_keeps_session_and_draft_in_canonical_ui_store(page):  # n
 
 @pytest.mark.parametrize('status,title', [('failed', 'Failed'), ('running', 'Work')])
 @pytest.mark.parametrize('owner_loaded', [True, False])
-def test_inherited_fork_history_never_assigns_source_task_ownership_to_child(page, status, title, owner_loaded):  # noqa: F811
+def test_inherited_fork_history_never_assigns_source_task_ownership_to_child(page, status, title, owner_loaded):
     page.route('**/api/sessions/a/messages**', lambda route: route.fulfill(json={
         'schema_version': 1, 'session_id': 'a', 'epoch': 'history', 'snapshot_revision': 1, 'has_more': False,
         'items': [{'id': 'source-user', 'type': 'user', 'text': 'Inherited', 'runId': 'source'},
@@ -111,7 +113,7 @@ def test_inherited_fork_history_never_assigns_source_task_ownership_to_child(pag
         expect(page.locator('.process-title')).to_have_text('Failed · read 1 file')
 
 
-def test_legacy_draft_survives_boot_read_failure_and_retry(page):  # noqa: F811
+def test_legacy_draft_survives_boot_read_failure_and_retry(page):
     baseline = page.evaluate('UiState.current().revision')
     # Seed the next document after pagehide has atomically cached the old page.
     page.add_init_script("""(() => {
@@ -139,7 +141,7 @@ def test_legacy_draft_survives_boot_read_failure_and_retry(page):  # noqa: F811
     assert not any(row['id'] == 'deleted' for row in saved['sessions'])
 
 
-def test_lost_creation_response_then_remote_deletion_cannot_resurrect_chat_on_reload(page):  # noqa: F811
+def test_lost_creation_response_then_remote_deletion_cannot_resurrect_chat_on_reload(page):
     existing = {row['id'] for row in page.codey_context.load_ui_state()['sessions']}
     lost = []
     def save(route):
@@ -162,3 +164,21 @@ def test_lost_creation_response_then_remote_deletion_cannot_resurrect_chat_on_re
     page.wait_for_function("id => !UiState.current().sessions.some(s=>s.id===id)", arg=lost[0])
     assert page.evaluate('UiState.ensureSaved()') is True
     assert all(row['id'] != lost[0] for row in page.codey_context.load_ui_state()['sessions'])
+
+
+def test_snapshot_registry_cannot_invent_or_settle_task_lifecycle(page):
+    page.evaluate("""() => {
+      applyRunState({busy:true,run_id:'missing',session_id:'a',active_runs:[{run_id:'missing',session_id:'a'}],task_states:[]});
+    }""")
+    expect(page.locator('#stop')).to_be_hidden()
+    assert page.evaluate("activeSession().messages.some(message => message.runId === 'missing')") is False
+    page.evaluate("""() => {
+      applyRunState({busy:true,run_id:'actual',session_id:'a',active_runs:[{run_id:'actual',session_id:'a'}],
+        task_states:[{run_id:'actual',session_id:'a',task_revision:2,task_status:'running'}]});
+      applyRunState({busy:false,active_runs:[],task_states:[]});
+    }""")
+    expect(page.locator('#stop')).to_be_visible()
+    page.evaluate("""applyRunState({busy:true,run_id:'actual',session_id:'a',active_runs:[{run_id:'actual',session_id:'a'}],
+      task_states:[{run_id:'actual',session_id:'a',task_revision:3,task_status:'cancelled'}]})""")
+    expect(page.locator('#stop')).to_be_hidden()
+    assert page.evaluate("activeSession().terminalRuns.includes('actual')") is True

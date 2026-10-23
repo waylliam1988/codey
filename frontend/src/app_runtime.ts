@@ -1310,10 +1310,7 @@ function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' =
     replyStreamFrames.enqueue(key, data);
     return;
   }
-  // Some legacy source tests execute only this dispatcher slice without the
-  // frame coalescer declaration. The production bundle always has it, while
-  // the optional guard keeps the isolated dispatcher usable.
-  if (typeof replyStreamFrames !== 'undefined') replyStreamFrames.flush();
+  replyStreamFrames.flush();
   if ((data.type === 'task_start' || data.type === 'task_done') && !applyLifecycle(data, lifecycleSource)) return;
   if (data.type === 'user_question' || data.type === 'user_question_state') {
     userQuestions.apply((raw as { question: unknown }).question);
@@ -1345,7 +1342,7 @@ function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' =
     'ghost_post_turn_warning',
     'resync_required',
   ];
-  const runIsActive = (id: string) => (typeof activeRuns !== 'undefined' && activeRuns.has(id)) || id === runningRunId;
+  const runIsActive = (id: string) => activeRuns.has(id) || id === runningRunId;
   if (runId && !mayOutliveRun.includes(data.type) && !runIsActive(runId)) return;
   // Server dropped queued events for this client: re-pull authoritative state.
   if (data.type === 'resync_required') {
@@ -1722,27 +1719,10 @@ function projectTaskStates(
 function applyRunState(data: RunState) {
   const owners = new Map((data.active_runs || []).map((run) => [run.run_id, run.session_id]));
   if (data.busy && data.run_id && data.session_id) owners.set(data.run_id, data.session_id);
-  const versioned = new Set((data.task_states || []).map((row) => row.run_id));
   projectTaskStates(data.task_states || [], owners);
-  // Compatibility for older servers and admission-only test adapters. Actual
-  // task revisions always win over this unversioned registry projection.
-  for (const [runId, sessionId] of owners)
-    if (!versioned.has(runId))
-      applyLifecycle({ type: 'task_start', run_id: runId, session_id: sessionId }, 'snapshot', true);
-  for (const [runId, sessionId] of [...activeRuns])
-    if (!owners.has(runId) && !versioned.has(runId) && data.last_terminal_event?.run_id !== runId)
-      applyLifecycle(
-        { type: 'task_done', run_id: runId, session_id: sessionId, stop_reason: 'idle' },
-        'snapshot',
-        false,
-      );
   (data.shell_approvals || []).forEach(approvalController.apply);
   if (data.last_shell_result) handleServerEvent(data.last_shell_result);
-  if (
-    data.last_terminal_event &&
-    !(owners.has(data.last_terminal_event.run_id || '') && data.last_terminal_event.task_revision === undefined)
-  )
-    handleServerEvent(data.last_terminal_event, 'snapshot');
+  if (data.last_terminal_event) handleServerEvent(data.last_terminal_event, 'snapshot');
   if (data.pending_event) handleServerEvent(data.pending_event);
   markResearchRestoreAvailability(data.research_restore_runs || []);
   runtime.Requests.reconcile({

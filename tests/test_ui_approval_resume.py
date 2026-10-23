@@ -61,6 +61,7 @@ def test_reconnect_snapshot_ignores_old_park_and_stop_targets_resumed_task(page)
       UiState.hydrateSessionIndexes(activeSession());
       applyRunState({busy:true,run_id:run,session_id:'a',
         active_runs:[{run_id:run,session_id:'a'}],
+        task_states:[{run_id:run,session_id:'a',task_revision:3,task_status:'running'}],
         last_terminal_event:{type:'task_done',session_id:'a',run_id:run,stop_reason:'approval'}});
     }""", run)
     expect(page.locator('#stop')).to_be_visible()
@@ -70,7 +71,7 @@ def test_reconnect_snapshot_ignores_old_park_and_stop_targets_resumed_task(page)
     page.route('**/api/stop', lambda route: (stops.append(route.request.post_data_json), route.fulfill(json={'ok': True})))
     page.locator('#stop').click()
     assert stops == [{'run_id': run}]
-    emit(page, run, 'task_done', stop_reason='stopped', summary='Stopped')
+    emit(page, run, 'task_done', task_revision=4, task_status='cancelled', stop_reason='stopped', summary='Stopped')
     expect(page.locator('#stop')).to_be_hidden()
     emit(page, run, 'task_start')
     expect(page.locator('#stop')).to_be_hidden()
@@ -82,10 +83,10 @@ def test_legacy_parked_terminal_cache_does_not_swallow_final_delivery(page):
     page.evaluate("""run => {
       activeSession().terminalRuns.push(run);
       UiState.hydrateSessionIndexes(activeSession());
-      applyRunState({busy:true,run_id:run,session_id:'a',active_runs:[{run_id:run,session_id:'a'}]});
+      applyRunState({busy:true,run_id:run,session_id:'a',active_runs:[{run_id:run,session_id:'a'}],task_states:[{run_id:run,session_id:'a',task_revision:3,task_status:'running'}]});
     }""", run)
-    emit(page, run, 'task_start')
-    emit(page, run, 'task_done', stop_reason='done', summary='Recovered final answer', final_delivery='success')
+    emit(page, run, 'task_start', task_revision=3, task_status='running')
+    emit(page, run, 'task_done', task_revision=4, task_status='completed', stop_reason='done', summary='Recovered final answer', final_delivery='success')
     expect(page.locator('.msg.asst')).to_contain_text('Recovered final answer')
     expect(page.locator('.process-title')).to_contain_text('Worked')
 
@@ -120,7 +121,7 @@ def test_completed_run_cannot_be_reopened_by_replayed_park(page):
 def test_active_snapshot_survives_buffered_older_park(page):
     run = begin(page)
     emit(page, run, 'task_done', stop_reason='approval', event_id=20)
-    page.evaluate('run => applyRunState({busy:true,run_id:run,session_id:"a",active_runs:[{run_id:run,session_id:"a"}],last_terminal_event:{type:"task_done",session_id:"a",run_id:run,stop_reason:"approval"}})', run)
+    page.evaluate('run => applyRunState({busy:true,run_id:run,session_id:"a",active_runs:[{run_id:run,session_id:"a"}],task_states:[{run_id:run,session_id:"a",task_revision:3,task_status:"running"}],last_terminal_event:{type:"task_done",session_id:"a",run_id:run,stop_reason:"approval"}})', run)
     emit(page, run, 'task_done', stop_reason='approval', event_id=20)
     expect(page.locator('#stop')).to_be_visible()
     assert page.evaluate('run => Requests.forRun("a",run).attempt.state', run) == 'running'

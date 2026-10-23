@@ -755,7 +755,7 @@ def test_running_owner_and_approval_are_discoverable_without_enter_approving(pag
     approvals = []
     page.on("request", lambda request: approvals.append(request.url) if "/api/shell_approval" in request.url else None)
     page.evaluate("""() => {
-        applyRunState({busy:true,run_id:'run-a',session_id:'a'});
+        applyRunState({busy:true,run_id:'run-a',session_id:'a',task_states:[{run_id:'run-a',session_id:'a',task_revision:1,task_status:'running'}]});
         addToSession('a', {type:'shell_request',id:'approval-a',command:'pytest -q',cwd:'E:/project-alpha'});
         switchSession('b');
     }""")
@@ -772,7 +772,7 @@ def test_running_owner_and_approval_are_discoverable_without_enter_approving(pag
 
 
 def test_new_chat_keeps_composer_usable_while_another_session_runs(page):
-    page.evaluate("applyRunState({busy:true,run_id:'run-a',session_id:'a',run_status:'running'})")
+    page.evaluate("applyRunState({busy:true,run_id:'run-a',session_id:'a',task_states:[{run_id:'run-a',session_id:'a',task_revision:1,task_status:'running'}],run_status:'running'})")
     page.evaluate("switchSession('b')")
     page.locator('#task').fill('independent topic')
     expect(page.locator('#send')).to_be_enabled()
@@ -835,7 +835,7 @@ def test_new_chat_can_start_while_another_session_is_running(page):
     page.route("**/api/run", lambda route: (started.append(route.request.post_data_json), route.fulfill(json={"ok": True, "run_id": "run-b"})))
     page.evaluate(
         "applyRunState",
-        {"busy": True, "run_id": "run_old", "session_id": "a", "run_status": "running"},
+        {"busy": True, "run_id": "run_old", "session_id": "a", "run_status": "running", "task_states": [{"run_id": "run_old", "session_id": "a", "task_revision": 1, "task_status": "running"}]},
     )
     page.locator("#btn-new-chat").click()
     expect(page.locator("#task")).to_be_enabled()
@@ -851,7 +851,7 @@ def test_three_chats_can_admit_inputs_while_first_chat_is_running(page):
     """Two background chats can start independently while chat A runs."""
     started = []
     page.route("**/api/run", lambda route: (started.append(route.request.post_data_json), route.fulfill(json={"ok": True, "run_id": "run-new"})))
-    page.evaluate("applyRunState", {"busy": True, "run_id": "run_a", "session_id": "a", "run_status": "running"})
+    page.evaluate("applyRunState", {"busy": True, "run_id": "run_a", "session_id": "a", "run_status": "running", "task_states": [{"run_id": "run_a", "session_id": "a", "task_revision": 1, "task_status": "running"}]})
 
     page.evaluate("switchSession('b')")
     page.locator("#task").fill("topic B")
@@ -870,7 +870,7 @@ def test_stale_frontend_run_state_recovers_busy_response_into_new_run(page):
     started = []
     page.route(
         "**/api/state",
-        lambda route: route.fulfill(json={"busy": True, "run_id": "run_a", "session_id": "a", "run_status": "running"}),
+        lambda route: route.fulfill(json={"busy": True, "run_id": "run_a", "session_id": "a", "run_status": "running", "task_states": [{"run_id": "run_a", "session_id": "a", "task_revision": 1, "task_status": "running"}]}),
     )
 
     page.route("**/api/run", lambda route: (started.append(route.request.post_data_json), route.fulfill(json={"ok": True, "run_id": "run-b"})))
