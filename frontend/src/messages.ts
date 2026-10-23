@@ -25,6 +25,7 @@ export interface MessagesApi {
   append(chat: HTMLElement, message: Message): void;
   updateReply(chat: HTMLElement, message: Message): boolean;
   updateApprovals(chat: HTMLElement, messages: Message[]): boolean;
+  updateAnswerIdentity(chat: HTMLElement, message: Message): boolean;
 }
 /* Message presentation; actions are supplied by the application core. */
 (function () {
@@ -50,6 +51,37 @@ export interface MessagesApi {
   }
   function append(chat: HTMLElement, m: Message): void {
     if (!runtime.Process.append(chat, m, appendContent)) appendContent(chat, m);
+  }
+  function answerActions(node: HTMLElement, message: Message): void {
+    if (!message.entryId || message.finalAnswer === false) return;
+    node.dataset.entryId = message.entryId;
+    let actions = node.querySelector<HTMLElement>(':scope > .message-actions');
+    if (!actions) {
+      actions = document.createElement('div');
+      actions.className = 'message-actions';
+      node.append(actions);
+    }
+    const copy = node.querySelector('.msg-copy'),
+      feedback = node.querySelector('.copy-feedback');
+    if (copy) actions.prepend(copy);
+    let fork = actions.querySelector<HTMLButtonElement>('.msg-fork');
+    if (!fork) {
+      fork = iconButton('Fork chat from here', 'branch', () => {});
+      fork.classList.add('msg-fork');
+      actions.append(fork);
+    }
+    fork.onclick = () => runtime.ChatFork?.open(message.sessionId || deps.getActiveId(), message.entryId);
+    if (feedback) actions.append(feedback);
+  }
+  function updateAnswerIdentity(chat: HTMLElement, message: Message): boolean {
+    const candidates = Array.from(chat.querySelectorAll<HTMLElement>('.msg.asst')).filter((node) =>
+      message.streamId
+        ? node.dataset.streamId === message.streamId && node.dataset.runId === message.runId
+        : node.dataset.entryId === message.entryId || (!!message.runId && node.dataset.runId === message.runId),
+    );
+    if (candidates.length !== 1) return false;
+    answerActions(candidates[0], message);
+    return true;
   }
   function updateApprovals(chat: HTMLElement, messages: Message[]): boolean {
     const ids = new Set(
@@ -193,18 +225,7 @@ export interface MessagesApi {
           final ? 'final' : 'message',
         );
       }
-      if (m.entryId) {
-        const actions = document.createElement('div');
-        actions.className = 'message-actions';
-        const copy = div.querySelector('.msg-copy'),
-          feedback = div.querySelector('.copy-feedback');
-        if (copy) actions.append(copy);
-        actions.append(
-          iconButton('Fork chat from here', 'branch', () => runtime.ChatFork?.open(m.sessionId || activeId, m.entryId)),
-        );
-        if (feedback) actions.append(feedback);
-        div.append(actions);
-      }
+      answerActions(div, m);
       streamStatus(div, m);
       chat.appendChild(div);
     } else if (m.type === 'tool') {
@@ -470,6 +491,7 @@ export interface MessagesApi {
         final ? 'final' : 'message',
       );
     }
+    answerActions(node, message);
     if (message.streamState !== 'partial')
       void hydrateDocumentContent(body, {
         sessionId: message.sessionId || deps.getActiveId(),
@@ -477,5 +499,5 @@ export interface MessagesApi {
       }).then(() => decorateDeliverables(body));
     return true;
   }
-  runtime.Messages = { init, append, updateReply, updateApprovals };
+  runtime.Messages = { init, append, updateReply, updateApprovals, updateAnswerIdentity };
 })();

@@ -4,6 +4,7 @@ import type { Message, Project, Session } from './types/domain';
 import type { ProcessSnapshot } from './process';
 import { ConversationSearch } from './conversation_search';
 import { ConversationHistory } from './conversation_history';
+import { HistoryRepository } from './history_repository';
 import { iconButton } from './icon_button';
 import type { ServerEvent } from './domain/protocol';
 export interface ConversationUiApi {
@@ -20,6 +21,7 @@ export interface ConversationUiApi {
   stopFollowing(): void;
   refreshApprovals(): boolean;
   revealApproval(id: string): void;
+  syncAnswerIdentity(sessionId: string, runId: string): Promise<void>;
   matchesSession(session: Session): boolean;
   matchesProject(project: Project): boolean;
   appendGroupLabel(list: HTMLElement, text: string, hasMatches: boolean | number): void;
@@ -100,6 +102,7 @@ export interface ConversationUiDeps {
   const historyStarts = new Map<string, number>();
   const loadingHistory = new Map<string, symbol>();
   const deferredHistory = new Set<string>();
+  const answerIdentityRequests = new Map<string, symbol>();
   let historyObserver: IntersectionObserver | undefined;
   let userScrollPending = false;
   let searchPanel: ConversationSearch | null = null;
@@ -304,6 +307,56 @@ export interface ConversationUiDeps {
     captureView();
     updateLatest();
     return true;
+  }
+  async function syncAnswerIdentity(sessionId: string, runId: string): Promise<void> {
+    const session = deps.getSessions().find((item) => item.id === sessionId);
+    if (!session) return;
+    const isAnswer = (message: Message) =>
+      message.type === 'asst' &&
+      message.runId === runId &&
+      message.finalAnswer !== false &&
+      message.contentRole !== 'commentary';
+    let answers = session.messages.filter(isAnswer);
+    if (!answers.length) return;
+    const key = `${sessionId}:${runId}`,
+      request = Symbol();
+    answerIdentityRequests.set(key, request);
+    try {
+      if (answers.some((message) => !message.entryId)) {
+        // Read canonical identity without replacing the reader's history window.
+        const page = await new HistoryRepository().loadLatest(sessionId);
+        if (
+          !page ||
+          answerIdentityRequests.get(key) !== request ||
+          deps.getSessions().find((item) => item.id === sessionId) !== session
+        )
+          return;
+        answers = session.messages.filter(isAnswer);
+        const committed = page.items.filter(
+          (item) => item.type === 'asst' && item.runId === runId && item.contentRole !== 'commentary',
+        );
+        session.messages = session.messages.map((message) => {
+          if (!answers.includes(message) || message.entryId) return message;
+          const matches = committed.filter((item) => item.answerId && item.answerId === message.answerId);
+          const source =
+            matches.length === 1
+              ? matches[0]
+              : answers.length === 1 && committed.length === 1
+                ? committed[0]
+                : undefined;
+          return source ? { ...message, entryId: String(source.id) } : message;
+        });
+      }
+      if (deps.activeSession() === session) {
+        for (const message of session.messages.filter(isAnswer))
+          runtime.Messages.updateAnswerIdentity($('chat'), message);
+        scrollChat();
+      }
+    } catch {
+      /* Without a confirmed entry, never fork from a guessed message. */
+    } finally {
+      if (answerIdentityRequests.get(key) === request) answerIdentityRequests.delete(key);
+    }
   }
   function backToLatest() {
     userScrollPending = false;
@@ -1351,6 +1404,7 @@ export interface ConversationUiDeps {
     stopFollowing,
     refreshApprovals,
     revealApproval,
+    syncAnswerIdentity,
     matchesSession,
     matchesProject,
     appendGroupLabel,

@@ -821,10 +821,10 @@
     display: flex; align-items: center; gap: 6px; margin-top: 2px; min-width: 0;
   }
   .composer-notice { display: flex; gap: 12px; align-items: baseline; color: var(--text-dim); font-size: 12px; padding: 0 8px 8px; }
-  .latest-row { text-align: center; }
-  .latest-row:has(button:not([hidden])) { padding: 3px 0 7px; }
+  .latest-row { position: relative; height: 0; z-index: 20; text-align: center; }
   .latest-button {
-    display: grid; place-items: center; width: 30px; height: 30px; margin: 0 auto; padding: 0;
+    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+    display: grid; place-items: center; width: 30px; height: 30px; margin: 0; padding: 0;
     border: 1px solid var(--border); border-radius: 50%;
     background: var(--bg); color: var(--text-dim); cursor: pointer;
   }

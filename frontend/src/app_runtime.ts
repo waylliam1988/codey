@@ -1541,6 +1541,7 @@ function handleServerEvent(raw: unknown) {
     } else if (summary) {
       addToSession(sid, { type: 'done', text: summary, sessionId: sid, runId, eventKey: terminalKey });
     }
+    if (reason === 'done' && sid && runId) void runtime.ConversationUI.syncAnswerIdentity(sid, runId);
     if (reason !== 'error' && reason !== 'approval' && data.changed && !shownReceipt)
       maybeAddChangesSummary(sid, terminalKey, runId);
     flushUiState();

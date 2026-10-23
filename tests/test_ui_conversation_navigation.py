@@ -76,6 +76,53 @@ def test_four_short_questions_show_navigation_without_requiring_overflow(page):
     expect(page.locator('.conversation-tick')).to_have_count(4)
 
 
+def test_bottom_transition_does_not_move_the_rail_or_resize_the_reading_area(page):
+    append_turns(page, 8)
+    nav = page.locator('#conversation-nav')
+    expect(nav).to_be_visible()
+    page.locator('#chat-area').evaluate('e => e.scrollTop=e.scrollHeight')
+    expect(page.locator('#back-to-latest')).to_be_hidden()
+    before = nav.bounding_box()
+    height = page.locator('#chat-area').evaluate('e => e.clientHeight')
+    page.locator('#chat-area').hover()
+    page.mouse.wheel(0, -120)
+    expect(page.locator('#back-to-latest')).to_be_visible()
+    assert page.locator('#chat-area').evaluate('e => e.clientHeight') == height
+    assert abs(nav.bounding_box()['y'] - before['y']) < 1
+    page.locator('#back-to-latest').click()
+    expect(page.locator('#back-to-latest')).to_be_hidden()
+    assert abs(nav.bounding_box()['y'] - before['y']) < 1
+
+
+@pytest.mark.parametrize('committed_run', ['finished-run', 'unrelated-run'])
+def test_final_stream_answer_binds_its_canonical_fork_target_without_remounting(page, committed_run):
+    page.route('**/api/sessions/a/messages?*', lambda route: route.fulfill(json={
+        'schema_version': 1, 'session_id': 'a', 'epoch': 'db', 'snapshot_revision': 2,
+        'has_more': False, 'items': [
+            {'id': 'entry-final', 'type': 'asst', 'runId': committed_run,
+             'finalAnswer': True, 'contentRole': 'final', 'text': 'Complete answer'},
+        ],
+    }))
+    page.evaluate("""() => {
+        addToSession('a',{type:'user',id:'request',text:'Explain the result',attempts:[{runId:'finished-run',state:'running'}]});
+        addToSession('a',{type:'asst',runId:'finished-run',streamId:'stream',finalAnswer:false,text:'Complete answer'});
+        window.finalAnswerNode=document.querySelector('.msg.asst');
+        window.ChatFork.open=(session,entry)=>{window.forkTarget=[session,entry]};
+        handleServerEvent({type:'task_done',session_id:'a',run_id:'finished-run',stop_reason:'done',mode:'chat',summary:'Complete answer'});
+    }""")
+    fork = page.locator('.msg.asst .message-actions').get_by_role('button', name='Fork chat from here')
+    page.wait_for_load_state('networkidle')
+    if committed_run == 'finished-run':
+        expect(fork).to_have_count(1)
+        page.locator('.msg.asst').hover()
+        fork.click()
+        assert page.evaluate('window.forkTarget') == ['a', 'entry-final']
+    else:
+        expect(page.locator('.msg.asst .msg-copy')).to_have_count(1)
+        expect(fork).to_have_count(0)
+    assert page.evaluate('window.finalAnswerNode === document.querySelector(".msg.asst")')
+
+
 def test_one_long_answer_does_not_create_fake_question_ticks(page):
     append_turns(page, 1)
     page.evaluate("document.querySelector('#chat .msg.asst .body').textContent='Long answer. '.repeat(5000)")

@@ -51,8 +51,12 @@ gap and actions in one continuous hover region so reaching a button does not hid
 
 The 2026-10-23 message action revision uses Copy, Edit, then Fork for user
 messages and Copy then Fork for settled assistant answers. Use the approved
-copy, pencil and thin branching-arrow vectors. Fork opens the compact
-`Fork chat from here` destination dialog directly; it does not open History.
+copy, pencil and thin branching-arrow vectors.
+Streaming settlement must produce the same Copy / Fork actions as a restored
+answer, updating the mounted node without duplicates. Bind the confirmed durable
+entry identity when it arrives, independently of deferred history rendering;
+never infer a fork target from answer text or an unrelated run.
+Fork opens the compact `Fork chat from here` destination dialog directly; it does not open History.
 Offer `Fork in this workspace` (or `Fork in this worktree`) and `Fork in a new
 worktree` for supported Git projects. Without Git, fork in the current directory.
 Retain the complete selected turn, focus the new chat's composer when ready,
@@ -472,6 +476,10 @@ Use available space, not fullscreen state; count overlapping inspection drawers
 and hide while Settings is open. Keep the original 760px
 content width and composer position. Each tick represents one user question
 and its following reply; tool calls and stream updates do not add ticks.
+
+`Back to latest` floats over the lower transcript edge without consuming grid
+row height. Its appearance/disappearance must not resize the reading area or
+move the tick rail when crossing the bottom boundary.
 
 At rest, only the current reading position uses `--nav-current`. Pointer
 hover or keyboard focus selects one tick with `--nav-highlight`, suppresses

@@ -84,6 +84,34 @@ it('retains an interrupted response locally and removes that notice on final set
   expect(host.querySelectorAll('.msg-copy')).toHaveLength(1);
 });
 
+it('adds the canonical fork action when a mounted streaming answer settles, without duplicate controls', () => {
+  const open = vi.fn();
+  runtime.ChatFork = { open };
+  window.Messages.init({
+    getActiveId: () => 'chat',
+    getRunningSessionId: () => null,
+    currentProjectPath: () => '',
+  } as Parameters<typeof window.Messages.init>[0]);
+  const host = document.createElement('div');
+  window.Messages.append(host, { type: 'asst', runId: 'run', streamId: 'stream', finalAnswer: false, text: 'Answer' });
+  const node = host.querySelector('.msg.asst');
+  const final = {
+    type: 'asst',
+    runId: 'run',
+    streamId: 'stream',
+    finalAnswer: true,
+    entryId: 'entry-final',
+    text: 'Answer',
+  };
+  window.Messages.updateReply(host, final);
+  window.Messages.updateReply(host, final);
+  expect(host.querySelector('.msg.asst')).toBe(node);
+  const actions = [...host.querySelectorAll<HTMLButtonElement>('.message-actions button')];
+  expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual(['Copy message', 'Fork chat from here']);
+  actions[1].click();
+  expect(open).toHaveBeenCalledWith('chat', 'entry-final');
+});
+
 it('opens the research report belonging to the message run', () => {
   const sessions: Session[] = [
     {
