@@ -1,6 +1,92 @@
-import { expect, it } from 'vitest';
-import { reconcileHistory } from './conversation_history';
-import type { Message } from './types/domain';
+import { afterEach, expect, it, vi } from 'vitest';
+import { ConversationHistory, reconcileHistory } from './conversation_history';
+import type { Message, Session } from './types/domain';
+
+afterEach(() => vi.unstubAllGlobals());
+
+function page(items: object[], inactive: string[], revision = 5) {
+  return new Response(
+    JSON.stringify({
+      schema_version: 1,
+      session_id: 'chat',
+      epoch: 'db',
+      snapshot_revision: revision,
+      items,
+      has_more: false,
+      inactive_run_ids: inactive,
+    }),
+  );
+}
+
+it('replaces removed Work and replies while retaining new live output and the prefix', async () => {
+  const session = {
+    id: 'chat',
+    messages: [
+      { type: 'user', entryId: 'old', runId: 'old-run' },
+      { type: 'tool', runId: 'old-run' },
+      { type: 'pause', runId: 'old-run' },
+      { type: 'asst', runId: 'new-run', streamId: 'new-stream', finalAnswer: false, text: 'new live answer' },
+    ],
+  } as Session;
+  const history = new ConversationHistory(() => {});
+  history.retireRuns(session, ['old-run']);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      page(
+        [
+          { id: 'prefix', type: 'user', runId: 'prefix-run', text: 'retained' },
+          { id: 'new', type: 'user', runId: 'new-run', text: 'replacement' },
+        ],
+        ['old-run'],
+      ),
+    ),
+  );
+  await history.refresh(session);
+  expect(session.messages.map((message) => message.text)).toEqual(['retained', 'replacement', 'new live answer']);
+  expect(history.revision('chat')).toBe(5);
+  expect(history.acceptsRun('chat', 'old-run')).toBe(false);
+  expect(history.acceptsRun('chat', 'new-run')).toBe(true);
+});
+
+it('ignores a history response started before the edit boundary', async () => {
+  let resolve!: (response: Response) => void;
+  const fetch = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((done) => {
+          resolve = done;
+        }),
+    )
+    .mockResolvedValueOnce(page([{ id: 'new', type: 'user', runId: 'new-run' }], ['old-run'], 10));
+  vi.stubGlobal('fetch', fetch);
+  const session = { id: 'chat', messages: [] } as unknown as Session;
+  const history = new ConversationHistory(() => {});
+  const stale = history.refresh(session);
+  history.retireRuns(session, ['old-run']);
+  await history.refresh(session);
+  resolve(page([{ id: 'old', type: 'user', runId: 'old-run' }], [], 1));
+  await stale;
+  expect(session.messages.map((message) => message.entryId)).toEqual(['new']);
+  expect(history.revision('chat')).toBe(10);
+  expect(history.acceptsRun('chat', 'old-run')).toBe(false);
+});
+
+it('rebuilds event visibility from canonical history when returning to a saved branch', async () => {
+  const session = { id: 'chat', messages: [] } as unknown as Session;
+  const history = new ConversationHistory(() => {});
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(page([{ id: 'new', type: 'user', runId: 'new-run' }], ['old-run']))
+    .mockResolvedValueOnce(page([{ id: 'old', type: 'user', runId: 'old-run' }], ['new-run'], 6));
+  vi.stubGlobal('fetch', fetch);
+  await history.refresh(session);
+  expect(history.acceptsRun('chat', 'old-run')).toBe(false);
+  await history.refresh(session);
+  expect(history.acceptsRun('chat', 'old-run')).toBe(true);
+  expect(history.acceptsRun('chat', 'new-run')).toBe(false);
+});
 
 it('keeps approval and execution records above their final answer and before the next turn', () => {
   const rows = reconcileHistory(

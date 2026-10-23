@@ -17,6 +17,8 @@ export type ServerEvent = {
   database_id?: string;
   after_commit_seq?: number;
   entry_ids?: string[];
+  edited_entry_id?: string;
+  replaced_run_ids?: string[];
   event_id?: number | string;
   cursor?: number | string;
   run_id?: string;
@@ -348,7 +350,14 @@ export function decodeServerEvent(value: unknown): ServerEvent {
         (!Array.isArray(value.entry_ids) || !value.entry_ids.every((id) => typeof id === 'string' && id.length > 0))))
   )
     throw new Error('durable commit is invalid');
+  if (
+    value.replaced_run_ids !== undefined &&
+    (!Array.isArray(value.replaced_run_ids) ||
+      !value.replaced_run_ids.every((id) => typeof id === 'string' && id.length > 0))
+  )
+    throw new Error('replaced run identities are invalid');
   const stringFields = [
+    'edited_entry_id',
     'session_id',
     'run_id',
     'task_id',

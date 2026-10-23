@@ -17,11 +17,12 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from codey.app.run_registry import RunSnapshot
     from codey.runtime.core.api_selection import ApiRunSelection
 
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.durable.errors import CommitConflict
-from codey.durable.model import thaw_json
+from codey.durable.model import TASK_TERMINAL_STATUSES, TaskStatus, thaw_json
 from codey.operations.project_adapter import run as agent_run
 from codey.operations.task_state import TaskSubmissionState
 from codey.providers.diagnostics import capture_provider_failure
@@ -29,7 +30,7 @@ from codey.providers.model_preferences import ModelDisabledError
 from codey.providers.snapshot import capture_provider_selection, provider_snapshot
 from codey.reviews.review_policy import load_review_policy
 from codey.task.kind import resolve_task_kind_values
-from codey.task.model import ResolveShellApproval, ResumeRun, StartTask, TaskInput, TaskSubmission
+from codey.task.model import EditUserMessage, ResolveShellApproval, ResumeRun, StartTask, TaskInput, TaskSubmission
 from codey.workspace.changes import collect_changes
 
 SHELL_CONTINUATION_IDLE_TIMEOUT = 15.0
@@ -231,6 +232,7 @@ def submit_task(
                 "cancelled", "failed", "unavailable",
             }:
                 return None
+        existing_reservation = any(row.run_id == run_id for row in state.run_registry.active_runs()) if run_id else False
         reserved = state.reserve_run(
             session_id=session_id,
             project=project,
@@ -277,26 +279,12 @@ def submit_task(
             tool_results=shell_tool_results,
         )
     except Exception:
-        state.release_run(reserved.run_id)
+        if not existing_reservation:
+            state.release_run(reserved.run_id)
         raise
     try:
-        from codey.durable.errors import CommitConflict
-
-        # Stop can land after reservation but before the checkpoint exists.
-        # Close that gap using the existing durable scheduler cancellation.
-        if reserved.stop_event.is_set():
-            state.durable_scheduler.abort_task(reserved.run_id, reason="user stopped during admission")
-            state.release_run(reserved.run_id)
+        if not _claim_admitted_task(state, reserved, existing_reservation=existing_reservation):
             return reserved_run_id
-        try:
-            state.durable.claim_task(reserved.run_id)
-        except CommitConflict:
-            current = state.durable.task(reserved.run_id)
-            if current.phase != "dispatching":
-                raise
-            state.durable_scheduler.claim(reserved.run_id)
-            return reserved_run_id
-        state.durable_scheduler.claim(reserved.run_id)
         accepted = submit_browser_task(
             run_task,
             session_id,
@@ -337,7 +325,34 @@ def submit_task(
     return run_id_value
 
 
+def _claim_admitted_task(state: TaskSubmissionState, reserved: RunSnapshot, *, existing_reservation: bool) -> bool:
+    """Claim once; repeated HTTP confirmation must not dispatch another worker."""
+    checkpoint = state.durable.task(reserved.run_id)
+    if checkpoint.status in TASK_TERMINAL_STATUSES:
+        if not existing_reservation:
+            state.release_run(reserved.run_id)
+        return False
+    # Stop can land after reservation but before the checkpoint exists.
+    if reserved.stop_event.is_set():
+        state.durable_scheduler.abort_task(reserved.run_id, reason="user stopped during admission")
+        state.release_run(reserved.run_id)
+        return False
+    if checkpoint.status != TaskStatus.PENDING:
+        return False
+    try:
+        state.durable.claim_task(reserved.run_id)
+    except (CommitConflict, ValueError):
+        if state.durable.task(reserved.run_id).status == TaskStatus.PENDING:
+            raise
+        return False
+    state.durable_scheduler.claim(reserved.run_id)
+    return True
+
+
 def _task_input_payload(input: TaskInput | None) -> dict[str, object] | None:
+    if isinstance(input, EditUserMessage):
+        return {"kind": "edit_user_message", "entry_id": input.entry_id, "text": input.text,
+                "expected_revision": input.expected_revision}
     if isinstance(input, StartTask):
         return {"kind": "start_task", "text": input.text}
     if isinstance(input, ResumeRun):
@@ -433,6 +448,8 @@ def _task_input_from_payload(value: object) -> TaskInput | None:
     if not isinstance(value, dict):
         return None
     kind = str(value.get("kind") or "")
+    if kind == "edit_user_message":
+        return EditUserMessage(value["entry_id"], value["text"], value["expected_revision"])
     if kind == "start_task":
         return StartTask(str(value.get("text") or ""))
     if kind == "resume_run":

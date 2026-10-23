@@ -853,6 +853,8 @@ class DurableMutation:
     # Kept as an explicit mutation so branch commits share the same CAS,
     # commit sequence, and projection path as every other durable change.
     branch_entry_id: str | None = None
+    edited_entry_id: str | None = None
+    replaced_run_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.conversation_id or self.expected_revision < 0:
@@ -861,6 +863,16 @@ class DurableMutation:
 
 
 def _validate_mutation_shape(mutation: DurableMutation) -> None:
+    if mutation.edited_entry_id is not None:
+        if (not mutation.edited_entry_id or mutation.branch_entry_id is not None
+                or mutation.create_conversation is not None or mutation.delete_conversation is not None
+                or len(mutation.entries) != 1 or mutation.entries[0].kind != "user_message"
+                or mutation.submission is None or mutation.task is None
+                or any((mutation.task_updates, mutation.effect, mutation.effects, mutation.submission_update,
+                        mutation.submission_updates, mutation.settlements, mutation.artifacts, mutation.approval))):
+            raise ValueError("an edit requires one replacement input, submission and task")
+    elif mutation.replaced_run_ids:
+        raise ValueError("replaced runs require an edit")
     if mutation.create_conversation is not None and mutation.delete_conversation is not None:
         raise ValueError("a mutation cannot create and delete a conversation")
     if mutation.delete_conversation is not None and any((

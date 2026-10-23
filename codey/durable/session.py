@@ -400,6 +400,16 @@ class DurableSession:
         entry_id = 'display-' + hashlib.sha256(f'{len(run_id)}:{run_id}{identity}'.encode()).hexdigest()
         if any(entry.entry_id == entry_id for entry in self.store.entries(conversation_id)):
             return
+        # Display observations from a removed turn remain in the execution
+        # audit, but must never be appended onto a replacement conversation.
+        try:
+            owner = self.store.task(run_id)
+        except KeyError:
+            owner = None
+        if owner is not None and owner.state.get("input_entry_id") and owner.state["input_entry_id"] not in {
+            entry.entry_id for entry in self.context(conversation_id)
+        }:
+            return
         head, revision = self.store.head(conversation_id)
         entry = EntryDraft(entry_id=entry_id, conversation_id=conversation_id, parent_id=head,
                            kind='display_message', by_task_id=run_id,

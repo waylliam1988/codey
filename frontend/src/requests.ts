@@ -2,6 +2,7 @@ import { runtime } from './runtime';
 import type { Message, Session } from './types/domain';
 import { isRunSuspension, isTerminalRun } from './run_lifecycle';
 export interface RequestAttempt {
+  edit?: boolean;
   runId: string;
   state: import('./types/domain').AttemptState;
   error?: string;
@@ -30,7 +31,12 @@ export interface RequestEventData {
 export interface RequestsApi {
   projectLifecycle(data: RequestEventData, state: string): boolean;
   init(deps: RequestsDeps): void;
-  begin(sessionId: string, text: string, requestId?: string): { request: Message; attempt: RequestAttempt } | null;
+  begin(
+    sessionId: string,
+    text: string,
+    requestId?: string,
+    editEntryId?: string,
+  ): { request: Message; attempt: RequestAttempt } | null;
   canRetry(sessionId: string, requestId: string): boolean;
   forRun(sessionId: string, runId: string): RequestMatch | null;
   running(sessionId: string, runId: string): boolean;
@@ -108,6 +114,7 @@ export interface RequestsDeps {
       !!s &&
       !!request &&
       !request.queuedInputId &&
+      !latest(request).edit &&
       runtime.Models.allows(
         s.provider || '',
         runtime.ProviderUI.runSelection(s, s.provider || '').model_selection?.model,
@@ -140,16 +147,26 @@ export interface RequestsDeps {
     changed(match.s, match.request, attempts);
     return true;
   }
-  function begin(sessionId: string, text: string, requestId = '') {
+  function begin(sessionId: string, text: string, requestId = '', editEntryId = '') {
     const s = session(sessionId);
     if (!s) return null;
     let request = requestId ? requestIn(s, requestId) : null;
+    if (editEntryId) {
+      const source = s.messages.find((message) => message.type === 'user' && message.entryId === editEntryId);
+      if (!source?.id) return null;
+      request = { ...source, id: source.id, text: String(source.text || ''), attempts: source.attempts || [] };
+      s.messages[s.messages.indexOf(source)] = request;
+    }
     if (
       requestId &&
       (!request || latest(request).state !== 'failed' || s.messages.filter((m) => m.type === 'user').at(-1) !== request)
     )
       return null;
-    const attempt: Attempt = { runId: 'run_' + crypto.randomUUID().replaceAll('-', ''), state: 'sending' };
+    const attempt: Attempt = {
+      runId: 'run_' + crypto.randomUUID().replaceAll('-', ''),
+      state: 'sending',
+      ...(editEntryId ? { edit: true } : {}),
+    };
     if (request) {
       request = changed(s, request, [...request.attempts, attempt]);
     } else {

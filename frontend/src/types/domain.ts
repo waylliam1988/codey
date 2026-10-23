@@ -69,6 +69,7 @@ export interface Draft {
 }
 export type AttemptState = 'sending' | 'running' | 'waiting' | 'done' | 'paused' | 'failed';
 export interface RequestAttempt {
+  edit?: boolean;
   runId: string;
   state: AttemptState;
   error?: string;

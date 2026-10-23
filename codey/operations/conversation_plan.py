@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any, cast
 
@@ -97,6 +98,15 @@ def build_conversation_plan(  # noqa: C901, PLR0912, PLR0915
     source_conversation = conversation
     if pure:
         conversation = replace(conversation, on_change=None)
+    durable = getattr(state, "durable", None)
+    checkpoint = durable.task(task_id) if durable is not None and task_id is not None else None
+    input_value = checkpoint.state.get("input") if checkpoint is not None else None
+    history_edit = isinstance(input_value, Mapping) and input_value.get("kind") == "edit_user_message"
+    if history_edit:
+        conversation.initialized = False
+        conversation.handoff_summary = ""
+        conversation.snapshot = ConversationSnapshot(mode=conversation_mode(task_kind, project))
+        conversation.estimated_context_tokens = 0
     mode = conversation_mode(task_kind, project)
     project_text = _project_text(project)
     budget = getattr(provider, "context_budget", None)
@@ -177,7 +187,7 @@ def build_conversation_plan(  # noqa: C901, PLR0912, PLR0915
         # A ResumeRun is already bound to the source window.  A fresh provider
         # wrapper for the same connection must not turn that explicit resume
         # into an implicit new-chat rollover.
-        force_rollover=cold_transport or (provider_session_changed and not continue_task),
+        force_rollover=history_edit or cold_transport or (provider_session_changed and not continue_task),
         resume=continue_task and not cold_transport,
         next_prompt=task,
     )
@@ -185,7 +195,7 @@ def build_conversation_plan(  # noqa: C901, PLR0912, PLR0915
         pending_calls = getattr(getattr(provider, "_codec", None), "pending_calls", None)
         history = getattr(provider, "_messages", [])
         pending = pending_calls(history) if callable(pending_calls) else ()
-        if isinstance(pending, (tuple, list, set, frozenset)) and pending:
+        if not history_edit and isinstance(pending, (tuple, list, set, frozenset)) and pending:
             raise ValueError("cannot open a new protocol window while calls are pending")
     # Durable context is the sole recovery source. Provider protocol state is
     # reconstructed at activation and never serialized into handoff text.
@@ -247,7 +257,8 @@ def build_conversation_plan(  # noqa: C901, PLR0912, PLR0915
         window_action: WindowAction | None = ReuseWindow(window_ref)
     elif fresh_chat:
         window_action = OpenWindow(
-            WindowOpenReason.MODEL_CHANGE if provider_session_changed else WindowOpenReason.CONTEXT_ROLLOVER,
+            WindowOpenReason.HISTORY_EDIT if history_edit else (
+                WindowOpenReason.MODEL_CHANGE if provider_session_changed else WindowOpenReason.CONTEXT_ROLLOVER),
             seed=handoff,
             context=replay_context,
         )

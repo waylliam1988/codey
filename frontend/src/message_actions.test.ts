@@ -27,28 +27,30 @@ it('orders message actions as copy, edit and fork and opens the message-local fl
 });
 
 it('edits a user message inline and submits the edited text', async () => {
+  runtime.ConversationUI = { historyRevision: () => 12 } as typeof runtime.ConversationUI;
   const editMessage = vi.fn().mockResolvedValue(true);
   window.Composer = { editMessage } as unknown as typeof window.Composer;
   window.Messages.init({ getActiveId: () => 'chat', getRunningSessionId: () => null } as Parameters<
     typeof window.Messages.init
   >[0]);
   const host = document.createElement('div');
-  window.Messages.append(host, { type: 'user', id: 'u', text: '原始请求' });
+  window.Messages.append(host, { type: 'user', id: 'u', entryId: 'entry-u', text: '原始请求' });
   host.querySelector<HTMLButtonElement>('.msg-edit')!.click();
   const input = host.querySelector<HTMLTextAreaElement>('.msg-edit-input')!;
   input.value = '修改后的请求';
   host.querySelector<HTMLButtonElement>('.msg-edit-send')!.click();
-  await vi.waitFor(() => expect(editMessage).toHaveBeenCalledWith('chat', '修改后的请求'));
+  await vi.waitFor(() => expect(editMessage).toHaveBeenCalledWith('chat', '修改后的请求', 'entry-u', 12));
   expect(host.querySelector('.msg-edit-input')).not.toBeNull();
 });
 
 it('cancels inline message editing without changing the original', () => {
+  runtime.ConversationUI = { historyRevision: () => 12 } as typeof runtime.ConversationUI;
   window.Composer = { editMessage: vi.fn() } as unknown as typeof window.Composer;
   window.Messages.init({ getActiveId: () => 'chat', getRunningSessionId: () => null } as Parameters<
     typeof window.Messages.init
   >[0]);
   const host = document.createElement('div');
-  window.Messages.append(host, { type: 'user', id: 'u', text: '原始请求' });
+  window.Messages.append(host, { type: 'user', id: 'u', entryId: 'entry-u', text: '原始请求' });
   host.querySelector<HTMLButtonElement>('.msg-edit')!.click();
   host.querySelector<HTMLButtonElement>('.msg-edit-editor .text-btn')!.click();
   expect(host.querySelector('.body')?.textContent).toBe('原始请求');

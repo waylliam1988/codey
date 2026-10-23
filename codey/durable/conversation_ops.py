@@ -71,6 +71,9 @@ def history_page(
     limit = max(1, min(200, int(limit)))
     path = [entry for entry in context(session, conversation_id)
             if entry.kind not in {"context_snapshot", "control_config", "control_receipt"}]
+    visible_runs = {entry.by_task_id for entry in path if entry.by_task_id}
+    inactive_runs = sorted({entry.by_task_id for entry in session.store.entries(conversation_id)
+                            if entry.by_task_id and entry.by_task_id not in visible_runs})
     _head, revision = session.store.head(conversation_id)
     boundary = len(path)
     if before:
@@ -98,6 +101,7 @@ def history_page(
         "session_id": conversation_id,
         "epoch": session.database_id,
         "snapshot_revision": revision,
+        "inactive_run_ids": inactive_runs,
         "items": items,
         "before_cursor": cursor,
         "has_more": has_more,

@@ -1183,6 +1183,7 @@ const activeRuns = new Map<string, string>();
 let turnCounter = 0;
 const turnIds = new Map<string, string>();
 const replyStreamFrames = new FrameCoalescer<ServerEventData>((key, data) => {
+  if (!runtime.ConversationUI.acceptsRun(data.session_id || '', data.run_id || '')) return;
   handleReplyStream(data);
 });
 
@@ -1221,6 +1222,7 @@ const sseEventKey = (data: ServerEvent, fallback = '') => runtime.Sse.eventKey(d
 const runLifecycle = new RunLifecycleProjection();
 
 function applyLifecycle(data: ServerEvent, source: LifecycleInput['source'], active?: boolean): boolean {
+  if (data.run_id && runtime.ConversationUI.acceptsRun?.(data.session_id || '', data.run_id) === false) return false;
   const runId = data.run_id || '',
     sessionId = data.session_id || '';
   const session = sessions.find((item) => item.id === sessionId);
@@ -1286,6 +1288,7 @@ function handleReplyStream(data: ServerEventData) {
 let inputRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' = 'event') {
   const data = decodeServerEvent(raw) as ServerEventData;
+  if (data.run_id && runtime.ConversationUI.acceptsRun?.(data.session_id || '', data.run_id) === false) return;
   if (data.type === 'conversation_inventory_changed') {
     void runtime.UiState.refreshInventory?.();
     return;

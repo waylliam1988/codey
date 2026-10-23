@@ -65,6 +65,33 @@ export class ConversationHistory {
   private sessions = new Map<string, Session>();
   private requests = new Map<string, symbol>();
   private errors = new Set<string>();
+  private inactiveRuns = new Map<string, Set<string>>();
+
+  revision(id: string): number | undefined {
+    return this.repositories.get(id)?.current?.revision;
+  }
+
+  acceptsRun(id: string, runId: string): boolean {
+    return !runId || !this.inactiveRuns.get(id)?.has(runId);
+  }
+
+  retireRuns(session: Session, runIds: string[], invalidate = true): void {
+    const retired = invalidate ? this.inactiveRuns.get(session.id) || new Set<string>() : new Set<string>();
+    runIds.forEach((id) => retired.add(id));
+    this.inactiveRuns.set(session.id, retired);
+    const removedRequests = new Set(
+      session.messages.filter((message) => message.runId && retired.has(message.runId)).map((message) => message.id),
+    );
+    session.messages = session.messages.filter(
+      (message) =>
+        (!message.runId || !retired.has(message.runId)) &&
+        !(message.type === 'request_status' && removedRequests.has(message.requestId)),
+    );
+    if (invalidate) {
+      this.repositories.get(session.id)?.invalidate();
+      this.requests.delete(session.id);
+    }
+  }
 
   constructor(private changed: (session: Session, revealEarlier?: boolean) => void) {}
 
@@ -111,6 +138,7 @@ export class ConversationHistory {
     try {
       const page = await repository.loadLatest(session.id);
       if (!page || this.requests.get(session.id) !== request) return;
+      if (page.inactiveRuns) this.retireRuns(session, page.inactiveRuns, false);
       // An empty page can race the commit that admitted the current turn. Do
       // not erase a mounted/live projection on that transient response; an
       // explicit clear starts with an empty session and still converges to an
@@ -144,5 +172,6 @@ export class ConversationHistory {
     this.sessions.delete(id);
     this.requests.delete(id);
     this.errors.delete(id);
+    this.inactiveRuns.delete(id);
   }
 }

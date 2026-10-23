@@ -12,6 +12,7 @@ from codey.runtime.core.protocol_window import ProtocolWindowRef
 class WindowOpenReason(StrEnum):
     FIRST_OPEN = "first_open"
     USER_RESET = "user_reset"
+    HISTORY_EDIT = "history_edit"
     MODEL_CHANGE = "model_change"
     CONTEXT_ROLLOVER = "context_rollover"
 

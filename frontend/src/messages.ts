@@ -183,7 +183,7 @@ export interface MessagesApi {
       const copy = div.querySelector('.msg-copy'),
         feedback = div.querySelector('.copy-feedback');
       if (copy) actions.append(copy);
-      actions.append(edit);
+      if (m.entryId) actions.append(edit);
       if (m.entryId)
         actions.append(iconButton('Fork chat from here', 'branch', () => runtime.ChatFork?.open(activeId, m.entryId)));
       if (feedback) actions.append(feedback);
@@ -420,6 +420,8 @@ export interface MessagesApi {
     activeId: string,
   ): void {
     if (!body || div.classList.contains('editing')) return;
+    const revision = runtime.ConversationUI.historyRevision(message.sessionId || activeId);
+    if (!message.entryId || revision === undefined || deps.getRunningSessionId?.()) return;
     const editor = document.createElement('div');
     editor.className = 'msg-edit-editor';
     const input = document.createElement('textarea');
@@ -439,6 +441,10 @@ export interface MessagesApi {
     send.textContent = 'Send';
     controls.append(cancel, send);
     editor.append(input, controls);
+    const error = document.createElement('div');
+    error.className = 'msg-edit-error';
+    error.setAttribute('role', 'status');
+    editor.append(error);
     div.classList.add('editing');
     body.replaceWith(editor);
     actions.hidden = true;
@@ -468,13 +474,16 @@ export interface MessagesApi {
       cancel.disabled = true;
       send.disabled = true;
       send.textContent = 'Sending…';
+      error.textContent = '';
       let sent = false;
       try {
-        sent = await runtime.Composer.editMessage(message.sessionId || activeId, text);
-      } catch {
+        sent = await runtime.Composer.editMessage(message.sessionId || activeId, text, message.entryId, revision);
+      } catch (failure) {
+        error.textContent = failure instanceof Error ? failure.message : 'Could not edit the message';
         sent = false;
       }
       if (sent) return;
+      if (!error.textContent) error.textContent = 'Could not edit the message. Check task status and try again.';
       input.disabled = false;
       cancel.disabled = false;
       send.disabled = false;

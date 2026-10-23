@@ -35,10 +35,24 @@ def snapshot_tasks(durable: Any, payload: dict[str, Any]) -> list[dict[str, Any]
         ids.add(str(row.get("continuation_run_id") or ""))
     last = payload.get("last_terminal_event") or {}
     ids.add(str(last.get("run_id") or ""))
+    for key in ("last_shell_result", "pending_event"):
+        ids.add(str((payload.get(key) or {}).get("run_id") or ""))
     rows = []
+    inactive: set[str] = set()
     for task_id in sorted(ids - {""}):
         try:
-            rows.append(task_lifecycle(durable.task(task_id)))
+            checkpoint = durable.task(task_id)
+            input_id = checkpoint.state.get("input_entry_id")
+            if input_id and input_id not in {entry.entry_id for entry in durable.context(checkpoint.conversation_id)}:
+                inactive.add(task_id)
+                continue
+            rows.append(task_lifecycle(checkpoint))
         except (KeyError, AttributeError):
             continue
+    for key in ("last_terminal_event", "last_shell_result", "pending_event"):
+        if (payload.get(key) or {}).get("run_id") in inactive:
+            payload[key] = None
+    if inactive:
+        payload["shell_approvals"] = [row for row in payload.get("shell_approvals", ())
+                                      if (row.get("source_run_id") or row.get("run_id")) not in inactive]
     return rows

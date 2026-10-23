@@ -980,9 +980,16 @@ the focused form and composition state. Answered cards become a quiet answer row
 **Editing and long histories.** Hover/focus on a user message reveals Copy and
 `Edit message`. Keep the current Codey inline editor with `Cancel` and `Send`:
 Escape cancels and Ctrl/Cmd+Enter sends. Editing does not open a modal or require
-a branch name, and retains the composer's separate draft. Its current ordinary
-send semantics remain unchanged. Historical-context branching is a separate
-entry-aware backend contract, not an extra naming dialog on Edit. Copy, branch,
+a branch name, and retains the composer's separate draft. Edit submits the durable
+entry identity and the history revision captured when editing began. One atomic
+admission replaces that input and its following effective history with a fresh
+input/task on a new branch. Previous answers, Work, Thinking, approvals and Continue
+controls disappear from the current path and provider context; immutable execution
+records remain available for audit. Existing provider window activation reconstructs
+the retained prefix without summaries from the removed suffix. Editing waits until
+the current task has stopped; stale-history conflicts retain the inline draft.
+Unconfirmed delivery remains cancellable using the same admission identity. Late
+events from removed turns cannot restore their display or lifecycle state. Copy, branch,
 regenerate and quote actions all follow the message-local hover/focus disclosure
 rule above, including pointer-exit hiding and non-hover availability.
 Conversation branching does not restore workspace files or authorize

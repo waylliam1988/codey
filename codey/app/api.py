@@ -11,6 +11,7 @@ from typing import Any
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.app import provider_services
 from codey.automation.browser_worker import BrowserWorkerBusy
+from codey.durable.errors import CommitConflict, IdempotencyConflict
 from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV
 from codey.ghost.control_surface import GhostControlSurface
 from codey.providers.catalog import API_CONNECTIONS, DEFAULT_PROVIDER_ID, PROVIDER_LABELS
@@ -30,6 +31,7 @@ from codey.runs.details import load_run_details
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.storage.local_store import StoreCorruption
 from codey.task.entry_auth import EntryAuth, derive_entry_auth
+from codey.task.model import EditUserMessage
 from codey.workspace.changes import (
     collect_changes,
     collect_git_file_diff,
@@ -603,13 +605,22 @@ def run_submit_response(  # noqa: C901, PLR0912
     input_payload = body.get("input")
     input_kind = "start_task"
     input_source_run = ""
+    edit_input: EditUserMessage | None = None
     if input_payload is not None:
         if not isinstance(input_payload, dict):
             return 400, {"error": "input must be an object"}
         input_kind = str(input_payload.get("kind") or "").strip().lower()
-        if input_kind == "start_task":
+        if input_kind in {"start_task", "edit_user_message"}:
             if not isinstance(input_payload.get("text"), str) or not input_payload["text"].strip():
                 return 400, {"error": "input.text required"}
+            if input_kind == "edit_user_message":
+                entry_id = input_payload.get("entry_id")
+                expected_revision = input_payload.get("expected_revision")
+                if not isinstance(entry_id, str) or not entry_id.strip():
+                    return 400, {"error": "input.entry_id required"}
+                if type(expected_revision) is not int or expected_revision < 0:
+                    return 400, {"error": "input.expected_revision must be a non-negative integer"}
+                edit_input = EditUserMessage(entry_id, input_payload["text"].strip(), expected_revision)
         elif input_kind == "resume_run":
             input_source_run = str(input_payload.get("source_run_id") or "").strip()
             if not input_source_run:
@@ -632,7 +643,7 @@ def run_submit_response(  # noqa: C901, PLR0912
     project = str(body.get("project") or "").strip() or None
     task = str(
         (input_payload or {}).get("text")
-        if input_kind == "start_task" and input_payload is not None
+        if input_kind in {"start_task", "edit_user_message"} and input_payload is not None
         else (input_payload or {}).get("instruction") if input_kind == "resume_run" and input_payload is not None
         else body.get("task") or ""
     ).strip()
@@ -698,6 +709,8 @@ def run_submit_response(  # noqa: C901, PLR0912
     }
     if review_source_run_id:
         submit_kwargs["review_source_run_id"] = review_source_run_id
+    if edit_input is not None:
+        submit_kwargs["input"] = edit_input
     if client_run_id:
         submit_kwargs["run_id"] = client_run_id
     if input_source_run:
@@ -720,6 +733,8 @@ def _submit_task_response(submit_task: Callable[..., str | None], args: tuple[An
         return 503, {"error": "browser worker busy", "hint": "retry"}
     except ModelDisabledError as exc:
         return 409, {"error": str(exc), "code": "model_disabled"}
+    except (CommitConflict, IdempotencyConflict) as exc:
+        return 409, {"error": str(exc), "code": "conversation_conflict"}
     except Exception as exc:
         return 500, {"error": str(exc)}
     if run_id is None:

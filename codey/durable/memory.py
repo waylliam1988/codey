@@ -215,7 +215,21 @@ class MemoryDurableStore:
             and mutation.branch_entry_id not in {entry.entry_id for entry in self._entries[mutation.conversation_id]}
         ):
             raise CommitConflict("branch entry does not belong to conversation")
-        self._validate_entry_chain(mutation.entries, mutation.conversation_id, head)
+        parent = head
+        if mutation.entries and mutation.edited_entry_id is None and mutation.create_conversation is None:
+            from codey.durable.edit import validate_entry_owners
+            validate_entry_owners(mutation.entries,
+                                  context_path(mutation.conversation_id, head, entries=self.entries, parent=self.conversation_parent),
+                                  tuple(self._tasks[owner] for owner in {entry.by_task_id for entry in mutation.entries}
+                                        if owner in self._tasks))
+        if mutation.edited_entry_id is not None:
+            from codey.durable.edit import validate_edit
+            parent = validate_edit(
+                mutation,
+                context_path(mutation.conversation_id, head, entries=self.entries, parent=self.conversation_parent),
+                busy=any(task.conversation_id == mutation.conversation_id for task in self.pending_tasks()),
+            )
+        self._validate_entry_chain(mutation.entries, mutation.conversation_id, parent)
         self._validate_task(mutation.task, mutation.submission, mutation.expected_attempt_token)
         for task in mutation.task_updates:
             self._validate_task(task)

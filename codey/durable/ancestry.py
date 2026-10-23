@@ -39,7 +39,19 @@ def context_path(
             continue
         local = {entry.entry_id: entry for entry in entries(scope)}
         if leaf in local:
-            path += _local_path(local, leaf)
+            tail = _local_path(local, leaf)
+            if tail[0].payload.get("edited_entry_id"):
+                # A replacement can rewind into an inherited fork prefix.
+                bridge = tail[0].payload.get("edit_parent_entry_id")
+                if bridge is None:
+                    path = ()
+                else:
+                    position = next((i for i, entry in enumerate(path) if entry.entry_id == bridge), None)
+                    if position is None:
+                        raise KeyError(f"edit parent {bridge} is not visible")
+                    if position is not None:
+                        path = path[:position + 1]
+            path += tail
             continue
         position = next((index for index, entry in enumerate(path) if entry.entry_id == leaf), None)
         if position is None:

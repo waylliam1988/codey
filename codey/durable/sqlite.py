@@ -633,6 +633,28 @@ def _validate_mutation(
     ):
         raise CommitConflict("branch entry does not belong to conversation")
     parent = head
+    if mutation.entries and mutation.edited_entry_id is None and mutation.create_conversation is None:
+        from codey.durable.edit import validate_entry_owners
+        owner_ids = {entry.by_task_id for entry in mutation.entries if entry.by_task_id}
+        owners = tuple(task_from_row(row) for task_id in owner_ids
+                       for row in database.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+        if owners:
+            validate_entry_owners(mutation.entries,
+                                  context_path(mutation.conversation_id, head,
+                                               entries=lambda scope: _entries(database, scope),
+                                               parent=lambda scope: _conversation_parent(database, scope)), owners)
+    if mutation.edited_entry_id is not None:
+        from codey.durable.edit import validate_edit
+        parent = validate_edit(
+            mutation,
+            context_path(mutation.conversation_id, head,
+                         entries=lambda scope: _entries(database, scope),
+                         parent=lambda scope: _conversation_parent(database, scope)),
+            busy=database.execute(
+                "SELECT 1 FROM tasks WHERE conversation_id=? AND status NOT IN ('completed','failed','cancelled') LIMIT 1",
+                (mutation.conversation_id,),
+            ).fetchone() is not None,
+        )
     for entry in mutation.entries:
         if entry.parent_id != parent:
             raise CommitConflict("mutation entries do not extend the active branch")

@@ -7,6 +7,7 @@ export interface HistoryPage {
   before_cursor?: string | null;
   has_more: boolean;
   has_after?: boolean;
+  inactive_run_ids?: string[];
 }
 
 export interface HistoryResult {
@@ -16,6 +17,7 @@ export interface HistoryResult {
   epoch: string;
   revision: number;
   hasAfter?: boolean;
+  inactiveRuns?: string[];
 }
 
 class HistorySnapshotChanged extends Error {}
@@ -69,6 +71,7 @@ export class HistoryRepository {
       cursor: page.before_cursor || null,
       epoch: page.epoch,
       revision: page.snapshot_revision,
+      inactiveRuns: page.inactive_run_ids,
     };
     return this.page;
   }

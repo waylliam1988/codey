@@ -1575,6 +1575,8 @@
   .msg-edit-editor { max-width: 680px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px 8px; }
   .msg-edit-input { display: block; width: 100%; min-height: 40px; max-height: 220px; box-sizing: border-box; resize: vertical; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; line-height: 1.6; padding: 2px 1px 8px; }
   .msg-edit-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+  .msg-edit-error { color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .msg-edit-error:empty { display: none; }
   .msg-edit-send { background: var(--text); border-color: var(--text); color: var(--bg); }
   .msg-edit-send:hover:not(:disabled) { background: var(--text); border-color: var(--text); color: var(--bg); }
   @media (hover: none) { .message-actions > button { opacity: 1; pointer-events: auto; } }

@@ -9,7 +9,10 @@ def committed_task_version(result: CommitResult, task_id: str) -> dict[str, obje
     """The exact task version in this commit, not its conversation revision."""
     if result.record is None:
         return {}
-    for row in result.record.payload.get("projections", ()):
+    projections = result.record.payload.get("projections", ())
+    if not isinstance(projections, (tuple, list)):
+        raise ValueError("commit projections must be a sequence")
+    for row in projections:
         if isinstance(row, Mapping) and row.get("type") == "task_progressed" and row.get("task_id") == task_id:
             return {"task_revision": row["revision"], "task_status": str(row["status"])}
     return {}
@@ -85,6 +88,8 @@ def mutation_projection(mutation: DurableMutation) -> dict[str, object]:
             })
     return {
         "session_id": mutation.conversation_id,
+        **({"edited_entry_id": mutation.edited_entry_id, "replaced_run_ids": list(mutation.replaced_run_ids)}
+           if mutation.edited_entry_id is not None else {}),
         "entry_ids": [entry.entry_id for entry in mutation.entries],
         "task_id": task.task_id if task is not None else "",
         "projections": projections,

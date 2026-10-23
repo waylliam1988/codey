@@ -27,6 +27,7 @@ PUBLIC_FIELDS = {
     "teach_request": frozenset({"type", "session_id", "run_id", "question", "text", "id", "options"}),
     "ghost_post_turn_warning": frozenset({"type", "session_id", "run_id", "text", "error"}),
 }
+PUBLIC_FIELDS["durable_commit"] |= {"edited_entry_id", "replaced_run_ids"}
 
 
 class PrivateEvent(Exception):

@@ -3,9 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from codey.app import task_submit
 from codey.app.context import AppContext
-from codey.task.model import StartTask
+from codey.durable.errors import IdempotencyConflict
+from codey.task.model import EditUserMessage, StartTask
 
 
 def test_submit_commits_input_and_task_before_worker_dispatch(tmp_path: Path) -> None:
@@ -35,6 +38,62 @@ def test_submit_commits_input_and_task_before_worker_dispatch(tmp_path: Path) ->
         assert observed == [("user_message", (run_id,))]
         assert state.durable.task(run_id).phase == "dispatching"
         assert state.durable.entries("session-1")[-1].payload["text"] == "write the implementation"
+    finally:
+        state.close()
+
+
+def test_edit_retry_never_dispatches_twice_or_releases_existing_owner(tmp_path):
+    state = AppContext(tmp_path / "state", start_scheduler=False)
+    try:
+        state.durable.admit_input(conversation_id="session", request_id="old", task_id="old", text="old", provider_snapshot={})
+        source = state.durable.task("old").state["input_entry_id"]
+        state.durable.complete_task("old", "old answer", state={})
+        revision = state.durable.store.head("session")[1]
+        input = EditUserMessage(source, "new", revision)
+        with mock.patch.object(task_submit, "submit_browser_task", return_value=True) as worker:
+            def send(value=input):
+                return task_submit.submit_task("session", None, value.text, 8, False, "deepseek", run_id="edit",
+                                                input=value, get_state=lambda: state)
+            assert send() == "edit"
+            head = state.durable.store.head("session")
+            assert send() == "edit"
+            assert state.durable.store.head("session") == head
+            assert worker.call_count == 1
+            with pytest.raises(IdempotencyConflict):
+                send(EditUserMessage(source, "different", revision))
+            assert state.active_run_for(session_id="session").run_id == "edit"
+            state.durable.cancel_task("edit")
+            state.release_run("edit")
+            assert send() == "edit"
+            assert worker.call_count == 1
+            assert state.active_run_for(session_id="session") is None
+    finally:
+        state.close()
+
+
+def test_edit_restart_dispatches_existing_checkpoint_without_reediting_history(tmp_path):
+    root = tmp_path / "state"
+    state = AppContext(root, start_scheduler=False)
+    try:
+        state.durable.admit_input(conversation_id="session", request_id="old", task_id="old", text="old", provider_snapshot={})
+        source = state.durable.task("old").state["input_entry_id"]
+        state.durable.complete_task("old", "old answer", state={})
+        input = EditUserMessage(source, "new", state.durable.store.head("session")[1])
+        with mock.patch.object(task_submit, "submit_browser_task", return_value=True):
+            task_submit.submit_task("session", None, "new", 8, False, "deepseek", run_id="edit",
+                                    input=input, get_state=lambda: state)
+        state.durable.unclaim_task("edit")
+        state.release_run("edit")
+        head = state.durable.store.head("session")
+    finally:
+        state.close()
+    state = AppContext(root, start_scheduler=False)
+    try:
+        with mock.patch.object(task_submit, "submit_browser_task", return_value=True) as worker:
+            assert task_submit.dispatch_durable_task(state.durable.task("edit"), state=state)
+        assert worker.call_args.kwargs["input"] == input
+        assert state.durable.store.head("session") == head
+        assert [row.payload["text"] for row in state.durable.context("session") if row.kind == "user_message"] == ["new"]
     finally:
         state.close()
 

@@ -23,6 +23,21 @@ class StartTask:
 
 
 @dataclass(frozen=True)
+class EditUserMessage:
+    entry_id: str
+    text: str
+    expected_revision: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.entry_id, str) or not self.entry_id.strip():
+            raise ValueError("entry_id is required")
+        if not isinstance(self.text, str) or not self.text.strip():
+            raise ValueError("task text is required")
+        if type(self.expected_revision) is not int or self.expected_revision < 0:
+            raise ValueError("expected_revision must be a non-negative integer")
+
+
+@dataclass(frozen=True)
 class ResumeRun:
     source_run_id: str
     instruction: str = ""
@@ -41,7 +56,7 @@ class ResolveShellApproval:
             raise ValueError("approval_id is required")
 
 
-TaskInput = StartTask | ResumeRun | ResolveShellApproval
+TaskInput = StartTask | EditUserMessage | ResumeRun | ResolveShellApproval
 
 
 @dataclass(frozen=True)
@@ -101,7 +116,7 @@ class TaskSubmission:
         review_source_run_id: str = "",
         model_selection: dict[str, object] | None = None,
     ) -> TaskSubmission:
-        task = input.text if isinstance(input, StartTask) else (
+        task = input.text if isinstance(input, (StartTask, EditUserMessage)) else (
             input.instruction or "Continue the source run"
             if isinstance(input, ResumeRun)
             else "Resolve the shell approval"

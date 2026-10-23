@@ -64,6 +64,8 @@ def admit_input(
     if not text.strip():
         raise ValueError("input text is required")
     metadata = message_metadata(task_state)
+    input_value = (task_state or {}).get("input")
+    edit = input_value if isinstance(input_value, Mapping) and input_value.get("kind") == "edit_user_message" else None
     placement = SubmissionPlacement(placement)
     if mode not in {"steer", "follow_up", "write"}:
         raise ValueError("unknown submission mode")
@@ -106,6 +108,7 @@ def admit_input(
         "workflow_replay_contract": workflow_replay_contract,
         "placement": placement,
         "mode": mode,
+        **({"edit": dict(edit)} if edit is not None else {}),
     })
     # Check idempotency before deriving any branch entries.  A retry of a
     # continuation must return the original commit without trying to
@@ -115,6 +118,12 @@ def admit_input(
     )
     if existing is not None:
         return existing
+    replaced_run_ids: tuple[str, ...] = ()
+    edit_parent_id = None
+    if edit is not None:
+        from codey.durable.edit import prepare_edit
+        head, edit_parent_id, replaced_run_ids = prepare_edit(session, conversation_id, revision, edit,
+            placed=placement is SubmissionPlacement.PLACED, has_tool_results=bool(tool_results))
     if creation is not None and tool_results:
         raise CommitConflict("a new conversation has no unanswered tool calls")
     entries = list(
@@ -135,7 +144,8 @@ def admit_input(
             conversation_id=conversation_id,
             parent_id=head,
             kind="user_message",
-            payload={"text": text, **metadata},
+            payload={"text": text, **metadata, **({"edited_entry_id": edit["entry_id"],
+                     "edit_parent_entry_id": edit_parent_id} if edit is not None else {})},
             by_task_id=task_id,
         )
         entries.append(entry)
@@ -187,6 +197,8 @@ def admit_input(
             submission=submission,
             task=task,
             create_conversation=creation,
+            edited_entry_id=str(edit["entry_id"]) if edit is not None else None,
+            replaced_run_ids=replaced_run_ids,
         )
     )
 

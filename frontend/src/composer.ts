@@ -40,7 +40,7 @@ export interface ComposerApi {
   isSending(sessionId?: string): boolean;
   observeRun(sessionId: string, runId: string): void;
   retryTask(sessionId: string, requestId: string): unknown;
-  editMessage(sessionId: string, text: string): Promise<boolean>;
+  editMessage(sessionId: string, text: string, entryId: string, expectedRevision: number): Promise<boolean>;
   quoteInReply(sessionId: string, text: string): boolean;
   recoveryActions(message: Message): RunDetailsAction[];
   resizeTask(): void;
@@ -439,6 +439,7 @@ export interface ComposerApi {
     requestId = '',
     preclaimed = false,
     onSendRejected: (() => void) | null = null,
+    edit?: { entryId: string; expectedRevision: number },
   ) {
     const text = String(task || '').trim();
     const reject = () => {
@@ -468,7 +469,7 @@ export interface ComposerApi {
       main?.classList.add('composer-animating');
       window.setTimeout(() => main?.classList.remove('composer-animating'), 400);
     }
-    const started = runtime.Requests.begin(sessionId, text, requestId);
+    const started = runtime.Requests.begin(sessionId, text, requestId, edit?.entryId);
     if (!started) {
       sendingSessionId = '';
       updateSend();
@@ -491,11 +492,29 @@ export interface ComposerApi {
           task: text,
           provider,
           intent,
+          ...(edit
+            ? {
+                input: {
+                  kind: 'edit_user_message',
+                  text,
+                  entry_id: edit.entryId,
+                  expected_revision: edit.expectedRevision,
+                },
+              }
+            : {}),
           ...runtime.ProviderUI.runSelection(s, provider),
         }),
       });
       if (admission.cancelled) return false;
       if (!r.ok) {
+        if (edit) {
+          const error = await r
+            .clone()
+            .json()
+            .catch(() => null);
+          runtime.Requests.fail(sessionId, runId, String(error?.error || 'Could not edit the message'));
+          throw new Error(String(error?.error || 'Could not edit the message'));
+        }
         await reportSendFailure(sessionId, r, runId);
         onSendRejected?.();
         return false;
@@ -503,7 +522,8 @@ export interface ComposerApi {
       if (admission.cancelled) return false;
       if (typeof onSendStarted === 'function') onSendStarted();
       await deps.acceptRunResponse(r, sessionId);
-    } catch {
+      if (edit) await runtime.ConversationUI.refreshHistory(sessionId);
+    } catch (error) {
       if (!admission.cancelled) {
         // An interrupted HTTP confirmation does not prove rejection. Reconcile
         // without holding the composer, and retain this identity for Stop.
@@ -516,6 +536,7 @@ export interface ComposerApi {
           );
         void runtime.Sse.reconcileRunState();
       }
+      if (edit) throw error;
       return false;
     } finally {
       if (admissions.get(sessionId) === admission) admissions.delete(sessionId);
@@ -607,10 +628,21 @@ export interface ComposerApi {
     return sendTaskFromSession(sessionId, original.text, s.provider || '', null, requestId);
   }
 
-  async function editMessage(sessionId: string, text: string): Promise<boolean> {
+  async function editMessage(
+    sessionId: string,
+    text: string,
+    entryId: string,
+    expectedRevision: number,
+  ): Promise<boolean> {
     const s = deps.findSession(sessionId);
     if (!s || !String(text || '').trim()) return false;
-    return (await sendTaskFromSession(sessionId, text, s.provider || '')) === true;
+    if (!entryId || !Number.isSafeInteger(expectedRevision)) return false;
+    return (
+      (await sendTaskFromSession(sessionId, text, s.provider || '', null, '', false, null, {
+        entryId,
+        expectedRevision,
+      })) === true
+    );
   }
 
   function recallMessage(sessionId: string, text: string): void {

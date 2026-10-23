@@ -11,6 +11,8 @@ export interface ConversationUiApi {
   init(deps: ConversationUiDeps): void;
   renderChat(): void;
   refreshHistory(sessionId: string): Promise<void>;
+  historyRevision(sessionId: string): number | undefined;
+  acceptsRun(sessionId: string, runId: string): boolean;
   searchHistory(): void;
   observeCommit(event: ServerEvent): Promise<void>;
   scrollChat(capture?: boolean): void;
@@ -670,6 +672,20 @@ export interface ConversationUiDeps {
     await history.refresh(session);
   }
   async function observeCommit(event: ServerEvent): Promise<void> {
+    if (event.type === 'durable_commit' && event.session_id && event.edited_entry_id) {
+      const session = deps.getSessions().find((item) => item.id === event.session_id);
+      if (session) history.retireRuns(session, event.replaced_run_ids || []);
+      views.delete(event.session_id);
+      historyRendered.delete(event.session_id);
+      historyStarts.delete(event.session_id);
+      loadingHistory.delete(event.session_id);
+      answerIdentityRequests.delete(event.session_id);
+      if (event.session_id === shownId) {
+        searchPanel?.hide();
+        searchOrigin = null;
+        following = true;
+      }
+    }
     if (
       event.type === 'durable_commit' &&
       event.session_id &&
@@ -681,7 +697,11 @@ export interface ConversationUiDeps {
       // their terminal entry is committed.
       const force = true;
       if (event.kind === 'branch' || event.kind === 'fork') historyRendered.delete(event.session_id);
-      await refreshHistory(event.session_id, force, event.kind !== 'branch' && event.kind !== 'fork');
+      await refreshHistory(
+        event.session_id,
+        force,
+        !event.edited_entry_id && event.kind !== 'branch' && event.kind !== 'fork',
+      );
       if (event.session_id === deps.getActiveId())
         runtime.ConversationNav.refresh(event.kind === 'branch' || event.kind === 'fork');
     }
@@ -1394,6 +1414,8 @@ export interface ConversationUiDeps {
     init,
     renderChat,
     refreshHistory,
+    historyRevision: (id: string) => history.revision(id),
+    acceptsRun: (id: string, runId: string) => history.acceptsRun(id, runId),
     searchHistory,
     observeCommit,
     scrollChat,

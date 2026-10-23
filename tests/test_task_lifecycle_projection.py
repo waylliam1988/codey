@@ -35,3 +35,19 @@ def test_checkpoint_revision_is_carried_by_events_and_current_snapshots(tmp_path
             assert projection['task_revision'] == parked_version
             assert projection['task_status'] == 'waiting'
         unsubscribe()
+
+
+def test_edit_does_not_restore_old_pause_or_shell_result_from_registry_snapshot(tmp_path):
+    with closing(AppContext(tmp_path, start_scheduler=False)) as ctx:
+        ctx.durable.admit_input(conversation_id='chat', request_id='old', task_id='old', text='old', provider_snapshot={})
+        source = ctx.durable.task('old').state['input_entry_id']
+        ctx.durable.cancel_task('old')
+        ctx.run_registry.set_last_terminal_event({'type':'task_done','session_id':'chat','run_id':'old','stop_reason':'stopped'})
+        ctx.run_registry.set_last_shell_result({'type':'shell_result','session_id':'chat','run_id':'old','command':'old'})
+        ctx.durable.admit_input(conversation_id='chat', request_id='new', task_id='new', text='new', provider_snapshot={},
+            task_state={'input':{'kind':'edit_user_message','entry_id':source,'text':'new',
+                                 'expected_revision':ctx.durable.store.head('chat')[1]}})
+        snapshot = ctx.run_state_payload()
+        assert snapshot['last_terminal_event'] is None
+        assert snapshot['last_shell_result'] is None
+        assert all(row['run_id'] != 'old' for row in snapshot['task_states'])
