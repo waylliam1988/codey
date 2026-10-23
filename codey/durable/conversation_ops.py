@@ -104,6 +104,39 @@ def history_page(
     }
 
 
+def navigation_page(session: Any, conversation_id: str, *, before: str | None = None,
+                    limit: int = 200) -> dict[str, object]:
+    """Compact question index on one pinned ancestry; never return tool bodies."""
+    path = list(context(session, conversation_id))
+    revision = session.store.head(conversation_id)[1]
+    boundary = len(path)
+    if before:
+        scope, entry_id, head, pinned_revision = _decode_history_cursor(before)
+        if scope != conversation_id:
+            raise ValueError('invalid conversation cursor')
+        positions = {entry.entry_id: index for index, entry in enumerate(path)}
+        if head is not None:
+            if head not in positions:
+                raise ValueError('history snapshot changed')
+            path = path[:positions[head] + 1]
+            revision = pinned_revision if pinned_revision is not None else revision
+        boundary = next((index for index, entry in enumerate(path) if entry.entry_id == entry_id), -1)
+        if boundary < 0:
+            raise ValueError('cursor does not belong to current conversation path')
+    questions = [entry for entry in path[:boundary] if entry.kind == 'user_message']
+    selected = questions[-max(1, min(200, int(limit))):]
+    more = len(selected) < len(questions)
+    return {
+        'schema_version': 1, 'session_id': conversation_id, 'epoch': session.database_id,
+        'snapshot_revision': revision,
+        'items': [{'id': entry.entry_id, 'text': str(_history_item(entry, 0).get('text') or '')[:240]}
+                  for entry in selected],
+        'has_more': more,
+        'before_cursor': _encode_history_cursor(conversation_id, selected[0].entry_id,
+                                               path[-1].entry_id, revision) if more else None,
+    }
+
+
 def search_history(
     session: Any,
     conversation_id: str,

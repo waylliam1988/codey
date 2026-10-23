@@ -34,7 +34,7 @@ beforeEach(() => {
     },
   );
   runtime.Composer = { syncSession() {} };
-  runtime.ConversationNav = { init() {} };
+  runtime.ConversationNav = { init() {}, refresh() {} };
   session = { id: `durable-${++id}`, title: 'History', messages: [] } as unknown as Session;
   runtime.ConversationUI.init({
     activeSession: () => session,

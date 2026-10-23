@@ -1,13 +1,20 @@
 import { runtime } from './runtime';
+import { loadNavigationIndex, type NavigationItem } from './conversation_nav_index';
+import type { Message } from './types/domain';
 export interface ConversationNavDeps {
   getActiveId(): string;
+  getMessages(): Message[];
+  reveal(entryId: string, message?: Message): Promise<void>;
 }
 /* A quiet index of user questions; native chat selection and drafts stay untouched. */
 (function () {
   'use strict';
   interface NavDeps extends ConversationNavDeps {}
   interface Entry {
-    anchor: HTMLElement;
+    id: string;
+    text: string;
+    message?: Message;
+    anchor: HTMLElement | null;
     button: HTMLButtonElement;
   }
   interface Bounds {
@@ -32,10 +39,17 @@ export interface ConversationNavDeps {
     previewTimer: number | undefined,
     previewSuppressed = false;
   let returnFocus: Element | null = null;
+  let index: NavigationItem[] = [];
+  let indexRequest: AbortController | undefined;
+  let jumpGeneration = 0;
+  let dragging: { pointer: number; index: number; moved: boolean; target: HTMLButtonElement } | null = null;
+  let suppressClick = false;
+  const localIds = new WeakMap<Message, string>();
+  let localSequence = 0;
+  const previews = new Map<string, string>();
   let bounds: Bounds = { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 };
   const STEP = 10,
-    MIN_TURNS = 8,
-    MAX_VISIBLE = 48;
+    MIN_TURNS = 4;
   const selected = () => (hovered >= 0 ? hovered : focused);
   const plain = (node: Element | null): string => (node?.textContent || '').replace(/\s+/g, ' ').trim();
 
@@ -71,6 +85,17 @@ export interface ConversationNavDeps {
     });
   }
   function answerFor(entry: Entry): string {
+    if (!entry.anchor) {
+      if (previews.has(entry.id)) return previews.get(entry.id) || '';
+      const messages = deps?.getMessages() || [];
+      const start = entry.message ? messages.indexOf(entry.message) : -1;
+      if (start >= 0)
+        for (const message of messages.slice(start + 1)) {
+          if (message.type === 'user') break;
+          if (message.type === 'asst') return String(message.text || '').slice(0, 500);
+        }
+      return '';
+    }
     for (
       let node = entry.anchor.nextElementSibling;
       node && !node.matches('.msg.user');
@@ -89,7 +114,7 @@ export interface ConversationNavDeps {
     const title = preview.querySelector<HTMLElement>('.conversation-preview-title');
     const body = preview.querySelector<HTMLElement>('.conversation-preview-body');
     if (!title || !body) return;
-    title.textContent = plain(entry.anchor.querySelector('.body'));
+    title.textContent = entry.text;
     body.textContent = answerFor(entry);
     body.hidden = !body.textContent;
     preview.hidden = false;
@@ -98,6 +123,36 @@ export interface ConversationNavDeps {
     preview.style.top =
       Math.max(bounds.top + 12, Math.min(rect.top - 25, bounds.bottom - preview.offsetHeight - 12)) + 'px';
     button.setAttribute('aria-describedby', preview.id);
+    if (!entry.anchor && !entry.message && !previews.has(entry.id)) void loadPreview(entry);
+  }
+  async function loadPreview(entry: Entry): Promise<void> {
+    const activeSession = sessionId;
+    previews.set(entry.id, 'Loading preview…');
+    const body = preview.querySelector<HTMLElement>('.conversation-preview-body');
+    if (body) {
+      body.hidden = false;
+      body.textContent = 'Loading preview…';
+    }
+    try {
+      const response = await fetch(
+        `/api/conversation_tree?${new URLSearchParams({ session_id: activeSession, entry_id: entry.id })}`,
+        { signal: AbortSignal.timeout(15000) },
+      );
+      if (!response.ok) throw new Error('Preview unavailable');
+      const page = await response.json();
+      const at = page.items.findIndex((item: { id: string }) => item.id === entry.id);
+      let answer = '';
+      for (const item of page.items.slice(at + 1)) {
+        if (item.type === 'user') break;
+        if (item.type === 'asst') answer = String(item.text || '').slice(0, 500);
+      }
+      if (activeSession !== sessionId) return;
+      previews.set(entry.id, answer);
+    } catch {
+      if (activeSession !== sessionId) return;
+      previews.set(entry.id, 'Preview unavailable');
+    }
+    if (entries[selected()]?.id === entry.id && !preview.hidden) showPreview();
   }
   function requestPreview() {
     closePreview();
@@ -110,18 +165,46 @@ export interface ConversationNavDeps {
     paint();
     requestPreview();
   }
-  function jump(index: number): void {
+  async function jump(index: number, scrub = false): Promise<void> {
     const entry = entries[index];
-    if (!entry?.anchor.isConnected || !deps || deps.getActiveId() !== sessionId) return;
+    if (!entry || !deps || deps.getActiveId() !== sessionId) return;
+    // Dragging only visits already mounted turns, avoiding a request per tick.
+    if (scrub && !entry.anchor?.isConnected) return;
+    const generation = ++jumpGeneration,
+      identity = sessionId;
     closePreview();
     previewSuppressed = true;
     runtime.ConversationUI.stopFollowing();
+    if (!entry.anchor?.isConnected) {
+      entry.button.setAttribute('aria-busy', 'true');
+      try {
+        await deps.reveal(entry.id, entry.message);
+      } catch {
+        if (identity === sessionId && generation === jumpGeneration) {
+          hovered = entries.findIndex((item) => item.id === entry.id);
+          previewSuppressed = false;
+          previews.set(entry.id, 'Could not load message. Click to retry.');
+          showPreview();
+        }
+        return;
+      } finally {
+        entry.button.removeAttribute('aria-busy');
+      }
+      if (identity !== sessionId || generation !== jumpGeneration) return;
+      reconcile();
+    }
+    const anchor = entries.find((item) => item.id === entry.id)?.anchor;
+    if (!anchor?.isConnected) return;
     const rect = area.getBoundingClientRect();
-    area.scrollTop += entry.anchor.getBoundingClientRect().top - rect.top - 24;
+    const top = area.scrollTop + anchor.getBoundingClientRect().top - rect.top - 24;
+    area.scrollTo({
+      top,
+      behavior: scrub || matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    });
     runtime.ConversationUI.captureView();
     schedule();
   }
-  function makeEntry(anchor: HTMLElement): Entry {
+  function makeEntry(id: string, text: string): Entry {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'conversation-tick';
@@ -137,8 +220,49 @@ export interface ConversationNavDeps {
         focused = -1;
       }
     });
-    button.addEventListener('click', () => jump(entries.findIndex((entry) => entry.button === button)));
-    return { anchor, button };
+    button.addEventListener('click', () => {
+      if (suppressClick) {
+        suppressClick = false;
+        return;
+      }
+      void jump(entries.findIndex((entry) => entry.button === button));
+    });
+    return { id, text, anchor: null, button };
+  }
+  function messageId(message: Message): string {
+    if (message.entryId) return message.entryId;
+    let id = localIds.get(message);
+    if (!id) {
+      id = `local-${++localSequence}`;
+      localIds.set(message, id);
+    }
+    return id;
+  }
+  function refresh(reset = false): void {
+    if (deps && deps.getActiveId() !== sessionId) {
+      schedule();
+      return;
+    }
+    if (reset) {
+      index = [];
+      previews.clear();
+      jumpGeneration++;
+      dismiss();
+      schedule();
+    }
+    indexRequest?.abort();
+    const request = new AbortController(),
+      identity = sessionId;
+    indexRequest = request;
+    void loadNavigationIndex(identity, request.signal)
+      .then((items) => {
+        if (request.signal.aborted || identity !== sessionId) return;
+        index = items;
+        schedule();
+      })
+      .catch(() => {
+        /* Keep the mounted/local index usable; the next commit retries. */
+      });
   }
   function reconcile(): void {
     if (!deps) return;
@@ -146,16 +270,34 @@ export interface ConversationNavDeps {
       changed = id !== sessionId;
     if (changed) {
       sessionId = id;
+      index = [];
+      previews.clear();
+      jumpGeneration++;
+      refresh();
       dismiss();
     }
-    const old = new Map(entries.map((entry) => [entry.anchor, entry]));
+    const old = new Map(entries.map((entry) => [entry.id, entry]));
     const focusIndex = entries.findIndex((entry) => entry.button === document.activeElement);
+    const focusId = entries[focusIndex]?.id;
+    const hoveredId = entries[hovered]?.id;
+    const focusedId = entries[focused]?.id;
     const anchors = Array.from(chat.children).filter(
       (node): node is HTMLElement => node instanceof HTMLElement && node.matches('.msg.user'),
     );
-    const same = anchors.length === entries.length && anchors.every((anchor, i) => anchor === entries[i].anchor);
+    const messages = deps.getMessages().filter((message) => message.type === 'user');
+    const messageMap = new Map(messages.map((message) => [messageId(message), message]));
+    const mounted = new Map<string, HTMLElement>();
+    messages.slice(-anchors.length || messages.length).forEach((message, i) => {
+      if (anchors[i]) mounted.set(messageId(message), anchors[i]);
+    });
+    for (const anchor of anchors) if (anchor.dataset.entryId) mounted.set(anchor.dataset.entryId, anchor);
+    const rows = new Map(index.map((item) => [item.id, item]));
+    for (const message of messages)
+      rows.set(messageId(message), { id: messageId(message), text: String(message.text || '') });
+    const next = Array.from(rows.values());
+    const same = next.length === entries.length && next.every((item, i) => item.id === entries[i].id);
     if (!same) {
-      entries = anchors.map((anchor) => old.get(anchor) || makeEntry(anchor));
+      entries = next.map((item) => old.get(item.id) || makeEntry(item.id, item.text));
       const buttons = new Set(entries.map((entry) => entry.button));
       for (const button of Array.from(nav.children)) {
         if (button instanceof HTMLButtonElement && !buttons.has(button)) button.remove();
@@ -163,15 +305,19 @@ export interface ConversationNavDeps {
       entries.forEach((entry, index) => {
         if (nav.children[index] !== entry.button) nav.insertBefore(entry.button, nav.children[index] || null);
       });
-      if (!changed && focusIndex >= 0 && entries[focusIndex] && !nav.contains(document.activeElement)) {
-        entries[focusIndex].button.focus({ preventScroll: true });
+      const focusedEntry = entries.find((entry) => entry.id === focusId);
+      if (!changed && focusedEntry && !nav.contains(document.activeElement)) {
+        focusedEntry.button.focus({ preventScroll: true });
       }
-      if (hovered >= entries.length) hovered = -1;
-      if (focused >= entries.length) focused = -1;
+      hovered = entries.findIndex((entry) => entry.id === hoveredId);
+      focused = entries.findIndex((entry) => entry.id === focusedId);
       closePreview();
     }
     entries.forEach((entry, index) => {
-      const label = 'Jump to question ' + (index + 1) + ': ' + plain(entry.anchor.querySelector('.body')).slice(0, 240);
+      entry.anchor = mounted.get(entry.id) || null;
+      entry.message = messageMap.get(entry.id);
+      entry.text = rows.get(entry.id)?.text || '';
+      const label = 'Jump to question ' + (index + 1) + ': ' + entry.text.slice(0, 240);
       if (entry.button.getAttribute('aria-label') !== label) entry.button.setAttribute('aria-label', label);
     });
   }
@@ -195,11 +341,12 @@ export interface ConversationNavDeps {
     frame = 0;
     reconcile();
     bounds = availableBounds();
+    const content = chat.getBoundingClientRect();
+    const leftMargin = Math.min(content.left - bounds.left, (bounds.width - content.width) / 2);
     const enough =
-      bounds.width >= 920 &&
-      bounds.height >= 360 &&
+      leftMargin >= 48 &&
+      bounds.height >= 100 &&
       entries.length >= MIN_TURNS &&
-      area.scrollHeight > area.clientHeight &&
       !document.querySelector('dialog[open]');
     if (!enough) {
       const hadFocus = nav.contains(document.activeElement);
@@ -213,23 +360,37 @@ export interface ConversationNavDeps {
       return;
     }
     nav.hidden = false;
-    current = 0;
+    current = Math.max(
+      0,
+      entries.findIndex((entry) => entry.anchor),
+    );
     for (let index = 0; index < entries.length; index++) {
-      if (entries[index].anchor.getBoundingClientRect().top > bounds.top + 55) break;
+      const anchor = entries[index].anchor;
+      if (!anchor) continue;
+      if (anchor.getBoundingClientRect().top > bounds.top + 55) break;
       current = index;
     }
-    if (area.scrollHeight - area.scrollTop - area.clientHeight < 2) current = entries.length - 1;
-    const capacity = Math.min(MAX_VISIBLE, Math.floor((bounds.height - 48) / STEP));
-    const center = selected() >= 0 ? selected() : current;
-    const start = Math.max(0, Math.min(entries.length - capacity, center - Math.floor(capacity / 2)));
-    const count = Math.min(entries.length, capacity);
-    entries.forEach((entry, index) => {
-      entry.button.hidden = index < start || index >= start + count;
-    });
+    if (area.scrollHeight - area.scrollTop - area.clientHeight < 2) {
+      for (let index = entries.length - 1; index >= 0; index--) {
+        if (entries[index].anchor) {
+          current = index;
+          break;
+        }
+      }
+    }
+    const height = Math.min(bounds.height * 0.7, 640, entries.length * STEP);
+    nav.style.maxHeight = height + 'px';
     nav.style.left = bounds.left + 14 + 'px';
-    nav.style.top = bounds.top + (bounds.height - count * STEP) / 2 + 'px';
+    nav.style.top = bounds.top + (bounds.height - height) / 2 + 'px';
+    if (!dragging && hovered < 0 && focused < 0) keepVisible(entries[current]?.button);
     paint();
     if (!preview.hidden) showPreview();
+  }
+  function keepVisible(button?: HTMLButtonElement): void {
+    if (!button) return;
+    const top = button.offsetTop;
+    if (top < nav.scrollTop) nav.scrollTop = top;
+    else if (top + STEP > nav.scrollTop + nav.clientHeight) nav.scrollTop = top + STEP - nav.clientHeight;
   }
   function schedule(): void {
     if (!frame) frame = requestAnimationFrame(update);
@@ -253,6 +414,7 @@ export interface ConversationNavDeps {
     focused = next;
     update();
     entries[next].button.focus({ preventScroll: true });
+    keepVisible(entries[next].button);
     paint();
     requestPreview();
   }
@@ -277,8 +439,53 @@ export interface ConversationNavDeps {
     preview.hidden = true;
     preview.innerHTML = '<div class="conversation-preview-title"></div><div class="conversation-preview-body"></div>';
     main.append(nav, preview);
+    nav.addEventListener(
+      'pointerdown',
+      (event: PointerEvent) => {
+        if (event.button !== 0 || event.pointerType === 'touch') return;
+        const button = event.target instanceof Element ? event.target.closest('.conversation-tick') : null;
+        const index = entries.findIndex((entry) => entry.button === button);
+        if (index < 0) return;
+        dragging = { pointer: event.pointerId, index, moved: false, target: entries[index].button };
+        dragging.target.setPointerCapture(event.pointerId);
+        runtime.ConversationUI.stopFollowing();
+      },
+      true,
+    );
+    const endDrag = (event: PointerEvent, cancel = false) => {
+      if (dragging?.pointer !== event.pointerId) return;
+      const state = dragging;
+      dragging = null;
+      if (state.target.hasPointerCapture(event.pointerId)) state.target.releasePointerCapture(event.pointerId);
+      if (state.moved) {
+        suppressClick = true;
+        if (!cancel) void jump(state.index);
+        window.setTimeout(() => {
+          suppressClick = false;
+        }, 0);
+      }
+    };
+    nav.addEventListener('pointerup', (event) => endDrag(event));
+    nav.addEventListener('pointercancel', (event) => endDrag(event, true));
+    nav.addEventListener('lostpointercapture', (event) => endDrag(event, true));
     nav.addEventListener('pointermove', (event: PointerEvent) => {
       if (event.pointerType === 'touch') return;
+      if (dragging?.pointer === event.pointerId) {
+        const rect = nav.getBoundingClientRect();
+        if (event.clientY < rect.top + STEP) nav.scrollTop -= STEP * 2;
+        else if (event.clientY > rect.bottom - STEP) nav.scrollTop += STEP * 2;
+        const index = Math.max(
+          0,
+          Math.min(entries.length - 1, Math.floor((event.clientY - rect.top + nav.scrollTop) / STEP)),
+        );
+        if (index !== dragging.index) {
+          dragging.index = index;
+          dragging.moved = true;
+          selectPointer(index);
+          void jump(index, true);
+        }
+        return;
+      }
       const button = event.target instanceof Element ? event.target.closest('.conversation-tick') : null;
       if (button) selectPointer(entries.findIndex((entry) => entry.button === button));
     });
@@ -307,6 +514,22 @@ export interface ConversationNavDeps {
     document.addEventListener(
       'keydown',
       (event: KeyboardEvent) => {
+        if (
+          !event.isComposing &&
+          event.altKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.shiftKey &&
+          !nav.hidden &&
+          (event.key === 'ArrowUp' || event.key === 'ArrowDown') &&
+          !(event.target instanceof Element && event.target.closest('.document-pane,[role="dialog"]'))
+        ) {
+          event.preventDefault();
+          const anchor = entries[current]?.anchor;
+          const previous = anchor && anchor.getBoundingClientRect().top < bounds.top - 24 ? current : current - 1;
+          void jump(Math.max(0, Math.min(entries.length - 1, event.key === 'ArrowDown' ? current + 1 : previous)));
+          return;
+        }
         if (event.key !== 'Escape' || nav.hidden || selected() < 0) return;
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -344,5 +567,5 @@ export interface ConversationNavDeps {
     });
     schedule();
   }
-  runtime.ConversationNav = { init };
+  runtime.ConversationNav = { init, refresh };
 })();

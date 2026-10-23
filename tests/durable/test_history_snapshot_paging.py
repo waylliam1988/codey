@@ -38,3 +38,28 @@ def test_a_branch_change_invalidates_the_pinned_cursor_instead_of_mixing_paths(s
     session.append_message('chat', 'assistant_message', {'text': 'different branch'})
     with pytest.raises(ValueError, match='history snapshot changed'):
         session.history_page('chat', before=page['before_cursor'], limit=2)
+
+
+def test_question_index_is_compact_and_pinned_while_live_content_grows(session):
+    session.append_message('chat', 'tool_result', {'content': 'private tool body' * 1000})
+    page = session.navigation_page('chat', limit=3)
+    revision = page['snapshot_revision']
+    items = page['items']
+    while page['has_more']:
+        session.append_message('chat', 'user_message', {'text': 'new question'})
+        page = session.navigation_page('chat', before=page['before_cursor'], limit=3)
+        assert page['snapshot_revision'] == revision
+        items = page['items'] + items
+        assert len(items) <= 10
+    assert [item['text'] for item in items] == [f'old {index}' for index in range(10)]
+    assert all(set(item) == {'id', 'text'} for item in items)
+
+
+def test_question_index_rejects_stale_branch_and_bounds_labels(session):
+    session.append_message('chat', 'user_message', {'text': 'x' * 10000})
+    page = session.navigation_page('chat', limit=2)
+    assert len(page['items'][-1]['text']) == 240
+    first = session.navigation_page('chat')['items'][0]['id']
+    session.branch('chat', first)
+    with pytest.raises(ValueError, match='history snapshot changed'):
+        session.navigation_page('chat', before=page['before_cursor'])

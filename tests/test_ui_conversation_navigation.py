@@ -46,26 +46,99 @@ def test_navigation_uses_available_space_and_does_not_shift_content(page):
     nav = page.get_by_role('navigation', name='Conversation navigation')
     expect(page.locator('#conversation-nav')).to_be_hidden()
     before = page.locator('#chat').evaluate('e => [e.getBoundingClientRect().x,e.getBoundingClientRect().width]')
-    append_turns(page, 7)
+    append_turns(page, 3)
     expect(page.locator('#conversation-nav')).to_be_hidden()
     append_turns(page, 1)
     expect(nav).to_be_visible()
-    expect(nav.locator('button')).to_have_count(8)
+    expect(nav.locator('button')).to_have_count(4)
     assert page.locator('#chat').evaluate(
         'e => [e.getBoundingClientRect().x,e.getBoundingClientRect().width]'
     ) == before
-    for size, visible in [((1000, 800), False), ((1240, 800), True), ((1240, 480), False), ((1240, 800), True)]:
+    for size, visible in [((1000, 800), False), ((1240, 800), True), ((1240, 480), True), ((1240, 800), True)]:
         page.set_viewport_size({'width': size[0], 'height': size[1]})
         if visible:
             expect(nav).to_be_visible()
         else:
             expect(page.locator('#conversation-nav')).to_be_hidden()
-    page.set_viewport_size({'width': 1160, 'height': 800})
+    page.set_viewport_size({'width': 1000, 'height': 800})
     expect(page.locator('#conversation-nav')).to_be_hidden()
     page.locator('#toggle-sidebar').click()
     expect(nav).to_be_visible()
     page.locator('#show-sidebar').click()
     expect(page.locator('#conversation-nav')).to_be_hidden()
+
+
+def test_four_short_questions_show_navigation_without_requiring_overflow(page):
+    page.evaluate("""() => {
+        for(let i=0;i<4;i++) addToSession('a',{type:'user',text:`Short ${i}`});
+    }""")
+    expect(page.locator('#conversation-nav')).to_be_visible()
+    expect(page.locator('.conversation-tick')).to_have_count(4)
+
+
+def test_one_long_answer_does_not_create_fake_question_ticks(page):
+    append_turns(page, 1)
+    page.evaluate("document.querySelector('#chat .msg.asst .body').textContent='Long answer. '.repeat(5000)")
+    expect(page.locator('#conversation-nav')).to_be_hidden()
+    expect(page.locator('.conversation-tick')).to_have_count(1)
+
+
+def test_pointer_drag_scrubs_questions_without_sending_or_changing_the_draft(page):
+    append_turns(page)
+    read_turn(page, 13)
+    task = page.locator('#task')
+    task.fill('Keep this draft')
+    ticks = page.locator('.conversation-tick')
+    start = ticks.nth(12).bounding_box()
+    end = ticks.nth(5).bounding_box()
+    page.mouse.move(start['x'] + 10, start['y'] + 5)
+    page.mouse.down()
+    page.mouse.move(end['x'] + 10, end['y'] + 5, steps=12)
+    page.mouse.up()
+    expect(ticks.nth(5)).to_have_attribute('aria-current', 'location')
+    expect(task).to_have_value('Keep this draft')
+    expect(page.locator('#chat > .msg.user')).to_have_count(28)
+
+
+def test_alt_arrow_navigation_keeps_composer_focus_and_draft(page):
+    append_turns(page)
+    read_turn(page, 10)
+    task = page.locator('#task')
+    task.fill('Unsent draft')
+    page.keyboard.press('Alt+ArrowDown')
+    expect(page.locator('.conversation-tick').nth(11)).to_have_attribute('aria-current', 'location')
+    expect(task).to_be_focused()
+    expect(task).to_have_value('Unsent draft')
+
+
+def test_unloaded_question_jump_can_retry_after_a_failed_history_request(page):
+    attempts = []
+
+    def history(route):
+        if 'navigation=1' in route.request.url:
+            route.fulfill(json={'schema_version': 1, 'session_id': 'a', 'epoch': 'db',
+                                'snapshot_revision': 1, 'has_more': False, 'items': [
+                                    {'id': f'entry-{i}', 'text': f'Remote question {i}'} for i in range(4)]})
+            return
+        attempts.append(True)
+        if len(attempts) == 1:
+            route.fulfill(status=503, json={'error': 'Temporarily unavailable'})
+            return
+        route.fulfill(json={'schema_version': 1, 'session_id': 'a', 'epoch': 'db',
+                            'snapshot_revision': 1, 'has_more': False, 'has_after': True,
+                            'items': [{'id': 'entry-0', 'type': 'user', 'text': 'Remote question 0'},
+                                      {'id': 'answer-0', 'type': 'asst', 'text': 'Loaded answer'}]})
+
+    page.route('**/api/conversation_tree?*', history)
+    page.evaluate('ConversationNav.refresh()')
+    tick = page.locator('.conversation-tick').first
+    expect(page.locator('.conversation-tick')).to_have_count(4)
+    tick.click()
+    expect(page.locator('.conversation-preview-body')).to_have_text('Could not load message. Click to retry.')
+    expect(tick).not_to_have_attribute('aria-busy', 'true')
+    tick.click()
+    expect(page.locator('#chat > .msg.user .body')).to_have_text('Remote question 0')
+    expect(tick).to_have_attribute('aria-current', 'location')
 
 
 @pytest.mark.parametrize('target', [8, 13])
@@ -183,7 +256,8 @@ def test_long_histories_keep_ticks_inside_view_and_keyboard_can_reach_every_ques
     read_turn(page, 50)
     nav = page.locator('#conversation-nav')
     visible = nav.locator('button:visible')
-    assert visible.count() <= 48
+    assert visible.count() == 100
+    assert nav.evaluate('e => e.scrollHeight > e.clientHeight')
     assert nav.evaluate("""e => {
         const nav=e.getBoundingClientRect(), area=document.getElementById('chat-area').getBoundingClientRect();
         return nav.top>=area.top+20 && nav.bottom<=area.bottom-20;

@@ -111,6 +111,8 @@ def retry_fork_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, 
 def conversation_tree_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
     session = str((query.get('session_id') or [''])[0])
     try:
+        if (query.get('navigation') or [''])[0] == '1':
+            return 200, ctx.durable.navigation_page(session, before=(query.get('before') or [''])[0] or None)
         target = str((query.get('entry_id') or [''])[0])
         leaf = str((query.get('leaf_id') or [''])[0])
         if target:

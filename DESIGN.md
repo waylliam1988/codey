@@ -465,10 +465,11 @@ pointer/keyboard selection, the exact copied text, draft values, and carets;
 selection styling does not add an input outline or shadow.
 
 **Conversation navigation:** show a quiet vertical tick rail in the left
-reading margin when the conversation has at least eight user questions,
-scrolls vertically, and its available reading area is at least 920px wide and
-360px high. Use available space, not fullscreen state; count overlapping
-inspection drawers and hide while Settings is open. Keep the original 760px
+reading margin when the conversation has at least four user messages and the
+rendered content has at least 48px of usable left margin. Do not gate on a fixed
+920px reading width, 360px height, or whether the transcript already overflows.
+Use available space, not fullscreen state; count overlapping inspection drawers
+and hide while Settings is open. Keep the original 760px
 content width and composer position. Each tick represents one user question
 and its following reply; tool calls and stream updates do not add ticks.
 
@@ -482,12 +483,24 @@ Hover never scrolls; click,
 Enter, or Space jumps to the user question without sending or changing drafts,
 carets, native text selections, or disclosure state. Scrolling dismisses the
 preview. ArrowUp/ArrowDown and Home/End browse questions through a single Tab
-stop; Escape dismisses and restores prior keyboard focus. Ticks have names
+stop; Escape dismisses and restores prior keyboard focus.
+Alt+ArrowUp/ArrowDown jumps between user messages without moving composer focus;
+file panes and dialogs retain their own keyboard handling. Ticks have names
 containing the question, and the reading position uses `aria-current="location"`.
 
-For long histories, keep at most 48 ticks inside the reading area, centering
-the visible window on the reading/selected question; keyboard navigation can
-reach every question. Preserve tick focus across tool/text updates, rebuild
+For long histories, retain the complete question index in an independently
+scrollable rail, with its native scrollbar hidden and height capped at the
+smaller of 70% of the reading area or 640px. Keep the reading/keyboard-selected
+tick visible without moving the transcript. Pointer hover only previews;
+pressing and dragging scrubs through mounted turns immediately, and releasing
+on an unloaded turn fetches its history window before positioning it. Ordinary
+click jumps smoothly; loaded history windows and reduced-motion jumps are instant.
+Read the compact question index in bounded pages of at most 200 labels (240
+characters each), not full tool/result bodies. Preserve snapshot identity across
+pages, reject non-advancing cursors, and fence stale requests on chat switches.
+Fetch unloaded previews and target windows on demand with bounded timeouts;
+failed jumps remain retryable without an endless spinner. Keyboard navigation can
+reach every question. Preserve tick identity and focus across tool/text updates, rebuild
 for the active chat only, and cancel stale previews on chat switches, hiding,
 drawer/Settings opening, or window blur. Respect reduced motion by disabling
 the width transition. Fixed UI labels stay English; question/reply excerpts

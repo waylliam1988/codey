@@ -298,8 +298,10 @@
   /* Conversation navigation lives in the reading margin, without moving content. */
   .conversation-nav {
     position: fixed; z-index: 30; width: 38px;
-    display: flex; flex-direction: column;
+    display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-width: none; touch-action: pan-y;
   }
+  .conversation-nav::-webkit-scrollbar { display: none; }
   .conversation-tick {
     display: flex; align-items: center; width: 38px; height: 10px; min-height: 10px;
     background: transparent; border: 0; padding: 0 4px; cursor: pointer;

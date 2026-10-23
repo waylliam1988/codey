@@ -407,6 +407,10 @@ class DurableSession:
         self._commit(DurableMutation(conversation_id, revision, entries=(entry,)))
 
     @_mutation_line
+    def navigation_page(self, conversation_id: str, *, before: str | None = None,
+                        limit: int = 200) -> dict[str, object]:
+        return conversation_ops.navigation_page(self, conversation_id, before=before, limit=limit)
+
     def history_window(self, conversation_id: str, entry_id: str, *, limit: int = 100,
                        leaf_id: str | None = None) -> dict[str, object]:
         return conversation_ops.history_window(self, conversation_id, entry_id, limit=limit, leaf_id=leaf_id)

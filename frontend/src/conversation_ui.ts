@@ -598,6 +598,8 @@ export interface ConversationUiDeps {
       const force = true;
       if (event.kind === 'branch' || event.kind === 'fork') historyRendered.delete(event.session_id);
       await refreshHistory(event.session_id, force, event.kind !== 'branch' && event.kind !== 'fork');
+      if (event.session_id === deps.getActiveId())
+        runtime.ConversationNav.refresh(event.kind === 'branch' || event.kind === 'fork');
     }
   }
   function historyBoundary(messages: Message[], index: number): number {
@@ -1287,7 +1289,21 @@ export interface ConversationUiDeps {
     initSidebarResize();
     initSelectionMenu();
     initTitleRename();
-    runtime.ConversationNav.init({ getActiveId: nextDeps.getActiveId });
+    runtime.ConversationNav.init({
+      getActiveId: nextDeps.getActiveId,
+      getMessages: () => deps.activeSession()?.messages || [],
+      reveal: async (entryId: string, message?: Message) => {
+        if (message?.entryId || !message) {
+          await focusHistory(entryId);
+          return;
+        }
+        const session = deps.activeSession();
+        if (!session || !session.messages.includes(message)) throw new Error('Message unavailable');
+        historyStarts.set(session.id, historyBoundary(session.messages, session.messages.indexOf(message)));
+        views.delete(session.id);
+        renderChat(true);
+      },
+    });
   }
 
   runtime.ConversationUI = {
