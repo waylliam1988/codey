@@ -67,7 +67,7 @@ export interface Draft {
   direction: 'none' | 'forward' | 'backward';
   revision: number;
 }
-export type AttemptState = 'sending' | 'running' | 'done' | 'paused' | 'failed';
+export type AttemptState = 'sending' | 'running' | 'waiting' | 'done' | 'paused' | 'failed';
 export interface RequestAttempt {
   runId: string;
   state: AttemptState;
@@ -320,6 +320,14 @@ export interface SseDeps {
   refreshProviderStatus(immediate: boolean): void;
 }
 export interface RunState {
+  task_states?: Array<{
+    run_id: string;
+    session_id: string;
+    task_revision: number;
+    task_status: string;
+    stop_reason?: string;
+  }>;
+  response_ack_run_id?: string;
   shell_approvals?: ApprovalState[];
   busy?: boolean;
   run_id?: string;

@@ -12,6 +12,13 @@ import { hydrateDocumentContent } from './document_content';
 import { streamMessage, finalStreamMessage } from './reply_stream';
 import { FrameCoalescer } from './frame_coalescer';
 import { terminalAnswerMessage } from './terminal_answer';
+import {
+  RunLifecycleProjection,
+  eventSequence,
+  lifecycleState,
+  lastRunState,
+  type LifecycleInput,
+} from './run_lifecycle';
 import type { QueuedInput } from './input_outbox';
 import { UserQuestions, type UserQuestion } from './user_questions';
 import { createApprovalController } from './shell_approvals';
@@ -1210,6 +1217,54 @@ function setStatus(text: string, kind: string) {
 }
 
 const sseEventKey = (data: ServerEvent, fallback = '') => runtime.Sse.eventKey(data, fallback);
+const runLifecycle = new RunLifecycleProjection();
+
+function applyLifecycle(data: ServerEvent, source: LifecycleInput['source'], active?: boolean): boolean {
+  const runId = data.run_id || '',
+    sessionId = data.session_id || '';
+  const session = sessions.find((item) => item.id === sessionId);
+  if (!session || !runId) return false;
+  if (session.terminalRuns?.includes(runId)) runLifecycle.restoreTerminal(sessionId, runId);
+  const request = runtime.Requests.forRun(sessionId, runId);
+  if (source !== 'snapshot' && request && request.request.attempts.at(-1) !== request.attempt) return false;
+  const state = lifecycleState(
+    data.task_status,
+    data.stop_reason,
+    data.type === 'task_start' ? 'running' : data.stop_reason || 'done',
+  );
+  const view = runLifecycle.transition({
+    runId,
+    sessionId,
+    state,
+    active: active ?? state === 'running',
+    revision: data.task_revision,
+    sequence: eventSequence(data.event_id),
+    source,
+  });
+  if (!view) return false;
+  // Every lifecycle write follows the one transition decision above. These are
+  // derived UI indexes; the durable task and its revision remain authoritative.
+  if (view.terminal)
+    session.terminalRuns = [...(session.terminalRuns || []).filter((id) => id !== runId), runId].slice(-32);
+  else if (source === 'snapshot') session.terminalRuns = (session.terminalRuns || []).filter((id) => id !== runId);
+  hydrateSessionIndexes(session);
+  if (view.active) activeRuns.set(runId, sessionId);
+  else activeRuns.delete(runId);
+  const primary = [...activeRuns.entries()].at(-1);
+  runningRunId = primary?.[0] ?? null;
+  runningSessionId = primary?.[1] ?? null;
+  if (view.active) turnIdForRun(sessionId, runId);
+  runtime.Requests.projectLifecycle(data as ServerEventData, view.state);
+  if (view.state !== 'idle') recordRunState(sessionId, runId, view.state, data);
+  if (data.type === 'task_done') data.stop_reason = view.state;
+  persistActive();
+  if (activeRuns.size) runtime.Sse.displayRunStatus('running');
+  else setStatus('', 'ok');
+  updateSend();
+  updateComposerContext();
+  syncResearchUseProjectButton();
+  return true;
+}
 
 function handleReplyStream(data: ServerEventData) {
   const sid = data.session_id || '';
@@ -1227,7 +1282,7 @@ function handleReplyStream(data: ServerEventData) {
 }
 
 let inputRefreshTimer: ReturnType<typeof setTimeout> | undefined;
-function handleServerEvent(raw: unknown) {
+function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' = 'event') {
   const data = decodeServerEvent(raw) as ServerEventData;
   if (data.type === 'conversation_inventory_changed') {
     void runtime.UiState.refreshInventory?.();
@@ -1251,6 +1306,7 @@ function handleServerEvent(raw: unknown) {
   // frame coalescer declaration. The production bundle always has it, while
   // the optional guard keeps the isolated dispatcher usable.
   if (typeof replyStreamFrames !== 'undefined') replyStreamFrames.flush();
+  if ((data.type === 'task_start' || data.type === 'task_done') && !applyLifecycle(data, lifecycleSource)) return;
   if (data.type === 'user_question' || data.type === 'user_question_state') {
     userQuestions.apply((raw as { question: unknown }).question);
     return;
@@ -1268,22 +1324,9 @@ function handleServerEvent(raw: unknown) {
     void reconcileRunState();
     return;
   }
-  if (data.type === 'task_done') {
-    if (data.run_id) activeRuns.delete(data.run_id);
-    if (!data.run_id || data.run_id === runningRunId) {
-      const next = [...activeRuns.entries()].at(-1);
-      runningRunId = next?.[0] || null;
-      runningSessionId = next?.[1] || null;
-    }
-    setStatus('', 'ok');
-    updateSend();
-    updateComposerContext();
-    syncResearchUseProjectButton();
-  }
   const runId = (data.run_id || '').toString();
   const sid = data.session_id || '';
-  if (data.type === 'task_start' && runId) turnIdForRun(sid, runId);
-  if (!runtime.Requests.acceptsEvent(data)) return;
+  if (data.type !== 'task_start' && data.type !== 'task_done' && !runtime.Requests.acceptsEvent(data)) return;
   const mayOutliveRun = [
     'task_start',
     'task_done',
@@ -1419,33 +1462,15 @@ function handleServerEvent(raw: unknown) {
     return;
   }
   if (data.type === 'task_start') {
-    runtime.Requests.running(sid, runId);
-    activeRuns.set(runId, sid);
-    runningRunId = runId;
-    runningSessionId = sid;
     turnCounter = 0;
-    runtime.Sse.displayRunStatus('running');
-    $('send').disabled = true;
-    $('provider-button').disabled = true;
-    updateSend();
-    updateComposerContext();
-    syncResearchUseProjectButton();
-    addToSession(sid, { type: 'run_state', state: 'running', runId, eventKey: `run-start:${runId}` });
     return;
   }
   if (data.type === 'task_done') {
     const research = data.research;
-    if (!markTerminalRun(sid, runId)) return;
     const summary = (data.summary || '').toString();
     const reason = (data.stop_reason || 'done').toString();
-    const requestFailed = runtime.Requests.finish(data);
-    addToSession(sid, {
-      type: 'run_state',
-      state: reason,
-      runId,
-      elapsedMs: typeof data.elapsed_ms === 'number' ? data.elapsed_ms : undefined,
-      eventKey: `run-end:${runId}`,
-    });
+    if (reason === 'running' || reason === 'waiting' || reason === 'idle') return;
+    const requestFailed = runtime.Requests.forRun(sid, runId)?.attempt.state === 'failed';
     const terminalKey = runId ? `terminal:${runId}` : '';
     const answerKey = terminalKey ? `${terminalKey}:answer` : '';
     const receiptKey = terminalKey ? `${terminalKey}:receipt` : '';
@@ -1671,31 +1696,45 @@ function markResearchRestoreAvailability(runIds: unknown) {
 }
 
 function applyRunState(data: RunState) {
+  const owners = new Map((data.active_runs || []).map((run) => [run.run_id, run.session_id]));
+  if (data.busy && data.run_id && data.session_id) owners.set(data.run_id, data.session_id);
+  const versioned = new Set<string>();
+  for (const row of data.task_states || []) {
+    versioned.add(row.run_id);
+    const state = lifecycleState(row.task_status, row.stop_reason, 'idle');
+    applyLifecycle(
+      { ...row, type: state === 'running' ? 'task_start' : 'task_done' },
+      'snapshot',
+      state === 'running' || (owners.has(row.run_id) && ['approval', 'question', 'waiting'].includes(state)),
+    );
+  }
+  // Compatibility for older servers and admission-only test adapters. Actual
+  // task revisions always win over this unversioned registry projection.
+  for (const [runId, sessionId] of owners)
+    if (!versioned.has(runId))
+      applyLifecycle({ type: 'task_start', run_id: runId, session_id: sessionId }, 'snapshot', true);
+  for (const [runId, sessionId] of [...activeRuns])
+    if (!owners.has(runId) && !versioned.has(runId) && data.last_terminal_event?.run_id !== runId)
+      applyLifecycle(
+        { type: 'task_done', run_id: runId, session_id: sessionId, stop_reason: 'idle' },
+        'snapshot',
+        false,
+      );
   (data.shell_approvals || []).forEach(approvalController.apply);
   if (data.last_shell_result) handleServerEvent(data.last_shell_result);
-  if (data.last_terminal_event) handleServerEvent(data.last_terminal_event);
+  if (
+    data.last_terminal_event &&
+    !(owners.has(data.last_terminal_event.run_id || '') && data.last_terminal_event.task_revision === undefined)
+  )
+    handleServerEvent(data.last_terminal_event, 'snapshot');
   if (data.pending_event) handleServerEvent(data.pending_event);
-
-  activeRuns.clear();
-  for (const run of data.active_runs || []) activeRuns.set(run.run_id, run.session_id);
-  const busy = activeRuns.size > 0 || (!!data.busy && !!data.run_id);
-  if (activeRuns.size === 0 && busy && data.run_id && data.session_id) activeRuns.set(data.run_id, data.session_id);
-  const primary = [...activeRuns.entries()].at(-1);
-  runningRunId = primary?.[0] ?? null;
-  runningSessionId = primary?.[1] ?? null;
-  if (busy) {
-    runtime.Sse.displayRunStatus(data.run_status === 'connecting' ? 'connecting' : 'running');
-  } else {
-    setStatus('', 'ok');
-  }
-  const activeSessionBusy = activeRuns.has(activeId);
-  $('provider-button').disabled = $('effort-button').disabled = activeSessionBusy;
   markResearchRestoreAvailability(data.research_restore_runs || []);
   runtime.Requests.reconcile({
     session_id: data.session_id ?? '',
     run_id: data.run_id ?? '',
-    busy: !!data.busy,
-    active_runs: (data.active_runs || []).map((run) => ({ run_id: run.run_id, session_id: run.session_id })),
+    busy: activeRuns.size > 0,
+    active_runs: [...activeRuns].map(([run_id, session_id]) => ({ run_id, session_id })),
+    response_ack_run_id: data.response_ack_run_id,
   });
   updateSend();
   updateComposerContext();
@@ -1884,16 +1923,17 @@ function replaceSessionMessage(sid: string, predicate: (message: Message) => boo
   return true;
 }
 
-function markTerminalRun(sid: string, runId: string | null) {
-  if (!runId) return true;
-  const s = sessions.find((x) => x.id === sid);
-  if (!s) return false;
-  ensureSessionIndexes(s);
-  if (s._terminalRunSet!.has(runId)) return false;
-  s.terminalRuns = [...(s.terminalRuns || []), runId].slice(-32);
-  hydrateSessionIndexes(s);
-  persistActive();
-  return true;
+function recordRunState(sid: string, runId: string, state: string, data: ServerEvent & { elapsed_ms?: unknown }) {
+  const session = sessions.find((item) => item.id === sid);
+  if (!session || lastRunState(session, runId) === state) return;
+  const revision = session.messages.filter((item) => item.type === 'run_state' && item.runId === runId).length;
+  addToSession(sid, {
+    type: 'run_state',
+    state,
+    runId,
+    elapsedMs: typeof data.elapsed_ms === 'number' ? data.elapsed_ms : undefined,
+    eventKey: sseEventKey(data, `run-state:${runId}:${revision}:${state}`),
+  });
 }
 
 function dropSessionMessages(sessionId: string, pred: (message: Message) => boolean) {
@@ -2194,9 +2234,7 @@ async function boot() {
     handleServerEvent,
     refreshProviderStatus,
     acceptRun: (runId: string | null, sessionId: string | null) => {
-      runningRunId = runId || null;
-      runningSessionId = runningRunId ? sessionId : null;
-      if (runId && sessionId) activeRuns.set(runId, sessionId);
+      if (runId && sessionId) applyLifecycle({ type: 'task_start', run_id: runId, session_id: sessionId }, 'admission');
     },
     setProviderBusy: (busy: boolean) => {
       $('provider-button').disabled = !!busy;

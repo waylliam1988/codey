@@ -7,6 +7,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import replace
 from typing import Any
+from codey.durable.events import committed_task_version
 
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.ghost_post_turn import (
@@ -184,6 +185,7 @@ def _commit_durable_terminal(deps: Any, frame: RunFrame, event: dict[str, object
     # outcome, but it must not try to park or complete an already-cancelled
     # durable task.
     if task.phase in {"failed", "cancelled", "completed"}:
+        event.update(task_revision=task.revision, task_status=str(task.status))
         return
     state: dict[str, object] = {
         "stop_reason": str(event.get("stop_reason") or ""),
@@ -202,14 +204,17 @@ def _commit_durable_terminal(deps: Any, frame: RunFrame, event: dict[str, object
     stop_reason = str(event.get("stop_reason") or "")
     if stop_reason in {"done", "max_turns"}:
         answer = _display_reply_text(outcome) or str(event.get("summary") or "")
-        durable.complete_task(run_id, answer, state=state)
+        committed = durable.complete_task(run_id, answer, state=state)
+        event.update(committed_task_version(committed, run_id))
     elif stop_reason in {"approval", "question"}:
         # The provider turn yielded to an external decision.  Preserve the
         # exact logical checkpoint and park scheduler ownership; the decision
         # worker or answer admission owns the explicit wake-up/continuation.
-        durable.wait_task(run_id, state=state)
+        committed = durable.wait_task(run_id, state=state)
+        event.update(committed_task_version(committed, run_id))
     elif task.phase not in {"failed", "cancelled", "completed"}:
-        durable.fail_task(run_id, str(event.get("summary") or event.get("stop_reason") or "task failed"), state=state)
+        committed = durable.fail_task(run_id, str(event.get("summary") or event.get("stop_reason") or "task failed"), state=state)
+        event.update(committed_task_version(committed, run_id))
 
 
 def _fail_durable_task(deps: Any, run_id: str, event: dict[str, object]) -> None:

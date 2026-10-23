@@ -186,6 +186,11 @@ def machine_event_payload(event: object) -> dict[str, object] | None:
         value = str(event.get(key) or "")
         if value:
             common[key] = value
+    revision = event.get("task_revision")
+    if type(revision) is int and 0 <= revision <= 2**53 - 1:
+        common["task_revision"] = revision
+    if isinstance(event.get("task_status"), str):
+        common["task_status"] = event["task_status"]
     if event_type == "task_start":
         return _payload_task_start(common, event)
     if event_type == "status":

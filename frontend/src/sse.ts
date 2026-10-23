@@ -158,14 +158,7 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
     const runId = data.run_id || null;
     const request = runtime.Requests.forRun(sessionId, runId);
     if (request && !['sending', 'running'].includes(request.attempt.state)) return;
-    runtime.Requests.running(sessionId, runId);
     deps.acceptRun(runId, runId ? sessionId : null);
-    if (runId) {
-      displayRunStatus('running');
-      deps.setProviderBusy(true);
-      deps.updateSend();
-      deps.updateComposerContext();
-    }
     const initialSnapshot = await reconcileRunState();
     if (runId) {
       // Give the worker one event-loop turn to publish admission before
@@ -174,7 +167,8 @@ import { decodeRunState, decodeServerEvent, type ServerEvent } from './domain/pr
       setTimeout(() => {
         void reconcileRunState().then((snapshot) => {
           const state = snapshot || initialSnapshot;
-          runtime.Requests.reconcile({
+          deps.applyRunState({
+            ...state,
             session_id: state?.session_id || sessionId,
             run_id: state?.run_id || runId,
             busy: state?.busy,

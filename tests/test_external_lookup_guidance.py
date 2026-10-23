@@ -1,0 +1,24 @@
+"""External data uses the shared tools and never weakens CodeMode isolation."""
+from types import SimpleNamespace
+
+import pytest
+
+from codey.codemode.protocol import parse_codemode_args
+from codey.operations.kernel_prompt import kernel_prompt_for_session
+
+
+@pytest.mark.parametrize('native', [False, True])
+def test_shell_lookup_guidance_is_capability_driven_not_topic_driven(native):
+    session = SimpleNamespace(task_text='Get current public information', handoff='', project='workspace')
+    prompt = kernel_prompt_for_session(session, tool_names=('shell', 'codemode', 'done'), native=native)
+    assert 'explicit connection and total timeouts' in prompt
+    assert 'Do not launch a browser' in prompt
+    assert 'Keep shell approval intact' in prompt
+    assert 'not evidence that the host has no network access' in prompt
+    restricted = kernel_prompt_for_session(session, tool_names=('codemode', 'done'), native=native)
+    assert 'shell can request' not in restricted
+
+
+def test_codemode_rejection_explains_the_scope_without_executing_network_code():
+    with pytest.raises(ValueError, match='not a host network denial'):
+        parse_codemode_args({'code': 'return await fetch("https://example.com")'})

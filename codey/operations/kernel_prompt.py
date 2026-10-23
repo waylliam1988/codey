@@ -96,6 +96,20 @@ def kernel_prompt_for_session(
         "must pass on the current workspace before completion. Tool availability alone does not require edits or tests. "
         "Shell runs on the execution host and requires approval. A working directory is not a system sandbox."
     )
+    parts.append(
+        "For current external facts, obtain actual source data using the authorized tools instead of guessing. "
+        "A CodeMode host-access rejection is local to that sandbox; it is not evidence that the host has no network access. "
+        "Do not claim an environment-wide network or permission failure from a malformed call or one failed endpoint. "
+        "Report the specific observed failure and consider a different authorized path."
+    )
+    if "shell" in visible_names:
+        parts.append(
+            "When a public URL or API can answer the request, shell can request a bounded noninteractive HTTP command "
+            "such as curl.exe on Windows or curl elsewhere, with explicit connection and total timeouts. "
+            "This does not open a browser. Keep shell approval intact; never put fetch, process or imports in CodeMode. "
+            "Do not launch a browser as a fallback for an ordinary data lookup unless the user requests browser interaction. "
+            "Use returned source and observation times when reporting time-sensitive facts."
+        )
     return "\n\n".join(parts)
 
 

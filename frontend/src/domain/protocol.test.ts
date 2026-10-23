@@ -165,6 +165,16 @@ describe('protocol decoders', () => {
     expect(decodeRunState({ busy: false, run_id: '', session_id: '' })).toMatchObject({ busy: false });
   });
 
+  it('validates the shared lifecycle version contract on events and snapshots', () => {
+    const row = { run_id: 'r', session_id: 's', task_revision: 8, task_status: 'running' };
+    expect(decodeRunState({ busy: false, task_states: [row] }).task_states).toEqual([row]);
+    for (const task_revision of [-1, true, '8', Number.NaN, 1.5]) {
+      expect(() => decodeRunState({ busy: false, task_states: [{ ...row, task_revision }] })).toThrow('revision');
+      expect(() => decodeServerEvent({ ...row, type: 'task_start', task_revision })).toThrow('revision');
+    }
+    expect(() => decodeRunState({ busy: false, task_states: [{ ...row, task_status: 'unknown' }] })).toThrow('status');
+  });
+
   it('preserves changes mode and metadata required by the drawer', () => {
     expect(
       decodeChangesData({

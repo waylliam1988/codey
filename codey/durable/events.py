@@ -1,6 +1,18 @@
 """Pure, bounded public projections of durable mutations; no raw content."""
 
-from codey.durable.model import DurableMutation, SubmissionStatus
+from collections.abc import Mapping
+
+from codey.durable.model import CommitResult, DurableMutation, SubmissionStatus
+
+
+def committed_task_version(result: CommitResult, task_id: str) -> dict[str, object]:
+    """The exact task version in this commit, not its conversation revision."""
+    if result.record is None:
+        return {}
+    for row in result.record.payload.get("projections", ()):
+        if isinstance(row, Mapping) and row.get("type") == "task_progressed" and row.get("task_id") == task_id:
+            return {"task_revision": row["revision"], "task_status": str(row["status"])}
+    return {}
 
 
 def mutation_projection(mutation: DurableMutation) -> dict[str, object]:

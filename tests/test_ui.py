@@ -552,7 +552,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         # A-1: the SSE hot path (addToSession) must keep the debounced persistActive,
         # otherwise every turn/tool/info event would序列化+落盘 all over again.
         add_start = HTML.index("function addToSession(sid, m)")
-        add_end = HTML.index("function markTerminalRun", add_start)
+        add_end = HTML.index("function recordRunState", add_start)
         add_block = HTML[add_start:add_end]
         self.assertIn("persistActive();", add_block)
         self.assertNotIn("persistActiveNow(", add_block)

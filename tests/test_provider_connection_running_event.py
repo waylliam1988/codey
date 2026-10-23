@@ -53,7 +53,7 @@ def test_replayed_connection_status_keeps_running_display(status, text, kind, sc
     if node is None:
         pytest.skip("Node.js unavailable")
     html = frontend_source("legacy-runtime")
-    start = html.index("function handleServerEvent(raw)")
+    start = html.index("function handleServerEvent(raw,")
     # Load the dispatcher's real SSE and request-filter dependencies. Only the
     # DOM rendering branches are outside this status-replay scenario.
     source = html[start:html.index("if (data.type === 'providers')", start)] + "}\n"

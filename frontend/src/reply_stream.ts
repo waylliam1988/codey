@@ -1,4 +1,5 @@
 import type { Message, Session } from './types/domain';
+import { isTerminalRun } from './run_lifecycle';
 export interface ReplySnapshot {
   stream_id: string;
   run_id: string;
@@ -22,7 +23,7 @@ export function streamMessage(session: Session, event: ReplySnapshot): Message |
   );
   if (old && ((old.streamSequence || 0) >= event.sequence || old.finalAnswer || old.streamState !== 'partial'))
     return null;
-  if (session.terminalRuns?.includes(event.run_id)) return null;
+  if (isTerminalRun(session, event.run_id)) return null;
   const request = session.messages.find(
     (message) =>
       message.type === 'user' && message.id && message.attempts?.some((attempt) => attempt.runId === event.run_id),

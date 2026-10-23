@@ -10,6 +10,8 @@ export type ProviderStatus = Array<{ id: string; available?: boolean; freshness?
 
 import type { ChangeFile, ChangeFilePreview, ChangesData, ResearchPayload, RunState } from '../types/domain';
 export type ServerEvent = {
+  task_revision?: number;
+  task_status?: string;
   type: string;
   commit_seq?: number;
   database_id?: string;
@@ -250,6 +252,29 @@ export function decodeRunState(value: unknown): RunState {
     throw new Error('busy run state requires run and session IDs');
   }
   const state: RunState = {};
+  if (value.task_states !== undefined) {
+    if (!Array.isArray(value.task_states)) throw new Error('task states are invalid');
+    state.task_states = value.task_states.map((row) => {
+      if (
+        !isRecord(row) ||
+        typeof row.run_id !== 'string' ||
+        !row.run_id ||
+        typeof row.session_id !== 'string' ||
+        !row.session_id ||
+        row.task_revision === undefined ||
+        row.task_status === undefined
+      )
+        throw new Error('task state is invalid');
+      decodeServerEvent({ ...row, type: 'task_start' });
+      return {
+        run_id: row.run_id,
+        session_id: row.session_id,
+        task_revision: row.task_revision as number,
+        task_status: row.task_status as string,
+        ...(typeof row.stop_reason === 'string' ? { stop_reason: row.stop_reason } : {}),
+      };
+    });
+  }
   for (const key of ['busy', 'run_id', 'session_id', 'run_status', 'research_restore_runs'] as const) {
     const item = value[key];
     if (item === undefined || item === null) continue;
@@ -294,6 +319,17 @@ export function decodeServerEvent(value: unknown): ServerEvent {
   if (!isRecord(value) || typeof value.type !== 'string' || value.type.length === 0) {
     throw new Error('server event is invalid');
   }
+  if (
+    value.task_revision !== undefined &&
+    (!Number.isSafeInteger(value.task_revision) || (value.task_revision as number) < 0)
+  )
+    throw new Error('task revision is invalid');
+  if (
+    value.task_status !== undefined &&
+    (typeof value.task_status !== 'string' ||
+      !['pending', 'running', 'waiting', 'completing', 'completed', 'failed', 'cancelled'].includes(value.task_status))
+  )
+    throw new Error('task status is invalid');
   if (
     value.type === 'hello' &&
     (typeof value.database_id !== 'string' ||

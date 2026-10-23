@@ -1,5 +1,6 @@
 import { runtime } from './runtime';
 import type { Message, Session } from './types/domain';
+import { isRunSuspension, isTerminalRun } from './run_lifecycle';
 export interface RequestAttempt {
   runId: string;
   state: import('./types/domain').AttemptState;
@@ -27,6 +28,7 @@ export interface RequestEventData {
   response_ack_run_id?: string;
 }
 export interface RequestsApi {
+  projectLifecycle(data: RequestEventData, state: string): boolean;
   init(deps: RequestsDeps): void;
   begin(sessionId: string, text: string, requestId?: string): { request: Message; attempt: RequestAttempt } | null;
   canRetry(sessionId: string, requestId: string): boolean;
@@ -72,7 +74,7 @@ export interface RequestsDeps {
   type EventData = RequestEventData;
   type StatusNode = HTMLDivElement & { _detailsOpen?: boolean };
   let deps: RequestsDeps = {} as RequestsDeps;
-  const pending = (attempt: Attempt): boolean => ['sending', 'running'].includes(attempt.state);
+  const pending = (attempt: Attempt): boolean => ['sending', 'running', 'waiting'].includes(attempt.state);
   const latest = (request: RequestMessage): Attempt => request.attempts[request.attempts.length - 1];
   function init(nextDeps: RequestsDeps): void {
     deps = nextDeps;
@@ -175,9 +177,20 @@ export interface RequestsDeps {
       data.run_id,
       failed
         ? { state: 'failed', error: summary.replace(/^ERROR:\s*/i, '') || 'Task failed' }
-        : { state: data.stop_reason === 'done' || !data.stop_reason ? 'done' : 'paused' },
+        : {
+            state: isRunSuspension(data.stop_reason)
+              ? 'waiting'
+              : data.stop_reason === 'done' || !data.stop_reason
+                ? 'done'
+                : 'paused',
+          },
     );
     return failed;
+  }
+  function projectLifecycle(data: EventData, state: string): boolean {
+    if (state === 'running') return update(data.session_id, data.run_id, { state: 'running' });
+    if (state === 'idle') return false;
+    return finish({ ...data, stop_reason: state });
   }
   function warning(sessionId: string, runId: string): boolean {
     return update(sessionId, runId, { warning: 'Local memory update unavailable' });
@@ -185,7 +198,7 @@ export interface RequestsDeps {
   function acceptsEvent(data: EventData): boolean {
     // History restores durable user entries without a browser attempt. The
     // session's settled run identities still forbid replay from reviving work.
-    if (data.type === 'task_start' && session(data.session_id)?.terminalRuns?.includes(data.run_id)) return false;
+    if (data.type === 'task_start' && isTerminalRun(session(data.session_id), data.run_id)) return false;
     const match = forRun(data.session_id, data.run_id);
     if (!match) return true;
     // Approvals and their settlements remain real records after a run ends.
@@ -205,14 +218,15 @@ export interface RequestsDeps {
         (m: Message): m is RequestMessage => m.type === 'user' && Array.isArray(m.attempts) && m.attempts.length > 0,
       )) {
         const attempt = latest(request);
+        if (active.has(`${s.id}\u0000${attempt.runId}`)) continue;
         if (!pending(attempt)) continue;
-        if (active.has(`${s.id}\u0000${attempt.runId}`)) running(s.id, attempt.runId);
         // An in-flight POST has not been admitted yet. A snapshot for another
         // session is not evidence of failure, and a delayed response may still
         // be followed by task_start on SSE. Only explicit HTTP failure or the
         // matching terminal event may settle a sending attempt.
-        else if (
+        if (
           attempt.state !== 'sending' &&
+          attempt.state !== 'waiting' &&
           (!runtime.Composer.isSending(s.id) || attempt.runId === data.response_ack_run_id)
         )
           fail(s.id, attempt.runId, 'Response was not confirmed');
@@ -241,9 +255,14 @@ export interface RequestsDeps {
       value.className = 'run-details-value';
       value.textContent = [
         attempt.error ||
-          { sending: 'Sending', running: 'Running', done: 'Completed', paused: 'Paused', failed: 'Failed' }[
-            attempt.state
-          ],
+          {
+            sending: 'Sending',
+            running: 'Running',
+            waiting: 'Waiting',
+            done: 'Completed',
+            paused: 'Paused',
+            failed: 'Failed',
+          }[attempt.state],
         attempt.warning,
       ]
         .filter(Boolean)
@@ -377,6 +396,7 @@ export interface RequestsDeps {
     return true;
   }
   runtime.Requests = {
+    projectLifecycle,
     init,
     begin,
     canRetry,

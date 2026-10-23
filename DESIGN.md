@@ -80,6 +80,26 @@ Show save failures beside the original command; Retry saving must never execute
 the command again. Merge process records with their owning turn above its final
 answer, and clear Waiting for approval after execution and continuation advance.
 
+Approval and user-question waits park a worker; they do not complete its durable
+task. The same task ID can resume, stream and deliver its final answer. Reserve
+terminal deduplication for actual completion/cancellation/failure. Lifecycle
+events capture the durable `TaskCheckpoint.revision` when produced, and state
+snapshots expose the current checkpoint revision/status. Both pass through one
+frontend transition boundary before changing active owners, Stop, request state
+or process messages. Reject older versions and conflicting equal-version states;
+observed terminal states are irreversible, including against newer active or
+waiting snapshots. SSE cursors additionally fence same-version replay. Older
+servers use a conservative snapshot/replay barrier when versions are absent.
+Repair legacy terminal caches only at the snapshot restore boundary; never
+reinterpret terminal ownership from the last displayed message. The frontend
+version watermarks are disposable projections, not a persisted task runtime.
+Reconnection must not hide Stop, suppress the final answer or execute a command
+a second time.
+An ordinary external-data lookup may use an approved bounded Shell HTTP command
+without opening a browser. Do not automatically enable Research's browser-backed
+source provider for ordinary chat. CodeMode host-access failures describe that
+sandbox alone and must not be presented as a machine-wide network prohibition.
+
 ---
 
 ## 1. Design intent

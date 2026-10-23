@@ -516,6 +516,8 @@ class AppContext(GhostStoreAccessors):
         self.input_queue.wake.set()
 
     def finish_run(self, run_id: str, event: dict[str, Any]) -> bool:
+        from codey.app.task_lifecycle_projection import version_task_event
+        event = version_task_event(self.durable, event)
         payload = self.run_registry.finish(run_id, event)
         if payload is None:
             return False
@@ -876,6 +878,8 @@ class AppContext(GhostStoreAccessors):
         if not payload["busy"] and approval_work is not None:
             payload.update(busy=True, run_id=approval_work["source_run_id"],
                            session_id=approval_work["session_id"], run_status="running")
+        from codey.app.task_lifecycle_projection import snapshot_tasks
+        payload["task_states"] = snapshot_tasks(self.durable, payload)
         return payload
 
     def _pending_ui_event(self, active: RunSnapshot | None) -> dict[str, Any] | None:
@@ -883,6 +887,8 @@ class AppContext(GhostStoreAccessors):
             return self.approvals.pending_ui_event(active)
 
     def emit(self, event: dict[str, Any]) -> None:
+        from codey.app.task_lifecycle_projection import version_task_event
+        event = version_task_event(self.durable, event)
         with self.lock:
             payload = event_bus.stamp_run_scope(
                 dict(event),

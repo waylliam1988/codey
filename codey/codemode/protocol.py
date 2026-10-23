@@ -28,7 +28,11 @@ def parse_codemode_args(args: Mapping[str, Any], *, limits: CodeModeLimits | Non
     if language not in {"javascript", "js"}:
         raise ValueError("codemode language must be javascript")
     if _DENIED_SOURCE.search(code):
-        raise ValueError("codemode recursive or host access is denied")
+        raise ValueError(
+            "codemode recursive or host access is denied. This restriction is local to CodeMode, "
+            "not a host network denial. Use an authorized tool from the supplied contract; "
+            "if shell is available, request approval for a bounded HTTP command there."
+        )
     return CodeModeProgram(code=code, language="javascript")
 
 
