@@ -168,15 +168,14 @@ export interface RequestsDeps {
   function fail(sessionId: string, runId: string, error: string, fields: Partial<Attempt> = {}): boolean {
     return update(sessionId, runId, { state: 'failed', error, ...fields });
   }
-  function finish(data: EventData): boolean {
+  function finish(data: EventData, fields: Partial<Attempt> = {}): boolean {
     const match = forRun(data.session_id, data.run_id);
     if (!match) return false;
     const summary = String(data.summary || '');
     const failed = data.stop_reason === 'error' || summary.startsWith('ERROR:');
-    update(
-      data.session_id,
-      data.run_id,
-      failed
+    update(data.session_id, data.run_id, {
+      ...fields,
+      ...(failed
         ? { state: 'failed', error: summary.replace(/^ERROR:\s*/i, '') || 'Task failed' }
         : {
             state: isRunSuspension(data.stop_reason)
@@ -184,14 +183,19 @@ export interface RequestsDeps {
               : data.stop_reason === 'done' || !data.stop_reason
                 ? 'done'
                 : 'paused',
-          },
-    );
+          }),
+    });
     return failed;
   }
   function projectLifecycle(data: EventData, state: string): boolean {
-    if (state === 'running') return update(data.session_id, data.run_id, { state: 'running' });
     if (state === 'idle') return false;
-    return finish({ ...data, stop_reason: state });
+    const attempt = forRun(data.session_id, data.run_id)?.attempt;
+    const fields =
+      attempt?.sendFailure === 'admission_unconfirmed'
+        ? { sendFailure: undefined, error: undefined, runOwner: undefined }
+        : {};
+    if (state === 'running') return update(data.session_id, data.run_id, { ...fields, state: 'running' });
+    return finish({ ...data, stop_reason: state }, fields);
   }
   function warning(sessionId: string, runId: string): boolean {
     return update(sessionId, runId, { warning: 'Local memory update unavailable' });

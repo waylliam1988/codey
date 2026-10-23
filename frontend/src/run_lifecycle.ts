@@ -17,13 +17,14 @@ export interface LifecycleInput {
   runId: string;
   sessionId: string;
   state: string;
-  active: boolean;
+  active?: boolean;
   revision?: number;
   sequence?: number;
   source: 'event' | 'snapshot' | 'admission';
 }
 
 export interface LifecycleView extends LifecycleInput {
+  active: boolean;
   terminal: boolean;
   restored: boolean;
   snapshotBarrier: boolean;
@@ -55,7 +56,12 @@ export class RunLifecycleProjection {
     if (!input.runId || !input.sessionId) return null;
     const old = this.rows.get(input.runId);
     if (old && old.sessionId !== input.sessionId) return null;
-    const terminal = !input.active && !isRunSuspension(input.state) && input.state !== 'idle';
+    // Cached lifecycle events do not carry the owner registry. Missing
+    // ownership is not evidence that an equal-version waiting owner vanished.
+    const sameRevision = !!old && input.revision === old.revision;
+    const active =
+      input.active ?? (sameRevision && old?.state === input.state && isRunSuspension(input.state) ? old.active : false);
+    const terminal = !active && !isRunSuspension(input.state) && input.state !== 'idle';
     const migration = old?.restored && input.source === 'snapshot';
     // Actual terminal states are irreversible. Only the snapshot restore
     // boundary may repair a legacy cache that incorrectly settled a park.
@@ -65,7 +71,18 @@ export class RunLifecycleProjection {
         if (input.revision === undefined || input.revision < old.revision) return null;
         if (input.revision === old.revision && input.state !== old.state) return null;
       }
-      const sameRevision = input.revision === old.revision;
+      // A waiting lifecycle event describes the checkpoint, not whether its
+      // worker/approval owner is still present. Only a snapshot may remove
+      // same-version activity that an authoritative owner snapshot confirmed.
+      if (
+        sameRevision &&
+        old.snapshotBarrier &&
+        old.active &&
+        !active &&
+        isRunSuspension(input.state) &&
+        input.source !== 'snapshot'
+      )
+        return null;
       if (
         sameRevision &&
         input.source === 'event' &&
@@ -87,13 +104,15 @@ export class RunLifecycleProjection {
         return null;
       if (input.source === 'admission' && old.source !== 'admission') return null;
     }
+    const sameVersion = sameRevision && !migration;
     const view: LifecycleView = {
       ...input,
+      active,
       terminal,
       restored: false,
       revision: input.revision ?? old?.revision,
-      sequence: input.sequence ?? old?.sequence,
-      snapshotBarrier: (input.source === 'snapshot' && input.active) || !!old?.snapshotBarrier,
+      sequence: input.sequence ?? (sameVersion ? old?.sequence : undefined),
+      snapshotBarrier: (input.source === 'snapshot' && active) || (sameVersion && !!old?.snapshotBarrier),
     };
     this.rows.set(input.runId, view);
     return view;

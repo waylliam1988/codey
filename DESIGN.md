@@ -88,7 +88,12 @@ snapshots expose the current checkpoint revision/status. Both pass through one
 frontend transition boundary before changing active owners, Stop, request state
 or process messages. Reject older versions and conflicting equal-version states;
 observed terminal states are irreversible, including against newer active or
-waiting snapshots. SSE cursors additionally fence same-version replay. Older
+waiting snapshots. Missing ownership in a cached lifecycle event cannot clear
+an equal-version waiting owner confirmed by a state snapshot; only an explicit
+snapshot may remove that owner. SSE cursors fence replay within the same task
+version and must not be inherited into a newer version. Confirmed lifecycle
+projection clears ambiguous-admission failure metadata, while retaining a real
+execution failure or an explicit cancellation request. Older
 servers use a conservative snapshot/replay barrier when versions are absent.
 Repair legacy terminal caches only at the snapshot restore boundary; never
 reinterpret terminal ownership from the last displayed message. The frontend

@@ -139,3 +139,28 @@ def test_versioned_snapshots_and_events_share_an_irreversible_boundary(page, ter
         emit(page, run, 'task_done', stop_reason='approval', task_revision=5, event_id=202)
     expect(page.locator('#stop')).to_be_hidden()
     assert page.evaluate('run => Requests.forRun("a",run).attempt.state', run) == {'done':'done','stopped':'paused','error':'failed'}[terminal]
+
+
+@pytest.mark.parametrize('wait', ['approval','question','waiting'])
+def test_same_version_cached_wait_keeps_snapshot_owner_and_stop(page, wait):
+    run = begin(page)
+    page.evaluate("""value => applyRunState({busy:true,run_id:value.run,session_id:'a',
+      active_runs:[{run_id:value.run,session_id:'a'}],
+      task_states:[{run_id:value.run,session_id:'a',task_status:'waiting',task_revision:7,stop_reason:value.wait}],
+      last_terminal_event:{type:'task_done',run_id:value.run,session_id:'a',task_status:'waiting',task_revision:7,stop_reason:value.wait}})""", {'run':run,'wait':wait})
+    expect(page.locator('#stop')).to_be_visible()
+    emit(page,run,'task_done',task_status='waiting',task_revision=7,stop_reason=wait,event_id=20)
+    expect(page.locator('#stop')).to_be_visible()
+
+
+def test_new_version_accepts_small_bus_sequence_after_snapshot(page):
+    run = begin(page)
+    emit(page,run,'task_done',task_status='waiting',task_revision=5,stop_reason='approval',event_id=1000)
+    page.evaluate("""run => applyRunState({busy:true,run_id:run,session_id:'a',active_runs:[{run_id:run,session_id:'a'}],
+      task_states:[{run_id:run,session_id:'a',task_status:'running',task_revision:8}]})""",run)
+    page.evaluate("run => Requests.fail('a',run,'Confirmation lost')",run)
+    emit(page,run,'task_start',task_status='running',task_revision=8,event_id=1)
+    assert page.evaluate("run => Requests.forRun('a',run).attempt.state",run) == 'running'
+    emit(page,run,'task_done',task_status='completed',task_revision=9,stop_reason='done',event_id=2,summary='Finished')
+    expect(page.locator('#stop')).to_be_hidden()
+    expect(page.locator('.msg.asst')).to_contain_text('Finished')

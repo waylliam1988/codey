@@ -101,3 +101,39 @@ describe('request recovery actions', () => {
     );
   });
 });
+
+it.each(['running', 'approval', 'done', 'stopped', 'error'])(
+  'clears ambiguous admission metadata when lifecycle confirms %s',
+  async (state) => {
+    await import('./requests');
+    const session = {
+      id: 'confirmed',
+      messages: [
+        {
+          type: 'user',
+          id: 'request',
+          text: 'hello',
+          attempts: [
+            {
+              runId: 'run',
+              state: 'failed',
+              error: 'Delivery unknown',
+              sendFailure: 'admission_unconfirmed',
+              runOwner: 'stale-owner',
+            },
+          ],
+        },
+      ],
+    } as Session;
+    window.Requests.init({
+      getSessions: () => [session],
+      getActiveId: () => '',
+      persistActiveNow: vi.fn(),
+    } as unknown as Parameters<typeof window.Requests.init>[0]);
+    window.Requests.projectLifecycle({ session_id: session.id, run_id: 'run' }, state);
+    const attempt = window.Requests.forRun(session.id, 'run')!.attempt;
+    expect(attempt.sendFailure).toBeUndefined();
+    expect(attempt.runOwner).toBeUndefined();
+    if (state !== 'error') expect(attempt.error).toBeUndefined();
+  },
+);

@@ -1237,7 +1237,7 @@ function applyLifecycle(data: ServerEvent, source: LifecycleInput['source'], act
     runId,
     sessionId,
     state,
-    active: active ?? state === 'running',
+    active: active ?? (state === 'running' ? true : undefined),
     revision: data.task_revision,
     sequence: eventSequence(data.event_id),
     source,

@@ -68,3 +68,18 @@ def test_stop_targets_sending_chat_not_another_chats_running_task(page):
     page.wait_for_function('stopCalls.length === 1')
     assert page.evaluate('stopCalls[0] === sentRun')
     assert page.evaluate('stopCalls.includes("other-chat")') is False
+
+
+def test_confirmed_execution_clears_unknown_admission_and_allows_next_send(page):
+    page.evaluate("""() => {
+      const run=Requests.begin('a','Delivery pending').attempt.runId;
+      Requests.fail('a',run,'Delivery unknown',{sendFailure:'admission_unconfirmed',runOwner:'old'});
+      handleServerEvent({type:'task_start',session_id:'a',run_id:run,task_revision:1,task_status:'running'});
+      const attempt=Requests.forRun('a',run).attempt;
+      if(attempt.sendFailure || attempt.error || attempt.runOwner) throw new Error('Stale admission metadata');
+      handleServerEvent({type:'task_done',session_id:'a',run_id:run,task_revision:2,task_status:'completed',stop_reason:'done',summary:'Completed'});
+    }""")
+    page.locator('#task').fill('Next request')
+    expect(page.locator('#send')).to_be_enabled()
+    expect(page.locator('#stop')).to_be_hidden()
+    expect(page.get_by_role('button',name='Check status',exact=True)).to_have_count(0)
