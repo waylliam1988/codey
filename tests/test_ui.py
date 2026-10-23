@@ -748,7 +748,7 @@ global.document = {
     if (id === 'local-config-pop') return fakePop;
     if (id === 'local-config-close') return fakeButtons['local-config-close'] || (fakeButtons['local-config-close'] = fakeButton());
     if (id === 'local-config-save') return fakeButtons['local-config-save'] || (fakeButtons['local-config-save'] = fakeButton());
-    if (id === 'task') return { value: '', style: {}, disabled: false, scrollHeight:40, setSelectionRange: () => {}, addEventListener: () => {}, click: () => {}, before: () => {} };
+    if (id === 'task') return { value: '', style: {}, disabled: false, scrollHeight:40, setSelectionRange: () => {}, addEventListener: () => {}, click: () => {}, before: () => {}, closest: () => null };
     if (id === 'composer-context') return { onclick: null, addEventListener: () => {} };
     if (id === 'send' || id === 'stop') return { onclick: null, disabled: false, style: {}, setAttribute: () => {}, click: () => {} };
     if (id === 'send-hint') return fakeButtons[id] || (fakeButtons[id] = makeElement('span'));
@@ -775,6 +775,7 @@ global.clearInterval = (handle) => {
 global.navigator = {};
 global.HTMLElement = function HTMLElement() {};
 global.HTMLButtonElement = function HTMLButtonElement() {};
+global.HTMLTextAreaElement = function HTMLTextAreaElement() {};
 const uiStateSrc = loadAsset('assets/ui_state.js');
 const providerUiSrc = loadAsset('assets/provider_ui.js');
 const composerSrc = loadAsset('assets/composer.js');

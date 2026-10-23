@@ -525,6 +525,20 @@ $ pytest -q
 
 Plain `--panel` card. `Allow` is `text-btn primary` (weight 500), not colored. Safety through copy and layout (`Deny` left, `Allow` right).
 
+Approval submission and authoritative results update the affected card even while
+an assistant reply is streaming. Preserve the mounted reply, unrelated cards,
+draft, reading position, and process disclosures. Show `Submitting…` immediately,
+disable both decision actions, and replace decided controls with execution state;
+a replayed pending event must not reopen controls during submission. Bound both
+submission and status confirmation to 15 seconds. An unknown outcome offers
+`Check status` without automatically resending the command. Reveal an approval
+by scrolling only the transcript; focus uses `preventScroll`. A newly arriving
+approval does not jump away from a reader who has stopped following.
+
+The application shell is constrained to the viewport. Only the transcript and
+explicit inner panels scroll; wheel chaining, focus, and approval reveal cannot
+move the topbar or composer out of their grid tracks.
+
 **Command results:**
 
 At rest, show one borderless 26px disclosure row: a small terminal SVG, neutral

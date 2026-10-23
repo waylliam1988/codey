@@ -18,6 +18,8 @@ export interface ConversationUiApi {
   updateLatest(): void;
   updateNotice(): void;
   stopFollowing(): void;
+  refreshApprovals(): boolean;
+  revealApproval(id: string): void;
   matchesSession(session: Session): boolean;
   matchesProject(project: Project): boolean;
   appendGroupLabel(list: HTMLElement, text: string, hasMatches: boolean | number): void;
@@ -273,6 +275,35 @@ export interface ConversationUiDeps {
     if (shownId) deferredHistory.add(shownId);
     captureView();
     updateLatest();
+  }
+  function revealApproval(id: string): void {
+    const card = $('chat').querySelector<HTMLElement>(`[data-approval-id="${CSS.escape(id)}"]`);
+    if (!card) return;
+    const area = $('chat-area'),
+      bounds = area.getBoundingClientRect(),
+      rect = card.getBoundingClientRect();
+    // Scroll only the transcript, never the main grid or the document.
+    setScroll(area.scrollTop + rect.top - bounds.top - Math.max(16, (area.clientHeight - rect.height) / 2));
+    card.focus({ preventScroll: true });
+    captureView();
+  }
+  function refreshApprovals(): boolean {
+    const session = deps.activeSession();
+    if (!session || session.id !== shownId) return false;
+    const chat = $('chat'),
+      area = $('chat-area'),
+      top = area.getBoundingClientRect().top;
+    const anchor = Array.from(chat.children).find((node) => node.getBoundingClientRect().bottom > top);
+    const offset = anchor?.getBoundingClientRect().top;
+    const scroll = area.scrollTop;
+    if (!runtime.Messages.updateApprovals(chat, session.messages)) return false;
+    if (following) setScroll(area.scrollHeight);
+    else if (anchor?.isConnected && offset !== undefined)
+      setScroll(area.scrollTop + anchor.getBoundingClientRect().top - offset);
+    else setScroll(scroll);
+    captureView();
+    updateLatest();
+    return true;
   }
   function backToLatest() {
     userScrollPending = false;
@@ -1318,6 +1349,8 @@ export interface ConversationUiDeps {
     updateLatest,
     updateNotice,
     stopFollowing,
+    refreshApprovals,
+    revealApproval,
     matchesSession,
     matchesProject,
     appendGroupLabel,

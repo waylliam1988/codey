@@ -81,7 +81,7 @@ export function createApprovalController(deps: ApprovalDeps) {
     if (old?.revision === state.revision && old.execution === 'uncertain' && state.execution !== 'uncertain') return;
     const request = session.messages.find((m) => m.type === 'shell_request' && m.id === state.id);
     if (state.decision === 'pending') {
-      if (request) delete request.approvalSubmission;
+      if (request && request.approvalSubmission !== 'sending') delete request.approvalSubmission;
       deps.changed(session.id);
       return;
     }
@@ -143,7 +143,10 @@ export function createApprovalController(deps: ApprovalDeps) {
   async function refresh(id: string) {
     submission(id, 'checking');
     try {
-      const response = await deps.fetch(`/api/shell_approval?id=${encodeURIComponent(id)}`, { cache: 'no-store' });
+      const response = await deps.fetch(`/api/shell_approval?id=${encodeURIComponent(id)}`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(15000),
+      });
       if (!response.ok) throw new Error('Approval state unavailable');
       apply(await response.json());
     } catch {
@@ -152,11 +155,17 @@ export function createApprovalController(deps: ApprovalDeps) {
   }
 
   async function submit(id: string, approved: boolean, scope = 'once') {
-    if (!id || inFlight.has(id) || stateFor(id)) return;
+    if (!id || inFlight.has(id)) return;
+    const known = stateFor(id);
+    if (known) {
+      apply(known);
+      return;
+    }
     inFlight.add(id);
     submission(id, 'sending');
     try {
       const response = await deps.fetch('/api/shell_approval', {
+        signal: AbortSignal.timeout(15000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, approved, ...(scope !== 'once' ? { scope } : {}) }),
@@ -202,6 +211,7 @@ export function createApprovalController(deps: ApprovalDeps) {
     inFlight.add(id);
     try {
       const response = await deps.fetch('/api/shell_approval/remember', {
+        signal: AbortSignal.timeout(15000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, scope }),
@@ -226,6 +236,7 @@ export function createApprovalController(deps: ApprovalDeps) {
     inFlight.add(id);
     try {
       const response = await deps.fetch('/api/shell_approval/retry', {
+        signal: AbortSignal.timeout(15000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),

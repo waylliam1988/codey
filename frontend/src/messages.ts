@@ -24,11 +24,13 @@ export interface MessagesApi {
   init(deps: MessagesDeps): void;
   append(chat: HTMLElement, message: Message): void;
   updateReply(chat: HTMLElement, message: Message): boolean;
+  updateApprovals(chat: HTMLElement, messages: Message[]): boolean;
 }
 /* Message presentation; actions are supplied by the application core. */
 (function () {
   'use strict';
   let deps: MessagesDeps = {} as MessagesDeps;
+  const approvalViews = new WeakMap<Element, string>();
   function init(nextDeps: MessagesDeps): void {
     deps = nextDeps;
   }
@@ -48,6 +50,53 @@ export interface MessagesApi {
   }
   function append(chat: HTMLElement, m: Message): void {
     if (!runtime.Process.append(chat, m, appendContent)) appendContent(chat, m);
+  }
+  function updateApprovals(chat: HTMLElement, messages: Message[]): boolean {
+    const ids = new Set(
+      messages
+        .filter((m) => ['shell_request', 'shell_result', 'shell_approval_status'].includes(m.type))
+        .map((m) => m.id),
+    );
+    let updated = false;
+    for (const id of ids) {
+      if (!id) continue;
+      const rows = [
+        ...new Set(
+          Array.from(
+            chat.querySelectorAll<HTMLElement>(`[data-approval-id="${CSS.escape(id)}"]`),
+            (node) => node.closest<HTMLElement>('.msg') || node,
+          ),
+        ),
+      ];
+      if (!rows.length) continue;
+      const records = messages.filter(
+        (m) => m.id === id && ['shell_request', 'shell_result', 'shell_approval_status'].includes(m.type),
+      );
+      const signature = JSON.stringify(records);
+      if (approvalViews.get(rows[0]) === signature) {
+        updated = true;
+        continue;
+      }
+      const fragment = document.createElement('div');
+      for (const message of records) {
+        runtime.Process.append(chat, message, () => {});
+        appendContent(fragment, message);
+      }
+      const open = rows.find((row) => row.matches('.command-card'))?.querySelector<HTMLDetailsElement>('details')?.open;
+      const details = fragment.querySelector<HTMLDetailsElement>('.command-card details');
+      if (details && open !== undefined) details.open = open;
+      const focused = rows.some((row) => row.contains(document.activeElement));
+      const first = fragment.firstElementChild;
+      for (const node of Array.from(fragment.children)) approvalViews.set(node, signature);
+      rows[0].replaceWith(...fragment.childNodes);
+      rows.slice(1).forEach((row) => row.remove());
+      if (focused && first instanceof HTMLElement) {
+        first.tabIndex = -1;
+        first.focus({ preventScroll: true });
+      }
+      updated = true;
+    }
+    return updated;
   }
   function appendContent(chat: HTMLElement, m: Message): void {
     const {
@@ -255,7 +304,9 @@ export interface MessagesApi {
       }
       chat.appendChild(div);
     } else if (m.type === 'shell_request') {
-      chat.append(approvalRequest(m, approveCommand));
+      const row = approvalRequest(m, approveCommand);
+      approvalViews.set(row, JSON.stringify([m]));
+      chat.append(row);
     } else if (m.type === 'shell_approval_status' && m.approval) {
       const state = m.approval;
       // Successful continuation is an internal transition; the shell result
@@ -277,7 +328,9 @@ export interface MessagesApi {
       row.tabIndex = -1;
       chat.appendChild(row);
     } else if (m.type === 'shell_result') {
-      chat.appendChild(commandCard(m, runtime.Render.copyText));
+      const row = commandCard(m, runtime.Render.copyText);
+      approvalViews.set(row, JSON.stringify([m]));
+      chat.appendChild(row);
     } else if (m.type === 'limit') {
       chat.appendChild(
         statusRow('Limit', m.text || 'Turn limit reached', {
@@ -424,5 +477,5 @@ export interface MessagesApi {
       }).then(() => decorateDeliverables(body));
     return true;
   }
-  runtime.Messages = { init, append, updateReply };
+  runtime.Messages = { init, append, updateReply, updateApprovals };
 })();

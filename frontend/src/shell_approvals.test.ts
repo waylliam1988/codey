@@ -150,6 +150,47 @@ it('keeps decisions disabled when neither submission nor status query returns', 
   expect(session.messages[0].approvalSubmission).toBe('unconfirmed');
 });
 
+it('bounds a hanging decision and confirmation without automatically resending the command', async () => {
+  const session = { id: 's', messages: [{ type: 'shell_request', id: 'a' }] } as Session;
+  const controllers: AbortController[] = [];
+  const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => {
+    const controller = new AbortController();
+    controllers.push(controller);
+    return controller.signal;
+  });
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(
+    (_url, options) =>
+      new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new DOMException('Timed out', 'TimeoutError')));
+      }),
+  );
+  try {
+    const controller = createApprovalController({ sessions: () => [session], changed: vi.fn(), fetch: fetcher });
+    const pending = controller.submit('a', true);
+    expect(session.messages[0].approvalSubmission).toBe('sending');
+    controller.apply({
+      type: 'shell_approval_status',
+      id: 'a',
+      session_id: 's',
+      decision: 'pending',
+      execution: 'not_started',
+      continuation: 'waiting_for_result',
+      revision: 1,
+    });
+    expect(session.messages[0].approvalSubmission).toBe('sending');
+    controllers[0].abort();
+    await vi.waitFor(() => expect(controllers).toHaveLength(2));
+    expect(session.messages[0].approvalSubmission).toBe('checking');
+    controllers[1].abort();
+    await pending;
+    expect(session.messages[0].approvalSubmission).toBe('unconfirmed');
+    expect(fetcher.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(1);
+    expect(timeout).toHaveBeenCalledWith(15000);
+  } finally {
+    timeout.mockRestore();
+  }
+});
+
 it('retry continues through a separate endpoint and never resubmits Allow', async () => {
   const { createApprovalController } = await import('./shell_approvals');
   const session = { id: 's', messages: [] } as unknown as Session;

@@ -1,5 +1,6 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
+  html { overflow: clip; }
   ::selection { background-color: var(--selection-bg); color: var(--text); }
   body {
     font-family: var(--font-sans);
@@ -9,7 +10,8 @@
     line-height: 1.6;
     display: grid;
     grid-template-columns: auto 1fr;
-    overflow: hidden;
+    grid-template-rows: minmax(0, 1fr);
+    overflow: clip;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -229,7 +231,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 44px minmax(0, 1fr) auto auto;
-    min-height: 0; min-width: 0; overflow: hidden;
+    min-height: 0; min-width: 0; overflow: clip;
   }
   .topbar {
     display: flex; align-items: center; gap: 10px;
@@ -288,6 +290,7 @@
 
   .chat-area {
     overflow-y: auto;
+    overscroll-behavior-y: contain;
     padding: 24px 0 28px;
     min-height: 0;
   }

@@ -505,7 +505,6 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
 
                     // Following resumes only through the explicit latest action.
                     document.getElementById('back-to-latest').click();
-                    const explicitFollowSucceeded = (chatArea.scrollTop >= maxScroll - 1);
 
                     return {
                         replaced,
@@ -518,9 +517,15 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                         toolHasFinalResult,
                         toolPendingRemoved,
                         scrollAwayPreserved,
-                        explicitFollowSucceeded
+                        explicitFollowSucceeded: false
                     };
                 }""")
+                # Returning to latest can first reconcile deferred durable history.
+                # Await the current transcript, whose render can remove the synthetic spacer.
+                result["explicitFollowSucceeded"] = page.wait_for_function("""() => {
+                    const area=document.getElementById('chat-area');
+                    return ConversationUI.isFollowing() && area.scrollHeight-area.scrollTop-area.clientHeight<=2;
+                }""").json_value()
             finally:
                 browser.close()
 

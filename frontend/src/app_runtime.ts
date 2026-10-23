@@ -1570,9 +1570,8 @@ function handleServerEvent(raw: unknown) {
     });
     if (sid === activeId && isNew)
       requestAnimationFrame(() => {
-        const card = document.querySelector<HTMLElement>(`[data-approval-id="${CSS.escape(data.id || '')}"]`);
-        card?.scrollIntoView({ block: 'center' });
-        card?.focus({ preventScroll: true });
+        if (sid === activeId && runtime.ConversationUI.isFollowing())
+          runtime.ConversationUI.revealApproval(data.id || '');
       });
     return;
   }
@@ -2024,10 +2023,10 @@ const approvalController = createApprovalController({
     const session = sessions.find((s) => s.id === sid);
     if (session) hydrateSessionIndexes(session);
     persistActive();
-    if (sid === activeId) renderChat();
+    if (sid === activeId && !runtime.ConversationUI.refreshApprovals()) renderChat();
   },
   fetch: (...args) => fetch(...args),
-  focus: (id) => document.querySelector<HTMLElement>(`[data-approval-id="${CSS.escape(id)}"]`)?.focus(),
+  focus: (id) => runtime.ConversationUI.revealApproval(id),
 });
 runtime.ShellApprovals = approvalController;
 
