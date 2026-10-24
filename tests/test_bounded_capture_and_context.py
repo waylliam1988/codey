@@ -509,13 +509,13 @@ class TruncationPropagationTests(unittest.TestCase):
 
 
 class LocalPrepareRequestTests(unittest.TestCase):
-    def _provider(self):
+    def _provider(self, *, context_window_tokens=200):
         from codey.providers.api_provider import ApiProvider
 
         return ApiProvider(
             base_url="http://127.0.0.1:9/v1",
             model="test",
-            context_window_tokens=200,
+            context_window_tokens=context_window_tokens,
             context_reserve_tokens=50,
             context_keep_recent_tokens=60,
         )
@@ -569,22 +569,35 @@ class LocalPrepareRequestTests(unittest.TestCase):
         self.assertEqual(provider._messages, before)
 
     def test_compaction_failure_is_explicit(self) -> None:
+        import time
+
         from codey.providers import error_classification as errors
 
-        provider = self._provider()
+        # The actual request clock is part of the irreducible envelope. Leave
+        # room for it and the new input, but not the old history; otherwise the
+        # correct minimum-input rejection never reaches the injected failure.
+        provider = self._provider(context_window_tokens=512)
+        history = [{"role": "user", "content": "old" * 1000}]
+        provider._messages = history.copy()
+        minimum = provider.count_text("hello", deadline=time.monotonic() + 5)
+        self.assertIsNotNone(minimum.value)
+        self.assertLessEqual(minimum.value, provider.context_budget.input_limit)
         with (
             mock.patch(
                 "codey.providers.compaction.CompactionCoordinator.compact",
                 side_effect=RuntimeError("boom"),
-            ),
+            ) as compact,
             mock.patch(
                 "codey.providers.api_transport.open_request",
                 side_effect=AssertionError("must not send"),
-            ),self.assertRaisesRegex(errors.RequestPrepError, "compaction failed")
+            ) as send,
+            self.assertRaisesRegex(errors.RequestPrepError, "compaction failed") as caught,
         ):
-            provider._messages = [{"role": "user", "content": "old" * 1000}]
             provider.send("hello")
-        self.assertEqual(provider._messages, [{"role": "user", "content": "old" * 1000}])
+        compact.assert_called_once()
+        send.assert_not_called()
+        self.assertIsInstance(caught.exception.__cause__, RuntimeError)
+        self.assertEqual(provider._messages, history)
 
     def test_prep_failure_settles_not_sent_without_rollover(self) -> None:
         import tempfile
