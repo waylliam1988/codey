@@ -266,34 +266,37 @@ def execute_turn(
         *,
         exit_code: object = None,
     ) -> None:
-        staged = session.clone_projection()
-        ledger = getattr(research_tools, "ledger", None)
-        staged_ledger = ledger.clone() if ledger is not None else None
-        # Receipt validation and projection happen before the commit barrier,
-        # on disposable views. A committed result is the sole replay input.
-        if identity not in session.executed and identity not in session.restored_effect_ids:
-            project_result_observation(staged, call, result, ok=ok,
-                                       exit_code=strict_exit_code_or_none(exit_code), research_ledger=staged_ledger)
-        project_execution_record(staged, identity, call, result, ok=ok, exit_code=exit_code)
-        if intent_sink is not None:
-            # 统一 sink 协议：生产 sink 一律接收 result/exit_code，无旧签名回退
-            intent_sink.settle(
-                identity,
-                ok if type(ok) is bool else False,
-                result=result,
-                exit_code=exit_code if isinstance(exit_code, int) else None,
-            )
-        if ledger is not None and staged_ledger is not None:
-            ledger.commit_projection(staged_ledger)
-            if hasattr(research_tools, "sources_read"):
-                research_tools.sources_read.update(
-                    url for source in ledger.opened_sources for url in (source.requested_url, source.final_url)
+        # Parallel tools may finish together. Serialize only the commit view,
+        # so two successful receipts cannot publish clones that erase each other.
+        with session.projection_lock:
+            staged = session.clone_projection()
+            ledger = getattr(research_tools, "ledger", None)
+            staged_ledger = ledger.clone() if ledger is not None else None
+            # Receipt validation and projection happen before the commit barrier,
+            # on disposable views. A committed result is the sole replay input.
+            if identity not in session.executed and identity not in session.restored_effect_ids:
+                project_result_observation(staged, call, result, ok=ok,
+                                           exit_code=strict_exit_code_or_none(exit_code), research_ledger=staged_ledger)
+            project_execution_record(staged, identity, call, result, ok=ok, exit_code=exit_code)
+            if intent_sink is not None:
+                # 统一 sink 协议：生产 sink 一律接收 result/exit_code，无旧签名回退
+                intent_sink.settle(
+                    identity,
+                    ok if type(ok) is bool else False,
+                    result=result,
+                    exit_code=exit_code if isinstance(exit_code, int) else None,
                 )
-            if hasattr(research_tools, "search_result_urls"):
-                research_tools.search_result_urls.update(hit.url for search in ledger.searches for hit in search.results)
-        session.commit_projection(staged)
-        with _contextlib.suppress(Exception):
-            session._memory_results[identity] = result
+            if ledger is not None and staged_ledger is not None:
+                ledger.commit_projection(staged_ledger)
+                if hasattr(research_tools, "sources_read"):
+                    research_tools.sources_read.update(
+                        url for source in ledger.opened_sources for url in (source.requested_url, source.final_url)
+                    )
+                if hasattr(research_tools, "search_result_urls"):
+                    research_tools.search_result_urls.update(hit.url for search in ledger.searches for hit in search.results)
+            session.commit_projection(staged)
+            with _contextlib.suppress(Exception):
+                session._memory_results[identity] = result
 
     def reconcile_intent_only(identity: str, ok: bool, result: ToolResult) -> None:
         # Already-durable replay: never rewrite ``session.executed``, only

@@ -213,7 +213,14 @@ def _required_checks_verdict(session: Any, deduped: list[CompletionCheck]) -> Ga
             by_id.setdefault((row.check_id or ""), []).append(row)
         except Exception:
             continue
-    for req in required:
+    from codey.policies.tool_requirement import parse_tool_success_check
+
+    for declaration in required:
+        try:
+            requirement = parse_tool_success_check(declaration)
+        except (ValueError, TypeError):
+            return GateVerdict(complete=False, followup="Invalid declared tool requirement; task cannot complete.", proof=None)
+        req = requirement.check_id if requirement is not None else declaration
         rows = by_id.get(req, [])
         if not rows:
             return GateVerdict(
@@ -242,12 +249,15 @@ def _required_checks_verdict(session: Any, deduped: list[CompletionCheck]) -> Ga
                 reason = (rows[0].reason_code or "")
             except Exception:
                 reason = ""
+            instruction = "Collect the missing local evidence or fresh verification, then propose done again."
+            if requirement is not None:
+                instruction = requirement.guidance
             return GateVerdict(
                 complete=False,
                 followup=(
                     f"Not done yet (required check '{req}' is {status or 'missing'}"
                     f"{f': {reason}' if reason else ''}). "
-                    "Collect the missing local evidence or fresh verification, then propose done again."
+                    + instruction
                 ),
                 proof=None,
             )
@@ -310,18 +320,20 @@ def _required_tool_checks(session: Any) -> list[CompletionCheck]:
     These are tool observations, not model assertions or inferred workflows.
     Recovery rebuilds the same projection from committed result receipts.
     """
+    from codey.policies.tool_requirement import parse_tool_success_check
+
     rows: list[CompletionCheck] = []
     for check_id in getattr(session.policy, "required_checks", ()):
-        if not check_id.startswith("tool_succeeded:"):
+        try:
+            requirement = parse_tool_success_check(check_id)
+        except (ValueError, TypeError):
+            rows.append(CompletionCheck("invalid_tool_requirement", CHECK_FAIL, "invalid_tool_requirement"))
             continue
-        name = check_id.removeprefix("tool_succeeded:")
-        observed = bool(name) and any(
-            row.get("name") == name and row.get("ok") is True
-            and row.get("execution_disposition") != "denied_before_execution"
-            for row in session.executed.values()
-        )
-        rows.append(CompletionCheck(check_id, CHECK_PASS if observed else CHECK_FAIL,
-                                    "" if observed else f"successful_tool_observation_required:{name}"))
+        if requirement is None:
+            continue
+        observed = requirement.satisfied_by(session.executed)
+        rows.append(CompletionCheck(requirement.check_id, CHECK_PASS if observed else CHECK_FAIL,
+                                    "" if observed else f"successful_tool_observation_required:{requirement.tool}"))
     return rows
 
 

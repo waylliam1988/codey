@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields, replace
+from threading import RLock
 from typing import Any
 
 from codey.policies.command_line import ShellSpec, resolve_shell
@@ -89,6 +90,7 @@ class TaskSession:
     _memory_results: dict[str, ToolResult] = field(default_factory=dict, repr=False, compare=False)
     restored_effect_ids: set[str] = field(default_factory=set, repr=False, compare=False)
     shell: ShellSpec = field(default_factory=resolve_shell)
+    projection_lock: RLock = field(default_factory=RLock, repr=False, compare=False)
 
     def clone_projection(self) -> TaskSession:
         """Isolate mutable projection containers, without copying capabilities."""

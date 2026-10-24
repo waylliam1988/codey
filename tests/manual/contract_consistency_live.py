@@ -25,6 +25,7 @@ from codey.operations.task_loop import (
 )
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from codey.policies.tool_requirement import require_tool_success
 from codey.providers.local_config import LocalContextBudget, LocalProviderConfig
 from codey.providers.local_connection import connect_local
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
@@ -44,8 +45,11 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
         'Use codemode to read a.txt and b.txt. Return exactly a JSON object with keys "a" and "b" '
         "containing their observed first lines. Do not modify files."
     )
+    required = ((require_tool_success("edit", via="codemode", arguments={"path": "created.txt"}),) if writing else
+                tuple(require_tool_success("read_file", via="codemode", arguments={"path": path})
+                      for path in ("a.txt", "b.txt")))
     policy = TaskPolicy(frozenset({"control", "project.read"} | ({"project.write"} if writing else set())),
-        required_checks=("tool_succeeded:codemode",), denied_capabilities=frozenset({"project.verify"}))
+        required_checks=required, denied_capabilities=frozenset({"project.verify"}))
     record_entry_policy(mutations, session_id="s", run_id="r", policy=policy)
     session = TaskSession(policy=policy, project=str(project), task_text=task, max_turns=8,
                           project_changes_required=writing, verification_forbidden=True)

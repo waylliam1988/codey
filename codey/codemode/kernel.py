@@ -145,6 +145,9 @@ def build_execute_turn_executor(
     child_executors = {key: value for key, value in dict(executors or {}).items() if key != "codemode"}
 
     def run_parent(call: ToolCall) -> ToolResult:
+        from codey.operations.task_session import turn_effect_id
+
+        child_effect_ids: list[str] = []
         digest = hashlib.sha256(
             json.dumps(call.args, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()[:16]
@@ -192,6 +195,10 @@ def build_execute_turn_executor(
             )
             if not results:
                 raise RuntimeError("nested kernel returned no tool result")
+            child_identity = turn_effect_id(f"{run_id}:{child_effect_scope}", turn, child_index)
+            if child_identity not in session.executed:
+                raise RuntimeError("nested kernel result was not committed")
+            child_effect_ids.append(child_identity)
             if on_event is not None:
                 result = results[0]
                 outcome = ToolOutcome(model_text=result.model_text, ok=result.ok,
@@ -215,6 +222,8 @@ def build_execute_turn_executor(
             session_id=session_id,
             run_id=str(run_id or ""),
         ).execute(call)
+        # References only: child facts stay in their original committed receipts.
+        result = replace(result, canonical={**result.canonical, "child_effect_ids": sorted(child_effect_ids)})
         if not result.ok:
             result = replace(result, model_text=codemode_error_text(
                 result.model_text, description=specs["codemode"].description,

@@ -271,6 +271,7 @@
     "codey/policies/shell_powershell.py",
     "codey/policies/shell_risk.py",
     "codey/policies/task_policy.py",
+    "codey/policies/tool_requirement.py",
     "codey/protocols/__init__.py",
     "codey/protocols/base.py",
     "codey/protocols/json_scanner.py",

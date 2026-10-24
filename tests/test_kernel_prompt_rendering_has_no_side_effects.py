@@ -13,7 +13,8 @@ def test_rendering_prompt_does_not_invoke_verification_loader_or_change_session(
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.read"})),
                           edited_files={"app.py": 1},
                           verification_candidate_loader=lambda: calls.append("load") or ())
-    before = deepcopy(vars(session))
+    # The projection lock is a shared runtime capability, not copyable facts.
+    before = deepcopy(vars(session), {id(session.projection_lock): session.projection_lock})
     kernel_prompt.kernel_prompt_for_session(session, tool_names=("read_file",))
     assert calls == []
     assert vars(session) == before

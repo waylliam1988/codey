@@ -9,6 +9,7 @@ from codey.operations.kernel_protocol import _CONTROLLER_ALIASES
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of, _session_workspace_identity
 from codey.operations.kernel_result import _call_args_digest, denied_before_execution, strict_exit_code_or_none
 from codey.operations.task_session import TaskSession
+from codey.policies.tool_requirement import argument_digest
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import (
     restore_ledger_observation,
@@ -247,12 +248,19 @@ def project_execution_record(
     """
     try:
         record: dict[str, Any] = {
-            "name": (result.call.name or ""),
+            "name": canonical_tool_name(result.call.name),
             "ok": ok if type(ok) is bool else False,
             "call_id": str(result.call.call_id or getattr(call, "call_id", "") or ""),
             "excerpt": (result.model_text or "")[:500],
             "args_digest": _call_args_digest(call),
+            "argument_digests": {key: argument_digest(value) for key, value in call.args.items()},
         }
+        children = result.canonical.get("child_effect_ids")
+        if children is not None:
+            if (not isinstance(children, list) or any(not isinstance(ref, str) or not ref for ref in children)
+                    or len(set(children)) != len(children)):
+                raise ValueError("invalid child effect references")
+            record["child_effect_ids"] = list(children)
         if result.canonical.get("workspace_unconfirmed") is True:
             record["applied_edit"] = {"mutation_applied": True, "identity_status": "unconfirmed",
                                       "identity_reason": result.canonical["identity_reason"]}
