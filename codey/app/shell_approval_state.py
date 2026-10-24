@@ -134,10 +134,10 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
     if not isinstance(payload, dict) or not isinstance(payload.get("command"), str):
         return None
     from codey.agents.shell_approval import shell_command_event_fields, shell_command_payload
-    from codey.policies.command_line import ShellSpec
+    from codey.policies.shell_analysis import request_analysis
 
     try:
-        shell = ShellSpec.from_payload(payload.get("shell"))
+        shell, analysis = request_analysis(payload)
     except ValueError:
         # Old/malformed requests lack the interpreter the operator would
         # authorize. Never fill it from the environment during recovery.
@@ -146,6 +146,7 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
     command_fields = shell_command_payload(payload["command"])
     pending: dict[str, Any] = {
         "shell": shell.to_payload(),
+        "analysis": analysis.to_payload(),
         "tool_name": str(payload.get("tool_name") or "shell"),
         "tool_args": payload.get("tool_args"),
         "approval_id": fact.approval_id,
@@ -199,9 +200,10 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
     }
     if pending["call_id"]:
         pending["ui_event"]["call_id"] = pending["call_id"]
-    from codey.storage.command_permissions import project_rule_available
+    from codey.storage.command_permissions import project_rule_available, session_rule_available
 
-    pending["ui_event"]["project_rule_available"] = project_rule_available(payload["command"])
+    pending["ui_event"]["session_rule_available"] = session_rule_available(payload["command"], shell=shell, analysis=analysis)
+    pending["ui_event"]["project_rule_available"] = project_rule_available(payload["command"], shell=shell, analysis=analysis)
     source_selection = _source_api_selection(ctx, fact.session_id, fact.source_run_id)
     if source_selection is not None:
         pending["_api_selection"] = source_selection

@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from codey.policies.command_line import ShellSpec, resolve_shell
+from codey.policies.shell_analysis import ShellAnalysis, analyze_shell, bound_analysis
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 
@@ -59,11 +60,19 @@ class ShellApprovalRequest:
     tool_name: str = "shell"
     tool_args: dict[str, object] = field(default_factory=dict)
     shell: ShellSpec = field(default_factory=resolve_shell)
+    analysis: ShellAnalysis | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "command", shell_command_text(self.command))
+        analysis = self.analysis if self.analysis is not None else analyze_shell(self.command, self.shell)
+        bound_analysis(self.command, self.shell, analysis.to_payload())
+        object.__setattr__(self, "analysis", analysis)
 
     def to_payload(self) -> dict[str, object]:
         deferred = tuple(self.deferred_calls[:MAX_DEFERRED_TOOL_CALLS])
         payload: dict[str, object] = {
             "shell": self.shell.to_payload(),
+            "analysis": self.analysis.to_payload() if self.analysis is not None else None,
             "cwd": _bounded_text(self.cwd or ".", MAX_DEFERRED_TEXT_CHARS),
             **shell_command_payload(self.command),
             "deferred_tool_count": len(self.deferred_calls),
@@ -121,12 +130,14 @@ def build_shell_approval_pending(
     并标记 invalid（绝不截断使用）。
     """
     cwd_rel = approval.cwd or "."
+    assert approval.analysis is not None
     fields = dict(command_fields) if isinstance(command_fields, dict) else dict(
         shell_command_payload(approval.command)
     )
     deferred_tool_calls = [item.to_payload() for item in approval.deferred_calls]
     pending: dict[str, object] = {
         "shell": approval.shell.to_payload(),
+        "analysis": approval.analysis.to_payload(),
         "tool_name": approval.tool_name,
         "tool_args": approval.tool_args or {"command": approval.command, "path": cwd_rel},
         "id": approval_id,
@@ -180,9 +191,10 @@ def build_shell_approval_pending(
         "deferred_tool_count": len(approval.deferred_calls),
         "deferred_tool_calls": deferred_tool_calls,
     }
-    from codey.storage.command_permissions import project_rule_available
+    from codey.storage.command_permissions import project_rule_available, session_rule_available
 
-    ui_event["project_rule_available"] = project_rule_available(approval.command)
+    ui_event["session_rule_available"] = session_rule_available(approval.command, shell=approval.shell, analysis=approval.analysis)
+    ui_event["project_rule_available"] = project_rule_available(approval.command, shell=approval.shell, analysis=approval.analysis)
     if "call_id" in pending:
         ui_event["call_id"] = pending["call_id"]
     pending["ui_event"] = ui_event

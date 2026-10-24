@@ -9,8 +9,8 @@ shell or the model. The command artifact is verified before accepting a decision
 Non-allowlisted singleton `run` calls enter the same approval workflow as
 `shell`, after checking the task grant, effective project profile and path
 policy. Hard denials and unavailable approval channels do not create waiting
-cards. Unsupported Windows heredoc syntax is rejected with a compatibility
-explanation before approval. The command is never rewritten after consent.
+cards. Syntax confirmed invalid by the selected dialect analyzer is rejected
+before approval; unknown syntax remains eligible for one-time approval. The command is never rewritten after consent.
 The immutable artifact preserves the original tool name, arguments and call
 ID through execution, native delivery and recovery. An approved arbitrary
 command does not become trusted verification merely because it used `run`.
@@ -21,7 +21,9 @@ also toggle the last 40 retained lines without changing the copied output.
 
 Approval choices are once, exact command in this conversation, and (for
 narrowly supported simple commands) exact command in this project. Grants
-bind canonical project/cwd, shell and an environment fingerprint. Compound
+bind canonical project/cwd, the full shell contract, parser identity and an
+environment fingerprint. Expanding, dynamic, opaque and login-mode commands
+support one-time approval only. Compound
 commands and inline scripts cannot create project rules. Rules live in the
 user state directory, never in repository-controlled configuration. Settings
 and command cards expose the saved rules and revocation. Revocation and the
@@ -40,32 +42,50 @@ selection are reconstructed from that source, rather than from the current UI.
 
 ## Interpreter contract
 
-`TaskSession.shell` captures one immutable `ShellSpec`. The model's dialect
-guidance, action-policy compatibility checks, command-grant identity, command
-artifact, restored approval and spawn ticket carry that same contract. A restored
-approval never substitutes the current environment's interpreter.
+`TaskSession.shell` captures one immutable `ShellSpec`: dialect, actual absolute
+executable, observed version (or explicit null for an unversioned Sh), startup
+mode and executable SHA-256. PowerShell 7 and Windows PowerShell 5.1 share the
+PowerShell dialect; their path/version identify the actual engine. Bash, Zsh,
+Sh and CMD use the same process and approval lifecycle.
 
-The supported defaults remain CMD on Windows and `/bin/sh` on POSIX. Windows
-requires an absolute `cmd.exe` path (COMSPEC, or SystemRoot/System32/cmd.exe when
-COMSPEC is absent); an unsupported explicit COMSPEC fails instead of changing
-dialect. POSIX ignores the interactive terminal's SHELL preference. Different
-interpreters must be invoked explicitly within an approved command.
+Defaults remain CMD on Windows and `/bin/sh` elsewhere. `SHELL_EXECUTABLE`
+selects a supported name/path before admission; `SHELL_STARTUP` selects
+`noninteractive` (default) or `login`. Missing/unsupported explicit choices
+fail; execution does not select an alternate interpreter. CMD rejects login.
+Noninteractive PowerShell uses `-NoProfile`; Bash disables profile/rc, Zsh uses
+`-f`. Login mode allows startup configuration and never acquires saved grants.
 
-The existing cancellation/process-tree owner starts the declared interpreter
-with `shell=False`: CMD receives `/d /s /c` and an intact raw command tail, while
-POSIX receives `[/bin/sh, -c, command]`. CMD AutoRun is disabled for a predictable
-startup. No command translation, shell retry, second execution service or new
-durable log is introduced. Direct allowlisted `run` verification remains argv
-execution and does not acquire shell expansion.
+CMD receives `/d /s /c` with an intact raw command tail. PowerShell receives
+UTF-16LE `-EncodedCommand` with a UTF-8 stdout bootstrap, preserving the original
+script and exit semantics. Native program status requires explicit
+`exit $LASTEXITCODE` in PowerShell. Bash/Zsh/Sh receive the contract's `-c` or
+`-lc` arguments. The existing cancellation/process-tree owner always starts
+these with `shell=False`. Immediately before spawn the entry executable's
+SHA-256 must still match; this does not freeze DLLs, dependencies or profiles.
+Direct allowlisted `run` verification remains argv execution.
 
-`path` is a project-relative working directory; omitting it selects the project
-root. Absolute directories and script filenames are not silently converted.
-The same workdir instruction is rendered once for run/shell. Model guidance
-does not change path policy, task grants, approval requirements or exit status.
+`analyze_shell` is the only syntax analysis entry. It selects bounded CMD
+literal scanning, the locked Bash tree-sitter grammar, or the chosen
+PowerShell engine's native `Parser.ParseInput`. The trusted packaged PowerShell
+helper treats the source as data and never invokes it. Unsupported Sh/Zsh
+extensions, unknown control syntax and parser failures produce `opaque`, not
+a fabricated parse or another parser retry. Confirmed syntax errors produce
+`invalid`. Analysis records commands/words, operators, redirections, expansions
+and dynamic execution in one schema bound to the full command and shell.
+Cmdlet wildcard arguments are conservatively expanding even when quoted.
 
-Old pending artifacts without a shell contract cannot be restored as executable
-approvals; the command needs a new request. Old saved grants do not match the new
-interpreter identity. There is no automatic migration or legacy execution path.
+The same analysis enters action policy, the existing command artifact,
+permission checks, restored pending state and the required execution ticket.
+Recovery validates it without executing a version probe or reparsing. No
+scanner of display text or legacy scanner is retained. Static exact grants
+still use the existing permission store; no second permission system or log
+exists. Project grants additionally require one narrow, simple argv command.
+
+`path` remains a project-relative working directory. The shared instruction is
+rendered once for run/shell. Commands are normalized before admission and are
+never translated or rewritten after approval. Missing/malformed old contracts
+or analysis cannot acquire executable authority during recovery. Old grants
+do not match the new executor/parser identity; new approval is required.
 
 The query projection separates `decision`, `execution` and `continuation`, with a
 revision derived from the durable history. An execution claim without a trusted

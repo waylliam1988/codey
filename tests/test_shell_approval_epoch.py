@@ -117,7 +117,8 @@ class ShellApprovalEpochTests(unittest.TestCase):
         import pathlib
 
         ctx = _FakeCtx(_pending(), generation_at_pop=5, generation_now=5)
-        ticket = shell_service.ShellExecutionTicket(
+        from tests.test_shell_contract import make_ticket
+        ticket = make_ticket(
             command="pytest -q",
             cwd=pathlib.Path(".").resolve(),
             generation=5,

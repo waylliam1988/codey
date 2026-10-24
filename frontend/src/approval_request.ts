@@ -83,11 +83,15 @@ export function approvalRequest(
   const menu = document.createElement('div');
   menu.className = 'approval-menu';
   for (const [scope, label, note] of [
-    [
-      'session',
-      'Allow exact command in this chat',
-      'Same command and working directory. Other commands still need approval.',
-    ],
+    ...(message.sessionRuleAvailable
+      ? [
+          [
+            'session',
+            'Allow exact command in this chat',
+            'Same command and working directory. Other commands still need approval.',
+          ],
+        ]
+      : []),
     ...(message.projectRuleAvailable
       ? [['project', 'Allow exact command in this project', 'Same command and working directory across this project.']]
       : []),

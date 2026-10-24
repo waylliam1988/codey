@@ -12,6 +12,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from codey.app.shell_service import ShellExecutionTicket, execute_shell_ticket
+from codey.policies.command_line import resolve_shell
+from codey.policies.shell_analysis import analyze_shell
 
 
 def main():
@@ -23,8 +25,10 @@ def main():
     context = SimpleNamespace(_shell_spawn_gate=threading.Lock(), approval_generation=lambda: 0,
                               run_registry=SimpleNamespace(stop_flag=threading.Event()))
     with tempfile.TemporaryDirectory(prefix="codey-shell-drift-") as temporary:
+        shell = resolve_shell()
+        command = 'python -c "print(\'SHELL_PINNED\')"'
         ticket = ShellExecutionTicket(command='python -c "print(\'SHELL_PINNED\')"', cwd=Path(temporary),
-                                      generation=0, timeout=10, output_limit=4000)
+                                      generation=0, timeout=10, output_limit=4000, shell=shell, analysis=analyze_shell(command, shell))
         with patch.dict(os.environ, {"COMSPEC": str(Path(temporary) / "missing cmd.exe")}):
             result = execute_shell_ticket(context, ticket)
     row = {"revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),

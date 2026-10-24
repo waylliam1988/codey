@@ -7,14 +7,15 @@ from unittest.mock import Mock
 
 import pytest
 
+from codey.agents.shell_approval import ShellApprovalRequest
 from codey.agents.tools import AgentToolFns
 from codey.app.context import AppContext
 from codey.app.shell_approval_state import restore_pending_shell_approvals
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_loop import _approval_stop
 from codey.operations.task_session import TaskSession
-from codey.policies.command_approval import shell_compatibility_error
-from codey.policies.command_line import resolve_shell
+from codey.policies.command_line import ShellSpec, resolve_shell
+from codey.policies.shell_analysis import analyze_shell
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall
 from codey.storage.command_permissions import CommandPermissionStore, project_rule_available
@@ -73,17 +74,17 @@ def test_invalid_tail_never_creates_approval_and_approved_run_honors_tail(tmp_pa
 
 
 def test_windows_heredoc_requires_explicit_compatible_interpreter(monkeypatch):
-    monkeypatch.setattr('codey.policies.command_line.sys.platform', 'win32')
-    assert 'Bash heredoc' in shell_compatibility_error("python - <<'PY'\nprint(1)\nPY")
-    assert not shell_compatibility_error('bash -lc "python - <<PY\nprint(1)\nPY"')
-    assert not shell_compatibility_error('python -c "print(\'<<PY\')"')
+    shell = ShellSpec("cmd", r"C:\Windows\System32\cmd.exe", None, "noninteractive", "0" * 64)
+    assert analyze_shell("python - <<'PY'\nprint(1)\nPY", shell).status == "invalid"
+    assert analyze_shell('bash -lc "python - <<PY\nprint(1)\nPY"', shell).status != 'invalid'
+    assert analyze_shell('python -c "print(\'<<PY\')"', shell).status != 'invalid'
 
 
 def test_exact_grants_bind_project_cwd_executor_and_chat_and_survive_restart(tmp_path):
     project = tmp_path / 'project'
     project.mkdir()
     pending = {'project': str(project), 'cwd': '.', 'command': 'git status --short', 'session_id': 'chat-a',
-               'shell': resolve_shell().to_payload()}
+               **ShellApprovalRequest('.', 'git status --short').to_payload()}
     store = CommandPermissionStore(tmp_path)
     store.remember(pending, 'session')
     assert CommandPermissionStore(tmp_path).matching(pending)
@@ -100,7 +101,8 @@ def test_exact_grants_bind_project_cwd_executor_and_chat_and_survive_restart(tmp
 @pytest.mark.parametrize('command', ['python -c "print(1)"', 'git status | python evil.py',
                                     'git status && echo extra', 'powershell -Command anything'])
 def test_arbitrary_scripts_and_compound_commands_cannot_be_saved_as_project_rules(tmp_path, command):
-    assert not project_rule_available(command)
+    shell = resolve_shell()
+    assert not project_rule_available(command, shell=shell, analysis=analyze_shell(command,shell))
     with pytest.raises(ValueError):
         CommandPermissionStore(tmp_path).remember({'project': str(tmp_path), 'command': command}, 'project')
 
@@ -110,7 +112,7 @@ def test_corrupt_saved_rules_fail_closed(tmp_path):
     store.path.write_text('{broken', encoding='utf-8')
     with pytest.raises(ValueError):
         store.matching({'command': 'echo x', 'project': str(tmp_path), 'session_id': 'a',
-                        'shell': resolve_shell().to_payload()})
+                        **ShellApprovalRequest('.', 'echo x').to_payload()})
 
 
 def test_retry_saving_a_grant_never_executes_the_command_again(tmp_path, monkeypatch):

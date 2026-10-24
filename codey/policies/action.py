@@ -19,6 +19,7 @@ from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
 )
+from codey.policies.shell_analysis import ShellAnalysis, bound_analysis
 from codey.utils.refs import digest_text, strict_nonnegative_int
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,7 @@ class ActionSubject:
     item_count: int = 0
     approval_available: bool = False
     shell: ShellSpec | None = None
+    analysis: ShellAnalysis | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "kind", _identifier(self.kind, 80))
@@ -110,6 +112,8 @@ class ActionSubject:
         }
         if self.shell is not None:
             private["shell"] = self.shell.to_payload()
+        if self.analysis is not None:
+            private["analysis_digest"] = hashlib.sha256(json.dumps(self.analysis.to_payload(), sort_keys=True).encode()).hexdigest()
         payload = json.dumps(private, sort_keys=True, separators=(",", ":"))
         return "action:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -367,14 +371,11 @@ def run_command_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
     try:
         canonical_run_command(subject.project, subject.path or ".", command)
     except RunCommandPolicyError as exc:
-        from codey.policies.command_approval import shell_compatibility_error
-
-        compatibility_error = shell_compatibility_error(command, shell=subject.shell) if exc.reason_code == "command_not_allowed" else ""
         return ActionPolicyDecision.deny(
             subject,
             guard_id="run_command_guard",
-            reason_code="shell_syntax_unsupported" if compatibility_error else exc.reason_code,
-            display=compatibility_error or exc.display,
+            reason_code=exc.reason_code,
+            display=exc.display,
         )
     return None
 
@@ -389,13 +390,18 @@ def shell_approval_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
             reason_code="command_required",
             display="command required",
         )
-    from codey.policies.command_approval import shell_compatibility_error
-
-    compatibility_error = shell_compatibility_error(subject.command, shell=subject.shell)
-    if compatibility_error:
+    if subject.shell is None or subject.analysis is None:
+        return ActionPolicyDecision.deny(subject, guard_id="shell_approval_guard", reason_code="shell_analysis_required",
+                                         display="a bound shell analysis is required before approval")
+    try:
+        analysis = bound_analysis(subject.command, subject.shell, subject.analysis.to_payload())
+    except ValueError:
+        return ActionPolicyDecision.deny(subject, guard_id="shell_approval_guard", reason_code="shell_analysis_mismatch",
+                                         display="shell analysis differs from the requested command or interpreter")
+    if analysis.status == "invalid":
         return ActionPolicyDecision.deny(
             subject, guard_id="shell_approval_guard", reason_code="shell_syntax_unsupported",
-            display=compatibility_error,
+            display=analysis.reason,
         )
     if not subject.approval_available:
         return ActionPolicyDecision.deny(

@@ -12,7 +12,7 @@ from __future__ import annotations
 import subprocess
 import uuid
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +22,7 @@ from codey.operations.task_context import safe_verification_candidates
 from codey.operations.task_state import TaskState
 from codey.policies.command_line import ShellSpec, resolve_shell
 from codey.policies.limits import SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
+from codey.policies.shell_analysis import ShellAnalysis, analyze_shell, bound_analysis, request_analysis
 from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.runtime.core import cancellation
@@ -156,10 +157,11 @@ class ShellExecutionTicket:
     generation: int
     timeout: int
     output_limit: int
+    shell: ShellSpec
+    analysis: ShellAnalysis
     execution_id: str = ""
     session_id: str = ""
     run_id: str = ""
-    shell: ShellSpec = field(default_factory=resolve_shell)
 
 
 def _approval_generation_current(ctx: TaskState, expected: int) -> bool:
@@ -246,7 +248,9 @@ def mint_shell_ticket(
         if stop_set or claimed_generation != int(current_generation or 0):
             return pending, None
         try:
-            shell = ShellSpec.from_payload(pending.get("shell"))
+            shell, analysis = request_analysis(pending)
+            if analysis.status == "invalid":
+                return pending, None
             cwd = safe_project_cwd(
                 str(pending.get("project") or ""),
                 str(pending.get("cwd") or "."),
@@ -265,6 +269,7 @@ def mint_shell_ticket(
             session_id=str(pending.get("session_id") or ""),
             run_id=str(pending.get("source_run_id") or ""),
             shell=shell,
+            analysis=analysis,
         )
         return pending, ticket
 
@@ -379,6 +384,9 @@ def _execute_shell_ticket(
             # Commit point: Popen while still holding the gate so a Stop that
             # needs the same gate to bump the generation cannot interleave.
             with cancellation.scope(stop_flag):
+                syntax = bound_analysis(command, ticket.shell, ticket.analysis.to_payload())
+                if syntax.status == "invalid":
+                    raise ValueError(syntax.reason)
                 from codey.runtime.core.shell_discovery import binary_fingerprint
                 if binary_fingerprint(ticket.shell.executable) != ticket.shell.binary_sha256:
                     raise ValueError("shell executable changed after approval; request a new approval")
@@ -523,12 +531,15 @@ def execute_approved_shell(
             return _stopped_shell_result()
         except Exception:
             generation = 0
+    shell = resolve_shell()
     ticket = ShellExecutionTicket(
         command=command,
         cwd=cwd,
         generation=(generation or 0),
         timeout=resolved_timeout,
         output_limit=resolved_limit,
+        shell=shell,
+        analysis=analyze_shell(command, shell),
         execution_id="execution_" + uuid.uuid4().hex,
         session_id=str(getattr(ctx, "session_id", "") or "shell"),
         run_id=str(getattr(ctx, "run_id", "") or "shell"),

@@ -132,14 +132,6 @@ class ShellSpec:
                    if self.kind == "sh" else f"Use {self.kind} syntax. ")
         return common + dialect + "Environment variables use $NAME. Quote paths with spaces."
 
-    def compatibility_error(self, command: str) -> str:
-        if (self.kind == "cmd" and _has_unquoted_heredoc(command)
-                and not re.match(r'^\s*(?:"[^"]*bash(?:\.exe)?"|\S*bash(?:\.exe)?)\s+-', command)):
-            return ("Bash heredoc is not supported by the Windows command shell; "
-                    "use an explicit Bash command or a Windows-compatible command.")
-        return ""
-
-
 def resolve_shell(*, platform: str | None = None, environ: Mapping[str, str] | None = None) -> ShellSpec:
     """Resolve once at task admission; never switch dialect after a failure."""
     host = sys.platform if platform is None else platform
@@ -150,21 +142,6 @@ def resolve_shell(*, platform: str | None = None, environ: Mapping[str, str] | N
     if mode not in {"noninteractive", "login"}:
         raise ValueError("shell startup must be noninteractive or login")
     return ShellSpec(kind, executable, version, "login" if mode == "login" else "noninteractive", fingerprint)
-
-
-def _has_unquoted_heredoc(command: str) -> bool:
-    quoted = False
-    escaped = False
-    for index, char in enumerate(command):
-        if escaped:
-            escaped = False
-        elif char == "^":
-            escaped = True
-        elif char == '"':
-            quoted = not quoted
-        elif not quoted and command[index:index + 2] == "<<":
-            return True
-    return False
 
 
 def _is_windows(platform: str) -> bool:

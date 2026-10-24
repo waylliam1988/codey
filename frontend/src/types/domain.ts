@@ -113,6 +113,7 @@ export interface Message extends importToolDisplay {
   permissionScope?: 'session' | 'project';
   permissionSaveScope?: 'session' | 'project';
   permissionSaveError?: string;
+  sessionRuleAvailable?: boolean;
   projectRuleAvailable?: boolean;
   id?: string;
   text?: string;

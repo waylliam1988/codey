@@ -17,6 +17,7 @@ from codey.app.shell_approval_state import restore_pending_shell_approvals
 from codey.operations.kernel_prompt import kernel_prompt_for_session
 from codey.operations.task_session import TaskSession
 from codey.policies.command_line import ShellSpec, resolve_shell
+from codey.policies.shell_analysis import analyze_shell
 from codey.policies.task_policy import TaskPolicy
 from codey.storage.command_permissions import CommandPermissionStore
 from tests.support.shell_approval import admit_shell_task, seed_requested_approval
@@ -65,7 +66,7 @@ def test_session_prompt_and_approval_keep_the_original_shell(monkeypatch):
 
 def test_grants_bind_the_persisted_interpreter(tmp_path):
     shell = resolve_shell()
-    pending = {"project": str(tmp_path), "command": "git status", "session_id": "s", "shell": shell.to_payload()}
+    pending = {"project": str(tmp_path), "command": "git status", "session_id": "s", "shell": shell.to_payload(), "analysis": analyze_shell("git status",shell).to_payload()}
     store = CommandPermissionStore(tmp_path)
     store.remember(pending, "session")
     assert store.matching(pending)
@@ -79,14 +80,14 @@ def test_grants_bind_the_persisted_interpreter(tmp_path):
 
 
 def test_approval_analysis_uses_the_same_pinned_dialect_as_the_prompt(tmp_path, monkeypatch):
-    from codey.policies.command_approval import approval_call
+    from codey.policies.command_approval import analyze_approval_call
     from codey.runtime.core.models import ToolCall
 
     call = ToolCall("shell", {"command": "python - <<'PY'\nprint(1)\nPY", "path": "."})
     monkeypatch.setenv("COMSPEC", "unsupported-shell.exe")
-    assert approval_call(call, project=tmp_path, permission_profile="coding_writer",
-                         shell=spec("sh", "/bin/sh")) is call
-    assert approval_call(call, project=tmp_path, permission_profile="coding_writer",
+    assert analyze_approval_call(call, project=tmp_path, permission_profile="coding_writer",
+                         shell=spec("sh", "/bin/sh")) is not None
+    assert analyze_approval_call(call, project=tmp_path, permission_profile="coding_writer",
                          shell=spec("cmd", r"C:\Windows\System32\cmd.exe")) is None
 
 
@@ -134,6 +135,12 @@ def test_missing_shell_artifact_cannot_be_recovered_as_executable(tmp_path):
         state.close()
 
 
+def make_ticket(command, cwd, generation, timeout, output_limit, *, shell=None):
+    selected = shell if shell is not None else resolve_shell()
+    return shell_service.ShellExecutionTicket(command, cwd, generation, timeout, output_limit,
+                                              selected, analyze_shell(command, selected))
+
+
 def _context():
     return SimpleNamespace(_shell_spawn_gate=threading.Lock(), approval_generation=lambda: 0,
                            run_registry=SimpleNamespace(stop_flag=threading.Event()))
@@ -151,7 +158,7 @@ def test_real_shell_keeps_quotes_unicode_cwd_and_exit_status(tmp_path, monkeypat
     else:
         import shlex
         command = f'{shlex.quote(sys.executable)} "probe script.py" "argument with spaces" {exit_code}'
-    ticket = shell_service.ShellExecutionTicket(command, work, 0, 10, 4000, shell=shell)
+    ticket = make_ticket(command, work, 0, 10, 4000, shell=shell)
     monkeypatch.setenv("COMSPEC", r"D:\Does Not Exist\cmd.exe")
     result = shell_service.execute_shell_ticket(_context(), ticket)
     assert result["status"] == "exit" and result["exit_code"] == exit_code, result
@@ -161,7 +168,7 @@ def test_real_shell_keeps_quotes_unicode_cwd_and_exit_status(tmp_path, monkeypat
 @pytest.mark.skipif(os.name != "nt", reason="CMD quoting is a Windows process contract")
 def test_cmd_preserves_raw_quotes_and_environment_assignment(tmp_path):
     command = 'set "SHELL_PROBE=two words" && python -c "import os; print(os.environ[\'SHELL_PROBE\'])"'
-    ticket = shell_service.ShellExecutionTicket(command, tmp_path, 0, 10, 4000)
+    ticket = make_ticket(command, tmp_path, 0, 10, 4000)
     result = shell_service.execute_shell_ticket(_context(), ticket)
     assert result["status"] == "exit" and result["exit_code"] == 0, result
     assert result["output"] == "two words"
@@ -171,14 +178,14 @@ def test_cmd_preserves_raw_quotes_and_environment_assignment(tmp_path):
 def test_cmd_executes_a_quoted_batch_path_with_spaces(tmp_path):
     script = tmp_path / "batch with spaces.cmd"
     script.write_bytes(b"@echo off\r\necho [%~1]\r\nexit /b 7\r\n")
-    ticket = shell_service.ShellExecutionTicket(f'"{script}" "two words"', tmp_path, 0, 10, 4000)
+    ticket = make_ticket(f'"{script}" "two words"', tmp_path, 0, 10, 4000)
     result = shell_service.execute_shell_ticket(_context(), ticket)
     assert result["status"] == "exit" and result["exit_code"] == 7, result
     assert result["output"] == "[two words]"
 
 
 def test_real_shell_timeout_is_not_a_successful_exit(tmp_path):
-    ticket = shell_service.ShellExecutionTicket('python -c "import time; time.sleep(30)"', tmp_path, 0, 1, 4000)
+    ticket = make_ticket('python -c "import time; time.sleep(30)"', tmp_path, 0, 1, 4000)
     result = shell_service.execute_shell_ticket(_context(), ticket)
     assert not result["ok"] and result["status"] == "timeout" and result["exit_code"] is None, result
 
@@ -186,7 +193,7 @@ def test_real_shell_timeout_is_not_a_successful_exit(tmp_path):
 def test_spawn_error_never_switches_interpreters(tmp_path, monkeypatch):
     start = Mock(side_effect=FileNotFoundError("interpreter missing"))
     monkeypatch.setattr(shell_service.cancellation, "start_process", start)
-    ticket = shell_service.ShellExecutionTicket("echo hello", tmp_path, 0, 10, 4000)
+    ticket = make_ticket("echo hello", tmp_path, 0, 10, 4000)
     result = shell_service.execute_shell_ticket(_context(), ticket)
     assert not result["ok"] and result["status"] == "spawn_error" and result["exit_code"] is None
     assert start.call_count == 1

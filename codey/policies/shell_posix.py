@@ -69,6 +69,7 @@ def analyze_posix(command: str, shell: ShellSpec, digest: str) -> ShellAnalysis:
             redirects.append(ShellRedirect(operator or "<<", word(target) if target else None))
     expanded = tuple(text(node) for node in nodes if node.type in _EXPANSIONS | {"variable_assignment"})
     expanded += tuple(item for row in commands for value in row.words for item in value.expansions)
+    expanded += tuple(item for redirect in redirects if redirect.target for item in redirect.target.expansions)
     unknown = sorted({node.type for node in nodes if node.is_named and node.type not in _KNOWN})
     if shell.kind == "sh" and any(node.type in {"process_substitution", "extglob_pattern"} for node in nodes):
         unknown.append("non-POSIX syntax")

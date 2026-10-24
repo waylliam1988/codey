@@ -356,7 +356,7 @@ def _approval_stop(
         return None
     from codey.agents.shell_approval import ShellApprovalRequest, deferred_tool_call_from_call
     from codey.operations.task_execution import effective_project_profile
-    from codey.policies.command_approval import approval_call
+    from codey.policies.command_approval import analyze_approval_call
     from codey.policies.command_line import resolve_shell
 
     try:
@@ -377,7 +377,8 @@ def _approval_stop(
             continue
         if call.name == "run" and not policy.allows("project.verify"):
             continue
-        if approval_call(call, project=project_path, permission_profile=effective_profile, shell=selected_shell) is None:
+        analysis = analyze_approval_call(call, project=project_path, permission_profile=effective_profile, shell=selected_shell)
+        if analysis is None:
             continue
         deferred = tuple(
             deferred_tool_call_from_call(item, tool_index=offset)
@@ -404,6 +405,7 @@ def _approval_stop(
                 tool_name=call.name,
                 tool_args=dict(call.args),
                 shell=selected_shell,
+                analysis=analysis,
             )
         )
         return KernelResult(False, "shell command requires approval", turn, "approval")

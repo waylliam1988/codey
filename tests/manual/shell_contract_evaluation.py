@@ -10,15 +10,18 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 from unittest.mock import patch
 
+from codey.env_names import SHELL_EXECUTABLE_ENV
+from codey.policies.command_line import resolve_shell
 from tools.local_model_gate_attempts import GateTarget, write_json
 from tools.local_model_gate_shell import GateHTTPClient, gate_application, wait_for_run
 
 
-def run_generated_case(case, target, directory):
+def run_generated_case(case, target, directory, shell_name):
     directory.mkdir(parents=True)
     project = directory / "workspace"
     project.mkdir()
@@ -39,7 +42,29 @@ def run_generated_case(case, target, directory):
         allowed = {f'{python} "{path}"' for python in ("python", "python.exe", "py")
                    for path in (str(script), script.as_posix(), script.name)}
         token, exit_code = "AMBER-7319", 7
-    with patch.dict(os.environ, {"SHELL_PROBE": "SAPPHIRE-5932"}), gate_application(target, directory) as (httpd, state, events):
+    selected = resolve_shell(environ={**os.environ, SHELL_EXECUTABLE_ENV: shell_name})
+    if selected.kind == "powershell":
+        if case == "read_spaces":
+            allowed = {f'{tool} {flag}{quote}{path}{quote}' for tool in ("Get-Content", "type", "cat")
+                       for flag in ("", "-LiteralPath ", "-Path ", "-Raw -LiteralPath ")
+                       for quote in ("'", '"') for path in (str(fixture), fixture.as_posix(), fixture.name)}
+        elif case in {"environment", "denial"}:
+            allowed = {"$env:SHELL_PROBE", "echo $env:SHELL_PROBE", "Write-Output $env:SHELL_PROBE"}
+        else:
+            allowed = {f'{prefix}{python} {quote}{path}{quote}{suffix}' for prefix in ("", "& ")
+                       for python in ("python", "python.exe", "py", "python3") for quote in ("'", '"')
+                       for path in (str(script), script.as_posix(), script.name)
+                       for suffix in ("; exit $LASTEXITCODE", " ; exit $LASTEXITCODE", "\nexit $LASTEXITCODE")}
+    elif selected.kind != "cmd":
+        if case == "read_spaces":
+            allowed = {f'cat {quote}{path}{quote}' for quote in ("'", '"')
+                       for path in (fixture.as_posix(), fixture.name)}
+        elif case in {"environment", "denial"}:
+            allowed = {"echo $SHELL_PROBE", 'echo "$SHELL_PROBE"', "printf '%s\\n' \"$SHELL_PROBE\""}
+        else:
+            allowed = {f'{python} {quote}{path}{quote}' for python in ("python", "python3", "py")
+                       for quote in ("'", '"') for path in (script.as_posix(), script.name)}
+    with patch.dict(os.environ, {"SHELL_PROBE": "SAPPHIRE-5932", SHELL_EXECUTABLE_ENV: shell_name}), gate_application(target, directory) as (httpd, state, events):
         client = GateHTTPClient(httpd)
         submitted = client.post("/api/run", {"session_id": "shell-contract", "input": {"kind": "start_task", "text": prompt},
             "provider": "local", "model_selection": {"model": target.model, "base_url": target.base_url},
@@ -54,14 +79,18 @@ def run_generated_case(case, target, directory):
             raise AssertionError("expected exactly one pending approval")
         approval_id, record = next(iter(pending.items()))
         write_json(directory / "approval.json", {key: record.get(key) for key in
-            ("command", "shell", "cwd", "project", "command_ref", "command_digest", "call_id", "window_ref")})
+            ("command", "shell", "analysis", "cwd", "project", "command_ref", "command_digest", "call_id", "window_ref")})
         if record["command"].strip() not in allowed:
             client.post("/api/shell_approval", {"id": approval_id, "approved": False})
             raise AssertionError(f"generated command outside the exact probe allowlist: {record['command']}")
+        terminal_count = sum(event.get("type") == "task_done" for event in events)
         client.post("/api/shell_approval", {"id": approval_id, "approved": case != "denial"})
         deadline = time.monotonic() + target.request_timeout
         final = None
         while time.monotonic() < deadline:
+            next_terminals = [event for event in events if event.get("type") == "task_done"][terminal_count:]
+            if any(event.get("stop_reason") != "done" for event in next_terminals):
+                raise AssertionError(f"continuation stopped without completing: {next_terminals}")
             final = next((event for event in events if event.get("type") == "task_done"
                           and event.get("run_id") == run_id and event.get("stop_reason") == "done"), None)
             if final is not None and not client.state().get("busy"):
@@ -93,14 +122,13 @@ def main():
     parser.add_argument("--model", required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--case", action="append", choices=("read_spaces", "environment", "failure", "denial"))
+    parser.add_argument("--shell", default="cmd" if os.name == "nt" else "sh")
     args = parser.parse_args()
-    if os.name != "nt":
-        raise SystemExit("This live suite's finite command allowlist targets CMD on Windows.")
     args.output = args.output.resolve()
     args.output.mkdir(parents=True, exist_ok=False)
     target = GateTarget(args.base_url, args.model, 32768, 1024, 12000, request_timeout=120)
     manifest = {"revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
-                "model": args.model, "scope": "Windows native tools, production HTTP and approval", "results": []}
+                "model": args.model, "scope": f"{sys.platform}/{args.shell}, native tools, production HTTP and approval", "results": []}
     production_diff = subprocess.check_output(["git", "diff", "--binary", "--", "codey"])
     (args.output / "production.patch").write_bytes(production_diff)
     manifest["production_diff_sha256"] = hashlib.sha256(production_diff).hexdigest()
@@ -108,7 +136,7 @@ def main():
     for case in args.case or ("read_spaces", "environment", "failure", "denial"):
         directory = args.output / case
         try:
-            row = run_generated_case(case, target, directory)
+            row = run_generated_case(case, target, directory, args.shell)
         except Exception as exc:
             row = {"case": case, "ok": False, "error": repr(exc)}
         manifest["results"].append(row)

@@ -323,12 +323,17 @@ exitCode 只接受真实整数并保留 POSIX 负值，非法值保持未知。�
 
 ## Shell 解释器合同（2026-10-24）
 
-任务创建时取得不可变 `ShellSpec`；模型方言提示、动作兼容校验、审批命令 artifact、
-授权身份、恢复投影和执行票据共用它。Windows 保留 CMD，POSIX 保留 `/bin/sh`；
-执行在原 cancellation/process-tree 链路中显式启动解释器，不再让 `shell=True` 在
-批准之后重新选择解释器。`run` 的允许验证命令仍直接执行 argv，与任意 shell 脚本
-的语义分别说明。工作目录只接受项目相对目录，不改写模型参数。
+任务创建时取得不可变 `ShellSpec`：方言、实际路径、实测版本、启动模式和入口二进制
+摘要。覆盖 PowerShell 7/5.1、Bash、Zsh、Sh、CMD；默认仍为 Windows CMD、其他系统
+`/bin/sh`。显式配置只在新任务准入时发现，批准后不切换解释器；启动参数由类型生成。
 
-没有增加解释器自动切换、命令翻译、第二个执行器或事实日志。缺少解释器合同的旧
-待批准 artifact 不重新获得执行资格，旧保存授权也不自动升级。详细流程见
-[shell 审批生命周期](shell_approval_lifecycle.md)。
+唯一 `analyze_shell` 按方言选解析器，统一记录命令/参数、管道/连接、重定向、展开和动态
+执行。无法确认的语法为 opaque，只能逐次审批；无效语法拒绝。分析绑定完整命令和
+解释器摘要，与 ShellSpec 一起进入原动作策略、命令 artifact、授权、恢复和执行票据。
+恢复只校验已提交分析，不从文字推测，不重跑解析器。旧合同或缺失分析不自动补权。
+
+执行继续由原 cancellation/process-tree、输出、审批回执和续跑链路负责。执行前检查
+入口二进制摘要；不宣称冻结所有依赖。允许验证的 `run` 仍直接执行 argv，明确区分其
+语义。没有增加第二执行器、权限系统、持久日志、命令翻译或解释器重试。
+详细流程与平台验证边界见 [shell 审批生命周期](shell_approval_lifecycle.md) 和
+[三批验收记录](reports/shell-dialects-2026-10-24.zh-CN.md)。

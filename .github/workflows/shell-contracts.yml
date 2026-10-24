@@ -1,0 +1,61 @@
+name: Shell contracts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  shell-contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            required: cmd pwsh powershell bash sh
+          - os: ubuntu-24.04
+            required: bash zsh sh
+          - os: macos-15
+            required: bash zsh sh
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Zsh on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          sudo apt-get install -y zsh
+          exit $LASTEXITCODE
+      - name: Select native Git Bash/Sh on Windows
+        if: runner.os == 'Windows'
+        run: Add-Content -LiteralPath $env:GITHUB_PATH -Value "$env:ProgramFiles\Git\bin"
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --require-hashes -r requirements-ci.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install -e . --no-deps --no-build-isolation
+          exit $LASTEXITCODE
+      - name: Require native interpreter contracts
+        run: python -m tools.shell_matrix_gate --required ${{ matrix.required }} --output .e2e-artifacts/shell-matrix.json
+      - name: Related shell tests
+        run: >-
+          python -m pytest -q tests/test_shell_contract.py tests/test_shell_interpreters.py
+          tests/test_shell_analysis.py tests/test_shell_analysis_authorization.py
+          tests/test_command_permissions.py tests/test_shell_approval_epoch.py
+          tests/test_release_shell_continuation_http.py
+          --junitxml=.e2e-artifacts/shell-related.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shell-contracts-${{ matrix.os }}
+          path: .e2e-artifacts/shell-*
+          include-hidden-files: true

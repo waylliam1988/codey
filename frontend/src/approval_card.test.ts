@@ -23,6 +23,7 @@ function render(fields: Partial<Message> = {}) {
     sessionId: 'chat',
     command: 'python -m pytest --collect-only',
     cwd: 'E:/Selfie - 副本',
+    sessionRuleAvailable: true,
     riskTitle: 'Shell command',
     riskDetail: 'May read or change files',
     ...fields,
@@ -133,4 +134,12 @@ it('settles one approval from mixed live/history result records rather than sele
   expect(chat.querySelectorAll('.command-card')).toHaveLength(1);
   expect(chat.querySelector('.command-card')?.getAttribute('data-status')).toBe('success');
   expect(chat.querySelector('.shell-stdout')?.textContent).toBe('27 C');
+});
+
+it('keeps once and denial available when the server forbids reusable grants', () => {
+  const chat = render({ sessionRuleAvailable: false, projectRuleAvailable: false });
+  expect(chat.textContent).not.toContain('Allow exact command');
+  expect(chat.textContent).toContain('Allow once');
+  expect(chat.textContent).toContain('Deny');
+  expect(chat.textContent).toContain('Manage saved permissions…');
 });

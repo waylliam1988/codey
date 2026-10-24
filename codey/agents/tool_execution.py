@@ -16,7 +16,8 @@ from codey.policies.action import (
     ActionSubject,
     evaluate_action,
 )
-from codey.policies.command_line import ShellSpec
+from codey.policies.command_line import ShellSpec, resolve_shell
+from codey.policies.shell_analysis import analyze_shell
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
@@ -56,6 +57,8 @@ def action_subject_for_call(
         kind = "shell"
     else:
         kind = "unknown_tool"
+    selected_shell = (shell if shell is not None else resolve_shell()) if kind == "shell" else shell
+    analysis = analyze_shell(call_arg(call, "command").strip(), selected_shell) if kind == "shell" and selected_shell else None
     return ActionSubject(
         kind=kind,
         phase=phase,
@@ -65,7 +68,8 @@ def action_subject_for_call(
         command=call_arg(call, "command"),
         tool_name=call.name,
         approval_available=approval_available,
-        shell=shell if kind in {"run_command", "shell"} else None,
+        shell=selected_shell if kind in {"run_command", "shell"} else None,
+        analysis=analysis,
     )
 
 

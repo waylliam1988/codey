@@ -18,6 +18,25 @@ $known = @('ScriptBlockAst', 'NamedBlockAst', 'PipelineAst', 'CommandAst', 'Comm
     'StringConstantExpressionAst', 'ConstantExpressionAst', 'CommandParameterAst', 'VariableExpressionAst',
     'ExpandableStringExpressionAst', 'FileRedirectionAst', 'MergingRedirectionAst', 'SubExpressionAst',
     'StatementBlockAst', 'ParenExpressionAst')
+function Get-ShellWord($element) {
+    $literal = $null
+    $wordExpansions = @($element.FindAll({ param($n)
+        $n -is [System.Management.Automation.Language.VariableExpressionAst] -or
+        $n -is [System.Management.Automation.Language.SubExpressionAst]
+    }, $true) | ForEach-Object { $_.Extent.Text })
+    switch ($element.GetType().Name) {
+        'StringConstantExpressionAst' { $literal = $element.Value }
+        'ConstantExpressionAst' { if ($null -ne $element.Value) { $literal = [string]$element.Value } }
+        'ExpandableStringExpressionAst' { if ($element.NestedExpressions.Count -eq 0) { $literal = $element.Value } }
+        'CommandParameterAst' { if ($null -eq $element.Argument) { $literal = $element.Extent.Text } }
+    }
+    # Cmdlets can interpret wildcard strings even when quoted. A literal
+    # AST value is not proof that the resolved command treats it literally.
+    if ($null -ne $literal -and [System.Management.Automation.WildcardPattern]::ContainsWildcardCharacters($literal)) {
+        $wordExpansions += $element.Extent.Text
+    }
+    return @{ raw = $element.Extent.Text; literal = $literal; expansions = @($wordExpansions) }
+}
 foreach ($node in $all) {
     $type = $node.GetType().Name
     if ($known -notcontains $type) { $unknown += $type }
@@ -27,18 +46,9 @@ foreach ($node in $all) {
     if ($type -eq 'CommandAst') {
         $words = @()
         foreach ($element in $node.CommandElements) {
-            $literal = $null
-            $wordExpansions = @($element.FindAll({ param($n)
-                $n -is [System.Management.Automation.Language.VariableExpressionAst] -or
-                $n -is [System.Management.Automation.Language.SubExpressionAst]
-            }, $true) | ForEach-Object { $_.Extent.Text })
-            switch ($element.GetType().Name) {
-                'StringConstantExpressionAst' { $literal = $element.Value }
-                'ConstantExpressionAst' { if ($null -ne $element.Value) { $literal = [string]$element.Value } }
-                'ExpandableStringExpressionAst' { if ($element.NestedExpressions.Count -eq 0) { $literal = $element.Value } }
-                'CommandParameterAst' { if ($null -eq $element.Argument) { $literal = $element.Extent.Text } }
-            }
-            $words += @{ raw = $element.Extent.Text; literal = $literal; expansions = @($wordExpansions) }
+            $word = Get-ShellWord $element
+            $words += $word
+            $expansions += $word.expansions
         }
         if ($node.InvocationOperator.ToString() -ne 'Unknown') { $dynamic = $true }
         $commands += @{ words = @($words) }
@@ -48,11 +58,8 @@ foreach ($node in $all) {
         $operator = $node.Extent.Text
         if ($type -eq 'FileRedirectionAst') {
             $raw = $node.Location.Extent.Text
-            $literal = $null
-            if ($node.Location -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
-                $literal = $node.Location.Value
-            }
-            $target = @{ raw = $raw; literal = $literal; expansions = @() }
+            $target = Get-ShellWord $node.Location
+            $expansions += $target.expansions
             $operator = $operator.Substring(0, $operator.Length - $raw.Length).Trim()
         }
         $redirects += @{ operator = $operator; target = $target }

@@ -309,9 +309,13 @@ class ShellApprovalWorkflow:
                         return 409, {**state, "error": "Saved permissions unavailable; explicit approval required"}
                     if rule is None or rule["id"] != remembered_rule_id:
                         return 409, {**state, "code": "permission_revoked", "error": "Saved permission was revoked"}
-                from codey.storage.command_permissions import project_rule_available
+                from codey.policies.shell_analysis import request_analysis
+                from codey.storage.command_permissions import project_rule_available, session_rule_available
 
-                if scope == "project" and not project_rule_available(str(pending.get("command") or "")):
+                shell, analysis = request_analysis(pending)
+                if scope != "once" and not session_rule_available(str(pending.get("command") or ""), shell=shell, analysis=analysis):
+                    return 400, {"error": "This command requires one-time approval"}
+                if scope == "project" and not project_rule_available(str(pending.get("command") or ""), shell=shell, analysis=analysis):
                     return 400, {"error": "This command supports one-time or exact session approval only"}
                 # Keep the UI projection intact until the verdict is durable.
                 if not _claim_decision_fact(

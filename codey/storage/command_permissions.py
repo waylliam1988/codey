@@ -9,18 +9,19 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from codey.policies.command_line import ShellSpec, split_run_command
+from codey.policies.command_line import ShellSpec
+from codey.policies.shell_analysis import ShellAnalysis, parser_identity, request_analysis
 from codey.storage.atomic_io import write_bytes_atomic
 from codey.storage.file_lock import with_file_lock
 
 
-def command_identity(pending: dict[str, Any]) -> dict[str, str]:
+def command_identity(pending: dict[str, Any], *, shell: ShellSpec, analysis: ShellAnalysis) -> dict[str, str]:
     project = str(Path(str(pending.get("project") or ".")).resolve())
     cwd = str(Path(project, str(pending.get("cwd") or ".")).resolve())
     return {
         "project": os.path.normcase(project), "cwd": os.path.normcase(cwd),
         "command": str(pending.get("command") or ""),
-        "executor": json.dumps(ShellSpec.from_payload(pending.get("shell")).to_payload(), sort_keys=True),
+        "executor": json.dumps({"shell": shell.to_payload(), "parser": analysis.parser}, sort_keys=True),
         "environment_sha256": hashlib.sha256(json.dumps(
             {key: os.environ.get(key, "") for key in ("PATH", "PATHEXT", "VIRTUAL_ENV", "CONDA_PREFIX", "COMSPEC")},
             sort_keys=True,
@@ -28,20 +29,22 @@ def command_identity(pending: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def project_rule_available(command: str) -> bool:
+def session_rule_available(command: str, *, shell: ShellSpec, analysis: ShellAnalysis) -> bool:
+    return (shell.startup == "noninteractive" and analysis.reusable and analysis.matches(command, shell)
+            and analysis.parser == parser_identity(shell))
+
+
+def project_rule_available(command: str, *, shell: ShellSpec, analysis: ShellAnalysis) -> bool:
     """Offer exact project grants only for narrowly understood command families."""
-    if any(token in command for token in ("\n", "\r", ";", "|", "&", ">", "<", "`", "$")):
+    if not session_rule_available(command, shell=shell, analysis=analysis):
         return False
-    try:
-        argv = split_run_command(command)
-    except ValueError:
-        return False
-    if len(argv) < 2:
+    argv = analysis.simple_argv
+    if argv is None or len(argv) < 2:
         return False
     executable = Path(argv[0]).name.lower().removesuffix(".exe")
     return ((executable == "git" and argv[1] in {"status", "diff", "log", "show"})
             or (executable in {"python", "py"} and len(argv) >= 3
-                and argv[1:3] in (["-m", "unittest"], ["-m", "pytest"]))
+                and argv[1:3] in (("-m", "unittest"), ("-m", "pytest")))
             or (executable in {"npm", "pnpm", "cargo", "go"} and argv[1] in {"test", "check"}))
 
 
@@ -76,7 +79,10 @@ class CommandPermissionStore:
 
     def matching(self, pending: dict[str, Any]) -> dict[str, str] | None:
         try:
-            identity = command_identity(pending)
+            shell, analysis = request_analysis(pending)
+            if not session_rule_available(str(pending.get("command") or ""), shell=shell, analysis=analysis):
+                return None
+            identity = command_identity(pending, shell=shell, analysis=analysis)
         except ValueError:
             return None
         return next((row for row in self.list_rules(session_id=str(pending.get("session_id") or ""),
@@ -86,9 +92,12 @@ class CommandPermissionStore:
     def remember(self, pending: dict[str, Any], scope: str) -> None:
         if scope not in {"session", "project"}:
             raise ValueError("Invalid command permission scope")
-        if scope == "project" and not project_rule_available(str(pending.get("command") or "")):
+        shell, analysis = request_analysis(pending)
+        if not session_rule_available(str(pending.get("command") or ""), shell=shell, analysis=analysis):
+            raise ValueError("This command requires one-time approval")
+        if scope == "project" and not project_rule_available(str(pending.get("command") or ""), shell=shell, analysis=analysis):
             raise ValueError("This command supports one-time or exact session approval only")
-        row = {**command_identity(pending), "session_id": str(pending.get("session_id") or "") if scope == "session" else "",
+        row = {**command_identity(pending, shell=shell, analysis=analysis), "session_id": str(pending.get("session_id") or "") if scope == "session" else "",
                "scope": scope}
         with with_file_lock(self.path):
             rows = self._read()

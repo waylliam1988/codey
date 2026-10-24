@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from codey.agents.shell_approval import ShellApprovalRequest
 from codey.app.context import AppContext
-from codey.policies.command_line import resolve_shell
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact, ShellApprovalRecordStore
 from tests.support.shell_approval import admit_shell_task
 
@@ -27,7 +27,7 @@ def test_cold_start_approval_rebuild_restores_current_command_fields(tmp_path) -
     try:
         admit_shell_task(state, session_id="s", run_id="r", task="shell approval")
         artifact = state.managed_outputs.write_json_artifact(
-            session_id="s", run_id="r", payload={"command": "echo hello", "cwd": ".", "shell": resolve_shell().to_payload()}
+            session_id="s", run_id="r", payload={"command": "echo hello", "cwd": ".", **ShellApprovalRequest(".", "echo hello").to_payload()}
         )
         state.record_shell_approval_fact(ShellApprovalFact(
             "a1", "s", "r", "requested", command_ref=artifact.handle,

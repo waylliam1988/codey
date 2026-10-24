@@ -2,24 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codey.policies.action import DECISION_ASK_USER, DECISION_DENY, ActionSubject, evaluate_action
-from codey.policies.command_line import ShellSpec, resolve_shell
+from codey.policies.command_line import ShellSpec
+from codey.policies.shell_analysis import ShellAnalysis, analyze_shell
 
 if TYPE_CHECKING:
     from codey.runtime.core.models import ToolCall
 
 
-def shell_compatibility_error(command: str, *, shell: ShellSpec | None = None) -> str:
-    """Do not ask Windows users to approve syntax the executor cannot run."""
-    return (shell if shell is not None else resolve_shell()).compatibility_error(command)
-
-
-def approval_call(call: ToolCall, *, project: Path, permission_profile: str,
-                  shell: ShellSpec | None = None) -> ToolCall | None:
+def analyze_approval_call(call: ToolCall, *, project: Path, permission_profile: str,
+                           shell: ShellSpec) -> ShellAnalysis | None:
     """Only allowlist refusals may ask for shell access; other denials remain final."""
     if call.name not in {"run", "shell"}:
         return None
@@ -37,11 +32,13 @@ def approval_call(call: ToolCall, *, project: Path, permission_profile: str,
         ))
         if decision.decision != DECISION_DENY or decision.reason_code != "command_not_allowed":
             return None
-    candidate = replace(call, name="shell")
+    command = str(call.args.get("command") or "").strip()
+    analysis = analyze_shell(command, shell)
     decision = evaluate_action(ActionSubject(
         kind="shell", project=str(project), permission_profile=permission_profile,
-        path=str(candidate.args.get("path") or "."), command=str(candidate.args.get("command") or ""),
+        path=str(call.args.get("path") or "."), command=command,
         approval_available=True,
         shell=shell,
+        analysis=analysis,
     ))
-    return call if decision.decision == DECISION_ASK_USER else None
+    return analysis if decision.decision == DECISION_ASK_USER else None

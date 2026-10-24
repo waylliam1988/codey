@@ -30,6 +30,7 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
     seed_requested_approval(ctx, command=command)
     original_task = ctx.durable.task("source")
     restore_pending_shell_approvals(ctx)
+    approved_request = ctx.approvals.shell_snapshot()["approval"]
     ctx.save_ui_state(
         {
             "active_id": "session",
@@ -155,8 +156,7 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
                 if scope in {'session', 'project'}:
                     assert len(ctx.command_permissions.list_rules(session_id='session', project=str(tmp_path))) == 1
                     if scope == 'project':
-                        assert ctx.command_permissions.matching({'project': str(tmp_path), 'session_id': 'other-chat',
-                                                                 'command': command, 'cwd': '.'})
+                        assert ctx.command_permissions.matching({**approved_request, 'session_id': 'other-chat'})
                     expect(page.locator('.command-card').get_by_role('button', name='Saved permissions', exact=True)).to_have_count(0)
                     page.keyboard.press('Control+k')
                     page.get_by_role('combobox', name='Find an action').fill('Manage saved permissions')

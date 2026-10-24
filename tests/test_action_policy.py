@@ -321,13 +321,17 @@ class ActionPolicyTests(unittest.TestCase):
         self.assertTrue(all(decision.reason_code == "command_path_escape" for decision in denied))
 
     def test_shell_requires_approval_channel(self) -> None:
+        from codey.policies.command_line import resolve_shell
+        from codey.policies.shell_analysis import analyze_shell
+        shell = resolve_shell()
+        analysis = analyze_shell("npm install", shell)
         with tempfile.TemporaryDirectory() as td:
             ask = evaluate_action(ActionSubject(
                 "shell",
                 permission_profile="coding_writer",
                 project=td,
                 path=".",
-                command="npm install",
+                command="npm install", shell=shell, analysis=analysis,
                 approval_available=True,
             ))
             deny = evaluate_action(ActionSubject(
@@ -335,7 +339,7 @@ class ActionPolicyTests(unittest.TestCase):
                 permission_profile="coding_writer",
                 project=td,
                 path=".",
-                command="npm install",
+                command="npm install", shell=shell, analysis=analysis,
                 approval_available=False,
             ))
 

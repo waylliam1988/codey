@@ -144,6 +144,7 @@ interface ServerEventData {
   risk_label: string;
   risk_title: string;
   risk_detail: string;
+  session_rule_available?: boolean;
   project_rule_available?: boolean;
   approved: boolean;
   exit_code: number;
@@ -1592,6 +1593,7 @@ function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' =
       riskLabel: data.risk_label,
       riskTitle: data.risk_title,
       riskDetail: data.risk_detail,
+      sessionRuleAvailable: data.session_rule_available,
       projectRuleAvailable: data.project_rule_available,
       sessionId: sid,
       runId,

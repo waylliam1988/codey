@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import shlex
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
 from typing import Literal, cast
 
@@ -63,7 +64,10 @@ class ShellAnalysis:
 
     @property
     def reusable(self) -> bool:
-        return self.status == "parsed" and not self.dynamic and not self.expansions
+        return (self.status == "parsed" and not self.dynamic and not self.expansions and bool(self.commands)
+                and all(word.literal is not None and not word.expansions for row in self.commands for word in row.words)
+                and all(row.target is None or (row.target.literal is not None and not row.target.expansions)
+                        for row in self.redirections))
 
     @property
     def simple_argv(self) -> tuple[str, ...] | None:
@@ -125,6 +129,29 @@ def shell_identity(shell: ShellSpec) -> str:
     return hashlib.sha256(json.dumps(shell.to_payload(), sort_keys=True).encode("utf-8")).hexdigest()
 
 
+def parser_identity(shell: ShellSpec) -> str:
+    if shell.kind == "cmd":
+        return "cmd-literal/v1"
+    if shell.kind == "powershell":
+        return "PowerShell AST/" + (shell.version or "unknown")
+    return "tree-sitter-bash/0.25.1"
+
+
+def bound_analysis(command: str, shell: ShellSpec, value: object) -> ShellAnalysis:
+    analysis = ShellAnalysis.from_payload(value)
+    if not analysis.matches(command, shell) or analysis.parser != parser_identity(shell):
+        raise ValueError("shell analysis differs from command, interpreter or parser; request a new approval")
+    return analysis
+
+
+def request_analysis(request: Mapping[str, object]) -> tuple[ShellSpec, ShellAnalysis]:
+    command = request.get("command")
+    if not isinstance(command, str):
+        raise ValueError("approval command required")
+    shell = ShellSpec.from_payload(request.get("shell"))
+    return shell, bound_analysis(command, shell, request.get("analysis"))
+
+
 _DYNAMIC_NAMES = {"eval", "source", ".", "exec", "command", "builtin", "env", "call", "start",
                   "invoke-expression", "iex", "invoke-command", "icm", "cmd", "powershell", "pwsh",
                   "bash", "zsh", "sh"}
@@ -151,7 +178,7 @@ def analyze_shell(command: str, shell: ShellSpec) -> ShellAnalysis:
     else:
         from codey.policies.shell_posix import analyze_posix
         result = analyze_posix(command, shell, digest)
-    return replace(result, shell_sha256=shell_identity(shell))
+    return replace(result, shell_sha256=shell_identity(shell), parser=parser_identity(shell))
 
 
 def _cmd(command: str, digest: str) -> ShellAnalysis:

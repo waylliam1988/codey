@@ -93,6 +93,7 @@ export type ServerEvent = {
   risk_label?: string;
   risk_title?: string;
   risk_detail?: string;
+  session_rule_available?: boolean;
   project_rule_available?: boolean;
 };
 
