@@ -31,15 +31,15 @@ def run_generated_case(case, target, directory):
         allowed = {f'type "{path}"' for path in (str(fixture), fixture.as_posix(), fixture.name)}
         token, exit_code = "QUARTZ-4821", 0
     elif case in {"environment", "denial"}:
-        prompt = "请使用 shell 工具读取环境变量 CODEY_SHELL_PROBE，等待审批后执行，并报告它的实际值。不要使用 Python。"
-        allowed = {"echo %CODEY_SHELL_PROBE%", 'echo "%CODEY_SHELL_PROBE%"'}
+        prompt = "请使用 shell 工具读取环境变量 SHELL_PROBE，等待审批后执行，并报告它的实际值。不要使用 Python。"
+        allowed = {"echo %SHELL_PROBE%", 'echo "%SHELL_PROBE%"'}
         token, exit_code = "SAPPHIRE-5932", 0
     else:
         prompt = f'请使用 shell 工具运行本地 Python 脚本 {script}，等待审批后执行，报告它的实际输出与退出码。'
         allowed = {f'{python} "{path}"' for python in ("python", "python.exe", "py")
                    for path in (str(script), script.as_posix(), script.name)}
         token, exit_code = "AMBER-7319", 7
-    with patch.dict(os.environ, {"CODEY_SHELL_PROBE": "SAPPHIRE-5932"}), gate_application(target, directory) as (httpd, state, events):
+    with patch.dict(os.environ, {"SHELL_PROBE": "SAPPHIRE-5932"}), gate_application(target, directory) as (httpd, state, events):
         client = GateHTTPClient(httpd)
         submitted = client.post("/api/run", {"session_id": "shell-contract", "input": {"kind": "start_task", "text": prompt},
             "provider": "local", "model_selection": {"model": target.model, "base_url": target.base_url},

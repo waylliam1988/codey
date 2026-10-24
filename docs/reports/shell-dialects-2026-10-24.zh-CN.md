@@ -36,7 +36,30 @@ artifacts/shell-coverage-batch1-live-20261024-01。后续两批结果在各批�
 
 ## 第二批：方言分析
 
-待本批完成后记录最终实现及验收。
+增加唯一 analyze_shell 入口及 ShellAnalysis：分别记录命令/参数、连接与管道、重定向、
+展开、动态执行、解析器身份与诊断。结构化结果绑定完整命令摘要和 ShellSpec 摘要；
+统一严格恢复校验，不从展示文字反推。第三批将它接入现有审批与授权消费者。
+
+Bash 使用固定版本 tree-sitter/tree-sitter-bash；Sh/Zsh 只对该语法树能确认的共同部分
+给出 parsed，不认识的扩展给出 opaque，不把 Bash 的错误诊断冒充完整 Zsh 语法判断。
+CMD 只确认有界的字面量、引号、连接、重定向、环境展开子集，控制流/caret 等明确 opaque。
+PowerShell 7/5.1 使用所选引擎的原生 Parser.ParseInput；随包可信解析程序通过原过程
+管理执行，用户源代码只作为 Base64 数据传入。未 Invoke/编译用户脚本，未修改执行策略。
+超时/缺少解析器/预算超限标记 opaque，无替代解析器重试；取消继续传播。
+
+依据：[Tree-sitter Python API](https://tree-sitter.github.io/py-tree-sitter/)、
+[Bash grammar](https://github.com/tree-sitter/tree-sitter-bash)、
+[PowerShell ParseInput](https://learn.microsoft.com/en-us/dotnet/api/system.management.automation.language.parser.parseinput)、
+[CMD 规则](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/cmd)。
+
+相关组合 74 passed、8 skipped、14 subtests passed，含两代 PowerShell 的真实 AST、
+命令替换、带引号元字符、管道/重定向/变量区分，以及恶意输入仅解析、不生成标记文件。
+随后 glob 与恢复身份检查的定向选择 33 passed、5 skipped。Zsh 缺少本地解释器的跳过不算
+实机通过。Ruff 与三项全树类型检查通过；wheel 实际包含 PowerShell 解析 helper，
+依赖 hash lock 只增加两个解析包，正式 runtime 描述由原 publish_runtime 生成。
+
+环境名检查同时发现上一轮探针的品牌前缀变量不符合仓库规则，已改为无品牌 SHELL_PROBE；
+没有增加生产环境配置兼容名。
 
 ## 第三批：授权与实机
 

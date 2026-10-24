@@ -16,6 +16,8 @@ dependencies = [
     "PyYAML>=6.0",
     "pypdf>=6.0,<7",
     "sqlite-vec==0.1.6",
+    "tree-sitter==0.25.2",
+    "tree-sitter-bash==0.25.1",
 ]
 
 [project.optional-dependencies]
@@ -53,6 +55,7 @@ codey = [
 "codey.providers" = ["profiles.json"]
 "*" = ["*.mjs"]
 "codey.research" = ["search_profiles.json"]
+"codey.policies" = ["*.ps1"]
 
 [tool.setuptools.cmdclass]
 build_py = "tools.build_runtime.BuildRuntime"

@@ -160,7 +160,7 @@ def test_real_shell_keeps_quotes_unicode_cwd_and_exit_status(tmp_path, monkeypat
 
 @pytest.mark.skipif(os.name != "nt", reason="CMD quoting is a Windows process contract")
 def test_cmd_preserves_raw_quotes_and_environment_assignment(tmp_path):
-    command = 'set "CODEY_SHELL_PROBE=two words" && python -c "import os; print(os.environ[\'CODEY_SHELL_PROBE\'])"'
+    command = 'set "SHELL_PROBE=two words" && python -c "import os; print(os.environ[\'SHELL_PROBE\'])"'
     ticket = shell_service.ShellExecutionTicket(command, tmp_path, 0, 10, 4000)
     result = shell_service.execute_shell_ticket(_context(), ticket)
     assert result["status"] == "exit" and result["exit_code"] == 0, result
