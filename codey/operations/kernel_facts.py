@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import replace
 from typing import Any
 
 from codey.operations.kernel_errors import EffectSettlementFailed
@@ -110,7 +112,20 @@ def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
 
 def _record_open_fact(session: TaskSession, result: ToolResult) -> None:
     source, _, _ = source_observation(result.canonical.get("research_observation"))
-    session.record_open(source.final_url)
+    sid = result.canonical.get("source_id")
+    if not isinstance(sid, str) or not re.fullmatch(r"s[1-9][0-9]*", sid):
+        raise ValueError("source observation requires a committed source_id")
+    session.record_open(source.final_url, source_id=sid)
+
+
+def bind_source_identity(session: TaskSession, call: ToolCall, result: ToolResult, *, ok: bool) -> ToolResult:
+    """Allocate under the commit lock; persist the binding in the same receipt."""
+    if not ok or canonical_tool_name(call.name) not in {"open_url", *_CONTROLLER_ALIASES}:
+        return result
+    source, _, _ = source_observation(result.canonical.get("research_observation"))
+    if "source_id" in result.canonical:
+        return result
+    return replace(result, canonical={**result.canonical, "source_id": session.source_id_for(source.final_url)})
 
 
 def _record_knowledge_fact(session: TaskSession, result: ToolResult) -> None:

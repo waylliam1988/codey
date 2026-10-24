@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
@@ -148,11 +147,8 @@ def build_execute_turn_executor(
         from codey.operations.task_session import turn_effect_id
 
         child_effect_ids: list[str] = []
-        digest = hashlib.sha256(
-            json.dumps(call.args, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()[:16]
         parent_id = parent_execution_id(run_id, turn, call)
-        child_scope = f"{effect_scope}:codemode:{digest}"
+        child_scope = f"{effect_scope}:codemode:{parent_id}"
 
         def execute_child(child: ToolCall) -> ToolResult:
             from codey.operations.kernel_events import _event_call

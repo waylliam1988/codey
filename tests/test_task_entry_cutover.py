@@ -797,7 +797,7 @@ def test_shell_approval_records_turn_intent_before_notifying_user(tmp_path) -> N
     order: list[str] = []
 
     class Sink:
-        def begin_turn(self, items, *, turn, specs=None):
+        def begin_turn(self, items, *, turn, specs=None, scope=""):
             assert turn == 1 and items[0][1].name == "shell"
             order.append("intent")
 
@@ -852,7 +852,7 @@ def test_kernel_records_intent_before_project_tool_execution(tmp_path) -> None:
     observed: list[str] = []
 
     class Sink:
-        def begin_turn(self, _items, *, turn, specs=None):
+        def begin_turn(self, _items, *, turn, specs=None, scope=""):
             observed.append(f"begin:{turn}")
 
         def has_unsettled(self, _identity):
@@ -896,7 +896,7 @@ def test_failed_intent_commit_prevents_tool_execution(tmp_path) -> None:
     session = TaskSession(policy=policy, task_kind="project", project=str(tmp_path))
 
     class Sink:
-        def begin_turn(self, _items, *, turn, specs=None):
+        def begin_turn(self, _items, *, turn, specs=None, scope=""):
             raise RuntimeError("journal unavailable")
 
     with pytest.raises(RuntimeError, match="journal unavailable"):

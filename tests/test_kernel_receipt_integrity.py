@@ -60,7 +60,8 @@ def test_large_source_observation_survives_real_result_receipt_and_restart(tmp_p
     ledger.record_open(url, url, "Large source", body)
     observation = ledger_observation(ledger, "open", url=url)
     call = ToolCall("open_url", {"url": url}, call_id="source-call")
-    result = ToolResult(call, "bounded preview", ok=True, canonical={"research_observation": observation})
+    result = ToolResult(call, "bounded preview", ok=True,
+                        canonical={"research_observation": observation, "source_id": "s1"})
     assert result.canonical["research_observation"]["text"] == body
     sink.begin_turn([("source-effect", call, 0)], turn=1)
     sink.settle("source-effect", True, result=result)

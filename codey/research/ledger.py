@@ -124,6 +124,7 @@ class ResearchLedger:
         self.source_searches: list[dict[str, Any]] = []
         self._source_texts: dict[str, str] = {}
         self._source_pages: dict[str, dict[int, str]] = {}
+        self._source_page_versions: dict[str, dict[int, tuple[str, str]]] = {}
 
     def clone(self) -> ResearchLedger:
         forked = ResearchLedger()
@@ -133,6 +134,7 @@ class ResearchLedger:
         forked.source_searches = [dict(s) for s in self.source_searches]
         forked._source_texts = dict(self._source_texts)
         forked._source_pages = {k: dict(v) for k, v in self._source_pages.items()}
+        forked._source_page_versions = {k: dict(v) for k, v in self._source_page_versions.items()}
         return forked
 
     def commit_projection(self, staged: ResearchLedger) -> None:
@@ -143,6 +145,7 @@ class ResearchLedger:
         self.source_searches = staged.source_searches
         self._source_texts = staged._source_texts
         self._source_pages = staged._source_pages
+        self._source_page_versions = staged._source_page_versions
 
     def record_search(self, query: str, results: list[dict[str, Any]]) -> None:
         query = " ".join((query or "").split())
@@ -191,17 +194,6 @@ class ResearchLedger:
             ),
             None,
         )
-        if existing is not None and (existing.content_kind == "pdf" or document.content_kind == "pdf"):
-            existing_pages = tuple(
-                page for page in (_safe_page_number(page) for page in existing.pages_read)
-                if page is not None and page > 0
-            )
-            pages_read = tuple(sorted({*existing_pages, *pages_read}))
-            existing_text = self._source_texts.get(existing.final_url) or ""
-            text = _merge_text(existing_text, text)
-            merged_page_map = dict(self._source_pages.get(existing.final_url) or {})
-            merged_page_map.update(page_map)
-            page_map = merged_page_map
         opened = OpenedSource(
             requested_url=(existing.requested_url if existing is not None else "") or requested_url or final_url,
             final_url=final_url,
@@ -218,21 +210,49 @@ class ResearchLedger:
             pages_read=pages_read,
             truncated=(document.truncated or (existing.truncated if existing is not None else False)),
         )
-        self.opened_sources = [
-            item for item in self.opened_sources
-            if item.final_url != opened.final_url
-            and item.requested_url != opened.requested_url
-            and item.final_url != opened.requested_url
-            and item.requested_url != opened.final_url
-        ]
-        self.opened_sources.append(opened)
-        self._source_texts[final_url] = text
-        if requested_url:
-            self._source_texts[requested_url] = text
-        if page_map:
-            self._source_pages[final_url] = page_map
-            if requested_url:
-                self._source_pages[requested_url] = page_map
+        self.merge_opened_source(opened, text, page_map)
+
+    def merge_opened_source(self, source: OpenedSource, text: str, pages: dict[int, str]) -> None:
+        """One acquisition/replay merge. Page versions derive only from observations.
+
+        Independent PDF reads form a union. Overlapping pages use acquisition
+        time, with a body digest as a deterministic tie break, never replay order.
+        The version map is disposable projection state, not another journal.
+        """
+        aliases = {source.final_url, source.requested_url}
+        previous = [item for item in self.opened_sources
+                    if {item.final_url, item.requested_url} & aliases]
+        if (previous == [source] and self._source_texts.get(source.final_url) == text
+                and self._source_pages.get(source.final_url) == pages):
+            return
+        page_map = dict(pages)
+        acquired_at = datetime.fromisoformat(source.retrieved_at).astimezone(UTC).isoformat()
+        versions = {number: (acquired_at, hashlib.sha256(body.encode("utf-8")).hexdigest())
+                    for number, body in pages.items()}
+        read_pages = set(source.pages_read)
+        for item in previous:
+            aliases.update((item.final_url, item.requested_url))
+            if item.content_kind == source.content_kind == "pdf":
+                read_pages.update(item.pages_read)
+                for number, body in self._source_pages.get(item.final_url, {}).items():
+                    stamp = self._source_page_versions[item.final_url][number]
+                    if number not in versions or stamp > versions[number]:
+                        page_map[number], versions[number] = body, stamp
+                latest = max((item, source), key=lambda row: (
+                    datetime.fromisoformat(row.retrieved_at), row.final_url, row.title, row.requested_url))
+                source = replace(latest, pages_read=tuple(sorted(read_pages)),
+                                 page_count=max(item.page_count, source.page_count),
+                                 truncated=item.truncated or source.truncated)
+                text = "\n\n".join(page_map[number] for number in sorted(page_map))
+                source = replace(source, text_hash=hashlib.sha256(
+                    text.encode("utf-8", errors="replace")).hexdigest()[:16])
+        self.opened_sources = [item for item in self.opened_sources if item not in previous]
+        self.opened_sources.append(source)
+        self.opened_sources.sort(key=lambda item: (datetime.fromisoformat(item.retrieved_at), item.final_url))
+        for url in aliases:
+            self._source_texts[url] = text
+            self._source_pages[url] = dict(page_map)
+            self._source_page_versions[url] = dict(versions)
 
     def prepare_evidence_items(
         self,
@@ -642,18 +662,6 @@ def _best_excerpt(text: str, hint: str = "") -> str:
             start = max(0, index - 80)
             return _clip(clean[start : start + MAX_SNIPPET_CHARS], MAX_SNIPPET_CHARS)
     return _clip(clean, MAX_SNIPPET_CHARS)
-
-
-def _merge_text(existing: str, current: str) -> str:
-    left = (existing or "").strip()
-    right = (current or "").strip()
-    if not left:
-        return right
-    if not right or right in left:
-        return left
-    if left in right:
-        return right
-    return f"{left}\n\n{right}"
 
 
 def _hint_tokens(hint: str) -> list[str]:

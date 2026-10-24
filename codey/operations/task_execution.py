@@ -416,13 +416,16 @@ class ExecutionDelegate:
         )
         return result, True, None
 
-    def _observation_tools(self) -> Any:
+    def _observation_tools(self, *, source_read: bool = False) -> Any:
         # Acquisition mutates a temporary ledger. Only the committed result
         # receipt may publish it into the run's formal projection.
         tools = copy.copy(self.research_tools)
         ledger = getattr(tools, "ledger", None)
         if isinstance(ledger, ResearchLedger):
-            tools.ledger = ledger.clone()
+            # A read receipt contains this acquisition alone, not stale pages
+            # inherited from the pre-call projection. Other tools need context.
+            with self.session.projection_lock if self.session is not None else contextlib.nullcontext():
+                tools.ledger = ResearchLedger() if source_read else ledger.clone()
             if hasattr(tools, "sources_read"):
                 tools.sources_read = {url for source in ledger.opened_sources
                                       for url in (source.requested_url, source.final_url)}
@@ -432,8 +435,8 @@ class ExecutionDelegate:
 
     def _execute_research(self, call: ToolCall, *, turn: int = 0,
                           tool_index: int = 0) -> tuple[ToolResult, bool, int | None]:
-        tools = self._observation_tools()
         name = (call.name or "").strip().lower()
+        tools = self._observation_tools(source_read=name in {"open_url", "open_result", "reopen_source", "open_hit"})
         args = dict(call.args or {})
         try:
             if name == "web_search":

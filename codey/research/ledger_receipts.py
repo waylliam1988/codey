@@ -180,9 +180,4 @@ def restore_ledger_observation(ledger: ResearchLedger, observation: dict[str, An
 
 def _restore_source(ledger: ResearchLedger, observation: dict[str, Any]) -> None:
     source, text, page_map = source_observation(observation)
-    ledger.opened_sources = [item for item in ledger.opened_sources
-                             if not {item.final_url, item.requested_url} & {source.final_url, source.requested_url}]
-    ledger.opened_sources.append(source)
-    for url in {source.final_url, source.requested_url}:
-        ledger._source_texts[url] = text
-        ledger._source_pages[url] = dict(page_map)
+    ledger.merge_opened_source(source, text, page_map)

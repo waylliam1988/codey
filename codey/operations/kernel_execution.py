@@ -16,7 +16,7 @@ from dataclasses import replace
 from typing import Any
 
 from codey.operations.kernel_errors import RecoveryFailed
-from codey.operations.kernel_facts import project_execution_record, project_result_observation
+from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
 from codey.operations.kernel_protocol import _validate_tool_args, frozen_custom_executor_map, frozen_spec_map
 from codey.operations.kernel_provenance import (
     _with_trusted_workspace_state,
@@ -265,10 +265,11 @@ def execute_turn(
         ok: bool,
         *,
         exit_code: object = None,
-    ) -> None:
+    ) -> ToolResult:
         # Parallel tools may finish together. Serialize only the commit view,
         # so two successful receipts cannot publish clones that erase each other.
         with session.projection_lock:
+            result = bind_source_identity(session, call, result, ok=ok)
             staged = session.clone_projection()
             ledger = getattr(research_tools, "ledger", None)
             staged_ledger = ledger.clone() if ledger is not None else None
@@ -297,6 +298,7 @@ def execute_turn(
             session.commit_projection(staged)
             with _contextlib.suppress(Exception):
                 session._memory_results[identity] = result
+            return result
 
     def reconcile_intent_only(identity: str, ok: bool, result: ToolResult) -> None:
         # Already-durable replay: never rewrite ``session.executed``, only
@@ -387,12 +389,7 @@ def _begin_pending_intents(
         and turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset) not in session.executed
     ]
     if pending_items:
-        try:
-            intent_sink.begin_turn(pending_items, turn=active_turn, specs=frozen_specs, scope=batch_scope)
-        except TypeError as exc:
-            if "scope" not in str(exc):
-                raise
-            intent_sink.begin_turn(pending_items, turn=active_turn, specs=frozen_specs)
+        intent_sink.begin_turn(pending_items, turn=active_turn, specs=frozen_specs, scope=batch_scope)
 
 
 def _settle_delivered_slot(
@@ -403,8 +400,7 @@ def _settle_delivered_slot(
     if slot.disposition == "NO_MATCH":
         return False
     assert slot.result is not None
-    settle(identity, call, slot.result, ok=slot.result.ok)
-    results.append(slot.result)
+    results.append(settle(identity, call, slot.result, ok=slot.result.ok))
     return True
 
 
@@ -548,8 +544,7 @@ def _execute_slots(
             if edit_done == "unconfirmed":
                 workspace_unconfirmed = True
             continue
-        settle(identity, call, result, ok=ok, exit_code=exit_code)
-        results.append(result)
+        results.append(settle(identity, call, result, ok=ok, exit_code=exit_code))
     return results
 
 

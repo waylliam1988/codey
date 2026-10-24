@@ -41,7 +41,7 @@ def test_no_success_fact_can_be_reconstructed_from_display_parameters_or_aliases
     session.search_results["r1"] = URL
     session.source_ids["s1"] = URL
     session.hit_targets["h1"] = {"url": URL, "offset": 0, "pages": ""}
-    before = deepcopy(vars(session))
+    before = deepcopy(vars(session), {id(session.projection_lock): session.projection_lock})
     call = ToolCall(name, args)
     result = ToolResult(call, f"success {URL}", ok=True, canonical={"opened_url": URL})
     with pytest.raises(ValueError, match="observation"):
@@ -57,7 +57,7 @@ def test_redirect_and_query_facts_use_only_the_observed_identity():
     opened = ToolCall("open_url", {"url": "https://wrong.example/ignored"})
     observation = source_receipt()
     record_facts_for_result(session, opened, ToolResult(opened, "display text", ok=True,
-                            canonical={"research_observation": observation}), ok=True)
+                            canonical={"research_observation": observation, "source_id": "s1"}), ok=True)
     assert session.searches == ["observed query"]
     assert session.search_results == {"r1": FINAL}
     assert session.opened_sources == {FINAL}

@@ -115,13 +115,24 @@ class TaskSession:
     def record_open(self, url: str, *, source_id: str = "") -> None:
         text = (url or "").strip()
         if text:
-            self.opened_sources.add(text)
             sid = (source_id or "").strip().lower()
             if not sid:
-                sid = next((key for key, value in self.source_ids.items() if value == text), "")
-            if not sid:
-                sid = f"s{len(self.source_ids) + 1}"
+                sid = self.source_id_for(text)
+            if sid in self.source_ids and self.source_ids[sid] != text:
+                raise ValueError(f"conflicting source identity: {sid}")
+            if any(key != sid and value == text for key, value in self.source_ids.items()):
+                raise ValueError(f"conflicting source identity for URL: {text}")
+            self.opened_sources.add(text)
             self.source_ids[sid] = text
+            self.source_ids = dict(sorted(self.source_ids.items(), key=lambda item: int(item[0][1:])))
+
+    def source_id_for(self, url: str) -> str:
+        existing = next((key for key, value in self.source_ids.items() if value == url), "")
+        if existing:
+            return existing
+        # Explicit receipt bindings can arrive out of order during recovery.
+        number = max((int(key[1:]) for key in self.source_ids if key[1:].isdigit()), default=0) + 1
+        return f"s{number}"
 
     def record_evidence(self, source_url: str, excerpt: str) -> None:
         url = (source_url or "").strip()

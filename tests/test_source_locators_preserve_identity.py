@@ -1,7 +1,7 @@
 """Locators are semantic identities, never display clips."""
 from types import SimpleNamespace
 
-from codey.operations.kernel_facts import record_facts_for_result
+from codey.operations.kernel_facts import bind_source_identity, record_facts_for_result
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
@@ -65,6 +65,7 @@ def test_long_hit_is_opened_and_replayed_with_exact_target():
     assert seen == [(url, {"offset": 120, "pages": ""})]
     assert opened.canonical["research_observation"]["source"]["final_url"] == url
     assert opened.canonical["research_observation"]["source"]["requested_url"] == url
+    opened = bind_source_identity(fresh, opened.call, opened, ok=True)
     record_facts_for_result(fresh, opened.call, opened, ok=True)
     assert fresh.opened_sources == {url}
 
