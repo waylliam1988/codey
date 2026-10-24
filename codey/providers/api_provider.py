@@ -606,7 +606,9 @@ class ApiProvider:
         self._on_display = sink
 
     def _payload(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
-                 settings: GenerationSettings) -> dict[str, Any]:
+                 settings: GenerationSettings, *, clock: str | None = None) -> dict[str, Any]:
+        from codey.providers.request_context import clock_context
+
         payload = self._codec.build_payload(messages, tools, settings)
         if self._working_context:
             key = "messages" if self.api_protocol == "openai-completions" else "input"
@@ -614,6 +616,8 @@ class ApiProvider:
             payload[key] = [{"role": "system", "content": self.system_prompt}] if self.system_prompt else []
             payload[key] += [{"role": "user", "content": self._working_context}]
             payload[key] += [item for item in messages if item.get("role") != "system"]
+        key = "messages" if self.api_protocol == "openai-completions" else "input"
+        payload[key] = [{"role": "system", "content": clock if clock is not None else clock_context()}, *payload[key]]
         self.configure_request(payload)
         return payload
 
@@ -621,13 +625,15 @@ class ApiProvider:
                        settings: GenerationSettings, deadline: float,
                        checkpoints: list[dict[str, Any]] | None) -> dict[str, Any]:
         from codey.providers.error_classification import ContextOverflowError, RequestPrepError
+        from codey.providers.request_context import clock_context
 
         candidate = copy.deepcopy(messages)
+        clock = clock_context()
         staged: list[dict[str, Any]] = checkpoints if checkpoints is not None else []
         while True:
             if self._is_cancelled() or time.monotonic() >= deadline:
                 raise RequestPrepError("context counting cancelled or deadline exceeded before generation")
-            payload = self._payload(candidate, tools, settings)
+            payload = self._payload(candidate, tools, settings, clock=clock)
             count = self.request_counter(payload, deadline=deadline)
             if self._is_cancelled() or time.monotonic() >= deadline:
                 raise RequestPrepError("context counting cancelled or deadline exceeded before generation")
@@ -644,7 +650,7 @@ class ApiProvider:
             latest_user = next((item for item in reversed(candidate) if item.get("role") == "user"), None)
             fixed = [item for item in candidate if item.get("role") in {"system", "developer"}]
             minimum = fixed + ([latest_user] if latest_user is not None else [])
-            minimum_count = self.request_counter(self._payload(minimum, tools, settings), deadline=deadline)
+            minimum_count = self.request_counter(self._payload(minimum, tools, settings, clock=clock), deadline=deadline)
             if minimum_count.value is not None and minimum_count.value > self.context_budget.input_limit:
                 raise ContextOverflowError("current request and declarations exceed the input limit")
             try:

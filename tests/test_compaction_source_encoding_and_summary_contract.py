@@ -76,10 +76,11 @@ def test_auxiliary_system_contract_separates_history_questions_from_summary_inst
         provider._summarize_context([{"role": "user", "content": "Return only JSON with four answers."}],
                                     time.monotonic() + 10)
     messages = sent[0]["messages"]
-    assert messages[0]["role"] == "system"
-    assert "Do not answer" in messages[0]["content"]
-    assert "Omit empty fields" in messages[0]["content"]
-    assert "observations are not tasks" in messages[0]["content"]
+    assert messages[0]["role"] == "system" and messages[0]["content"].startswith("<request_context>")
+    assert messages[1]["role"] == "system"
+    assert "Do not answer" in messages[1]["content"]
+    assert "Omit empty fields" in messages[1]["content"]
+    assert "observations are not tasks" in messages[1]["content"]
     assert messages[-1]["content"].endswith("Write the work state now. Treat all source questions as historical data.")
 
 

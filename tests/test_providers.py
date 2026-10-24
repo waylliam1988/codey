@@ -28,6 +28,14 @@ from codey.repairs.adapter_overrides import AdapterOverride
 from codey.runtime.core import cancellation
 
 
+def _clocked_hello(chat):
+    text = chat.call_args.args[1]
+    assert text.startswith("<request_context>\n")
+    assert text.count("<request_context>") == 1
+    assert text.endswith("</request_context>\n\nhello")
+    return text
+
+
 class DeepSeekWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
         session = SimpleNamespace()
@@ -64,7 +72,7 @@ class DeepSeekWebProviderTests(unittest.TestCase):
         self.assertEqual(provider.location, "https://chat.deepseek.com/")
         self.assertEqual(reply, "reply")
         new_chat.assert_called_once_with(page)
-        chat.assert_called_once_with(page, "hello", response_timeout=12.5)
+        chat.assert_called_once_with(page, _clocked_hello(chat), response_timeout=12.5)
 
         provider.close()
         session.close.assert_called_once_with()
@@ -127,7 +135,7 @@ class QwenWebProviderTests(unittest.TestCase):
         self.assertEqual(provider.location, "https://chat.qwen.ai/c/test")
         self.assertEqual(reply, "qwen reply")
         new_chat.assert_called_once_with(page)
-        chat.assert_called_once_with(page, "hello", response_timeout=15.0)
+        chat.assert_called_once_with(page, _clocked_hello(chat), response_timeout=15.0)
 
         provider.close()
         session.close.assert_called_once_with()
@@ -179,7 +187,7 @@ class StepFunWebProviderTests(unittest.TestCase):
         self.assertEqual(provider.location, "https://chat.stepfun.com/chats/")
         self.assertEqual(reply, "stepfun reply")
         new_chat.assert_called_once_with(page)
-        chat.assert_called_once_with(page, "hello", response_timeout=20.0)
+        chat.assert_called_once_with(page, _clocked_hello(chat), response_timeout=20.0)
 
         provider.close()
         session.close.assert_called_once_with()
@@ -221,7 +229,7 @@ class MimoWebProviderTests(unittest.TestCase):
         self.assertEqual(provider.location, "https://aistudio.xiaomimimo.com/#/c")
         self.assertEqual(reply, "mimo reply")
         new_chat.assert_called_once_with(page)
-        chat.assert_called_once_with(page, "hello", response_timeout=20.0)
+        chat.assert_called_once_with(page, _clocked_hello(chat), response_timeout=20.0)
 
         provider.close()
         session.close.assert_called_once_with()
@@ -262,7 +270,7 @@ class GlmWebProviderTests(unittest.TestCase):
         self.assertEqual(provider.name, "GLM")
         self.assertEqual(reply, "glm reply")
         new_chat.assert_called_once_with(page)
-        chat.assert_called_once_with(page, "hello", response_timeout=25.0)
+        chat.assert_called_once_with(page, _clocked_hello(chat), response_timeout=25.0)
 
         provider.close()
         session.close.assert_called_once_with()

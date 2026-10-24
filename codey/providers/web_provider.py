@@ -90,6 +90,9 @@ class WebChatProvider:
                 raise ValueError("timeout must be a finite number")
         if self.spec.blank_message and not text.strip():
             raise ValueError(self.spec.blank_message)
+        from codey.providers.request_context import clock_context
+
+        text = clock_context() + "\n\n" + text
         kwargs = {}
         if timeout is not None:
             kwargs["response_timeout"] = timeout

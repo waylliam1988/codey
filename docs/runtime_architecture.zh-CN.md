@@ -5,6 +5,15 @@
 
 完整包结构与当前函数入口见[项目结构与职责地图](project_structure.zh-CN.md)。
 
+## 请求时钟（2026-10-24，第 3 批）
+
+`providers/request_context.py::clock_context` 是唯一的请求时钟渲染入口，给出 UTC、
+主机本地时间/日期、UTC 偏移、主机时区名称及操作系统来源。它不猜用户时区。
+API/local/Zen 的 `_admit_request` 每个逻辑生成捕获一次，计数和发送使用同一个 payload；
+HTTP 安全重试复用原 payload。上下文只加入请求视图，不写入或改写语义历史。
+工具续轮、评审与 compaction 经过相同 ApiProvider 边界。浏览器 provider 每条新发送
+消息使用同一个渲染入口；远端已有历史保留原时间。时间上下文不成为外部事实证据。
+
 ## 观察提交与投影（2026-10-24，第 2 批）
 
 共享工具内核的采集 facade 使用临时 ledger。`kernel_execution` 在临时 TaskSession
