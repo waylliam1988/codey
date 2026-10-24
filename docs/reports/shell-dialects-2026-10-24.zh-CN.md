@@ -143,6 +143,9 @@ PowerShell 7 最初退出码探针的安全白名单漏了分号前空格，测�
 execute_shell_ticket，不自建进程执行器。Linux/macOS 尚未远端运行，本机 Windows
 结果不代替那些平台结果；本轮未推送远端。
 
+两项旧失败在后续任务中已进一步定位并修复；此处保留当时验收记录。见
+[根因与修复报告](context-shell-failure-roots-2026-10-24.zh-CN.md)。
+
 ## 三个参考项目的借鉴边界
 
 - Codex：`reference-projects/codex/codex-rs/core/src/shell.rs:24` 的

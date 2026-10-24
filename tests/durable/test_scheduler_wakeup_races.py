@@ -116,3 +116,45 @@ def test_completion_during_queue_scan_places_input_without_another_notification(
         release.set()
         assert scheduler.close()
         session.close()
+
+
+def test_requeue_after_dispatch_snapshot_is_not_lost(tmp_path, monkeypatch):
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "resume")
+    calls = []
+    dispatch_returned = False
+    interleaved = False
+
+    def dispatch(task):
+        nonlocal dispatch_returned
+        calls.append(task.attempt_token)
+        session.start_task(task.task_id, state={})
+        dispatch_returned = True
+        return True
+
+    scheduler = DurableTaskScheduler(session, dispatch)
+    read = session.task
+
+    def stale_dispatch_snapshot(task_id):
+        nonlocal interleaved
+        current = read(task_id)
+        if dispatch_returned and not interleaved:
+            interleaved = True
+            # The worker parks and an approval resumes the same task after
+            # the dispatcher read RUNNING, before it updates volatile sets.
+            session.wait_task(task_id, state={"wait_reason": "approval"})
+            session.advance_task(task_id=task_id, phase="provider_prepared", state={"next": "resume"})
+            session.unclaim_task(task_id)
+            scheduler.notify(task_id, start=False)
+        return current
+
+    monkeypatch.setattr(session, "task", stale_dispatch_snapshot)
+    try:
+        scheduler._reconcile()
+        assert interleaved and read("resume").status == TaskStatus.PENDING
+        scheduler._reconcile()
+        assert len(calls) == 2, "the committed continuation was suppressed by a stale dispatch snapshot"
+        assert calls[0] != calls[1], "resumption must claim a new attempt"
+    finally:
+        scheduler.close()
+        session.close()

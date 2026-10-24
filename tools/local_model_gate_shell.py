@@ -219,7 +219,13 @@ def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict:
                 raise AssertionError(f"approval continuation failed: {approval}")
             time.sleep(0.02)
         else:
-            raise AssertionError("approval continuation did not finish")
+            write_json(directory / "continuation-timeout.json", {
+                "approval": approval,
+                "busy": snapshot.get("busy"),
+                "last_terminal_event": snapshot.get("last_terminal_event"),
+            })
+            raise AssertionError(f"approval continuation did not finish: {approval}; "
+                                 f"last terminal: {snapshot.get('last_terminal_event')}; busy: {snapshot.get('busy')}")
         proof = verify_shell_events(events, source_run, case, original_window)
         # Durable session history is the canonical protocol fact source.  The
         # provider window remains an execution handle, while tool results are

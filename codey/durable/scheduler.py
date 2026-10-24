@@ -347,6 +347,9 @@ class DurableTaskScheduler:
                 return
             with self._lock:
                 self._inflight.add(task_id)
+                # Consume this wakeup before dispatch. A later pending entry
+                # then represents a new durable requeue, not this invocation.
+                self._pending.discard(task_id)
             try:
                 task = self._session.task(task_id)
                 if task.state.get("input_state") == "queued":
@@ -408,7 +411,10 @@ class DurableTaskScheduler:
                         self._remove(task_id)
                         continue
                     with self._lock:
-                        if current.status == TaskStatus.PENDING:
+                        # The snapshot predates this lock. A committed resume
+                        # may already have notified us; never overwrite it with
+                        # the old RUNNING/WAITING observation.
+                        if current.status == TaskStatus.PENDING or task_id in self._pending:
                             self._scheduled.discard(task_id)
                             self._pending.add(task_id)
                         else:

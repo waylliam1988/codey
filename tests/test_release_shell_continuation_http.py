@@ -1,7 +1,9 @@
 """Real approval HTTP routes and native history, with a deterministic model peer."""
 from __future__ import annotations
 
+import inspect
 import json
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -139,14 +141,57 @@ def test_remembered_run_approval_automatically_resumes_next_task(protocol, tmp_p
 
 
 @pytest.mark.parametrize('protocol', ['openai-completions', 'openai-responses'])
-def test_zen_wrapper_restores_approved_call_before_native_continuation(protocol, tmp_path, monkeypatch):
+@pytest.mark.parametrize('resume_before_dispatch_bookkeeping', [False, True])
+def test_zen_wrapper_restores_approved_call_before_native_continuation(
+        protocol, tmp_path, monkeypatch, resume_before_dispatch_bookkeeping):
     from codey.providers import local_connection
     from codey.providers.zen.connection import ZenProvider
 
     original = local_connection.open_selection
     monkeypatch.setattr(local_connection, 'open_selection', lambda selection: ZenProvider(original(selection)))
+    snapshot_observed = threading.Event()
+    approval_settled = threading.Event()
+    if resume_before_dispatch_bookkeeping:
+        from codey.app import task_submit
+        from codey.durable import DurableSession
+        from codey.durable.scheduler import DurableTaskScheduler
+
+        # Exercise the valid admission race in which the scheduler, rather
+        # than the HTTP handler, claims the newly committed task first.
+        monkeypatch.setattr(task_submit, '_claim_admitted_task', lambda *a, **kw: False)
+        reconcile = DurableTaskScheduler._reconcile
+        source, first = inspect.getsourcelines(reconcile)
+        snapshot_line = first + next(i for i, line in enumerate(source)
+                                     if line.strip() == 'if current.state.get("cancel_requested"):')
+        settle = DurableSession.settle_approval
+
+        def settle_and_signal(self, *args, **kwargs):
+            result = settle(self, *args, **kwargs)
+            approval_settled.set()
+            return result
+
+        def trace(frame, event, arg):
+            if frame.f_code is not reconcile.__code__:
+                return None
+            if event == 'line' and frame.f_lineno == snapshot_line and not snapshot_observed.is_set():
+                snapshot_observed.set()
+                assert approval_settled.wait(5), 'approval did not reach the durable settlement boundary'
+            return trace
+
+        def reconcile_with_barrier(self):
+            previous = sys.gettrace()
+            sys.settrace(trace)
+            try:
+                return reconcile(self)
+            finally:
+                sys.settrace(previous)
+
+        monkeypatch.setattr(DurableSession, 'settle_approval', settle_and_signal)
+        monkeypatch.setattr(DurableTaskScheduler, '_reconcile', reconcile_with_barrier)
     with model_peer(protocol, 'shell_approve') as (url, requests, errors):
         target = GateTarget(url, 'shell-fixture', 32768, 8192, 12000, api_protocol=protocol, request_timeout=5)
         proof = run_shell_case('shell_approve', target, tmp_path)
         assert proof['stop_reason'] == 'done'
         assert len(requests) == 2 and not errors
+        if resume_before_dispatch_bookkeeping:
+            assert snapshot_observed.is_set() and approval_settled.is_set()
