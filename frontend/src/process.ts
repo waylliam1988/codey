@@ -1,4 +1,5 @@
 import { mergeCommandResult } from './command_result';
+import { captureCommandOutput, restoreCommandOutput } from './command_output_view';
 import { runtime } from './runtime';
 import type { ApprovalState } from './types/domain';
 import type { ToolPreview } from './render';
@@ -396,6 +397,7 @@ export interface ProcessToolRecord {
         (node) => node.dataset.approvalId === m.id,
       );
       const open = existing?.querySelector<HTMLDetailsElement>('details')?.open;
+      const outputReading = captureCommandOutput(existing);
       const fragment = document.createElement('div');
       render(fragment, m);
       const card = fragment.firstElementChild;
@@ -404,6 +406,7 @@ export interface ProcessToolRecord {
         if (details && open !== undefined) details.open = open;
         if (existing) existing.replaceWith(card);
         else target.append(card);
+        restoreCommandOutput(card, outputReading);
       }
       block._process.tools.set(key, {
         ...m,

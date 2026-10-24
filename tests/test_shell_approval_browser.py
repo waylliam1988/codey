@@ -52,6 +52,26 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 _goto_restored_ui(page, httpd.launch_url(f"http://127.0.0.1:{httpd.server_port}/"))
 
+                # Managing rules and returning must leave the command undecided.
+                decisions = []
+                page.on('request', lambda request: decisions.append(request.url)
+                        if request.method == 'POST' and request.url.endswith('/api/shell_approval') else None)
+                page.locator('.approval-options > summary').click()
+                page.get_by_role('button', name='Manage saved permissions…', exact=True).click()
+                manager = page.get_by_role('dialog', name='Saved permissions', exact=True)
+                expect(manager).to_contain_text('No saved permissions')
+                if not approved:
+                    page.keyboard.press('Escape')
+                else:
+                    manager.get_by_role('button', name='Back to approval' if scope == 'session' else 'Back', exact=True).click()
+                expect(manager).to_have_count(0)
+                expect(page.locator('.approval-options > summary')).to_be_focused()
+                expect(page.get_by_role('button', name='Allow once', exact=True)).to_be_visible()
+                assert decisions == []
+                assert ctx.shell_approval_workflow.status('approval')['decision'] == 'pending'
+                assert ctx.durable.task('source') == original_task
+                assert not (tmp_path / 'executions').exists()
+
                 # The server accepts the decision, but its response is lost.
                 def drop_response(route):
                     if route.request.method == "POST":
@@ -137,22 +157,29 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
                     if scope == 'project':
                         assert ctx.command_permissions.matching({'project': str(tmp_path), 'session_id': 'other-chat',
                                                                  'command': command, 'cwd': '.'})
-                    process = page.locator('.process-block').filter(has=page.locator('.command-card'))
-                    process.locator('.process-summary').click()
-                    page.locator('.command-card > details > summary').click()
-                    page.get_by_role('button', name='Saved permissions', exact=True).click()
+                    expect(page.locator('.command-card').get_by_role('button', name='Saved permissions', exact=True)).to_have_count(0)
+                    page.keyboard.press('Control+k')
+                    page.get_by_role('combobox', name='Find an action').fill('Manage saved permissions')
+                    page.get_by_role('option', name='Manage saved permissions…', exact=True).click()
                     dialog = page.get_by_role('dialog')
-                    expect(dialog).to_contain_text('This project · Exact command' if scope == 'project' else 'This chat · Exact command')
+                    expect(dialog).to_contain_text('This project ·' if scope == 'project' else 'Chat session ·')
                     output = Path('.e2e-artifacts/command-permissions')
                     output.mkdir(parents=True, exist_ok=True)
                     page.screenshot(path=str(output / f'{scope}-permissions.png'), full_page=True)
-                    dialog.get_by_role('button', name='Revoke', exact=True).click()
+                    dialog.get_by_role('button', name=f'Remove permission for {command}', exact=True).click()
                     expect(dialog).to_contain_text('No saved permissions')
                     assert ctx.command_permissions.list_rules(session_id='session', project=str(tmp_path)) == []
-                    dialog.get_by_role('button', name='Close', exact=True).click()
+                    dialog.get_by_role('button', name='Back', exact=True).click()
                     page.locator('#btn-settings').click()
-                    page.get_by_role('button', name='Saved command permissions', exact=True).click()
-                    expect(page.get_by_role('dialog', name='Saved command permissions')).to_contain_text('No saved permissions')
+                    settings = page.get_by_role('dialog', name='Settings', exact=True)
+                    expect(settings.locator('#btn-command-permissions')).to_have_count(0)
+                    expect(settings.get_by_text('Permissions', exact=True)).to_have_count(0)
+                    expect(settings.get_by_text('Models', exact=True)).to_have_count(0)
+                    settings.get_by_role('button', name='Close settings', exact=True).click()
+                    page.keyboard.press('Control+k')
+                    page.get_by_role('combobox', name='Find an action').fill('Manage saved permissions')
+                    page.get_by_role('option', name='Manage saved permissions…', exact=True).click()
+                    expect(page.get_by_role('dialog', name='Saved permissions', exact=True)).to_contain_text('No saved permissions')
             finally:
                 browser.close()
     finally:

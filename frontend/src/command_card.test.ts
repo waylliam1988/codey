@@ -1,25 +1,26 @@
 import { expect, it, vi } from 'vitest';
 import { commandCard } from './command_card';
 import './render';
+import { messageIcons } from './message_icons';
+import { runtime } from './runtime';
 
-it('tails retained output without changing status or copied output', () => {
+it('keeps all retained output without permanent tail or permission controls', () => {
   const text = Array.from({ length: 80 }, (_, i) => String(i)).join('\n') + '\n';
   const copy = vi.fn().mockResolvedValue(true);
   const card = commandCard(
     { type: 'shell_result', approved: true, shellStatus: 'exit', exitCode: 7, output: text },
     copy,
   );
-  const tail = Array.from(card.querySelectorAll('button')).find(
-    (button) => button.textContent === 'Show last 40 lines',
-  )!;
-  tail.click();
-  expect(card.querySelector('.shell-stdout')?.textContent?.split('\n')).toHaveLength(40);
-  expect(card.querySelector('.shell-stdout')?.textContent).toMatch(/^40\n/);
-  expect(card.querySelector('.command-status')?.textContent).toContain('exit 7');
+  expect(card.textContent).not.toMatch(/Show last|Show retained|Saved permissions/);
+  expect(card.querySelector('.command-status')?.textContent).toBe('Exit code 7');
   (card.querySelector('[aria-label="Copy output"]') as HTMLButtonElement).click();
   expect(copy).toHaveBeenCalledWith(text);
-  tail.click();
   expect(card.querySelector('.shell-stdout')?.textContent).toBe(text);
+  const svg = card.querySelector('[aria-label="Copy command"] svg')!;
+  expect(svg.getAttribute('viewBox')).toBe(messageIcons.copy.viewBox);
+  const original = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  original.innerHTML = messageIcons.copy.body;
+  expect(svg.querySelector('path')?.getAttribute('d')).toBe(original.querySelector('path')?.getAttribute('d'));
 });
 
 it('uses the shared activity-row disclosure with a trailing chevron', () => {
@@ -31,7 +32,7 @@ it('uses the shared activity-row disclosure with a trailing chevron', () => {
   expect(summary.querySelector('.command-terminal, svg, img')).toBeNull();
   expect(summary.querySelector('.activity-dot')?.textContent).toBe('·');
   expect(summary.querySelector('.command-label')?.textContent).toBe('Ran');
-  expect(summary.querySelector('.command-arrow')?.textContent).toBe('→');
+  expect(summary.querySelector('.command-arrow, .command-result-slot')).toBeNull();
   expect(summary.lastElementChild?.className).toBe('command-chevron');
 });
 
@@ -73,7 +74,7 @@ it('keeps command/output independently copyable while exposing truncation separa
     copy,
   );
   document.body.append(card);
-  expect(card.querySelector('.command-status')?.textContent).toContain('exit 1');
+  expect(card.querySelector('.command-status')?.textContent).toBe('Exit code 1');
   expect(card.querySelector('details')?.open).toBe(false);
   expect(card.querySelector('.shell-output')?.textContent).toContain('参数');
   const buttons = card.querySelectorAll('button');
@@ -81,11 +82,38 @@ it('keeps command/output independently copyable while exposing truncation separa
   expect(copy).toHaveBeenLastCalledWith('x'.repeat(4000));
   buttons[1].click();
   expect(copy).toHaveBeenLastCalledWith('参数\n'.repeat(2000));
-  expect(buttons[1].getAttribute('aria-label')).toBe('Copy output');
-  expect(card.querySelector('.command-notice')?.textContent).toBe('Output truncated');
+  expect(buttons[1].getAttribute('aria-label')).toBe('Copy retained output');
+  expect(card.querySelector('.shell-stdout')?.textContent).toMatch(/^\[output truncated\]\n/);
+  expect(card.querySelector('.command-notice')).toBeNull();
   expect(buttons[0].textContent).toBe('');
   expect(buttons[0].querySelector('svg')).not.toBeNull();
   card.remove();
+});
+
+it('only surfaces permission failures and retries saving without rerunning a command', () => {
+  const remember = vi.fn();
+  runtime.ShellApprovals = { remember };
+  const success = commandCard(
+    { type: 'shell_result', id: 'one', permissionScope: 'session', approved: true, shellStatus: 'exit', exitCode: 0 },
+    vi.fn(),
+  );
+  expect(success.querySelector('.command-permission-note')).toBeNull();
+  const failure = commandCard(
+    {
+      type: 'shell_result',
+      id: 'two',
+      permissionSaveError: 'Saving failed',
+      permissionSaveScope: 'session',
+      approved: true,
+      shellStatus: 'exit',
+      exitCode: 0,
+    },
+    vi.fn(),
+  );
+  expect(failure.querySelector('.command-permission-note')?.textContent).toContain('Permission not saved.');
+  (failure.querySelector('.command-permission-note button') as HTMLButtonElement).click();
+  expect(remember).toHaveBeenCalledExactlyOnceWith('two', 'session');
+  expect(failure.textContent).not.toContain('Saved permissions');
 });
 
 it('scopes live output polling to the owning session and run', async () => {
@@ -153,6 +181,8 @@ it('shows a running command card and observes bounded output before settlement',
   expect(fetcher).toHaveBeenCalled();
   expect(card.querySelector('.shell-output')?.textContent).toContain('last line');
   expect(card.querySelector('.shell-output')?.textContent).toContain('[stderr]');
+  expect(card.querySelectorAll('.shell-output')).toHaveLength(1);
+  expect(card.querySelector('.shell-output')?.textContent?.match(/warn/g)).toHaveLength(1);
   vi.unstubAllGlobals();
   card.remove();
 });

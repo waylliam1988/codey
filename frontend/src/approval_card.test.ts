@@ -20,6 +20,7 @@ function render(fields: Partial<Message> = {}) {
   window.Messages.append(chat, {
     type: 'shell_request',
     id: 'approval',
+    sessionId: 'chat',
     command: 'python -m pytest --collect-only',
     cwd: 'E:/Selfie - 副本',
     riskTitle: 'Shell command',
@@ -39,7 +40,7 @@ it('shows the approved compact approval layout without a reason section', () => 
   expect(Array.from(buttons, (button) => button.textContent).filter((text) => text === 'Allow once')).toHaveLength(1);
   expect(chat.querySelector('.approval-options')?.textContent).not.toContain('Allow once');
   expect(chat.querySelector('.approval-options')?.textContent).toContain('Allow exact command in this chat');
-  expect(chat.textContent).not.toContain('Saved permissions');
+  expect(chat.querySelector('.approval-options')?.textContent).toContain('Manage saved permissions…');
   buttons[1].click();
   expect(submit).toHaveBeenCalledExactlyOnceWith('approval', true);
 });

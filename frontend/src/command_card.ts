@@ -1,17 +1,36 @@
 import { iconButton } from './icon_button';
 import type { Message } from './types/domain';
 import { mergeOutputSnapshot, type ExecutionSnapshot } from './execution_output';
-import { permissionsButton } from './command_permissions';
+import { commandOutputView } from './command_output_view';
 import { runtime } from './runtime';
 
 type Copy = (text: string) => Promise<boolean>;
 
-function copyButton(label: string, text: string, copy: Copy): HTMLButtonElement {
+function copyButton(label: string, text: string | (() => string), copy: Copy): HTMLButtonElement {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const button = iconButton(label, 'copy', async () => {
-    const status = (await copy(text)) ? 'Copied' : 'Could not copy';
-    button.title = status;
+    if (timer) clearTimeout(timer);
+    button.disabled = true;
+    let ok = false;
+    try {
+      ok = await copy(typeof text === 'function' ? text() : text);
+    } catch {
+      /* Keep copying retryable. */
+    }
+    const status = ok ? 'Copied' : 'Could not copy';
+    button.disabled = false;
+    button.dataset.copyFeedback = 'true';
     button.setAttribute('aria-label', status);
+    timer = setTimeout(
+      () => {
+        delete button.dataset.copyFeedback;
+        button.setAttribute('aria-label', button.dataset.copyLabel || label);
+      },
+      ok ? 1200 : 4000,
+    );
   });
+  button.removeAttribute('title');
+  button.dataset.copyLabel = label;
   return button;
 }
 
@@ -47,14 +66,16 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
           ? 'failed'
           : 'unknown';
   const result = queued
-    ? 'Allowed; command queued'
+    ? 'Queued'
     : running
       ? 'Command running'
       : failure ||
         (!message.approved
           ? 'Denied'
           : completed
-            ? `Command ${success ? 'completed' : 'failed'} · exit ${exit}`
+            ? success
+              ? '✓ Success'
+              : `Exit code ${exit}`
             : 'Result status unknown');
   const dot = document.createElement('span');
   dot.className = 'activity-dot';
@@ -69,14 +90,6 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
   excerpt.className = 'command-excerpt';
   excerpt.textContent = message.command || '';
   summary.append(excerpt);
-  const arrow = document.createElement('span');
-  arrow.className = 'command-arrow';
-  arrow.textContent = '→';
-  arrow.setAttribute('aria-hidden', 'true');
-  const resultSlot = document.createElement('span');
-  resultSlot.className = 'command-result-slot';
-  resultSlot.setAttribute('aria-hidden', 'true');
-  summary.append(arrow, resultSlot);
   const chevron = document.createElement('span');
   chevron.className = 'command-chevron';
   chevron.setAttribute('aria-hidden', 'true');
@@ -84,15 +97,20 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
   details.append(summary);
   const panel = document.createElement('div');
   panel.className = 'command-panel';
-  const panelLabel = document.createElement('div');
-  panelLabel.className = 'command-panel-label';
-  panelLabel.textContent = 'Shell';
-  panel.append(panelLabel);
   const command = document.createElement('section');
   command.className = 'command-source';
   const pre = document.createElement('pre');
-  pre.textContent = message.command || '';
-  command.append(copyButton('Copy command', message.command || '', copy), pre);
+  pre.textContent = (message.commandTruncated ? '[command truncated]\n' : '') + (message.command || '');
+  command.append(
+    copyButton(message.commandTruncated ? 'Copy retained command' : 'Copy command', message.command || '', copy),
+    pre,
+  );
+  if (message.commandTruncated && message.commandSha256) {
+    const integrity = document.createElement('div');
+    integrity.className = 'command-integrity';
+    integrity.textContent = `Full command sha256 · ${message.commandSha256}`;
+    command.append(integrity);
+  }
   const output = document.createElement('section');
   output.className = 'command-result';
   const stdoutText = document.createElement('pre');
@@ -100,57 +118,30 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
   stdoutText.tabIndex = 0;
   stdoutText.setAttribute('role', 'region');
   stdoutText.setAttribute('aria-label', 'Standard output');
-  stdoutText.textContent = message.output || (running ? 'Waiting for output…' : '(no output)');
-  const stderrText = document.createElement('pre');
-  stderrText.className = 'shell-output shell-stderr';
-  stderrText.tabIndex = 0;
-  stderrText.setAttribute('role', 'region');
-  stderrText.setAttribute('aria-label', 'Standard error');
-  stderrText.hidden = true;
-  output.append(
-    copyButton(running ? 'Copy received content' : 'Copy output', message.output || '', copy),
-    stdoutText,
-    stderrText,
+  let retainedOutput = message.output || '';
+  const outputCopy = copyButton(
+    message.outputTruncated ? 'Copy retained output' : running ? 'Copy received content' : 'Copy output',
+    () => retainedOutput,
+    copy,
   );
-  if (message.outputTruncated || message.commandTruncated) {
-    const notice = document.createElement('div');
-    notice.className = 'command-notice';
-    notice.textContent = message.outputTruncated ? 'Output truncated' : 'Command truncated';
-    notice.title = 'Copy includes retained content only.';
-    output.append(notice);
-  }
+  output.append(outputCopy, stdoutText);
+  const reader = commandOutputView(stdoutText, output, details);
+  reader.write(
+    (message.outputTruncated ? '[output truncated]\n' : '') +
+      (retainedOutput || (running ? 'Waiting for output…' : 'No output')),
+  );
   const settlement = document.createElement('div');
   settlement.className = 'command-status';
-  settlement.textContent = success ? '✓ Succeeded' : result;
+  settlement.textContent = running ? '' : result;
   panel.append(command, output, settlement);
-  const tail = document.createElement('button');
-  tail.className = 'text-btn';
-  tail.textContent = 'Show last 40 lines';
-  let showingTail = false;
-  tail.onclick = () => {
-    showingTail = !showingTail;
-    const text = message.output || '';
-    stdoutText.textContent = showingTail
-      ? text
-          .replace(/\r?\n$/, '')
-          .split(/\r?\n/)
-          .slice(-40)
-          .join('\n')
-      : text;
-    tail.textContent = showingTail ? 'Show retained output' : 'Show last 40 lines';
-  };
-  if (!running && message.output) panel.append(tail);
-  if (message.id && !message.permissionScope && !message.permissionSaveError)
-    panel.append(permissionsButton(message.sessionId || '', message.project || ''));
   details.append(panel);
   card.append(details);
-  if (message.permissionSaveError || message.permissionScope) {
+  if (message.permissionSaveError) {
     const notice = document.createElement('div');
     notice.className = 'command-permission-note';
     notice.setAttribute('role', 'status');
-    notice.textContent = message.permissionSaveError
-      ? `Allowed once. ${message.permissionSaveError}`
-      : `Exact command allowed in this ${message.permissionScope === 'project' ? 'project' : 'chat'}.`;
+    notice.textContent = 'Permission not saved.';
+    notice.title = message.permissionSaveError;
     if (message.permissionSaveError && message.permissionSaveScope) {
       const retry = document.createElement('button');
       retry.type = 'button';
@@ -162,31 +153,22 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
       };
       notice.append(' ', retry);
     }
-    notice.append(' ', permissionsButton(message.sessionId || '', message.project || ''));
     card.append(notice);
   }
   if (running && message.executionId) {
-    const outputCopy = output.querySelector('button') as HTMLButtonElement | null;
     let latest: ExecutionSnapshot = { revision: -1, execution_state: 'running', stdout: '', stderr: '' };
-    const updateOutput = (stdout: string, stderr: string) => {
-      const following = textAtBottom(stdoutText);
-      const stdoutTop = stdoutText.scrollTop;
-      const stderrTop = stderrText.scrollTop;
-      stdoutText.textContent =
-        [stdout, stderr ? `[stderr]\n${stderr}` : ''].filter(Boolean).join('\n\n') || 'Waiting for output…';
-      stderrText.textContent = stderr;
-      stderrText.hidden = !stderr;
-      stdoutText.scrollTop = following ? stdoutText.scrollHeight : stdoutTop;
-      stderrText.scrollTop = stderrTop;
-      if (outputCopy) {
-        outputCopy.title = 'Copy received content';
-        outputCopy.setAttribute('aria-label', 'Copy received content');
-        outputCopy.onclick = async () => {
-          const value = [latest.stdout, latest.stderr ? `[stderr]\n${latest.stderr}` : ''].filter(Boolean).join('\n\n');
-          const ok = await copy(value);
-          outputCopy.title = ok ? 'Copied' : 'Could not copy';
-        };
-      }
+    const updateOutput = (stdout: string, stderr: string, truncated: boolean) => {
+      retainedOutput = [stdout, stderr ? `[stderr]\n${stderr}` : ''].filter(Boolean).join('\n\n');
+      reader.write(
+        (truncated ? '[output truncated]\n' : '') +
+          (retainedOutput || (latest.execution_state === 'running' ? 'Waiting for output…' : 'No output')),
+      );
+      outputCopy.dataset.copyLabel = truncated
+        ? 'Copy retained output'
+        : latest.execution_state === 'running'
+          ? 'Copy received content'
+          : 'Copy output';
+      if (!outputCopy.dataset.copyFeedback) outputCopy.setAttribute('aria-label', outputCopy.dataset.copyLabel);
     };
     const poll = async (): Promise<void> => {
       while (card.isConnected || latest.revision < 0) {
@@ -204,6 +186,7 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
               execution_state?: 'running' | 'settled' | 'unknown';
               stdout?: unknown;
               stderr?: unknown;
+              exit_code?: number | null;
             };
             const textValue = (value: unknown) =>
               typeof value === 'string'
@@ -213,13 +196,30 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
                   : '';
             const stdout = textValue(data.stdout);
             const stderr = textValue(data.stderr);
-            latest = mergeOutputSnapshot(latest, {
+            const next = mergeOutputSnapshot(latest, {
               revision: Number(data.revision || 0),
               execution_state: data.execution_state || 'running',
               stdout,
               stderr,
             });
-            updateOutput(latest.stdout, latest.stderr || '');
+            if (next !== latest) {
+              latest = next;
+              const truncated = [data.stdout, data.stderr].some(
+                (value) => value && typeof value === 'object' && 'truncated' in value && value.truncated === true,
+              );
+              updateOutput(latest.stdout, latest.stderr || '', truncated);
+              if (latest.execution_state !== 'running') {
+                const exit = data.exit_code;
+                const known = latest.execution_state === 'settled' && Number.isInteger(exit);
+                card.dataset.status = known ? (exit === 0 ? 'success' : 'failed') : 'unknown';
+                label.textContent = 'Ran';
+                settlement.textContent = known
+                  ? exit === 0
+                    ? '✓ Success'
+                    : `Exit code ${exit}`
+                  : 'Result status unknown';
+              }
+            }
             if (latest.execution_state === 'settled' || latest.execution_state === 'unknown') break;
           }
         } catch {}
@@ -229,8 +229,4 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
     void poll();
   }
   return card;
-}
-
-function textAtBottom(element: HTMLElement): boolean {
-  return element.scrollHeight - element.scrollTop - element.clientHeight <= 8;
 }

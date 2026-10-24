@@ -1,5 +1,6 @@
 import { runtime } from './runtime';
 import { createIconSvg } from './icon_button';
+import { showCommandPermissions } from './command_permissions';
 import type { Message } from './types/domain';
 
 export function approvalRequest(
@@ -101,6 +102,13 @@ export function approvalRequest(
     choice.append(description);
     menu.append(choice);
   }
+  const manage = button('Manage saved permissions…', () => {
+    options.open = false;
+    void showCommandPermissions(message.sessionId || '', message.project || '', false, toggle);
+  });
+  manage.classList.add('approval-manage-permissions');
+  manage.disabled ||= !message.sessionId;
+  menu.append(manage);
   options.append(toggle, menu);
   let outside: AbortController | undefined;
   options.addEventListener('toggle', () => {

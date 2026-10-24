@@ -347,7 +347,14 @@ export interface MessagesApi {
       }
       chat.appendChild(div);
     } else if (m.type === 'shell_request') {
-      const row = approvalRequest(m, approveCommand);
+      const row = approvalRequest(
+        {
+          ...m,
+          sessionId: m.sessionId || deps.getActiveId?.(),
+          project: m.project || deps.currentProjectPath?.(),
+        },
+        approveCommand,
+      );
       approvalViews.set(row, JSON.stringify([m]));
       chat.append(row);
     } else if (m.type === 'shell_approval_status' && m.approval) {

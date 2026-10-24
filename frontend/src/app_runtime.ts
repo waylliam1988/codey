@@ -326,15 +326,12 @@ const commandPalette = new CommandPalette(() => [
   { id: 'settings', label: 'Settings', run: () => $('btn-settings').click() },
   {
     id: 'command-permissions',
-    label: 'Saved command permissions',
+    label: 'Manage saved permissions…',
     run: () => {
       void showCommandPermissions('', '', true);
     },
   },
 ]);
-$('btn-command-permissions')?.addEventListener('click', () => {
-  void showCommandPermissions('', '', true);
-});
 document.body.append(commandPalette.element);
 document.addEventListener('keydown', (event) => {
   if (

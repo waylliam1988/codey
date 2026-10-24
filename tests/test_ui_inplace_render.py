@@ -746,7 +746,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 browser.close()
 
         try:
-            self.assertEqual(result["exit|true"], "✓ Succeeded")
+            self.assertEqual(result["exit|true"], "✓ Success")
             self.assertEqual(result["empty|denied"], "Denied")
             self.assertEqual(result["missing|denied"], "Denied")
             self.assertEqual(result["exit|denied"], "Denied")

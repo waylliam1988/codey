@@ -73,9 +73,19 @@ its identity and preventing a second provider task. Editing retains unsaved text
 if placement wins the race; settled receipts disappear from the pending strip.
 
 Command approval uses a compact Deny action and an Allow once split button.
-The dropdown contains only extended scopes: Allow exact command in this chat,
-and Allow exact command in this project when supported. Do not repeat Allow once
-in the dropdown. Saved permission management is separate from pending decisions.
+The dropdown offers Allow exact command in this chat, and Allow exact command
+in this project when supported, followed by Manage saved permissions…. Do not
+repeat Allow once in the dropdown. Settings remains the original model-selection
+page: no Permissions section, saved-permissions button, or redundant Models label.
+Saved permissions opens a separate, compact panel from the approval menu or
+command palette, never a permanent button under completed output. Use a left-facing return arrow in its header and
+Back in its footer, never Done. Back, the arrow and Escape only close the panel
+and restore focus to the command without scrolling; they never approve, execute,
+or save a rule. Pending commands still require Allow once or an explicit allow
+and remember choice. List each saved command with its chat/project scope, working
+directory and a remove icon; show No saved permissions for an empty list. Keep
+the panel typography and neutral surfaces consistent with model Settings.
+Loading and removal failures remain retryable, and closing cancels pending reads.
 Show save failures beside the original command; Retry saving must never execute
 the command again. Merge process records with their owning turn above its final
 answer, and clear Waiting for approval after execution and continuation advance.
@@ -859,6 +869,27 @@ Product context: root `README.md`
 When this document and the code disagree, **update the code to match this document**, or amend this document in the same PR with a short rationale.
 
 Shell results preserve explicit process status and signed integer exits across restart. Missing historical status displays `Result status unknown`; a zero exit alone does not invent a missing status. Command preview truncation and its complete-command digest remain visible after restore.
+
+Completed Shell rows show `Ran`, the command and one trailing disclosure chevron.
+Opening reveals the command, retained output and a compact `✓ Success`, `Exit code N`,
+`Stopped` or specific failure footer. Omit the redundant Shell heading, blank result
+column, and permanent `Show last 40 lines` / `Show retained output` controls.
+Use one bounded output viewport (144px maximum) with normal horizontal/vertical
+scrolling and subtle fades at the overflowing edges. Initially show the latest
+output; upward reading, text selection and reading keys stop following. Reaching
+the bottom or the icon-only `Back to latest output` action resumes following.
+Preserve vertical/horizontal reading position across live snapshots and replacement
+of the same command card. Do not show that arrow at the bottom or on short output.
+Scrollbars have a transparent intersection corner. Output focus adds no bright
+outline; retain keyboard scrolling and copying. Use Codey's existing copy vectors
+without substituting a generic library icon. Copy controls reveal on hover/focus,
+retain brief gray feedback and copy received/retained content without UI annotations.
+Mark discarded output as `[output truncated]` inside the output, with the accessible
+copy action named `Copy retained output`; never imply missing content is available.
+Combine stdout and stderr once, labeling the latter `[stderr]` when present.
+Successful permission saves add no permanent output footer. A save failure alone
+shows `Permission not saved.` and `Retry saving`, with its reason available on
+hover. Retrying only saves the rule; it must not execute or approve another command.
 
 
 ### Process disclosure and local maintenance diagnostics

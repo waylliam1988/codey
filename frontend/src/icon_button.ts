@@ -1,5 +1,7 @@
 import { messageIcons } from './message_icons';
 export type Icon =
+  | 'arrow-left'
+  | 'arrow-down'
   | 'copy'
   | 'edit'
   | 'reload'
@@ -11,6 +13,8 @@ export type Icon =
   | 'chevron-down'
   | 'trash';
 const paths: Record<Icon, string> = {
+  'arrow-left': 'M19 12H5m7-7-7 7 7 7',
+  'arrow-down': 'M12 5v14m-7-7 7 7 7-7',
   'chevron-down': 'm6 9 6 6 6-6',
   trash: 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7',
   copy: '',
