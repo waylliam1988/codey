@@ -245,6 +245,7 @@ class ExecutionDelegate:
                 permission_profile=self._project_permission_profile(),
                 approval_available=self.approval_available,
                 phase="writer",
+                shell=self.session.shell,
             )
         except Exception as exc:
             return ProjectPolicyCheck(True, f"policy error: {exc}", False)

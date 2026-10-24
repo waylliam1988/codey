@@ -14,6 +14,7 @@ from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_loop import _approval_stop
 from codey.operations.task_session import TaskSession
 from codey.policies.command_approval import shell_compatibility_error
+from codey.policies.command_line import resolve_shell
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall
 from codey.storage.command_permissions import CommandPermissionStore, project_rule_available
@@ -72,7 +73,7 @@ def test_invalid_tail_never_creates_approval_and_approved_run_honors_tail(tmp_pa
 
 
 def test_windows_heredoc_requires_explicit_compatible_interpreter(monkeypatch):
-    monkeypatch.setattr('codey.policies.command_approval.sys.platform', 'win32')
+    monkeypatch.setattr('codey.policies.command_line.sys.platform', 'win32')
     assert 'Bash heredoc' in shell_compatibility_error("python - <<'PY'\nprint(1)\nPY")
     assert not shell_compatibility_error('bash -lc "python - <<PY\nprint(1)\nPY"')
     assert not shell_compatibility_error('python -c "print(\'<<PY\')"')
@@ -81,7 +82,8 @@ def test_windows_heredoc_requires_explicit_compatible_interpreter(monkeypatch):
 def test_exact_grants_bind_project_cwd_executor_and_chat_and_survive_restart(tmp_path):
     project = tmp_path / 'project'
     project.mkdir()
-    pending = {'project': str(project), 'cwd': '.', 'command': 'git status --short', 'session_id': 'chat-a'}
+    pending = {'project': str(project), 'cwd': '.', 'command': 'git status --short', 'session_id': 'chat-a',
+               'shell': resolve_shell().to_payload()}
     store = CommandPermissionStore(tmp_path)
     store.remember(pending, 'session')
     assert CommandPermissionStore(tmp_path).matching(pending)
@@ -107,7 +109,8 @@ def test_corrupt_saved_rules_fail_closed(tmp_path):
     store = CommandPermissionStore(tmp_path)
     store.path.write_text('{broken', encoding='utf-8')
     with pytest.raises(ValueError):
-        store.matching({'command': 'echo x', 'project': str(tmp_path), 'session_id': 'a'})
+        store.matching({'command': 'echo x', 'project': str(tmp_path), 'session_id': 'a',
+                        'shell': resolve_shell().to_payload()})
 
 
 def test_retry_saving_a_grant_never_executes_the_command_again(tmp_path, monkeypatch):

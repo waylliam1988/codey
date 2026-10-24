@@ -33,6 +33,7 @@ from codey.operations.kernel_trace import record_outbound, record_turn
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import effect_coordinates
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
+from codey.policies.command_line import ShellSpec
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult, TurnFinish, tools_from_specs
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
@@ -349,12 +350,14 @@ def _approval_stop(
     permission_profile: object = "coding_writer",
     provider_id: object = "",
     window_ref: Any = None,
+    shell: ShellSpec | None = None,
 ) -> KernelResult | None:
     if on_shell_request is None or project_path is None:
         return None
     from codey.agents.shell_approval import ShellApprovalRequest, deferred_tool_call_from_call
     from codey.operations.task_execution import effective_project_profile
     from codey.policies.command_approval import approval_call
+    from codey.policies.command_line import resolve_shell
 
     try:
         allows_shell = bool(policy.allows("shell.approval")) if policy is not None else False
@@ -365,6 +368,7 @@ def _approval_stop(
         # pause here. Execution still denies via the project guard.
         return None
     effective_profile = effective_project_profile(permission_profile)
+    selected_shell = shell if shell is not None else resolve_shell()
     for index, call in enumerate(calls):
         if call.name == "run" and len(calls) > 1:
             # Do not park a whole batch and silently skip earlier effects.
@@ -373,7 +377,7 @@ def _approval_stop(
             continue
         if call.name == "run" and not policy.allows("project.verify"):
             continue
-        if approval_call(call, project=project_path, permission_profile=effective_profile) is None:
+        if approval_call(call, project=project_path, permission_profile=effective_profile, shell=selected_shell) is None:
             continue
         deferred = tuple(
             deferred_tool_call_from_call(item, tool_index=offset)
@@ -399,6 +403,7 @@ def _approval_stop(
                 window_ref=window_ref,
                 tool_name=call.name,
                 tool_args=dict(call.args),
+                shell=selected_shell,
             )
         )
         return KernelResult(False, "shell command requires approval", turn, "approval")
@@ -516,6 +521,7 @@ def _kernel_handle_done_approval(
         permission_profile=permission_profile,
         provider_id=provider_id,
         window_ref=getattr(provider, "window_ref", None),
+        shell=session.shell,
     )
     return done_action, approval, list(calls or ())
 

@@ -10,6 +10,7 @@ from unittest import mock
 
 from codey.app import server, shell_service
 from codey.app.context import AppContext
+from codey.policies.command_line import resolve_shell
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact
 from tests.operator_http import OperatorHTTPConnection
 from tests.support.shell_approval import admit_shell_task
@@ -22,6 +23,7 @@ def _seed_requested_approval(state: AppContext, approval_id: str) -> None:
         session_id="session",
         run_id="source-run",
         payload={
+            "shell": resolve_shell().to_payload(),
             "command": "python --version",
             "cwd": ".",
             "project": str(state.state_home),

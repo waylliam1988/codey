@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from codey.policies.command_line import shell_executor, split_run_command
+from codey.policies.command_line import ShellSpec, split_run_command
 from codey.storage.atomic_io import write_bytes_atomic
 from codey.storage.file_lock import with_file_lock
 
@@ -20,7 +20,7 @@ def command_identity(pending: dict[str, Any]) -> dict[str, str]:
     return {
         "project": os.path.normcase(project), "cwd": os.path.normcase(cwd),
         "command": str(pending.get("command") or ""),
-        "executor": shell_executor(),
+        "executor": json.dumps(ShellSpec.from_payload(pending.get("shell")).to_payload(), sort_keys=True),
         "environment_sha256": hashlib.sha256(json.dumps(
             {key: os.environ.get(key, "") for key in ("PATH", "PATHEXT", "VIRTUAL_ENV", "CONDA_PREFIX", "COMSPEC")},
             sort_keys=True,
@@ -75,7 +75,10 @@ class CommandPermissionStore:
                         and row.get("project") == os.path.normcase(str(Path(project).resolve())))]
 
     def matching(self, pending: dict[str, Any]) -> dict[str, str] | None:
-        identity = command_identity(pending)
+        try:
+            identity = command_identity(pending)
+        except ValueError:
+            return None
         return next((row for row in self.list_rules(session_id=str(pending.get("session_id") or ""),
                                               project=identity["project"])
                      if all(row.get(key) == value for key, value in identity.items())), None)

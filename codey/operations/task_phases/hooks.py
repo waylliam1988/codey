@@ -207,6 +207,7 @@ class _RunHookCallbacks:
             max_turns_raw = pending.get("max_turns")
             max_turns = max_turns_raw if type(max_turns_raw) is int and max_turns_raw > 0 else 1
             command_payload = {
+                "shell": pending["shell"],
                 "tool_name": pending["tool_name"],
                 "tool_args": pending["tool_args"],
                 "command": command,

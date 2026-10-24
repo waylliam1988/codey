@@ -16,6 +16,7 @@ from codey.policies.action import (
     ActionSubject,
     evaluate_action,
 )
+from codey.policies.command_line import ShellSpec
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
@@ -36,6 +37,7 @@ def action_subject_for_call(
     permission_profile: str,
     phase: str,
     approval_available: bool = False,
+    shell: ShellSpec | None = None,
 ) -> ActionSubject | None:
     path = call_arg(call, "path", ".")
     if call.name == "read":
@@ -63,6 +65,7 @@ def action_subject_for_call(
         command=call_arg(call, "command"),
         tool_name=call.name,
         approval_available=approval_available,
+        shell=shell if kind in {"run_command", "shell"} else None,
     )
 
 
@@ -73,6 +76,7 @@ def evaluate_tool_call_policy_for(
     permission_profile: str,
     approval_available: bool = False,
     phase: str = "writer",
+    shell: ShellSpec | None = None,
 ) -> tuple[ActionPolicyDecision | None, Any]:
     policy_subject = action_subject_for_call(
         call,
@@ -80,6 +84,7 @@ def evaluate_tool_call_policy_for(
         permission_profile=permission_profile,
         phase=phase,
         approval_available=approval_available,
+        shell=shell,
     )
     policy_decision = (
         evaluate_action(policy_subject)

@@ -134,9 +134,18 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
     if not isinstance(payload, dict) or not isinstance(payload.get("command"), str):
         return None
     from codey.agents.shell_approval import shell_command_event_fields, shell_command_payload
+    from codey.policies.command_line import ShellSpec
+
+    try:
+        shell = ShellSpec.from_payload(payload.get("shell"))
+    except ValueError:
+        # Old/malformed requests lack the interpreter the operator would
+        # authorize. Never fill it from the environment during recovery.
+        return None
 
     command_fields = shell_command_payload(payload["command"])
     pending: dict[str, Any] = {
+        "shell": shell.to_payload(),
         "tool_name": str(payload.get("tool_name") or "shell"),
         "tool_args": payload.get("tool_args"),
         "approval_id": fact.approval_id,
@@ -173,6 +182,7 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
         ][:8],
     }
     pending["ui_event"] = {
+        "shell": shell.to_payload(),
         "tool_name": pending["tool_name"],
         "type": "shell_request",
         "run_id": fact.source_run_id,

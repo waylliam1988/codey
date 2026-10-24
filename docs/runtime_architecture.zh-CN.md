@@ -320,3 +320,15 @@ exitCode 只接受真实整数并保留 POSIX 负值，非法值保持未知。�
 也不推断为成功。UI 历史不能替代服务端审批事实或授权。
 
 回归与边界见[测试报告](../TEST_REPORT.md)及[维护审计](ui_maintenance_audit_2026-10-13.zh-CN.md)。
+
+## Shell 解释器合同（2026-10-24）
+
+任务创建时取得不可变 `ShellSpec`；模型方言提示、动作兼容校验、审批命令 artifact、
+授权身份、恢复投影和执行票据共用它。Windows 保留 CMD，POSIX 保留 `/bin/sh`；
+执行在原 cancellation/process-tree 链路中显式启动解释器，不再让 `shell=True` 在
+批准之后重新选择解释器。`run` 的允许验证命令仍直接执行 argv，与任意 shell 脚本
+的语义分别说明。工作目录只接受项目相对目录，不改写模型参数。
+
+没有增加解释器自动切换、命令翻译、第二个执行器或事实日志。缺少解释器合同的旧
+待批准 artifact 不重新获得执行资格，旧保存授权也不自动升级。详细流程见
+[shell 审批生命周期](shell_approval_lifecycle.md)。

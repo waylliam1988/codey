@@ -11,7 +11,7 @@ import sys
 from typing import Any
 
 from codey.operations.task_session import TaskSession
-from codey.policies.command_line import shell_executor
+from codey.policies.command_line import COMMAND_WORKDIR_DESCRIPTION
 from codey.runtime.core.models import ToolResult
 from codey.utils.refs import strict_exit_code, strict_verification_success
 from codey.workspace.coding_context import CodingContext, render_coding_context
@@ -105,18 +105,16 @@ def kernel_prompt_for_session(
         "Report the specific observed failure and consider a different authorized path."
     )
     if {"run", "shell"}.intersection(visible_names):
+        parts.append(COMMAND_WORKDIR_DESCRIPTION)
+    if "run" in visible_names:
         parts.append(
-            f"Execution host platform: {sys.platform}. Default command interpreter: {shell_executor()}. "
-            "Use syntax for this interpreter. Do not infer the shell from the user's terminal or workspace path. "
-            + (
-                "Windows commands use cmd.exe syntax, not Bash heredocs (<<EOF) or implicit PowerShell syntax. "
-                "Use python -c for Python snippets; invoke PowerShell explicitly with powershell -NoProfile -Command "
-                "when PowerShell syntax is needed."
-                if sys.platform == "win32" else
-                "Use POSIX /bin/sh syntax; invoke a different interpreter explicitly when its syntax is needed."
-            )
+            "run executes allowed project verification commands directly as argv, without a shell. "
+            "Use a single verification command, not pipes, redirections, environment assignments or shell expansion. "
+            "Use output_tail_lines to limit displayed output. "
+            "Other authorized commands require the existing shell approval workflow."
         )
     if "shell" in visible_names:
+        parts.append(f"Execution host platform: {sys.platform}. " + session.shell.guidance())
         parts.append(
             "When a public URL or API can answer the request, shell can request a bounded noninteractive HTTP command "
             "such as curl.exe on Windows or curl elsewhere, with explicit connection and total timeouts. "

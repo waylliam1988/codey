@@ -12,7 +12,7 @@ from __future__ import annotations
 import subprocess
 import uuid
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +20,7 @@ from codey.agents.shell_approval import render_deferred_tool_calls
 from codey.app.run_registry import RunSnapshot
 from codey.operations.task_context import safe_verification_candidates
 from codey.operations.task_state import TaskState
+from codey.policies.command_line import ShellSpec, resolve_shell
 from codey.policies.limits import SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
 from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
@@ -158,6 +159,7 @@ class ShellExecutionTicket:
     execution_id: str = ""
     session_id: str = ""
     run_id: str = ""
+    shell: ShellSpec = field(default_factory=resolve_shell)
 
 
 def _approval_generation_current(ctx: TaskState, expected: int) -> bool:
@@ -244,6 +246,7 @@ def mint_shell_ticket(
         if stop_set or claimed_generation != int(current_generation or 0):
             return pending, None
         try:
+            shell = ShellSpec.from_payload(pending.get("shell"))
             cwd = safe_project_cwd(
                 str(pending.get("project") or ""),
                 str(pending.get("cwd") or "."),
@@ -261,6 +264,7 @@ def mint_shell_ticket(
             execution_id="execution_" + uuid.uuid4().hex,
             session_id=str(pending.get("session_id") or ""),
             run_id=str(pending.get("source_run_id") or ""),
+            shell=shell,
         )
         return pending, ticket
 
@@ -376,9 +380,8 @@ def _execute_shell_ticket(
             # needs the same gate to bump the generation cannot interleave.
             with cancellation.scope(stop_flag):
                 proc, job = cancellation.start_process(
-                    command,
+                    ticket.shell.invocation(command),
                     cwd=ticket.cwd,
-                    shell=True,
                 )
         stop_flag_for = getattr(ctx.run_registry, "stop_flag_for", None)
         stop_flag_after = stop_flag_for(ticket.run_id) if callable(stop_flag_for) else ctx.run_registry.stop_flag

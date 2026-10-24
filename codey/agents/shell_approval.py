@@ -6,6 +6,7 @@ import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
+from codey.policies.command_line import ShellSpec, resolve_shell
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 
@@ -57,10 +58,12 @@ class ShellApprovalRequest:
     window_ref: ProtocolWindowRef | None = None
     tool_name: str = "shell"
     tool_args: dict[str, object] = field(default_factory=dict)
+    shell: ShellSpec = field(default_factory=resolve_shell)
 
     def to_payload(self) -> dict[str, object]:
         deferred = tuple(self.deferred_calls[:MAX_DEFERRED_TOOL_CALLS])
         payload: dict[str, object] = {
+            "shell": self.shell.to_payload(),
             "cwd": _bounded_text(self.cwd or ".", MAX_DEFERRED_TEXT_CHARS),
             **shell_command_payload(self.command),
             "deferred_tool_count": len(self.deferred_calls),
@@ -123,6 +126,7 @@ def build_shell_approval_pending(
     )
     deferred_tool_calls = [item.to_payload() for item in approval.deferred_calls]
     pending: dict[str, object] = {
+        "shell": approval.shell.to_payload(),
         "tool_name": approval.tool_name,
         "tool_args": approval.tool_args or {"command": approval.command, "path": cwd_rel},
         "id": approval_id,
@@ -160,6 +164,7 @@ def build_shell_approval_pending(
     if approval.window_ref is not None:
         pending["window_ref"] = approval.window_ref.to_payload()
     ui_event: dict[str, object] = {
+        "shell": approval.shell.to_payload(),
         "tool_name": approval.tool_name,
         "type": "shell_request",
         "run_id": run_id,

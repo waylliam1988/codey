@@ -38,6 +38,35 @@ The fact journal binds every approval to its session, source run and verified co
 artifact. Native call IDs, protocol windows, workspace attachment and API model
 selection are reconstructed from that source, rather than from the current UI.
 
+## Interpreter contract
+
+`TaskSession.shell` captures one immutable `ShellSpec`. The model's dialect
+guidance, action-policy compatibility checks, command-grant identity, command
+artifact, restored approval and spawn ticket carry that same contract. A restored
+approval never substitutes the current environment's interpreter.
+
+The supported defaults remain CMD on Windows and `/bin/sh` on POSIX. Windows
+requires an absolute `cmd.exe` path (COMSPEC, or SystemRoot/System32/cmd.exe when
+COMSPEC is absent); an unsupported explicit COMSPEC fails instead of changing
+dialect. POSIX ignores the interactive terminal's SHELL preference. Different
+interpreters must be invoked explicitly within an approved command.
+
+The existing cancellation/process-tree owner starts the declared interpreter
+with `shell=False`: CMD receives `/d /s /c` and an intact raw command tail, while
+POSIX receives `[/bin/sh, -c, command]`. CMD AutoRun is disabled for a predictable
+startup. No command translation, shell retry, second execution service or new
+durable log is introduced. Direct allowlisted `run` verification remains argv
+execution and does not acquire shell expansion.
+
+`path` is a project-relative working directory; omitting it selects the project
+root. Absolute directories and script filenames are not silently converted.
+The same workdir instruction is rendered once for run/shell. Model guidance
+does not change path policy, task grants, approval requirements or exit status.
+
+Old pending artifacts without a shell contract cannot be restored as executable
+approvals; the command needs a new request. Old saved grants do not match the new
+interpreter identity. There is no automatic migration or legacy execution path.
+
 The query projection separates `decision`, `execution` and `continuation`, with a
 revision derived from the durable history. An execution claim without a trusted
 receipt is uncertain and cannot automatically execute again. A missing or invalid

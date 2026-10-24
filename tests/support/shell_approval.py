@@ -3,6 +3,7 @@
 import hashlib
 
 from codey.agents.shell_approval import shell_command_payload
+from codey.policies.command_line import resolve_shell
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact
 
 
@@ -38,6 +39,7 @@ def admit_shell_task(ctx, *, session_id: str, run_id: str, task: str = "shell ap
 def add_pending_approval(ctx, approval_id: str, pending: dict[str, object]) -> None:
     """Seed the UI projection from a fully identified durable approval."""
     row = dict(pending)
+    row["shell"] = resolve_shell().to_payload()
     event = row.get("ui_event")
     if isinstance(event, dict):
         row.setdefault("session_id", event.get("session_id"))
@@ -73,6 +75,7 @@ def seed_requested_approval(ctx, approval_id="approval", *, continue_after=True,
         session_id="session",
         run_id=source_run_id,
         payload={
+            "shell": resolve_shell().to_payload(),
             "command": command,
             "cwd": ".",
             "project": str(ctx.state_home),

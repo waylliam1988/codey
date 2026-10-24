@@ -161,8 +161,8 @@ def _argv(command: str) -> list[str]:
 
 
 def _split(command: str) -> list[str]:
-    # Same tokenizer as execution, so the approval card always describes the
-    # command that will actually run. If even that fails, fall back to a raw
+    # Shared direct-command tokenizer, used only as a display heuristic here;
+    # the declared shell interprets the intact script. If splitting fails, use raw
     # whitespace split: risk classification is display-only and must not
     # invent structure the parser could not see.
     try:

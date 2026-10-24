@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from codey.policies.command_line import ShellSpec
 from codey.policies.permissions import PermissionProfile, profile_for_name
 from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
@@ -73,6 +74,7 @@ class ActionSubject:
     byte_count: int = 0
     item_count: int = 0
     approval_available: bool = False
+    shell: ShellSpec | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "kind", _identifier(self.kind, 80))
@@ -91,7 +93,7 @@ class ActionSubject:
 
     @property
     def subject_ref(self) -> str:
-        private = {
+        private: dict[str, object] = {
             "kind": self.kind,
             "phase": self.phase,
             "permission_profile": self.permission_profile,
@@ -106,6 +108,8 @@ class ActionSubject:
             "item_count": self.item_count,
             "approval_available": self.approval_available,
         }
+        if self.shell is not None:
+            private["shell"] = self.shell.to_payload()
         payload = json.dumps(private, sort_keys=True, separators=(",", ":"))
         return "action:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -365,7 +369,7 @@ def run_command_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
     except RunCommandPolicyError as exc:
         from codey.policies.command_approval import shell_compatibility_error
 
-        compatibility_error = shell_compatibility_error(command) if exc.reason_code == "command_not_allowed" else ""
+        compatibility_error = shell_compatibility_error(command, shell=subject.shell) if exc.reason_code == "command_not_allowed" else ""
         return ActionPolicyDecision.deny(
             subject,
             guard_id="run_command_guard",
@@ -387,7 +391,7 @@ def shell_approval_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
         )
     from codey.policies.command_approval import shell_compatibility_error
 
-    compatibility_error = shell_compatibility_error(subject.command)
+    compatibility_error = shell_compatibility_error(subject.command, shell=subject.shell)
     if compatibility_error:
         return ActionPolicyDecision.deny(
             subject, guard_id="shell_approval_guard", reason_code="shell_syntax_unsupported",

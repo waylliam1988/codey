@@ -2,42 +2,24 @@
 
 from __future__ import annotations
 
-import re
-import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codey.policies.action import DECISION_ASK_USER, DECISION_DENY, ActionSubject, evaluate_action
+from codey.policies.command_line import ShellSpec, resolve_shell
 
 if TYPE_CHECKING:
     from codey.runtime.core.models import ToolCall
 
 
-def shell_compatibility_error(command: str) -> str:
+def shell_compatibility_error(command: str, *, shell: ShellSpec | None = None) -> str:
     """Do not ask Windows users to approve syntax the executor cannot run."""
-    if sys.platform == "win32" and _has_unquoted_heredoc(command):
-        if not re.match(r"^\s*(?:\"[^\"]*bash(?:\.exe)?\"|\S*bash(?:\.exe)?)\s+-", command):
-            return "Bash heredoc is not supported by the Windows command shell; use an explicit Bash command or a Windows-compatible command."
-    return ""
+    return (shell if shell is not None else resolve_shell()).compatibility_error(command)
 
 
-def _has_unquoted_heredoc(command: str) -> bool:
-    quoted = False
-    escaped = False
-    for index, char in enumerate(command):
-        if escaped:
-            escaped = False
-        elif char == "^":
-            escaped = True
-        elif char == '"':
-            quoted = not quoted
-        elif not quoted and command[index:index + 2] == "<<":
-            return True
-    return False
-
-
-def approval_call(call: ToolCall, *, project: Path, permission_profile: str) -> ToolCall | None:
+def approval_call(call: ToolCall, *, project: Path, permission_profile: str,
+                  shell: ShellSpec | None = None) -> ToolCall | None:
     """Only allowlist refusals may ask for shell access; other denials remain final."""
     if call.name not in {"run", "shell"}:
         return None
@@ -51,6 +33,7 @@ def approval_call(call: ToolCall, *, project: Path, permission_profile: str) -> 
         decision = evaluate_action(ActionSubject(
             kind="run_command", project=str(project), permission_profile=permission_profile,
             path=str(call.args.get("path") or "."), command=str(call.args.get("command") or ""),
+            shell=shell,
         ))
         if decision.decision != DECISION_DENY or decision.reason_code != "command_not_allowed":
             return None
@@ -59,5 +42,6 @@ def approval_call(call: ToolCall, *, project: Path, permission_profile: str) -> 
         kind="shell", project=str(project), permission_profile=permission_profile,
         path=str(candidate.args.get("path") or "."), command=str(candidate.args.get("command") or ""),
         approval_available=True,
+        shell=shell,
     ))
     return call if decision.decision == DECISION_ASK_USER else None

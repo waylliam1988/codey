@@ -8,6 +8,7 @@ import pytest
 from codey.app.context import AppContext
 from codey.app.shell_approval_state import restore_pending_shell_approvals
 from codey.app.shell_approval_workflow import _CONTINUATION_STATES
+from codey.policies.command_line import resolve_shell
 from codey.runtime.effects import shell_approval_records as records
 
 
@@ -52,7 +53,7 @@ def test_pending_approval_recovery_reads_durable_task_without_audit(tmp_path) ->
             provider_snapshot={"provider_id": "local"},
         )
         artifact = state.managed_outputs.write_json_artifact(
-            session_id="chat", run_id="run", payload={"command": "echo hello", "cwd": "."}
+            session_id="chat", run_id="run", payload={"command": "echo hello", "cwd": ".", "shell": resolve_shell().to_payload()}
         )
         state.record_shell_approval_fact(records.ShellApprovalFact(
             "approval", "chat", "run", "requested",
