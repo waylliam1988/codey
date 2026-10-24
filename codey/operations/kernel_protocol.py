@@ -16,6 +16,7 @@ from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, Te
 from codey.providers.base import AssistantTurn, TurnFinish
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
+from codey.toolchain.tool_spec import is_text_batch_tool
 
 MAX_NATIVE_CALLS_PER_TURN = 8
 
@@ -174,18 +175,16 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     allowed = controller_allowed_for_session(session)
     from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
 
-    names = tuple(visible_tool_names_for_snapshot(session.policy, allowed))
+    names = tuple(visible_tool_names_for_snapshot(session.policy, allowed, native=native))
     frozen = _frozen_specs_for_names(names)
-    frozen_by_name = {str(getattr(s, "name", "") or ""): s for s in frozen}
     from codey.toolchain.tool_spec import json_contract_text as _contract
 
     # JSON 与 native 契约同源：都从同一冻结定义生成，不再查实时注册表。
-    contract_now = _contract(session.policy, controller_allowed=allowed,
-                             specs=frozen_by_name) if _contract is not None else ""
+    contract_now = _contract(frozen)
     executors = _frozen_custom_executors(names)
     return TurnSnapshot(
         allowed=allowed,
-        contract_text=(contract_now or ""),
+        contract_text=contract_now,
         tool_names=names,
         policy=session.policy,
         frozen_specs=frozen,
@@ -473,7 +472,7 @@ def _lower_text_batches(items: list[tuple[str, dict[str, Any], str]]) -> tuple[l
     expanded = []
     for raw_tool, args, call_id in items:
         name = _canonical_name(raw_tool)
-        if name in {"parallel", "read_files"}:
+        if is_text_batch_tool(name):
             if call_id:
                 return [], "batch wrappers are text-only; native calls require individual ids"
             from codey.toolchain.tool_spec import validate_args_against_spec

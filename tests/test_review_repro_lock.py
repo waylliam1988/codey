@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
 from tests.support.observed_tool_result import observed_tool_result
 
 
@@ -70,6 +70,7 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
     from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
+    from codey.research.tools import ResearchTools
     from codey.runtime.core.models import ToolResult
     from codey.task.model import TaskSubmission
     from codey.workspace.revision import WorkspaceRevisionStore
@@ -108,6 +109,7 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
         "read_file": lambda call: ToolResult(call, (project / call.args["path"]).read_text(), ok=True),
         "edit": edit, "run": verify,
     }
+    research = ResearchTools(search=None, store=None, changes=None)
     result = run_task_kernel(
         session,
         request=KernelRunRequest(
@@ -119,11 +121,14 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
             execution=KernelExecutionDeps(
                 executors=executors,
                 project_path=project,
+                research_tools=research,
                 workspace_revision_store=WorkspaceRevisionStore(tmp_path / "state"),
             ),
+            observation=KernelObservationDeps(completion_context={"research_ledger": research.ledger}),
         ),
     )
     assert result.stop_reason == "done", result
+    assert research.ledger.final_url_set() == {"https://example.com/docs"}
     assert session.searches
     assert session.read_files and session.opened_sources
     assert session.edited_files and session.verifications
@@ -230,11 +235,11 @@ def test_issue4_policy_roundtrip_and_explicit_session_copy_keeps_facts():
 
 
 def test_issue5_strict_initial_snapshot_hides_unavailable_tools():
-    from codey.operations.kernel_protocol import controller_allowed_for_session
+    from codey.operations.kernel_protocol import build_turn_snapshot, controller_allowed_for_session
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
+    from codey.providers.base import tools_from_specs
     from codey.task.model import TaskSubmission
-    from codey.toolchain.tool_spec import json_contract_text
     sub = TaskSubmission("s", None, "research q", 3, False, "deepseek")
     policy = build_task_policy(sub, task_kind="research", strict_research=True)
     session = TaskSession(policy=policy, task_kind="research", max_turns=3)
@@ -243,17 +248,9 @@ def test_issue5_strict_initial_snapshot_hides_unavailable_tools():
     assert "knowledge_write" not in controller, controller
     assert "open_hit" not in controller, controller
     # Per-turn snapshot shown to model must respect controller, not just policy
-    contract = json_contract_text(policy, controller_allowed=controller)
+    contract = build_turn_snapshot(session).contract_text
     assert "knowledge_write" not in contract, contract
-    # native snapshot helper should also support controller narrowing (or caller must filter)
-    # At minimum, policy-wide list contains knowledge_write but per-turn must hide it.
-    # This locks the requirement: caller needs controller-aware snapshot.
-    try:
-        from codey.toolchain.tool_spec import native_tools_for_snapshot
-    except ImportError as err:
-        # Before fix there is no controller-aware native snapshot -> fail to lock issue
-        raise AssertionError("missing controller-aware native snapshot (native_tools_for_snapshot)") from err
-    names2 = [t["function"]["name"] for t in native_tools_for_snapshot(policy, controller)]
+    names2 = [tool.name for tool in tools_from_specs(build_turn_snapshot(session, native=True).frozen_specs)]
     assert "knowledge_write" not in names2
 
 
@@ -268,21 +265,9 @@ def test_issue6_native_prompt_and_done_closure(monkeypatch):
     sub = TaskSubmission("s", None, "q", 2, False, "local")
     policy = build_task_policy(sub, task_kind="research")
     session = TaskSession(policy=policy, task_kind="research", max_turns=2)
-    # Native prompt must not demand JSON-only
-    try:
-        import inspect
+    from codey.operations.kernel_preparation import prepare_kernel_turn
 
-        from codey.operations.kernel_prompt import kernel_prompt_for_session as kprompt
-        sig = inspect.signature(kprompt)
-        if "native" in sig.parameters or "protocol" in sig.parameters:
-            prompt = kprompt(session, native=True)
-        else:
-            # Before fix: no native-aware prompt param -> fail
-            raise AssertionError("kernel prompt has no native mode (still forces JSON)")
-    except AssertionError:
-        raise
-    except Exception as exc:
-        raise AssertionError(f"native prompt missing: {exc}") from exc
+    prompt = prepare_kernel_turn(session, user_task="q", context_text="", task_guidance="", native=True).prompt
     assert "JSON" not in prompt or "native" in prompt.lower(), prompt[:500]
     # Accepted native done must still answer its call id
     sent_batches = []

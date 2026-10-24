@@ -370,7 +370,7 @@ class PromptEnvelopeTests(unittest.TestCase):
 
         policy = TaskPolicy(grants=frozenset({"web.read", "control"}))
         session = TaskSession(policy=policy, task_kind="research", project="", max_turns=2, task_text="Why alpha?")
-        prompt = kernel_prompt_for_session(session, user_task="Why alpha?", contract_text="", context_text="")
+        prompt = kernel_prompt_for_session(session, user_task="Why alpha?", contract_text="", context_text="", tool_names=("done",))
         self.assertIn("Why alpha?", prompt)
 
     def test_research_prompt_trace_does_not_claim_trace_attr(self) -> None:
@@ -380,7 +380,7 @@ class PromptEnvelopeTests(unittest.TestCase):
 
         policy = TaskPolicy(grants=frozenset({"web.read", "control"}))
         session = TaskSession(policy=policy, task_kind="research", project="", max_turns=2, task_text="Why beta?")
-        prompt = kernel_prompt_for_session(session, user_task="Why beta?", contract_text="", context_text="")
+        prompt = kernel_prompt_for_session(session, user_task="Why beta?", contract_text="", context_text="", tool_names=("done",))
         self.assertIn("Why beta?", prompt)
 
     def test_research_request_row_is_gone_question_section_is_the_only_request(self) -> None:
@@ -393,7 +393,7 @@ class PromptEnvelopeTests(unittest.TestCase):
 
         policy = TaskPolicy(grants=frozenset({"web.read", "control"}))
         session = TaskSession(policy=policy, task_kind="research", project="", max_turns=2, task_text="Why gamma?")
-        prompt = kernel_prompt_for_session(session, user_task="Why gamma?", contract_text="", context_text="")
+        prompt = kernel_prompt_for_session(session, user_task="Why gamma?", contract_text="", context_text="", tool_names=("done",))
         self.assertIn("Why gamma?", prompt)
         self.assertIn("User task (verbatim):", prompt)
 

@@ -325,7 +325,7 @@ class SnapshotFailClosedTests(unittest.TestCase):
         """Snapshot import failure must terminate the turn, not show stale tools."""
         from types import SimpleNamespace
 
-        from codey.operations import kernel_prompt, kernel_protocol
+        from codey.operations import kernel_protocol
         from codey.policies.task_policy import TaskPolicy
 
         policy = TaskPolicy(grants=frozenset({"web.read", "knowledge.read", "control"}), strict_research=True)
@@ -334,15 +334,15 @@ class SnapshotFailClosedTests(unittest.TestCase):
 
         orig = spec_mod.visible_tool_names_for_snapshot
 
-        def _boom(policy_arg, controller_allowed=None):
+        def _boom(policy_arg, controller_allowed=None, *, native=False):
             raise RuntimeError("snapshot boom")
 
         spec_mod.visible_tool_names_for_snapshot = _boom  # type: ignore[assignment]
         try:
-            # _snapshot_names must not silently fallback to policy-scope list;
-            # it must raise/fail-closed so the kernel terminates the turn.
+            # Both protocols use the single snapshot entry; failed selection
+            # cannot fall back to a policy-wide prompt renderer.
             with self.assertRaises(RuntimeError, msg="snapshot failure must not fallback"):
-                kernel_prompt._snapshot_names(policy, ("web_search",))
+                kernel_protocol.build_turn_snapshot(SimpleNamespace(policy=policy), native=False)
             # The single snapshot entry builds JSON + native from the same
             # frozen source; any failure raises instead of stale fallback.
             with self.assertRaises(RuntimeError, msg="native snapshot failure must not fallback"):

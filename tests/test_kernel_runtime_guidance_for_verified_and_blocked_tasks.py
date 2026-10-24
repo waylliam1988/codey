@@ -4,6 +4,7 @@ import json
 import pytest
 
 from codey.operations.kernel_prompt import _result_context, kernel_prompt_for_session, working_context
+from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -37,7 +38,7 @@ def test_readonly_task_can_report_blocked_in_user_requested_format(native):
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read", "project.verify"}),
         denied_capabilities=frozenset({"project.write"})), task_kind="project",
         task_text='Diagnose only; report JSON {"status":"blocked","reason":"..."} if edits would be required.')
-    prompt = kernel_prompt_for_session(session, native=native)
+    prompt = kernel_prompt_for_session(session, native=native, tool_names=build_turn_snapshot(session, native=native).tool_names)
     assert "cannot be completed within" in prompt and "blocked" in prompt
     assert "requested final format" in prompt and "Deliver the final answer as normal text" in prompt
     assert "only after the required checks have passed" not in prompt

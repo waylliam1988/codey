@@ -6,10 +6,10 @@ import pytest
 
 
 def test_read_only_catalog_filters_write_and_control_specs() -> None:
-    from codey.codemode.catalog import build_read_only_catalog
+    from codey.codemode.catalog import build_codemode_catalog
     from codey.toolchain.tool_spec import ToolSpec
 
-    snapshot = build_read_only_catalog(
+    snapshot = build_codemode_catalog(
         (
             ToolSpec(name="read_file", grant="project.read", executor="project", replay_class="safe"),
             ToolSpec(name="edit", grant="project.write", executor="project", replay_class="unsafe"),
@@ -21,10 +21,10 @@ def test_read_only_catalog_filters_write_and_control_specs() -> None:
 
 
 def test_read_only_catalog_does_not_expose_legacy_batch_wrappers() -> None:
-    from codey.codemode.catalog import build_read_only_catalog
+    from codey.codemode.catalog import build_codemode_catalog
     from codey.toolchain.tool_spec import ToolSpec
 
-    snapshot = build_read_only_catalog(
+    snapshot = build_codemode_catalog(
         (
             ToolSpec(name="read_file", grant="project.read", executor="project", replay_class="safe"),
             ToolSpec(name="parallel", grant="project.read", executor="project", replay_class="safe"),

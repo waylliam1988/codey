@@ -10,12 +10,17 @@ are denied, never passed as ``control``.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any, cast
 
 _TEXT_BATCH_TOOLS = frozenset({"parallel", "read_files"})
+
+
+def is_text_batch_tool(name: str) -> bool:
+    """Wrappers need text-plan lowering; they are not callable tool leaves."""
+    return name in _TEXT_BATCH_TOOLS
 
 # Native (runtime) alias -> canonical model name for coding tools.
 _NATIVE_TO_CANONICAL = {
@@ -172,6 +177,7 @@ def _research_json_type(pytype: type) -> str:
 
 def _all_specs() -> dict[str, ToolSpec]:
     specs = _coding_specs()
+    codemode_example = 'return await tools.read_file({path:"app.py"});'
     specs["codemode"] = ToolSpec(
         name="codemode",
         grant="project.read",
@@ -179,15 +185,20 @@ def _all_specs() -> dict[str, ToolSpec]:
         replay_class="safe",
         description=(
             "Execute one bounded JavaScript program in the local CodeMode sandbox. "
-            "Only frozen read-only tools are available through tools.*; writes, approval, "
-            "network access, and recursive codemode calls are unavailable."
+            "Use only tools from the task's frozen catalog through tools.*; "
+            "each call retains its normal authorization and execution checks. "
+            "Calls return {ok, value}; check ok and consume value. "
+            "Shell approval, direct filesystem/process/network access, and recursive codemode calls are unavailable. "
+            f"Example JavaScript: {codemode_example}"
         ),
         parameters=(
             ("code", {"type": "string"}),
             ("language", {"type": "string", "enum": ["javascript", "js"]}),
         ),
         required=("code",),
-        json_examples=('{"tool":"codemode","args":{"code":"return await tools.read_file({path:\"app.py\"});"}}',),
+        json_examples=(json.dumps({"tool": "codemode", "args": {
+            "code": codemode_example,
+        }}, separators=(",", ":")),),
     )
     specs["ask_user"] = ToolSpec(
         name="ask_user", grant="control", replay_class="safe", executor="control",
@@ -414,7 +425,7 @@ def _is_research_tool(name: str) -> bool:
     return spec is not None and spec.executor in {"source", "knowledge"}
 
 
-def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None) -> tuple[str, ...]:
+def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None, *, native: bool = False) -> tuple[str, ...]:
     """Per-turn snapshot: policy ∩ current controller facts.
 
     The controller may only narrow research tools; it never removes project
@@ -431,6 +442,8 @@ def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None)
              "knowledge_write", "knowledge_link", "read_tool_result", "done")
     names: list[str] = []
     for name in order:
+        if native and is_text_batch_tool(name):
+            continue
         spec = tool_specs().get(name)
         if spec is None or not spec.grant:
             continue
@@ -483,9 +496,7 @@ def native_tools_for_policy(policy: Any) -> list[dict[str, object]]:
 def native_tools_for_snapshot(policy: Any, controller_allowed: Any = None) -> list[dict[str, object]]:
     """Native schemas for one turn's snapshot; same source as JSON contract."""
     tools: list[dict[str, object]] = []
-    for name in visible_tool_names_for_snapshot(policy, controller_allowed):
-        if name in _TEXT_BATCH_TOOLS:
-            continue
+    for name in visible_tool_names_for_snapshot(policy, controller_allowed, native=True):
         spec = tool_specs().get(name)
         if spec is None:
             continue
@@ -873,23 +884,14 @@ def validate_args_with_spec(spec: Any, args: object) -> str:
     return _validate_types(spec, declared, is_builtin, args)
 
 
-def json_contract_text(
-    policy: Any,
-    *,
-    controller_allowed: Any = None,
-    specs: dict[str, ToolSpec] | None = None,
-) -> str:
-    """One contract source: frozen snapshot specs when given, else live."""
-    source = specs if specs is not None else tool_specs()
+def json_contract_text(specs: Iterable[ToolSpec]) -> str:
+    """Render exactly the captured declarations; never select or look up tools."""
     lines: list[str] = []
-    for name in visible_tool_names_for_snapshot(policy, controller_allowed):
-        spec = source.get(name)
-        if spec is None:
-            continue
+    for spec in specs:
         if spec.json_examples:
             lines.extend(f"- {example}  {spec.description}".rstrip() for example in spec.json_examples)
         else:
-            lines.append(f"- {name}")
+            lines.append(f"- {spec.name}")
     return "\n".join(lines)
 
 

@@ -22,40 +22,21 @@ __all__ = [
 ]
 
 
-def _snapshot_names(policy: Any, controller_allowed: Any = None) -> tuple[str, ...]:
-    """Per-turn tool snapshot; fail-closed on build failure (no fallback).
-
-    A snapshot failure must terminate the turn (controller_failure), never
-    fall back to a policy-scope list that would show the model tools the
-    current turn cannot execute.
-    """
-    try:
-        from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
-    except Exception as exc:
-        raise RuntimeError(f"tool snapshot unavailable: {exc}") from exc
-    return tuple(visible_tool_names_for_snapshot(policy, controller_allowed))
-
-
 def kernel_prompt_for_session(
     session: TaskSession,
     *,
+    tool_names: tuple[str, ...],
     user_task: str = "",
     contract_text: str = "",
     context_text: str = "",
-    controller_allowed: Any = None,
     native: bool = False,
-    tool_names: Any = None,
     task_guidance: str = "",
     coding_context: CodingContext | None = None,
 ) -> str:
     task_text = str(user_task or getattr(session, "task_text", "") or "").strip()
     handoff = str(getattr(session, "handoff", "") or "").strip()
     project = str(getattr(session, "project", "") or "").strip() or "-"
-    visible_names = (
-        tuple(str(name) for name in tool_names)
-        if tool_names is not None
-        else _snapshot_names(getattr(session, "policy", None), controller_allowed)
-    )
+    visible_names = tool_names
     names = ", ".join(visible_names) or "none"
     parts = [
         f"User task (verbatim):\n{task_text or '(no task text)'}\n",

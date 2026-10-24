@@ -130,7 +130,7 @@ def test_snapshot_schema_enum_and_required_are_immutable():
 
 
 def test_native_tools_derive_from_same_frozen_specs():
-    session = TaskSession(policy=_bind_policy(), task_kind="research", max_turns=2)
+    session = TaskSession(policy=TaskPolicy(_bind_policy().grants | {"project.read"}), task_kind="research", max_turns=2)
     snapshot = build_turn_snapshot(session, native=True)
     frozen_names = {str(getattr(s, "name", "")) for s in snapshot.frozen_specs}
     schema_names = {
@@ -138,7 +138,7 @@ def test_native_tools_derive_from_same_frozen_specs():
         for item in tools_from_specs(snapshot.frozen_specs)
     }
     assert schema_names, "native schema 不得为空"
-    assert schema_names <= frozen_names, f"schema 与冻结定义漂移：{schema_names - frozen_names}"
+    assert schema_names == frozen_names == set(snapshot.tool_names)
 
 
 def test_execute_turn_without_snapshot_still_runs():

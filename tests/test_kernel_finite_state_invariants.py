@@ -95,5 +95,5 @@ def test_every_capability_subset_has_same_json_native_boundary_and_exact_roundtr
             snapshot = build_turn_snapshot(TaskSession(policy=policy), native=True)
             assert all(spec.grant in grants - denied for spec in snapshot.frozen_specs)
             native_names = {row.name for row in tools_from_specs(snapshot.frozen_specs)}
-            assert native_names == set(snapshot.tool_names) - {"parallel", "read_files"}
+            assert native_names == set(snapshot.tool_names)
     print(f"capability enumeration: {2 ** len(vocabulary)} subsets x 2 denial states")

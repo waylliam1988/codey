@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from codey.codemode.types import ToolCatalogEntry, ToolCatalogSnapshot
+from codey.toolchain.tool_spec import is_text_batch_tool
 
 
 def _json_value(value: object) -> object:
@@ -79,31 +80,6 @@ def build_catalog_from_specs(specs: Mapping[str, Any] | Iterable[Any]) -> ToolCa
     return build_catalog_snapshot(rows)
 
 
-def build_read_only_catalog(specs: Mapping[str, Any] | Iterable[Any]) -> ToolCatalogSnapshot:
-    values = specs.values() if isinstance(specs, Mapping) else specs
-    safe = [
-        spec
-        for spec in values
-        if str(getattr(spec, "replay_class", "unsafe") or "unsafe") == "safe"
-        and str(getattr(spec, "executor", "") or "") in {"project", "source", "knowledge"}
-        and str(getattr(spec, "name", "") or "") not in {"parallel", "read_files"}
-    ]
-    snapshot = build_catalog_from_specs(safe)
-    entries = tuple(
-        ToolCatalogEntry(
-            name=entry.name,
-            description=entry.description,
-            parameters=entry.parameters,
-            namespace=entry.namespace,
-            grant=entry.grant,
-            read_only=True,
-            parallel_safe=entry.name in {"list_dir", "read_file", "grep"},
-        )
-        for entry in snapshot.entries
-    )
-    return ToolCatalogSnapshot(entries, snapshot.digest)
-
-
 def build_codemode_catalog(
     specs: Mapping[str, Any] | Iterable[Any], *, allow_writes: bool = False,
 ) -> ToolCatalogSnapshot:
@@ -117,6 +93,8 @@ def build_codemode_catalog(
     snapshot = build_catalog_from_specs(specs)
     allowed: list[ToolCatalogEntry] = []
     for entry in snapshot.entries:
+        if is_text_batch_tool(entry.name):
+            continue
         if (
             (entry.read_only and entry.namespace in {"project", "source", "knowledge"})
             or (

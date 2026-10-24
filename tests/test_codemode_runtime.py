@@ -96,7 +96,7 @@ def test_node_runtime_reports_unserializable_host_values() -> None:
 
 
 def test_node_runtime_serializes_nested_frozen_catalog_schemas() -> None:
-    from codey.codemode.catalog import build_read_only_catalog
+    from codey.codemode.catalog import build_codemode_catalog
     from codey.codemode.runtime import NodeWorkerRuntime
     from codey.codemode.types import CodeModeLimits
     from codey.operations.kernel_protocol import build_turn_snapshot
@@ -105,7 +105,7 @@ def test_node_runtime_serializes_nested_frozen_catalog_schemas() -> None:
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})))
     snapshot = build_turn_snapshot(session)
-    catalog = build_read_only_catalog({spec.name: spec for spec in snapshot.frozen_specs})
+    catalog = build_codemode_catalog({spec.name: spec for spec in snapshot.frozen_specs})
 
     result = NodeWorkerRuntime().execute(
         "return await tools.read_file({path: 'a.py'});",

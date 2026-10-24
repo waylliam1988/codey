@@ -38,7 +38,7 @@ def tools_from_specs(specs: tuple[Any, ...]) -> list[ProviderToolDefinition]:
     return sorted([
         ProviderToolDefinition(spec.name, spec.description or "\n".join(spec.json_examples),
                                cast(Mapping[str, object], _freeze_schema_value(_schema_for_spec(spec))))
-        for spec in specs if spec.name not in {"parallel", "read_files"}
+        for spec in specs
     ], key=lambda tool: tool.name)
 
 

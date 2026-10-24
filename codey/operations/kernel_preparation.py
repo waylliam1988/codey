@@ -19,7 +19,7 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
     snapshot = kernel_protocol.build_turn_snapshot(session, native=native)
     prompt = kernel_prompt.kernel_prompt_for_session(
         session, user_task=user_task, contract_text=snapshot.contract_text,
-        context_text=context_text, controller_allowed=snapshot.allowed,
+        context_text=context_text,
         native=native, tool_names=snapshot.tool_names, task_guidance=task_guidance,
         coding_context=prepare_coding_context(session, completion_context=completion_context),
     )

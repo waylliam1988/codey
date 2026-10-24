@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from codey.operations.kernel_prompt import _format_results, kernel_prompt_for_session
+from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -15,7 +16,7 @@ from tools.ui_e2e import TASK, ScriptedWriter
 def workspace_prompt(task, *, project=""):
     session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.write", "project.verify", "shell.approval"})),
                           task_kind="chat", project=project)
-    return kernel_prompt_for_session(session, user_task=task)
+    return kernel_prompt_for_session(session, user_task=task, tool_names=build_turn_snapshot(session).tool_names)
 
 
 def test_plain_workspace_question_has_a_plain_answer():

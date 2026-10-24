@@ -66,6 +66,6 @@ def test_repair_uses_supplied_contract_without_consulting_live_registry(monkeypa
     def forbidden(*args, **kwargs):
         pytest.fail("repair must not rebuild the captured contract")
 
-    monkeypatch.setattr(kernel_prompt, "_snapshot_names", forbidden)
+    monkeypatch.setattr("codey.toolchain.tool_spec.tool_specs", forbidden)
     contract = 'frozen tools: {"tool":"done","args":{"summary":"complete"}}'
     assert contract in kernel_prompt._repair_prompt("no JSON tool call found", contract_text=contract, native=False)
