@@ -61,7 +61,11 @@ def test_opened_source_with_edit_and_verify_completes_ordinary_task() -> None:
         workspace_fingerprint=_VALID_FP,
         workspace_revision=1,
     )
-    verdict = gate.evaluate(sess, "done summary", context=None)
+    from codey.research.ledger import ResearchLedger
+
+    ledger = ResearchLedger()
+    ledger.record_open("https://example.com/a", "https://example.com/a", "A", "Observed source")
+    verdict = gate.evaluate(sess, "done summary", context={"research_ledger": ledger})
     assert verdict.complete, f"普通任务已打开来源+修改+验证通过应完成，实际 followup={verdict.followup} proof={verdict.proof}"
 
 

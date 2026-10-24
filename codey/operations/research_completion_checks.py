@@ -28,17 +28,33 @@ def source_requirement_checks(session: Any, context: Any = None) -> list[Complet
     policy = getattr(session, "policy", None)
     if not bool(getattr(policy, "sources_open_required", False)):
         return []
-    if context is not None:
-        single = _ledger_source_only(session, context)
-        if single is not None:
-            return single
-    opened = set(getattr(session, "opened_sources", set()) or set())
+    ledger = _context_get(context, "research_ledger")
+    if ledger is None:
+        return [CompletionCheck("research_sources_opened", CHECK_FAIL, "research_ledger_missing")]
+    opened = ledger.final_url_set()
     row = completion_check(
         "research_sources_opened",
         CHECK_PASS if opened else CHECK_NOT_RUN,
         "" if opened else "research_source_not_opened",
     )
     return [row] if row is not None else []
+
+
+def citation_requirement_checks(session: Any, text: str, context: Any) -> list[CompletionCheck]:
+    policy = getattr(session, "policy", None)
+    required = "research_citations" in getattr(policy, "required_checks", ())
+    strict = bool(getattr(policy, "strict_research", False))
+    if not (required or strict or getattr(policy, "sources_open_required", False)):
+        return []
+    ledger = _context_get(context, "research_ledger")
+    if ledger is None:
+        reason = "research_ledger_missing"
+    else:
+        from codey.research.provenance import citation_problem
+
+        reason = citation_problem(text, ledger=ledger, source_ids=dict(session.source_ids),
+                                  require_citation=required or strict) or ""
+    return [CompletionCheck("research_citations", CHECK_FAIL if reason else CHECK_PASS, reason)]
 
 
 def _missing_ledger_rows() -> list[CompletionCheck]:
@@ -68,25 +84,6 @@ def strict_research_checks(session: Any, done_text: str, context: Any = None) ->
     if context is None:
         return _missing_ledger_rows()
     return _ledger_checks(session, done_text, context)
-
-
-def _ledger_source_only(session: Any, context: Any) -> list[CompletionCheck] | None:
-    def get(key: str) -> Any:
-        return _context_get(context, key)
-    ledger = get("research_ledger")
-    if ledger is None:
-        return None
-    try:
-        finals = set(ledger.final_url_set())
-    except Exception as exc:
-        row = completion_check("research_ledger", CHECK_FAIL, f"ledger_error:{type(exc).__name__}")
-        return [row] if row is not None else []
-    row = completion_check(
-        "research_sources_opened",
-        CHECK_PASS if finals else CHECK_NOT_RUN,
-        "" if finals else "research_source_not_opened",
-    )
-    return [row] if row is not None else []
 
 
 def _ledger_checks(session: Any, done_text: str, context: Any) -> list[CompletionCheck]:
@@ -129,7 +126,7 @@ def _ledger_checks(session: Any, done_text: str, context: Any) -> list[Completio
     try:
         finalized = finalize_done_answer(
             (done_text or ""), ledger,
-            source_ids=dict(get("source_ids") or {}),
+            source_ids=dict(session.source_ids),
             question=str(get("question") or ""),
         )
     except Exception as exc:
@@ -194,12 +191,7 @@ def _ledger_citable_urls(ledger: Any, finals: set[str]) -> list[str]:
         excerpt = str(getattr(item, "excerpt", "") or "").strip()
         if not url or not excerpt:
             continue
-        try:
-            from codey.research.urls import opened_url
-
-            canonical = opened_url(ledger, url)
-        except Exception:
-            canonical = url
+        canonical = ledger.canonical_opened_url(url)
         if canonical in finals and canonical not in urls:
             urls.append(canonical)
     return urls
@@ -220,7 +212,7 @@ def finalize_research_text(session: Any, text: str, context: Any) -> str:
         return text
     from codey.research.done_finalizer import finalize_done_answer
 
-    finalized = finalize_done_answer(text, ledger, source_ids=dict(get("source_ids") or {}),
+    finalized = finalize_done_answer(text, ledger, source_ids=dict(session.source_ids),
                                     question=str(get("question") or ""), enforce_claim_support=True)
     return finalized.text.strip()
 

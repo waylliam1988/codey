@@ -2389,7 +2389,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
             runner = ResearchIteration(FakeProvider(), FakeSearch(), store, max_turns=2)
-            runner.tools.search_result_urls.add("https://example.com/helium")
+            runner.tools.ledger.record_search("helium", [{"url": "https://example.com/helium"}])
             call = ToolCall(
                 "knowledge_write",
                 {
@@ -2420,7 +2420,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
             runner = ResearchIteration(FakeProvider(), FakeSearch(), store, max_turns=2)
-            runner.tools.sources_read.add("https://example.com/helium")
+            runner.tools.ledger.record_open("https://example.com/helium", "https://example.com/helium",
+                                            "Helium", "Helium is useful.")
             call = ToolCall(
                 "knowledge_write",
                 {

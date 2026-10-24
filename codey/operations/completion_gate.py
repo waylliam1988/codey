@@ -28,10 +28,12 @@ from codey.completion.contract import (
 )
 from codey.operations.project_completion_checks import project_completion_checks
 from codey.operations.research_completion_checks import (
+    citation_requirement_checks,
     finalize_research_text,
     source_requirement_checks,
     strict_research_checks,
 )
+from codey.utils.refs import stable_ref
 
 
 def _context_get(context: Any, key: str) -> Any:
@@ -115,8 +117,10 @@ def _proof_evidence_refs(session: Any, context: Any) -> tuple[str, ...]:
     except Exception:
         pass
     try:
-        for url in sorted(str(u)[:160] for u in (getattr(session, "opened_sources", set()) or set()))[:8]:
-            refs.append(f"source:{url}")
+        ledger = _context_get(context, "research_ledger")
+        sources = ledger.opened_sources if ledger is not None else ()
+        for source in sorted(sources, key=lambda item: item.final_url)[:8]:
+            refs.append(stable_ref("source", source.final_url, source.text_hash, source.retrieved_at))
     except Exception:
         pass
     try:
@@ -302,10 +306,12 @@ def _contract_subject(session: Any, profile: str, context: Any) -> str:
 
 def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
     text = str(done_text or "").strip()
+    citation_checks = citation_requirement_checks(session, text, context)
     text = finalize_research_text(session, text, context)
     checks: list[CompletionCheck] = []
     checks.extend(project_completion_checks(session, context))
     checks.extend(source_requirement_checks(session, context))
+    checks.extend(citation_checks)
     checks.extend(strict_research_checks(session, text, context))
     profile = _session_profile(session)
     _collect_provider_checks(session, profile, checks)

@@ -26,6 +26,7 @@ STRICT_RESEARCH_REQUIRED_CHECKS = (
     "research_sources_opened",
     "research_evidence_saved",
     "research_report_sections",
+    "research_citations",
 )
 
 

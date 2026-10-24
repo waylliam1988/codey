@@ -557,7 +557,20 @@ const renderApi = (function () {
   }
   function receiptSummary(receipt: unknown): string {
     const display = isRecord(receipt) && isRecord(receipt.display) ? receipt.display : null;
-    return display?.summary ? String(display.summary) : '';
+    const summary = display?.summary ? String(display.summary) : '';
+    const proof = isRecord(receipt) && isRecord(receipt.completion_proof) ? receipt.completion_proof : null;
+    if (!proof) return summary;
+    const refs = (value: unknown): string[] =>
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(0, 12) : [];
+    const evidence = refs(proof.evidence_refs);
+    const limitations = refs(proof.limitation_refs);
+    return [
+      summary,
+      evidence.length ? `依据：${evidence.join(', ')}` : '',
+      limitations.length ? `限制：${limitations.join(', ')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   function receiptChangedCount(receipt: unknown, changes?: unknown): number {

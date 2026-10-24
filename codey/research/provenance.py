@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+from typing import Any
 from urllib.parse import urlparse
 
 _URL_RE = re.compile(r"https?://[^\s<>\]）】`\"']+", re.IGNORECASE)
@@ -42,6 +44,70 @@ _NON_SOURCE_DOTTED_IDENTIFIERS = {
     "path.info",
     "pathlib.unsupportedoperation",
 }
+
+
+def _citation_text(text: str) -> str:
+    """JSON arrays/numbers are not bracket citations; scan string values only."""
+    def strings(value: Any) -> list[str]:
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, dict):
+            return [text for item in value.values() for text in strings(item)]
+        if isinstance(value, list):
+            return [text for item in value for text in strings(item)]
+        return []
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return text
+    return "\n".join(strings(value))
+
+
+def citation_problem(summary: str, *, ledger: Any, source_ids: dict[str, str],
+                     require_citation: bool) -> str | None:
+    """Validate only contract-scoped citations against the committed ledger."""
+    from codey.research.report_quality import parse_citation_rows
+    from codey.utils.citation_scanner import citation_ref_items, source_id_ref_items
+
+    text = _citation_text(summary)
+    urls = _urls_in_text(text)
+    ids = source_id_ref_items(text)
+    try:
+        numeric = citation_ref_items(text)
+    except ValueError:
+        return "research_citation_page_invalid"
+    if require_citation and not (urls or ids or numeric):
+        return "research_citation_missing"
+    numbers: dict[int, str] = {}
+    for citation in parse_citation_rows(text, ledger):
+        if citation.number < 1:
+            return "research_citation_number_unknown"
+        prior = numbers.get(citation.number)
+        if prior is not None and prior != citation.url:
+            return "research_citation_conflict"
+        numbers[citation.number] = citation.url
+    targets: list[tuple[str, tuple[int, ...]]] = [(url, ()) for url in urls]
+    for ref in ids:
+        url = source_ids.get(ref.source_id)
+        if not url:
+            return "research_citation_source_unknown"
+        try:
+            pages = citation_ref_items("[1" + ref.page_suffix + "]")[0].pages
+        except ValueError:
+            return "research_citation_page_invalid"
+        targets.append((url, pages))
+    for item in numeric:
+        url = numbers.get(item.number)
+        if not url:
+            return "research_citation_number_unknown"
+        targets.append((url, item.pages))
+    for url, pages in targets:
+        canonical = ledger.canonical_opened_url(url)
+        if not canonical:
+            return "research_citation_source_unread"
+        if any(not ledger.page_was_read(canonical, page) for page in pages):
+            return "research_citation_page_unread"
+    return None
 
 
 def provenance_problem(

@@ -205,10 +205,8 @@ def _parse_page_ref(value: str) -> tuple[int, ...]:
     match = re.fullmatch(r"(\d+)(?:\s*-\s*(\d+))?", text)
     if not match:
         return ()
-    start = max(1, int(match.group(1)))
-    end = max(1, int(match.group(2) or start))
-    if end < start:
-        start, end = end, start
-    if end - start > 99:
-        end = start + 99
+    start = int(match.group(1))
+    end = int(match.group(2) or start)
+    if start < 1 or end < start or end - start > 99:
+        raise ValueError("invalid citation page range")
     return tuple(range(start, end + 1))

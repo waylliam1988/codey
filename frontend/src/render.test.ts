@@ -17,6 +17,26 @@ void renderTypeContract;
 describe('render boundaries', () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it('renders receipt basis from proof without changing the final answer', () => {
+    const answer = '{"ok":true}';
+    expect(window.Render.receiptSummary({ display: { summary: answer } })).toBe(answer);
+    expect(
+      window.Render.receiptSummary({
+        display: { summary: 'Completed' },
+        completion_proof: {
+          evidence_refs: ['source:verified'],
+          limitation_refs: ['limit:observed'],
+        },
+      }),
+    ).toBe('Completed\n依据：source:verified\n限制：limit:observed');
+    expect(
+      window.Render.receiptSummary({
+        display: { summary: 'Completed', evidence_refs: ['model claim'] },
+        completion_proof: { evidence_refs: [null, 7], limitation_refs: [] },
+      }),
+    ).toBe('Completed');
+  });
+
   it('renders Windows CRLF headings and paragraphs without stalling', () => {
     const body = document.createElement('div');
     window.Render.renderMarkdown(body, '# Report\r\n\r\n参数正常\r\n');

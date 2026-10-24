@@ -5,6 +5,17 @@
 
 完整包结构与当前函数入口见[项目结构与职责地图](project_structure.zh-CN.md)。
 
+## 来源完成契约与交付（2026-10-24，第 4 批）
+
+来源准入只读 completion_context 中的 committed research ledger，缺失时不再改用
+session.opened_sources。后者继续作为工具别名和控制器的派生视图。来源 proof ref
+绑定完整最终 URL、正文摘要和采集时间，不裁剪 URL 作为身份。
+`research_citations` 复用既有引用扫描器和来源行解析器；严格研究要求引用，普通任务
+仅在来源契约范围内校验已有引用，显式要求该检查时才强制至少一条引用。
+未知来源/编号、未读页和非法页码范围不能通过；JSON 的数字数组不视为引用。
+严格研究仍复用原报告编译、片段证据及质量检查，没有第二个 done 判断。
+界面回执的依据与限制按已有 completion_proof 引用即时渲染，不增持久字段或改写回答。
+
 ## 请求时钟（2026-10-24，第 3 批）
 
 `providers/request_context.py::clock_context` 是唯一的请求时钟渲染入口，给出 UTC、
