@@ -16,6 +16,7 @@ Tokenization failure raises :class:`ValueError`; callers must fail closed
 
 from __future__ import annotations
 
+import base64
 import os
 import re
 import shlex
@@ -25,6 +26,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
 from typing import Literal
+
+from codey.env_names import SHELL_STARTUP_ENV
 
 COMMAND_WORKDIR_DESCRIPTION = (
     "Use a project-relative directory for path, or omit path to use the project root. "
@@ -36,30 +39,51 @@ COMMAND_WORKDIR_DESCRIPTION = (
 class ShellSpec:
     """One immutable interpreter contract, carried by the existing approval."""
 
-    kind: Literal["cmd", "posix"]
+    kind: Literal["cmd", "powershell", "bash", "zsh", "sh"]
     executable: str
+    version: str | None
+    startup: Literal["noninteractive", "login"]
+    binary_sha256: str
 
     def __post_init__(self) -> None:
         if any(char in self.executable for char in ('"', '\0', '\r', '\n')):
             raise ValueError("invalid shell executable path")
-        if self.kind == "cmd":
-            path = PureWindowsPath(self.executable)
-            if not path.is_absolute() or path.name.lower() != "cmd.exe":
-                raise ValueError("Windows shell must be an absolute cmd.exe path")
-        elif self.kind != "posix" or self.executable != "/bin/sh":
+        if self.kind not in {"cmd", "powershell", "bash", "zsh", "sh"}:
             raise ValueError("unsupported shell contract")
+        if self.startup not in {"noninteractive", "login"} or (self.kind == "cmd" and self.startup == "login"):
+            raise ValueError("unsupported shell startup mode")
+        if self.version is not None and (not isinstance(self.version, str) or not self.version.strip()):
+            raise ValueError("invalid shell version")
+        if not re.fullmatch(r"[a-f0-9]{64}", self.binary_sha256):
+            raise ValueError("shell binary fingerprint required")
+        if PureWindowsPath(self.executable).is_absolute():
+            path = PureWindowsPath(self.executable)
+            name = path.stem.lower()
+        elif self.executable.startswith("/"):
+            name = self.executable.rsplit("/", 1)[-1]
+        else:
+            raise ValueError("shell executable must be an absolute path")
+        names = {"cmd": {"cmd"}, "powershell": {"pwsh", "powershell"}, "bash": {"bash"},
+                 "zsh": {"zsh"}, "sh": {"sh", "dash"}}
+        if name not in names[self.kind]:
+            raise ValueError("shell kind differs from executable")
 
-    def to_payload(self) -> dict[str, str]:
-        return {"kind": self.kind, "executable": self.executable}
+    def to_payload(self) -> dict[str, object]:
+        return {"kind": self.kind, "executable": self.executable, "version": self.version,
+                "startup": self.startup, "binary_sha256": self.binary_sha256}
 
     @classmethod
     def from_payload(cls, value: object) -> ShellSpec:
-        if not isinstance(value, dict) or set(value) != {"kind", "executable"}:
+        if not isinstance(value, dict) or set(value) != {"kind", "executable", "version", "startup", "binary_sha256"}:
             raise ValueError("shell contract required; request a new command approval")
         kind, executable = value["kind"], value["executable"]
-        if not isinstance(kind, str) or kind not in {"cmd", "posix"} or not isinstance(executable, str):
+        if (not isinstance(kind, str) or not isinstance(executable, str)
+                or not isinstance(value["startup"], str) or not isinstance(value["binary_sha256"], str)
+                or (value["version"] is not None and not isinstance(value["version"], str))):
             raise ValueError("invalid shell contract")
-        return cls("cmd" if kind == "cmd" else "posix", executable)
+        from typing import cast
+        return cls(cast(Literal["cmd", "powershell", "bash", "zsh", "sh"], kind), executable,
+                   value["version"], cast(Literal["noninteractive", "login"], value["startup"]), value["binary_sha256"])
 
     def invocation(self, command: str) -> str | list[str]:
         if not isinstance(command, str) or not command.strip() or "\0" in command:
@@ -68,11 +92,22 @@ class ShellSpec:
             # CMD consumes a raw command tail. list2cmdline on the entire argv
             # would apply CRT escaping to the script's embedded quotes.
             return f'{subprocess.list2cmdline([self.executable])} /d /s /c "{command}"'
-        return [self.executable, "-c", command]
+        if self.kind == "powershell":
+            args = [self.executable, "-NoLogo", "-NonInteractive"]
+            if self.startup == "noninteractive":
+                args.append("-NoProfile")
+            # Encoding only transports the script; do not change its exit semantics.
+            encoding = "$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);\n"
+            return [*args, "-EncodedCommand", base64.b64encode((encoding + command).encode("utf-16-le")).decode("ascii")]
+        if self.startup == "login":
+            return [self.executable, "-lc", command]
+        flags = {"bash": ["--noprofile", "--norc"], "zsh": ["-f"], "sh": []}
+        return [self.executable, *flags[self.kind], "-c", command]
 
     def guidance(self) -> str:
         common = (
-            f"Shell command interpreter: {self.executable} (dialect: {self.kind}). "
+            f"Shell command interpreter: {self.executable} (dialect: {self.kind}, "
+            f"version: {self.version or 'not exposed'}, startup: {self.startup}). "
             "Use syntax for this interpreter. Do not infer the shell from the user's terminal or workspace path. "
             "Use the tool's working directory instead of chaining cd. "
             "Prefer file tools for multiline scripts, then invoke the saved script; do not build nested quoted programs. "
@@ -87,11 +122,15 @@ class ShellSpec:
                 "Do not assume POSIX utilities such as head, tail or sed exist. "
                 "For run output, use output_tail_lines instead of a pipe to tail."
             )
-        return common + (
-            "Use POSIX /bin/sh syntax and $NAME environment variables. Bash-only arrays, [[ ... ]] and "
-            "process substitution require an explicit Bash invocation. Quote paths with spaces. "
-            "For run output, use output_tail_lines instead of a pipe to tail."
-        )
+        if self.kind == "powershell":
+            return common + (
+                "Use PowerShell syntax and $env:NAME environment variables. Pipelines can carry objects. "
+                "Use -LiteralPath for literal file paths. POSIX heredocs are not PowerShell syntax. "
+                "For a native program's exact exit code, end with exit $LASTEXITCODE."
+            )
+        dialect = ("Use POSIX sh syntax; Bash arrays, [[ ... ]] and process substitution require explicit Bash. "
+                   if self.kind == "sh" else f"Use {self.kind} syntax. ")
+        return common + dialect + "Environment variables use $NAME. Quote paths with spaces."
 
     def compatibility_error(self, command: str) -> str:
         if (self.kind == "cmd" and _has_unquoted_heredoc(command)
@@ -105,10 +144,12 @@ def resolve_shell(*, platform: str | None = None, environ: Mapping[str, str] | N
     """Resolve once at task admission; never switch dialect after a failure."""
     host = sys.platform if platform is None else platform
     env = os.environ if environ is None else environ
-    if host == "win32":
-        executable = env.get("COMSPEC") or str(PureWindowsPath(env.get("SystemRoot", r"C:\Windows"), "System32", "cmd.exe"))
-        return ShellSpec("cmd", executable)
-    return ShellSpec("posix", "/bin/sh")
+    from codey.runtime.core.shell_discovery import discover_shell
+    kind, executable, version, fingerprint = discover_shell(host, env)
+    mode = env.get(SHELL_STARTUP_ENV, "noninteractive")
+    if mode not in {"noninteractive", "login"}:
+        raise ValueError("shell startup must be noninteractive or login")
+    return ShellSpec(kind, executable, version, "login" if mode == "login" else "noninteractive", fingerprint)
 
 
 def _has_unquoted_heredoc(command: str) -> bool:

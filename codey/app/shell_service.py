@@ -379,6 +379,9 @@ def _execute_shell_ticket(
             # Commit point: Popen while still holding the gate so a Stop that
             # needs the same gate to bump the generation cannot interleave.
             with cancellation.scope(stop_flag):
+                from codey.runtime.core.shell_discovery import binary_fingerprint
+                if binary_fingerprint(ticket.shell.executable) != ticket.shell.binary_sha256:
+                    raise ValueError("shell executable changed after approval; request a new approval")
                 proc, job = cancellation.start_process(
                     ticket.shell.invocation(command),
                     cwd=ticket.cwd,

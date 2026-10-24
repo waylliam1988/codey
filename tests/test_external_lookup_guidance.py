@@ -31,7 +31,7 @@ def test_command_guidance_declares_actual_windows_executor(monkeypatch,native,to
     from codey.operations import kernel_prompt
     monkeypatch.setattr(kernel_prompt.sys,'platform','win32')
     session=SimpleNamespace(task_text='Assess project',handoff='',project='workspace',
-                            shell=ShellSpec('cmd',r'C:\Windows\System32\cmd.exe'))
+                            shell=ShellSpec('cmd',r'C:\Windows\System32\cmd.exe',None,'noninteractive','0'*64))
     prompt=kernel_prompt_for_session(session,tool_names=(tool,'done'),native=native)
     if tool == 'shell':
         assert 'Execution host platform: win32' in prompt

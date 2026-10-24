@@ -22,32 +22,32 @@ from codey.storage.command_permissions import CommandPermissionStore
 from tests.support.shell_approval import admit_shell_task, seed_requested_approval
 
 
-@pytest.mark.parametrize("platform", ["linux", "darwin", "cygwin"])
-def test_posix_shell_ignores_terminal_preferences(platform):
-    shell = resolve_shell(platform=platform, environ={"SHELL": "/bin/fish", "COMSPEC": "pwsh.exe"})
-    assert shell == ShellSpec("posix", "/bin/sh")
+def spec(kind, executable):
+    return ShellSpec(kind, executable, None, "noninteractive", "0" * 64)
+
+
+def test_posix_invocation_keeps_the_entire_command():
+    shell = spec("sh", "/bin/sh")
     assert shell.invocation('printf "%s" "a b"') == ["/bin/sh", "-c", 'printf "%s" "a b"']
 
 
-def test_windows_resolution_has_no_unknown_interpreter_fallback():
-    assert resolve_shell(platform="win32", environ={"SystemRoot": r"D:\Windows"}) == ShellSpec(
-        "cmd", r"D:\Windows\System32\cmd.exe")
-    for path in ("cmd.exe", r"C:\Tools\pwsh.exe", r"C:cmd.exe"):
-        with pytest.raises(ValueError):
-            resolve_shell(platform="win32", environ={"COMSPEC": path})
+def test_unknown_interpreter_does_not_fall_back():
+    from codey.env_names import SHELL_EXECUTABLE_ENV
+    with pytest.raises(ValueError, match="unsupported shell"):
+        resolve_shell(environ={SHELL_EXECUTABLE_ENV: "unknown-shell"})
 
 
 @pytest.mark.parametrize("value", [None, {}, {"kind": [], "executable": "/bin/sh"},
                                   {"kind": "bash", "executable": "/bin/bash"},
-                                  {"kind": "posix", "executable": "/tmp/sh"},
-                                  {"kind": "posix", "executable": "/bin/sh", "args": ["-l"]}])
+                                  {"kind": "sh", "executable": "/tmp/sh"},
+                                  {"kind": "sh", "executable": "/bin/sh", "args": ["-l"]}])
 def test_invalid_or_old_approval_never_infers_an_interpreter(value):
     with pytest.raises(ValueError):
         ShellSpec.from_payload(value)
 
 
 def test_session_prompt_and_approval_keep_the_original_shell(monkeypatch):
-    shell = ShellSpec("cmd", r"C:\Old Windows\System32\cmd.exe")
+    shell = spec("cmd", r"C:\Old Windows\System32\cmd.exe")
     session = TaskSession(policy=TaskPolicy(frozenset({"control"})), shell=shell)
     monkeypatch.setenv("COMSPEC", r"D:\Other\cmd.exe")
     prompt = kernel_prompt_for_session(session, tool_names=("run", "shell", "done"))
@@ -69,7 +69,7 @@ def test_grants_bind_the_persisted_interpreter(tmp_path):
     store = CommandPermissionStore(tmp_path)
     store.remember(pending, "session")
     assert store.matching(pending)
-    other = ShellSpec("cmd", r"D:\Other\cmd.exe") if os.name == "nt" else ShellSpec("cmd", r"C:\Windows\cmd.exe")
+    other = spec("cmd", r"D:\Other\cmd.exe") if os.name == "nt" else spec("cmd", r"C:\Windows\cmd.exe")
     assert not store.matching({**pending, "shell": other.to_payload()})
     assert not store.matching({key: value for key, value in pending.items() if key != "shell"})
     rules = json.loads(store.path.read_text(encoding="utf-8"))
@@ -85,9 +85,9 @@ def test_approval_analysis_uses_the_same_pinned_dialect_as_the_prompt(tmp_path, 
     call = ToolCall("shell", {"command": "python - <<'PY'\nprint(1)\nPY", "path": "."})
     monkeypatch.setenv("COMSPEC", "unsupported-shell.exe")
     assert approval_call(call, project=tmp_path, permission_profile="coding_writer",
-                         shell=ShellSpec("posix", "/bin/sh")) is call
+                         shell=spec("sh", "/bin/sh")) is call
     assert approval_call(call, project=tmp_path, permission_profile="coding_writer",
-                         shell=ShellSpec("cmd", r"C:\Windows\System32\cmd.exe")) is None
+                         shell=spec("cmd", r"C:\Windows\System32\cmd.exe")) is None
 
 
 def test_command_path_guidance_appears_once_for_both_tools():
