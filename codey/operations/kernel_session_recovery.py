@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from codey.operations.kernel_errors import RecoveryFailed
-from codey.operations.kernel_facts import project_result_observation
+from codey.operations.kernel_facts import project_execution_record, project_result_observation
 from codey.operations.kernel_recovery_result import (
     _strict_slot_index,
     build_recovered_result,
@@ -115,6 +115,8 @@ def restore_task_session(frame: Any, session: Any, *, effect_scope: str = "task"
         if prior is None:
             prior = build_recovered_result(spec_for_recovered_row(row))
         _replay_recovered_facts(session, [row], [prior], staged_ledger)
+        project_execution_record(session, identity, row.call, prior, ok=frame_outcome_ok(row),
+                                 exit_code=frame_outcome_exit_code(row))
         session._memory_results[identity] = prior
         session.restored_effect_ids.add(identity)
     pending_batch = bool(getattr(frame, "recovered_tool_result_batch_id", "") or "")

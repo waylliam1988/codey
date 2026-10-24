@@ -23,7 +23,7 @@ from tools.local_model_gate_shell import (
 
 
 @contextmanager
-def model_peer(protocol, case, tool_name="shell", repeat=False):
+def model_peer(protocol, case, tool_name="shell", repeat=False, retry_denied=False):
     requests = []
     errors = []
 
@@ -49,14 +49,16 @@ def model_peer(protocol, case, tool_name="shell", repeat=False):
                 assert body["model"] == "shell-fixture"
                 items = body.get("input", body.get("messages"))
                 expected_id = f"original-shell-call-{(len(requests) - 1) // 2}" if repeat else "original-shell-call"
+                if retry_denied and len(requests) == 3:
+                    expected_id = "repeated-denied-call"
                 if len(requests) == 1 or (repeat and len(requests) % 2 == 1):
                     name, call_id, args = tool_name, expected_id, {"command": probe_command(case), "path": "."}
                 else:
-                    assert repeat or len(requests) == 2, "unexpected new generation/retry"
+                    assert repeat or len(requests) == 2 or retry_denied and len(requests) == 3, "unexpected new generation/retry"
                     if protocol == "openai-responses":
                         calls = [item for item in items if item.get("type") == "function_call"]
                         results = [item for item in items if item.get("type") == "function_call_output"]
-                        if not repeat:
+                        if not repeat and not retry_denied:
                             assert len(calls) == len(results) == 1
                         assert calls[-1]["call_id"] == results[-1]["call_id"] == expected_id
                         assert calls[-1]["name"] == tool_name
@@ -64,13 +66,18 @@ def model_peer(protocol, case, tool_name="shell", repeat=False):
                     else:
                         calls = [call for item in items for call in item.get("tool_calls", [])]
                         results = [item for item in items if item.get("role") == "tool"]
-                        if not repeat:
+                        if not repeat and not retry_denied:
                             assert len(calls) == len(results) == 1
                         assert calls[-1]["id"] == results[-1]["tool_call_id"] == expected_id
                         assert calls[-1]["function"]["name"] == tool_name
                         content = results[-1]["content"]
-                    assert ("Denied by user" if case == "shell_deny" else "SHELL_GATE_RESULT") in content
+                    if retry_denied and len(requests) == 3:
+                        assert "not executed" in content and "new user request" in content
+                    else:
+                        assert ("Denied by user" if case == "shell_deny" else "SHELL_GATE_RESULT") in content
                     name, call_id, args = "done", "done-call", {"summary": "Shell result received; " + content}
+                    if retry_denied and len(requests) == 2:
+                        name, call_id, args = tool_name, "repeated-denied-call", {"command": probe_command(case), "path": "."}
                 if protocol == "openai-responses":
                     self.reply({"status": "completed", "output": [{"type": "function_call", "status": "completed",
                         "call_id": call_id, "name": name, "arguments": json.dumps(args)}]})
@@ -109,6 +116,18 @@ def test_http_approval_returns_original_result_without_another_user_message(tmp_
     # second task identity or synthetic user submission is created.
     assert proof["source_run_id"] == proof["continuation_run_id"]
     assert "Shell result received" in proof["summary"]
+
+
+@pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
+@pytest.mark.parametrize("tool_name", ["shell", "run"])
+def test_http_denial_refuses_model_retry_without_another_approval(tmp_path, protocol, tool_name):
+    with model_peer(protocol, "shell_deny", tool_name, retry_denied=True) as (url, requests, errors):
+        target = GateTarget(url, "shell-fixture", 32768, 8192, 12000,
+                            api_protocol=protocol, request_timeout=10)
+        proof = run_shell_case("shell_deny", target, tmp_path)
+        assert not errors and len(requests) == 3
+        assert proof["ok"] and proof["stop_reason"] == "done"
+        assert "not executed" in proof["summary"]
 
 
 @pytest.mark.parametrize('protocol', ['openai-completions', 'openai-responses'])

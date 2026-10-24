@@ -87,7 +87,7 @@ def render_results(hits: list[SourceSearchHit], *, hit_ids: tuple[str, ...] = ()
         return "no source_search matches"
     lines = [
         "source_search results from an already-opened source.",
-        "Locator preview only. Use open_hit from the next allowed-actions block before citing.",
+        "Locator preview only; this is not an opened source observation.",
     ]
     for index, hit in enumerate(hits, 1):
         prefix = f"{hit_ids[index - 1]}: " if hit_ids else ""

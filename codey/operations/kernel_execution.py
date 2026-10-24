@@ -15,11 +15,10 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any
 
-from codey.operations.kernel_errors import EffectSettlementFailed, RecoveryFailed
-from codey.operations.kernel_facts import project_result_observation
+from codey.operations.kernel_errors import RecoveryFailed
+from codey.operations.kernel_facts import project_execution_record, project_result_observation
 from codey.operations.kernel_protocol import _validate_tool_args, frozen_custom_executor_map, frozen_spec_map
 from codey.operations.kernel_provenance import (
-    _kernel_workspace_identity_of,
     _with_trusted_workspace_state,
     sync_workspace_state_after_edit,
 )
@@ -32,7 +31,6 @@ from codey.operations.kernel_recovery import (
 )
 from codey.operations.kernel_recovery_context import RecoveryContext
 from codey.operations.kernel_result import (
-    _call_args_digest,
     _consistent_tool_result,
     _error_result,
     _normalize_delegate_result,
@@ -221,6 +219,7 @@ def execute_turn(
     workspace_revision_store: Any = None,
     stop_flag: Any = None,
     snapshot: Any = None,
+    durable: Any = None,
 ) -> list[ToolResult]:
     """Execute one turn; identity is run+turn+index with durable delivery first.
 
@@ -275,7 +274,7 @@ def execute_turn(
         if identity not in session.executed and identity not in session.restored_effect_ids:
             project_result_observation(staged, call, result, ok=ok,
                                        exit_code=strict_exit_code_or_none(exit_code), research_ledger=staged_ledger)
-        _settle_slot(staged, identity, call, result, ok=ok, exit_code=exit_code)
+        project_execution_record(staged, identity, call, result, ok=ok, exit_code=exit_code)
         if intent_sink is not None:
             # 统一 sink 协议：生产 sink 一律接收 result/exit_code，无旧签名回退
             intent_sink.settle(
@@ -326,6 +325,7 @@ def execute_turn(
         delivered_map, intent_sink, controller_allowed, project_path,
         workspace_ignored_paths, ignores, recovery_ctx, workspace_revision_store,
         execution_evidence, settle, reconcile_intent_only, stop_flag, frozen_specs,
+        durable, managed_outputs, run_ref_str,
     )
 
 
@@ -460,6 +460,7 @@ def _execute_slots(
     workspace_ignored_paths: Any, ignores: tuple[str, ...], recovery_ctx: RecoveryContext,
     workspace_revision_store: Any, execution_evidence: Any, settle: Any,
     reconcile_intent_only: Any, stop_flag: Any, frozen_specs: Any,
+    durable: Any, managed_outputs: Any, run_id: str,
 ) -> list[ToolResult]:
     results: list[ToolResult] = []
     workspace_unconfirmed = False
@@ -497,6 +498,16 @@ def _execute_slots(
             continue
         if stop_flag is not None and stop_flag.is_set():
             blocked = policy_denial_result(call, "task stopped; tool call was not executed")
+            settle(identity, call, blocked, ok=False)
+            results.append(blocked)
+            continue
+        from codey.operations.shell_authorization import denied_shell_message
+
+        denial = denied_shell_message(call, durable=durable, managed_outputs=managed_outputs,
+                                      run_id=run_id, project=project_path, shell=session.shell)
+        if denial:
+            blocked = policy_denial_result(call, denial, reason_code="shell_authorization_denied")
+            blocked = replace(blocked, audit={**blocked.audit, "execution_disposition": "denied_before_execution"})
             settle(identity, call, blocked, ok=False)
             results.append(blocked)
             continue
@@ -634,55 +645,3 @@ def _settle_unconfirmed_edit(session: TaskSession, identity: str, call: ToolCall
         execution_evidence.set_workspace_state(0, "")
     results.append(failed)
     return "unconfirmed"
-
-
-def _settle_slot(
-    session: TaskSession,
-    identity: str,
-    call: ToolCall,
-    result: ToolResult,
-    *,
-    ok: bool,
-    exit_code: object = None,
-) -> None:
-    """Build the process execution index on a staged session.
-
-    ``session._memory_results`` stays a tolerant process-local cache (handled
-    by the caller with suppress). This index becomes visible only after the
-    authoritative sink commit. Durable recovery rebuilds from the full result
-    receipt; this dictionary is not a second persistent authority.
-    """
-    try:
-        record: dict[str, Any] = {
-            "name": (result.call.name or ""),
-            "ok": ok if type(ok) is bool else False,
-            "call_id": str(result.call.call_id or getattr(call, "call_id", "") or ""),
-            "excerpt": (result.model_text or "")[:500],
-            "args_digest": _call_args_digest(call),
-        }
-        if result.canonical.get("workspace_unconfirmed") is True:
-            record["applied_edit"] = {"mutation_applied": True, "identity_status": "unconfirmed",
-                                      "identity_reason": result.canonical["identity_reason"]}
-        strict_exit = strict_exit_code_or_none(exit_code)
-        if strict_exit is None and isinstance(result.audit, dict):
-            strict_exit = strict_exit_code_or_none(result.audit.get("exit_code"))
-        if strict_exit is not None:
-            record["exit_code"] = strict_exit
-        if denied_before_execution(result):
-            record["execution_disposition"] = "denied_before_execution"
-    except Exception as exc:
-        raise EffectSettlementFailed(f"effect settlement failed for {identity}: {exc}") from exc
-    # Minimal durable provenance: only the kernel side-channel is persisted,
-    # never raw audit. Extraction stays tolerant (missing provenance fails
-    # closed on later replay); the receipt write below is fail-hard.
-    try:
-        identity_obj = _kernel_workspace_identity_of(result)
-        if identity_obj is not None and type(ok) is bool and ok is True:
-            record["workspace_revision"] = identity_obj.revision
-            record["workspace_fingerprint"] = identity_obj.fingerprint
-    except Exception as exc:
-        raise EffectSettlementFailed(f"effect settlement provenance failed for {identity}: {exc}") from exc
-    try:
-        session.executed[identity] = record
-    except Exception as exc:
-        raise EffectSettlementFailed(f"effect settlement failed for {identity}: {exc}") from exc

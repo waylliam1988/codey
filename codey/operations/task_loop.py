@@ -351,6 +351,9 @@ def _approval_stop(
     provider_id: object = "",
     window_ref: Any = None,
     shell: ShellSpec | None = None,
+    durable: Any = None,
+    managed_outputs: Any = None,
+    task_id: str = "",
 ) -> KernelResult | None:
     if on_shell_request is None or project_path is None:
         return None
@@ -370,6 +373,12 @@ def _approval_stop(
     effective_profile = effective_project_profile(permission_profile)
     selected_shell = shell if shell is not None else resolve_shell()
     for index, call in enumerate(calls):
+        from codey.operations.shell_authorization import denied_shell_message
+
+        if denied_shell_message(call, durable=durable, managed_outputs=managed_outputs,
+                                run_id=task_id or str(run_id), project=project_path, shell=selected_shell):
+            # Normal execution settles and delivers the refusal to this call.
+            continue
         if call.name == "run" and len(calls) > 1:
             # Do not park a whole batch and silently skip earlier effects.
             # Normal execution returns a refusal for this command; the model
@@ -485,6 +494,9 @@ def _kernel_handle_done_approval(
     permission_profile: object = "coding_writer",
     provider_id: object = "",
     on_event: Any = None,
+    durable: Any = None,
+    managed_outputs: Any = None,
+    run_id: str = "",
 ) -> tuple[Any, Any, list[Any]]:
     """Handle done/approval; returns (done_action, approval, calls).
 
@@ -524,6 +536,9 @@ def _kernel_handle_done_approval(
         provider_id=provider_id,
         window_ref=getattr(provider, "window_ref", None),
         shell=session.shell,
+        durable=durable,
+        managed_outputs=managed_outputs,
+        task_id=run_id,
     )
     return done_action, approval, list(calls or ())
 
@@ -796,6 +811,9 @@ def run_task_kernel(
             permission_profile=execution.permission_profile,
             provider_id=provider_id,
             on_event=on_event,
+            durable=execution.durable,
+            managed_outputs=execution.managed_outputs,
+            run_id=transport.run_id,
         )
         done_action = _finish_or_steer(done_action, on_boundary, turn, startup.max_turns,
                                       propagate=propagate_provider_failure)
@@ -1061,7 +1079,7 @@ def _call_execute_turn(
             controller_allowed=controller, execution_evidence=outer_evidence,
             workspace_ignored_paths=workspace_ignored_paths,
             workspace_revision_store=workspace_revision_store,
-            stop_flag=stop_flag, snapshot=snapshot,
+            stop_flag=stop_flag, snapshot=snapshot, durable=durable,
         )
     except Exception as exc:
         # Fail closed: an execution-layer fault (e.g. durable settle) never

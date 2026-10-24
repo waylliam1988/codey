@@ -445,13 +445,12 @@ def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None)
                 continue
         names.append(name)
     # Controller aliases are model-visible names; expose them when allowed.
-    if allowed is not None:
-        for alias in ("open_result", "reopen_source", "open_hit"):
-            spec = tool_specs().get(alias)
-            if spec is None or alias in names:
-                continue
-            if _policy_allows(policy, spec.grant) and alias in allowed:
-                names.append(alias)
+    for alias in ("open_result", "reopen_source", "open_hit"):
+        spec = tool_specs().get(alias)
+        if spec is None or alias in names:
+            continue
+        if _policy_allows(policy, spec.grant) and (allowed is None or alias in allowed):
+            names.append(alias)
     # Registered third-task tools advertise alongside built-ins; unregistered
     # names stay denied.
     for name in sorted(tool_specs()):

@@ -304,6 +304,27 @@ def _contract_subject(session: Any, profile: str, context: Any) -> str:
     return f"task:{profile or 'task'}"
 
 
+def _required_tool_checks(session: Any) -> list[CompletionCheck]:
+    """Explicit entry requirements consume the committed execution projection.
+
+    These are tool observations, not model assertions or inferred workflows.
+    Recovery rebuilds the same projection from committed result receipts.
+    """
+    rows: list[CompletionCheck] = []
+    for check_id in getattr(session.policy, "required_checks", ()):
+        if not check_id.startswith("tool_succeeded:"):
+            continue
+        name = check_id.removeprefix("tool_succeeded:")
+        observed = bool(name) and any(
+            row.get("name") == name and row.get("ok") is True
+            and row.get("execution_disposition") != "denied_before_execution"
+            for row in session.executed.values()
+        )
+        rows.append(CompletionCheck(check_id, CHECK_PASS if observed else CHECK_FAIL,
+                                    "" if observed else f"successful_tool_observation_required:{name}"))
+    return rows
+
+
 def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
     text = str(done_text or "").strip()
     citation_checks = citation_requirement_checks(session, text, context)
@@ -313,6 +334,7 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     checks.extend(source_requirement_checks(session, context))
     checks.extend(citation_checks)
     checks.extend(strict_research_checks(session, text, context))
+    checks.extend(_required_tool_checks(session))
     profile = _session_profile(session)
     _collect_provider_checks(session, profile, checks)
     deduped = _dedupe_checks(checks)

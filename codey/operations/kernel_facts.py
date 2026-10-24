@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from codey.operations.kernel_errors import EffectSettlementFailed
 from codey.operations.kernel_protocol import _CONTROLLER_ALIASES
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of, _session_workspace_identity
-from codey.operations.kernel_result import denied_before_execution, strict_exit_code_or_none
+from codey.operations.kernel_result import _call_args_digest, denied_before_execution, strict_exit_code_or_none
 from codey.operations.task_session import TaskSession
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import (
@@ -227,3 +228,54 @@ def _record_search_results(session: TaskSession, result: ToolResult) -> None:
         if not existing:
             existing = f"r{len(session.search_results) + 1}"
         session.record_search_result(existing, url)
+
+def project_execution_record(
+    session: TaskSession,
+    identity: str,
+    call: ToolCall,
+    result: ToolResult,
+    *,
+    ok: bool,
+    exit_code: object = None,
+) -> None:
+    """Project the execution index on a staged live or recovered session.
+
+    ``session._memory_results`` stays a tolerant process-local cache (handled
+    by the caller with suppress). This index becomes visible only after the
+    authoritative sink commit. Recovery invokes this same projection on the
+    full committed receipt; this dictionary is not a persistent authority.
+    """
+    try:
+        record: dict[str, Any] = {
+            "name": (result.call.name or ""),
+            "ok": ok if type(ok) is bool else False,
+            "call_id": str(result.call.call_id or getattr(call, "call_id", "") or ""),
+            "excerpt": (result.model_text or "")[:500],
+            "args_digest": _call_args_digest(call),
+        }
+        if result.canonical.get("workspace_unconfirmed") is True:
+            record["applied_edit"] = {"mutation_applied": True, "identity_status": "unconfirmed",
+                                      "identity_reason": result.canonical["identity_reason"]}
+        strict_exit = strict_exit_code_or_none(exit_code)
+        if strict_exit is None and isinstance(result.audit, dict):
+            strict_exit = strict_exit_code_or_none(result.audit.get("exit_code"))
+        if strict_exit is not None:
+            record["exit_code"] = strict_exit
+        if denied_before_execution(result):
+            record["execution_disposition"] = "denied_before_execution"
+    except Exception as exc:
+        raise EffectSettlementFailed(f"effect settlement failed for {identity}: {exc}") from exc
+    # Minimal durable provenance: only the kernel side-channel is persisted,
+    # never raw audit. Extraction stays tolerant (missing provenance fails
+    # closed on later replay); the receipt write below is fail-hard.
+    try:
+        identity_obj = _kernel_workspace_identity_of(result)
+        if identity_obj is not None and type(ok) is bool and ok is True:
+            record["workspace_revision"] = identity_obj.revision
+            record["workspace_fingerprint"] = identity_obj.fingerprint
+    except Exception as exc:
+        raise EffectSettlementFailed(f"effect settlement provenance failed for {identity}: {exc}") from exc
+    try:
+        session.executed[identity] = record
+    except Exception as exc:
+        raise EffectSettlementFailed(f"effect settlement failed for {identity}: {exc}") from exc

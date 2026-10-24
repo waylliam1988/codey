@@ -186,6 +186,7 @@ def build_execute_turn_executor(
                 workspace_revision_store=workspace_revision_store,
                 stop_flag=stop_flag,
                 snapshot=snapshot,
+                durable=durable,
             )
             if not results:
                 raise RuntimeError("nested kernel returned no tool result")

@@ -65,7 +65,8 @@ def probe(root, proxy, model, protocol, case):
     _, mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     required = case in {"redirect", "locator"}
     policy = TaskPolicy(frozenset({"control", "web.read"}), sources_open_required=required,
-                        required_checks=("research_sources_opened",) if required else ())
+                        required_checks=(("research_sources_opened", "tool_succeeded:source_search", "tool_succeeded:open_hit")
+                                         if case == "locator" else ("research_sources_opened",) if required else ()))
     record_entry_policy(mutations, session_id="s", run_id="r", policy=policy)
     session = TaskSession(policy=policy, task_kind="project", task_text=prompt, max_turns=8)
     backend = SourceBackend(case)
@@ -105,6 +106,9 @@ def probe(root, proxy, model, protocol, case):
     stable = restored_once == (dict(fresh.search_results), set(fresh.opened_sources), len(ledger.searches))
     facts_equal = (fresh.search_results == session.search_results and fresh.opened_sources == session.opened_sources
                    and ledger.opened_sources == tools.ledger.opened_sources and ledger.searches == tools.ledger.searches)
+    from codey.operations.completion_gate import evaluate
+
+    recovered_complete = evaluate(fresh, result.summary, context={"research_ledger": ledger}).complete
     executed = [row.intent.tool_name for row in rows if row.intent.tool_name]
     valid_case = (
         case == "redirect" and "web_search" in executed
@@ -115,10 +119,11 @@ def probe(root, proxy, model, protocol, case):
         or case == "failure" and "open_url" in executed and not session.opened_sources
     )
     result_row = {"case": case, "protocol": protocol, "ok": bool(result.completed and valid_case and recovered.ok
-                  and stable and facts_equal and backend.calls == calls_before_recovery),
+                  and stable and facts_equal and recovered_complete and backend.calls == calls_before_recovery),
                   "stop_reason": result.stop_reason, "summary": result.summary, "executed": executed,
                   "source_backend_calls": backend.calls, "facts_equal_after_recovery": facts_equal,
                   "repeat_recovery_stable": stable, "opened_sources": sorted(session.opened_sources),
+                  "recovered_completion_passed": recovered_complete,
                   "proof": as_proof(result.proof), "seconds": round(time.monotonic() - started, 2),
                   "requests": proxy.records[before_requests:]}
     (root / "result.json").write_text(json.dumps(result_row, ensure_ascii=False, indent=2), encoding="utf-8")

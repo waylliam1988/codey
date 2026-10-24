@@ -162,16 +162,16 @@ def _result_context(result: ToolResult, session: TaskSession) -> str:
         text += f"\nStored result: {result_ref}\n{instruction} do not repeat execution to recover output."
     if result.call.name == "web_search" and session.search_results:
         refs = "\n".join(f"{key}: {url}" for key, url in list(session.search_results.items())[-12:])
-        return f"{text}\n\nAvailable result IDs for open_result:\n{refs}"
+        return f"{text}\n\nSearch result references:\n{refs}"
     if result.call.name == "source_search" and session.hit_targets:
         refs = "\n".join(
             f"{key}: {target.get('url')} offset={target.get('offset')} pages={target.get('pages')}"
             for key, target in list(session.hit_targets.items())[-12:]
         )
-        return f"{text}\n\nAvailable hit IDs for open_hit:\n{refs}"
+        return f"{text}\n\nSource locator references:\n{refs}"
     if result.call.name in {"open_url", "open_result", "open_hit", "reopen_source"} and session.source_ids:
         refs = "\n".join(f"{key}: {url}" for key, url in list(session.source_ids.items())[-12:])
-        return f"{text}\n\nOpened source IDs for reopen_source and citations:\n{refs}"
+        return f"{text}\n\nOpened source references for citations:\n{refs}"
     return text
 
 

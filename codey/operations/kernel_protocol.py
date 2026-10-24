@@ -89,6 +89,12 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
             base = None
     if base is not None:
         base = (*base, "ask_user")
+    # Reference aliases require an observed target, in ordinary and strict
+    # tasks alike. The resulting list drives both wire protocols and execution.
+    for alias, facts in (("open_result", "search_results"),
+                         ("reopen_source", "source_ids"), ("open_hit", "hit_targets")):
+        if not getattr(session, facts, None):
+            denied.add(alias)
     if not denied:
         return base
     if base is None:

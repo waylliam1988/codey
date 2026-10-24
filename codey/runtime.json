@@ -236,6 +236,7 @@
     "codey/operations/research_iteration.py",
     "codey/operations/result.py",
     "codey/operations/review_flow.py",
+    "codey/operations/shell_authorization.py",
     "codey/operations/task_context.py",
     "codey/operations/task_effects.py",
     "codey/operations/task_entry.py",
