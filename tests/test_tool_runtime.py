@@ -203,9 +203,7 @@ class ToolOutcomeTests(unittest.TestCase):
             "ok",
             True,
             canonical={
-                "path": Path("app.py"),
-                "bad": object(),
-                "nan": float("nan"),
+                "path": "app.py",
                 "long": "x" * 3_000,
             },
             presentation={
@@ -221,20 +219,16 @@ class ToolOutcomeTests(unittest.TestCase):
         json.dumps(outcome.canonical, allow_nan=False)
         self.assertEqual(outcome.presentation_status(), "shown")
         self.assertEqual(outcome.presentation_result(20), "UI")
-        self.assertTrue(str(outcome.canonical["path"]).startswith("<non-json "))
-        self.assertTrue(str(outcome.canonical["path"]).endswith("Path>"))
-        self.assertEqual(outcome.canonical["bad"], "<non-json object>")
-        self.assertEqual(outcome.canonical["nan"], "nan")
-        self.assertEqual(len(str(outcome.canonical["long"])), 2_000)
+        self.assertEqual(outcome.canonical["path"], "app.py")
+        self.assertEqual(outcome.canonical["long"], "x" * 3_000)
         self.assertIn("_projection_warnings", outcome.presentation)
         self.assertIn("_projection_warnings", outcome.audit)
-        self.assertIn("_projection_warnings", outcome.canonical)
+        self.assertNotIn("_projection_warnings", outcome.canonical)
 
     def test_tool_outcome_sanitizes_non_mapping_projections(self) -> None:
         outcome = tool_runtime.ToolOutcome(
             "ok",
             True,
-            canonical=object(),
             presentation=object(),
             audit=object(),
         )
@@ -246,7 +240,12 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertEqual(outcome.presentation_result(20), "ok")
         self.assertIn("_projection_warnings", outcome.presentation)
         self.assertIn("_projection_warnings", outcome.audit)
-        self.assertIn("_projection_warnings", outcome.canonical)
+        self.assertEqual(outcome.canonical, {})
+
+    def test_tool_outcome_rejects_non_json_canonical_facts(self) -> None:
+        for index, canonical in enumerate((object(), {"path": Path("app.py")}, {"value": float("nan")}, {1: "bad key"})):
+            with self.subTest(case=index), self.assertRaises(TypeError):
+                tool_runtime.ToolOutcome("content", True, canonical=canonical)
 
     def test_tool_outcome_ignores_invalid_managed_output_handles(self) -> None:
         for handle in ("../x", "out_", "out_" + ("x" * 81), 123, float("nan")):
@@ -288,7 +287,7 @@ class ToolOutcomeTests(unittest.TestCase):
                 self.assertNotIn("INJECTED", outcome.model_text)
                 self.assertNotIn("<non-json object>", outcome.model_text)
 
-    def test_tool_outcome_bounds_projection_depth_keys_and_items(self) -> None:
+    def test_tool_outcome_preserves_canonical_depth_keys_and_items(self) -> None:
         deep: dict[str, object] = {"leaf": "value"}
         for _index in range(10):
             deep = {"next": deep}
@@ -304,14 +303,10 @@ class ToolOutcomeTests(unittest.TestCase):
         )
 
         json.dumps(outcome.canonical, allow_nan=False)
-        clipped_key = next(key for key in outcome.canonical if key.startswith("x"))
-        self.assertEqual(len(clipped_key), 80)
-        self.assertLess(len(outcome.canonical["items"]), 300)
-        value = outcome.canonical["deep"]
-        while isinstance(value, dict):
-            value = next(iter(value.values()))
-        self.assertTrue(str(value).startswith("<max-depth "))
-        self.assertIn("_projection_warnings", outcome.canonical)
+        self.assertEqual(outcome.canonical["x" * 120], "value")
+        self.assertEqual(outcome.canonical["items"], list(range(300)))
+        self.assertEqual(outcome.canonical["deep"], deep)
+        self.assertNotIn("_projection_warnings", outcome.canonical)
 
     def test_failed_check_has_exit_code_without_becoming_runtime_error(self) -> None:
         with tempfile.TemporaryDirectory() as td:

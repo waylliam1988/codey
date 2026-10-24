@@ -6,6 +6,7 @@ import pytest
 
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from tests.support.observed_tool_result import observed_tool_result
 
 
 def test_project_fresh_chat_failure_never_reuses_previous_dialogue():
@@ -36,13 +37,13 @@ def test_readonly_request_does_not_create_project_directory(tmp_path):
 def test_explicit_source_executor_does_not_use_project_only_guard():
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.kernel_protocol import build_turn_snapshot
-    from codey.runtime.core.models import ToolCall, ToolResult
+    from codey.runtime.core.models import ToolCall
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "web.read"})))
     calls = []
     results = execute_turn(session, [ToolCall("web_search", {"query":"q"})],
                            research_tools=SimpleNamespace(), snapshot=build_turn_snapshot(session),
-                           executors={"web_search":lambda call: calls.append(call) or ToolResult(call, "searched", ok=True)})
+                           executors={"web_search":lambda call: calls.append(call) or observed_tool_result(call, "searched")})
     assert len(calls) == 1
     assert results[0].model_text == "searched"
 

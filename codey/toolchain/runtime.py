@@ -28,6 +28,7 @@ from codey.policies.run_command_semantics import (
 )
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import (
+    canonical_json_mapping,
     json_safe_projection,
     model_text_with_audit_markers,
     normalized_managed_output,
@@ -170,7 +171,7 @@ class ToolOutcome:
             audit["changed"] = True
         if self.truncated:
             audit["truncated"] = True
-        canonical = json_safe_projection(self.canonical, label="canonical")
+        canonical = canonical_json_mapping(self.canonical)
         model_text = model_text_with_audit_markers(
             model_text,
             truncated=self.truncated,

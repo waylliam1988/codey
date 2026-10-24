@@ -334,6 +334,7 @@ def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from codey.research.ledger import ResearchLedger
     from codey.research.tools import ResearchToolOutput
     from codey.runtime.core.models import ToolCall
 
@@ -344,12 +345,17 @@ def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
     opened: list[tuple[str, int]] = []
 
     class Tools:
+        ledger = ResearchLedger()
+
         def source_search(self, target, _query, _limit):
             assert target == url
+            self.ledger.record_source_search(target, _query, [{"offset": 123, "page": None,
+                                                              "snippet": "relevant excerpt"}])
             return ResearchToolOutput("source_search results\n1. offset 123: relevant excerpt", ok=True)
 
         def open_url(self, target, offset=0, limit=6000, pages=""):
             opened.append((target, offset))
+            self.ledger.record_open(target, target, "Long", "relevant excerpt")
             return ResearchToolOutput(model_text="Title: Long\nrelevant excerpt", ok=True)
 
     tools = Tools()

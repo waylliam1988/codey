@@ -225,6 +225,34 @@ def json_safe_projection(
     return result
 
 
+def canonical_json_mapping(value: object) -> dict[str, Any]:
+    """Detach authoritative JSON data without clipping or inventing replacements.
+
+    Result receipts own complete-payload storage bounds. Display projections
+    may be lossy; execution facts must either survive exactly or be rejected.
+    """
+    if not isinstance(value, Mapping):
+        raise TypeError("canonical payload must be a mapping")
+    result: dict[str, Any] = {}
+    for key, item in value.items():
+        if type(key) is not str:
+            raise TypeError("canonical payload keys must be strings")
+        result[key] = _canonical_json_value(item)
+    return result
+
+
+def _canonical_json_value(value: object) -> Any:
+    if value is None or type(value) in {str, bool, int}:
+        return value
+    if type(value) is float and math.isfinite(value):
+        return value
+    if isinstance(value, Mapping):
+        return canonical_json_mapping(value)
+    if isinstance(value, (list, tuple)):
+        return [_canonical_json_value(item) for item in value]
+    raise TypeError(f"canonical payload contains non-JSON {type(value).__name__}")
+
+
 @dataclass(frozen=True)
 class ToolCall:
     name: str
@@ -265,7 +293,7 @@ class ToolResult:
             raise TypeError("tool result ok must be an exact boolean")
         presentation = json_safe_projection(self.presentation, label="presentation")
         audit = json_safe_projection(self.audit, label="audit")
-        canonical = json_safe_projection(self.canonical, label="canonical")
+        canonical = canonical_json_mapping(self.canonical)
         object.__setattr__(
             self,
             "model_text",

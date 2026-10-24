@@ -4,6 +4,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+from tests.support.observed_tool_result import observed_tool_result
 
 
 def _submission(project="E:/codey", task="研究，不要修改", requested=(), strict=True):
@@ -102,8 +103,8 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
         return ToolResult(call, "1 passed", ok=True, audit={"exit_code": 0})
 
     executors = {
-        "web_search": lambda call: ToolResult(call, "1. Docs\n   https://example.com/docs", ok=True),
-        "open_url": lambda call: ToolResult(call, "Official documentation", ok=True),
+        "web_search": lambda call: observed_tool_result(call, "1. Docs\n   https://example.com/docs"),
+        "open_url": lambda call: observed_tool_result(call, "Official documentation"),
         "read_file": lambda call: ToolResult(call, (project / call.args["path"]).read_text(), ok=True),
         "edit": edit, "run": verify,
     }

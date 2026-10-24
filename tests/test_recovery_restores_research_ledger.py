@@ -97,9 +97,15 @@ def test_failed_ledger_projection_does_not_commit_partial_task_facts():
     policy = TaskPolicy(frozenset({"control", "web.read"}))
     session = TaskSession(policy=policy)
     ledger = ResearchLedger()
+    from codey.research.ledger_receipts import ledger_observation
+
+    search_ledger = ResearchLedger()
+    search_ledger.record_search("helium", [{"url": "https://example.com"}])
     rows = (
         RecoveredToolOutcome(ToolCall("web_search", {"query": "helium"}),
-                             ToolOutcome("1. docs\n   https://example.com", True), 1, 0, effect_id="search"),
+                             ToolOutcome("1. docs\n   https://example.com", True,
+                                         canonical={"research_observation": ledger_observation(search_ledger, "web_search")}),
+                             1, 0, effect_id="search"),
         RecoveredToolOutcome(ToolCall("open_url", {"url": "https://example.com"}),
                              ToolOutcome("source", True, canonical={"research_observation": {"bad": True}}),
                              2, 0, effect_id="open"),

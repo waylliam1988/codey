@@ -10,6 +10,7 @@ from __future__ import annotations
 import unittest
 
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+from tests.support.observed_tool_result import observed_tool_result
 
 
 def _project_runtime(case):
@@ -212,10 +213,10 @@ class WebOnlyLoopTests(unittest.TestCase):
         self.assertFalse(hasattr(provider, "send_tool_results"))
 
         def fake_web_search(call):
-            return ToolResult(ok=True, call=call, model_text="found https://example.com/docs")
+            return observed_tool_result(call, "found https://example.com/docs")
 
         def fake_open(call):
-            return ToolResult(ok=True, call=call, model_text="page text about login")
+            return observed_tool_result(call, "page text about login")
 
         def fake_read(call):
             return ToolResult(ok=True, call=call, model_text="old code")
@@ -259,7 +260,6 @@ class WebOnlyLoopTests(unittest.TestCase):
         from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.providers.base import AssistantTurn, ProviderToolCall
-        from codey.runtime.core.models import ToolResult
 
         policy = _policy(
             submission={"requested_capabilities": ("web.read",)},
@@ -303,8 +303,8 @@ class WebOnlyLoopTests(unittest.TestCase):
                 ),
                 execution=KernelExecutionDeps(
                     executors={
-                        "web_search": lambda call: ToolResult(ok=True, call=call, model_text="found"),
-                        "open_url": lambda call: ToolResult(ok=True, call=call, model_text="page"),
+                        "web_search": lambda call: observed_tool_result(call, "found"),
+                        "open_url": lambda call: observed_tool_result(call, "page"),
                     },
                 ),
             ),
@@ -374,7 +374,6 @@ class HybridAndPlanningTests(unittest.TestCase):
     def test_hybrid_interleaves_web_and_project_in_one_run(self) -> None:
         from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
-        from codey.runtime.core.models import ToolResult
 
         policy = _policy(
             submission={"requested_capabilities": ("web.read",)},
@@ -406,7 +405,7 @@ class HybridAndPlanningTests(unittest.TestCase):
                 if name == "edit":
                     (project / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
                 audit = {"exit_code": exit_code} if exit_code is not None else {}
-                return ToolResult(ok=True, call=call, model_text=text, audit=audit)
+                return observed_tool_result(call, text, audit=audit)
 
             return fn
 
@@ -519,7 +518,7 @@ class RecoveryTests(unittest.TestCase):
 
         from codey.operations.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
-        from codey.runtime.core.models import ToolCall, ToolResult
+        from codey.runtime.core.models import ToolCall
         from codey.workspace.revision import WorkspaceRevisionStore
 
         temporary = tempfile.TemporaryDirectory()
@@ -540,7 +539,7 @@ class RecoveryTests(unittest.TestCase):
                 calls_made.append(name)
                 if name == "edit":
                     (project / call.args["path"]).write_text(call.args["content"], encoding="utf-8")
-                return ToolResult(ok=True, call=call, model_text=f"{name} ok", audit={"exit_code": 0} if name == "run" else {})
+                return observed_tool_result(call, f"{name} ok", audit={"exit_code": 0} if name == "run" else {})
 
             return fn
 
@@ -581,7 +580,6 @@ class RecoveryTests(unittest.TestCase):
     def test_provider_switch_keeps_results(self) -> None:
         from codey.operations.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession, turn_effect_id
-        from codey.runtime.core.models import ToolResult
         from tests.support.kernel_protocol_test_helpers import normalize_turn
 
         policy = _policy(
@@ -593,7 +591,7 @@ class RecoveryTests(unittest.TestCase):
 
         def fake_search(call):
             executed.append("web_search")
-            return ToolResult(ok=True, call=call, model_text="found https://example.com/a")
+            return observed_tool_result(call, "found https://example.com/a")
 
         # First run executes once; the durable delivery carries the full
         # result across the switch.

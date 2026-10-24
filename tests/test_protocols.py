@@ -71,7 +71,7 @@ class JsonToolCodecTests(unittest.TestCase):
                 "_projection_warnings": ["input"],
             },
             audit={"bad": object(), "nan": float("nan")},
-            canonical={"path": Path("app.py"), "long": "x" * 3_000},
+            canonical={"path": "app.py", "long": "x" * 3_000},
         )
 
         json.dumps(result.presentation, allow_nan=False)
@@ -80,11 +80,11 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertEqual(result.presentation["result"], "<non-json object>")
         self.assertEqual(result.audit["bad"], "<non-json object>")
         self.assertEqual(result.audit["nan"], "nan")
-        self.assertEqual(len(str(result.canonical["long"])), 2_000)
+        self.assertEqual(result.canonical["long"], "x" * 3_000)
         self.assertEqual(result.presentation["_input_projection_warnings"], ["input"])
         self.assertIn("_projection_warnings", result.presentation)
         self.assertIn("_projection_warnings", result.audit)
-        self.assertIn("_projection_warnings", result.canonical)
+        self.assertNotIn("_projection_warnings", result.canonical)
         self.assertNotEqual(result.presentation["_projection_warnings"], ["input"])
 
     def test_tool_result_sanitizes_non_mapping_projections(self) -> None:
@@ -93,7 +93,6 @@ class JsonToolCodecTests(unittest.TestCase):
             "content", ok=True,
             presentation=object(),
             audit=object(),
-            canonical=object(),
         )
 
         json.dumps(result.presentation, allow_nan=False)
@@ -101,7 +100,12 @@ class JsonToolCodecTests(unittest.TestCase):
         json.dumps(result.canonical, allow_nan=False)
         self.assertIn("_projection_warnings", result.presentation)
         self.assertIn("_projection_warnings", result.audit)
-        self.assertIn("_projection_warnings", result.canonical)
+        self.assertEqual(result.canonical, {})
+
+    def test_tool_result_rejects_non_json_canonical_facts(self) -> None:
+        for index, canonical in enumerate((object(), {"path": Path("app.py")}, {"value": float("nan")}, {1: "bad key"})):
+            with self.subTest(case=index), self.assertRaises(TypeError):
+                ToolResult(ToolCall("read", {}), "content", ok=True, canonical=canonical)
 
     def test_canonical_tool_contract_matches_reviewed_fixture(self) -> None:
         expected = CONTRACT_FIXTURE.read_text(encoding="utf-8")

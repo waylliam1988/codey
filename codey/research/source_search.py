@@ -80,7 +80,9 @@ def search_pages(
     return _rank_hits(hits, bounded_limit(limit))
 
 
-def render_results(hits: list[SourceSearchHit]) -> str:
+def render_results(hits: list[SourceSearchHit], *, hit_ids: tuple[str, ...] = ()) -> str:
+    if hit_ids and len(hit_ids) != len(hits):
+        raise ValueError("source search hit labels do not match results")
     if not hits:
         return "no source_search matches"
     lines = [
@@ -88,10 +90,11 @@ def render_results(hits: list[SourceSearchHit]) -> str:
         "Locator preview only. Use open_hit from the next allowed-actions block before citing.",
     ]
     for index, hit in enumerate(hits, 1):
+        prefix = f"{hit_ids[index - 1]}: " if hit_ids else ""
         if hit.page is not None:
-            lines.append(f'{index}. p.{hit.page}: {hit.snippet}')
+            lines.append(f'{prefix}{index}. p.{hit.page}: {hit.snippet}')
         else:
-            lines.append(f"{index}. offset {hit.offset}: {hit.snippet}")
+            lines.append(f"{prefix}{index}. offset {hit.offset}: {hit.snippet}")
     return "\n".join(lines)
 
 

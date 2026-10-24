@@ -8,6 +8,7 @@ from codey.operations.kernel_protocol import _CONTROLLER_ALIASES
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of, _session_workspace_identity
 from codey.operations.kernel_result import denied_before_execution, strict_exit_code_or_none
 from codey.operations.task_session import TaskSession
+from codey.research.ledger_receipts import search_observation, source_observation, source_search_observation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import canonical_tool_name
 
@@ -85,25 +86,9 @@ def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
             session.hit_targets[hid] = clean
 
 
-def _record_open_fact(session: TaskSession, name: str, args: dict[str, Any], result: ToolResult) -> None:
-    canonical = _canonical_mapping(result)
-    opened_url = str(canonical.get("opened_url", "") or "").strip()
-    if name == "open_url":
-        url = (opened_url or str(args.get("url", "") or "")).strip()
-        if url:
-            session.record_open(url)
-        return
-    url = opened_url
-    if not url:
-        key = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}[name]
-        rid = str(args.get(key, "") or "").strip().lower()
-        if name == "open_hit":
-            hit_url = str(((getattr(session, "hit_targets", {}) or {}).get(rid, {}) or {}).get("url", "") or "").strip()
-            url = (hit_url or session.search_results.get(rid, "") or session.source_ids.get(rid, "")).strip()
-        else:
-            url = (session.search_results.get(rid, "") or session.source_ids.get(rid, "")).strip()
-    if url:
-        session.record_open(url)
+def _record_open_fact(session: TaskSession, result: ToolResult) -> None:
+    source, _, _ = source_observation(result.canonical.get("research_observation"))
+    session.record_open(source.final_url)
 
 
 def _record_knowledge_fact(session: TaskSession, result: ToolResult) -> None:
@@ -188,6 +173,7 @@ def record_facts_for_result(
             if text:
                 session.transcript_notes.append(f"{name}: {text[:500]}")
             return
+        source_search_observation(result.canonical.get("research_observation"))
         _apply_hit_targets(session, _canonical_mapping(result).get("hit_targets"))
         if text:
             session.transcript_notes.append(f"{name}: {text[:500]}")
@@ -195,9 +181,9 @@ def record_facts_for_result(
     if not ok:
         return
     if name == "web_search":
-        _record_search_results(session, args, text, _canonical_mapping(result))
+        _record_search_results(session, result)
     elif name == "open_url" or name in _CONTROLLER_ALIASES:
-        _record_open_fact(session, name, args, result)
+        _record_open_fact(session, result)
     elif name == "knowledge_write":
         _record_knowledge_fact(session, result)
     elif name == "edit":
@@ -208,39 +194,15 @@ def record_facts_for_result(
         session.transcript_notes.append(f"{name}: {text[:500]}")
 
 
-def _search_result_rows(text: str) -> list[tuple[str, str]]:
-    import re as _re
+def _record_search_results(session: TaskSession, result: ToolResult) -> None:
+    from codey.research.url_selection import source_candidate_skip_reason
 
-    rows: list[tuple[str, str]] = []
-    for match in _re.finditer(r"https?://[^\s)>\]]+", (text or "")):
-        rows.append((f"r{len(rows) + 1}", match.group(0).rstrip(".,;)]")))
-        if len(rows) >= 8:
-            break
-    return rows
-
-
-def _record_search_results(
-    session: TaskSession, args: dict[str, Any], text: str, canonical: dict[str, Any],
-) -> None:
-    observation = canonical.get("research_observation")
-    if observation is not None:
-        if not isinstance(observation, dict) or set(observation) != {"search"}:
-            raise ValueError("invalid search observation")
-        search = observation["search"]
-        if not isinstance(search, dict) or not isinstance(search.get("results"), (list, tuple)):
-            raise ValueError("invalid search results")
-        from codey.research.url_selection import source_candidate_skip_reason
-
-        urls = []
-        for row in search["results"]:
-            if not isinstance(row, dict) or type(row.get("url")) is not str or not row["url"]:
-                raise ValueError("invalid search result URL")
-            if not source_candidate_skip_reason(row["url"]):
-                urls.append(row["url"])
-    else:
-        urls = [url for _, url in _search_result_rows(text)]
-    session.record_search(str(args.get("query", "") or ""))
-    for url in urls:
+    search = search_observation(result.canonical.get("research_observation"))
+    session.record_search(search.query)
+    for row in search.results:
+        url = row.url
+        if source_candidate_skip_reason(url):
+            continue
         existing = next((key for key, value in session.search_results.items() if value == url), "")
         if not existing:
             existing = f"r{len(session.search_results) + 1}"

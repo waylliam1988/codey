@@ -135,7 +135,6 @@ class SnapshotFailClosedTests(unittest.TestCase):
     def test_web_drift_notice_still_announced_on_success(self) -> None:
         from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
-        from codey.runtime.core.models import ToolResult
 
         prompts: list[str] = []
         replies = [
@@ -150,10 +149,12 @@ class SnapshotFailClosedTests(unittest.TestCase):
                 return replies.pop(0)
 
         def fake_search(call):
-            return ToolResult(ok=True, call=call, model_text="found https://example.com/docs")
+            from tests.support.observed_tool_result import observed_tool_result
+            return observed_tool_result(call, "found https://example.com/docs")
 
         def fake_open(call):
-            return ToolResult(ok=True, call=call, model_text="page text")
+            from tests.support.observed_tool_result import observed_tool_result
+            return observed_tool_result(call, "page text")
 
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission

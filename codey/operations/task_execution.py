@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import ledger_observation
+from codey.research.ledger_receipts import ledger_observation, source_search_observation
 from codey.runtime.core.models import ToolCall, ToolResult
 
 if TYPE_CHECKING:
@@ -389,6 +389,10 @@ class ExecutionDelegate:
         model_text = opened.model_text
         if not opened.ok:
             return ToolResult(ok=False, call=call, model_text=model_text), False, None
+        ledger = getattr(self.research_tools, "ledger", None)
+        if not isinstance(ledger, ResearchLedger):
+            raise ValueError("successful source read requires a research ledger observation")
+        observation = ledger_observation(ledger, "open", url=url)
         from codey.research.output_receipts import maybe_externalize_output
 
         title = next((line.removeprefix("Title: ") for line in model_text.splitlines()
@@ -400,14 +404,9 @@ class ExecutionDelegate:
             turn=turn, tool_index=tool_index, presentation_result=title,
             model_text_override=model_text,
         )
-        final_url = self._ledger_final_url({"url": url})
         base = _tool_result(call, outcome)
         merged = dict(base.canonical)
-        merged["opened_url"] = final_url
-        merged["request_url"] = (url or "")
-        ledger = getattr(self.research_tools, "ledger", None)
-        if isinstance(ledger, ResearchLedger):
-            merged["research_observation"] = ledger_observation(ledger, "open", url=url)
+        merged["research_observation"] = observation
         result = ToolResult(
             ok=base.ok, call=base.call, model_text=base.model_text, truncated=base.truncated,
             presentation=dict(base.presentation) if isinstance(base.presentation, dict) else {},
@@ -428,7 +427,9 @@ class ExecutionDelegate:
                 outcome = tools.web_search(first_text_arg(args, "query"))
                 canonical = {}
                 ledger = getattr(tools, "ledger", None)
-                if outcome.ok and isinstance(ledger, ResearchLedger):
+                if outcome.ok:
+                    if not isinstance(ledger, ResearchLedger):
+                        raise ValueError("successful search requires a research ledger observation")
                     canonical["research_observation"] = ledger_observation(ledger, name)
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
             if name == "open_url":
@@ -453,12 +454,13 @@ class ExecutionDelegate:
                 if not url and str(args.get("source_id") or ""):
                     url = self._resolve_alias_url("reopen_source", {"source_id": args.get("source_id")}) or ""
                 outcome = tools.source_search(url, query, args.get("limit", 6))
-                if outcome.ok and url and self.session is not None:
-                    text, mapping = self._build_hit_mapping(outcome.model_text, url)
-                    hit_canonical: dict[str, object] = {"hit_targets": mapping, "source_url": url}
+                if outcome.ok:
                     ledger = getattr(tools, "ledger", None)
-                    if isinstance(ledger, ResearchLedger):
-                        hit_canonical["research_observation"] = ledger_observation(ledger, name)
+                    if not isinstance(ledger, ResearchLedger):
+                        raise ValueError("successful source search requires a research ledger observation")
+                    observation = ledger_observation(ledger, name)
+                    text, mapping = self._build_hit_mapping(source_search_observation(observation))
+                    hit_canonical: dict[str, object] = {"hit_targets": mapping, "research_observation": observation}
                     return (
                         ToolResult(ok=outcome.ok, call=call, model_text=text, canonical=hit_canonical),
                         True, None,
@@ -549,14 +551,14 @@ class ExecutionDelegate:
             return str((getattr(session, "hit_targets", {}) or {}).get(rid, {}).get("url", "") or "")
         return str(results.get(rid, "") or sources.get(rid, "") or "")
 
-    def _build_hit_mapping(self, text: str, url: str) -> tuple[str, dict[str, dict[str, object]]]:
+    def _build_hit_mapping(self, observation: dict[str, Any]) -> tuple[str, dict[str, dict[str, object]]]:
         """Build hit text plus its mapping without touching the session.
 
         IDs consider both the live session mapping and the current batch so
         repeated IDs never collide. The caller persists the mapping in the
         receipt canonical; the single fact entry applies it to the session.
         """
-        import re
+        from codey.research.source_search import SourceSearchHit, render_results
 
         existing = dict(getattr(self.session, "hit_targets", {}) or {}) if self.session is not None else {}
         batch: dict[str, dict[str, object]] = {}
@@ -564,30 +566,23 @@ class ExecutionDelegate:
         for key, value in list(existing.items()):
             if isinstance(value, dict):
                 by_target[(str(value.get("url", "")), int(value.get("offset", 0) or 0), str(value.get("pages", "")))] = key
-        lines: list[str] = []
+        hit_ids = []
         counter = len(existing) + 1
-        for line in (text or "").splitlines():
-            match = re.match(r"^\s*\d+\.\s+(?:offset\s+(\d+)|p\.(\d+)):", line)
-            if match:
-                target = ((url or ""), int(match.group(1) or 0), str(match.group(2) or ""))
-                hit_id = by_target.get(target, "")
-                if not hit_id:
-                    while f"h{counter}" in existing or f"h{counter}" in batch:
-                        counter += 1
-                    hit_id = f"h{counter}"
+        for hit in observation["hits"]:
+            page = hit["page"]
+            target = (observation["source_url"], 0 if page is not None else hit["offset"],
+                      str(page) if page is not None else "")
+            hit_id = by_target.get(target, "")
+            if not hit_id:
+                while f"h{counter}" in existing or f"h{counter}" in batch:
                     counter += 1
-                    batch[hit_id] = {"url": target[0], "offset": target[1], "pages": target[2]}
-                    by_target[target] = hit_id
-                line = f"{hit_id}: {line}"
-            lines.append(line)
-        return "\n".join(lines), batch
-
-    def _ledger_final_url(self, args: dict[str, Any]) -> str:
-        from codey.research.urls import opened_url
-
-        requested = str(args.get("url", "") or "")
-        ledger = getattr(self.research_tools, "ledger", None)
-        return opened_url(ledger, requested)
+                hit_id = f"h{counter}"
+                counter += 1
+                batch[hit_id] = {"url": target[0], "offset": target[1], "pages": target[2]}
+                by_target[target] = hit_id
+            hit_ids.append(hit_id)
+        hits = [SourceSearchHit(**hit) for hit in observation["hits"]]
+        return render_results(hits, hit_ids=tuple(hit_ids)), batch
 
     def _ledger_evidence(self, before: int) -> list[dict[str, str]]:
         tools = self.research_tools
