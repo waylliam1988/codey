@@ -33,19 +33,26 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
     ledger = ResearchLedger()
     url = next(iter(expected_ledger.final_url_set()))
     calls = []
-    def search(query):
-        calls.append("search")
-        ledger.record_search(query, [{"title": "Helium article", "url": url, "snippet": "Helium supply."}])
-        return ResearchToolOutput(f"1. Helium article\n   {url}", ok=True)
-    def opened(actual, **kwargs):
-        calls.append("open")
-        ledger.record_open(actual, url, "Helium article", expected_ledger.source_text_for_url(url))
-        return ResearchToolOutput(model_text="Helium article\nbody", ok=True)
-    def write(args):
-        calls.append("write")
-        ledger.add_evidence_items(list(expected_ledger.evidence_items))
-        return ResearchToolOutput("saved note-1", ok=True)
-    tools = SimpleNamespace(ledger=ledger, web_search=search, open_url=opened, knowledge_write=write)
+    class Tools:
+        def __init__(self):
+            self.ledger = ledger
+
+        def web_search(self, query):
+            calls.append("search")
+            self.ledger.record_search(query, [{"title": "Helium article", "url": url, "snippet": "Helium supply."}])
+            return ResearchToolOutput(f"1. Helium article\n   {url}", ok=True)
+
+        def open_url(self, actual, **kwargs):
+            calls.append("open")
+            self.ledger.record_open(actual, url, "Helium article", expected_ledger.source_text_for_url(url))
+            return ResearchToolOutput(model_text="Helium article\nbody", ok=True)
+
+        def knowledge_write(self, args):
+            calls.append("write")
+            self.ledger.add_evidence_items(list(expected_ledger.evidence_items))
+            return ResearchToolOutput("saved note-1", ok=True)
+
+    tools = Tools()
     for turn, call in enumerate([
         ToolCall("web_search", {"query": "helium supply"}),
         ToolCall("open_url", {"url": url}),
@@ -111,7 +118,7 @@ def test_failed_ledger_projection_does_not_commit_partial_task_facts():
                              2, 0, effect_id="open"),
     )
     frame = SimpleNamespace(run_id="r", recovered_tool_outcomes=(), settled_tool_outcomes=rows)
-    with pytest.raises(RecoveryFailed, match="research ledger"):
+    with pytest.raises(RecoveryFailed, match="recovered facts replay"):
         restore_task_session(frame, session, research_ledger=ledger)
     assert session.searches == []
     assert session.search_results == {}

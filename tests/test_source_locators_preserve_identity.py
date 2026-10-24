@@ -36,20 +36,20 @@ def test_long_hit_is_opened_and_replayed_with_exact_target():
     seen = []
     ledger = ResearchLedger()
 
-    def open_url(actual, **kw):
-        seen.append((actual, kw))
-        ledger.record_open(actual, actual, "Test", "body")
-        return ResearchToolOutput("Title: Test\nbody", ok=True)
+    class Tools:
+        def __init__(self):
+            self.ledger = ledger
 
-    def source_search(actual, query, limit):
-        ledger.record_source_search(actual, query, [{"offset": 120, "page": None, "snippet": "observed"}])
-        return ResearchToolOutput("1. offset 999: unrelated display", ok=True)
+        def open_url(self, actual, **kw):
+            seen.append((actual, kw))
+            self.ledger.record_open(actual, actual, "Test", "body")
+            return ResearchToolOutput("Title: Test\nbody", ok=True)
 
-    tools = SimpleNamespace(
-        ledger=ledger,
-        source_search=source_search,
-        open_url=open_url,
-    )
+        def source_search(self, actual, query, limit):
+            self.ledger.record_source_search(actual, query, [{"offset": 120, "page": None, "snippet": "observed"}])
+            return ResearchToolOutput("1. offset 999: unrelated display", ok=True)
+
+    tools = Tools()
     delegate = ExecutionDelegate(session=task, research_tools=tools)
     call = ToolCall("source_search", {"url": url, "query": "q"})
     result, ok, _ = delegate._execute_research(call)
@@ -78,7 +78,7 @@ def test_unrelated_ledger_source_cannot_replace_actual_open():
     ledger.record_open(unrelated, unrelated, "Unrelated", "other content")
     delegate = ExecutionDelegate(research_tools=SimpleNamespace(ledger=ledger))
     with pytest.raises(ValueError, match="missing research observation"):
-        delegate._opened_result(ToolCall("open_url", {"url": requested}), ResearchToolOutput("body", ok=True), requested, turn=1, tool_index=0)
+        delegate._opened_result(ToolCall("open_url", {"url": requested}), ResearchToolOutput("body", ok=True), requested, ledger=ledger, turn=1, tool_index=0)
 
 
 def test_collision_after_500_characters_is_still_a_conflict():
@@ -105,11 +105,15 @@ def test_search_source_identity_comes_from_receipt_not_rendered_punctuation():
     task = session()
     ledger = ResearchLedger()
     url = "https://example.com/entry_(official)"
-    def search(query):
-        ledger.record_search(query, [{"title": "Official", "url": url, "snippet": "See https://unrelated.example/a"}])
-        return ResearchToolOutput(f"1. Official\n   {url}\n   See https://unrelated.example/a", ok=True)
+    class Tools:
+        def __init__(self):
+            self.ledger = ledger
+
+        def web_search(self, query):
+            self.ledger.record_search(query, [{"title": "Official", "url": url, "snippet": "See https://unrelated.example/a"}])
+            return ResearchToolOutput(f"1. Official\n   {url}\n   See https://unrelated.example/a", ok=True)
     call = ToolCall("web_search", {"query": "official"})
-    result, ok, _ = ExecutionDelegate(session=task, research_tools=SimpleNamespace(ledger=ledger, web_search=search))._execute_research(call)
+    result, ok, _ = ExecutionDelegate(session=task, research_tools=Tools())._execute_research(call)
     assert ok is True
     record_facts_for_result(task, call, result, ok=True)
     assert task.search_results == {"r1": url}

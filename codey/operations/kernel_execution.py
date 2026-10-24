@@ -12,10 +12,11 @@ never import ``execute_turn`` back (no cycles).
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from typing import Any
 
 from codey.operations.kernel_errors import EffectSettlementFailed, RecoveryFailed
-from codey.operations.kernel_facts import record_facts_for_result
+from codey.operations.kernel_facts import project_result_observation
 from codey.operations.kernel_protocol import _validate_tool_args, frozen_custom_executor_map, frozen_spec_map
 from codey.operations.kernel_provenance import (
     _kernel_workspace_identity_of,
@@ -266,9 +267,15 @@ def execute_turn(
         *,
         exit_code: object = None,
     ) -> None:
-        _settle_slot(session, identity, call, result, ok=ok, exit_code=exit_code)
-        with _contextlib.suppress(Exception):
-            session._memory_results[identity] = result
+        staged = session.clone_projection()
+        ledger = getattr(research_tools, "ledger", None)
+        staged_ledger = ledger.clone() if ledger is not None else None
+        # Receipt validation and projection happen before the commit barrier,
+        # on disposable views. A committed result is the sole replay input.
+        if identity not in session.executed and identity not in session.restored_effect_ids:
+            project_result_observation(staged, call, result, ok=ok,
+                                       exit_code=strict_exit_code_or_none(exit_code), research_ledger=staged_ledger)
+        _settle_slot(staged, identity, call, result, ok=ok, exit_code=exit_code)
         if intent_sink is not None:
             # 统一 sink 协议：生产 sink 一律接收 result/exit_code，无旧签名回退
             intent_sink.settle(
@@ -277,6 +284,17 @@ def execute_turn(
                 result=result,
                 exit_code=exit_code if isinstance(exit_code, int) else None,
             )
+        if ledger is not None and staged_ledger is not None:
+            ledger.commit_projection(staged_ledger)
+            if hasattr(research_tools, "sources_read"):
+                research_tools.sources_read.update(
+                    url for source in ledger.opened_sources for url in (source.requested_url, source.final_url)
+                )
+            if hasattr(research_tools, "search_result_urls"):
+                research_tools.search_result_urls.update(hit.url for search in ledger.searches for hit in search.results)
+        session.commit_projection(staged)
+        with _contextlib.suppress(Exception):
+            session._memory_results[identity] = result
 
     def reconcile_intent_only(identity: str, ok: bool, result: ToolResult) -> None:
         # Already-durable replay: never rewrite ``session.executed``, only
@@ -449,7 +467,7 @@ def _execute_slots(
         name = str(getattr(call, "name", "") or "").strip().lower()
         identity = turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset)
         if workspace_unconfirmed and name in {"edit", "run", "shell"}:
-            blocked = _error_result(
+            blocked = policy_denial_result(
                 call,
                 "prior edit workspace identity unconfirmed (edit was applied); "
                 "verification skipped, re-check workspace before continuing",
@@ -466,6 +484,8 @@ def _execute_slots(
             frozen_specs=frozen_specs,
         )
         if guarded is not None:
+            if identity not in session.executed:
+                guarded = replace(guarded, audit={**guarded.audit, "execution_disposition": "denied_before_execution"})
             # Fresh guard errors settle inside the helper; already-durable
             # replays only reconcile the intent and never rewrite the receipt.
             _reconcile_guarded_slot(
@@ -476,12 +496,15 @@ def _execute_slots(
             results.append(guarded)
             continue
         if stop_flag is not None and stop_flag.is_set():
-            blocked = _error_result(call, "task stopped; tool call was not executed")
+            blocked = policy_denial_result(call, "task stopped; tool call was not executed")
             settle(identity, call, blocked, ok=False)
             results.append(blocked)
             continue
         verification_blocked = _recheck_unconfirmed_workspace(session, call, recovery_ctx, execution_evidence)
         if verification_blocked is not None:
+            verification_blocked = replace(verification_blocked, audit={
+                **verification_blocked.audit, "execution_disposition": "denied_before_execution",
+            })
             settle(identity, call, verification_blocked, ok=False)
             results.append(verification_blocked)
             continue
@@ -512,7 +535,6 @@ def _execute_slots(
                 workspace_unconfirmed = True
             continue
         settle(identity, call, result, ok=ok, exit_code=exit_code)
-        record_facts_for_result(session, call, result, ok=ok, exit_code=exit_code)
         results.append(result)
     return results
 
@@ -588,7 +610,6 @@ def _settle_edit_with_workspace_bump(
             return _settle_unconfirmed_edit(session, identity, call, "provenance attach failed",
                                              execution_evidence=execution_evidence, settle=settle, results=results)
         settle(identity, call, trusted, ok=True)
-        record_facts_for_result(session, call, trusted, ok=True, exit_code=exit_code)
         results.append(trusted)
         return "trusted"
     return _settle_unconfirmed_edit(session, identity, call, "revision_store_missing" if workspace_revision_store is None else "identity_invalid",
@@ -608,7 +629,6 @@ def _settle_unconfirmed_edit(session: TaskSession, identity: str, call: ToolCall
                         canonical={"workspace_unconfirmed": True, "mutation_applied": True,
                                    "identity_status": "unconfirmed", "identity_reason": reason})
     settle(identity, call, failed, ok=False)
-    record_facts_for_result(session, call, failed, ok=False)
     session.set_workspace_state(0, "")
     if execution_evidence is not None:
         execution_evidence.set_workspace_state(0, "")
@@ -625,12 +645,12 @@ def _settle_slot(
     ok: bool,
     exit_code: object = None,
 ) -> None:
-    """Settle the durable receipt; failure raises ``EffectSettlementFailed``.
+    """Build the process execution index on a staged session.
 
     ``session._memory_results`` stays a tolerant process-local cache (handled
-    by the caller with suppress). The durable ``session.executed`` write must
-    never be suppressed: an already-executed tool without a receipt would look
-    never-executed on the next recovery and risk a second unsafe execution.
+    by the caller with suppress). This index becomes visible only after the
+    authoritative sink commit. Durable recovery rebuilds from the full result
+    receipt; this dictionary is not a second persistent authority.
     """
     try:
         record: dict[str, Any] = {

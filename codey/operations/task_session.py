@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, replace
 from typing import Any
 
 from codey.runtime.core.models import ToolResult
@@ -87,6 +87,15 @@ class TaskSession:
     executed: dict[str, dict[str, Any]] = field(default_factory=dict)
     _memory_results: dict[str, ToolResult] = field(default_factory=dict, repr=False, compare=False)
     restored_effect_ids: set[str] = field(default_factory=set, repr=False, compare=False)
+
+    def clone_projection(self) -> TaskSession:
+        """Isolate mutable projection containers, without copying capabilities."""
+        return replace(self, **{name: value.copy() for name, value in vars(self).items()
+                                if type(value) in {dict, list, set}})
+
+    def commit_projection(self, staged: TaskSession) -> None:
+        for item in fields(self):
+            setattr(self, item.name, getattr(staged, item.name))
 
     def record_search(self, query: str) -> None:
         text = (query or "").strip()

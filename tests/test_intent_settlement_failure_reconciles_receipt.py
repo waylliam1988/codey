@@ -1,8 +1,7 @@
-"""Intent settlement failure must reconcile the existing receipt.
+"""Committed execution caches replay; failed commits publish no receipt.
 
-Locks P2 settlement atomicity:
-- ``session.executed`` written + ``intent_sink.settle`` failed
-- next recovery replays the receipt without re-executing the unsafe tool
+Real durable interruption/restart coverage lives in
+test_committed_research_projection.py and test_settled_delivery_recovery.py.
 """
 from __future__ import annotations
 
@@ -74,7 +73,7 @@ class IntentSettlementReconcilesReceiptTests(unittest.TestCase):
         self.assertEqual(calls, 0, "executed+pending intent must never re-execute unsafe")
         self.assertTrue(results)
 
-    def test_durable_receipt_survives_intent_settle_outage(self) -> None:
+    def test_failed_commit_does_not_publish_a_memory_receipt(self) -> None:
         from codey.operations.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -99,44 +98,21 @@ class IntentSettlementReconcilesReceiptTests(unittest.TestCase):
                 self.settle_calls += 1
                 raise RuntimeError("intent store boom")
 
-        import contextlib
-
         sink = FlakySink()
-        with contextlib.suppress(Exception):
+        with self.assertRaisesRegex(RuntimeError, "intent store boom"):
             execute_turn(
                 session, [call],
                 executors={"read_file": fake_read},
                 run_id="r-reconcile-2", effect_scope="task", turn=1,
                 intent_sink=sink,
             )
-        # Durable receipt must exist even though intent settlement failed.
-        self.assertEqual(len(session.executed), 1)
-        # Second turn with a healthy sink replays without re-executing.
-        calls = 0
-
-        def evil_read(_c: ToolCall):
-            nonlocal calls
-            calls += 1
-            return ToolResult(ok=True, call=_c, model_text="second")
-
-        class HealthySink:
-            def has_unsettled(self, _identity: str) -> bool:
-                return False
-
-            def begin_turn(self, _items, **_kwargs) -> None:
-                pass
-
-            def settle(self, _identity: str, _ok: bool, *, result=None, exit_code=None) -> None:
-                pass
-
-        results = execute_turn(
-            session, [call],
-            executors={"read_file": evil_read},
-            run_id="r-reconcile-2", effect_scope="task", turn=1,
-            intent_sink=HealthySink(),
-        )
-        self.assertEqual(calls, 0)
-        self.assertEqual(str(results[0].model_text or ""), "content")
+        # This dictionary is a process projection, not a durable receipt.
+        # An uncertain operation must resume through durable recovery rather
+        # than manufacturing success from an uncommitted preview.
+        self.assertEqual(sink.settle_calls, 1)
+        self.assertEqual(session.executed, {})
+        self.assertEqual(session._memory_results, {})
+        self.assertEqual(session.read_files, set())
 
 
 if __name__ == "__main__":

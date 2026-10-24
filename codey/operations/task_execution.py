@@ -10,6 +10,7 @@ state, never from substring matching or model-supplied parameters.
 from __future__ import annotations
 
 import contextlib
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -384,12 +385,11 @@ class ExecutionDelegate:
             self.change_tracker.capture_after(path)
         return outcome
 
-    def _opened_result(self, call: ToolCall, opened: Any, url: str, *, turn: int,
+    def _opened_result(self, call: ToolCall, opened: Any, url: str, *, ledger: ResearchLedger, turn: int,
                        tool_index: int) -> tuple[ToolResult, bool, int | None]:
         model_text = opened.model_text
         if not opened.ok:
             return ToolResult(ok=False, call=call, model_text=model_text), False, None
-        ledger = getattr(self.research_tools, "ledger", None)
         if not isinstance(ledger, ResearchLedger):
             raise ValueError("successful source read requires a research ledger observation")
         observation = ledger_observation(ledger, "open", url=url)
@@ -415,9 +415,23 @@ class ExecutionDelegate:
         )
         return result, True, None
 
+    def _observation_tools(self) -> Any:
+        # Acquisition mutates a temporary ledger. Only the committed result
+        # receipt may publish it into the run's formal projection.
+        tools = copy.copy(self.research_tools)
+        ledger = getattr(tools, "ledger", None)
+        if isinstance(ledger, ResearchLedger):
+            tools.ledger = ledger.clone()
+            if hasattr(tools, "sources_read"):
+                tools.sources_read = {url for source in ledger.opened_sources
+                                      for url in (source.requested_url, source.final_url)}
+            if hasattr(tools, "search_result_urls"):
+                tools.search_result_urls = {hit.url for search in ledger.searches for hit in search.results}
+        return tools
+
     def _execute_research(self, call: ToolCall, *, turn: int = 0,
                           tool_index: int = 0) -> tuple[ToolResult, bool, int | None]:
-        tools = self.research_tools
+        tools = self._observation_tools()
         name = (call.name or "").strip().lower()
         args = dict(call.args or {})
         try:
@@ -435,7 +449,7 @@ class ExecutionDelegate:
             if name == "open_url":
                 opened = tools.open_url(str(args.get("url") or ""), offset=args.get("offset", 0),
                                         limit=args.get("limit", 6000), pages=str(args.get("pages") or ""))
-                return self._opened_result(call, opened, str(args.get("url") or ""),
+                return self._opened_result(call, opened, str(args.get("url") or ""), ledger=tools.ledger,
                                            turn=turn, tool_index=tool_index)
             if name in {"open_result", "reopen_source", "open_hit"}:
                 url = self._resolve_alias_url(name, args)
@@ -447,7 +461,7 @@ class ExecutionDelegate:
                 opened = (tools.open_url(url, offset=target.get("offset", 0),
                                          pages=target.get("pages", ""))
                           if target else tools.open_url(url))
-                return self._opened_result(call, opened, url, turn=turn, tool_index=tool_index)
+                return self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
             if name == "source_search":
                 query = str(args.get("query") or "")
                 url = str(args.get("url") or "")
@@ -482,7 +496,7 @@ class ExecutionDelegate:
                 outcome = tools.knowledge_write(lowered)
                 if not outcome.ok:
                     return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), False, None
-                evidence = self._ledger_evidence(before)
+                evidence = self._ledger_evidence(before, tools.ledger)
                 evidence_canonical: dict[str, object] = {"evidence_items": evidence}
                 ledger = getattr(tools, "ledger", None)
                 if isinstance(ledger, ResearchLedger):
@@ -584,9 +598,7 @@ class ExecutionDelegate:
         hits = [SourceSearchHit(**hit) for hit in observation["hits"]]
         return render_results(hits, hit_ids=tuple(hit_ids)), batch
 
-    def _ledger_evidence(self, before: int) -> list[dict[str, str]]:
-        tools = self.research_tools
-        ledger = getattr(tools, "ledger", None)
+    def _ledger_evidence(self, before: int, ledger: ResearchLedger) -> list[dict[str, str]]:
         items = list(getattr(ledger, "evidence_items", ()) or [])
         fresh = items[before:] if before >= 0 else items
         evidence: list[dict[str, str]] = []

@@ -5,6 +5,17 @@
 
 完整包结构与当前函数入口见[项目结构与职责地图](project_structure.zh-CN.md)。
 
+## 观察提交与投影（2026-10-24，第 2 批）
+
+共享工具内核的采集 facade 使用临时 ledger。`kernel_execution` 在临时 TaskSession
+与 ledger 上调用 `kernel_facts.project_result_observation`，校验通过后提交原有
+KernelEffectSink 完整回执，最后发布临时投影。提交异常不发布正式事实或执行索引。
+`kernel_session_recovery` 调用同一个投影函数，并保留整批成功才发布的边界。
+`TaskSession.clone_projection/commit_projection` 统一容器隔离，完整回执仍是唯一持久依据。
+未执行命令的回执记录 execution_disposition，实时和恢复均不把它累计为失败验证。
+读取/搜索缓存只从 committed ledger 派生；知识工具的采集视图据此重建读取资格。
+知识文件、已发生的 edit 等外部效果并不因回执失败自动回滚；不确定执行仍走原恢复策略。
+
 ## 服务、控制与持久入场（2026-10-21）
 
 `app/service.py::LocalService` 持有显式 AppContext、HTTP server、公共事件广播和服务 lease；

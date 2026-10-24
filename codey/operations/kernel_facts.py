@@ -8,13 +8,33 @@ from codey.operations.kernel_protocol import _CONTROLLER_ALIASES
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of, _session_workspace_identity
 from codey.operations.kernel_result import denied_before_execution, strict_exit_code_or_none
 from codey.operations.task_session import TaskSession
-from codey.research.ledger_receipts import search_observation, source_observation, source_search_observation
+from codey.research.ledger import ResearchLedger
+from codey.research.ledger_receipts import (
+    restore_ledger_observation,
+    search_observation,
+    source_observation,
+    source_search_observation,
+)
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import canonical_tool_name
 
 __all__ = [
     "record_facts_for_result",
+    "project_result_observation",
 ]
+
+
+def project_result_observation(
+    session: TaskSession, call: ToolCall, result: ToolResult, *, ok: bool,
+    exit_code: int | None = None, research_ledger: ResearchLedger | None = None,
+) -> None:
+    """The shared live/recovery projection, applied only to staged views."""
+    observation = result.canonical.get("research_observation")
+    if ok and research_ledger is not None and observation is not None:
+        if not isinstance(observation, dict):
+            raise ValueError("research observation must be an object")
+        restore_ledger_observation(research_ledger, observation)
+    record_facts_for_result(session, call, result, ok=ok, exit_code=exit_code)
 
 
 def _record_run_verification(

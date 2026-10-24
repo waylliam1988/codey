@@ -1,11 +1,10 @@
 """Restore shared task facts and pending delivery from durable outcomes."""
 from __future__ import annotations
 
-from dataclasses import fields, replace
 from typing import Any
 
 from codey.operations.kernel_errors import RecoveryFailed
-from codey.operations.kernel_facts import record_facts_for_result
+from codey.operations.kernel_facts import project_result_observation
 from codey.operations.kernel_recovery_result import (
     _strict_slot_index,
     build_recovered_result,
@@ -15,7 +14,6 @@ from codey.operations.kernel_recovery_result import (
 )
 from codey.operations.recovery import delivered_from_frame
 from codey.operations.task_session import turn_effect_id
-from codey.research.ledger_receipts import restore_ledger_observation
 
 
 def _validate_recovered_rows(raw_rows: list[Any]) -> None:
@@ -60,12 +58,13 @@ def _delivery_identity(frame: Any, effect_scope: str, row: Any) -> str:
     )
 
 
-def _replay_recovered_facts(session: Any, recovered_rows: list[Any], recovered_results: list[Any]) -> None:
+def _replay_recovered_facts(session: Any, recovered_rows: list[Any], recovered_results: list[Any],
+                            research_ledger: Any = None) -> None:
     """Replay facts from the single-built recovered results (no rebuild)."""
     for row, prior in zip(recovered_rows, recovered_results, strict=True):
         try:
-            record_facts_for_result(session, row.call, prior, ok=frame_outcome_ok(row),
-                                    exit_code=frame_outcome_exit_code(row))
+            project_result_observation(session, row.call, prior, ok=frame_outcome_ok(row),
+                                       exit_code=frame_outcome_exit_code(row), research_ledger=research_ledger)
         except Exception as exc:
             raise RecoveryFailed(f"recovered facts replay failed: {exc}") from exc
 
@@ -81,8 +80,7 @@ def restore_task_session(frame: Any, session: Any, *, effect_scope: str = "task"
     # Fact recording appends/replaces container entries, never mutates stored
     # result objects. Shallow copies isolate the projection without copying
     # callbacks, immutable policy, or trusted workspace capabilities.
-    session = replace(session, **{name: value.copy() for name, value in vars(session).items()
-                                  if type(value) in {dict, list, set}})
+    session = session.clone_projection()
     staged_ledger = research_ledger.clone() if research_ledger is not None else None
     raw_rows = list(getattr(frame, "recovered_tool_outcomes", ()) or ())
     _validate_recovered_rows(raw_rows)
@@ -116,15 +114,7 @@ def restore_task_session(frame: Any, session: Any, *, effect_scope: str = "task"
         prior = pending_by_effect.get(identity)
         if prior is None:
             prior = build_recovered_result(spec_for_recovered_row(row))
-        observation = prior.canonical.get("research_observation")
-        if staged_ledger is not None and observation is not None:
-            try:
-                if not isinstance(observation, dict):
-                    raise RecoveryFailed("research ledger observation is not a mapping")
-                restore_ledger_observation(staged_ledger, observation)
-            except (TypeError, ValueError, KeyError, AttributeError) as exc:
-                raise RecoveryFailed(f"research ledger recovery failed: {exc}") from exc
-        _replay_recovered_facts(session, [row], [prior])
+        _replay_recovered_facts(session, [row], [prior], staged_ledger)
         session._memory_results[identity] = prior
         session.restored_effect_ids.add(identity)
     pending_batch = bool(getattr(frame, "recovered_tool_result_batch_id", "") or "")
@@ -154,6 +144,5 @@ def restore_task_session(frame: Any, session: Any, *, effect_scope: str = "task"
         raise RecoveryFailed(f"recovered resume turn unreadable: {exc}") from exc
     if staged_ledger is not None:
         research_ledger.commit_projection(staged_ledger)
-    for item in fields(session):
-        setattr(original_session, item.name, getattr(session, item.name))
+    original_session.commit_projection(session)
     return delivered, recovered_rows, resume_start, initial_results
