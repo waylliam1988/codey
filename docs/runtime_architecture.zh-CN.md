@@ -5,6 +5,14 @@
 
 完整包结构与当前函数入口见[项目结构与职责地图](project_structure.zh-CN.md)。
 
+## 协议修复及固定评测（2026-10-24，第 5 批）
+
+原生协议修复复用原冻结工具快照。畸形 tool_calls 不会降级为正常答案或执行；
+任务已经可以回答时，提示模型通过已声明 done 工具的 summary 字符串重新提交，
+由原共同 gate 校验并保留用户格式。没有第二个 JSON 答案解析运行时。
+跨领域评测直接调用生产 run_task_kernel、KernelEffectSink 和正式恢复入口；
+比较器要求题集/运行器摘要、实际模型参数及完整场景集合一致，不把缺失场景当通过。
+
 ## 来源完成契约与交付（2026-10-24，第 4 批）
 
 来源准入只读 completion_context 中的 committed research ledger，缺失时不再改用

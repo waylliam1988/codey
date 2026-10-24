@@ -135,8 +135,10 @@ def _repair_prompt(error: str, *, contract_text: str, native: bool) -> str:
     if native:
         return (
             intro + "Call exactly one of the provided native tools with schema-correct arguments. "
-            "Do not emit text tool-call tags, JSON tool wrappers or prose. "
-            "Resend the intended call with complete arguments and concise file contents."
+            "For a final answer, use done if it is declared: put the complete answer in its summary string. "
+            "That string is delivered in the user's requested final format. "
+            "Do not place a bare answer object in tool_calls, invent a function name, or emit text tool-call tags. "
+            "For an action, resend the intended call with complete arguments and concise file contents."
         )
     else:
         instruction = (

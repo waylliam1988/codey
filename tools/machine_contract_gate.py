@@ -9,6 +9,8 @@ from __future__ import annotations
 import pytest
 
 CONTRACT_TESTS = (
+    "tests/test_native_final_answer_protocol_repair.py",
+    "tests/test_cross_domain_evaluation_oracle.py",
     "tests/test_source_completion_contract.py",
     "tests/test_generation_clock_context.py",
     "tests/test_committed_research_projection.py",
@@ -174,7 +176,6 @@ CONTRACT_TESTS = (
     "tests/test_settled_delivery_recovery.py",
     "tests/test_durable_recovery_preserves_failed_tool_status.py",
     "tests/test_recovery_requires_original_policy.py",
-    "tests/test_recovery_restores_research_ledger.py",
     "tests/test_review_contract_integration.py",
     "tests/test_review_reuse_integration.py",
     "tests/test_headless_review_uses_selected_provider.py",
