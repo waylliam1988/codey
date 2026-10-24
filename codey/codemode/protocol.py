@@ -15,6 +15,11 @@ _DENIED_SOURCE = re.compile(
 )
 
 
+def codemode_error_text(error: str, *, description: str) -> str:
+    """Render a failure with its already captured contract, without API repair."""
+    return f"{error}\nCurrent CodeMode contract:\n{description}"
+
+
 def parse_codemode_args(args: Mapping[str, Any], *, limits: CodeModeLimits | None = None) -> CodeModeProgram:
     if not isinstance(args, Mapping):
         raise ValueError("codemode args must be an object")
@@ -27,11 +32,12 @@ def parse_codemode_args(args: Mapping[str, Any], *, limits: CodeModeLimits | Non
     language = str(args.get("language", "javascript") or "javascript").strip().lower()
     if language not in {"javascript", "js"}:
         raise ValueError("codemode language must be javascript")
-    if _DENIED_SOURCE.search(code):
+    denied = _DENIED_SOURCE.search(code)
+    if denied:
+        access = ("recursive invocation" if denied.group(0).lower().startswith("tools")
+                  else f"direct host access token '{denied.group(0)}'")
         raise ValueError(
-            "codemode recursive or host access is denied. This restriction is local to CodeMode, "
-            "not a host network denial. Use an authorized tool from the supplied contract; "
-            "if shell is available, request approval for a bounded HTTP command there."
+            f"codemode rejected before execution: {access} is denied."
         )
     return CodeModeProgram(code=code, language="javascript")
 

@@ -3,13 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 
 from codey.codemode.catalog import build_catalog_snapshot, build_codemode_catalog
 from codey.codemode.host import CodeModeHost
 from codey.codemode.identity import parent_execution_id
 from codey.codemode.output import externalize_value
-from codey.codemode.protocol import parse_codemode_args
+from codey.codemode.protocol import codemode_error_text, parse_codemode_args
 from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -129,6 +130,7 @@ def build_execute_turn_executor(
     from codey.operations.kernel_execution import execute_turn
 
     frozen_specs = getattr(snapshot, "frozen_specs", ()) or ()
+    specs = {str(getattr(spec, "name", "")): spec for spec in frozen_specs}
     if state_store is None and durable is not None and run_id:
         try:
             from codey.codemode.state import DurableCodeModeState
@@ -137,7 +139,7 @@ def build_execute_turn_executor(
         except (KeyError, ValueError):
             state_store = None
     catalog = build_codemode_catalog(
-        {str(getattr(spec, "name", "")): spec for spec in frozen_specs},
+        specs,
         allow_writes=allow_writes,
     )
     child_executors = {key: value for key, value in dict(executors or {}).items() if key != "codemode"}
@@ -202,7 +204,7 @@ def build_execute_turn_executor(
                 on_event(event)
             return results[0]
 
-        return CodeModeKernelExecutor(
+        result = CodeModeKernelExecutor(
             execution_id=parent_id,
             catalog=catalog,
             execute_child=execute_child,
@@ -213,5 +215,10 @@ def build_execute_turn_executor(
             session_id=session_id,
             run_id=str(run_id or ""),
         ).execute(call)
+        if not result.ok:
+            result = replace(result, model_text=codemode_error_text(
+                result.model_text, description=specs["codemode"].description,
+            ))
+        return result
 
     return run_parent

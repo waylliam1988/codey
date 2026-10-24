@@ -415,12 +415,14 @@ def _validate_tool_args(
         return (dict(validated_done.args), "") if validated_done.ok else ({}, validated_done.error)
     if name == "codemode":
         try:
-            from codey.codemode.protocol import parse_codemode_args
+            from codey.codemode.protocol import codemode_error_text, parse_codemode_args
 
             program = parse_codemode_args(args if isinstance(args, dict) else {})
             return {"code": program.code, "language": program.language}, ""
         except ValueError as exc:
-            return {}, str(exc)
+            # The correction repeats the contract actually sent this turn;
+            # do not invent another API example or consult the live registry.
+            return {}, codemode_error_text(str(exc), description=spec.description)
     # Custom/third-task tools: generic spec validation is sufficient.
     # They run via injected executors; no legacy coding/research repair.
     if executor not in {"project", "source", "knowledge"}:

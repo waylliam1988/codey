@@ -166,8 +166,8 @@ def test_documented_codemode_example_executes_with_real_child_tools(tmp_path, na
     result = execute_turn(state, plan.calls, snapshot=snapshot, executors={"codemode": executor},
                           run_id="example", turn=1, project_path=tmp_path)[0]
     observed = json.loads(result.model_text)
-    assert result.ok and observed["ok"]
-    assert observed["value"] == "OBSERVED-CODEMODE-729\n"
+    assert result.ok
+    assert observed == "OBSERVED-CODEMODE-729\n"
     # Both surfaces teach the very same program, not independently escaped copies.
     assert example["args"]["code"] in spec.description
     assert "Calls return {ok, value}" in spec.description

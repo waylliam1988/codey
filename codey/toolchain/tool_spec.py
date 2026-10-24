@@ -177,7 +177,10 @@ def _research_json_type(pytype: type) -> str:
 
 def _all_specs() -> dict[str, ToolSpec]:
     specs = _coding_specs()
-    codemode_example = 'return await tools.read_file({path:"app.py"});'
+    codemode_example = (
+        "const result = await tools.read_file({path:'app.py'}); "
+        "if (!result.ok) throw new Error(String(result.value)); return result.value;"
+    )
     specs["codemode"] = ToolSpec(
         name="codemode",
         grant="project.read",
@@ -188,6 +191,8 @@ def _all_specs() -> dict[str, ToolSpec]:
             "Use only tools from the task's frozen catalog through tools.*; "
             "each call retains its normal authorization and execution checks. "
             "Calls return {ok, value}; check ok and consume value. "
+            "The returned object is not raw file text: string operations belong on value after checking ok. "
+            "Return the program's final value with return; console.log and console.error produce no output. "
             "Shell approval, direct filesystem/process/network access, and recursive codemode calls are unavailable. "
             f"Example JavaScript: {codemode_example}"
         ),

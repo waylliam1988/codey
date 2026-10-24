@@ -92,9 +92,9 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> Non
     assert result.stop_reason == "done"
     assert len(provider.prompts) == 1
     prompt = provider.prompts[0].replace(str(project), "<PROJECT>")
-    # Reviewed against the actual 88dcd4a8 baseline: only the CodeMode
-    # example/description changed. Result and repair surfaces stay frozen.
+    # Replacing only the CodeMode contract line reconstructs f8b656ab's
+    # b54d4697... baseline. Result and repair surfaces stay frozen.
     assert "ask_user" in prompt
     assert "Calls return {ok, value}" in prompt
     assert "Only frozen read-only tools" not in prompt
-    assert _sha256(prompt) == "b54d46973ad12dd0944733c8ef6eacf0c30f4710f7148b964264b5e255903f18"
+    assert _sha256(prompt) == "3930b6d72c759f3c75f69d617e8064f0260571e86bbc9a0aa87f6cec0c1f8175"
