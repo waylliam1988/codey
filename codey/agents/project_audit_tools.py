@@ -13,7 +13,6 @@ from typing import Any
 
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import (
-    READ_MAX_CHARS,
     SEARCH_MAX_FILE_BYTES,
     SEARCH_MAX_RESULTS,
     SEARCH_MAX_SCAN_BYTES,
@@ -303,144 +302,28 @@ def _audit_search_resolve_start(
     return start, None
 
 
-def _audit_search_scan_one_file(
-    path: Path,
-    bytes_read: int,
-) -> tuple[str | None, int, bool, bool]:
-    try:
-        size = path.stat().st_size
-        if size > SEARCH_MAX_FILE_BYTES:
-            return None, bytes_read, True, False
-        if bytes_read + size > SEARCH_MAX_SCAN_BYTES:
-            return None, bytes_read, False, True
-        bytes_read += size
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None, bytes_read, False, False
-    return text, bytes_read, False, False
-
-
-def _audit_search_collect_file_matches(
-    path: Path,
-    root: Path,
-    text: str,
-    needle: str,
-    matches: list[str],
-    max_results: int,
-) -> bool:
-    for line_no, line in enumerate(text.splitlines(), start=1):
-        if needle not in line.lower():
-            continue
-        rel_path = path.relative_to(root).as_posix()
-        clean = line.strip()
-        if len(clean) > 240:
-            clean = clean[:237] + "..."
-        matches.append(f"{rel_path}:{line_no}: {clean}")
-        if len(matches) >= max_results:
-            return True
-    return False
-
-
-def _audit_search_append_limit_notes(
-    matches: list[str],
-    *,
-    max_results: int,
-    result_limited: bool,
-    oversized_files: int,
-    byte_limited: bool,
-    budget: BoundedScanBudget,
-) -> None:
-    if not matches:
-        matches.append("(no literal matches; regex is not supported)")
-    if result_limited:
-        matches.append(f"... truncated after {max_results} matches")
-    if oversized_files:
-        matches.append(
-            f"... skipped {oversized_files} oversized file(s); omitted files may "
-            "contain more matches"
-        )
-    if byte_limited:
-        matches.append(
-            "... project audit search reached its read budget; omitted files may "
-            "contain more matches"
-        )
-    if budget.limited:
-        matches.append(budget.stop_message("project audit search scan"))
-
-
-def _audit_search_build_outcome(
-    matches: list[str],
-    *,
-    result_limited: bool,
-    oversized_files: int,
-    byte_limited: bool,
-    budget: BoundedScanBudget,
-) -> ToolOutcome:
-    output = "\n".join(matches)
-    truncated = result_limited or budget.limited or byte_limited or bool(oversized_files)
-    if len(output) > READ_MAX_CHARS:
-        output = output[:READ_MAX_CHARS].rstrip() + "\n... truncated"
-        truncated = True
-    return ToolOutcome(output, True, truncated=truncated)
-
-
 def _audit_search_files(
-    root: Path,
-    rel: str,
-    query: str,
-    *,
-    max_results: int = SEARCH_MAX_RESULTS,
+    root: Path, rel: str, query: str, *, max_results: int | None = None,
+    offset: int = 1, limit: int = SEARCH_MAX_RESULTS, literal: bool = True,
+    case_sensitive: bool = False, include: str = "",
 ) -> ToolOutcome:
-    query = query.strip()
-    if not query:
+    from codey.toolchain.rg_search import search
+    from codey.toolchain.search_page import normalize_page_args
+
+    if not query.strip():
         return ToolOutcome.error("search query required")
     start, error = _audit_search_resolve_start(root, rel)
     if error is not None:
         return error
     if start is None:
         return ToolOutcome.error("path could not be resolved")
-    # See _audit_searchable_files: match results must be relativized
-    # against the same resolved form the scanner yields.
     root = root.expanduser().resolve()
-    needle = query.lower()
-    matches: list[str] = []
-    result_limited = False
-    bytes_read = 0
-    byte_limited = False
-    oversized_files = 0
     budget = _audit_scan_budget()
-    for path in _audit_searchable_files(root, start, budget):
-        text, bytes_read, oversized_hit, byte_hit = _audit_search_scan_one_file(
-            path, bytes_read
-        )
-        if byte_hit:
-            byte_limited = True
-            break
-        if oversized_hit:
-            oversized_files += 1
-            continue
-        if text is None:
-            continue
-        if _audit_search_collect_file_matches(
-            path, root, text, needle, matches, max_results
-        ):
-            result_limited = True
-            break
-    _audit_search_append_limit_notes(
-        matches,
-        max_results=max_results,
-        result_limited=result_limited,
-        oversized_files=oversized_files,
-        byte_limited=byte_limited,
-        budget=budget,
-    )
-    return _audit_search_build_outcome(
-        matches,
-        result_limited=result_limited,
-        oversized_files=oversized_files,
-        byte_limited=byte_limited,
-        budget=budget,
-    )
+    page_offset, page_limit = normalize_page_args(offset, limit, max_results, SEARCH_MAX_RESULTS)
+    return search(root, _audit_searchable_files(root, start, budget), budget,
+        query=query.strip(), path=rel or ".", offset=page_offset, limit=page_limit,
+        literal=literal, case_sensitive=case_sensitive, include=include,
+        max_file_bytes=SEARCH_MAX_FILE_BYTES, max_scan_bytes=SEARCH_MAX_SCAN_BYTES)
 
 
 def _audit_find_references(root: Path, rel: str, symbol: str) -> ToolOutcome:
@@ -484,7 +367,9 @@ def _execute_read_only_call(project: Path, call: ToolCall) -> ToolOutcome:
         }
         return _audit_read_file(project, path, **read_options)
     if call.name == "search":
-        return _audit_search_files(project, path, str(call.args.get("query") or ""))
+        return _audit_search_files(project, path, str(call.args.get("query") or ""),
+            **{name: call.args[name] for name in ("offset", "limit", "literal", "case_sensitive", "include")
+               if name in call.args})
     if call.name == "references":
         return _audit_find_references(project, path, str(call.args.get("symbol") or ""))
     return ToolOutcome.error(

@@ -658,8 +658,8 @@ class ConsensusTests(unittest.TestCase):
                 )
 
         self.assertEqual(report, "audit search stayed bounded")
-        self.assertIn("no literal matches", advisor.sent[1])
-        self.assertIn("project audit search scan stopped after 2 files", advisor.sent[1])
+        self.assertIn("no matches", advisor.sent[1])
+        self.assertIn("search scan stopped after 2 files", advisor.sent[1])
         self.assertIn("file budget 2", advisor.sent[1])
         self.assertNotIn("c.py:1", advisor.sent[1])
 
@@ -793,7 +793,7 @@ class ConsensusTests(unittest.TestCase):
             )
 
         self.assertEqual(report, "secret search produced no result")
-        self.assertIn("(no literal matches; regex is not supported)", advisor.sent[1])
+        self.assertIn("(no matches in admitted files)", advisor.sent[1])
         self.assertNotIn("SUPER_SECRET=orange", "\n".join(advisor.sent))
 
     def test_project_audit_malformed_reply_returns_no_report(self) -> None:

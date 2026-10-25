@@ -40,7 +40,7 @@ class SearchFilesBehaviorTests(unittest.TestCase):
         self.assertTrue(hit.ok)
         self.assertFalse(hit.truncated)
         self.assertIn("a.py:1: hello needle here", hit.model_text)
-        self.assertIn("(no literal matches; regex is not supported)", miss.model_text)
+        self.assertIn("(no matches in admitted files)", miss.model_text)
 
     def test_pagination_next_offset(self) -> None:
         with tempfile.TemporaryDirectory() as td:

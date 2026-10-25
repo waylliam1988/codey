@@ -2,6 +2,69 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## One packaged rg backend for grep (2026-10-25)
+
+The existing `grep` entry now uses one `rg_search` engine. Normal project search
+and audit search both supply their authorized file lists to it; both Python
+content-matching implementations were removed. Existing workspace containment,
+excluded directories, symlink rules, audit secret filtering and file/byte budgets
+remain at admission. Hidden and gitignored files stay searchable within that
+scope. Explicit-file arguments bypass rg's glob filters, so the positive relative
+POSIX `include` glob is applied at admission. Default matching remains literal
+and case-insensitive, with explicit regex and case-sensitive options.
+
+`ripgrep-bin==15.2.0` is a pinned runtime dependency with platform hashes in the
+generated CI lock. The executable resolves only through that distribution's file
+record: no PATH search, runtime download or Python search fallback. JSON queries
+use fixed argv, `--no-config` and the existing cancellation/process-tree owner;
+argument batches share one elapsed-time budget. Full match text and byte-column
+coordinates live in `canonical.value`; previews, pagination and coverage are
+derived views. The original frozen schema drives CodeMode declarations/validation.
+Canonical pending replay arguments now preserve mode, case, filter and pagination;
+its allowed fields derive from the same tool definition.
+
+Regression probes caught and fixed native-platform edge cases: explicit-file glob
+bypass, `--no-encoding` restoring BOM autodetection (now `--encoding=none`), JSON
+records containing Unicode line separators, LF/CRLF versus trailing CR, and
+preservation of new options in pending intents. Malformed/partial JSON, missing or
+inconsistent summaries, exit-status mismatches, raw-output overflow, invalid
+patterns, matching non-UTF-8 lines, missing binaries and process failures cannot
+become successful empty searches. Stop and timeout tests verify the original
+process owner reaps the child and closes pipes. Admission omissions and continued
+pages cannot claim `scan_complete=true`.
+
+Final focused verification passed **379 tests and 81 subtests (80.92s)** across
+search, audit admission, both protocols, CodeMode, lifecycle, lineage, answer
+bindings, receipt/restart integrity, safe replay and dependency boundaries. The
+new rg contract file contains **27** cases. Ruff, mypy (522 production files),
+Pyrefly (0 errors, 29 existing suppressions and 80 warnings) and ty passed. The
+existing machine-contract selection includes the new regression file.
+
+The current wheel was built and installed into an independent venv with the
+pinned rg wheel. With PATH empty, the installed package completed regex search,
+resolved its own venv executable and validated the generated runtime inventory.
+Evidence: ignored `.e2e-artifacts/rg-wheel-smoke.json`, build/install logs and wheel.
+This installed-runtime smoke was performed on Windows; other platforms were not
+executed here.
+
+The final local Gemma4-12B native/text matrix passed **7/8** across literal search,
+regex search, empty results and Stop. Both regexes, both empty searches, text
+literal search and both Stops passed, including repeated receipt recovery. Stops
+started no following generation. Native literal search is retained as a failure:
+all actual grep observations contain exact `PATTERN.*`, but the model encoded it
+again as a quoted string in the final JSON, then repeated searches until the
+original no-progress guard stopped it after six generations. The answer binding
+rejected that wrong content; no result coercion, source rewriting or fallback was
+added to force the case green. The earlier development matrices are also retained.
+Final evidence is under ignored `.e2e-artifacts/rg-live-release-20261025/`, including
+raw requests, receipts, the complete production source archive and 524 Python/MJS
+hashes matching the delivered source. Wheel production source matches as well.
+
+Architecture checks passed **97 tests and 405 subtests**, with the known line
+guard checked separately: unchanged `operations/task_loop.py` is still 1231 lines
+against its 1205 ceiling. No ceiling was raised. Full pytest and the entire machine
+contract selection were not run, as requested.
+
 ## Structured read results and explicit answer bindings (2026-10-25)
 
 The `A/C` failure now has two controls in the existing runtime. Read results carry

@@ -6,7 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from codey.runtime.effects.replay_policy import is_replayable_safe_tool
-from codey.toolchain.tool_args_repair import ToolArgLimits
+from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
+from codey.toolchain.tool_args_repair import ToolArgLimits, normalize_tool_args
 
 REPLAY_ARG_TEXT_MAX_CHARS = 1000
 REPLAY_READ_MAX_LINES = ToolArgLimits().read_max_lines
@@ -29,7 +30,7 @@ _REPLAY_ARG_SPECS = {
         required=frozenset({"path"}),
     ),
     "search": ReplayArgSpec(
-        allowed=frozenset({"path", "query"}),
+        allowed=frozenset(key for key, _schema in TOOL_DEFINITION_BY_NAME["grep"].parameters),
         required=frozenset({"path", "query"}),
     ),
     "references": ReplayArgSpec(
@@ -118,6 +119,12 @@ def validate_replay_args_shape(
             )
     elif canonical_name == "search":
         validated["query"] = _validate_replay_text_arg(args["query"], "query")
+        normalized = normalize_tool_args(canonical_name, args)
+        if normalized.alias_rewrite_count or normalized.arg_repair_counts or normalized.args != dict(args):
+            raise ValueError("search replay arguments must be strictly canonical")
+        if "include" in args and len(str(args["include"])) > REPLAY_ARG_TEXT_MAX_CHARS:
+            raise ValueError("search include exceeds replay text limit")
+        validated.update(normalized.args)
     elif canonical_name == "references":
         validated["symbol"] = _validate_replay_text_arg(args["symbol"], "symbol")
     return validated

@@ -49,9 +49,17 @@ def finalize_page(
     )]
 
 
-def next_call_hint(*, query: str, path: str, offset: int, limit: int) -> str:
+def next_call_hint(*, query: str, path: str, offset: int, limit: int,
+                   literal: bool = True, case_sensitive: bool = False, include: str = "") -> str:
+    args: dict[str, object] = {"query": query, "path": path, "offset": offset, "limit": limit}
+    if not literal:
+        args["literal"] = literal
+    if case_sensitive:
+        args["case_sensitive"] = case_sensitive
+    if include:
+        args["include"] = include
     payload = json.dumps(
-        {"tool": "grep", "args": {"query": query, "path": path, "offset": offset, "limit": limit}},
+        {"tool": "grep", "args": args},
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -66,6 +74,7 @@ def page_footer(
     limit: int,
     shown: int,
     has_more: bool,
+    literal: bool = True, case_sensitive: bool = False, include: str = "",
 ) -> str:
     try:
         start = max(1, coerce_int(offset or 1, default=1))
@@ -75,7 +84,7 @@ def page_footer(
     if has_more:
         return (
             f"[grep page: results {start}-{end}; next offset={end + 1}; "
-            f"{next_call_hint(query=query, path=path, offset=end + 1, limit=limit)}]"
+            f"{next_call_hint(query=query, path=path, offset=end + 1, limit=limit, literal=literal, case_sensitive=case_sensitive, include=include)}]"
         )
     if shown:
         return f"[grep page: results {start}-{end}; end of matches]"

@@ -1,7 +1,4 @@
-"""Split regression guard for _audit_search_files helpers (pure extraction).
-
-Covers path admission, per-file budget/read, line matching, footers and
-final output. No behavior change vs pre-split implementation.
+"""Audit admission and shared rg search retain their separate responsibilities.
 """
 
 from __future__ import annotations
@@ -45,79 +42,16 @@ def test_resolve_start_blocks_excluded_and_secret() -> None:
         assert err2 is not None
 
 
-def test_scan_one_file_ok_oversized_byte_and_unreadable() -> None:
-    with _make_root({"a.py": "hello\n"}) as td:
+def test_audit_and_regular_search_use_the_same_backend() -> None:
+    from codey.toolchain import rg_search
+
+    with _make_root({"a.py": "HeLLo world\n"}) as td:
         root = Path(td)
-        path = root / "a.py"
-        text, new_br, over, byte_hit = audit_tools._audit_search_scan_one_file(path, 0)
-        assert text == "hello\n" and new_br == path.stat().st_size
-        assert not over and not byte_hit
-        with mock.patch("codey.agents.project_audit_tools.SEARCH_MAX_FILE_BYTES", 2):
-            t2, br2, over2, _ = audit_tools._audit_search_scan_one_file(path, 0)
-            assert t2 is None and over2 and br2 == 0
-        with mock.patch("codey.agents.project_audit_tools.SEARCH_MAX_SCAN_BYTES", 1):
-            t3, br3, _, byte3 = audit_tools._audit_search_scan_one_file(path, 0)
-            assert t3 is None and byte3 and br3 == 0
-        missing = root / "gone.py"
-        t4, br4, over4, byte4 = audit_tools._audit_search_scan_one_file(missing, 7)
-        assert t4 is None and br4 == 7 and not over4 and not byte4
-
-
-def test_scan_one_file_decode_failure_preserves_bytes_read() -> None:
-    # Pre-split semantics: bytes_read += size before read_text, so a
-    # UnicodeDecodeError still consumes budget. Helper must preserve it.
-    with _make_root({"bad.py": b"marker \xff\xfe\n"}) as td:
-        root = Path(td)
-        bad = root / "bad.py"
-        size = bad.stat().st_size
-        text, new_br, over, byte_hit = audit_tools._audit_search_scan_one_file(bad, 100)
-        assert text is None and not over and not byte_hit
-        assert new_br == 100 + size
-
-
-def test_collect_file_matches_case_and_truncation() -> None:
-    with _make_root({}) as td:
-        root = Path(td)
-        path = root / "a.py"
-        matches: list[str] = []
-        limited = audit_tools._audit_search_collect_file_matches(
-            path, root, "HeLLo world\nsecond\n", "hello", matches, 80
-        )
-        assert not limited and matches == ["a.py:1: HeLLo world"]
-        long_line = "x" * 300
-        m2: list[str] = []
-        audit_tools._audit_search_collect_file_matches(
-            path, root, long_line + "\n", "x", m2, 80
-        )
-        assert len(m2[0]) <= len("a.py:1: ") + 240
-        assert m2[0].endswith("...")
-        m3: list[str] = []
-        limited3 = audit_tools._audit_search_collect_file_matches(
-            path, root, "m\nm\nm\n", "m", m3, 2
-        )
-        assert limited3 and len(m3) == 2
-
-
-def test_append_and_build_outcome_footers() -> None:
-    budget = audit_tools._audit_scan_budget()
-    matches: list[str] = []
-    audit_tools._audit_search_append_limit_notes(
-        matches,
-        max_results=80,
-        result_limited=False,
-        oversized_files=0,
-        byte_limited=False,
-        budget=budget,
-    )
-    assert matches == ["(no literal matches; regex is not supported)"]
-    out = audit_tools._audit_search_build_outcome(
-        matches,
-        result_limited=False,
-        oversized_files=0,
-        byte_limited=False,
-        budget=budget,
-    )
-    assert not out.truncated
+        with mock.patch.object(rg_search, "search", wraps=rg_search.search) as shared:
+            result = audit_tools._audit_search_files(root, ".", "hello")
+        assert result.ok and "a.py:1: HeLLo world" in result.model_text
+        assert shared.call_count == 1
+        assert result.canonical["value"]["matches"][0]["text"] == "HeLLo world"
 
 
 def test_search_files_end_to_end_basic_and_limits() -> None:
@@ -129,21 +63,21 @@ def test_search_files_end_to_end_basic_and_limits() -> None:
         empty = audit_tools._audit_search_files(root, ".", "   ")
         assert not empty.ok
         limited = audit_tools._audit_search_files(root, ".", "marker", max_results=1)
-        assert limited.truncated
-        assert "truncated after 1 matches" in limited.model_text
+        assert not limited.truncated  # Exactly one match is a complete page.
+        assert not limited.canonical["value"]["has_more"]
 
 
 def test_search_files_skips_secret_and_reports_budgets() -> None:
     with _make_root({".env": "SUPER_SECRET=1\n", "a.py": "safe\n"}) as td:
         root = Path(td)
         out = audit_tools._audit_search_files(root, ".", "SUPER_SECRET")
-        assert "(no literal matches" in out.model_text
+        assert "(no matches" in out.model_text
         assert "SUPER_SECRET=1" not in out.model_text
     with _make_root({"a.py": "marker\n", "b.py": "marker\n"}) as td:
         root = Path(td)
         with mock.patch("codey.agents.project_audit_tools.SEARCH_MAX_FILE_BYTES", 2):
             o2 = audit_tools._audit_search_files(root, ".", "marker")
-            assert "oversized" in o2.model_text and o2.truncated
+            assert "larger than" in o2.model_text and o2.truncated
         with mock.patch("codey.agents.project_audit_tools.SEARCH_MAX_SCAN_BYTES", 1):
             o3 = audit_tools._audit_search_files(root, ".", "marker")
             assert "read budget" in o3.model_text and o3.truncated

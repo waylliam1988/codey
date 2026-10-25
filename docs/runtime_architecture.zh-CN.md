@@ -351,6 +351,28 @@ catalog 摘要和 host 校验均从这个快照派生。`read_file` 的事实只
 均拒绝。此契约证明显式选择的答案值与观测一致；未声明绑定的任务仍只有原执行要求，
 不承诺任意自然语言答案的语义正确性。
 
+## 唯一 rg 搜索后端（2026-10-25）
+
+模型入口仍为 `grep`，依赖固定版本 `ripgrep-bin==15.2.0`。二进制只从已安装发行包的
+文件记录解析，不搜索 PATH，不在运行时下载，不保留 Python 文本搜索 fallback。
+发布描述和 wheel 依赖从原 `pyproject.toml` 生成；CI 锁文件含各平台发行物哈希。
+
+普通搜索和审阅搜索共用 `toolchain/rg_search.py`。原目录、符号链接、审阅保密路径和
+文件/字节预算先确定获准文件；Python 只做准入，不匹配文件正文。`include` 是相对路径的
+正向 POSIX glob，在准入阶段处理，避免 rg 显式文件参数绕过 glob。范围包括隐藏和被
+gitignore 忽略的文件，仍排除原构建/VCS 目录。默认字面量且忽略大小写；正则和区分大小写
+通过显式参数选择，分页提示保留这些参数。
+
+rg 使用固定 argv、`--no-config`、JSON 输出和原 `cancellation.run_process`；没有 shell、
+新执行循环或进程管理器。批次共用一次查询的时间预算，argv 分批并保持分页顺序。
+原始传输超限、坏 JSON、进程错误、匹配行非 UTF-8、取消和超时均不冒充空结果。
+关闭 BOM 自动转码，避免搜索字节与后续文件读取内容不一致。
+
+完整匹配行、文件、行号、UTF-8 字节列、下一页和覆盖状态只存入原收据 `canonical.value`；
+展示预览由它派生。`files_admitted/bytes_admitted` 表示获准范围，不能当作实际完整扫描量；
+预算不足或尚有下一页时 `scan_complete=false`。原 frozen ToolSpec 驱动 CodeMode 声明和
+host 校验；搜索的新参数进入原 pending intent 和恢复验证，恢复不丢参数或重新搜索。
+
 ## Shell 审批交付与展示恢复（2026-10-13）
 
 `ResolveShellApproval` 从服务端已校验的持久结果构建文字 provider 的 continuation，

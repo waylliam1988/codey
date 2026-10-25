@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.constants import EXACT_REPLACEMENT_CONTEXT_HINT, MAX_REPLACEMENTS
-from codey.toolchain.result_schema import read_file_output_schema, text_output_schema
+from codey.toolchain.result_schema import read_file_output_schema, search_output_schema, text_output_schema
 
 MAX_ACCIDENTAL_TOOL_CALLS = 8
 MAX_PARALLEL_CALLS = 4
@@ -105,8 +105,13 @@ TOOL_DEFINITIONS = (
         ),
         description=(
             "Search file contents for literal text before reading when the location "
-            "is unknown. Matching is case-insensitive; regex is not supported."
+            "is unknown. Uses packaged ripgrep. Defaults to literal, case-insensitive matching; "
+            "set literal=false for regex, case_sensitive=true for exact case, include for one positive glob. "
+            "Searches hidden and ignored files within the admitted workspace scope, excluding build/VCS directories "
+            "and symlinks. CodeMode value is a page object with matches and explicit coverage; "
+            "column_byte is one-based UTF-8 bytes. Read matched files for context."
         ),
+        output_schema=search_output_schema(),
         render_hint="search",
         repair_hint="grep",
         parameters=(
@@ -114,6 +119,9 @@ TOOL_DEFINITIONS = (
             ("path", {"type": "string"}),
             ("offset", {"type": "integer", "minimum": 1}),
             ("limit", {"type": "integer", "minimum": 1}),
+            ("literal", {"type": "boolean"}),
+            ("case_sensitive", {"type": "boolean"}),
+            ("include", {"type": "string"}),
         ),
         required=("query",),
         category="coding",

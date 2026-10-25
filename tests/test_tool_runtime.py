@@ -779,42 +779,23 @@ class ToolOutcomeTests(unittest.TestCase):
 
             outcome = tool_runtime.search_files(root, ".", marker)
 
-        self.assertTrue(outcome.ok)
-        self.assertTrue(outcome.truncated)
-        self.assertIn("no literal matches", outcome.model_text)
-        self.assertIn("Scan coverage:", outcome.model_text)
-        self.assertIn("search skipped 1 non-UTF-8 file", outcome.model_text)
-        self.assertIn("omitted files may contain more matches", outcome.model_text)
-        self.assertNotIn(marker, outcome.model_text)
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.error_code, "search_invalid_encoding")
+        self.assertNotIn("no matches", outcome.model_text)
 
-    def test_search_reports_read_text_errors_as_incomplete(self) -> None:
-        original_reader = tool_runtime._read_text_bounded_no_follow
-
-        def failing_reader(path, *args, **kwargs) -> str:
-            if Path(path).name == "unreadable.py":
-                raise OSError("synthetic unreadable file")
-            return original_reader(path, *args, **kwargs)
+    def test_search_reports_process_read_errors_as_failure(self) -> None:
+        from codey.runtime.core.cancellation import CapturedProcess
+        from codey.toolchain import rg_search
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            (root / "app.py").write_text(
-                "def healthcheck():\n    return True\n",
-                encoding="utf-8",
-            )
             (root / "unreadable.py").write_text("target_marker\n", encoding="utf-8")
-
-            with mock.patch.object(tool_runtime, "_read_text_bounded_no_follow", failing_reader):
+            failed = CapturedProcess([], 2, "", "permission denied", 0, 17, False, False)
+            with mock.patch.object(rg_search.cancellation, "run_process", return_value=failed):
                 outcome = tool_runtime.search_files(root, ".", "target_marker")
-
-        self.assertTrue(outcome.ok)
-        self.assertTrue(outcome.truncated)
-        self.assertIn("no literal matches", outcome.model_text)
-        self.assertIn("Scan coverage:", outcome.model_text)
-        self.assertIn(
-            "search could not read metadata or contents for 1 file",
-            outcome.model_text,
-        )
-        self.assertNotIn("target_marker", outcome.model_text)
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.error_code, "search_failed")
+        self.assertNotIn("no matches", outcome.model_text)
 
     def test_search_reports_stat_errors_as_incomplete(self) -> None:
         original_lstat = Path.lstat
@@ -827,7 +808,7 @@ class ToolOutcomeTests(unittest.TestCase):
                 # the bounded scanner's own lstat runs in the generator and
                 # must keep yielding so the failure is counted, not skipped.
                 caller = traceback.extract_stack(limit=2)[0].name
-                if caller == "search_files":
+                if caller == "_candidates":
                     raise OSError("synthetic stat failure")
             return original_lstat(path, *args, **kwargs)
 
@@ -844,10 +825,10 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.truncated)
-        self.assertIn("no literal matches", outcome.model_text)
+        self.assertIn("no matches", outcome.model_text)
         self.assertIn("Scan coverage:", outcome.model_text)
         self.assertIn(
-            "search could not read metadata or contents for 1 file",
+            "could not read metadata for 1 file",
             outcome.model_text,
         )
         self.assertNotIn("target_marker", outcome.model_text)

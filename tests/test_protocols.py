@@ -112,11 +112,11 @@ class JsonToolCodecTests(unittest.TestCase):
 
         self.assertEqual(_canonical_tool_contract(), expected)
 
-    def test_system_prompt_describes_grep_as_literal_search(self) -> None:
+    def test_system_prompt_describes_grep_modes(self) -> None:
         prompt = JsonToolCodec().system_prompt()
 
         self.assertIn('{"tool":"grep","args":{"query":"login handler"', prompt)
-        self.assertIn("Matching is case-insensitive; regex is not supported.", prompt)
+        self.assertIn("set literal=false for regex", prompt)
         self.assertNotIn('{"tool":"grep","args":{"pattern":', prompt)
 
     def test_default_system_prompt_is_writer_prompt(self) -> None:

@@ -10,6 +10,7 @@ import hashlib
 import json
 import subprocess
 import threading
+import zipfile
 from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
@@ -40,7 +41,8 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
     (project / "b.txt").write_text("COBALT-923\n", encoding="utf-8")
     _, mutations, managed, revisions, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     writing = case == "write"
-    cancelling = case == "cancel"
+    cancelling = case in {"cancel", "search_cancel"}
+    searching = case.startswith("search_")
     stop = threading.Event()
     requests_at_stop: list[int] = []
 
@@ -60,6 +62,23 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
                 tuple(require_tool_success("read_file", via="codemode", arguments={"path": path},
                                            answer_pointer=f"/{key}", result_pointer="/text", result_line=1)
                       for key, path in (("a", "a.txt"), ("b", "b.txt"))))
+    expected_search = None
+    if searching:
+        (project / "sample.py").write_text("PATTERN.*\nSIGNAL-729\n", encoding="utf-8")
+        (project / "ignored.txt").write_text("SIGNAL-999\n", encoding="utf-8")
+        query = {"search_literal": "PATTERN.*", "search_regex": "SIGNAL-[0-9]{3}",
+                 "search_empty": "ABSENT-NEEDLE", "search_cancel": "PATTERN.*"}[case]
+        args = {"query": query, "path": ".", "literal": case != "search_regex",
+                "case_sensitive": True, "include": "*.py"}
+        empty = case == "search_empty"
+        expected_search = {"matches": []} if empty else {"text": "PATTERN.*" if case == "search_literal" else "SIGNAL-729"}
+        pointer = "/matches" if empty else "/text"
+        required = (require_tool_success("grep", via="codemode", arguments=args, answer_pointer=pointer,
+                                        result_pointer="/matches" if empty else "/matches/0/text"),)
+        task = ("Use codemode tools.grep with exactly these arguments: " + json.dumps(args) +
+                ('. Return only JSON {"matches": <the observed matches array>}. ' if empty else
+                 '. Return only JSON {"text": <the complete first matching line text>}. ') +
+                "Do not modify files or execute shell/verification commands. Check ok before consuming value.")
     policy = TaskPolicy(frozenset({"control", "project.read"} | ({"project.write"} if writing else set())),
         required_checks=required, denied_capabilities=frozenset({"project.verify"}))
     record_entry_policy(mutations, session_id="s", run_id="r", policy=policy)
@@ -97,7 +116,12 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
         count = len(fresh.executed)
         restore_task_session(frame, fresh)
         stable = len(fresh.executed) == count and session.executed == calls_before_recovery
-        if writing:
+        if searching:
+            try:
+                valid_output = json.loads(result.summary) == expected_search
+            except ValueError:
+                valid_output = False
+        elif writing:
             target = project / "created.txt"
             valid_output = target.is_file() and target.read_text(encoding="utf-8") == "SAPPHIRE-369\n"
         else:
@@ -105,10 +129,10 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
                 valid_output = json.loads(result.summary) == {"a": "AMBER-471", "b": "COBALT-923"}
             except ValueError:
                 valid_output = False
-        child_tool = "edit" if writing else "read_file"
+        child_tool = "grep" if searching else "edit" if writing else "read_file"
         observed_children = [record for record in session.executed.values() if record.get("name") == child_tool
                              and record.get("ok") is True and ":child:" in str(record.get("call_id", ""))]
-        workflow_observed = len(observed_children) >= (1 if writing else 2)
+        workflow_observed = len(observed_children) >= (1 if writing or searching else 2)
         if cancelling:
             valid_output = ((project / "a.txt").read_text(encoding="utf-8") == "AMBER-471\n"
                             and (project / "b.txt").read_text(encoding="utf-8") == "COBALT-923\n"
@@ -135,7 +159,7 @@ def main():
     parser.add_argument("--model", required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--protocols", nargs="+", choices=("on", "off"), default=("on", "off"))
-    parser.add_argument("--cases", nargs="+", choices=("read", "write", "cancel"), default=("read", "write"))
+    parser.add_argument("--cases", nargs="+", choices=("read", "write", "cancel", "search_literal", "search_regex", "search_empty", "search_cancel"), default=("read", "write"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / "production.patch").write_bytes(subprocess.check_output(["git", "diff", "--binary", "--", "codey"]))
@@ -143,6 +167,10 @@ def main():
         path.as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(Path("codey").rglob("*")) if path.suffix in {".py", ".mjs"}
     }, indent=2) + "\n", encoding="utf-8")
+    with zipfile.ZipFile(args.output / "production-source.zip", "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(Path("codey").rglob("*")):
+            if path.suffix in {".py", ".mjs"}:
+                archive.write(path, path.as_posix())
     rows = []
     for protocol in args.protocols:
         for case in args.cases:

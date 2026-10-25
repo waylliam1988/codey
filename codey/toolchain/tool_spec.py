@@ -726,7 +726,7 @@ def _builtin_alias_allowed_keys(tool: str) -> set[str] | None:
     if name in {"read_file", "read"}:
         return {"path", "cwd", "offset", "limit"}
     if name in {"grep", "search"}:
-        return {"query", "pattern", "path", "cwd", "offset", "limit"}
+        return {"query", "pattern", "path", "cwd", "offset", "limit", "literal", "case_sensitive", "include"}
     if name in {"find_references", "references"}:
         return {"symbol", "name", "path", "cwd"}
     if name in {"edit"}:

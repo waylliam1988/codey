@@ -1,5 +1,6 @@
 {
   "dependencies": [
+    "ripgrep-bin==15.2.0",
     "playwright>=1.45",
     "pywebview>=5.3",
     "PyYAML>=6.0",
@@ -452,6 +453,7 @@
     "codey/runtime/core/reasoning.py",
     "codey/runtime/core/run_result.py",
     "codey/runtime/core/shell_discovery.py",
+    "codey/runtime/core/tool_dispatch.py",
     "codey/runtime/core/window_action.py",
     "codey/runtime/effects/__init__.py",
     "codey/runtime/effects/effect_records.py",
@@ -503,6 +505,8 @@
     "codey/toolchain/line_prefix.py",
     "codey/toolchain/openai_tools.py",
     "codey/toolchain/presentation.py",
+    "codey/toolchain/result_schema.py",
+    "codey/toolchain/rg_search.py",
     "codey/toolchain/runtime.py",
     "codey/toolchain/search_page.py",
     "codey/toolchain/tool_args_repair.py",

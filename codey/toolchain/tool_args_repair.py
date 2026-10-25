@@ -338,7 +338,7 @@ def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
     # Mirrors codey.toolchain.constants.SEARCH_PAGE_MAX_RESULTS (100). The
     # constant lives in constants.py so runtime.py can share it, but this
     # module must stay import-free of sibling subpackages (purity boundary).
-    _reject_unknown_args(args, {*SEARCH_QUERY_KEYS, *PATH_ARG_KEYS, "offset", "limit"}, context="grep")
+    _reject_unknown_args(args, {*SEARCH_QUERY_KEYS, *PATH_ARG_KEYS, "offset", "limit", "literal", "case_sensitive", "include"}, context="grep")
     query_val, query_alias = _require_text_arg(
         args,
         SEARCH_QUERY_KEYS,
@@ -358,6 +358,15 @@ def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
         counts[k] = counts.get(k, 0) + v
 
     call_args: dict[str, Any] = {"query": query_val, "path": norm_path}
+    for key in ("literal", "case_sensitive"):
+        if key in args:
+            if type(args[key]) is not bool:
+                raise ToolArgsRepairError(f"{key} must be a boolean")
+            call_args[key] = args[key]
+    if "include" in args:
+        if not isinstance(args["include"], str) or args["include"].startswith("!") or "\x00" in args["include"]:
+            raise ToolArgsRepairError("include must be one positive glob string")
+        call_args["include"] = args["include"]
     if "offset" in args:
         offset, coerced = _bounded_positive_int(args.get("offset"), "offset")
         if coerced:
