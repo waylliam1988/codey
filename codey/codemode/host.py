@@ -5,6 +5,7 @@ from typing import Protocol
 
 from codey.codemode.types import ToolCatalogEntry
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.toolchain.result_schema import validate_output
 
 
 class CodeModeHostProtocol(Protocol):
@@ -20,8 +21,7 @@ class CodeModeHost:
         *,
         execution_id: str,
         catalog: Sequence[ToolCatalogEntry],
-        execute: Callable[[ToolCall], object],
-        transform_value: Callable[[object], object] | None = None,
+        execute: Callable[[ToolCall], ToolResult],
         allow_writes: bool = False,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
@@ -32,31 +32,31 @@ class CodeModeHost:
         if any(not entry.read_only and entry.grant != "project.write" for entry in catalog):
             raise ValueError("CodeMode only permits project.write tools")
         self._allow_writes = bool(allow_writes)
-        self._allowed = frozenset(entry.name for entry in catalog)
+        self._catalog = {entry.name: entry for entry in catalog}
         self._execute = execute
-        self._transform_value = transform_value
         self._next_child = 0
 
     def invoke(self, name: str, args: dict[str, object]) -> object:
         tool_name = str(name or "").strip().lower()
         if tool_name == "codemode" or tool_name.startswith("codemode."):
             raise ValueError("recursive codemode invocation is denied")
-        if tool_name not in self._allowed:
+        if tool_name not in self._catalog:
             raise ValueError(f"tool is not in the frozen catalog: {tool_name}")
         if not isinstance(args, dict):
             raise ValueError("tool args must be an object")
         call = ToolCall(tool_name, dict(args), call_id=f"{self.execution_id}:child:{self._next_child}")
         self._next_child += 1
         raw = self._execute(call)
-        if isinstance(raw, ToolResult):
-            value = raw.canonical.get("value", raw.model_text)
-            if self._transform_value is not None:
-                value = self._transform_value(value)
-            return {"ok": raw.ok, "value": value}
-        if isinstance(raw, dict):
-            value = dict(raw)
-            if self._transform_value is not None and "value" in value:
-                value["value"] = self._transform_value(value["value"])
-            return value
-        value = self._transform_value(raw) if self._transform_value is not None else raw
+        if not isinstance(raw, ToolResult):
+            raise TypeError("host executor must return a ToolResult")
+        if not raw.ok:
+            return {"ok": False, "error": raw.model_text}
+        schema = self._catalog[tool_name].output_schema
+        if schema.get("type") == "string":
+            value: object = raw.model_text
+        else:
+            if "value" not in raw.canonical:
+                raise ValueError(f"missing structured result for {tool_name}")
+            value = raw.canonical["value"]
+        validate_output(tool_name, schema, value)
         return {"ok": True, "value": value}

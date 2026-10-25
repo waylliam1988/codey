@@ -49,7 +49,10 @@ def test_nested_execute_turn_passes_unique_child_scopes_to_intent_sink() -> None
     sink = Sink()
 
     def read_file(call: ToolCall) -> ToolResult:
-        return ToolResult(ok=True, call=call, model_text=str(call.args["path"]))
+        from codey.toolchain.runtime import _format_read_file_page
+
+        page = _format_read_file_page(str(call.args["path"]), 1, 300, 1, ["observed\n"])
+        return ToolResult(ok=True, call=call, model_text=page.model_text, canonical=page.canonical)
 
     codemode = build_execute_turn_executor(
         session=session,

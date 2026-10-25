@@ -40,7 +40,7 @@ def test_host_bridge_assigns_stable_child_ids_and_rejects_recursion() -> None:
 
     host = CodeModeHost(
         execution_id="cm-7",
-        catalog=(ToolCatalogEntry("read_file", "read", {"type": "object"}),),
+        catalog=(ToolCatalogEntry("read_file", "read", {"type": "object"}, output_schema={"type": "integer"}),),
         execute=execute,
     )
     assert host.invoke("read_file", {"path": "a.py"}) == {"ok": True, "value": 3}

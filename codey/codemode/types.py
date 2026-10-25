@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
+from codey.toolchain.result_schema import text_output_schema
+
 
 def _freeze_value(value: object) -> object:
     if isinstance(value, Mapping):
@@ -53,6 +55,7 @@ class ToolCatalogEntry:
     read_only: bool = True
     parallel_safe: bool = False
     grant: str = ""
+    output_schema: Mapping[str, object] = field(default_factory=text_output_schema)
 
     def __post_init__(self) -> None:
         name = str(self.name or "").strip()
@@ -62,6 +65,7 @@ class ToolCatalogEntry:
         object.__setattr__(self, "description", str(self.description or ""))
         frozen = _freeze_value(self.parameters)
         object.__setattr__(self, "parameters", frozen if isinstance(frozen, Mapping) else MappingProxyType({}))
+        object.__setattr__(self, "output_schema", _freeze_value(self.output_schema))
 
 
 @dataclass(frozen=True)

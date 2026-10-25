@@ -57,8 +57,9 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
         "containing their observed first lines. Do not modify files."
     )
     required = ((require_tool_success("edit", via="codemode", arguments={"path": "created.txt"}),) if writing else
-                tuple(require_tool_success("read_file", via="codemode", arguments={"path": path})
-                      for path in ("a.txt", "b.txt")))
+                tuple(require_tool_success("read_file", via="codemode", arguments={"path": path},
+                                           answer_pointer=f"/{key}", result_pointer="/text", result_line=1)
+                      for key, path in (("a", "a.txt"), ("b", "b.txt"))))
     policy = TaskPolicy(frozenset({"control", "project.read"} | ({"project.write"} if writing else set())),
         required_checks=required, denied_capabilities=frozenset({"project.verify"}))
     record_entry_policy(mutations, session_id="s", run_id="r", policy=policy)

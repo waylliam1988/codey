@@ -331,6 +331,26 @@ Research 工作流，也不刷新验证或扫描工作区。`project_prompt_cont
 
 可执行检查与准确的证明边界见 [kernel_invariants.zh-CN.md](kernel_invariants.zh-CN.md)。
 
+## 工具结果类型与答案观测绑定（2026-10-25）
+
+`ToolDefinition.output_schema` 经原 `ToolSpec` 进入每轮不可变快照；CodeMode 的类型声明、
+catalog 摘要和 host 校验均从这个快照派生。`read_file` 的事实只由原工具产生，存放在
+原收据的 `canonical.value`：`text`、页行号、总行数、下一页和 `text_complete`。
+展示文本包含分页提示，不能代替结构化值。文本工具仍声明字符串结果；host 不探测
+值类型或从展示文字补结构。子调用不转换为另一种 artifact 包装类型，父输出继续走
+现有大小限制和 artifact 路径。失败结果使用 `{ok:false,error}`。
+
+确定性输出要求在原 `TaskPolicy.required_checks` 中显式声明，沿用
+`require_tool_success` 的工具、参数及成功父子关系选择器，并增加答案 JSON pointer、
+收据值 JSON pointer 和可选绝对文件行号。原 completion gate 比对最终答案与已提交
+完整收据；恢复仍由原收据链重建同一结果缓存。没有另存期望答案、第二日志或执行循环，
+检查不重读文件、不运行工具，也不从自然语言猜规则。摘要和展示片段不能成为事实来源。
+
+只接受完整观测到的目标行；其他分页和失败尝试不能证明该行，也不会推翻已有有效观测。
+成功观测之间值冲突时拒绝完成，不猜最新值。JSON 缺字段、重复键、非法常量和错误类型
+均拒绝。此契约证明显式选择的答案值与观测一致；未声明绑定的任务仍只有原执行要求，
+不承诺任意自然语言答案的语义正确性。
+
 ## Shell 审批交付与展示恢复（2026-10-13）
 
 `ResolveShellApproval` 从服务端已校验的持久结果构建文字 provider 的 continuation，

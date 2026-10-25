@@ -22,15 +22,17 @@ def test_codemode_catalog_exposes_project_writes_only_when_explicit() -> None:
 def test_codemode_host_requires_explicit_write_capability() -> None:
     from codey.codemode.host import CodeModeHost
     from codey.codemode.types import ToolCatalogEntry
+    from codey.runtime.core.models import ToolResult
 
     writable = ToolCatalogEntry("edit", "write", namespace="project", read_only=False, grant="project.write")
     with pytest.raises(ValueError, match="allow_writes"):
         CodeModeHost(execution_id="cm", catalog=(writable,), execute=lambda _call: None)
 
     host = CodeModeHost(
-        execution_id="cm", catalog=(writable,), execute=lambda call: {"path": call.args["path"]}, allow_writes=True,
+        execution_id="cm", catalog=(writable,),
+        execute=lambda call: ToolResult(call, str(call.args["path"]), ok=True), allow_writes=True,
     )
-    assert host.invoke("edit", {"path": "a.py"}) == {"path": "a.py"}
+    assert host.invoke("edit", {"path": "a.py"}) == {"ok": True, "value": "a.py"}
 
 
 def test_durable_codemode_state_survives_close_and_reopen(tmp_path) -> None:

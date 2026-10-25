@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.constants import EXACT_REPLACEMENT_CONTEXT_HINT, MAX_REPLACEMENTS
+from codey.toolchain.result_schema import read_file_output_schema, text_output_schema
 
 MAX_ACCIDENTAL_TOOL_CALLS = 8
 MAX_PARALLEL_CALLS = 4
@@ -28,6 +30,7 @@ class ToolDefinition:
     required: tuple[str, ...] = ()
     category: str = "coding"
     side_effect: str = "none"
+    output_schema: Mapping[str, object] = field(default_factory=text_output_schema)
 
 
 TOOL_DEFINITIONS = (
@@ -58,7 +61,10 @@ TOOL_DEFINITIONS = (
             '{"tool":"read_file","args":{"path":"app.py"}}',
             '{"tool":"read_file","args":{"path":"app.py","offset":301,"limit":300}}',
         ),
-        description="Read one file. Large files are returned in complete-line pages.",
+        description=("Read one file. Large files are returned in complete-line pages. "
+                     "In CodeMode, value is an object: value.text is the page text (a string), "
+                     "with start_line, end_line, total_lines, next_offset and text_complete metadata."),
+        output_schema=read_file_output_schema(),
         render_hint="read",
         repair_hint="read_file",
         parameters=(

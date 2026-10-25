@@ -314,7 +314,7 @@ def _contract_subject(session: Any, profile: str, context: Any) -> str:
     return f"task:{profile or 'task'}"
 
 
-def _required_tool_checks(session: Any) -> list[CompletionCheck]:
+def _required_tool_checks(session: Any, final_text: str) -> list[CompletionCheck]:
     """Explicit entry requirements consume the committed execution projection.
 
     These are tool observations, not model assertions or inferred workflows.
@@ -331,9 +331,11 @@ def _required_tool_checks(session: Any) -> list[CompletionCheck]:
             continue
         if requirement is None:
             continue
-        observed = requirement.satisfied_by(session.executed)
+        observed = requirement.satisfied_by(session.executed, final_text=final_text, results=session._memory_results)
+        missing = ("answer_observation_mismatch" if requirement.answer_pointer is not None
+                   else f"successful_tool_observation_required:{requirement.tool}")
         rows.append(CompletionCheck(requirement.check_id, CHECK_PASS if observed else CHECK_FAIL,
-                                    "" if observed else f"successful_tool_observation_required:{requirement.tool}"))
+                                    "" if observed else missing))
     return rows
 
 
@@ -346,7 +348,7 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     checks.extend(source_requirement_checks(session, context))
     checks.extend(citation_checks)
     checks.extend(strict_research_checks(session, text, context))
-    checks.extend(_required_tool_checks(session))
+    checks.extend(_required_tool_checks(session, text))
     profile = _session_profile(session)
     _collect_provider_checks(session, profile, checks)
     deduped = _dedupe_checks(checks)

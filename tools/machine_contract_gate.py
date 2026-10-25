@@ -10,6 +10,8 @@ import pytest
 
 CONTRACT_TESTS = (
     "tests/test_tool_execution_lifecycle.py",
+    "tests/test_read_result_contract.py",
+    "tests/test_answer_observation_requirements.py",
     "tests/test_native_final_answer_protocol_repair.py",
     "tests/test_cross_domain_evaluation_oracle.py",
     "tests/test_source_completion_contract.py",

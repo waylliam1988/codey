@@ -24,8 +24,10 @@ def test_catalog_is_frozen_and_never_advertises_codemode_itself() -> None:
 
     snapshot = build_catalog_snapshot(
         (
-            {"name": "read_file", "description": "read", "parameters": {"type": "object"}},
-            {"name": "codemode", "description": "recursive", "parameters": {"type": "object"}},
+            {"name": "read_file", "description": "read", "parameters": {"type": "object"},
+             "output_schema": {"type": "string"}},
+            {"name": "codemode", "description": "recursive", "parameters": {"type": "object"},
+             "output_schema": {"type": "string"}},
         )
     )
 

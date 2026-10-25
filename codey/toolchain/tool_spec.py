@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, cast
+
+from codey.toolchain.result_schema import text_output_schema
 
 _TEXT_BATCH_TOOLS = frozenset({"parallel", "read_files"})
 
@@ -54,6 +56,7 @@ class ToolSpec:
     executor: str = ""
     replay_class: str = "unsafe"
     parallel_safe: bool = False
+    output_schema: Mapping[str, object] = field(default_factory=text_output_schema)
 
 
 def _freeze_schema_value(value: object) -> object:
@@ -78,6 +81,8 @@ def freeze_spec_parameters(spec: ToolSpec) -> ToolSpec:
     """Return a copy of ``spec`` with nested parameter schemas frozen."""
     from dataclasses import replace as _replace
 
+    if not _valid_custom_schema(thaw_schema_value(spec.output_schema)):
+        raise ValueError(f"invalid output schema for {spec.name}")
     try:
         params = tuple(
             (key, _freeze_schema_value(schema))
@@ -85,7 +90,8 @@ def freeze_spec_parameters(spec: ToolSpec) -> ToolSpec:
         )
     except Exception as exc:
         raise RuntimeError(f"tool snapshot freeze failed for {getattr(spec, 'name', '?')}: {exc}") from exc
-    return _replace(spec, parameters=params)
+    return _replace(spec, parameters=params,
+                    output_schema=cast(Mapping[str, object], _freeze_schema_value(spec.output_schema)))
 
 
 def _coding_specs() -> dict[str, ToolSpec]:
@@ -114,6 +120,7 @@ def _coding_specs() -> dict[str, ToolSpec]:
             executor="project",
             replay_class="safe" if definition.read_only else "unsafe",
             parallel_safe=definition.parallel_safe,
+            output_schema=definition.output_schema,
         )
     return specs
 
@@ -181,7 +188,7 @@ def _all_specs() -> dict[str, ToolSpec]:
     specs = _coding_specs()
     codemode_example = (
         "const result = await tools.read_file({path:'app.py'}); "
-        "if (!result.ok) throw new Error(String(result.value)); return result.value;"
+        "if (!result.ok) throw new Error(result.error); return result.value.text;"
     )
     specs["codemode"] = ToolSpec(
         name="codemode",
@@ -192,8 +199,8 @@ def _all_specs() -> dict[str, ToolSpec]:
             "Execute one bounded JavaScript program in the local CodeMode sandbox. "
             "Use only tools from the task's frozen catalog through tools.*; "
             "each call retains its normal authorization and execution checks. "
-            "Calls return {ok, value}; check ok and consume value. "
-            "The returned object is not raw file text: string operations belong on value after checking ok. "
+            "Calls return {ok:true, value} or {ok:false, error}; check ok before consuming value. "
+            "Successful value types are declared below. read_file returns an object; its text is value.text. "
             "Return the program's final value with return; console.log and console.error produce no output. "
             "Await every tool, store and load call before returning; unfinished calls fail the program. "
             "Shell approval, direct filesystem/process/network access, and recursive codemode calls are unavailable. "

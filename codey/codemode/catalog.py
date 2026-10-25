@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from codey.codemode.types import ToolCatalogEntry, ToolCatalogSnapshot
+from codey.toolchain.result_schema import schema_typescript
 from codey.toolchain.tool_spec import is_text_batch_tool
 
 
@@ -28,6 +29,7 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, Any] | ToolCatalogEntry])
             grant=str(row.get("grant", "") or ""),
             read_only=bool(row.get("read_only", True)),
             parallel_safe=bool(row.get("parallel_safe", False)),
+            output_schema=row["output_schema"],
         )
         if entry.name in {"codemode", "done", "ask_user"}:
             continue
@@ -44,7 +46,8 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, Any] | ToolCatalogEntry])
         {
             "name": entry.name,
             "description": entry.description,
-            "parameters": entry.parameters,
+            "parameters": _json_value(entry.parameters),
+            "output_schema": _json_value(entry.output_schema),
             "namespace": entry.namespace,
             "grant": entry.grant,
             "read_only": entry.read_only,
@@ -52,7 +55,7 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, Any] | ToolCatalogEntry])
         }
         for entry in unique
     ]
-    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     digest = "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
     return ToolCatalogSnapshot(tuple(unique), digest)
 
@@ -76,6 +79,7 @@ def build_catalog_from_specs(specs: Mapping[str, Any] | Iterable[Any]) -> ToolCa
             "grant": str(getattr(spec, "grant", "") or ""),
             "read_only": str(getattr(spec, "replay_class", "unsafe")) == "safe",
             "parallel_safe": spec.parallel_safe,
+            "output_schema": spec.output_schema,
         })
     return build_catalog_snapshot(rows)
 
@@ -116,6 +120,8 @@ def render_declarations(snapshot: ToolCatalogSnapshot) -> str:
     for entry in snapshot.entries:
         schema = json.dumps(_json_value(entry.parameters), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         lines.append(f"  // tools.{entry.name}: {schema}")
-        lines.append(f"  {entry.name}: (args: Record<string, unknown>) => Promise<unknown>;")
+        value = schema_typescript(entry.output_schema)
+        lines.append(f"  {entry.name}: (args: Record<string, unknown>) => "
+                     f"Promise<{{ok: true; value: {value}}} | {{ok: false; error: string}}>;")
     lines.extend(("};", f"// catalog_digest={snapshot.digest}"))
     return "\n".join(lines)

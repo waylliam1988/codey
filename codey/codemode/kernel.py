@@ -62,13 +62,6 @@ class CodeModeKernelExecutor:
             catalog=self.catalog.entries,
             execute=self.execute_child,
             allow_writes=self.allow_writes,
-            transform_value=lambda value: externalize_value(
-                value,
-                store=self.artifact_store,
-                session_id=self.session_id,
-                run_id=self.run_id,
-                max_inline_bytes=self.max_inline_bytes,
-            ),
         )
         audit: dict[str, object] = {
             "codemode_execution_id": self.execution_id,

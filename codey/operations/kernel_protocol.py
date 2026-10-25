@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests
@@ -177,6 +177,13 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
 
     names = tuple(visible_tool_names_for_snapshot(session.policy, allowed, native=native))
     frozen = _frozen_specs_for_names(names)
+    if "codemode" in names:
+        from codey.codemode.catalog import build_codemode_catalog, render_declarations
+
+        catalog = build_codemode_catalog(frozen, allow_writes=session.policy.allows("project.write"))
+        declarations = render_declarations(catalog)
+        frozen = tuple(replace(spec, description=spec.description + "\n" + declarations)
+                       if spec.name == "codemode" else spec for spec in frozen)
     from codey.toolchain.tool_spec import json_contract_text as _contract
 
     # JSON 与 native 契约同源：都从同一冻结定义生成，不再查实时注册表。

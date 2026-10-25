@@ -851,7 +851,7 @@ def _format_read_file_page(
     if total == 0:
         if start_line != 1:
             return ToolOutcome.error(f"offset {start_line} exceeds {rel} total lines 0")
-        return ToolOutcome("", True)
+        return _read_page_outcome(rel, "", "", 1, 0, 0, text_complete=True)
     if start_line > total:
         return ToolOutcome.error(
             f"offset {start_line} exceeds {rel} total lines {total}"
@@ -873,11 +873,8 @@ def _format_read_file_page(
             f"{READ_MAX_CHARS} chars; preview only, not a complete old_string"
             f"{next_text}"
         )
-        return ToolOutcome(
-            _append_page_metadata(preview, metadata),
-            True,
-            truncated=True,
-        )
+        return _read_page_outcome(rel, preview, _append_page_metadata(preview, metadata),
+                                  start_line, start_line, total, text_complete=False, truncated=True)
 
     selected: list[str] = []
     chars = 0
@@ -892,7 +889,7 @@ def _format_read_file_page(
     end_line = start_line + len(selected) - 1
     partial = start_line > 1 or end_line < total
     if not partial:
-        return ToolOutcome(content, True, presentation={"preview": {"line_start": start_line, "line_end": end_line}})
+        return _read_page_outcome(rel, content, content, start_line, end_line, total, text_complete=True)
     next_text = ""
     if end_line < total:
         next_offset = end_line + 1
@@ -903,12 +900,17 @@ def _format_read_file_page(
     metadata = (
         f"read_file page: lines {start_line}-{end_line} of {total}{next_text}"
     )
-    return ToolOutcome(
-        _append_page_metadata(content, metadata),
-        True,
-        truncated=True,
-        presentation={"preview": {"line_start": start_line, "line_end": end_line}},
-    )
+    return _read_page_outcome(rel, content, _append_page_metadata(content, metadata),
+                              start_line, end_line, total, text_complete=True, truncated=True)
+
+
+def _read_page_outcome(rel: str, content: str, display: str, start: int, end: int, total: int,
+    *, text_complete: bool, truncated: bool = False,
+) -> ToolOutcome:
+    value = {"path": rel, "text": content, "start_line": start, "end_line": end, "total_lines": total,
+             "next_offset": end + 1 if end < total else 0, "text_complete": text_complete}
+    return ToolOutcome(display, True, canonical={"value": value}, truncated=truncated,
+                       presentation={"preview": {"line_start": start, "line_end": end}})
 
 
 def list_directory(root: Path, rel: str) -> ToolOutcome:

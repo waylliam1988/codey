@@ -49,7 +49,8 @@ def test_codemode_kernel_executor_routes_children_through_callback() -> None:
     executor = CodeModeKernelExecutor(
         execution_id="run-1:turn:0:slot:0",
         catalog=(
-            {"name": "read_file", "description": "read", "parameters": {"type": "object"}, "read_only": True},
+            {"name": "read_file", "description": "read", "parameters": {"type": "object"}, "read_only": True,
+             "output_schema": {"type": "string"}},
         ),
         execute_child=execute_child,
     )
@@ -89,7 +90,8 @@ def test_nested_child_reenters_execute_turn_with_frozen_snapshot() -> None:
 
     executor = CodeModeKernelExecutor(
         execution_id="run-1:turn:0:slot:0",
-        catalog=({"name": "read_file", "description": "read", "parameters": {"type": "object"}, "read_only": True},),
+        catalog=({"name": "read_file", "description": "read", "parameters": {"type": "object"}, "read_only": True,
+                  "output_schema": {"type": "string"}},),
         execute_child=child,
     )
     result = execute_turn(
@@ -118,7 +120,11 @@ def test_production_builder_wires_nested_calls_into_execute_turn() -> None:
     snapshot = build_turn_snapshot(session)
 
     def read_file(call: ToolCall) -> ToolResult:
-        return ToolResult(ok=True, call=call, model_text=f"kernel:{call.args['path']}")
+        from codey.toolchain.runtime import _format_read_file_page
+
+        text = f"kernel:{call.args['path']}"
+        page = _format_read_file_page(call.args['path'], 1, 300, 1, [text])
+        return ToolResult(ok=True, call=call, model_text=page.model_text, canonical=page.canonical)
 
     codemode = build_execute_turn_executor(
         session=session,

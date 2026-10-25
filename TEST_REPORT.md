@@ -2,6 +2,60 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Structured read results and explicit answer bindings (2026-10-25)
+
+The `A/C` failure now has two controls in the existing runtime. Read results carry
+one canonical page object; frozen ToolSpec output schemas drive CodeMode's actual
+model declarations, catalog digest and host result validation. Missing structured
+values fail explicitly rather than falling back to display text. Successful text
+tools have a declared string contract. Child values retain their declared type;
+artifact conversion remains at the parent output boundary.
+
+Optional answer selectors live in the existing immutable `required_checks`, with
+the original tool/argument/parent selectors. The existing completion gate compares
+strict final JSON with committed full receipt values or fully observed absolute
+file lines. It never rereads files, reexecutes tools, stores expected answer text,
+or treats excerpts as authoritative. Restart reconstructs the same receipt cache.
+Failed attempts and unrelated pages cannot prove a line; they do not poison a
+valid observation. Conflicting successful observations block completion.
+
+New regressions cover `A/C` rejection, exact answers before/after restart, missing
+or substituted cached receipts, escaped JSON pointers, duplicate keys, invalid
+JSON/types, empty/Unicode/CRLF text, clipped lines, pagination and conflicting
+observations. Both protocols exercise the production task loop rejecting the wrong
+answer and accepting correction without repeating tools. The new files are part
+of the existing machine-contract selection; no separate runtime was introduced.
+
+Final focused verification passed **239 tests and 21 subtests (73.87s)** across
+CodeMode, lifecycle, lineage/recovery, receipt integrity, completion authority,
+immutable snapshots, recursive schema validation, paging and project tools.
+The final read-contract file, including two additional strict-boundary checks,
+also passed **18/18 (2.73s)**. Together the two new files contain 39 passing cases.
+Ruff, mypy (521 production files), Pyrefly (0 errors, 29 existing suppressions,
+80 warnings) and ty passed.
+
+Architecture checks passed **97 tests and 405 subtests** with one known failing
+line-count guard deselected. That guard still fails because unchanged
+`operations/task_loop.py` has 1231 lines against its 1205 ceiling; `git show HEAD`
+has the same 1231 lines. The changed read producer is within its existing 1440-line
+ceiling. No architecture ceiling was loosened, and the full machine gate was not
+rerun or claimed green.
+
+The final local KoboldCpp Gemma4-12B native/text read/write/Stop matrix passed
+**6/6**. Both read answers contain complete values; repeated recovery is stable,
+and Stops start no subsequent generation. Both final reads completed in two model
+generations. Text writing exposed invalid model-written JavaScript, corrected
+through the original loop on its third generation. An earlier retained native
+read exposed missing return and wrong-field `.split` errors and recovered on its
+sixth generation. No generated source was rewritten. Raw evidence is retained under ignored
+`.e2e-artifacts/answer-contract-live-verified-20261025/`; the source manifest binds
+all 523 production Python/MJS files. The earlier two six-case runs are retained
+separately, including the boundary change between runs.
+
+This is explicit observation consistency, not a general semantic answer oracle.
+An entry must declare its answer bindings; execution-only requirements retain
+their existing meaning. Full pytest remains reserved for the user's evening run.
+
 ## Unified tool execution lifecycle (2026-10-25)
 
 Normal leaves and CodeMode children now use the same session-local admission in
