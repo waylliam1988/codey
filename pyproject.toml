@@ -39,6 +39,8 @@ version = { attr = "codey.__version__" }
 [tool.setuptools.packages.find]
 include = ["codey*"]
 exclude = ["tests*", "tools*"]
+# Codey uses regular packages; do not scan unrelated trees for implicit namespaces.
+namespaces = false
 
 [tool.setuptools.package-data]
 codey = [

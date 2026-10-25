@@ -2,6 +2,26 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Wheel discovery and installed-runtime verification (2026-10-25)
+
+The metadata timeout came from setuptools' implicit namespace-package discovery.
+`include = ["codey*"]` filtered package names after discovery but did not prune
+unrelated workspace trees. Stack dumps stayed in `os.walk` / PackageFinder before
+wheel installation. All Codey Python modules use regular packages, so the existing
+pyproject discovery configuration now explicitly sets `namespaces = false`.
+
+A regression loads the actual config, forbids entering a synthetic reference project,
+and checks that every production Python module's package remains discoverable. It
+failed with the old config and passes after the fix. Identical direct metadata probes
+changed from a 38s timeout to successful completion in 2.30s.
+
+Full installed-runtime/publication verification now passed **11/11** in **123.77s**:
+real wheel build/install, launch outside the checkout, reconnect, installed update,
+cold restart, and building a wheel from the source archive. This resolves the wheel
+verification limitation recorded below. Ruff and `git diff --check` passed; no full
+pytest or model rerun was needed for this packaging-only change. Artifacts are
+`.e2e-artifacts/wheel-*` and `E:/codey-validation-tmp/wheel-diagnosis-20261025/`.
+
 ## CodeMode inputs, returns and repair delivery (2026-10-25)
 
 One ToolSpec still owns native/text contracts, CodeMode signatures and parameter
@@ -27,7 +47,8 @@ Ruff, production mypy (**532 source files**), Node syntax and `git diff --check`
 Architecture ceilings and task budgets were not raised. Full pytest was not run.
 Publication-contract checks separately passed **8/8** and the generated runtime file
 inventory matches the checkout. An additional full wheel cold-install probe timed out
-in build metadata and was stopped; it is not a pass or a completed installation check.
+in build metadata and was stopped; it was not counted as a pass. The package-discovery
+fix and subsequent successful full installation verification are recorded above.
 
 Final 12B boundaries passed **44/44** across both protocols and seeds 41/42/43, with
 receipt/recovery/Stop checks. Both source manifests (534 Python/MJS files) match the

@@ -1,5 +1,7 @@
 """Source and installed artifacts share a single immutable runtime contract."""
 import json
+import os
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -8,6 +10,34 @@ from codey.control.protocol import ControlError
 from codey.launcher.releases import runtime_digest, snapshot
 from codey.launcher.runtime import dependencies, read_runtime
 from tools.publish_runtime import publish_runtime
+
+
+def test_package_discovery_never_enters_unrelated_workspace_trees(tmp_path, monkeypatch):
+    from setuptools.config.expand import find_packages
+
+    root = Path(__file__).resolve().parents[1]
+    config = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
+    discovery = config['tool']['setuptools']['packages']['find']
+    for name in ('codey', 'codey/nested', 'tests', 'tools'):
+        package = tmp_path / name
+        package.mkdir(parents=True, exist_ok=True)
+        (package / '__init__.py').touch()
+    unrelated = tmp_path / 'reference-projects'
+    (unrelated / 'node_modules' / 'deep').mkdir(parents=True)
+    scandir = os.scandir
+
+    def checked_scandir(path):
+        assert not Path(path).is_relative_to(unrelated), 'package discovery entered a reference project'
+        return scandir(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, 'scandir', checked_scandir)
+        assert set(find_packages(root_dir=str(tmp_path), **discovery)) == {'codey', 'codey.nested'}
+    # Disabling implicit namespaces must keep every actual Python module's package.
+    actual = set(find_packages(root_dir=str(root), **discovery))
+    for module in (root / 'codey').rglob('*.py'):
+        package = module.parent.relative_to(root).as_posix().replace('/', '.')
+        assert package in actual, module
 
 
 @pytest.fixture
