@@ -120,8 +120,11 @@ def restore_task_session(frame: Any, session: Any, *, effect_scope: str = "task"
         session._memory_results[identity] = prior
         session.restored_effect_ids.add(identity)
     pending_batch = bool(getattr(frame, "recovered_tool_result_batch_id", "") or "")
+    nested = {child_id for row in fact_rows if row.call.name == "codemode"
+              for child_id in row.outcome.canonical.get("child_effect_ids", ())}
+    delivery_rows = [row for row in fact_rows if row.effect_id not in nested]
     if pending_batch:
-        for row in fact_rows:
+        for row in delivery_rows:
             identity = _delivery_identity(frame, effect_scope, row)
             if identity in delivered:
                 continue
@@ -130,7 +133,7 @@ def restore_task_session(frame: Any, session: Any, *, effect_scope: str = "task"
             except Exception as exc:
                 raise RecoveryFailed(f"settled delivery rebuild failed: {exc}") from exc
     initial_rows = [
-        row for row in fact_rows
+        row for row in delivery_rows
         if pending_batch or row in recovered_rows
     ]
     initial_results: list[Any] = []

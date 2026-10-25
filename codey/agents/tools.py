@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 from codey.toolchain import runtime as tool_runtime
@@ -58,3 +59,17 @@ class AgentToolFns:
 
 
 DEFAULT_TOOL_FNS = AgentToolFns()
+
+
+def build_project_tool_fns(
+    *, state_home: Path | None,
+    run_command_with_context: Callable[..., ToolOutcome] | None = None,
+) -> AgentToolFns:
+    """Own the workspace discovery resource for one execution tool set."""
+    from codey.workspace.file_index import IncrementalFileIndex
+
+    index = IncrementalFileIndex(state_home)
+    return AgentToolFns(
+        search_files=partial(tool_runtime.search_files, file_index=index),
+        run_command_with_context=run_command_with_context,
+    )

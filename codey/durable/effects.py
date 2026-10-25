@@ -26,3 +26,19 @@ def interrupted_effect(task: TaskCheckpoint, effect: EffectRecord) -> EffectReco
         "sent_state": "maybe_sent" if effect.category == "provider_send" else "settled",
         "replay_class": effect.replay_class,
     })
+
+
+def nested_effect_ids(effects: tuple[EffectRecord, ...]) -> set[str]:
+    """Derive nested membership solely from committed effect intent links."""
+    by_id = {effect.effect_id: effect for effect in effects}
+    nested: set[str] = set()
+    for effect in effects:
+        parent_id = effect.intent.get("parent_effect_id", "")
+        if not parent_id:
+            continue
+        parent = by_id.get(str(parent_id))
+        if (parent is None or parent.intent.get("tool_name") != "codemode"
+                or effect.effect_id == parent_id):
+            raise ValueError("nested effect has no valid original parent")
+        nested.add(effect.effect_id)
+    return nested

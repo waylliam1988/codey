@@ -30,7 +30,8 @@ from codey.runtime.effects.safe_tool_replay import (
 class SafeToolReplayTests(unittest.TestCase):
     def test_replayable_safe_tool_whitelist(self) -> None:
         expected = {"read", "ls", "search", "references"}
-        self.assertEqual(REPLAYABLE_SAFE_TOOL_NAMES, frozenset(expected))
+        self.assertEqual(REPLAYABLE_SAFE_TOOL_NAMES, frozenset(expected | {"codemode"}))
+        self.assertEqual(validate_replay_args("codemode", {"code": "return 1;"}), {"code":"return 1;"})
         for name in expected:
             self.assertTrue(is_replayable_safe_tool(name))
             self.assertIn(name, SAFE_RUNTIME_TOOL_NAMES)

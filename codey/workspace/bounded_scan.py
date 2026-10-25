@@ -187,6 +187,7 @@ def iter_bounded_files(
     allow_dir: Callable[[Path], bool] | None = None,
     allow_file: Callable[[Path], bool] | None = None,
     skip_start_if_excluded: bool = True,
+    on_directory: Callable[[Path], None] | None = None,
 ) -> Iterator[Path]:
     cancellation.check()
     excluded_lower = {name.lower() for name in excluded_dirs}
@@ -214,6 +215,8 @@ def iter_bounded_files(
             budget.dir_limited = True
             return
         budget.dirs_seen += 1
+        if on_directory is not None:
+            on_directory(current)
         entries = _collect_dir_entries(current, excluded_lower, budget)
 
         dirs, yielded, stop = _partition_sorted_entries(

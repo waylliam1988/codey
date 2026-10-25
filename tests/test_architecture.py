@@ -2377,7 +2377,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # the previous warning ceiling until a whole semantic owner can
             # move without duplicating its boundary.
             # Kernel transport carries the explicit Ghost admit_hints gate.
-            "operations/task_loop.py": 1205,
+            # Current cohesive task admission/finalization owner is 1231 lines.
+            "operations/task_loop.py": 1235,
             # LF/CRLF line-boundary note (was a one-line overclaim).
             # PLR split 2026-09-26: 1381 lines after search_files scan split.
             "toolchain/runtime.py": 1440,

@@ -38,6 +38,7 @@ class ToolContract:
     optional: dict[str, ToolArg] = field(default_factory=dict)
     example: str = ""
     description: str = ""
+    parallel_safe: bool = False
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ TOOL_CONTRACTS = {
         required={"query": str},
         example='{"tool":"web_search","args":{"query":"..."}}',
         description="search the web for ranked results",
+        parallel_safe=True,
     ),
     "open_url": ToolContract(
         name="open_url",
@@ -65,6 +67,7 @@ TOOL_CONTRACTS = {
         },
         example='{"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000,"pages":"1-5"}}',
         description="read a page's text; for PDFs, pages selects bounded page ranges",
+        parallel_safe=True,
     ),
     "source_search": ToolContract(
         name="source_search",
@@ -72,18 +75,21 @@ TOOL_CONTRACTS = {
         optional={"limit": ToolArg(int, 6)},
         example='{"tool":"source_search","args":{"url":"https://...","query":"...","limit":6}}',
         description="search within a source already opened with open_url; returns locators, offsets, and PDF pages",
+        parallel_safe=True,
     ),
     "knowledge_search": ToolContract(
         name="knowledge_search",
         required={"query": str},
         example='{"tool":"knowledge_search","args":{"query":"..."}}',
         description="search your existing local notes FIRST",
+        parallel_safe=True,
     ),
     "knowledge_read": ToolContract(
         name="knowledge_read",
         required={"id": str},
         example='{"tool":"knowledge_read","args":{"id":"<note id>"}}',
         description="read one existing note in full. " + knowledge_read_id_guidance(),
+        parallel_safe=True,
     ),
     "knowledge_write": ToolContract(
         name="knowledge_write",

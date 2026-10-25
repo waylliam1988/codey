@@ -167,10 +167,10 @@ def test_documented_codemode_example_executes_with_real_child_tools(tmp_path, na
                           run_id="example", turn=1, project_path=tmp_path)[0]
     observed = json.loads(result.model_text)
     assert result.ok
-    assert observed == "OBSERVED-CODEMODE-729\n"
+    assert observed == {"ok": True, "value": "OBSERVED-CODEMODE-729\n"}
     # Both surfaces teach the very same program, not independently escaped copies.
     assert example["args"]["code"] in spec.description
-    assert "Calls return {ok, value}" in spec.description
+    assert "Calls return {ok:true, value}" in spec.description
 
 
 @pytest.mark.parametrize("native", [False, True])

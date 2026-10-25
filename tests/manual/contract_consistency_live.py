@@ -65,20 +65,37 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
     expected_search = None
     if searching:
         literal_line = '"PATTERN.*"' if case == "search_quoted" else "PATTERN.*"
-        (project / "sample.py").write_text(literal_line + "\nSIGNAL-729\n", encoding="utf-8")
-        (project / "ignored.txt").write_text("SIGNAL-999\n", encoding="utf-8")
+        if case == "search_context":
+            (project / "sample.py").write_text("before\nNEEDLE\nafter\n", encoding="utf-8")
+            (project / "ignored.txt").write_text("before\nNEEDLE\nafter\n", encoding="utf-8")
+        else:
+            (project / "sample.py").write_text(literal_line + "\nSIGNAL-729\n", encoding="utf-8")
+            (project / "ignored.txt").write_text("SIGNAL-999\n", encoding="utf-8")
         query = {"search_literal": "PATTERN.*", "search_regex": "SIGNAL-[0-9]{3}",
                  "search_empty": "ABSENT-NEEDLE", "search_cancel": "PATTERN.*",
-                 "search_quoted": '"PATTERN.*"'}[case]
+                 "search_quoted": '"PATTERN.*"', "search_context": "NEEDLE"}[case]
         args = {"query": query, "path": ".", "literal": case != "search_regex",
                 "case_sensitive": True, "include": "*.py"}
+        if case == "search_context":
+            args.update(exclude=["ignored.txt"], before_context=1, after_context=1)
         empty = case == "search_empty"
-        expected_search = {"matches": []} if empty else {"text": "SIGNAL-729" if case == "search_regex" else literal_line}
-        pointer = "/matches" if empty else "/text"
+        expected_search = (
+            {"matches": []} if empty else
+            {"context": [
+                {"path": "sample.py", "line": 1, "text": "before", "relation": "before"},
+                {"path": "sample.py", "line": 3, "text": "after", "relation": "after"},
+            ]} if case == "search_context" else
+            {"text": "SIGNAL-729" if case == "search_regex" else literal_line}
+        )
+        pointer = "/matches" if empty else "/context" if case == "search_context" else "/text"
         required = (require_tool_success("grep", via="codemode", arguments=args, answer_pointer=pointer,
-                                        result_pointer="/matches" if empty else "/matches/0/text"),)
-        task = ("Use codemode tools.grep with exactly these arguments: " + json.dumps(args) +
+                                        result_pointer=("/matches" if empty else "/context" if case == "search_context" else "/matches/0/text")),)
+        guidance = ("Use codemode tools.grep exactly once. The query value is the bare text NEEDLE; "
+            "do not include quote characters in the query value. " if case == "search_context" else
+            "Use codemode tools.grep exactly once. ")
+        task = (guidance + "Use these arguments literally: " + json.dumps(args) +
                 ('. Return only JSON {"matches": <the observed matches array>}. ' if empty else
+                 '. Return only JSON {"context": <the observed context array>}. ' if case == "search_context" else
                  '. Return only JSON {"text": <the complete first matching line text>}. ') +
                 "Do not modify files or execute shell/verification commands. Check ok before consuming value.")
     policy = TaskPolicy(frozenset({"control", "project.read"} | ({"project.write"} if writing else set())),
@@ -161,7 +178,7 @@ def main():
     parser.add_argument("--model", required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--protocols", nargs="+", choices=("on", "off"), default=("on", "off"))
-    parser.add_argument("--cases", nargs="+", choices=("read", "write", "cancel", "search_literal", "search_quoted", "search_regex", "search_empty", "search_cancel"), default=("read", "write"))
+    parser.add_argument("--cases", nargs="+", choices=("read", "write", "cancel", "search_literal", "search_quoted", "search_regex", "search_empty", "search_context", "search_cancel"), default=("read", "write"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / "production.patch").write_bytes(subprocess.check_output(["git", "diff", "--binary", "--", "codey"]))

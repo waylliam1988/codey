@@ -548,7 +548,7 @@ class RuntimeMutationLine:
         run_id: str,
         *,
         intents: Iterable[RuntimeEffectIntent],
-        delivery_intent: DeliveryBatchIntent,
+        delivery_intent: DeliveryBatchIntent | None,
         driver: str = "",
     ) -> ToolBatchCommit:
         committed: ToolBatchCommit | None = None

@@ -658,6 +658,7 @@
     "codey/workspace/context_epoch.py",
     "codey/workspace/context_source.py",
     "codey/workspace/facts.py",
+    "codey/workspace/file_index.py",
     "codey/workspace/map.py",
     "codey/workspace/paths.py",
     "codey/workspace/revision.py",

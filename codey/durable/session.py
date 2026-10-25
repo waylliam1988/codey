@@ -540,6 +540,18 @@ class DurableSession:
         ))
 
     @_mutation_line
+    def transform_task_state(
+        self, task_id: str,
+        transform: Callable[[TaskCheckpoint], Mapping[str, object] | None],
+    ) -> CommitResult | None:
+        """Atomically derive metadata; None verifies a read without a commit."""
+        current = self.store.task(task_id)
+        patch = transform(current)
+        if patch is None:
+            return None
+        return self.update_task_state(task_id, patch, expected_revision=current.revision)
+
+    @_mutation_line
     def update_task_state(
         self,
         task_id: str,

@@ -86,6 +86,54 @@ class SearchFilesBehaviorTests(unittest.TestCase):
         self.assertNotIn("could not read metadata", outcome.model_text)
         self.assertFalse(outcome.truncated)
 
+    def test_native_brace_glob_and_exclude_filter_admitted_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "src").mkdir()
+            (root / "src" / "a.py").write_text("needle py\n", encoding="utf-8")
+            (root / "src" / "b.ts").write_text("needle ts\n", encoding="utf-8")
+            (root / "src" / "c.txt").write_text("needle txt\n", encoding="utf-8")
+
+            outcome = tool_runtime.search_files(
+                root, ".", "needle", include="*.{py,ts}", exclude=("src/b.ts",)
+            )
+
+        self.assertTrue(outcome.ok)
+        value = outcome.canonical["value"]
+        self.assertEqual([row["path"] for row in value["matches"]], ["src/a.py"])
+        self.assertNotIn("b.ts", outcome.model_text)
+        self.assertNotIn("c.txt", outcome.model_text)
+
+    def test_context_is_separate_from_matches_and_text_is_derived(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a.py").write_text("before\nneedle\nbetween\nneedle again\nafter\n", encoding="utf-8")
+
+            outcome = tool_runtime.search_files(root, ".", "needle", before_context=1, after_context=1)
+
+        self.assertTrue(outcome.ok)
+        value = outcome.canonical["value"]
+        self.assertEqual([row["line"] for row in value["matches"]], [2, 4])
+        self.assertEqual([(row["line"], row["relation"]) for row in value["context"]],
+                         [(1, "before"), (3, "between"), (5, "after")])
+        self.assertIn("a.py:2: needle", outcome.model_text)
+        self.assertIn("a.py:1: [context before] before", outcome.model_text)
+        self.assertEqual(outcome.presentation["preview"]["matches"], len(value["matches"]))
+        self.assertEqual(outcome.presentation["preview"]["context"], len(value["context"]))
+
+    def test_context_follows_match_pagination(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a.py").write_text("a\nneedle one\nb\nneedle two\nc\n", encoding="utf-8")
+
+            page = tool_runtime.search_files(root, ".", "needle", offset=2, limit=1, before_context=1, after_context=1)
+
+        value = page.canonical["value"]
+        self.assertEqual([row["line"] for row in value["matches"]], [4])
+        self.assertEqual([row["line"] for row in value["context"]], [3, 5])
+        self.assertNotIn("a.py:1:", page.model_text)
+        self.assertNotIn("a.py:2:", page.model_text)
+
 
 class BoundedScanBehaviorTests(unittest.TestCase):
     def test_excluded_dirs_skipped_and_sorted(self) -> None:

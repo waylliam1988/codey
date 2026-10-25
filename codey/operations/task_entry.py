@@ -166,9 +166,12 @@ def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | Non
             project_path = candidate.resolve()
     tool_fns = None
     if project_path is not None:
-        from codey.agents.tools import DEFAULT_TOOL_FNS
+        from codey.agents.tools import build_project_tool_fns
 
-        tool_fns = DEFAULT_TOOL_FNS
+        managed_outputs = getattr(deps, "managed_outputs", None)
+        tool_fns = build_project_tool_fns(
+            state_home=managed_outputs.root.parent if managed_outputs is not None else None,
+        )
     research_tools = None
     if any(policy.allows(grant) for grant in ("web.read", "knowledge.read", "knowledge.write", "knowledge.link")):
         from codey.operations.task_execution import build_research_tools

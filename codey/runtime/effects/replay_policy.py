@@ -17,7 +17,9 @@ from codey.toolchain.definition import (
 
 SAFE_RUNTIME_TOOL_NAMES = READ_ONLY_RUNTIME_TOOL_NAMES
 UNSAFE_RUNTIME_TOOL_NAMES = SUPPORTED_RUNTIME_TOOL_NAMES - SAFE_RUNTIME_TOOL_NAMES
-REPLAYABLE_SAFE_TOOL_NAMES = SAFE_RUNTIME_TOOL_NAMES
+# CodeMode is a resumable container. Its recovery still re-enters the kernel;
+# it is never passed to the information-tool dispatcher.
+REPLAYABLE_SAFE_TOOL_NAMES = SAFE_RUNTIME_TOOL_NAMES | {"codemode"}
 
 
 def is_replayable_safe_tool(tool_name: str) -> bool:

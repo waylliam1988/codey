@@ -30,8 +30,10 @@ def search_output_schema() -> dict[str, object]:
     """Canonical search pages, shared by declarations, receipts and CodeMode."""
     properties: dict[str, object] = {
         **{key: {"type": "string"} for key in ("query", "path", "include")},
+        "exclude": {"type": "array", "items": {"type": "string"}},
         **{key: {"type": "boolean"} for key in ("literal", "case_sensitive", "has_more", "scan_complete")},
         **{key: {"type": "integer", "minimum": 1} for key in ("offset", "limit")},
+        **{key: {"type": "integer", "minimum": 0} for key in ("before_context", "after_context")},
         "next_offset": {"type": "integer", "minimum": 0},
         "matches": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
@@ -39,6 +41,12 @@ def search_output_schema() -> dict[str, object]:
             "properties": {"path": {"type": "string"}, "text": {"type": "string"},
                            "line": {"type": "integer", "minimum": 1},
                            "column_byte": {"type": "integer", "minimum": 1}}}},
+        "context": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["path", "line", "text", "relation"],
+            "properties": {"path": {"type": "string"}, "text": {"type": "string"},
+                           "line": {"type": "integer", "minimum": 1},
+                           "relation": {"type": "string", "enum": ["before", "after", "between"]}}}},
         "coverage": {"type": "object", "additionalProperties": False,
                      "required": ["files_admitted", "bytes_admitted", "oversized", "unreadable", "budget_limited"],
                      "properties": {**{key: {"type": "integer", "minimum": 0}

@@ -38,7 +38,7 @@ _REPLAY_ARG_SPECS = {
         required=frozenset({"path", "symbol"}),
     ),
 }
-REPLAY_ARG_TOOL_NAMES = frozenset(_REPLAY_ARG_SPECS)
+REPLAY_ARG_TOOL_NAMES = frozenset(_REPLAY_ARG_SPECS) | {"codemode"}
 
 
 def _validate_replay_text_arg(value: object, key: str) -> str:
@@ -86,6 +86,15 @@ def validate_replay_args_shape(
         raise ValueError(f"tool is not replayable: {canonical_name}")
     if not isinstance(args, Mapping):
         raise ValueError("replay args must be a mapping")
+    if canonical_name == "codemode":
+        from codey.codemode.protocol import parse_codemode_args
+        from codey.toolchain.tool_spec import spec_for_tool
+
+        codemode_spec = spec_for_tool("codemode")
+        if codemode_spec is None or set(args) - {key for key, _schema in codemode_spec.parameters}:
+            raise ValueError("unsupported CodeMode replay arguments")
+        parse_codemode_args(args)
+        return dict(args)
 
     keys: set[str] = set()
     for key in args:

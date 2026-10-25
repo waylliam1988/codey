@@ -665,9 +665,9 @@ def _settle_at_boundary(
     turns_used: int,
     *,
     propagate: bool,
-    only_stop_reason: str = "",
+    only_stop_reasons: tuple[str, ...] = (),
 ) -> KernelResult:
-    if only_stop_reason and result.stop_reason != only_stop_reason:
+    if only_stop_reasons and result.stop_reason not in only_stop_reasons:
         return result
     settled = _call_boundary(on_boundary, 'approval' if boundary == 'approval' else 'settle', turns_used, propagate=propagate)
     return settled if isinstance(settled, KernelResult) else result
@@ -788,7 +788,7 @@ def run_task_kernel(
             # deferred provider effect must be settled before the verdict.
             return _settle_at_boundary(
                 received, "final", on_boundary, turns_used,
-                propagate=propagate_provider_failure, only_stop_reason="protocol",
+                propagate=propagate_provider_failure, only_stop_reasons=("protocol",),
             )
         if received is None:
             continue
@@ -892,7 +892,8 @@ def run_task_kernel(
                                     turns_used, stop_flag=stop_flag, propagate=propagate_provider_failure,
                                     declared_tools=native_tools)
         if stopped is not None:
-            return cast(KernelResult, stopped)
+            return _settle_at_boundary(stopped, "final", on_boundary, turns_used,
+                propagate=propagate_provider_failure, only_stop_reasons=("no_progress", "blocked"))
     finished = _finish_after_budget(
         session,
         provider,
@@ -902,7 +903,7 @@ def run_task_kernel(
         propagate_provider_failure=propagate_provider_failure,
         declared_tools=native_tools,
     )
-    if finished.stop_reason == "max_turns":
+    if finished.stop_reason in {"max_turns", "protocol"}:
         # The turn budget can stop after a completed provider generation whose
         # settlement was deferred (for example a rejected done without tools).
         # Settle it at the final boundary before the outer lifecycle records

@@ -50,7 +50,9 @@ def finalize_page(
 
 
 def next_call_hint(*, query: str, path: str, offset: int, limit: int,
-                   literal: bool = True, case_sensitive: bool = False, include: str = "") -> str:
+                   literal: bool = True, case_sensitive: bool = False, include: str = "",
+                   exclude: list[str] | tuple[str, ...] = (), before_context: int = 0,
+                   after_context: int = 0) -> str:
     args: dict[str, object] = {"query": query, "path": path, "offset": offset, "limit": limit}
     if not literal:
         args["literal"] = literal
@@ -58,6 +60,12 @@ def next_call_hint(*, query: str, path: str, offset: int, limit: int,
         args["case_sensitive"] = case_sensitive
     if include:
         args["include"] = include
+    if exclude:
+        args["exclude"] = list(exclude)
+    if before_context:
+        args["before_context"] = before_context
+    if after_context:
+        args["after_context"] = after_context
     payload = json.dumps(
         {"tool": "grep", "args": args},
         ensure_ascii=False,
@@ -75,6 +83,7 @@ def page_footer(
     shown: int,
     has_more: bool,
     literal: bool = True, case_sensitive: bool = False, include: str = "",
+    exclude: list[str] | tuple[str, ...] = (), before_context: int = 0, after_context: int = 0,
 ) -> str:
     try:
         start = max(1, coerce_int(offset or 1, default=1))
@@ -82,9 +91,14 @@ def page_footer(
         start = 1
     end = start + shown - 1 if shown else start - 1
     if has_more:
+        hint = next_call_hint(
+            query=query, path=path, offset=end + 1, limit=limit, literal=literal,
+            case_sensitive=case_sensitive, include=include, exclude=exclude,
+            before_context=before_context, after_context=after_context,
+        )
         return (
             f"[grep page: results {start}-{end}; next offset={end + 1}; "
-            f"{next_call_hint(query=query, path=path, offset=end + 1, limit=limit, literal=literal, case_sensitive=case_sensitive, include=include)}]"
+            f"{hint}]"
         )
     if shown:
         return f"[grep page: results {start}-{end}; end of matches]"

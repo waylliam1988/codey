@@ -172,8 +172,8 @@ def test_parent_commit_boundary_owns_completion_and_restart_never_reexecutes(run
         _execute(runtime, SCENARIOS[-1][1], True)
     assert not evaluate(runtime.state, "Completed").complete
     contents = (runtime.project / "created.txt").read_bytes()
-    fresh = _restart(runtime, expected_ok=when == "after_parent_commit")
-    assert evaluate(fresh, "Completed").complete is (when == "after_parent_commit")
+    fresh = _restart(runtime)
+    assert evaluate(fresh, "Completed").complete
     assert (runtime.project / "created.txt").read_bytes() == contents
     assert len(parent_settlements) == 1
 

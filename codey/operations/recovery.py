@@ -15,7 +15,7 @@ from codey.agents.tool_execution import (
     execute_information_tool_call,
     policy_denied,
 )
-from codey.agents.tools import DEFAULT_TOOL_FNS
+from codey.agents.tools import build_project_tool_fns
 from codey.durable import decide_recovery
 from codey.durable.model import ArtifactRecord, EffectRecord, thaw_json
 from codey.durable.session import DurableSession
@@ -215,7 +215,7 @@ def _recover_pending_effects(
     if durable_decision.action == "recover_tool_effects":
         return _recover_durable_tool_effects(
             durable, run_id=run_id, project=project,
-            task_kind=task_kind, deps=deps, mutations=mutations,
+            task_kind=task_kind, deps=deps, mutations=mutations, ignored_paths=ignored_paths,
         )
     if durable_decision.action in {"continue", "settle_provider_unknown", "settle_tool_unknown"}:
         recovered_batch_id = ""
@@ -249,6 +249,9 @@ def _reconcile_provider_generation(
     if mutations is None:
         raise RuntimeError("provider generation recovery requires runtime mutations")
     task, effects = durable.task_facts(task_id)
+    from codey.durable.effects import nested_effect_ids
+
+    nested = nested_effect_ids(effects)
     provider = next(
         effect for effect in effects
         if effect.category == "provider_send" and effect.settlement is None
@@ -263,6 +266,7 @@ def _reconcile_provider_generation(
             effect for effect in effects
             if effect.category == EFFECT_CATEGORY_TOOL_CALL
             and effect.settlement is not None
+            and effect.effect_id not in nested
         ),
         key=tool_order,
     )
@@ -359,11 +363,15 @@ def _recover_settled_delivery(
     if mutations is None:
         return ""
     try:
+        from codey.durable.effects import nested_effect_ids
+
+        nested = nested_effect_ids(durable.effects(run_id))
         records = durable.effects(run_id)
         settled = tuple(
             record for record in records
             if record.category == EFFECT_CATEGORY_TOOL_CALL
             and record.settlement is not None
+            and record.effect_id not in nested
         )
         by_batch: dict[str, list[EffectRecord]] = {}
         for record in settled:
@@ -397,6 +405,7 @@ def _recover_durable_tool_effects(
     task_kind: str,
     deps: Any,
     mutations: RuntimeMutationLine | None = None,
+    ignored_paths: tuple[str, ...] = (),
 ) -> ResumeRecoveryResult:
     """Recover safe information tools from canonical durable intents alone."""
     outcomes: list[RecoveredToolOutcome] = []
@@ -408,6 +417,17 @@ def _recover_durable_tool_effects(
         )
         if not pending_records:
             return ResumeRecoveryResult(ok=True)
+        from codey.durable.effects import nested_effect_ids
+
+        nested = nested_effect_ids(durable.effects(run_id))
+        if any(record.intent.get("tool_name") == "codemode" for record in pending_records):
+            from codey.operations.codemode_recovery import recover_containers
+
+            return recover_containers(durable, run_id=run_id, project=project, deps=deps,
+                                      mutations=mutations, pending=pending_records, task_kind=task_kind,
+                                      ignored_paths=ignored_paths)
+        if any(record.effect_id in nested for record in pending_records):
+            raise ValueError("nested CodeMode effect requires container recovery; refusing independent replay")
         # A safe effect is not independently replayable when it belonged to a
         # batch that also contained an unsafe/provider effect. The batch ID is
         # part of the durable intent, so this decision does not depend on the
@@ -437,6 +457,10 @@ def _recover_durable_tool_effects(
                 )
             return ResumeRecoveryResult(ok=False)
         profile_name = profile_for_task_kind(task_kind, phase="writer").name
+        managed_store = _managed_output_store(deps)
+        tool_fns = build_project_tool_fns(
+            state_home=managed_store.root.parent if managed_store is not None else None,
+        )
         intents: list[RuntimeEffectIntent] = []
         for record in pending_records:
             intents.append(RuntimeEffectIntent.from_payload(_intent_object(record)))
@@ -468,7 +492,7 @@ def _recover_durable_tool_effects(
                     reason="tool effect was not safe to replay",
                 )
                 return ResumeRecoveryResult(ok=False)
-            outcome = execute_information_tool_call(project_path, DEFAULT_TOOL_FNS, candidate.call)
+            outcome = execute_information_tool_call(project_path, tool_fns, candidate.call)
             _settle_durable_tool_observation(
                 durable, record, outcome, candidate.call,
                 managed_store=_managed_output_store(deps), mutations=mutations,

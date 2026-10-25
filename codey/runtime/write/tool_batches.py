@@ -55,7 +55,7 @@ def build_tool_batch_rows(
     session_id: str,
     run_id: str,
     intents: Iterable[RuntimeEffectIntent],
-    delivery_intent: DeliveryBatchIntent,
+    delivery_intent: DeliveryBatchIntent | None,
     driver: str = "",
 ) -> tuple[tuple[dict[str, object], ...], ToolBatchCommit]:
     state = require_open_view(projection, view)
@@ -66,6 +66,18 @@ def build_tool_batch_rows(
     )
     for intent in prepared_intents:
         require_new_effect_id(existing_effects, intent.effect_id)
+    if delivery_intent is None:
+        if not prepared_intents:
+            raise RuntimeOperationTransitionError("nested batch requires effect intents")
+        for intent in prepared_intents:
+            parent = find_effect(existing_effects, intent.parent_effect_id)
+            if (parent.settlement is not None or parent.intent.tool_name != "codemode"
+                    or parent.intent.turn != intent.turn):
+                raise RuntimeOperationTransitionError("nested effect requires its pending CodeMode parent")
+        rows = [effect_intent_entry(intent) for intent in prepared_intents]
+        rows.append(operation_state_entry(mark_tool_effect_pending(
+            state, driver=effect_driver, turn=prepared_intents[0].turn)))
+        return tuple(rows), ToolBatchCommit("", tuple(i.effect_id for i in prepared_intents), effect_driver)
     prepared_delivery = prepare_batch_intent(session_id, run_id, delivery_intent)
     batches = view.batches
     existing_batch = next(

@@ -250,6 +250,25 @@ def _bounded_positive_int(
     return parsed, coerced
 
 
+def _bounded_nonnegative_int(value: object, name: str, maximum: int | None = None) -> tuple[int, bool]:
+    """Parse non-negative integers, accepting numeric strings."""
+    if value is None or isinstance(value, bool):
+        raise ToolArgsRepairError(f"{name} must be a non-negative integer")
+    coerced = False
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str) and value.strip().isascii() and value.strip().isdigit():
+        parsed = int(value.strip())
+        coerced = True
+    else:
+        raise ToolArgsRepairError(f"{name} must be a non-negative integer")
+    if parsed < 0:
+        raise ToolArgsRepairError(f"{name} must be a non-negative integer")
+    if maximum is not None and parsed > maximum:
+        raise ToolArgsRepairError(f"{name} must be at most {maximum}")
+    return parsed, coerced
+
+
 def _normalize_edit(
     args: Mapping[str, Any],
     limits: ToolArgLimits,
@@ -338,7 +357,7 @@ def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
     # Mirrors codey.toolchain.constants.SEARCH_PAGE_MAX_RESULTS (100). The
     # constant lives in constants.py so runtime.py can share it, but this
     # module must stay import-free of sibling subpackages (purity boundary).
-    _reject_unknown_args(args, {*SEARCH_QUERY_KEYS, *PATH_ARG_KEYS, "offset", "limit", "literal", "case_sensitive", "include"}, context="grep")
+    _reject_unknown_args(args, {*SEARCH_QUERY_KEYS, *PATH_ARG_KEYS, "offset", "limit", "literal", "case_sensitive", "include", "exclude", "before_context", "after_context"}, context="grep")
     query_val, query_alias = _require_text_arg(
         args,
         SEARCH_QUERY_KEYS,
@@ -367,6 +386,18 @@ def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
         if not isinstance(args["include"], str) or args["include"].startswith("!") or "\x00" in args["include"]:
             raise ToolArgsRepairError("include must be one positive glob string")
         call_args["include"] = args["include"]
+    if "exclude" in args:
+        exclude = args["exclude"]
+        if not isinstance(exclude, list) or any(not isinstance(item, str) or not item or item.startswith("!") or "\x00" in item for item in exclude):
+            raise ToolArgsRepairError("exclude must be a list of positive glob strings")
+        call_args["exclude"] = list(exclude)
+    for key in ("before_context", "after_context"):
+        if key in args:
+            value, coerced = _bounded_nonnegative_int(args[key], key)
+            if coerced:
+                _record_repair(counts, "numeric_coerced")
+                rewrites += 1
+            call_args[key] = value
     if "offset" in args:
         offset, coerced = _bounded_positive_int(args.get("offset"), "offset")
         if coerced:

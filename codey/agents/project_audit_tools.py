@@ -305,7 +305,8 @@ def _audit_search_resolve_start(
 def _audit_search_files(
     root: Path, rel: str, query: str, *, max_results: int | None = None,
     offset: int = 1, limit: int = SEARCH_MAX_RESULTS, literal: bool = True,
-    case_sensitive: bool = False, include: str = "",
+    case_sensitive: bool = False, include: str = "", exclude: tuple[str, ...] | list[str] = (),
+    before_context: int = 0, after_context: int = 0,
 ) -> ToolOutcome:
     from codey.toolchain.rg_search import search
     from codey.toolchain.search_page import normalize_page_args
@@ -321,8 +322,9 @@ def _audit_search_files(
     budget = _audit_scan_budget()
     page_offset, page_limit = normalize_page_args(offset, limit, max_results, SEARCH_MAX_RESULTS)
     return search(root, _audit_searchable_files(root, start, budget), budget,
-        query=query.strip(), path=rel or ".", offset=page_offset, limit=page_limit,
-        literal=literal, case_sensitive=case_sensitive, include=include,
+        query=query, path=rel or ".", offset=page_offset, limit=page_limit,
+        literal=literal, case_sensitive=case_sensitive, include=include, exclude=exclude,
+        before_context=before_context, after_context=after_context,
         max_file_bytes=SEARCH_MAX_FILE_BYTES, max_scan_bytes=SEARCH_MAX_SCAN_BYTES)
 
 
@@ -368,7 +370,7 @@ def _execute_read_only_call(project: Path, call: ToolCall) -> ToolOutcome:
         return _audit_read_file(project, path, **read_options)
     if call.name == "search":
         return _audit_search_files(project, path, str(call.args.get("query") or ""),
-            **{name: call.args[name] for name in ("offset", "limit", "literal", "case_sensitive", "include")
+            **{name: call.args[name] for name in ("offset", "limit", "literal", "case_sensitive", "include", "exclude", "before_context", "after_context")
                if name in call.args})
     if call.name == "references":
         return _audit_find_references(project, path, str(call.args.get("symbol") or ""))

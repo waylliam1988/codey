@@ -102,11 +102,16 @@ TOOL_DEFINITIONS = (
         permission="project_read",
         examples=(
             '{"tool":"grep","args":{"query":"login handler","path":"."}}',
+            '{"tool":"grep","args":{"query":"TODO","path":"src","include":"*.{py,ts}","exclude":["src/vendor/**"]}}',
         ),
         description=(
             "Search file contents for literal text before reading when the location "
             "is unknown. Uses packaged ripgrep. Defaults to literal, case-insensitive matching; "
-            "set literal=false for regex, case_sensitive=true for exact case, include for one positive glob. "
+            "set literal=false for regex, case_sensitive=true for exact case, include for one positive glob, "
+            "exclude for positive globs to omit, and before_context/after_context for surrounding lines. "
+            "Use rg braces for alternatives, e.g. include='*.{py,ts}'; comma-separated globs are not alternatives. "
+            "Globs are relative to the workspace root even when path narrows the search. "
+            "Exclude directories with an array such as exclude=['src/vendor/**']. "
             "Searches hidden and ignored files within the admitted workspace scope, excluding build/VCS directories "
             "and symlinks. CodeMode value is a page object with matches and explicit coverage; "
             "column_byte is one-based UTF-8 bytes. Read matched files for context."
@@ -122,6 +127,9 @@ TOOL_DEFINITIONS = (
             ("literal", {"type": "boolean"}),
             ("case_sensitive", {"type": "boolean"}),
             ("include", {"type": "string"}),
+            ("exclude", {"type": "array", "items": {"type": "string"}}),
+            ("before_context", {"type": "integer", "minimum": 0}),
+            ("after_context", {"type": "integer", "minimum": 0}),
         ),
         required=("query",),
         category="coding",

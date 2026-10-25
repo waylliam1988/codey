@@ -90,7 +90,30 @@ async function execute(request) {
     store: (key, value) => stateCall("store", String(key), value),
     load: (key) => stateCall("load", String(key)),
     console: Object.freeze({ log() {}, error() {} }),
-  });
+  }, { codeGeneration: { strings: false, wasm: false } });
+  // Fix the ambient clock and PRNG for one durable execution. Reconstructing
+  // the same program consumes exactly the same sequence after a restart.
+  const epoch = Number(request.determinism?.epochMs);
+  const seed = Number(request.determinism?.seed) >>> 0;
+  new vm.Script(`{
+    const OriginalDate = Date;
+    const epoch = ${JSON.stringify(epoch)};
+    OriginalDate.now = () => epoch;
+    Date = new Proxy(OriginalDate, {
+      apply() { return new OriginalDate(epoch).toString(); },
+      construct(target, args, newTarget) {
+        return Reflect.construct(target, args.length ? args : [epoch], newTarget);
+      },
+    });
+    let state = ${JSON.stringify(seed)};
+    Math.random = () => { state = (Math.imul(1664525, state) + 1013904223) >>> 0; return state / 4294967296; };
+    Object.freeze(Math);
+    Object.freeze(Date);
+    WeakRef = undefined;
+    FinalizationRegistry = undefined;
+    SharedArrayBuffer = undefined;
+    Atomics = undefined;
+  }`).runInContext(context);
   try {
     const script = new vm.Script(`(async () => {\n${code}\n})()`, { filename: "codemode-program.js" });
     const value = await script.runInContext(context, { timeout: 1_000 });

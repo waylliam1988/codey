@@ -476,7 +476,12 @@ def _execute_slots(
                 # Existing receipts need neither admission nor a new verdict,
                 # including when cancellation arrives before their delivery.
                 if name != "codemode" and identity not in session.executed and identity not in delivered_map:
-                    spec = frozen_specs.get(name) if frozen_specs is not None else None
+                    if frozen_specs is None:
+                        from codey.toolchain.tool_spec import spec_for_tool
+
+                        spec = spec_for_tool(name)
+                    else:
+                        spec = frozen_specs.get(name)
                     parallel = spec is not None and spec.parallel_safe and spec.replay_class == "safe"
                     admission.enter_context(session.tool_dispatch.admit(parallel=parallel))
             except (cancellation.TaskCancelled, cancellation.DeadlineExceeded) as exc:

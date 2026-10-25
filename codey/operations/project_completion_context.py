@@ -14,7 +14,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
 
-from codey.agents.tools import AgentToolFns
+from codey.agents.tools import AgentToolFns, build_project_tool_fns
 from codey.agents.writer_failover import WriterFailoverRunner
 from codey.completion.contract import completion_proof_trace_payload
 from codey.completion.edit_integrity import EditIntegrityObservation
@@ -273,7 +273,10 @@ def managed_tool_fns(
             return raw
         return project_run_command_result(root, raw)
 
-    return AgentToolFns(run_command_with_context=run_command)
+    return build_project_tool_fns(
+        state_home=managed_outputs.root.parent if managed_outputs is not None else None,
+        run_command_with_context=run_command,
+    )
 
 
 def project_has_user_files(project: str | Path) -> bool:

@@ -45,7 +45,6 @@ from codey.workspace.bounded_scan import (
     DEFAULT_MAX_SCAN_DIRS,
     DEFAULT_MAX_SCAN_FILES,
     BoundedScanBudget,
-    iter_bounded_files,
 )
 from codey.workspace.paths import bounded_directory_entries as _bounded_directory_entries
 from codey.workspace.paths import safe_join
@@ -973,13 +972,14 @@ def list_directory(root: Path, rel: str) -> ToolOutcome:
 def search_files(
     root: Path, rel: str, query: str, *, offset: int = 1, limit: int = SEARCH_MAX_RESULTS,
     max_results: int | None = None, literal: bool = True, case_sensitive: bool = False, include: str = "",
+    exclude: tuple[str, ...] | list[str] = (), before_context: int = 0, after_context: int = 0,
+    file_index: Any = None,
 ) -> ToolOutcome:
     from codey.toolchain.rg_search import search
     from codey.toolchain.search_page import normalize_page_args
 
     cancellation.check()
-    query = query.strip()
-    if not query:
+    if not query.strip():
         return ToolOutcome.error("search query required")
     page_offset, page_limit = normalize_page_args(offset, limit, max_results, SEARCH_MAX_RESULTS)
     start, error = _checked_tool_path(root, rel or ".", tool="grep")
@@ -991,10 +991,18 @@ def search_files(
     root = root.resolve()
     budget = BoundedScanBudget(max_files=SEARCH_MAX_SCAN_FILES, max_dirs=SEARCH_MAX_SCAN_DIRS,
                                max_dir_entries=SEARCH_MAX_DIR_ENTRIES)
-    files = iter_bounded_files(start, excluded_dirs=SEARCH_EXCLUDED_DIRS, budget=budget,
-                               skip_start_if_excluded=start.resolve() != root)
+    from codey.workspace.file_index import IncrementalFileIndex
+    index = file_index if file_index is not None else IncrementalFileIndex()
+    try:
+        snapshot = index.discover(root, start, excluded_dirs=SEARCH_EXCLUDED_DIRS, budget=budget,
+                                  skip_start_if_excluded=start != root)
+    except (OSError, ValueError) as exc:
+        return ToolOutcome.error(f"search index failed: {exc}", error_code="search_index_failed")
+    files = [entry.path for entry in snapshot.entries]
+    budget = snapshot.coverage.budget()
     return search(root, files, budget, query=query, path=rel or ".", offset=page_offset, limit=page_limit,
-                  literal=literal, case_sensitive=case_sensitive, include=include,
+                  literal=literal, case_sensitive=case_sensitive, include=include, exclude=exclude,
+                  before_context=before_context, after_context=after_context,
                   max_file_bytes=SEARCH_MAX_FILE_BYTES, max_scan_bytes=SEARCH_MAX_SCAN_BYTES)
 
 

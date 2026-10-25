@@ -158,7 +158,8 @@ def build_recovered_result(spec: RecoveredResultSpec) -> ToolResult:
 def build_recovery_error_result(call: ToolCall, message: str) -> ToolResult:
     """Single constructor for recovery-failure errors (never success-like)."""
     try:
-        return ToolResult(ok=False, call=call, model_text=f"ERROR: recovery failed: {message}")
+        return ToolResult(ok=False, call=call, model_text=f"ERROR: recovery failed: {message}",
+                          audit={"recovery_disposition": "failed"})
     except Exception as exc:
         raise RecoveryFailed(f"recovery error rebuild failed: {exc}") from exc
 
@@ -167,7 +168,7 @@ def build_recovery_mismatch_result(call: ToolCall, expected: str, actual: str) -
     """Single constructor for recovery-mismatch errors (never success-like)."""
     try:
         return ToolResult(
-            ok=False, call=call,
+            ok=False, call=call, audit={"recovery_disposition": "mismatch"},
             model_text=(
                 "ERROR: recovery mismatch for this turn slot: "
                 f"expected {expected or '?'} with args {actual or '?'}; "

@@ -129,11 +129,11 @@ class ExecutionDelegate:
         self._frozen_specs = frozen_specs
         self._custom_executors = custom_executors
         if self.tool_fns is None and self.project_path is not None:
-            try:
-                from codey.agents.tools import DEFAULT_TOOL_FNS
-                self.tool_fns = DEFAULT_TOOL_FNS
-            except Exception:
-                pass
+            from codey.agents.tools import build_project_tool_fns
+
+            self.tool_fns = build_project_tool_fns(
+                state_home=managed_outputs.root.parent if managed_outputs is not None else None,
+            )
 
     def _resolve_spec(self, name: str) -> Any:
         lowered = (name or "").strip().lower()

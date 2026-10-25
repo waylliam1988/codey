@@ -114,3 +114,17 @@ def test_node_runtime_serializes_nested_frozen_catalog_schemas() -> None:
         limits=CodeModeLimits(timeout_ms=1_000),
     )
     assert result.ok is True
+
+
+def test_worker_replay_clock_preserves_date_call_and_constructor_semantics():
+    from codey.codemode.runtime import NodeWorkerRuntime
+    runtime = NodeWorkerRuntime()
+    code = "return {now:Date.now(), time:new Date().getTime(), called:Date(), explicit:new Date(123).getTime(), random:[Math.random(),Math.random()]};"
+    kwargs = dict(catalog=(),invoke=lambda _name,_args: None,replay_context={'epochMs':1000,'seed':42})
+    first = runtime.execute(code,**kwargs)
+    second = runtime.execute(code,**kwargs)
+    assert first.ok and second.ok
+    assert first.value == second.value
+    assert first.value['now'] == first.value['time'] == 1000
+    assert first.value['explicit'] == 123
+    assert isinstance(first.value['called'],str)

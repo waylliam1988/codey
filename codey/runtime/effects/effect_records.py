@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -90,6 +90,7 @@ _INTENT_PAYLOAD_KEYS = frozenset({
     "args_digest",
     "display_ref",
     "delivery_batch_id",
+    "parent_effect_id",
     "replay_class",
     "replay_args",
     "created_at",
@@ -239,6 +240,7 @@ class RuntimeEffectIntent:
     # Durable recovery uses the batch identity to avoid replaying one safe
     # effect from a mixed batch that also contains an unsafe effect.
     delivery_batch_id: str = ""
+    parent_effect_id: str = ""
     replay_class: str = ReplayClass.UNSAFE
     replay_args: dict[str, object] | None = None
     created_at: str = ""
@@ -261,6 +263,9 @@ class RuntimeEffectIntent:
         _require_bounded_str(self.args_digest, "args_digest", MAX_ARGS_DIGEST_CHARS, allow_empty=True)
         _require_bounded_str(self.display_ref, "display_ref", MAX_TEXT_CHARS, allow_empty=True)
         _require_bounded_str(self.delivery_batch_id, "delivery_batch_id", MAX_REF_CHARS, allow_empty=True)
+        _require_bounded_str(self.parent_effect_id, "parent_effect_id", MAX_EFFECT_ID_CHARS, allow_empty=True)
+        if self.parent_effect_id and self.delivery_batch_id:
+            raise RuntimeEffectError("nested effects cannot own provider delivery batches")
         _require_bounded_str(self.created_at, "created_at", MAX_TEXT_CHARS, allow_empty=True)
         _require_nonnegative_int(self.turn, "turn")
         _require_nonnegative_int(self.tool_index, "tool_index")
@@ -309,6 +314,8 @@ class RuntimeEffectIntent:
             payload["call_id"] = self.call_id
         if self.delivery_batch_id:
             payload["delivery_batch_id"] = self.delivery_batch_id
+        if self.parent_effect_id:
+            payload["parent_effect_id"] = self.parent_effect_id
         if self.replay_args is not None:
             payload["replay_args"] = dict(self.replay_args)
         return payload
@@ -352,6 +359,7 @@ class RuntimeEffectIntent:
             args_digest=_require_bounded_str(payload.get("args_digest") or "", "args_digest", MAX_ARGS_DIGEST_CHARS, allow_empty=True),
             display_ref=_require_bounded_str(payload.get("display_ref") or "", "display_ref", MAX_TEXT_CHARS, allow_empty=True),
             delivery_batch_id=_require_bounded_str(payload.get("delivery_batch_id") or "", "delivery_batch_id", MAX_REF_CHARS, allow_empty=True),
+            parent_effect_id=_require_bounded_str(payload.get("parent_effect_id") or "", "parent_effect_id", MAX_EFFECT_ID_CHARS, allow_empty=True),
             replay_class=replay_class,
             replay_args=replay_args,
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
@@ -593,27 +601,9 @@ def prepare_intent(
         raise RuntimeEffectError(
             f"intent operation_id '{intent.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
         )
-    return RuntimeEffectIntent(
-        effect_id=intent.effect_id,
-        effect_category=intent.effect_category,
-        session_id=session_id,
-        run_id=run_id,
-        lane=expected_lane,
-        operation_id=expected_op,
-        phase=intent.phase,
-        provider_id=intent.provider_id,
-        turn=intent.turn,
-        tool_index=intent.tool_index,
-        tool_name=intent.tool_name,
-        tool_id=intent.tool_id,
-        call_id=intent.call_id,
-        args_digest=intent.args_digest,
-        display_ref=intent.display_ref,
-        delivery_batch_id=intent.delivery_batch_id,
-        replay_class=intent.replay_class,
-        replay_args=intent.replay_args,
-        created_at=intent.created_at or _now(),
-    )
+    return replace(intent, session_id=session_id, run_id=run_id,
+                   lane=expected_lane, operation_id=expected_op,
+                   created_at=intent.created_at or _now())
 
 
 def effect_intent_entry(intent: RuntimeEffectIntent) -> dict[str, object]:

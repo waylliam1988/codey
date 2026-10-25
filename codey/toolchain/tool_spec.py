@@ -158,6 +158,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             description=contract.description,
             executor="source" if grant == "web.read" else "knowledge",
             replay_class="safe" if grant in {"web.read", "knowledge.read"} else "unsafe",
+            parallel_safe=contract.parallel_safe,
         )
     for alias, (canonical, id_arg) in _CONTROLLER_ALIAS_ID_ARG.items():
         specs[alias] = ToolSpec(
@@ -736,7 +737,8 @@ def _builtin_alias_allowed_keys(tool: str) -> set[str] | None:
     if name in {"read_file", "read"}:
         return {"path", "cwd", "offset", "limit"}
     if name in {"grep", "search"}:
-        return {"query", "pattern", "path", "cwd", "offset", "limit", "literal", "case_sensitive", "include"}
+        return {"query", "pattern", "path", "cwd", "offset", "limit", "literal", "case_sensitive",
+                "include", "exclude", "before_context", "after_context"}
     if name in {"find_references", "references"}:
         return {"symbol", "name", "path", "cwd"}
     if name in {"edit"}:

@@ -2,6 +2,67 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Search, persistent discovery and CodeMode recovery convergence (2026-10-25)
+
+Kept context/glob search, persistent metadata discovery and CodeMode recovery.
+Search has one production orchestration; glob filtering precedes content admission
+and revisits only admitted files' immediate parents. Cold/warm/reopened snapshots
+project the same incomplete coverage. Index corruption and IO failures fail explicitly.
+One tool-set factory wires the index into managed project execution, default delegates,
+task entry and safe information-tool recovery; there is no global index or alternate store.
+
+Original effect intents own nested call identities and parent links; original complete
+receipts own results. Recovery reconstructs control flow through execute_turn and the
+same Node worker, with deterministic clock/random/result-delivery ordering. Checkpoints
+retain state once; state-operation recovery references original revisions. Missing or
+uncertain receipts and changed histories block, including when JavaScript catches the
+error. No shadow result cache or second child request journal remains. Local tool-frame
+decoding uses a deterministic grammar and never rewrites quoted contents.
+
+Live comparison exposed a native no-progress acknowledgement left pending before writer
+settlement. Both no-progress and budget closing now use the original generation boundary;
+real durable regressions verify legal settlement, without relaxing state transitions.
+
+Verification: **420 focused tests and 484 subtests passed** in 113.65s. After final entry
+wiring, **142 tests and 420 subtests passed**; replay/protocol type-only changes also passed
+**77 tests and 79 subtests**. These overlapping selections are not summed. Ruff passed;
+full production mypy passed for **526 source files**; git diff --check passed. Architecture
+ceilings were not raised by this implementation. Full pytest was not run, as requested.
+
+The delivered-source local native/text matrix passed **18/18**: read, write, Stop,
+literal search, quoted search, regex, empty results, asymmetric context and search Stop.
+It checks original receipts, recovered completion, idempotent fact restoration, frozen
+tool contracts and absence of another generation after Stop. All **528 Python/MJS**
+source hashes match the retained archive and delivered source. The text quoted case
+needed three generations; rejection/reissue uses the original loop, not parameter repair.
+Artifacts: `live-delivered/`, `live-delivered.log`, `verification-delivered.log`,
+`final-entry-checks.log`, `mypy-delivered-complete.log`.
+The final headless glob recheck returned correct content in four requests and created
+the real `state/search_index/*.json`; its Markdown fence remains a format failure.
+
+The four original CLIs ran the same four tasks on local Gemma4-12B in independent, clean,
+committed fixture repositories. Content/scope/completion outcomes were Codey 4/4, Pi 3/4,
+OpenCode 0/4, DSH 3/4. Bare JSON adherence for the three read-only tasks was respectively
+1/3, 0/3, 0/3, 0/3; semantic scores do not mean full format compliance. DSH edited the
+multi-file fixture correctly but did not complete in-agent verification. OpenCode had a
+successful multi-file diagnostic sample in a preceding cohort; all failures are retained.
+An additional original-CLI DSH diagnostic reproduced actual pwsh/Python cwd as the
+PowerShell installation directory despite the session workspace metadata, explaining
+why fixture tests were not discovered. This is a Windows execution boundary, not evidence
+that the model could not edit the code; the underlying reference code was not changed.
+Pi was faster on simple reading and this multi-file sample. DSH sampling controls differ;
+these are small boundary experiments, not a general ranking or an rg speed benchmark.
+
+A separate original boundary remains: an uncommitted fixture repository with pre-existing
+untracked files can make Codey's outer completion treat those files as this task's edits
+and incorrectly require verification after a read. It is reproduced and documented, not
+silently excluded from the record or fixed by a second completion gate.
+
+Implementation ownership, measured results, limitations and raw-artifact locations:
+[Chinese report](docs/convergence_12b_comparison.zh-CN.md). Artifacts are under ignored
+`.e2e-artifacts/convergence-20261025/`; user baseline, failed cohorts, HTTP journals,
+original CLI events, source manifests/archives and independent oracle results are kept.
+
 ## CodeMode values, answer repair and nested JSON boundaries (2026-10-25)
 
 The preceding rg implementation was committed as `7f31d11d`. The changes below

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
+from codey.codemode.identity import rpc_child_index
 from codey.codemode.types import ToolCatalogEntry
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.result_schema import validate_output
@@ -44,8 +45,11 @@ class CodeModeHost:
             raise ValueError(f"tool is not in the frozen catalog: {tool_name}")
         if not isinstance(args, dict):
             raise ValueError("tool args must be an object")
-        call = ToolCall(tool_name, dict(args), call_id=f"{self.execution_id}:child:{self._next_child}")
-        self._next_child += 1
+        index = rpc_child_index.get()
+        if index is None:
+            index = self._next_child
+            self._next_child += 1
+        call = ToolCall(tool_name, dict(args), call_id=f"{self.execution_id}:child:{index}")
         raw = self._execute(call)
         if not isinstance(raw, ToolResult):
             raise TypeError("host executor must return a ToolResult")

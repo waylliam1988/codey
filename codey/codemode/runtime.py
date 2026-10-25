@@ -11,6 +11,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Protocol
 
+from codey.codemode.identity import rpc_child_index
 from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry
 from codey.runtime.core import cancellation
 
@@ -25,6 +26,7 @@ class CodeModeRuntime(Protocol):
         catalog: Sequence[ToolCatalogEntry],
         invoke: ToolInvoker,
         state_store: Any = None,
+        replay_context: Mapping[str, object] | None = None,
         limits: CodeModeLimits | None = None,
     ) -> CodeModeResult:
         """Run one program and mediate all host calls through ``invoke``."""
@@ -44,6 +46,7 @@ class NodeWorkerRuntime:
         catalog: Sequence[ToolCatalogEntry],
         invoke: ToolInvoker,
         state_store: Any = None,
+        replay_context: Mapping[str, object] | None = None,
         limits: CodeModeLimits | None = None,
     ) -> CodeModeResult:
         cancellation.check()
@@ -59,13 +62,14 @@ class NodeWorkerRuntime:
             return CodeModeResult(False, error_code="sandbox_denied", error="direct host access is denied")
         with cancellation.linked_scope(deadline=time.monotonic() + active_limits.timeout_ms / 1000) as stop:
             try:
-                return self._run_worker(code, catalog, invoke, state_store, active_limits, stop)
+                return self._run_worker(code, catalog, invoke, state_store, active_limits, stop, replay_context)
             except cancellation.DeadlineExceeded:
                 return CodeModeResult(False, error_code="timeout", error="codemode execution timed out")
 
     def _run_worker(
         self, code: str, catalog: Sequence[ToolCatalogEntry], invoke: ToolInvoker,
         state_store: Any, limits: CodeModeLimits, stop: threading.Event,
+        replay_context: Mapping[str, object] | None,
     ) -> CodeModeResult:
         try:
             process = subprocess.Popen(
@@ -111,6 +115,7 @@ class NodeWorkerRuntime:
                 "maxOutputBytes": limits.max_output_bytes,
             },
             "stateEnabled": state_store is not None,
+            "determinism": dict(replay_context) if replay_context is not None else {"epochMs": int(time.time() * 1000), "seed": 1},
         }
         try:
             reader.start()
@@ -118,7 +123,8 @@ class NodeWorkerRuntime:
             with ThreadPoolExecutor(max_workers=limits.max_concurrent_calls) as executor:
                 try:
                     self._write_line(stdin, request)
-                    return self._drive(stdin, messages, invoke, state_store, limits, executor, stop)
+                    return self._drive(stdin, messages, invoke, state_store, limits, executor, stop,
+                                       {entry.name for entry in catalog if not entry.read_only})
                 finally:
                     # Join running callbacks and reject queued work through the
                     # same cancellation context, before releasing the parent.
@@ -146,8 +152,10 @@ class NodeWorkerRuntime:
         limits: CodeModeLimits,
         executor: ThreadPoolExecutor,
         stop: threading.Event,
+        write_tools: set[str],
     ) -> CodeModeResult:
         pending: dict[str, Future[dict[str, Any]]] = {}
+        child_index = 0
         while True:
             cancellation.check()
             self._flush_completed(pending, stdin)
@@ -164,12 +172,21 @@ class NodeWorkerRuntime:
                         "errorCode": "pending_limit", "error": "codemode pending promise limit exceeded",
                     })
                 else:
+                    writing = message.get("name") in write_tools
+                    if writing:
+                        self._wait_callbacks(pending)
                     pending[call_id] = executor.submit(
-                        self._handle_call, message, invoke, stop, cancellation.current_deadline(),
+                        self._handle_call, message, invoke, stop, cancellation.current_deadline(), child_index,
                     )
+                    if writing:
+                        self._wait_callbacks(pending)
+                child_index += 1
                 continue
             if kind == "state":
-                self._handle_state(message, stdin, state_store)
+                response = self._handle_state(message, state_store)
+                ready: Future[dict[str, Any]] = Future()
+                ready.set_result(response)
+                pending[str(message["callId"])] = ready
                 continue
             if kind == "done":
                 if message["ok"] is True and message["unawaitedCalls"]:
@@ -191,19 +208,24 @@ class NodeWorkerRuntime:
                 return CodeModeResult(False, error_code="worker_exit", error="codemode worker exited without a result")
 
     @staticmethod
+    def _wait_callbacks(pending: dict[str, Future[dict[str, Any]]]) -> None:
+        from concurrent.futures import wait
+
+        unfinished = set(pending.values())
+        while unfinished:
+            cancellation.check()
+            _, unfinished = wait(unfinished, timeout=0.05)
+
+    @staticmethod
     def _handle_state(
-        message: dict[str, Any], stdin: Any, state_store: Any,
-    ) -> None:
+        message: dict[str, Any], state_store: Any,
+    ) -> dict[str, Any]:
         call_id = str(message.get("callId", ""))
         key = str(message.get("key", ""))
         operation = str(message.get("op", ""))
         if state_store is None:
-            NodeWorkerRuntime._write_line(
-                stdin,
-                {"type": "stateResult", "callId": call_id, "ok": False,
-                 "errorCode": "state_unavailable", "error": "codemode state is unavailable"},
-            )
-            return
+            return {"type": "stateResult", "callId": call_id, "ok": False,
+                    "errorCode": "state_unavailable", "error": "codemode state is unavailable"}
         try:
             if operation == "store":
                 value = message.get("value")
@@ -220,7 +242,7 @@ class NodeWorkerRuntime:
         except Exception as exc:
             response = {"type": "stateResult", "callId": call_id, "ok": False,
                         "errorCode": "state_error", "error": str(exc)[:400]}
-        NodeWorkerRuntime._write_line(stdin, response, call_id=call_id)
+        return response
 
     @staticmethod
     def _plain_json(value: object) -> object:
@@ -234,7 +256,7 @@ class NodeWorkerRuntime:
     def _flush_completed(pending: dict[str, Future[dict[str, Any]]], stdin: Any) -> None:
         for call_id, future in tuple(pending.items()):
             if not future.done():
-                continue
+                break
             pending.pop(call_id, None)
             try:
                 response = future.result()
@@ -263,6 +285,7 @@ class NodeWorkerRuntime:
     @staticmethod
     def _handle_call(
         message: dict[str, Any], invoke: ToolInvoker, stop: threading.Event, deadline: float | None,
+        child_index: int,
     ) -> dict[str, Any]:
         call_id = str(message.get("callId", ""))
         name = str(message.get("name", ""))
@@ -272,7 +295,11 @@ class NodeWorkerRuntime:
         try:
             with cancellation.scope(stop), cancellation.deadline_scope(deadline):
                 cancellation.check()
-                value = invoke(name, dict(args))
+                token = rpc_child_index.set(child_index)
+                try:
+                    value = invoke(name, dict(args))
+                finally:
+                    rpc_child_index.reset(token)
             return {"type": "result", "callId": call_id, "ok": True, "value": value}
         except Exception as exc:
             return {"type": "result", "callId": call_id, "ok": False, "error": str(exc)[:400]}

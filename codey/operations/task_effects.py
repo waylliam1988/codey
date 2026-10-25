@@ -75,6 +75,7 @@ class KernelEffectSink:
                  recovered_batch_id: str = "",
                  managed_outputs: Any = None,
                  durable: Any = None,
+                 parent_effect_id: str = "",
                  defer_generation_settlement: bool = False) -> None:
         self.mutations = mutations
         self.session_id = session_id
@@ -85,12 +86,27 @@ class KernelEffectSink:
         self.send_index = 0
         self.managed_outputs = managed_outputs
         self.durable = durable
+        self.parent_effect_id = parent_effect_id
         self.defer_generation_settlement = defer_generation_settlement
         self._pending_provider_settlement: tuple[RuntimeEffectSettlement, tuple[tuple[str, dict[str, object]], ...]] | None = None
         store = RuntimeEffectStore(durable=durable)
         previous = store.load_effects(session_id, run_id)
         self._replay_classes = {row.intent.effect_id: row.intent.replay_class for row in previous}
         self._old_pending = {row.intent.effect_id for row in previous if row.is_pending}
+
+    def for_child(self, call: ToolCall, *, turn: int) -> KernelEffectSink:
+        """Bind nested effects to the existing parent; only it owns delivery."""
+        matches = [effect for effect in self.durable.effects(self.run_id)
+                   if effect.category == EFFECT_CATEGORY_TOOL_CALL
+                   and effect.intent.get("tool_name") == "codemode"
+                   and effect.intent.get("call_id", "") == call.call_id
+                   and effect.intent.get("turn") == turn
+                   and effect.args_digest == compute_args_digest(call.args)]
+        if len(matches) != 1:
+            raise ValueError("CodeMode requires one original parent effect")
+        return KernelEffectSink(self.mutations, session_id=self.session_id, run_id=self.run_id,
+            provider_id=self.provider_id, phase=self.phase, managed_outputs=self.managed_outputs,
+            durable=self.durable, parent_effect_id=matches[0].effect_id)
 
     def begin_turn(
         self,
@@ -120,7 +136,8 @@ class KernelEffectSink:
                 tool_name=name, tool_id=f"{turn}:{index}",
                 call_id=str(getattr(call, "call_id", "") or ""),
                 args_digest=compute_args_digest(call.args), replay_class=replay_class,
-                delivery_batch_id=batch_id,
+                delivery_batch_id="" if self.parent_effect_id else batch_id,
+                parent_effect_id=self.parent_effect_id,
                 replay_args=replay_args,
             ))
             batch_items.append(DeliveryBatchItem(
@@ -132,13 +149,14 @@ class KernelEffectSink:
         batch_tuple = tuple(batch_items)
         self.mutations.begin_tool_batch(
             self.session_id, self.run_id, intents=tuple(intents),
-            delivery_intent=DeliveryBatchIntent(
+            delivery_intent=None if self.parent_effect_id else DeliveryBatchIntent(
                 batch_id=batch_id, session_id=self.session_id, run_id=self.run_id,
                 turn=turn, items=batch_tuple,
                 batch_digest=compute_batch_digest(batch_tuple),
             ),
         )
-        self.delivery_batch_id = batch_id
+        if not self.parent_effect_id:
+            self.delivery_batch_id = batch_id
 
     def has_unsettled(self, identity: str) -> bool:
         return identity in self._old_pending
@@ -194,7 +212,7 @@ class KernelEffectSink:
         self.mutations.settle_tool_effect(
             self.session_id, self.run_id,
             settlement,
-            messages=tool_history_messages(settlement) if self.durable is not None else (),
+            messages=tool_history_messages(settlement) if self.durable is not None and not self.parent_effect_id else (),
             artifacts=artifacts,
         )
 

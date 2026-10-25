@@ -150,7 +150,7 @@ def execute_information_tool_call(
     if call.name == "search":
         search_options = {
             name: call.args[name]
-            for name in ("offset", "limit", "literal", "case_sensitive", "include")
+            for name in ("offset", "limit", "literal", "case_sensitive", "include", "exclude", "before_context", "after_context")
             if name in call.args
         }
         return cast(ToolOutcome, tool_fns.search_files(

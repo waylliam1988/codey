@@ -122,9 +122,16 @@ def apply_recovery_first(
 
 def _same_effect_call(stored_name: str, stored_digest: str, call: ToolCall) -> bool:
     from codey.operations.kernel_result import _call_args_digest
+    from codey.toolchain.definition import RUNTIME_TOOL_DEFINITION_BY_NAME, TOOL_DEFINITION_BY_NAME
+
+    def identity(name: str) -> str:
+        # Public schema names and internal dispatch names are two namespaces
+        # of the same definition. Compare their owner, never arbitrary aliases.
+        definition = TOOL_DEFINITION_BY_NAME.get(name) or RUNTIME_TOOL_DEFINITION_BY_NAME.get(name)
+        return definition.name if definition is not None else name
 
     name = str(getattr(call, "name", "") or "").strip().lower()
-    if (stored_name or "").strip().lower() != name:
+    if identity((stored_name or "").strip().lower()) != identity(name):
         return False
     if not stored_digest:
         # Legacy records without a digest cannot prove sameness; treat as
@@ -169,7 +176,7 @@ def _replay_memory_slot(
         )
     call_id = str(getattr(call, "call_id", "") or full.call.call_id or "")
     try:
-        want = ToolCall(name=full.call.name, args=dict(full.call.args), call_id=call_id)
+        want = ToolCall(name=call.name, args=dict(full.call.args), call_id=call_id)
     except Exception as exc:
         return RecoverySlotResult(
             disposition="FAILED",

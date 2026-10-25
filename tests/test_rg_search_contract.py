@@ -46,7 +46,10 @@ def test_paging_keeps_options_and_full_line_separate_from_display(tmp_path):
     assert len(page.model_text) < len(text) + 300
 
 
-@pytest.mark.parametrize("kwargs", [{"literal": "false"}, {"case_sensitive": 1}, {"include": "!*.py"}])
+@pytest.mark.parametrize("kwargs", [
+    {"literal": "false"}, {"case_sensitive": 1}, {"include": "!*.py"},
+    {"exclude": ["!*.py"]}, {"before_context": -1}, {"after_context": "bad"},
+])
 def test_invalid_options_are_rejected_before_spawn(tmp_path, kwargs):
     result = search_files(tmp_path, ".", "x", **kwargs)
     assert not result.ok
@@ -134,7 +137,7 @@ def test_empty_admitted_scope_stays_bounded_and_incomplete_when_files_were_omitt
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("runtime", [(require_tool_success(
     "grep", via="codemode", arguments={"query": "TOKEN", "path": ".", "literal": False,
-        "case_sensitive": True, "include": "*.py"},
+        "case_sensitive": True, "include": "*.py", "before_context": 1, "after_context": 1},
     answer_pointer="/hits", result_pointer="/matches"),)], indirect=True)
 def test_real_codemode_search_preserves_full_receipt_and_recovery(runtime, native, monkeypatch):
     import json
@@ -142,11 +145,11 @@ def test_real_codemode_search_preserves_full_receipt_and_recovery(runtime, nativ
     from codey.operations.completion_gate import evaluate
     from tests.test_required_tool_lineage import _code, _execute, _restart
 
-    (runtime.project / "a.py").write_text("  TOKEN exact  \n", encoding="utf-8")
-    result = _execute(runtime, [_code("const r = await tools.grep({query:'TOKEN',path:'.',literal:false,case_sensitive:true,include:'*.py'});"
+    (runtime.project / "a.py").write_text("before\n  TOKEN exact  \n after\n", encoding="utf-8")
+    result = _execute(runtime, [_code("const r = await tools.grep({query:'TOKEN',path:'.',literal:false,case_sensitive:true,include:'*.py',before_context:1,after_context:1});"
                                      "if (!r.ok) throw new Error(r.error); return r.value.matches;")], native)[0]
     assert result.ok, result.model_text
-    expected = [{"path": "a.py", "line": 1, "column_byte": 3, "text": "  TOKEN exact  "}]
+    expected = [{"path": "a.py", "line": 2, "column_byte": 3, "text": "  TOKEN exact  "}]
     assert result.canonical["value"] == expected
     answer = json.dumps({"hits": expected})
     assert evaluate(runtime.state, answer).complete
@@ -219,6 +222,28 @@ def test_pending_search_intent_preserves_every_canonical_option(tmp_path):
         durable.close()
 
 
+def test_pending_search_intent_preserves_glob_context_options(tmp_path):
+    from codey.operations.task_effects import KernelEffectSink
+    from codey.runtime.core.models import ToolCall
+    from codey.runtime.effects.effect_records import RuntimeEffectStore
+    from codey.runtime.effects.safe_tool_replay import candidate_from_intent
+    from tests.durable_runtime import accept_writer, open_runtime
+
+    durable, mutations = open_runtime(tmp_path, session_id="s1", run_id="r1")
+    try:
+        accept_writer(durable, mutations, session_id="s1", run_id="r1")
+        sink = KernelEffectSink(mutations, session_id="s1", run_id="r1", provider_id="local", durable=durable)
+        args = {"path": ".", "query": "TOKEN", "include": "*.py", "exclude": ["vendor/**"],
+                "before_context": 2, "after_context": 3, "offset": 2, "limit": 4}
+        sink.begin_turn([("effect-1", ToolCall("grep", args), 0)], turn=1)
+        intent = RuntimeEffectStore(durable=durable).load_effects("s1", "r1")[0].intent
+        assert intent.replay_args == args
+        candidate = candidate_from_intent(intent)
+        assert candidate is not None and candidate.call.args == args
+    finally:
+        durable.close()
+
+
 def test_packaged_binary_works_without_system_path(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", "")
     (tmp_path / "space 中文.py").write_text("--literal-TOKEN\n", encoding="utf-8")
@@ -248,3 +273,139 @@ def test_timeout_uses_existing_process_teardown_and_is_not_empty_success(tmp_pat
     assert not result.ok and result.error_code == "search_timeout"
     assert processes[0].poll() is not None
     assert processes[0].stdout.closed and processes[0].stderr.closed
+
+
+
+
+
+
+
+
+def test_glob_preserves_default_excluded_directories(tmp_path):
+    (tmp_path / "visible.py").write_text("needle\n", encoding="utf-8")
+    hidden = tmp_path / "node_modules"
+    hidden.mkdir()
+    (hidden / "hidden.py").write_text("needle\n", encoding="utf-8")
+
+    result = search_files(tmp_path, ".", "needle", include="*.py")
+
+    assert result.ok
+    assert [row["path"] for row in result.canonical["value"]["matches"]] == ["visible.py"]
+
+
+
+
+def test_glob_respects_discovery_budget_before_search(tmp_path):
+    from unittest import mock
+
+    import codey.toolchain.runtime as tool_runtime
+
+    for index in range(80):
+        (tmp_path / f"file-{index:03}.py").write_text("needle\n" * 32, encoding="utf-8")
+
+    with mock.patch.object(tool_runtime, "SEARCH_MAX_SCAN_FILES", 3):
+        result = tool_runtime.search_files(tmp_path, ".", "needle", include="*.py")
+
+    assert result.ok
+    value = result.canonical["value"]
+    assert value["coverage"]["budget_limited"]
+    assert value["coverage"]["files_admitted"] < 80
+    assert value["scan_complete"] is False
+
+
+def test_context_parser_rejects_malformed_and_non_utf8_events(tmp_path):
+    import json
+
+    from codey.toolchain.rg_search import SearchError, _parse_events
+
+    source = tmp_path / "a.py"
+    source.write_text("needle\n", encoding="utf-8")
+    malformed = json.dumps({"type": "context", "data": {"path": {"text": str(source)},
+        "lines": {"text": "before\n"}, "line_number": "1"}})
+    try:
+        _parse_events(malformed + "\n", tmp_path, None)
+    except SearchError as exc:
+        assert exc.code == "search_malformed_output"
+    else:
+        raise AssertionError("malformed context line was accepted")
+
+    binary = json.dumps({"type": "match", "data": {"path": {"text": str(source)},
+        "lines": {"bytes": "AP8="}, "line_number": 1, "submatches": []}})
+    try:
+        _parse_events(binary + "\n", tmp_path, None)
+    except SearchError as exc:
+        assert exc.code == "search_invalid_encoding"
+    else:
+        raise AssertionError("non-UTF-8 context was accepted")
+
+
+def test_asymmetric_context_does_not_leak_from_previous_page(tmp_path):
+    (tmp_path / 'a.py').write_text(''.join('needle\n' if n in (3, 8) else f'line{n}\n' for n in range(1, 14)))
+    result = search_files(tmp_path, '.', 'needle', offset=2, limit=1, before_context=0, after_context=4)
+    assert result.ok, result.model_text
+    value = result.canonical['value']
+    assert [r['line'] for r in value['matches']] == [8]
+    assert [(r['line'], r['relation']) for r in value['context']] == [(n, 'after') for n in (9, 10, 11, 12)]
+
+
+def test_glob_does_not_enumerate_unrelated_subtrees(tmp_path, monkeypatch):
+    from codey.toolchain import rg_search
+    src = tmp_path / 'src'
+    src.mkdir()
+    (src / 'a.py').write_text('needle')
+    ignored = tmp_path / '.git'
+    ignored.mkdir()
+    for n in range(70):
+        (ignored / (str(n) + 'x' * 120 + '.py')).write_text('needle')
+    monkeypatch.setattr(rg_search, 'SEARCH_RAW_BYTES', 4096)
+    result = search_files(tmp_path, 'src', 'needle', include='*.{py,ts}')
+    assert result.ok, result.model_text
+    assert [r['path'] for r in result.canonical['value']['matches']] == ['src/a.py']
+
+
+def test_glob_filter_runs_before_content_byte_admission(tmp_path, monkeypatch):
+    import codey.toolchain.runtime as runtime
+    (tmp_path / 'a.txt').write_text('x' * 500)
+    (tmp_path / 'b.py').write_text('needle')
+    monkeypatch.setattr(runtime, 'SEARCH_MAX_SCAN_BYTES', 10)
+    result = search_files(tmp_path, '.', 'needle', include='*.py')
+    assert result.ok, result.model_text
+    assert result.canonical['value']['scan_complete']
+    assert result.canonical['value']['matches'][0]['path'] == 'b.py'
+
+
+def test_literal_query_whitespace_is_preserved(tmp_path):
+    (tmp_path / 'a.py').write_text('needle\n needle \n')
+    result = search_files(tmp_path, '.', ' needle ')
+    assert result.ok, result.model_text
+    value = result.canonical['value']
+    assert value['query'] == ' needle '
+    assert [row['line'] for row in value['matches']] == [2]
+
+
+def test_adjacent_hit_outside_page_is_available_as_context(tmp_path):
+    (tmp_path / 'a.py').write_text('needle1\nneedle2\nlast\n')
+    result = search_files(tmp_path, '.', 'needle', limit=1, after_context=2)
+    assert result.ok, result.model_text
+    value = result.canonical['value']
+    assert [r['line'] for r in value['matches']] == [1]
+    assert [(r['line'],r['text']) for r in value['context']] == [(2,'needle2'),(3,'last')]
+    assert value['has_more']
+
+
+def test_glob_never_reenumerates_a_directory_with_unknown_entry_coverage(tmp_path, monkeypatch):
+    from codey.toolchain import rg_search, runtime
+    (tmp_path / 'a.py').write_text('needle')
+    (tmp_path / 'b.py').write_text('needle')
+    monkeypatch.setattr(runtime, 'SEARCH_MAX_DIR_ENTRIES', 1)
+    monkeypatch.setattr(rg_search.RgExecutor, '_run', lambda *a,**k: (_ for _ in ()).throw(AssertionError('walked beyond discovery budget')))
+    result = search_files(tmp_path, '.', 'needle', include='*.py')
+    assert not result.ok and result.error_code == 'search_glob_discovery_limit'
+
+
+def test_empty_scope_still_reports_invalid_native_patterns(tmp_path):
+    for options in ({'literal':False}, {'include':'[unterminated'}):
+        result = search_files(tmp_path, '.', '[', **options)
+        assert not result.ok and result.error_code == 'search_invalid_pattern'
+    valid = search_files(tmp_path, '.', 'needle', include='*.{py,ts}')
+    assert valid.ok and valid.canonical['value']['matches'] == []

@@ -6,6 +6,8 @@ import json
 from collections.abc import Mapping
 from typing import Any, Protocol
 
+from codey.durable.model import TaskCheckpoint, thaw_json
+
 
 class CodeModeStateStore(Protocol):
     def store(self, key: str, value: object) -> None:
@@ -38,27 +40,35 @@ class DurableCodeModeState:
             raise ValueError("CodeMode state limits must be positive integers")
 
     def store(self, key: str, value: object) -> None:
+        self.durable.transform_task_state(
+            self.task_id,
+            lambda current: {
+                "codemode_state": self.prepare_store(current, key, value),
+            },
+        )
+
+    def prepare_store(self, current: TaskCheckpoint, key: str, value: object) -> dict[str, object]:
+        """The single state mutation; replay adds only atomic revision references."""
         key = self._key(key)
         encoded = self._encode(value)
-        current = self.durable.task(self.task_id)
-        raw = current.state.get("codemode_state", {})
-        state: dict[str, object] = dict(raw) if isinstance(raw, Mapping) else {}
+        state = self.values_at(current)
         if key not in state and len(state) >= self.max_keys:
             raise ValueError("CodeMode state key limit exceeded")
         state[key] = json.loads(encoded)
-        self.durable.update_task_state(
-            self.task_id,
-            {"codemode_state": state},
-            expected_revision=current.revision,
-        )
+        return state
 
     def load(self, key: str) -> object:
-        key = self._key(key)
-        current = self.durable.task(self.task_id)
+        return self.values_at(self.durable.task(self.task_id)).get(self._key(key))
+
+    @staticmethod
+    def values_at(current: TaskCheckpoint) -> dict[str, object]:
         raw = current.state.get("codemode_state", {})
         if not isinstance(raw, Mapping):
-            return None
-        return raw.get(key)
+            raise ValueError("invalid CodeMode program state")
+        value = thaw_json(raw)
+        if not isinstance(value, dict):
+            raise ValueError("invalid CodeMode program state")
+        return value
 
     def _key(self, key: str) -> str:
         if not isinstance(key, str) or not key:
