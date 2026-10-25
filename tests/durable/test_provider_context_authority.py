@@ -138,6 +138,8 @@ def test_first_actual_request_replays_paired_tools_in_the_selected_protocol(monk
     items = sent[0]["messages" if protocol == "openai-completions" else "input"]
     assert items[0] == {"role": "system", "content": "trusted system"}
     assert items[1] == {"role": "user", "content": "previous input"}
+    assert items[-2] == {"role": "user", "content": "next"}
+    assert items[-1]["role"] == "user" and "<request_context>" in items[-1]["content"]
     assert "tools" in sent[0] and sent[0].get("max_tokens", sent[0].get("max_output_tokens")) == 8192
     if protocol == "openai-responses":
         assert items[2]["type"] == "function_call" and items[2]["call_id"] == "call-1"

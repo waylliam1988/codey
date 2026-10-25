@@ -204,6 +204,7 @@ class ReaderErrorTests(unittest.TestCase):
 
     def test_shell_maps_read_error_to_failure(self) -> None:
         from codey.app import shell_service
+        from codey.policies.command_line import ShellSpec
 
         with tempfile.TemporaryDirectory() as td:
             ctx = SimpleNamespace(
@@ -213,6 +214,14 @@ class ReaderErrorTests(unittest.TestCase):
             )
             ctx._shell_spawn_gate = threading.Lock()
             with (
+                mock.patch.object(
+                    shell_service, "resolve_shell",
+                    return_value=ShellSpec("cmd", r"C:\\Windows\\System32\\cmd.exe", None, "noninteractive", "0" * 64),
+                ),
+                mock.patch(
+                    "codey.runtime.core.shell_discovery.binary_fingerprint",
+                    return_value="0" * 64,
+                ),
                 mock.patch.object(
                     cancellation, "start_process",
                     return_value=(mock.Mock(), mock.Mock()),

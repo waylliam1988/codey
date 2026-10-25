@@ -4,6 +4,7 @@ from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -45,12 +46,21 @@ class NativeConversation:
 
 def workspace_frame(root, provider, *, intent="chat", task="Hello", **requirements):
     request = TaskSubmission("chat-workspace", None, task, 4, False, "local",
-                             intent=intent, run_id="workspace-run", **requirements)
+                             intent=intent, run_id=f"workspace-{uuid4().hex}", **requirements)
     return RunFrame(request, request.run_id, intent, provider, "local", str(root),
                     ConversationContext(), True, "", "", None, "", False, set(), 0)
 
 
+def admit_frame(frame, state):
+    from codey.operations.task_phases.lifecycle import _ensure_durable_task
+
+    if _ensure_durable_task(state, frame.request):
+        checkpoint = state.durable.task(frame.run_id)
+        state.durable.start_task(frame.run_id, state=dict(checkpoint.state))
+
+
 def execute_frame(frame, state):
+    admit_frame(frame, state)
     events = []
     deps = SimpleNamespace(state=state, workspace_revisions=state.workspace_revisions,
                            collect_changes=collect_changes)
@@ -267,6 +277,7 @@ def test_chat_and_auto_dispatch_enter_shared_workspace_kernel(tmp_path, intent):
     provider = NativeConversation(AssistantTurn(text="Hello!"))
     frame = workspace_frame("", provider, intent=intent)
     with closing(AppContext(tmp_path / "state")) as state:
+        admit_frame(frame, state)
         deps = TaskRunDeps(state=state, agent_run=lambda **_: None, collect_changes=collect_changes,
                            run_review=lambda **_: None, capture_provider_failure=lambda *_, **__: None,
                            workspace_revisions=state.workspace_revisions)

@@ -183,7 +183,8 @@ def test_folded_checkpoint_and_native_tail_reach_the_actual_codec_attempt(sessio
     items = sent[0]["messages" if protocol == "openai-completions" else "input"]
     assert items[0] == {"role": "assistant", "content": "retained early fact and decision"}
     assert items[1] == {"role": "user", "content": "latest constraint"}
-    assert items[-1] == {"role": "user", "content": "next"}
+    assert items[-2] == {"role": "user", "content": "next"}
+    assert items[-1]["role"] == "user" and "<request_context>" in items[-1]["content"]
     assert json.dumps(items).count("tail-call") == 2
     assert "old execution result" not in json.dumps(items)
     provider.close()

@@ -87,20 +87,7 @@ def _persist_approval(state, pending):
     # Approval facts belong to an admitted durable task.  ``reserve_run``
     # only owns the in-memory execution lane; seed the canonical durable
     # admission explicitly for fixtures that start at the approval boundary.
-    from tests.support.shell_approval import admit_shell_task
-    admit_shell_task(
-        state,
-        session_id=str(pending["session_id"]),
-        run_id=str(pending["run_id"]),
-        task=str(pending.get("task") or "shell approval"),
-        provider_id=str(pending.get("provider") or DEFAULT_PROVIDER_ID),
-        project=str(pending.get("project")) if pending.get("project") else None,
-    )
-    artifact = state.managed_outputs.write_json_artifact(
-        session_id=pending["session_id"], run_id=pending["run_id"], payload=pending,
-    )
-    pending.update(command_ref=artifact.handle, command_digest=artifact.sha256)
-    state.add_pending_shell_approval(pending["id"], pending)
+    add_pending_approval(state, pending["id"], pending)
 
 
 # Product no longer auto-waits for ghost maintenance (cold start: no
@@ -533,6 +520,10 @@ class ApprovedShellTests(unittest.TestCase):
         self.assertIn("escapes project root", data["error"])
 
     def test_execute_approved_shell_preserves_large_output_head_and_tail(self) -> None:
+        from codey.policies.command_line import resolve_shell
+
+        # Observe the real interpreter before installing process-output mocks.
+        shell = resolve_shell()
         completed = cancellation.CapturedProcess(
             "command",
             1,
@@ -546,6 +537,7 @@ class ApprovedShellTests(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(shell_service, "SHELL_OUTPUT_LIMIT", 80),
+            mock.patch.object(shell_service, "resolve_shell", return_value=shell),
             mock.patch.object(
                 cancellation, "start_process",
                 return_value=(mock.Mock(), mock.Mock()),
@@ -561,7 +553,8 @@ class ApprovedShellTests(unittest.TestCase):
                 "command",
             )
 
-        self.assertTrue(start_process.call_args.kwargs.get("shell") is True)
+        self.assertEqual(start_process.call_args.args, (shell.invocation("command"),))
+        self.assertNotIn("shell", start_process.call_args.kwargs)
         self.assertTrue(data["truncated"])
         self.assertTrue(data["output"].startswith("HEAD"))
         self.assertTrue(data["output"].endswith("TAIL"))

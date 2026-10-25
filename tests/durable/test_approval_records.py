@@ -171,32 +171,14 @@ def test_shell_approval_runtime_never_reads_audit_projection(
 ) -> None:
     """The durable approval is sufficient when the JSONL audit is unavailable."""
     from codey.app.context import AppContext
+    from tests.support.shell_approval import add_pending_approval, admit_shell_task
 
     state = AppContext(tmp_path)
     try:
-        state.durable.admit_input(
-            conversation_id="conversation-1",
-            request_id="request-1",
-            task_id="task-1",
-            text="run a shell command",
-            provider_snapshot={"provider_id": "local"},
-        )
-        artifact = state.managed_outputs.write_json_artifact(
-            session_id="conversation-1",
-            run_id="task-1",
-            payload={"command": "echo hello", "cwd": "."},
-        )
-        state.add_pending_shell_approval(
-            "approval-1",
-            {
-                "session_id": "conversation-1",
-                "run_id": "task-1",
-                "command": "echo hello",
-                "command_ref": artifact.handle,
-                "command_digest": artifact.sha256,
-                "cwd": ".",
-            },
-        )
+        admit_shell_task(state, session_id="conversation-1", run_id="task-1", task="run a shell command")
+        add_pending_approval(state, "approval-1", {
+            "session_id": "conversation-1", "run_id": "task-1", "command": "echo hello", "cwd": ".",
+        })
         audit = state.shell_approval_records
         monkeypatch.setattr(audit, "read", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("missing audit")))
         monkeypatch.setattr(audit, "latest", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("missing audit")))
@@ -220,37 +202,19 @@ def test_shell_approval_accept_commits_durable_decision_without_audit_projection
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from codey.app.context import AppContext
+    from tests.support.shell_approval import add_pending_approval, admit_shell_task
 
     state = AppContext(tmp_path)
     try:
-        state.durable.admit_input(
-            conversation_id="conversation-1",
-            request_id="request-1",
-            task_id="task-1",
-            text="run a shell command",
-            provider_snapshot={"provider_id": "local"},
-        )
-        artifact = state.managed_outputs.write_json_artifact(
-            session_id="conversation-1",
-            run_id="task-1",
-            payload={"command": "echo hello", "cwd": "."},
-        )
+        admit_shell_task(state, session_id="conversation-1", run_id="task-1", task="run a shell command")
         monkeypatch.setattr(
             state.shell_approval_records,
             "append",
             lambda _fact: (_ for _ in ()).throw(OSError("audit projection unavailable")),
         )
-        state.add_pending_shell_approval(
-            "approval-1",
-            {
-                "session_id": "conversation-1",
-                "run_id": "task-1",
-                "command": "echo hello",
-                "command_ref": artifact.handle,
-                "command_digest": artifact.sha256,
-                "cwd": ".",
-            },
-        )
+        add_pending_approval(state, "approval-1", {
+            "session_id": "conversation-1", "run_id": "task-1", "command": "echo hello", "cwd": ".",
+        })
         monkeypatch.setattr(state.shell_approval_workflow, "_schedule", lambda _id: None)
         code, _payload = state.shell_approval_workflow.accept(
             "approval-1", True, lambda *_args, **_kwargs: None,
@@ -317,32 +281,16 @@ def test_restart_rebuilds_pending_approval_from_task_checkpoint_without_audit_pr
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from codey.app.context import AppContext
-    from codey.runtime.effects.shell_approval_records import ShellApprovalFact
+    from tests.support.shell_approval import seed_requested_approval
 
     state = AppContext(tmp_path)
     try:
-        state.durable.admit_input(
-            conversation_id="conversation-1",
-            request_id="request-1",
-            task_id="task-1",
-            text="run a shell command",
-            provider_snapshot={"provider_id": "local"},
-        )
-        command = state.managed_outputs.write_json_artifact(
-            session_id="conversation-1",
-            run_id="task-1",
-            payload={"command": "echo hello", "cwd": "."},
-        )
         monkeypatch.setattr(
             state.shell_approval_records,
             "append",
             lambda _fact: (_ for _ in ()).throw(OSError("audit projection unavailable")),
         )
-        requested = ShellApprovalFact(
-            "approval-1", "conversation-1", "task-1", "requested",
-            command_ref=command.handle, command_digest=command.sha256, cwd=".",
-        )
-        state.record_shell_approval_fact(requested)
+        requested = seed_requested_approval(state, approval_id="approval-1", source_run_id="task-1", command="echo hello")
         state.record_shell_approval_fact(replace(requested, kind="approved"))
     finally:
         state.close()

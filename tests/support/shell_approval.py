@@ -57,7 +57,8 @@ def add_pending_approval(ctx, approval_id: str, pending: dict[str, object]) -> N
                          provider_id=str(row.get("provider") or "local"),
                          project=str(row.get("project")) if row.get("project") else None)
     fields = shell_command_payload(str(row.get("command") or ""))
-    row.update(fields)
+    row.update({key: value for key, value in fields.items() if key != "command"})
+    row["command_preview"] = fields["command"]
     if getattr(ctx, "managed_outputs", None) is not None:
         artifact = ctx.managed_outputs.write_json_artifact(
         session_id=session_id, run_id=run_id, payload=row,

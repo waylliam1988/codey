@@ -114,7 +114,22 @@ def test_identical_native_codemode_parents_have_distinct_children(tmp_path):
 
     def read(call):
         children.append(call.call_id)
-        return ToolResult(call, "contents", ok=True)
+        return ToolResult(
+            call,
+            "contents",
+            ok=True,
+            canonical={
+                "value": {
+                    "path": "a.py",
+                    "text": "contents",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "total_lines": 1,
+                    "next_offset": 0,
+                    "text_complete": True,
+                }
+            },
+        )
 
     executor = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="r",
         effect_scope="task", turn=1, intent_sink=sink, executors={"read_file": read})

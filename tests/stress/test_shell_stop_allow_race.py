@@ -29,8 +29,11 @@ def _ctx(approvals: ApprovalRegistry):
 
 def _pending(project: str) -> dict:
     from codey.agents.shell_approval import shell_command_payload
+    from codey.policies.command_line import resolve_shell
+    from codey.policies.shell_analysis import analyze_shell
 
     fields = shell_command_payload("echo hi")
+    shell = resolve_shell()
     return {
         "id": "shell-race",
         "run_id": "run-1",
@@ -42,6 +45,8 @@ def _pending(project: str) -> dict:
         "command_truncated": fields["command_truncated"],
         "cwd": ".",
         "project": project,
+        "shell": shell.to_payload(),
+        "analysis": analyze_shell("echo hi", shell).to_payload(),
     }
 
 

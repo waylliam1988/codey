@@ -206,16 +206,24 @@ class SecondRoundWebPromptTests(unittest.TestCase):
                     return '{"tool":"web_search","args":{"query":"hi"}}'
                 return '{"tool":"done","args":{"summary":"结论\n来源\nx"}}'
 
+            def send_tool_results(self, messages, tools, timeout=None):
+                return self.send("tool results")
+
         # Minimal research tools stub: web_search returns URLs, open allowed after.
         class FakeTools:
             def __init__(self):
-                from types import SimpleNamespace as SN
-                self.ledger = SN(evidence_items=[], final_url_set=lambda: set(), opened_sources=[], searches=[], search_results_payload=lambda: [], opened_sources_payload=lambda: [], coverage_payload=lambda: {}, evidence_payload=lambda: [])
+                from codey.research.ledger import ResearchLedger
+
+                self.ledger = ResearchLedger()
                 self.sources_read = set()
                 self.search_result_urls = set()
 
             def web_search(self, q):
                 from codey.research.tools import ResearchToolOutput
+                self.ledger.record_search(q, [
+                    {"title": "A", "url": "https://example.com/a", "snippet": "a"},
+                    {"title": "B", "url": "https://example.com/b", "snippet": "b"},
+                ])
                 return ResearchToolOutput("r1: https://example.com/a\nr2: https://example.com/b", ok=True)
 
             def open_url(self, url, **kwargs):

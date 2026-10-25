@@ -127,8 +127,11 @@ def shell_ctx(approvals: ApprovalRegistry) -> SimpleNamespace:
 
 def shell_pending_request(command: str, run_id: str, project: str = ".") -> dict:
     from codey.agents.shell_approval import shell_command_payload
+    from codey.policies.command_line import resolve_shell
+    from codey.policies.shell_analysis import analyze_shell
 
     fields = shell_command_payload(command)
+    shell = resolve_shell()
     return {
         "id": "shell-soak",
         "run_id": run_id,
@@ -140,6 +143,8 @@ def shell_pending_request(command: str, run_id: str, project: str = ".") -> dict
         "command_truncated": fields["command_truncated"],
         "cwd": ".",
         "project": project,
+        "shell": shell.to_payload(),
+        "analysis": analyze_shell(command, shell).to_payload(),
     }
 
 

@@ -16,17 +16,17 @@ from tests.project_candidate_recovery_fixture import (
 @pytest.mark.parametrize('phase', ['writer', 'repair'])
 def test_denied_probe_then_stagnation_gets_actual_current_validation_and_completion(tmp_path, phase):
     from codey.agents import tools
-    from codey.operations import kernel_execution
+    from codey.operations import kernel_facts
 
     sessions = []
-    record_facts = kernel_execution.record_facts_for_result
+    record_facts = kernel_facts.record_facts_for_result
 
     def capture(session, *args, **kwargs):
         sessions.append(session)
         return record_facts(session, *args, **kwargs)
 
     original_execute = tools.AgentToolFns.execute_run_command
-    with (mock.patch.object(kernel_execution, 'record_facts_for_result', side_effect=capture),
+    with (mock.patch.object(kernel_facts, 'record_facts_for_result', side_effect=capture),
           mock.patch.object(tools.AgentToolFns, 'execute_run_command', autospec=True,
                             side_effect=original_execute) as execute):
         result = scenario(tmp_path, kind='repair' if phase == 'repair' else 'stagnant',
