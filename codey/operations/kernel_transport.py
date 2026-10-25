@@ -6,6 +6,7 @@ drain. Failures raise explicit errors; the task loop maps them to results.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from codey.operations.provider_session import normalize_provider_reply
@@ -56,13 +57,20 @@ def send_kernel_reply(
     pending_reply: Any,
     pending_native_messages: list[ProviderToolResult] | None,
     window_ref: Any = None,
+    *, observations: str = "",
 ) -> tuple[Any, Any, list[ProviderToolResult] | None]:
     """Send exactly one provider message and clear the consumed pending slot."""
     if pending_reply is not None:
         return pending_reply, None, pending_native_messages
     if native and pending_native_messages is not None:
-        reply = call_provider_send_results(provider, pending_native_messages, native_tools, window_ref=window_ref)
+        messages = list(pending_native_messages)
+        if observations and messages:
+            last = messages[-1]
+            messages[-1] = replace(last, user_content="\n\n".join(
+                part for part in (last.user_content, observations) if part))
+        reply = call_provider_send_results(provider, messages, native_tools, window_ref=window_ref)
         return reply, None, None
+    prompt = "\n\n".join(part for part in (prompt, observations) if part)
     if native:
         return call_provider_send_turn(provider, prompt, native_tools), None, pending_native_messages
     return call_provider_send(provider, prompt), None, pending_native_messages
@@ -192,7 +200,7 @@ def repair_native_dangling(
     native: bool,
     native_tools: Any,
     error: str,
-    *, window_ref: Any = None,
+    *, window_ref: Any = None, instruction: str = "",
 ) -> Any:
     """Close native call ids after a protocol error so the provider chain stays valid.
 
@@ -210,9 +218,12 @@ def repair_native_dangling(
     ids = list(dict.fromkeys(item for item in ids if item))
     if not ids:
         return None
+    messages = [ProviderToolResult(item, f"ERROR: {error}") for item in ids]
+    if instruction:
+        messages[-1] = replace(messages[-1], user_content=instruction)
     return call_provider_send_results(
         provider,
-        [ProviderToolResult(item, f"ERROR: {error}") for item in ids],
+        messages,
         native_tools,
         window_ref=window_ref,
     )

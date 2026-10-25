@@ -21,6 +21,10 @@ __all__ = [
     "kernel_prompt_for_session",
 ]
 
+_NATIVE_ARGUMENTS_RULE = (
+    "Pass schema properties directly as native arguments; omit the text protocol's tool/args envelope."
+)
+
 
 def kernel_prompt_for_session(
     session: TaskSession,
@@ -62,7 +66,7 @@ def kernel_prompt_for_session(
         parts.append(
             "Answer directly when no action is needed. For actions, call one native tool per turn and "
             "wait for its result before choosing the next tool. Use native tool calls, not JSON in prose. "
-            "Deliver the final answer as normal text or call done separately."
+            "Deliver the final answer as normal text or call done separately. " + _NATIVE_ARGUMENTS_RULE
         )
     else:
         parts.append(
@@ -117,7 +121,8 @@ def _repair_prompt(error: str, *, contract_text: str, native: bool) -> str:
             "For a final answer, use done if it is declared: put the complete answer in its summary string. "
             "That string is delivered in the user's requested final format. "
             "Do not place a bare answer object in tool_calls, invent a function name, or emit text tool-call tags. "
-            "For an action, resend the intended call with complete arguments and concise file contents."
+            "For an action, resend the intended call with complete arguments and concise file contents. "
+            + _NATIVE_ARGUMENTS_RULE
         )
     else:
         instruction = (

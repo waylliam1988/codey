@@ -51,7 +51,6 @@ def replay_recovery(provider, project, *, seed, enhanced, recoverable):
     store = ManagedOutputStore(project / "outputs")
     delegate = ExecutionDelegate(session=session, managed_outputs=store, session_id="recovery", run_id="trial")
     facts, registry = {}, {}
-    provider.set_working_context(working_context(session))
     for wave in range(8):
         if enhanced:
             provider.wait_for_maintenance(180)
@@ -76,7 +75,8 @@ def replay_recovery(provider, project, *, seed, enhanced, recoverable):
                 provider.context_ledger.commit(provider._messages, events=items)
         if recoverable:
             provider.set_result_refs(tuple(session._memory_results))
-        provider.send("Continue the review. State the next action under 100 characters; keep evidence in context without enumerating it.")
+        provider.send("Continue the review. State the next action under 100 characters; keep evidence in context without enumerating it.\n\n"
+                      + working_context(session))
     if enhanced:
         provider.wait_for_maintenance(180)
     # Select the probe only after maintenance. Earlier questions never contain

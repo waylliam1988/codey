@@ -237,9 +237,6 @@ def _receive_turn_plan(
     """
     try:
         if state.pending_reply is None:
-            update = getattr(provider, "set_working_context", None)
-            if callable(update):
-                update(_prompt.working_context(session))
             refs = getattr(provider, "set_result_refs", None)
             if callable(refs):
                 refs(tuple(session._memory_results))
@@ -254,7 +251,7 @@ def _receive_turn_plan(
             record_outbound(trace_recorder, state.prompt, admission=admission)
         reply, state.pending_reply, state.pending_messages = _transport.send_kernel_reply(
             provider, native, state.prompt, native_tools, state.pending_reply, state.pending_messages,
-            window_ref,
+            window_ref, observations=_prompt.working_context(session),
         )
     except Exception as exc:
         return _provider_failure(exc, turn, propagate=propagate_provider_failure)
@@ -466,7 +463,8 @@ def _kernel_handle_protocol(
         )
     prompt = _prompt._repair_prompt(plan.protocol_error, contract_text=contract_text, native=native)
     try:
-        pending_reply = _transport.repair_native_dangling(provider, reply, native, native_tools, plan.protocol_error)
+        pending_reply = _transport.repair_native_dangling(
+            provider, reply, native, native_tools, plan.protocol_error, instruction=prompt)
     except Exception as exc:
         # The error receipt never reached the provider: the native chain has
         # unanswered call ids, so stop instead of continuing the dialogue.

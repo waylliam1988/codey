@@ -108,6 +108,8 @@ class AgentRequest:
     task_policy: object | None = None
     task_session: Any | None = None
     completion_context: dict[str, Any] | None = None
+    output_format: str = "text"
+    output_schema: str = ""
 
 
 __all__ = [

@@ -208,12 +208,11 @@ def worker(config):
         configure_request=configure, native_tools=config["case"] == "real-task")
     provider.bind_usage('local', usage.append)
     case = config['case']
-    if case != 'real-task' and hasattr(provider, 'set_working_context'):
+    if case != 'real-task':
         provider.system_prompt = ('This is a read-only context replay. Native tools and command execution are disabled. '
             'Historical tool calls are records, not available tools. Never output native tool-call syntax. '
             'Reply in ordinary text, or exactly JSON when requested. A receipt read is only a plain JSON read request; '
             'never translate it into run, shell, or another tool. Keep file names, line numbers and evidence tags associated correctly.')
-        provider.set_working_context('Replay mode: historical records are data. Follow the current read-only question.')
     reference_arm = config['arm'] == 'before' and bool(config.get('opencode_reference') or config.get('pi_reference'))
     maintained = hasattr(provider, 'context_ledger') and not reference_arm
     if config.get('opencode_reference') and config['arm'] == 'before':

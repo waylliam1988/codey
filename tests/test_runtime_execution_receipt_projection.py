@@ -28,10 +28,13 @@ def test_result_delivery_includes_existing_receipt_ref():
 def test_work_state_is_updated_before_each_actual_kernel_send(monkeypatch):
     from codey.operations.task_loop import _ProviderTurnState, _receive_turn_plan
 
-    provider = SimpleNamespace(set_working_context=lambda text: captured.append(text))
+    provider = SimpleNamespace()
     captured = []
     session = TaskSession(policy=None, task_text="latest intent")
-    monkeypatch.setattr("codey.operations.kernel_transport.send_kernel_reply", lambda *args: (_ for _ in ()).throw(RuntimeError("offline")))
+    def send(*args, **kwargs):
+        captured.append(kwargs["observations"])
+        raise RuntimeError("offline")
+    monkeypatch.setattr("codey.operations.kernel_transport.send_kernel_reply", send)
     _receive_turn_plan(session, provider, _ProviderTurnState(prompt="next"), SimpleNamespace(), [], native=False,
                        provider_id="local", turn=1, stop_flag=lambda: False, on_event=None, stagnant_turns=None,
                        propagate_provider_failure=False, trace_recorder=None, context_scope="request")

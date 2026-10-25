@@ -1118,7 +1118,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                     "agent_run",
                     side_effect=[failure, RunResult("done", "done", 1, False, False)],
                 ),
-                mock.patch.object(task_submit, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
                 # Secondary consensus must never reach a real provider in unit
                 # tests: with koboldcpp serving it stalls ~2min via faulthandler.

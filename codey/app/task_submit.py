@@ -31,7 +31,7 @@ from codey.providers.snapshot import capture_provider_selection, provider_snapsh
 from codey.reviews.review_policy import load_review_policy
 from codey.task.kind import resolve_task_kind_values
 from codey.task.model import EditUserMessage, ResolveShellApproval, ResumeRun, StartTask, TaskInput, TaskSubmission
-from codey.workspace.changes import collect_changes
+from codey.workspace.task_changes import collect_task_changes
 
 SHELL_CONTINUATION_IDLE_TIMEOUT = 15.0
 
@@ -60,6 +60,7 @@ def run_task(
     model_selection: ApiRunSelection | None = None,
     worker_key: str = "",
     attempt_token: str = "",
+    output_format: str = "text", output_schema: str = "",
 ) -> None:
     # Heavy task stack stays lazy: importing this module (and server.py)
     # must not load operations/service modules/research (see test_server_lazy_state).
@@ -104,7 +105,7 @@ def run_task(
             deps = build_task_deps(
                 state,
                 agent_run=agent_run,
-                collect_changes=collect_changes,
+                collect_changes=collect_task_changes,
                 review_policy=review_policy,
                 capture_provider_failure=capture_provider_failure,
             )
@@ -129,6 +130,7 @@ def run_task(
                     max_turns=max_turns,
                     provider_id=provider_id,
                     input=input,
+                    output_format=output_format, output_schema=output_schema,
                     intent=intent,
                     run_id=run_id,
                     requested_capabilities=tuple(requested_capabilities or ()),
@@ -159,6 +161,7 @@ def run_task(
                     review_source_run_id=review_source_run_id,
                     model_selection=model_selection.to_payload() if model_selection is not None else {},
                     input=input,
+                    output_format=output_format, output_schema=output_schema,
                 )
             run_task_submission(
                 deps,
@@ -192,7 +195,11 @@ def submit_task(
     model_selection: ApiRunSelection | None = None,
     run_id: str = "",
     input: TaskInput | None = None,
+    output_format: str = "text", output_schema: str = "",
 ) -> str | None:
+    from codey.policies.output_requirement import declaration
+
+    declaration(output_format, output_schema)
     # Fail fast on config error before taking the slot; the validated value is
     # passed through so the worker never re-reads the environment (no race).
     # The state object is captured once and handed to the worker as-is, so
@@ -275,6 +282,7 @@ def submit_task(
                 "review_source_run_id": review_source_run_id,
                 "model_selection": admitted_selection.to_payload() if admitted_selection is not None else {},
                 "input": _task_input_payload(input),
+                "output_format": output_format, "output_schema": output_schema,
             },
             tool_results=shell_tool_results,
         )
@@ -309,6 +317,7 @@ def submit_task(
             model_selection=admitted_selection,
             worker_key=session_id,
             attempt_token=state.durable.task(reserved.run_id).attempt_token,
+            output_format=output_format, output_schema=output_schema,
         )
     except Exception:
         with contextlib.suppress(Exception):
@@ -438,6 +447,8 @@ def _dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) ->
                 model_selection=model_selection,
                 worker_key=session_id,
                 attempt_token=checkpoint.attempt_token,
+                output_format=str(stored.get("output_format", "text")),
+                output_schema=str(stored.get("output_schema", "")),
             )
         )
         if not accepted:

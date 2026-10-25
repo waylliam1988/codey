@@ -211,7 +211,7 @@ def build_execute_turn_executor(
                 raise ValueError(replay.failure)
             child_identity = turn_effect_id(f"{run_id}:{child_effect_scope}", turn, child_index)
             if child_identity not in session.executed:
-                raise RuntimeError("nested kernel result was not committed")
+                raise RuntimeError(f"nested kernel result was not committed: {results[0].model_text}")
             child_effect_ids.append(child_identity)
             if on_event is not None:
                 result = results[0]
@@ -223,7 +223,7 @@ def build_execute_turn_executor(
                 event.metadata['parent_call_id'] = parent_id
                 event.metadata['tool_name'] = child.name
                 on_event(event)
-            return results[0]
+            return replace(results[0], audit={**results[0].audit, "result_ref": child_identity})
 
         result = CodeModeKernelExecutor(
             execution_id=parent_id,

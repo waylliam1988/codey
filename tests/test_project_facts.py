@@ -269,7 +269,7 @@ class ProjectFactsTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
                     task_submit,
-                    "collect_changes",
+                    "collect_task_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
@@ -329,7 +329,7 @@ class ProjectFactsTests(unittest.TestCase):
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
-                mock.patch.object(task_submit, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
                 mock.patch.object(review_service, "run_review", return_value=None),
                 mock.patch(
@@ -368,7 +368,7 @@ class ProjectFactsTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
                     task_submit,
-                    "collect_changes",
+                    "collect_task_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
@@ -403,7 +403,7 @@ class ProjectFactsTests(unittest.TestCase):
                 ),
                 mock.patch.object(
                     task_submit,
-                    "collect_changes",
+                    "collect_task_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):

@@ -97,6 +97,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
         ) if enabled),
         continue_task=args.continue_task,
         review_policy=args.review_policy,
+        output_format=args.output_format, output_schema=args.output_schema,
         model_selection={"model": args.model, **({"effort": args.effort} if args.effort is not None else {})} if args.model else {},
     )
     if json_mode:
@@ -573,6 +574,8 @@ def main(argv: list[str] | None = None) -> int:
     sp_agent = sub.add_parser("agent", help="CLI agent loop")
     sp_agent.add_argument("--project", default="", help="attach a project folder")
     sp_agent.add_argument("--max-turns", type=int, default=None)
+    sp_agent.add_argument("--output-format", choices=("text", "json"), default="text")
+    sp_agent.add_argument("--output-schema", default="", help="JSON Schema for a JSON final answer")
     sp_agent.add_argument("--port", type=int, default=9222)
     sp_agent.add_argument("--provider", choices=provider_ids(), default=DEFAULT_PROVIDER_ID)
     sp_agent.add_argument("--model", default="", help="explicit API model; protocol comes from connection settings or catalog")

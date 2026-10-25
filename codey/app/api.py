@@ -14,6 +14,7 @@ from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.durable.errors import CommitConflict, IdempotencyConflict
 from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV
 from codey.ghost.control_surface import GhostControlSurface
+from codey.policies.output_requirement import submission_fields
 from codey.providers.catalog import API_CONNECTIONS, DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.local_config import (
     LocalProviderConfig,
@@ -690,6 +691,7 @@ def run_submit_response(  # noqa: C901, PLR0912
 
     try:
         review_source_run_id = validate_source_run_id(body.get("review_source_run_id", ""))
+        output_fields = submission_fields(body)
     except ValueError as exc:
         return 400, {"error": str(exc)}
     if review_source_run_id and intent not in {"review", "project"}:
@@ -706,6 +708,7 @@ def run_submit_response(  # noqa: C901, PLR0912
     }
     if review_source_run_id:
         submit_kwargs["review_source_run_id"] = review_source_run_id
+    submit_kwargs.update(output_fields)
     if edit_input is not None:
         submit_kwargs["input"] = edit_input
     if client_run_id:

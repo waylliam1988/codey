@@ -33,7 +33,7 @@ from codey.operations.research_completion_checks import (
     source_requirement_checks,
     strict_research_checks,
 )
-from codey.policies.tool_requirement import ToolRequirementEvaluation
+from codey.policies.requirement import RequirementEvaluation
 from codey.utils.refs import stable_ref
 
 
@@ -175,7 +175,7 @@ def evaluate(session: Any, done_text: object, *, context: Any = None) -> GateVer
 
 
 def _required_checks_verdict(
-    session: Any, deduped: list[CompletionCheck], tool_evaluations: dict[str, ToolRequirementEvaluation],
+    session: Any, deduped: list[CompletionCheck], tool_evaluations: dict[str, RequirementEvaluation],
 ) -> GateVerdict | None:
     """Enforce the task's own required_checks: missing/unrun/conflict blocks.
 
@@ -223,7 +223,11 @@ def _required_checks_verdict(
             requirement = parse_tool_success_check(declaration)
         except (ValueError, TypeError):
             return GateVerdict(complete=False, followup="Invalid declared tool requirement; task cannot complete.", proof=None)
-        req = requirement.check_id if requirement is not None else declaration
+        from codey.policies.output_requirement import check_id as output_id
+        from codey.policies.output_requirement import is_output_check
+
+        req = (requirement.check_id if requirement is not None else
+               output_id(declaration) if is_output_check(declaration) else declaration)
         rows = by_id.get(req, [])
         if not rows:
             return GateVerdict(
@@ -254,6 +258,8 @@ def _required_checks_verdict(
                 reason = ""
             instruction = "Collect the missing local evidence or fresh verification, then propose done again."
             if requirement is not None:
+                instruction = tool_evaluations[req].feedback
+            if is_output_check(declaration):
                 instruction = tool_evaluations[req].feedback
             return GateVerdict(
                 complete=False,
@@ -319,17 +325,26 @@ def _contract_subject(session: Any, profile: str, context: Any) -> str:
 
 def _required_tool_checks(
     session: Any, final_text: str,
-) -> tuple[list[CompletionCheck], dict[str, ToolRequirementEvaluation]]:
+) -> tuple[list[CompletionCheck], dict[str, RequirementEvaluation]]:
     """Explicit entry requirements consume the committed execution projection.
 
     These are tool observations, not model assertions or inferred workflows.
     Recovery rebuilds the same projection from committed result receipts.
     """
+    from codey.policies.output_requirement import check_id as output_id
+    from codey.policies.output_requirement import evaluate as evaluate_output
+    from codey.policies.output_requirement import is_output_check
     from codey.policies.tool_requirement import parse_tool_success_check
 
     rows: list[CompletionCheck] = []
-    evaluations: dict[str, ToolRequirementEvaluation] = {}
+    evaluations: dict[str, RequirementEvaluation] = {}
     for check_id in getattr(session.policy, "required_checks", ()):
+        if is_output_check(check_id):
+            passed, reason, feedback = evaluate_output(check_id, final_text)
+            outcome = RequirementEvaluation(reason, feedback)
+            evaluations[output_id(check_id)] = outcome
+            rows.append(CompletionCheck(output_id(check_id), CHECK_PASS if passed else CHECK_FAIL, reason))
+            continue
         try:
             requirement = parse_tool_success_check(check_id)
         except (ValueError, TypeError):

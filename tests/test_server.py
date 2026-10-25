@@ -4529,7 +4529,7 @@ class SessionThreadingTests(unittest.TestCase):
         # A mocked writer boolean is not a recorded verification result.
         self.assertEqual(task_done["receipt"]["display"]["summary"], "No files changed")
         self.assertEqual(state.run_registry.provider_id(), "qwen")
-        self.assertIn(str(Path(td).resolve()), state.change_trackers)
+        self.assertIn(agent_request.change_tracker, state.change_trackers.values())
         self.assertIsNotNone(agent_request.change_tracker)
         self.assertIs(provider_flow._handler.func, sibling_probe.handle_flow_recovery)
         self.assertIs(provider_flow._handler.args[0], state)
@@ -4617,7 +4617,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
-                    task_submit, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}
+                    task_submit, "collect_task_changes", return_value={"ok": True, "changed_count": 0, "files": []}
                 ),
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
                 mock.patch("codey.toolchain.runtime.RUN_OUTPUT_LIMIT", 80),
@@ -4686,7 +4686,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as unified_task,
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
             mock.patch.object(consensus_service, "run_project_audit", return_value=()),
@@ -4810,7 +4810,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
             mock.patch.object(consensus_service, "run_project_audit", return_value=()),
@@ -4862,7 +4862,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as unified_task,
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
             mock.patch.object(consensus_service, "run_project_audit", return_value=()),
@@ -5480,7 +5480,7 @@ class SessionThreadingTests(unittest.TestCase):
                     "codey.operations.task_phases.dispatch.run_task_mode",
                     return_value=ok,
                 ) as unified_task,
-                mock.patch.object(task_submit, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             ):
                 _run_task_with_ghost_wait(
                     "session-hybrid-ok",
@@ -5670,7 +5670,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ) as agent_run,
                 mock.patch.object(
                     task_submit,
-                    "collect_changes",
+                    "collect_task_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
@@ -5775,7 +5775,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ) as agent_run,
                 mock.patch.object(
                     task_submit,
-                    "collect_changes",
+                    "collect_task_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
@@ -5942,7 +5942,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "agent_run",
                 side_effect=_verified_writer_agent_run("complete"),
             ),
-            mock.patch.object(task_submit, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
             mock.patch.object(provider_services, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
         ):
@@ -6020,7 +6020,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
-                mock.patch.object(task_submit, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
                 mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
                 mock.patch.object(provider_services, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
             ):
@@ -6070,7 +6070,7 @@ class SessionThreadingTests(unittest.TestCase):
             links,
         )
 
-    def test_run_task_recovers_failed_diff_before_review_and_receipt(self) -> None:
+    def test_unavailable_task_change_projection_blocks_without_retry_or_review(self) -> None:
         state = server.AppContext()
         events = state.subscribe()
         provider = mock.Mock()
@@ -6099,7 +6099,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 side_effect=[{"ok": False, "error": "snapshot unavailable"}, final_changes],
             ) as collect_changes,
             mock.patch.object(provider_services, "connect_existing_provider",
@@ -6108,20 +6108,15 @@ class SessionThreadingTests(unittest.TestCase):
         ):
             _run_task_with_ghost_wait("session-diff-retry", td, "task", 8, False, "deepseek", "project")
 
-        self.assertEqual(collect_changes.call_count, 2)
-        connect_review.assert_called_once_with("mimo")
-        reviewer.send.assert_called_once()
-        review_prompt = reviewer.send.call_args.args[0]
-        self.assertIn("app.py", review_prompt)
-        self.assertIn(final_changes["diff"], review_prompt)
+        self.assertEqual(collect_changes.call_count, 1)
+        connect_review.assert_not_called()
+        reviewer.send.assert_not_called()
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
-        task_done = next(event for event in emitted if event["type"] == "task_done")
-        self.assertTrue(task_done["changed"])
-        self.assertEqual(task_done["changes"]["changed_count"], 1)
-        self.assertEqual(task_done["changes"]["files"], final_changes["files"])
-        self.assertEqual(task_done["receipt"]["work"]["changed_count"], 1)
+        terminal = next(event for event in emitted if event["type"] == "task_done")
+        self.assertNotEqual(terminal["stop_reason"], "done")
+        self.assertIn("task change projection is unavailable", terminal["summary"])
 
     def test_run_task_uses_second_model_for_approved_review(self) -> None:
         state = server.AppContext()
@@ -6151,7 +6146,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as agent_run,
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 return_value=changes,
             ) as collect_changes,
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer) as connect_review,
@@ -6208,7 +6203,7 @@ class SessionThreadingTests(unittest.TestCase):
                     second_summary="review fixed",
                 ),
             ) as agent_run,
-            mock.patch.object(task_submit, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
@@ -6265,7 +6260,7 @@ class SessionThreadingTests(unittest.TestCase):
                     second_summary="self-review fixed",
                 ),
             ) as agent_run,
-            mock.patch.object(task_submit, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider",
                 side_effect=RuntimeError("not open"),
             ),
@@ -6349,7 +6344,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as agent_run,
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 side_effect=[changes, repaired_changes, repaired_changes],
             ) as collect_changes,
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
@@ -6411,7 +6406,7 @@ class SessionThreadingTests(unittest.TestCase):
                     (RunResult("review claim was invalid", "done", 2, False, False), False),
                 ),
             ),
-            mock.patch.object(task_submit, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
@@ -6464,7 +6459,7 @@ class SessionThreadingTests(unittest.TestCase):
                     RunResult("tests failed", "done", 2, False, False, True),
                 ],
             ),
-            mock.patch.object(task_submit, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "app.py").write_text("new\n", encoding="utf-8")
@@ -6516,7 +6511,7 @@ class SessionThreadingTests(unittest.TestCase):
                     RunResult("stopped after no progress", "no_progress", 2, False, False, False),
                 ],
             ),
-            mock.patch.object(task_submit, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             _run_task_with_ghost_wait("session-1", td, "task", 20, False, "deepseek", "project")
@@ -6555,7 +6550,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "agent_run",
                 side_effect=_verified_writer_agent_run("complete"),
             ) as agent_run,
-            mock.patch.object(task_submit, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
             mock.patch.object(provider_services, "connect_fresh_provider_tab",
                 side_effect=RuntimeError("self-review failed"),
@@ -6603,7 +6598,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "agent_run",
                 return_value=RunResult("complete", "done", 3, False, True),
             ),
-            mock.patch.object(task_submit, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             _run_task_with_ghost_wait("session-1", td, "task", 8, False, "deepseek", "project")
@@ -6652,7 +6647,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "agent_run",
                 return_value=RunResult("complete", "done", 3, False, True),
             ),
-            mock.patch.object(task_submit, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             _run_task_with_ghost_wait("session-1", td, "task", 8, False, "deepseek", "project")
@@ -6683,7 +6678,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
             mock.patch.object(provider_services, "connect_existing_provider") as connect_review,
@@ -6722,7 +6717,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as agent_run,
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
             mock.patch.object(provider_services, "connect_existing_provider") as connect_review,
@@ -6766,7 +6761,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as agent_run,
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
         ):
@@ -6806,7 +6801,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as agent_run,
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
         ):
@@ -6835,7 +6830,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
         ):
@@ -6886,7 +6881,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "agent_run",
                 side_effect=write_and_finish,
             ) as agent_run,
-            mock.patch.object(task_submit, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer) as review_connect,
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
@@ -6945,7 +6940,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "agent_run",
                 return_value=RunResult("implemented", "done", 1, False, True),
             ),
-            mock.patch.object(task_submit, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
             mock.patch(
                 "codey.completion.verification_policy.shutil.which",
@@ -7001,7 +6996,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as agent_run,
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
         ):
@@ -7046,7 +7041,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "agent_run",
                 return_value=RunResult("implemented", "done", 2, True, True, True),
             ) as agent_run,
-            mock.patch.object(task_submit, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             _run_task_with_ghost_wait("session-1", td, "Build a tiny app", 8, False, "deepseek", "project")
@@ -7078,7 +7073,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as agent_run,
             mock.patch.object(
                 task_submit,
-                "collect_changes",
+                "collect_task_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
         ):
@@ -7287,7 +7282,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
 
     @unittest.skipIf(shutil.which("git") is None, "git is not installed")
-    def test_git_task_does_not_persist_recovery_snapshot(self) -> None:
+    def test_git_task_persists_task_scoped_original_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             root = Path(td)
             subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
@@ -7311,13 +7306,18 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
                     task_submit,
-                    "collect_changes",
+                    "collect_task_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
                 _run_task_with_ghost_wait("session-1", str(root), "task", 4, False, "deepseek", "project")
 
-            self.assertFalse(state.snapshot_store.path_for(root).exists())
+            tracker = state.change_tracker_for(root, persistent=True)
+            self.assertIsNotNone(tracker.store)
+            self.assertTrue(tracker.store.path_for(root).exists())
+            before, after = tracker.store.load(root)
+            self.assertEqual(before, {"app.py": "old\n"})
+            self.assertIn("app.py", after)
 
     @unittest.skipIf(shutil.which("git") is None, "git is not installed")
     def test_cached_tracker_switches_to_git_mode_after_repository_init(self) -> None:

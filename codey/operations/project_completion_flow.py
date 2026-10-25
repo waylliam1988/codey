@@ -95,10 +95,11 @@ def _prepare_project_context(ctx: ProjectRun) -> None:
         )
     _prepare_new_project_context(ctx)
     key = str(Path(ctx.project).expanduser().resolve())
-    ctx.tracker = ctx.state.change_tracker_for(
-        key,
-        persistent=not ctx.deps.agent.is_git_repository(key),
-    )
+    from codey.operations.task_changes import task_change_tracker
+
+    source = (ctx.work.work_checkpoint.run_id
+              if ctx.project_context.checkpoint.resumed and ctx.work.work_checkpoint is not None else "")
+    ctx.tracker = task_change_tracker(ctx.state, key, ctx.frame.run_id, source_id=source)
     ctx.tried_writers = set(ctx.frame.preflight_tried)
 
 

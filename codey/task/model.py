@@ -96,6 +96,8 @@ class TaskSubmission:
     # the outer scheduling boundary while all new callers can pass one typed
     # input object and avoid ambiguous boolean combinations.
     input: TaskInput | None = None
+    output_format: str = "text"
+    output_schema: str = ""
 
     @classmethod
     def from_input(
@@ -115,6 +117,7 @@ class TaskSubmission:
         denied_capabilities: tuple[str, ...] = (),
         review_source_run_id: str = "",
         model_selection: dict[str, object] | None = None,
+        output_format: str = "text", output_schema: str = "",
     ) -> TaskSubmission:
         task = input.text if isinstance(input, (StartTask, EditUserMessage)) else (
             input.instruction or "Continue the source run"
@@ -139,6 +142,7 @@ class TaskSubmission:
             review_source_run_id=review_source_run_id,
             model_selection=dict(model_selection or {}),
             input=input,
+            output_format=output_format, output_schema=output_schema,
         )
 
     def resolved_input(self) -> TaskInput:

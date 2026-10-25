@@ -29,7 +29,7 @@ def build_task_deps(
     from codey.operations.task_run import TaskRunDeps
     from codey.providers import diagnostics
     from codey.reviews.review_policy import allow_self_review, load_review_policy
-    from codey.workspace import changes
+    from codey.workspace import changes, task_changes
 
     policy = load_review_policy() if review_policy is None else review_policy
     allow_self_review(policy)  # Validate even when no review is eventually needed.
@@ -37,7 +37,7 @@ def build_task_deps(
         state=state,
         stores=state.task_submission_stores,
         agent_run=project_adapter.run if agent_run is None else agent_run,
-        collect_changes=changes.collect_changes if collect_changes is None else collect_changes,
+        collect_changes=task_changes.collect_task_changes if collect_changes is None else collect_changes,
         capture_provider_failure=diagnostics.capture_provider_failure if capture_provider_failure is None else capture_provider_failure,
         run_review=partial(review_service.run_review, state, review_policy=policy, connect_reviewer=connect_reviewer),
         run_consensus=partial(consensus_service.run_consensus, state),

@@ -2,6 +2,40 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Request input, task ownership and output contract convergence (2026-10-25)
+
+One ToolSpec generates native/text contracts and compact CodeMode parameter/result
+signatures. API request history is append-only with respect to per-turn observations
+and clocks; counting and sending share one clock projection. Task-owned baselines
+exclude unrelated Git dirt. Version-guarded whole-file updates reuse original read
+receipts and the original edit writer. Explicit JSON/schema output requirements use
+the original TaskPolicy.required_checks and completion loop.
+
+Native protocol repair previously generated guidance but delivered only short errors.
+The same guidance now follows the original paired error receipt, preserving call IDs
+and error content. Arguments are never unwrapped or rewritten to make a call execute.
+
+Verification: **401 focused tests and 472 subtests passed**. After the last native
+repair-delivery change, **181 tests and 405 subtests passed**. Contract/UI refinements
+also passed **79 tests and 64 subtests**. These overlapping selections are not summed.
+Architecture ceilings were not raised. Full pytest was not run, as requested.
+Final Ruff, production mypy (**532 source files**) and `git diff --check` passed.
+
+Final 12B primary tasks passed **4/4**, including strict bare JSON and task-local
+verification. Multi-file work took **46.79s / 12 requests**, versus historical Codey
+**130.57s / 17 requests**. Final native boundaries passed **9/10**; the final text path
+passed **10/10** in the preceding matrix. The remaining native model failure repeatedly
+logged to console without returning values; completion was blocked at the turn limit.
+An earlier complete **20/20** matrix is retained but does not replace this last failure.
+An entirely untracked Git read task passed in **6.38s / 2 requests**, with no spurious
+verification block. Historical comparison and diagnostic failures are documented in
+[the focused report](docs/codey_input_convergence_12b.zh-CN.md).
+
+After a host crash, all further tests/model runs were sequential, with temporary files
+on E:. The interrupted run is not counted as verification. A broader old server probe
+also had four shell-related failures outside this change's final focused selection;
+their relationship to this patch was not established and they were not fixed here.
+
 ## Search, persistent discovery and CodeMode recovery convergence (2026-10-25)
 
 Kept context/glob search, persistent metadata discovery and CodeMode recovery.

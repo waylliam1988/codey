@@ -391,15 +391,21 @@ def _write_text_after_final_path_check(
     content: str,
     *,
     tool: str,
+    expected_version: str | None = None,
 ) -> ToolOutcome | None:
     path, error = _checked_tool_path(root, rel, tool=tool)
     if error is not None or path is None:
         return error or ToolOutcome.error("path could not be resolved")
+    if expected_version is not None:
+        from codey.workspace.paths import path_hash
+
+        if path_hash(path) != expected_version:
+            return ToolOutcome.error("file version changed since the referenced full read; read the current file again")
     write_text_atomic(path, content)
     return None
 
 
-def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
+def write_file(root: Path, rel: str, content: str, *, expected_version: str | None = None) -> ToolOutcome:
     if len(content.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
     path, error = _checked_tool_path(root, rel, tool="write_file")
@@ -411,6 +417,11 @@ def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
             try:
                 before = path.read_text(encoding="utf-8")
                 if before == content:
+                    if expected_version is not None:
+                        from codey.workspace.paths import content_hash
+
+                        if content_hash(before) != expected_version:
+                            return ToolOutcome.error("file version changed since the referenced full read")
                     return ToolOutcome(f"wrote {rel} (no changes)", True)
             except (OSError, UnicodeDecodeError, ValueError):
                 # Best-effort hint only: the authoritative path check
@@ -423,6 +434,7 @@ def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
         rel,
         content,
         tool="write_file",
+        expected_version=expected_version,
     )
     if write_error is not None:
         return write_error

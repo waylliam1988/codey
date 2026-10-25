@@ -17,12 +17,10 @@ class ReplayProvider:
     def set_result_refs(self, refs):
         self.refs = refs
 
-    def set_working_context(self, text):
-        assert 'exec-17' in text and '"exit_code": 1' in text
-
     def send(self, prompt):
         self.questions.append(prompt)
         if len(self.questions) <= 8:
+            assert 'exec-17' in prompt and '"exit_code": 1' in prompt
             return "Next: inspect the following module."
         if len(self.questions) == 9 and self.recoverable:
             return json.dumps({"read": {"result_ref": "observation-1", "offset": 0, "limit": 8000}})

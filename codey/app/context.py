@@ -387,30 +387,11 @@ class AppContext(GhostStoreAccessors):
         project: str | Path,
         *,
         persistent: bool,
+        task_id: str = "",
     ) -> ChangeTracker:
-        key = str(Path(project).expanduser().resolve())
-        if not persistent:
-            # Read-only/Git view: never mutate a cached tracker a task may
-            # hold, and never delete durable recovery data on a query path.
-            # Explicit cleanup owns deletion.
-            return ChangeTracker(key, None)
-        with self.lock:
-            tracker = self.change_trackers.get(key)
-            current_persistent = tracker is not None and tracker.store is not None
-            if tracker is None or not current_persistent:
-                tracker = ChangeTracker(key, self.snapshot_store)
-                self.change_trackers[key] = tracker
-            else:
-                self.change_trackers.move_to_end(key)
-            self._evict_change_trackers_locked()
-            return tracker
+        from codey.app.change_tracking import change_tracker_for
 
-    def _evict_change_trackers_locked(self) -> None:
-        """Drop oldest in-memory trackers only; durable snapshots stay on disk."""
-        while len(self.change_trackers) > MAX_CHANGE_TRACKERS:
-            _old_key, old_tracker = self.change_trackers.popitem(last=False)
-            with contextlib.suppress(Exception):
-                old_tracker.disable_persistence()
+        return change_tracker_for(self, project, persistent=persistent, task_id=task_id, limit=MAX_CHANGE_TRACKERS)
 
     def reserve_run(
         self,

@@ -14,7 +14,7 @@ from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.runtime.core.models import ToolCall
-from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _new_session, _open_runtime
+from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _new_session, _open_runtime, _tracker_state
 
 
 def fixture(tmp_path):
@@ -213,7 +213,7 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(tmp_
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
     deps = SimpleNamespace(
-        state=SimpleNamespace(durable=durable),
+        state=_tracker_state(durable, state),
         runtime_mutations=RuntimeMutationLine(durable=durable),
         runtime_effects=RuntimeEffectStore(durable=durable),
         tool_result_delivery=ToolResultDeliveryStore(durable=durable),

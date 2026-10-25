@@ -66,9 +66,8 @@ def test_original_loop_repairs_recorded_escape_failure_then_searches_exact_quote
     correct = json.dumps({"text": '"PATTERN.*"'})
     snapshot = build_turn_snapshot(runtime.state, native=False)
     codemode = next(spec for spec in snapshot.frozen_specs if spec.name == "codemode")
-    quoted = [json.loads(example) for example in codemode.json_examples if "quoted text" in example]
-    assert len(quoted) == 1
-    assert "query:'\"quoted text\"'" in quoted[0]["args"]["code"]
+    examples = [json.loads(example) for example in codemode.json_examples]
+    assert examples and all(example["tool"] == "codemode" for example in examples)
 
     class Provider:
         step = 0
@@ -79,8 +78,8 @@ def test_original_loop_repairs_recorded_escape_failure_then_searches_exact_quote
                 return MALFORMED
             if self.step == 2:
                 assert runtime.state.executed == {} and runtime.state._memory_results == {}
-                assert quoted[0]["args"]["code"] in prompt
-                assert codemode.json_examples[1] in prompt
+                assert "Preserve argument strings exactly" in prompt
+                assert codemode.json_examples[0] in prompt
                 assert "No tool in this reply was executed" in prompt
                 code = ('const r = await tools.grep({query:\'"PATTERN.*"\',path:\'.\',literal:true,'
                         "case_sensitive:true,include:'*.py'}); if (!r.ok) throw new Error(r.error); "

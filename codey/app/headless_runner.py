@@ -56,6 +56,8 @@ class HeadlessRequest:
     review_policy: str | None = None
     model_selection: dict[str, Any] = field(default_factory=dict)
     input: TaskInput | None = None
+    output_format: str = "text"
+    output_schema: str = ""
 
 
 @dataclass(frozen=True)
@@ -391,6 +393,7 @@ def _run_headless_task(
                 denied_capabilities=auth.denied_capabilities,
                 review_source_run_id=request.review_source_run_id,
                 model_selection=selection_payload,
+                output_format=request.output_format, output_schema=request.output_schema,
             )
         else:
             submission = TaskSubmission(
@@ -409,6 +412,7 @@ def _run_headless_task(
                 denied_capabilities=auth.denied_capabilities,
                 review_source_run_id=request.review_source_run_id,
                 model_selection=selection_payload,
+                output_format=request.output_format, output_schema=request.output_schema,
                 input=request.input,
             )
         run_task_submission(deps, submission)

@@ -273,7 +273,7 @@ def _normalize_edit(
     args: Mapping[str, Any],
     limits: ToolArgLimits,
 ) -> ToolArgsRepairResult:
-    _reject_unknown_args(args, {"path", "cwd", "content", "replacements"}, context="edit")
+    _reject_unknown_args(args, {"path", "cwd", "content", "replacements", "base_result_ref"}, context="edit")
     norm_path, rewrites, counts = _resolve_path_arg(
         args, missing_msg="edit requires a top-level path and can only edit one file",
     )
@@ -284,7 +284,12 @@ def _normalize_edit(
         if not isinstance(args["content"], str):
             raise ToolArgsRepairError("edit content must be a string", repair_kind="invalid_args")
         call_args["content"] = args["content"]
+        if "base_result_ref" in args:
+            ref, _ = _require_text_arg(args, ("base_result_ref",), "base_result_ref", allow_blank=False)
+            call_args["base_result_ref"] = ref
     else:
+        if "base_result_ref" in args:
+            raise ToolArgsRepairError("base_result_ref requires content mode")
         replacements = args["replacements"]
         if not isinstance(replacements, list) or not replacements:
             raise ToolArgsRepairError("edit replacements must be a non-empty list", repair_kind="invalid_args")

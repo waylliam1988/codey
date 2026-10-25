@@ -47,6 +47,21 @@ def _policy():
     return TaskPolicy(grants=frozenset({"control", "project.read", "project.write", "project.verify"}))
 
 
+def _tracker_state(durable, state_home):
+    """Use the production resource factory without starting application services."""
+    from collections import OrderedDict
+    from threading import RLock
+
+    from codey.app.change_tracking import change_tracker_for
+    from codey.workspace.changes import SnapshotStore
+
+    state = SimpleNamespace(durable=durable, snapshot_store=SnapshotStore(state_home),
+                            lock=RLock(), change_trackers=OrderedDict())
+    state.change_tracker_for = lambda project, *, persistent, task_id: change_tracker_for(
+        state, project, persistent=persistent, task_id=task_id, limit=8)
+    return state
+
+
 def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, project: Path,
                   *, task_kind: str = "project"):
     from codey.durable import DurableSession, SQLiteDurableStore
@@ -68,7 +83,7 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
         task_id=run_id,
         text="recovery fixture",
         provider_snapshot={"provider_id": "local", "model_id": "fixture"},
-        task_state={"task_kind": task_kind},
+        task_state={"task_kind": task_kind, "project": str(project)},
     )
     durable.start_task(run_id, state={"task_kind": "project"})
     durable.advance_task(
@@ -89,7 +104,7 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
         managed_outputs=managed, durable=durable,
     )
     deps = SimpleNamespace(
-        state=SimpleNamespace(durable=durable),
+        state=_tracker_state(durable, state),
         runtime_mutations=mutations,
         runtime_effects=RuntimeEffectStore(durable=durable),
         tool_result_delivery=ToolResultDeliveryStore(durable=durable),

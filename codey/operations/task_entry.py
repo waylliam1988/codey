@@ -213,14 +213,15 @@ def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, An
     return active_provider, intent_sink, stop_flag
 
 
-def _entry_project_tracker(project_path: Path | None, deps: Any, policy: Any) -> Any:
+def _entry_project_tracker(project_path: Path | None, deps: Any, policy: Any, run_id: str) -> Any:
     if project_path is None or not policy.allows("project.write"):
         return None
     from codey.operations.kernel_errors import RecoveryFailed
-    from codey.workspace.changes import is_git_repository
 
     try:
-        tracker = deps.state.change_tracker_for(project_path, persistent=not is_git_repository(project_path))
+        from codey.operations.task_changes import task_change_tracker
+
+        tracker = task_change_tracker(deps.state, project_path, run_id)
         if tracker is None:
             raise ValueError("project change tracker is missing")
         return tracker
@@ -454,7 +455,7 @@ def _run_entry_kernel(  # noqa: PLR0915
     except Exception:
         ignored = ()
     try:
-        tracker = _entry_project_tracker(project_path, deps, policy)
+        tracker = _entry_project_tracker(project_path, deps, policy, frame.run_id)
         initial_turn, frame.entry_initial_turn = frame.entry_initial_turn, None
         result = run_task_kernel(
             session,

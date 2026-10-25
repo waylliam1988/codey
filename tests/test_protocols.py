@@ -144,13 +144,13 @@ class JsonToolCodecTests(unittest.TestCase):
             with self.subTest(profile=profile), self.assertRaises(ValueError):
                 JsonToolCodec(permission_profile=profile)
 
-    def test_system_prompt_limits_content_to_new_file_creation(self) -> None:
+    def test_system_prompt_requires_read_receipt_for_whole_file_update(self) -> None:
         prompt = JsonToolCodec().system_prompt()
         normalized = " ".join(prompt.split())
 
-        self.assertIn("content only when creating a new file", normalized)
-        self.assertIn("Existing files must use exact old_string/new_string pairs", normalized)
-        self.assertIn("never use content to replace an existing file", normalized)
+        self.assertIn("Use content to create a file", normalized)
+        self.assertIn("whole-file updates require content plus base_result_ref", normalized)
+        self.assertIn("complete read_file base_result_ref", normalized)
         self.assertNotIn("substantial rewrite", normalized)
         self.assertNotIn("use content with the full file instead", normalized)
 
@@ -737,9 +737,9 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("read_file page:", prompt)
         self.assertIn("find_references output is lexical reference hints only", prompt)
         self.assertIn("not semantic\n    resolution", prompt)
-        self.assertIn("written atomically", prompt)
+        self.assertIn("base_result_ref", prompt)
         self.assertIn("JSON strings must escape quotes", prompt)
-        self.assertIn("never use content\n    to replace an existing file", prompt)
+        self.assertIn("complete read_file base_result_ref", prompt)
         self.assertIn("Never claim a command, test, build, lint, or shell result", prompt)
         self.assertIn("[tool_result tool=run]", prompt)
         self.assertIn("No pipes, redirects", prompt)

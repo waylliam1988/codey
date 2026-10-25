@@ -187,9 +187,10 @@ TOOL_DEFINITIONS = (
             '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}',
         ),
         description=(
-            f"Create a new file with content, or edit an existing file with exact "
-            f"replacements. Up to {MAX_REPLACEMENTS} replacements are validated "
-            "together and written atomically. " + EXACT_REPLACEMENT_CONTEXT_HINT
+            f"Use exactly one mode: content to create; up to {MAX_REPLACEMENTS} exact replacements to edit; "
+            "or content plus base_result_ref to update a whole existing file. "
+            "base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. "
+            + EXACT_REPLACEMENT_CONTEXT_HINT
         ),
         output_facts=("file_changed",),
         render_hint="edit",
@@ -197,6 +198,7 @@ TOOL_DEFINITIONS = (
         parameters=(
             ("path", {"type": "string"}),
             ("content", {"type": "string"}),
+            ("base_result_ref", {"type": "string"}),
             (
                 "replacements",
                 {

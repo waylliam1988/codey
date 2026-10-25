@@ -5,6 +5,35 @@
 
 完整包结构与当前函数入口见[项目结构与职责地图](project_structure.zh-CN.md)。
 
+## 请求输入、任务变更与显式输出合同（2026-10-25）
+
+工具参数继续由原 ToolDefinition/ToolSpec 定义。原生 schema、文本合同和 CodeMode 的
+TypeScript 参数及结果签名均从它派生；CodeMode 不再重复附加完整参数 JSON 文本。
+必填参数仍保留在签名中，参数字符串不做引号修补，未知字段继续按声明校验。
+
+API Provider 不再保存或重排可变 working context。内核从原 TaskSession 投影本轮观察，
+追加到当前请求；原生协议中位于完整工具回执之后。每次生成只取一次时钟，作为请求
+尾部投影参与计数和发送，不回写历史。已提交消息不因新一轮观察或时钟变化而重写。
+这保留了可复用的请求前缀；实际缓存收益取决于后端，不由 Codey 保证。
+
+任务编辑的原始内容与确认后的版本仍归原 SnapshotStore/ChangeTracker 所有。原 durable
+task checkpoint 只增加不可变 change_scope 引用，恢复和接续复用该作用域。不同任务的
+基线相互隔离，工作区写锁仍共用。Git 和非 Git 任务都保存基线；本任务变更只从确认
+写入过的路径投影，不用整个 Git dirty 集合推断。外部修改、基线损坏或投影不可用会
+阻断完成，不能伪装成无变更。工作区 UI 的全局 diff 仍用于展示，不决定任务是否写过文件。
+
+整文件更新属于原 edit：创建文件使用 content；更新已有文件必须同时提供 content 和
+base_result_ref。该引用必须指向本任务原收据中的完整 read_file 结果，路径、完整性和
+当前内容版本均须匹配。CodeMode 子工具返回的 result_ref 派生自原效果身份，正文仍只存
+原收据。失败的 replacements 不会自动变成整文件覆盖。写入复用原原子文件替换入口；
+这是乐观版本检查，不是对任意外部进程的文件系统原子比较交换。
+
+调用方可通过 output_format=json 和可选 output_schema 显式要求机器可读答案。这些输入
+编译进原 TaskPolicy.required_checks，持久化与恢复沿用原策略。原完成门在一次评估中
+校验严格 JSON 和已有 schema 子集；不剥 Markdown 围栏，不修复内容，也不新增模型循环。
+格式失败时通过原任务循环只要求返修答案。它能验证格式和声明的类型，不能普遍证明
+答案语义正确；观察内容绑定仍由原 ToolSuccessRequirement 的显式声明负责。
+
 ## 持久索引与 CodeMode 恢复的所有权（2026-10-25）
 
 文件索引保留路径、stat、目录身份、版本、生成身份和发现覆盖信息，不缓存文件正文。

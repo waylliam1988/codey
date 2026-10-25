@@ -338,17 +338,17 @@ class ExecutionDelegate:
         path = str(args.get("path", "") or "")
         try:
             canonical = canonical_project_path(project_path, path)
-            target = safe_join(project_path, canonical)
+            safe_join(project_path, canonical)
         except ValueError:
             return ToolOutcome.error("workspace_escape: path escapes project root")
         if "content" in args:
-            if target.is_file():
-                return ToolOutcome.error(
-                    f"content is only allowed when creating a new file; use replacements for existing file: {canonical}"
-                )
+            from codey.operations.edit_base import content_edit_version
+
+            version = content_edit_version(self.session, project_path, canonical, args)
             if self.change_tracker is not None:
                 self.change_tracker.capture_before(path)
-            outcome = self.tool_fns.write_file(project_path, path, str(args.get("content") or ""))
+            kwargs = {"expected_version": version} if version is not None else {}
+            outcome = self.tool_fns.write_file(project_path, path, str(args.get("content") or ""), **kwargs)
             if outcome.ok and outcome.changed and self.change_tracker is not None:
                 self.change_tracker.capture_after(path)
             return outcome

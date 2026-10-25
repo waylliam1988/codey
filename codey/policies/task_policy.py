@@ -243,6 +243,10 @@ def build_task_policy(
     required_checks = STRICT_RESEARCH_REQUIRED_CHECKS if strict else (("research_sources_opened",) if sources_open_required else ())
     if getattr(submission, "project_changes_required", False) is True:
         required_checks = (*required_checks, "project_changes_required")
+    from codey.policies.output_requirement import declaration
+
+    output = declaration(getattr(submission, "output_format", "text"), getattr(submission, "output_schema", ""))
+    required_checks = (*required_checks, *((output,) if output else ()))
     requested_text = ",".join(sorted(requested)) if requested else "-"
     denied_text = ",".join(sorted(denied)) if denied else "-"
     source = f"kind:{kind or 'project'};project:{'yes' if has_project else 'no'};requested:{requested_text};strict:{'yes' if strict else 'no'};denied:{denied_text}"

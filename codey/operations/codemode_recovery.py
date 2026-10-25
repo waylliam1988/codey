@@ -59,6 +59,9 @@ def recover_containers(
         SimpleNamespace(run_id=run_id, recovered_tool_outcomes=(), settled_tool_outcomes=facts), session
     )
     managed = _managed_output_store(deps)
+    from codey.operations.task_changes import task_change_tracker
+
+    tracker = task_change_tracker(deps.state, project, run_id) if policy.allows("project.write") else None
     sink = KernelEffectSink(
         mutations,
         session_id=session_id,
@@ -89,6 +92,7 @@ def recover_containers(
             effect_scope=scope,
             turn=intent.turn,
             project_path=project,
+            change_tracker=tracker,
             managed_outputs=managed,
             session_id=session_id,
             intent_sink=sink,
@@ -107,6 +111,7 @@ def recover_containers(
             tool_index_base=intent.tool_index,
             snapshot=snapshot,
             project_path=project,
+            change_tracker=tracker,
             managed_outputs=managed,
             session_id=session_id,
             intent_sink=sink,

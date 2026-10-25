@@ -79,8 +79,8 @@ _RULE_READFILE_TRAILING = (
 )
 _RULE_EDIT_MODES = (
     "  - Use edit for all file changes. Use one replacements item for a small edit,",
-    "    and multiple items for multiple edits in one file. Use content only when",
-    "    creating a new file. Existing files must use exact old_string/new_string pairs.",
+    "    and multiple items for multiple edits in one file. Use content to create a file;",
+    "    whole-file updates require content plus base_result_ref from a full read_file receipt.",
     "    Never mix these edit modes.",
 )
 _RULE_OLD_STRING = (
@@ -90,7 +90,7 @@ _RULE_OLD_STRING = (
 _RULE_JSON_ESCAPE = (
     "  - JSON strings must escape quotes and backslashes correctly. If escaping is",
     "    difficult, read the exact current lines and escape them; never use content",
-    "    to replace an existing file.",
+    "    to overwrite an existing file without its complete read_file base_result_ref.",
 )
 _RULE_EDIT_BLOCK = _RULE_EDIT_MODES + _RULE_OLD_STRING + _RULE_JSON_ESCAPE
 _RULE_PATHS = (

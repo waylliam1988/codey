@@ -63,4 +63,7 @@ class CodeModeHost:
                 raise ValueError(f"missing structured result for {tool_name}")
             value = raw.canonical["value"]
         validate_output(tool_name, schema, value)
-        return {"ok": True, "value": value}
+        output: dict[str, object] = {"ok": True, "value": value}
+        if raw.audit.get("result_ref"):
+            output["result_ref"] = raw.audit["result_ref"]
+        return output

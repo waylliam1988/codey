@@ -72,8 +72,13 @@ def build_catalog_from_specs(specs: Mapping[str, Any] | Iterable[Any]) -> ToolCa
             "name": name,
             "description": str(getattr(spec, "description", "") or ""),
             "parameters": {
-                key: dict(schema) if isinstance(schema, Mapping) else {"type": "string"}
-                for key, schema in (getattr(spec, "parameters", ()) or ())
+                "type": "object",
+                "properties": {
+                    key: dict(schema) if isinstance(schema, Mapping) else {"type": "string"}
+                    for key, schema in (getattr(spec, "parameters", ()) or ())
+                },
+                "required": list(spec.required),
+                "additionalProperties": False,
             },
             "namespace": executor,
             "grant": str(getattr(spec, "grant", "") or ""),
@@ -114,14 +119,12 @@ def build_codemode_catalog(
 
 def render_declarations(snapshot: ToolCatalogSnapshot) -> str:
     lines = [
-        "// Frozen CodeMode tool declarations. Calls are host mediated.",
+        "// tools.NAME uses NAME's declared arguments; returns Result<T>.",
+        "type Result<T> = Promise<{ok:true;value:T;result_ref?:string}|{ok:false;error:string}>;",
         "declare const tools: {",
     ]
     for entry in snapshot.entries:
-        schema = json.dumps(_json_value(entry.parameters), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        lines.append(f"  // tools.{entry.name}: {schema}")
         value = schema_typescript(entry.output_schema)
-        lines.append(f"  {entry.name}: (args: Record<string, unknown>) => "
-                     f"Promise<{{ok: true; value: {value}}} | {{ok: false; error: string}}>;")
+        lines.append(f"  {entry.name}(args: {schema_typescript(entry.parameters)}): Result<{value}>;")
     lines.extend(("};", f"// catalog_digest={snapshot.digest}"))
     return "\n".join(lines)

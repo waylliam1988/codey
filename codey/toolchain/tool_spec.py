@@ -191,37 +191,27 @@ def _all_specs() -> dict[str, ToolSpec]:
         "const result = await tools.read_file({path:'app.py'}); "
         "if (!result.ok) throw new Error(result.error); return result.value.text;"
     )
-    quoted_example = (
-        "const result = await tools.grep({query:'\"quoted text\"',path:'.'}); "
-        "if (!result.ok) throw new Error(result.error); return result.value.matches;"
-    )
     specs["codemode"] = ToolSpec(
         name="codemode",
         grant="project.read",
         executor="codemode",
         replay_class="safe",
         description=(
-            "Execute one bounded JavaScript program in the local CodeMode sandbox. "
-            "Use only tools from the task's frozen catalog through tools.*; "
-            "each call retains its normal authorization and execution checks. "
-            "Calls return {ok:true, value} or {ok:false, error}; check ok before consuming value. "
-            "Successful value types are declared below. read_file returns an object; its text is value.text. "
-            "Return the program's final value with return; console.log and console.error produce no output. "
-            "Await every tool, store and load call before returning; unfinished calls fail the program. "
-            "Shell approval, direct filesystem/process/network access, and recursive codemode calls are unavailable. "
-            "For text containing double quote characters, prefer single-quoted JavaScript literals, "
-            "preserving the quote characters in the value. When sending code in a JSON tool request, "
-            "JSON-encode the complete request once; JavaScript escapes and outer JSON escapes are separate. "
-            "Do not paste already JSON-escaped data into JavaScript. "
-            f"Example JavaScript: {codemode_example}\nQuoted-text JavaScript example: {quoted_example}"
+            "Compose bounded JavaScript with the declared tools.*. Normal authorization applies. "
+            "Calls return {ok:true, value} or {ok:false, error}; check ok. "
+            "Data lives in value: read_file value.text; grep value.matches (possibly empty). "
+            "Await all tool/store/load calls; return the final value. console produces no output. "
+            "No direct filesystem, process, network, shell or recursive CodeMode access. "
+            "Preserve argument strings exactly, including whether quote characters are present. "
+            "In JS string literals use \\n for newlines; JSON-encode the outer request once. "
+            f"Example JavaScript: {codemode_example}"
         ),
         parameters=(
             ("code", {"type": "string"}),
             ("language", {"type": "string", "enum": ["javascript", "js"]}),
         ),
         required=("code",),
-        json_examples=tuple(json.dumps({"tool": "codemode", "args": {"code": example}}, separators=(",", ":"))
-                            for example in (codemode_example, quoted_example)),
+        json_examples=(json.dumps({"tool": "codemode", "args": {"code": codemode_example}}, separators=(",", ":")),),
     )
     specs["ask_user"] = ToolSpec(
         name="ask_user", grant="control", replay_class="safe", executor="control",
@@ -741,11 +731,6 @@ def _builtin_alias_allowed_keys(tool: str) -> set[str] | None:
                 "include", "exclude", "before_context", "after_context"}
     if name in {"find_references", "references"}:
         return {"symbol", "name", "path", "cwd"}
-    if name in {"edit"}:
-        # Edit has content/replacements forms; legacy handles the rest.
-        # Generic only checks no-extra beyond the known edit surface.
-        return {"path", "cwd", "content", "old_string", "new_string", "search",
-                "old", "new", "before", "after", "replace", "replacement", "replacements"}
     if name in {"run", "shell"}:
         return {"command", "cmd", "path", "cwd"}
     if name == "source_search":

@@ -418,16 +418,12 @@ def _run_writer_phase(ctx: ProjectRun) -> None:
     ctx.task_session = ctx.result.facts
     if ctx.inherited_green:
         ctx.result = replace(ctx.result, checks_passed=True)
-    checkpoint_changed = bool(
-        ctx.work.work_checkpoint is not None
-        and ctx.work.work_checkpoint.changed_files
-    )
-    ctx.task_changed = ctx.result.changed or checkpoint_changed
     ctx.task_changes = ctx.deps.verification.collect_changes(ctx.project, ctx.tracker)
     collected_changed = change_state(ctx.task_changes)
     ctx.task_changes_dirty = collected_changed is None
-    if collected_changed is not None:
-        ctx.task_changed = collected_changed
+    if collected_changed is None:
+        raise RuntimeError("task change projection is unavailable")
+    ctx.task_changed = collected_changed
     if ctx.result.stop_reason == "done":
         ctx.hooks.update_checkpoint(
             lambda store, item: store.set_status(item, "ready_for_review")

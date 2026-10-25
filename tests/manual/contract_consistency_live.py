@@ -40,7 +40,7 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
     (project / "a.txt").write_text("AMBER-471\n", encoding="utf-8")
     (project / "b.txt").write_text("COBALT-923\n", encoding="utf-8")
     _, mutations, managed, revisions, deps, sink = _open_runtime(logdir, state, "s", "r", project)
-    writing = case == "write"
+    writing = case in {"write", "replace"}
     cancelling = case in {"cancel", "search_cancel"}
     searching = case.startswith("search_")
     stop = threading.Event()
@@ -62,6 +62,13 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
                 tuple(require_tool_success("read_file", via="codemode", arguments={"path": path},
                                            answer_pointer=f"/{key}", result_pointer="/text", result_line=1)
                       for key, path in (("a", "a.txt"), ("b", "b.txt"))))
+    if case == "replace":
+        task = ("Use codemode to read the complete a.txt, then update that existing file with edit content "
+                "and base_result_ref from the read result. Its complete new content must be SAPPHIRE-369 "
+                "followed by a newline. Do not use replacements. Do not execute tests or shell commands. "
+                "Report what you actually updated.")
+        required = tuple(require_tool_success(tool, via="codemode", arguments={"path": "a.txt"})
+                         for tool in ("read_file", "edit"))
     expected_search = None
     if searching:
         literal_line = '"PATTERN.*"' if case == "search_quoted" else "PATTERN.*"
@@ -141,7 +148,7 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
             except ValueError:
                 valid_output = False
         elif writing:
-            target = project / "created.txt"
+            target = project / ("a.txt" if case == "replace" else "created.txt")
             valid_output = target.is_file() and target.read_text(encoding="utf-8") == "SAPPHIRE-369\n"
         else:
             try:
@@ -178,7 +185,7 @@ def main():
     parser.add_argument("--model", required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--protocols", nargs="+", choices=("on", "off"), default=("on", "off"))
-    parser.add_argument("--cases", nargs="+", choices=("read", "write", "cancel", "search_literal", "search_quoted", "search_regex", "search_empty", "search_context", "search_cancel"), default=("read", "write"))
+    parser.add_argument("--cases", nargs="+", choices=("read", "write", "replace", "cancel", "search_literal", "search_quoted", "search_regex", "search_empty", "search_context", "search_cancel"), default=("read", "write"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / "production.patch").write_bytes(subprocess.check_output(["git", "diff", "--binary", "--", "codey"]))

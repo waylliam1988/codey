@@ -115,7 +115,6 @@ class ApiProvider:
         self._result_refs: frozenset[str] = frozenset()
         self._auxiliary: ApiProvider | None = None
         self._history_revision = 0
-        self._working_context = ""
         self.auxiliary_connection: Callable[[ApiProvider], AuxiliaryConnection] = lambda client: client
         self.summarize_context: Callable[[list[dict[str, Any]], float], str] = self._summarize_context
         self.base_url = base_url.strip().rstrip("/")
@@ -610,14 +609,8 @@ class ApiProvider:
         from codey.providers.request_context import clock_context
 
         payload = self._codec.build_payload(messages, tools, settings)
-        if self._working_context:
-            key = "messages" if self.api_protocol == "openai-completions" else "input"
-            # Runtime observations are data, never provider/system instructions.
-            payload[key] = [{"role": "system", "content": self.system_prompt}] if self.system_prompt else []
-            payload[key] += [{"role": "user", "content": self._working_context}]
-            payload[key] += [item for item in messages if item.get("role") != "system"]
         key = "messages" if self.api_protocol == "openai-completions" else "input"
-        payload[key] = [{"role": "system", "content": clock if clock is not None else clock_context()}, *payload[key]]
+        payload[key] = [*payload[key], {"role": "user", "content": clock if clock is not None else clock_context()}]
         self.configure_request(payload)
         return payload
 
@@ -685,12 +678,6 @@ class ApiProvider:
 
     def export_work_state(self) -> str:
         return self.context_ledger.portable_state()
-
-    def set_working_context(self, text: str) -> None:
-        with self._state_lock:
-            if self._working_context != text:
-                self._working_context = text
-                self._history_revision += 1
 
     def fork_auxiliary(self) -> ApiProvider:
         budget = self.context_budget

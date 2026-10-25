@@ -14,7 +14,7 @@ from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
-from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
+from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime, _tracker_state
 
 
 def _write(path="created.txt"):
@@ -45,8 +45,11 @@ def runtime(tmp_path, request):
     policy = TaskPolicy(frozenset({"control", "project.read", "project.write"}), required_checks=required)
     state = TaskSession(policy=policy, project=str(project), verification_forbidden=True)
     record_entry_policy(mutations, session_id="s", run_id="r", policy=policy)
+    from codey.operations.task_changes import task_change_tracker
+
+    tracker = task_change_tracker(deps.state, project, "r")
     value = SimpleNamespace(project=project, storage=storage, mutations=mutations, managed=managed,
-                            revisions=revisions, deps=deps, sink=sink, state=state)
+                            revisions=revisions, deps=deps, sink=sink, state=state, tracker=tracker)
     try:
         yield value
     finally:
@@ -67,11 +70,12 @@ def _execute(runtime, items, native, *, start=1, stop=None, on_event=None):
         executor = build_execute_turn_executor(session=runtime.state, snapshot=snapshot, run_id="r",
             effect_scope="task", turn=turn, project_path=runtime.project, managed_outputs=runtime.managed,
             session_id="s", durable=runtime.mutations.durable, intent_sink=runtime.sink,
-            workspace_revision_store=runtime.revisions, allow_writes=True, stop_flag=stop, on_event=on_event)
+            workspace_revision_store=runtime.revisions, change_tracker=runtime.tracker,
+            allow_writes=True, stop_flag=stop, on_event=on_event)
         results.extend(execute_turn(runtime.state, plan.calls, snapshot=snapshot, run_id="r", effect_scope="task",
             turn=turn, project_path=runtime.project, managed_outputs=runtime.managed, session_id="s",
             intent_sink=runtime.sink, workspace_revision_store=runtime.revisions,
-            executors={"codemode": executor}, stop_flag=stop))
+            change_tracker=runtime.tracker, executors={"codemode": executor}, stop_flag=stop))
         # A following turn must settle the previous delivery through the
         # production provider-effect boundary, just as the task loop does.
         delivery.send("Tool results received")
@@ -89,7 +93,7 @@ def _restart(runtime, *, expected_ok=True):
     runtime.mutations.durable.close()
     durable = DurableSession(SQLiteDurableStore(runtime.storage / "durable.sqlite3"))
     runtime.mutations = RuntimeMutationLine(durable=durable)
-    deps = SimpleNamespace(state=SimpleNamespace(durable=durable), runtime_mutations=runtime.mutations,
+    deps = SimpleNamespace(state=_tracker_state(durable, runtime.storage), runtime_mutations=runtime.mutations,
         runtime_effects=RuntimeEffectStore(durable=durable), tool_result_delivery=ToolResultDeliveryStore(durable=durable),
         managed_outputs=runtime.managed, workspace_revisions=runtime.revisions)
     policy = policy_from_durable_task(durable, task_id="r")

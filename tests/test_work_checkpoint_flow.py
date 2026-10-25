@@ -107,7 +107,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=interrupted),
-                mock.patch.object(task_submit, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             ):
                 task_submit.run_task("session-1", str(project), "Do work", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
@@ -128,7 +128,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=resumed),
-                mock.patch.object(task_submit, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
                 mock.patch.object(
                     review_service,
                     "run_review",
@@ -172,6 +172,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     assert request.change_tracker is not None
                     request.change_tracker.capture_before("app.py")
                     (project / "app.py").write_text("after\n", encoding="utf-8")
+                    request.change_tracker.capture_after("app.py")
                     request.on_event(RunEvent.tool_finished(
                         2,
                         ToolCall("edit", {"path": "app.py"}),
@@ -259,7 +260,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 ) as agent_run,
                 mock.patch.object(
                     task_submit,
-                    "collect_changes",
+                    "collect_task_changes",
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),
             ):
@@ -316,7 +317,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 ) as agent_run,
                 mock.patch.object(
                     task_submit,
-                    "collect_changes",
+                    "collect_task_changes",
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),
             ):
@@ -387,7 +388,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run", side_effect=writer),
                 mock.patch.object(
                     task_submit,
-                    "collect_changes",
+                    "collect_task_changes",
                     return_value={
                         "ok": True,
                         "changed_count": 1,
@@ -539,7 +540,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(
                     task_submit,
-                    "collect_changes",
+                    "collect_task_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
@@ -596,7 +597,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
-                mock.patch.object(task_submit, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", return_value=None),
             ):
                 task_submit.run_task("session-1", str(project), "Do work", 8, False, "deepseek", "project", get_state=http_context.get_context)
@@ -662,7 +663,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
-                mock.patch.object(task_submit, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", review),
             ):
                 task_submit.run_task("session-1", str(project), "Fix login", 8, False, "deepseek", "project", get_state=http_context.get_context)
@@ -710,7 +711,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "agent_run",
                     return_value=RunResult("done", "done", 1, False, True, False),
                 ),
-                mock.patch.object(task_submit, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", review),
                 mock.patch(
                     "codey.operations.project_completion_context.render_verification_map",
@@ -761,7 +762,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=interrupted),
-                mock.patch.object(task_submit, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             ):
                 task_submit.run_task("session-1", str(project), "Fix app", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
@@ -776,7 +777,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "agent_run",
                     return_value=RunResult("done", "done", 1, False, False, False),
                 ),
-                mock.patch.object(task_submit, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", return_value=None),
             ):
                 task_submit.run_task("session-1", str(project), "Continue", 8, True, "deepseek", get_state=http_context.get_context)
@@ -821,7 +822,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
-                mock.patch.object(task_submit, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", return_value=None),
             ):
                 task_submit.run_task(
@@ -863,7 +864,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(
                     task_submit,
-                    "collect_changes",
+                    "collect_task_changes",
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),
             ):
@@ -913,7 +914,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(
                     task_submit,
-                    "collect_changes",
+                    "collect_task_changes",
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),
                 mock.patch(

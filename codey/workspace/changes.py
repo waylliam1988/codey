@@ -113,7 +113,7 @@ class RestoreResult:
 
 
 class SnapshotStore:
-    """Persist one bounded recovery baseline per non-Git project.
+    """Persist bounded first-write baselines for one workspace/task scope.
 
     The store is two-layered so one edit no longer rewrites the whole
     baseline set:
@@ -127,17 +127,22 @@ class SnapshotStore:
     re-serializing up to 64MB of JSON on every edit.
     """
 
-    def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
+    def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME, *, task_id: str = "") -> None:
         self.state_home = Path(state_home)
+        self.task_id = task_id
 
-    def dir_for(self, root: str | Path) -> Path:
-        snapshot_dir: Path = (
+    def _project_dir(self, root: str | Path) -> Path:
+        return (
             self.state_home
             / "projects"
             / project_key(root)
             / SNAPSHOT_DIR_NAME
         )
-        return snapshot_dir
+
+    def dir_for(self, root: str | Path) -> Path:
+        snapshot_dir = self._project_dir(root)
+        return (snapshot_dir / "tasks" / hashlib.sha256(self.task_id.encode()).hexdigest()
+                if self.task_id else snapshot_dir)
 
     def path_for(self, root: str | Path) -> Path:
         return self.dir_for(root) / "manifest.json"
@@ -153,10 +158,7 @@ class SnapshotStore:
     def load(self, root: str | Path) -> tuple[dict[str, str | None], dict[str, str]]:
         resolved_root = Path(root).expanduser().resolve()
         manifest_path = self.path_for(resolved_root)
-        try:
-            if not manifest_path.exists():
-                return {}, {}
-        except OSError:
+        if not manifest_path.exists():
             return {}, {}
         with with_file_lock(self._lock_target(resolved_root)):
             # Missing -> empty. Present-but-unreadable or top-level-invalid
@@ -173,48 +175,47 @@ class SnapshotStore:
             hashes: dict[str, str] = {}
             total = 0
             for rel, entry in raw_files.items():
-                # One dirty entry must not wipe the whole baseline: skip it.
                 if len(before) >= MAX_SNAPSHOT_FILES or not isinstance(rel, str):
-                    continue
+                    raise StoreCorruption(manifest_path, "baseline entry limit or path type")
                 if not isinstance(entry, dict):
-                    continue
+                    raise StoreCorruption(manifest_path, "baseline entry must be an object")
                 if set(entry) - {"baseline", "after_hash"}:
-                    continue
+                    raise StoreCorruption(manifest_path, "unknown baseline entry fields")
                 if "baseline" not in entry:
-                    continue
+                    raise StoreCorruption(manifest_path, "missing baseline reference")
                 try:
                     path = _safe_join(resolved_root, rel)
                     canonical = path.relative_to(resolved_root).as_posix()
-                except (ValueError, OSError):
-                    continue
+                except (ValueError, OSError) as exc:
+                    raise StoreCorruption(manifest_path, "invalid baseline path") from exc
                 if canonical != rel:
-                    continue
+                    raise StoreCorruption(manifest_path, "noncanonical baseline path")
                 content: str | None
                 if entry.get("baseline") is None:
                     content = None
                 else:
                     expected_body = self._baseline_path(resolved_root, rel).name
                     if entry.get("baseline") != expected_body:
-                        continue
+                        raise StoreCorruption(manifest_path, "baseline reference mismatch")
                     try:
                         body = _read_text_bounded(
                             self._baseline_path(resolved_root, rel),
                             max_bytes=MAX_SNAPSHOT_FILE_BYTES,
                         )
-                    except (OSError, UnicodeDecodeError, ValueError):
-                        continue
+                    except (OSError, UnicodeDecodeError, ValueError) as exc:
+                        raise StoreCorruption(manifest_path, "baseline body unavailable") from exc
                     if len(body.encode("utf-8")) > MAX_SNAPSHOT_FILE_BYTES:
-                        continue
+                        raise StoreCorruption(manifest_path, "baseline body exceeds budget")
                     content = body
                 digest = entry.get("after_hash")
                 if digest is not None and not (
                     isinstance(digest, str)
                     and (digest == "missing" or digest.startswith("sha256:"))
                 ):
-                    continue
+                    raise StoreCorruption(manifest_path, "invalid produced version")
                 content_bytes = len((content or "").encode("utf-8"))
                 if total + content_bytes > MAX_SNAPSHOT_TOTAL_BYTES:
-                    break
+                    raise StoreCorruption(manifest_path, "baseline total budget exceeded")
                 total += content_bytes
                 before[rel] = content
                 if isinstance(digest, str):
@@ -223,7 +224,7 @@ class SnapshotStore:
 
     def writer_lock_path(self, root: str | Path) -> Path:
         """Per-project persistent-writer ownership lock (held for a task)."""
-        return self.dir_for(root) / ".writer.lock"
+        return self._project_dir(root) / ".writer.lock"
 
     def acquire_writer(self, root: str | Path, *, timeout_seconds: float = 0.0) -> FileLease:
         """Claim the single persistent writer for ``root`` or raise busy.
@@ -654,10 +655,7 @@ class ChangeTracker:
         with self._lock:
             if rel_posix not in self._before:
                 return
-        try:
-            digest = _path_hash(path)
-        except (OSError, UnicodeDecodeError, ValueError):
-            return
+        digest = _path_hash(path)
         # Hashing also happens outside the lock; prune_clean may have dropped
         # the baseline meanwhile. Re-check membership so no orphan after-hash
         # outlives its baseline.
@@ -667,8 +665,7 @@ class ChangeTracker:
             self._after_hashes[rel_posix] = digest
             store = self.store
         if store is not None:
-            with contextlib.suppress(OSError, ValueError):
-                store.set_after_hash(self.root, rel_posix, digest)
+            store.set_after_hash(self.root, rel_posix, digest)
 
     def snapshots(self, paths: list[str] | None = None) -> list[Snapshot]:
         # One locked copy of {path: baseline}: the whole collect sees a single
@@ -677,26 +674,23 @@ class ChangeTracker:
         # lock; only this small dict is copied under it.
         with self._lock:
             view = dict(self._before)
-            selected = set(paths) if paths else set(view)
+            selected = set(paths) if paths is not None else set(view)
         items: list[Snapshot] = []
         for rel in sorted(view):
             if rel not in selected:
                 continue
             before = view[rel]
             path = _safe_join(self.root, rel)
-            try:
-                after = _read_text_or_none(path, max_bytes=MAX_SNAPSHOT_FILE_BYTES)
-            except (OSError, UnicodeDecodeError, ValueError):
-                continue
+            after = _read_text_or_none(path, max_bytes=MAX_SNAPSHOT_FILE_BYTES)
             if before == after:
                 continue
             items.append(Snapshot(rel, before, after))
         return items
 
-    def collect(self, *, prune_clean: bool = False) -> dict[str, Any]:
+    def collect(self, *, prune_clean: bool = False, paths: list[str] | None = None) -> dict[str, Any]:
         """Render the current change set; read-only unless pruning."""
 
-        snapshots = self.snapshots()
+        snapshots = self.snapshots(paths)
         files = []
         diff_parts = []
         for snapshot in snapshots:

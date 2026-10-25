@@ -23,7 +23,7 @@ class AgentToolFns:
     find_references: Callable[[Path, str, str], ToolOutcome] = (
         tool_runtime.find_references
     )
-    write_file: Callable[[Path, str, str], ToolOutcome] = tool_runtime.write_file
+    write_file: Callable[..., ToolOutcome] = tool_runtime.write_file
     edit_file: Callable[[Path, str, list[EditBlock]], ToolOutcome] = (
         tool_runtime.edit_file
     )

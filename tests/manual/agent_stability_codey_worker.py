@@ -62,6 +62,7 @@ def main():
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--continue", dest="continue_task", action="store_true")
     parser.add_argument("--max-turns", type=int, default=1000)
+    parser.add_argument("--output-format", choices=("text", "json"), default="text")
     parser.add_argument("task")
     args = parser.parse_args()
     headless_runner.HeadlessAppContext = ControlledContext
@@ -73,7 +74,7 @@ def main():
 
     request = headless_runner.HeadlessRequest(project=args.project, task=args.task,
         provider_id="local", state_home=args.state_home, session_id=args.session_id,
-        continue_task=args.continue_task, max_turns=args.max_turns)
+        continue_task=args.continue_task, max_turns=args.max_turns, output_format=args.output_format)
     return headless_runner.run_headless(request, emit_jsonl=emit, connect_provider=sampling_provider,
                                        connect_reviewer=sampling_provider).exit_code
 

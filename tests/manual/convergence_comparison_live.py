@@ -313,11 +313,13 @@ def run(args):
                 "GIT_AUTHOR_DATE": "2000-01-01T00:00:00+00:00",
                 "GIT_COMMITTER_DATE": "2000-01-01T00:00:00+00:00",
             }
-            subprocess.run([*git, "add", "--", *case["files"]], env=git_env, check=True, capture_output=True)
-            subprocess.run(
-                [*git, "commit", "--no-verify", "-qm", "fixture baseline"], env=git_env, check=True, capture_output=True
-            )
-            baseline_commit = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+            baseline_commit = ""
+            if not args.untracked_fixture:
+                subprocess.run([*git, "add", "--", *case["files"]], env=git_env, check=True, capture_output=True)
+                subprocess.run(
+                    [*git, "commit", "--no-verify", "-qm", "fixture baseline"], env=git_env, check=True, capture_output=True
+                )
+                baseline_commit = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
             trace = directory / "trace"
             trace.mkdir()
             env = {k: v for k, v in os.environ.items() if not k.endswith(("_API_KEY", "_AUTH_TOKEN", "_OAUTH_TOKEN"))}
@@ -361,7 +363,10 @@ def run(args):
                 "source": source_identity(arm),
             }
             try:
-                cmd = command(arm, directory, project, url, env, args.output_tokens) + [case["task"]]
+                cmd = command(arm, directory, project, url, env, args.output_tokens)
+                if arm == "codey" and case["expected"] is not None:
+                    cmd += ["--output-format", "json"]
+                cmd += [case["task"]]
                 (directory / "command.json").write_text(json.dumps(cmd, indent=2), encoding="utf-8")
                 phase = _run_process(cmd, project, env, phase_dir, deadline=time.monotonic() + args.timeout, control="")
                 text = final_text(arm, phase["rows"])
@@ -448,4 +453,5 @@ if __name__ == "__main__":
     parser.add_argument("--timeout", type=float, default=240)
     parser.add_argument("--output-tokens", type=int, default=2048)
     parser.add_argument("--request-limit", type=int, default=24)
+    parser.add_argument("--untracked-fixture", action="store_true")
     raise SystemExit(run(parser.parse_args()))
