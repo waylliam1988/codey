@@ -64,14 +64,16 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
                       for key, path in (("a", "a.txt"), ("b", "b.txt"))))
     expected_search = None
     if searching:
-        (project / "sample.py").write_text("PATTERN.*\nSIGNAL-729\n", encoding="utf-8")
+        literal_line = '"PATTERN.*"' if case == "search_quoted" else "PATTERN.*"
+        (project / "sample.py").write_text(literal_line + "\nSIGNAL-729\n", encoding="utf-8")
         (project / "ignored.txt").write_text("SIGNAL-999\n", encoding="utf-8")
         query = {"search_literal": "PATTERN.*", "search_regex": "SIGNAL-[0-9]{3}",
-                 "search_empty": "ABSENT-NEEDLE", "search_cancel": "PATTERN.*"}[case]
+                 "search_empty": "ABSENT-NEEDLE", "search_cancel": "PATTERN.*",
+                 "search_quoted": '"PATTERN.*"'}[case]
         args = {"query": query, "path": ".", "literal": case != "search_regex",
                 "case_sensitive": True, "include": "*.py"}
         empty = case == "search_empty"
-        expected_search = {"matches": []} if empty else {"text": "PATTERN.*" if case == "search_literal" else "SIGNAL-729"}
+        expected_search = {"matches": []} if empty else {"text": "SIGNAL-729" if case == "search_regex" else literal_line}
         pointer = "/matches" if empty else "/text"
         required = (require_tool_success("grep", via="codemode", arguments=args, answer_pointer=pointer,
                                         result_pointer="/matches" if empty else "/matches/0/text"),)
@@ -159,7 +161,7 @@ def main():
     parser.add_argument("--model", required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--protocols", nargs="+", choices=("on", "off"), default=("on", "off"))
-    parser.add_argument("--cases", nargs="+", choices=("read", "write", "cancel", "search_literal", "search_regex", "search_empty", "search_cancel"), default=("read", "write"))
+    parser.add_argument("--cases", nargs="+", choices=("read", "write", "cancel", "search_literal", "search_quoted", "search_regex", "search_empty", "search_cancel"), default=("read", "write"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / "production.patch").write_bytes(subprocess.check_output(["git", "diff", "--binary", "--", "codey"]))

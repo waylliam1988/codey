@@ -33,6 +33,7 @@ from codey.operations.research_completion_checks import (
     source_requirement_checks,
     strict_research_checks,
 )
+from codey.policies.tool_requirement import ToolRequirementEvaluation
 from codey.utils.refs import stable_ref
 
 
@@ -173,7 +174,9 @@ def evaluate(session: Any, done_text: object, *, context: Any = None) -> GateVer
         )
 
 
-def _required_checks_verdict(session: Any, deduped: list[CompletionCheck]) -> GateVerdict | None:
+def _required_checks_verdict(
+    session: Any, deduped: list[CompletionCheck], tool_evaluations: dict[str, ToolRequirementEvaluation],
+) -> GateVerdict | None:
     """Enforce the task's own required_checks: missing/unrun/conflict blocks.
 
     Each required id must be produced exactly once with pass. Missing provider,
@@ -251,7 +254,7 @@ def _required_checks_verdict(session: Any, deduped: list[CompletionCheck]) -> Ga
                 reason = ""
             instruction = "Collect the missing local evidence or fresh verification, then propose done again."
             if requirement is not None:
-                instruction = requirement.guidance
+                instruction = tool_evaluations[req].feedback
             return GateVerdict(
                 complete=False,
                 followup=(
@@ -314,7 +317,9 @@ def _contract_subject(session: Any, profile: str, context: Any) -> str:
     return f"task:{profile or 'task'}"
 
 
-def _required_tool_checks(session: Any, final_text: str) -> list[CompletionCheck]:
+def _required_tool_checks(
+    session: Any, final_text: str,
+) -> tuple[list[CompletionCheck], dict[str, ToolRequirementEvaluation]]:
     """Explicit entry requirements consume the committed execution projection.
 
     These are tool observations, not model assertions or inferred workflows.
@@ -323,6 +328,7 @@ def _required_tool_checks(session: Any, final_text: str) -> list[CompletionCheck
     from codey.policies.tool_requirement import parse_tool_success_check
 
     rows: list[CompletionCheck] = []
+    evaluations: dict[str, ToolRequirementEvaluation] = {}
     for check_id in getattr(session.policy, "required_checks", ()):
         try:
             requirement = parse_tool_success_check(check_id)
@@ -331,12 +337,11 @@ def _required_tool_checks(session: Any, final_text: str) -> list[CompletionCheck
             continue
         if requirement is None:
             continue
-        observed = requirement.satisfied_by(session.executed, final_text=final_text, results=session._memory_results)
-        missing = ("answer_observation_mismatch" if requirement.answer_pointer is not None
-                   else f"successful_tool_observation_required:{requirement.tool}")
-        rows.append(CompletionCheck(requirement.check_id, CHECK_PASS if observed else CHECK_FAIL,
-                                    "" if observed else missing))
-    return rows
+        outcome = requirement.evaluate(session.executed, final_text=final_text, results=session._memory_results)
+        evaluations[requirement.check_id] = outcome
+        rows.append(CompletionCheck(requirement.check_id, CHECK_PASS if outcome.passed else CHECK_FAIL,
+                                    outcome.reason_code))
+    return rows, evaluations
 
 
 def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
@@ -348,13 +353,14 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     checks.extend(source_requirement_checks(session, context))
     checks.extend(citation_checks)
     checks.extend(strict_research_checks(session, text, context))
-    checks.extend(_required_tool_checks(session, text))
+    tool_checks, tool_evaluations = _required_tool_checks(session, text)
+    checks.extend(tool_checks)
     profile = _session_profile(session)
     _collect_provider_checks(session, profile, checks)
     deduped = _dedupe_checks(checks)
     # Task-declared required checks gate before the contract: the task entry
     # must prove its own checks ran, not just any globally registered check.
-    required_block = _required_checks_verdict(session, deduped)
+    required_block = _required_checks_verdict(session, deduped, tool_evaluations)
     if required_block is not None:
         return required_block
     domain = _domain_for_session(session)

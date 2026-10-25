@@ -190,6 +190,10 @@ def _all_specs() -> dict[str, ToolSpec]:
         "const result = await tools.read_file({path:'app.py'}); "
         "if (!result.ok) throw new Error(result.error); return result.value.text;"
     )
+    quoted_example = (
+        "const result = await tools.grep({query:'\"quoted text\"',path:'.'}); "
+        "if (!result.ok) throw new Error(result.error); return result.value.matches;"
+    )
     specs["codemode"] = ToolSpec(
         name="codemode",
         grant="project.read",
@@ -204,16 +208,19 @@ def _all_specs() -> dict[str, ToolSpec]:
             "Return the program's final value with return; console.log and console.error produce no output. "
             "Await every tool, store and load call before returning; unfinished calls fail the program. "
             "Shell approval, direct filesystem/process/network access, and recursive codemode calls are unavailable. "
-            f"Example JavaScript: {codemode_example}"
+            "For text containing double quote characters, prefer single-quoted JavaScript literals, "
+            "preserving the quote characters in the value. When sending code in a JSON tool request, "
+            "JSON-encode the complete request once; JavaScript escapes and outer JSON escapes are separate. "
+            "Do not paste already JSON-escaped data into JavaScript. "
+            f"Example JavaScript: {codemode_example}\nQuoted-text JavaScript example: {quoted_example}"
         ),
         parameters=(
             ("code", {"type": "string"}),
             ("language", {"type": "string", "enum": ["javascript", "js"]}),
         ),
         required=("code",),
-        json_examples=(json.dumps({"tool": "codemode", "args": {
-            "code": codemode_example,
-        }}, separators=(",", ":")),),
+        json_examples=tuple(json.dumps({"tool": "codemode", "args": {"code": example}}, separators=(",", ":"))
+                            for example in (codemode_example, quoted_example)),
     )
     specs["ask_user"] = ToolSpec(
         name="ask_user", grant="control", replay_class="safe", executor="control",
@@ -226,9 +233,12 @@ def _all_specs() -> dict[str, ToolSpec]:
     specs["read_tool_result"] = ToolSpec(
         name="read_tool_result", grant="control", executor="receipt", replay_class="safe",
         description="Read a stored result from this task without repeating its execution. "
+                    "Use view=value for the full canonical JSON value, or view=output (default) for display/command output. "
+                    "A missing canonical value is an error; display text cannot replace it. "
                     "Use query (a literal keyword, 1-512 characters) to locate a bounded excerpt in long output; "
                     "offset starts the search or selects a page. Not a regular expression.",
-        parameters=(("result_ref", {"type": "string"}), ("offset", {"type": "integer", "minimum": 0}),
+        parameters=(("result_ref", {"type": "string"}), ("view", {"type": "string", "enum": ["output", "value"]}),
+                    ("offset", {"type": "integer", "minimum": 0}),
                     ("limit", {"type": "integer", "minimum": 1, "maximum": 8000}),
                     ("query", {"type": "string"})),
         required=("result_ref",),

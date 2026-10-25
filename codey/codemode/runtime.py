@@ -248,7 +248,9 @@ class NodeWorkerRuntime:
     @staticmethod
     def _write_line(stdin: Any, payload: dict[str, Any], *, call_id: str = "") -> None:
         try:
-            encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
+            # Node readline also splits on U+2028/U+2029. Keep the JSONL frame
+            # ASCII so data separators cannot become transport delimiters.
+            encoded = json.dumps(payload, ensure_ascii=True, allow_nan=False)
         except (TypeError, ValueError, OverflowError):
             encoded = json.dumps({
                 "type": "result", "callId": call_id, "ok": False,

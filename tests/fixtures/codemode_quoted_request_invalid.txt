@@ -1,0 +1,1 @@
+{"tool":"codemode","args":{"code":"const result = await tools.grep({\"query\": \"\\\"PATTERN.*\\\"", \"path\": \".\", \"literal\": true, \"case_sensitive\": true, \"include\": \"*.py\"});\nif (!result.ok) throw new Error(result.error);\nreturn result.value.matches[0].text;"}}

@@ -20,13 +20,21 @@ def read_tool_result(delegate: Any, call: ToolCall) -> ToolResult:
         query = call.args.get("query")
         if "query" in call.args and (not isinstance(query, str) or not 1 <= len(query) <= 512):
             raise ValueError("query must be a nonempty literal string of at most 512 characters")
+        view = call.args.get("view", "output")
+        if view not in ("output", "value"):
+            raise ValueError("view must be output or value")
         result = delegate.session._memory_results.get(identity)
         if result is None:
             raise ValueError("stored result unavailable in this task")
         text = result.model_text
         managed = result.audit.get("managed_output")
         clipped = result.truncated
-        if isinstance(managed, dict):
+        if view == "value":
+            if "value" not in result.canonical:
+                raise ValueError("canonical value unavailable in this receipt")
+            text = json.dumps({"value": result.canonical["value"]}, ensure_ascii=False,
+                              sort_keys=True, separators=(",", ":"), allow_nan=False)
+        elif isinstance(managed, dict):
             if delegate.managed_outputs is None:
                 raise ValueError("stored output unavailable")
             text, metadata = delegate.managed_outputs.read_tool_output(delegate.session_id, delegate.run_id, managed["handle"])
@@ -40,7 +48,7 @@ def read_tool_result(delegate: Any, call: ToolCall) -> ToolResult:
                 match_offset = found
                 offset = max(offset, found - min(200, limit // 4))
         excerpt = text[offset:offset + limit] if query is None or match_offset is not None else ""
-        data = {"result_ref": identity, "ok": result.ok, "exit_code": result.audit.get("exit_code"),
+        data = {"result_ref": identity, "view": view, "ok": result.ok, "exit_code": result.audit.get("exit_code"),
                 "offset": offset, "next_offset": offset + limit if offset + limit < len(text) else None,
                 "stored_chars": len(text), "original_output_incomplete": clipped, "text": excerpt}
         if query is not None:

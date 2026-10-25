@@ -1,10 +1,39 @@
 """Reading an execution receipt never reruns a command or accepts arbitrary paths."""
+import json
 from types import SimpleNamespace
 from unittest import mock
+
+import pytest
 
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolCall, ToolResult
+
+
+@pytest.mark.parametrize("value", [None, False, 0, "", '"quoted"\\中文\u2028\u2029', {"text": "full" * 2000}])
+def test_explicit_canonical_view_preserves_types_and_ignores_display(value):
+    session = TaskSession(policy=SimpleNamespace(allows=lambda _: True))
+    session._memory_results["exec-17"] = ToolResult(ToolCall("grep", {}), "display decoy", ok=True,
+                                                   canonical={"value": value})
+    delegate = ExecutionDelegate(session=session)
+    result, ok, _ = delegate.execute(ToolCall("read_tool_result", {"result_ref": "exec-17", "view": "value",
+                                                                              "limit": 8000}))
+    assert ok
+    page = json.loads(result.model_text)
+    assert page["view"] == "value"
+    if page["next_offset"] is None:
+        assert json.dumps(json.loads(page["text"])["value"]) == json.dumps(value)
+    else:
+        assert page["text"].startswith('{"value":') and "display decoy" not in page["text"]
+
+
+@pytest.mark.parametrize("view", ["value", "unknown", False, []])
+def test_invalid_or_missing_value_view_never_falls_back_to_display(view):
+    session = TaskSession(policy=SimpleNamespace(allows=lambda _: True))
+    session._memory_results["exec-17"] = ToolResult(ToolCall("grep", {}), '{"value":"display decoy"}', ok=True)
+    result, ok, _ = ExecutionDelegate(session=session).execute(ToolCall("read_tool_result",
+        {"result_ref": "exec-17", "view": view}))
+    assert not ok and "display decoy" not in result.model_text
 
 
 def test_read_tool_result_is_scoped_paginated_and_has_no_executor_side_effects():

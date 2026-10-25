@@ -56,6 +56,29 @@ def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
     return tool, args
 
 
+def _json_error(source: str, exc: json.JSONDecodeError) -> TextError:
+    """Locate the failure without guessing a repaired request or changing data."""
+    detail = f"invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}."
+    if exc.msg.startswith("Invalid control character"):
+        detail += (
+            r" Escape line breaks and tabs inside JSON strings as \n, \r and \t;"
+            r' for example, "content":"first line\nsecond line\n".'
+        )
+    else:
+        detail += (
+            r' Inside a JSON string, escape each double quote as \" and each literal backslash as \\.'
+            " For embedded JavaScript, write valid JavaScript first, then JSON-encode the request once. "
+            "An unescaped quote can end the string before the reported error position."
+        )
+    start = max(source.rfind("\n", 0, exc.pos) + 1, exc.pos - 60)
+    end = source.find("\n", exc.pos)
+    end = min(len(source) if end < 0 else end, exc.pos + 60)
+    detail += (f"\nSource excerpt (starting at character {start + 1}):\n{source[start:end]}"
+               f"\nReported error is character {exc.pos - start + 1} within this excerpt. "
+               "No tool in this reply was executed. Resend the request with correct JSON escaping; preserve its values.")
+    return TextError(detail, kind="invalid_json")
+
+
 def _json_objects(text: str) -> list[dict[str, Any]] | TextError | None:
     source = (text or "").strip()
     if source.startswith("```"):
@@ -74,13 +97,7 @@ def _json_objects(text: str) -> list[dict[str, Any]] | TextError | None:
         try:
             value = json.loads(source[start:end])
         except json.JSONDecodeError as exc:
-            detail = f"invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}."
-            if exc.msg.startswith("Invalid control character"):
-                detail += (
-                    r" Escape line breaks and tabs inside JSON strings as \n, \r and \t;"
-                    r' for example, "content":"first line\nsecond line\n".'
-                )
-            return TextError(detail, kind="invalid_json")
+            return _json_error(source[start:end], exc)
         except (ValueError, RecursionError):
             return TextError("invalid JSON: value exceeds decoder limits", kind="invalid_json")
         if isinstance(value, dict):
@@ -113,8 +130,10 @@ def decode_text_turn(text: str) -> DecodedTextTurn:
     if source.startswith(("{", "[")):
         try:
             json.loads(source)
+        except json.JSONDecodeError as exc:
+            return _json_error(source, exc)
         except (ValueError, RecursionError):
-            return TextError("incomplete or malformed JSON response", kind="invalid_json")
+            return TextError("invalid JSON: value exceeds decoder limits", kind="invalid_json")
     return TextAnswer(source)
 
 

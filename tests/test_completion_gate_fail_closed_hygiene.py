@@ -64,7 +64,7 @@ def test_required_checks_read_failure_blocks_completion() -> None:
         search_results={},
     )
     verdict = completion_gate._required_checks_verdict(
-        session, [completion_check("x", CHECK_PASS)]
+        session, [completion_check("x", CHECK_PASS)], {}
     )
     assert verdict is not None
     assert verdict.complete is False

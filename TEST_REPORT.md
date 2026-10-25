@@ -2,6 +2,72 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## CodeMode values, answer repair and nested JSON boundaries (2026-10-25)
+
+The preceding rg implementation was committed as `7f31d11d`. The changes below
+are the subsequent repair work.
+
+CodeMode success display now derives `{"ok":true,"value":...}` from the same
+program value as `canonical.value`, with separate result-data and metadata
+sections in the shared native/text renderer. Primitive strings no longer appear
+as an unexplained JSON string followed by prose. Literal content quotes, empty
+strings, null, booleans, numbers and containers retain their original values.
+
+The original tool requirement evaluator now returns one ephemeral result used
+for completion status, proof reason and repair feedback. It distinguishes absent
+execution/parent, invalid receipt, unavailable selection, conflicting observations,
+invalid answer JSON, missing answer fields, wrong types and wrong values. Once
+execution and observation are satisfied, feedback requests only answer repair,
+shows bounded expected/actual JSON and identifies the committed receipts. It
+requires bare JSON without Markdown fences. No expected-answer cache, second
+execution loop, result coercion, quote stripping or compatibility reader was added.
+Explicit `read_tool_result(view="value")` pages the full canonical value from the
+same receipt; missing values fail instead of substituting display text. Default
+output reading retains the existing managed-output integrity checks.
+
+Raw HTTP evidence located the text quoted-query failure before provider parsing:
+a missing backslash closed the outer JSON string early. The parser correctly
+rejected it. CodeMode's frozen ToolSpec now supplies a quoted-text JavaScript
+example and its JSON request generated from that same program string. Strict
+JSON diagnostics share bounded source location and escaping guidance; malformed
+requests are never guessed, unescaped or executed. A recorded bad response is a
+regression fixture, including repair through the original task loop and exact
+quoted arguments reaching the actual packaged rg backend once.
+
+An independent worker boundary regression found Node readline splitting raw
+U+2028/U+2029 inside JSONL messages. The existing Python-to-worker writer now
+uses ASCII JSON encoding, preserving decoded Unicode data while protecting frame
+boundaries. Both source input and host-result regressions exercise the real worker.
+
+Verification passed: **268 focused tests and 63 subtests**, then **96** focused
+receipt/answer regressions after adding canonical-value reading, and **72** final
+tests after clarifying bare-JSON feedback. These overlapping selections are not
+summed as distinct tests. Coverage includes both protocols, actual worker/rg
+execution, strict whole-batch rejection, invalid JSON constants/overflow, literal
+quotes/backslashes/control characters, long-value paging, forged display text,
+conflicting observations, missing parents/receipts and restart recovery. Ruff,
+mypy (522 production files), Pyrefly (0 errors, 29 existing suppressions, 80 warnings)
+and ty passed. Architecture checks passed **97 tests and 405 subtests**, excluding
+the separately observed existing line guard: unchanged `operations/task_loop.py`
+remains 1231 lines against its 1205 ceiling, identical to HEAD. No ceiling changed.
+
+The final local Gemma4-12B native/text matrix passed **12/12** across read, quoted
+literal search, ordinary literal search, regex, empty results and Stop. All answers
+were checked against committed child observations and repeated recovery. The
+quoted-query case took two generations in native mode and three in text mode;
+text repaired a malformed `done.summary` JSON request without repeating grep.
+Both Stop cases started no subsequent generation. An earlier text read run also
+repaired an unwanted trailing newline by changing only done, without rereading.
+The pre-fix quoted-query failure and intermediate native Markdown-fence failure
+are retained; successful samples do not erase those model limitations.
+
+Final raw requests/results, receipts and complete production source archive:
+ignored `.e2e-artifacts/answer-and-quoted-final-release-20261025/`. All **524**
+Python/MJS source hashes match the delivered source and archive. Focused test logs
+are `answer-and-quoted-final-focused.log`, `answer-value-view-final-tests.log` and
+`answer-and-quoted-final-delta.log` under `.e2e-artifacts/`. Full pytest and the
+entire machine-contract selection were not run, as requested.
+
 ## One packaged rg backend for grep (2026-10-25)
 
 The existing `grep` entry now uses one `rg_search` engine. Normal project search

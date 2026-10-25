@@ -24,6 +24,18 @@ def argument_digest(value: object) -> str:
 
 
 @dataclass(frozen=True)
+class ToolRequirementEvaluation:
+    """Ephemeral derivation from receipts, shared by proof and repair feedback."""
+
+    reason_code: str = ""
+    feedback: str = ""
+
+    @property
+    def passed(self) -> bool:
+        return not self.reason_code
+
+
+@dataclass(frozen=True)
 class ToolSuccessRequirement:
     tool: str
     via: str = ""
@@ -86,47 +98,56 @@ class ToolSuccessRequirement:
                 "Use the stored result rather than repeating execution to restate it. "
                 "Conflicting observations cannot establish this answer requirement.")
 
-    def satisfied_by(
+    def evaluate(
         self, records: Mapping[str, Any], *, final_text: str = "", results: Mapping[str, ToolResult] | None = None,
-    ) -> bool:
+    ) -> ToolRequirementEvaluation:
         expected = {key: argument_digest(value) for key, value in json.loads(self.arguments_json).items()}
         eligible = []
+        matching_execution = False
         for identity, row in records.items():
             if not _succeeded(row, self.tool):
                 continue
             digests = row.get("argument_digests", {})
             if not isinstance(digests, dict) or any(digests.get(key) != value for key, value in expected.items()):
                 continue
+            matching_execution = True
             if not self.via or any(
                 _succeeded(parent, self.via) and identity in parent.get("child_effect_ids", ())
                 for parent in records.values()
             ):
                 eligible.append((identity, row))
+        if not eligible:
+            if matching_execution:
+                return ToolRequirementEvaluation("tool_parent_missing",
+                    "The child execution succeeded, but no successful required parent committed it. " + self.guidance)
+            return ToolRequirementEvaluation("tool_execution_missing", self.guidance)
         if self.answer_pointer is None:
-            return any(_succeeded(row, self.tool) for _, row in eligible)
-        return self._answer_satisfied(eligible, final_text, results)
+            return ToolRequirementEvaluation()
+        return self._evaluate_answer(eligible, final_text, results)
 
-    def _answer_satisfied(
+    def _evaluate_answer(
         self, eligible: list[tuple[str, Any]], final_text: str, results: Mapping[str, ToolResult] | None,
-    ) -> bool:
+    ) -> ToolRequirementEvaluation:
         from codey.toolchain.tool_spec import canonical_tool_name
 
-        if not eligible or results is None or self.answer_pointer is None:
-            return False
-        try:
-            answer = json.loads(final_text, object_pairs_hook=_unique_object, parse_constant=_reject_constant)
-            actual = _pointer(answer, self.answer_pointer)
-            observed = []
-            for identity, row in eligible:
-                if not _succeeded(row, self.tool):
-                    return False
+        assert self.answer_pointer is not None
+        observed: list[tuple[str, Any, str]] = []
+        for identity, row in eligible:
+            try:
+                if results is None:
+                    raise ValueError("full receipts unavailable")
                 receipt = results[identity]
                 if (not isinstance(receipt, ToolResult) or not receipt.ok
                         or canonical_tool_name(receipt.call.name) != self.tool
                         or {key: argument_digest(value) for key, value in receipt.call.args.items()}
                         != row.get("argument_digests")):
-                    return False
+                    raise ValueError("receipt differs from committed execution")
                 value = receipt.canonical["value"]
+            except (KeyError, ValueError, TypeError):
+                return ToolRequirementEvaluation("observation_receipt_invalid",
+                    "The required execution committed, but its full receipt is unavailable or inconsistent. "
+                    "Restore the original verified receipt before proposing done; display text cannot prove the answer.")
+            try:
                 if self.result_line is not None:
                     from codey.toolchain.result_schema import read_page_line
 
@@ -135,10 +156,51 @@ class ToolSuccessRequirement:
                         continue
                 else:
                     selected = _pointer(value, self.result_pointer)
-                observed.append(_json(selected))
-            return bool(observed) and all(value == observed[0] for value in observed) and _json(actual) == observed[0]
+                observed.append((identity, selected, _json(selected)))
+            except (KeyError, ValueError, TypeError, IndexError):
+                return ToolRequirementEvaluation("observation_selector_unavailable",
+                    "The committed result does not contain the required result selector. " + self.guidance)
+        if not observed:
+            return ToolRequirementEvaluation("observation_selector_unavailable",
+                "No committed page contains the required absolute line. " + self.guidance)
+        if any(item[2] != observed[0][2] for item in observed):
+            return ToolRequirementEvaluation("conflicting_observations",
+                "Committed observations disagree at the required selector. An answer edit cannot resolve this. "
+                "Report the conflict; do not choose an arbitrary result or repeat execution merely to restate it.")
+        expected = observed[0][1]
+        refs = [item[0] for item in observed]
+        try:
+            answer = json.loads(final_text, object_pairs_hook=_unique_object, parse_constant=_reject_constant)
+            _json(answer)  # Reject non-finite numbers produced by exponent overflow too.
+        except (ValueError, TypeError):
+            return self._answer_failure("answer_json_invalid", expected, refs)
+        try:
+            actual = _pointer(answer, self.answer_pointer)
         except (KeyError, ValueError, TypeError, IndexError):
-            return False
+            return self._answer_failure("answer_pointer_missing", expected, refs)
+        if _json(actual) == observed[0][2]:
+            return ToolRequirementEvaluation()
+        reason = "answer_type_mismatch" if type(actual) is not type(expected) else "answer_value_mismatch"
+        result = self._answer_failure(reason, expected, refs)
+        return ToolRequirementEvaluation(result.reason_code,
+            result.feedback + "\nActual answer value (JSON): " + _value_preview(actual))
+
+    def _answer_failure(self, reason: str, expected: Any, refs: list[str]) -> ToolRequirementEvaluation:
+        return ToolRequirementEvaluation(reason,
+            "Execution and observation are already satisfied. Do not repeat the tool execution. "
+            "Final answer must be JSON, as one bare document without Markdown fences or surrounding prose: "
+            f"repair only the answer at pointer {self.answer_pointer!r} "
+            "using the committed selected value below. Preserve its JSON type and content, including literal quotes. "
+            'Do not copy a truncated preview; use read_tool_result with view="value" for omitted detail.\n'
+            "Expected selected value (JSON): " + _value_preview(expected) + "\n"
+            "Committed result references: " + _json(refs[:8]) + f" (total {len(refs)})")
+
+
+def _value_preview(value: Any) -> str:
+    encoded = _json(value)
+    if len(encoded) <= 1024:
+        return _json({"value": value})
+    return _json({"json_prefix": encoded[:1024], "truncated": True, "json_chars": len(encoded)})
 
 
 def _succeeded(row: Any, name: str) -> bool:

@@ -90,7 +90,8 @@ class CodeModeKernelExecutor:
                 run_id=self.run_id,
                 max_inline_bytes=self.max_inline_bytes,
             )
-            text = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            text = json.dumps({"ok": True, "value": value}, ensure_ascii=False,
+                              sort_keys=True, separators=(",", ":"), allow_nan=False)
         except (TypeError, ValueError, OverflowError) as exc:
             return ToolResult(ok=False, call=call, model_text=str(exc), audit=audit)
         return ToolResult(ok=True, call=call, model_text=text, audit=audit, canonical={"value": value})

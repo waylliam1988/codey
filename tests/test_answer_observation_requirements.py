@@ -135,7 +135,8 @@ def test_invalid_answer_binding_is_rejected_at_declaration(kwargs):
 
 @pytest.mark.parametrize("runtime", [BINDINGS], indirect=True)
 @pytest.mark.parametrize("native", [False, True])
-def test_wrong_answer_is_repaired_by_original_task_loop_without_repeating_tools(runtime, native):
+@pytest.mark.parametrize("mistake", ["first_characters", "extra_quotes", "missing_content_quotes", "markdown_fence"])
+def test_wrong_answer_is_repaired_by_original_task_loop_without_repeating_tools(runtime, native, mistake):
     from codey.operations.task_effects import KernelRecordedProvider
     from codey.operations.task_loop import (
         KernelExecutionDeps,
@@ -146,11 +147,15 @@ def test_wrong_answer_is_repaired_by_original_task_loop_without_repeating_tools(
     )
     from codey.providers.base import AssistantTurn, ProviderToolCall
 
-    (runtime.project / "a.txt").write_text("AMBER-471\n", encoding="utf-8")
+    first = '"AMBER-471"' if mistake == "missing_content_quotes" else "AMBER-471"
+    (runtime.project / "a.txt").write_text(first + "\n", encoding="utf-8")
     (runtime.project / "b.txt").write_text("COBALT-923\n", encoding="utf-8")
     runtime.state.max_turns = 5
-    wrong = '{"a":"A","b":"C"}'
-    correct = '{"a":"AMBER-471","b":"COBALT-923"}'
+    correct = json.dumps({"a": first, "b": "COBALT-923"}, separators=(",", ":"))
+    wrong = ('{"a":"A","b":"C"}' if mistake == "first_characters" else
+             json.dumps({"a": json.dumps(first) if mistake == "extra_quotes" else "AMBER-471", "b": "COBALT-923"}))
+    if mistake == "markdown_fence":
+        wrong = "```json\n" + correct + "\n```"
 
     class Provider:
         native_tools = native
@@ -162,14 +167,18 @@ def test_wrong_answer_is_repaired_by_original_task_loop_without_repeating_tools(
             if index == 0:
                 name, args = "codemode", {"code":
                     "const a = await tools.read_file({path:'a.txt'});"
-                    "const b = await tools.read_file({path:'b.txt'});"
-                    "return {a:a.value.text[0],b:b.value.text[0]};"}
+                    "const b = await tools.read_file({path:'b.txt'});" +
+                    ("return {a:a.value.text[0],b:b.value.text[0]};" if mistake == "first_characters" else
+                     "return a.value.text.split('\\n')[0];")}
             elif index == 1:
-                assert '"a":"A"' in feedback
+                assert ('"a":"A"' if mistake == "first_characters" else
+                        json.dumps({"ok": True, "value": first}, separators=(",", ":"))) in feedback
                 name, args = "done", {"summary": wrong}
             else:
                 assert index == 2
                 assert "Final answer must be JSON" in feedback
+                assert "Execution and observation are already satisfied" in feedback
+                assert "Required execution:" not in feedback
                 assert len(runtime.state.executed) == 3
                 assert not evaluate(runtime.state, wrong).complete
                 name, args = "done", {"summary": correct}
