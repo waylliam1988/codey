@@ -85,14 +85,14 @@ def test_node_worker_state_rpc_round_trip() -> None:
     state = State()
     runtime = NodeWorkerRuntime()
     result = runtime.execute(
-        "store('answer', {ok: true}); return await load('answer');",
+        "await store('answer', {ok: true}); return await load('answer');",
         catalog=(ToolCatalogEntry("read_file", "read"),),
         invoke=lambda _name, _args: None,
         state_store=state,
     )
     assert result.ok is True
     assert result.value == {"ok": True}
-    assert result.store_writes == {"answer": {"ok": True}}
+    assert state.values == {"answer": {"ok": True}}
     second = runtime.execute(
         "return await load('answer');",
         catalog=(ToolCatalogEntry("read_file", "read"),),

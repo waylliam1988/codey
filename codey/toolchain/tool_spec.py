@@ -53,6 +53,7 @@ class ToolSpec:
     description: str = ""
     executor: str = ""
     replay_class: str = "unsafe"
+    parallel_safe: bool = False
 
 
 def _freeze_schema_value(value: object) -> object:
@@ -112,6 +113,7 @@ def _coding_specs() -> dict[str, ToolSpec]:
             description=definition.description,
             executor="project",
             replay_class="safe" if definition.read_only else "unsafe",
+            parallel_safe=definition.parallel_safe,
         )
     return specs
 
@@ -193,6 +195,7 @@ def _all_specs() -> dict[str, ToolSpec]:
             "Calls return {ok, value}; check ok and consume value. "
             "The returned object is not raw file text: string operations belong on value after checking ok. "
             "Return the program's final value with return; console.log and console.error produce no output. "
+            "Await every tool, store and load call before returning; unfinished calls fail the program. "
             "Shell approval, direct filesystem/process/network access, and recursive codemode calls are unavailable. "
             f"Example JavaScript: {codemode_example}"
         ),

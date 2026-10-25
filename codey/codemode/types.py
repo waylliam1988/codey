@@ -86,4 +86,3 @@ class CodeModeResult:
     error: str = ""
     child_calls: int = 0
     diagnostics: tuple[CodeModeDiagnostic, ...] = ()
-    store_writes: Mapping[str, object] = field(default_factory=dict)

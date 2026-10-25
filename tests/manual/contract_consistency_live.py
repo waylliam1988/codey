@@ -6,8 +6,10 @@ CodeMode worker, child tools, commits, completion and recovery are unchanged.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
+import threading
 from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
@@ -38,6 +40,15 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
     (project / "b.txt").write_text("COBALT-923\n", encoding="utf-8")
     _, mutations, managed, revisions, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     writing = case == "write"
+    cancelling = case == "cancel"
+    stop = threading.Event()
+    requests_at_stop: list[int] = []
+
+    def observe(event):
+        if cancelling and event.kind == "tool_start" and event.metadata.get("parent_call_id"):
+            requests_at_stop.append(sum(json.loads(line).get("type") == "request" for line in
+                (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()))
+            stop.set()
     task = (
         "Use codemode to create created.txt containing exactly SAPPHIRE-369 followed by a newline. "
         "Do not run tests, lint, shell commands or any other verification commands. Report what you actually created."
@@ -59,11 +70,11 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
         with record_api_generations(directory / "provider.jsonl"), closing(connect_local(config=config)) as provider:
             result = run_task_kernel(session, request=KernelRunRequest(
                 transport=KernelTransportDeps(provider=KernelRecordedProvider(provider, sink), run_id="r",
-                    effect_scope="task", provider_id="local", user_task=task),
+                    effect_scope="task", provider_id="local", user_task=task, stop_flag=stop),
                 execution=KernelExecutionDeps(project_path=project, managed_outputs=managed, session_id="s",
                     durable=mutations.durable, workspace_revision_store=revisions,
                     permission_profile="coding_writer" if writing else "planning_readonly"),
-                observation=KernelObservationDeps(intent_sink=sink),
+                observation=KernelObservationDeps(intent_sink=sink, on_event=observe),
             ))
         requests = [json.loads(line)["payload"] for line in (directory / "provider.jsonl").read_text(
                     encoding="utf-8").splitlines() if json.loads(line).get("type") == "request"]
@@ -97,13 +108,20 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
         observed_children = [record for record in session.executed.values() if record.get("name") == child_tool
                              and record.get("ok") is True and ":child:" in str(record.get("call_id", ""))]
         workflow_observed = len(observed_children) >= (1 if writing else 2)
+        if cancelling:
+            valid_output = ((project / "a.txt").read_text(encoding="utf-8") == "AMBER-471\n"
+                            and (project / "b.txt").read_text(encoding="utf-8") == "COBALT-923\n"
+                            and not (project / "created.txt").exists())
+            workflow_observed = bool(requests_at_stop) and all(count == len(requests) for count in requests_at_stop)
+        terminal_valid = (not result.completed and result.stop_reason == "stopped" and not recovered_complete
+                          if cancelling else result.completed and recovered_complete)
         row = {"case": case, "protocol": protocol,
-            "ok": result.completed and valid_output and workflow_observed and wire_consistent
-                  and recovered.ok and recovered_complete and stable,
+            "ok": terminal_valid and valid_output and workflow_observed and wire_consistent and recovered.ok and stable,
             "stop_reason": result.stop_reason, "summary": result.summary, "valid_output": valid_output,
             "wire_contract_consistent": wire_consistent, "visible_tools": visible, "schema_tools": sorted(schema_names),
             "executed": list(session.executed.values()), "recovered_completion_passed": recovered_complete,
-            "repeat_recovery_stable": stable, "required_child_workflow_observed": workflow_observed}
+            "repeat_recovery_stable": stable, "required_child_workflow_observed": workflow_observed,
+            "requests_at_stop": requests_at_stop, "generation_requests": len(requests)}
         (directory / "result.json").write_text(json.dumps(row, ensure_ascii=False, indent=2), encoding="utf-8")
         return row
     finally:
@@ -116,10 +134,14 @@ def main():
     parser.add_argument("--model", required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--protocols", nargs="+", choices=("on", "off"), default=("on", "off"))
-    parser.add_argument("--cases", nargs="+", choices=("read", "write"), default=("read", "write"))
+    parser.add_argument("--cases", nargs="+", choices=("read", "write", "cancel"), default=("read", "write"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / "production.patch").write_bytes(subprocess.check_output(["git", "diff", "--binary", "--", "codey"]))
+    (args.output / "source-manifest.json").write_text(json.dumps({
+        path.as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(Path("codey").rglob("*")) if path.suffix in {".py", ".mjs"}
+    }, indent=2) + "\n", encoding="utf-8")
     rows = []
     for protocol in args.protocols:
         for case in args.cases:

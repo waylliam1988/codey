@@ -257,6 +257,44 @@ def deadline_scope(deadline: float | None) -> Generator[None, None, None]:
         _context.deadline = previous
 
 
+class _LinkedEvent(threading.Event):
+    """A local stop request also observes its enclosing cancellation sources."""
+
+    def __init__(self, parents: tuple[threading.Event, ...]) -> None:
+        super().__init__()
+        self._parents = parents
+
+    def is_set(self) -> bool:
+        return super().is_set() or any(parent.is_set() for parent in self._parents)
+
+    def wait(self, timeout: float | None = None) -> bool:
+        end = None if timeout is None else time.monotonic() + timeout
+        while not self.is_set():
+            remaining = POLL_INTERVAL if end is None else min(POLL_INTERVAL, end - time.monotonic())
+            if remaining <= 0:
+                return self.is_set()
+            super().wait(remaining)
+        return True
+
+
+@contextmanager
+def linked_scope(
+    event: threading.Event | None = None, *, deadline: float | None = None,
+) -> Generator[threading.Event, None, None]:
+    """Own local cancellation without replacing the enclosing stop or deadline.
+
+    Blocking child threads receive the yielded event and current deadline through
+    the ordinary scopes. The owner must join its children before leaving.
+    """
+    parents = tuple(parent for parent in (current_event(), event) if parent is not None)
+    local = _LinkedEvent(parents)
+    with scope(local), deadline_scope(deadline):
+        try:
+            yield local
+        finally:
+            local.set()
+
+
 def check() -> None:
     event = current_event()
     if event is not None and event.is_set():

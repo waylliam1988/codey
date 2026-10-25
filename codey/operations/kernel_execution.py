@@ -12,6 +12,7 @@ never import ``execute_turn`` back (no cycles).
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from contextlib import ExitStack
 from dataclasses import replace
 from typing import Any
 
@@ -40,6 +41,7 @@ from codey.operations.kernel_result import (
     strict_exit_code_or_none,
 )
 from codey.operations.task_session import TaskSession, effect_coordinates, turn_effect_id
+from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 
 __all__ = [
@@ -325,13 +327,14 @@ def execute_turn(
         intent_sink, calls, session, delivered_map, identity_ref, active_turn, base_index,
         frozen_specs=frozen_specs, batch_scope=effect_scope,
     )
-    return _execute_slots(
-        session, calls, runnable, delegate, identity_ref, active_turn, base_index,
-        delivered_map, intent_sink, controller_allowed, project_path,
-        workspace_ignored_paths, ignores, recovery_ctx, workspace_revision_store,
-        execution_evidence, settle, reconcile_intent_only, stop_flag, frozen_specs,
-        durable, managed_outputs, run_ref_str,
-    )
+    with cancellation.linked_scope(stop_flag):
+        return _execute_slots(
+            session, calls, runnable, delegate, identity_ref, active_turn, base_index,
+            delivered_map, intent_sink, controller_allowed, project_path,
+            workspace_ignored_paths, ignores, recovery_ctx, workspace_revision_store,
+            execution_evidence, settle, reconcile_intent_only, stop_flag, frozen_specs,
+            durable, managed_outputs, run_ref_str,
+        )
 
 
 def _turn_setup(
@@ -466,85 +469,100 @@ def _execute_slots(
     for offset, call in enumerate(calls or []):
         name = str(getattr(call, "name", "") or "").strip().lower()
         identity = turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset)
-        if workspace_unconfirmed and name in {"edit", "run", "shell"}:
-            blocked = policy_denial_result(
-                call,
-                "prior edit workspace identity unconfirmed (edit was applied); "
-                "verification skipped, re-check workspace before continuing",
+        with ExitStack() as admission:
+            try:
+                # The program container must not retain a leaf lock while its
+                # children re-enter this same admission and settlement path.
+                # Existing receipts need neither admission nor a new verdict,
+                # including when cancellation arrives before their delivery.
+                if name != "codemode" and identity not in session.executed and identity not in delivered_map:
+                    spec = frozen_specs.get(name) if frozen_specs is not None else None
+                    parallel = spec is not None and spec.parallel_safe and spec.replay_class == "safe"
+                    admission.enter_context(session.tool_dispatch.admit(parallel=parallel))
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded) as exc:
+                if identity not in session.executed and identity not in delivered_map:
+                    blocked = _error_result(call, str(exc))
+                    results.append(settle(identity, call, blocked, ok=False))
+                    continue
+            if workspace_unconfirmed and name in {"edit", "run", "shell"}:
+                blocked = policy_denial_result(
+                    call,
+                    "prior edit workspace identity unconfirmed (edit was applied); "
+                    "verification skipped, re-check workspace before continuing",
+                )
+                settle(identity, call, blocked, ok=False)
+                results.append(blocked)
+                continue
+            if _settle_delivered_slot(delivered_map, identity, call, settle, results):
+                continue
+            guarded = _guarded_slot_result(
+                session, identity, call, name, active_turn, intent_sink, controller_allowed,
+                project_path=project_path, revision_store=workspace_revision_store,
+                ignored_paths=ignores, recovery_ctx=recovery_ctx,
+                frozen_specs=frozen_specs,
             )
-            settle(identity, call, blocked, ok=False)
-            results.append(blocked)
-            continue
-        if _settle_delivered_slot(delivered_map, identity, call, settle, results):
-            continue
-        guarded = _guarded_slot_result(
-            session, identity, call, name, active_turn, intent_sink, controller_allowed,
-            project_path=project_path, revision_store=workspace_revision_store,
-            ignored_paths=ignores, recovery_ctx=recovery_ctx,
-            frozen_specs=frozen_specs,
-        )
-        if guarded is not None:
-            if identity not in session.executed:
-                guarded = replace(guarded, audit={**guarded.audit, "execution_disposition": "denied_before_execution"})
-            # Fresh guard errors settle inside the helper; already-durable
-            # replays only reconcile the intent and never rewrite the receipt.
-            _reconcile_guarded_slot(
-                session, identity, call, name, project_path,
-                workspace_revision_store, ignores, recovery_ctx, reconcile_intent_only,
-                settle, guarded,
-            )
-            results.append(guarded)
-            continue
-        if stop_flag is not None and stop_flag.is_set():
-            blocked = policy_denial_result(call, "task stopped; tool call was not executed")
-            settle(identity, call, blocked, ok=False)
-            results.append(blocked)
-            continue
-        from codey.operations.shell_authorization import denied_shell_message
+            if guarded is not None:
+                if identity not in session.executed:
+                    guarded = replace(guarded, audit={**guarded.audit, "execution_disposition": "denied_before_execution"})
+                # Fresh guard errors settle inside the helper; already-durable
+                # replays only reconcile the intent and never rewrite the receipt.
+                _reconcile_guarded_slot(
+                    session, identity, call, name, project_path,
+                    workspace_revision_store, ignores, recovery_ctx, reconcile_intent_only,
+                    settle, guarded,
+                )
+                results.append(guarded)
+                continue
+            if stop_flag is not None and stop_flag.is_set():
+                blocked = policy_denial_result(call, "task stopped; tool call was not executed")
+                settle(identity, call, blocked, ok=False)
+                results.append(blocked)
+                continue
+            from codey.operations.shell_authorization import denied_shell_message
 
-        denial = denied_shell_message(call, durable=durable, managed_outputs=managed_outputs,
-                                      run_id=run_id, project=project_path, shell=session.shell)
-        if denial:
-            blocked = policy_denial_result(call, denial, reason_code="shell_authorization_denied")
-            blocked = replace(blocked, audit={**blocked.audit, "execution_disposition": "denied_before_execution"})
-            settle(identity, call, blocked, ok=False)
-            results.append(blocked)
-            continue
-        verification_blocked = _recheck_unconfirmed_workspace(session, call, recovery_ctx, execution_evidence)
-        if verification_blocked is not None:
-            verification_blocked = replace(verification_blocked, audit={
-                **verification_blocked.audit, "execution_disposition": "denied_before_execution",
-            })
-            settle(identity, call, verification_blocked, ok=False)
-            results.append(verification_blocked)
-            continue
-        result, ok, exit_code = _run_via_delegate_or_fn(
-            delegate, runnable, session, call, name, active_turn=active_turn,
-            tool_index=base_index + offset, project_path=project_path,
-        )
-        from codey.workspace.revision import WorkspaceIdentity
-
-        if name == "run" and exit_code is not None and WorkspaceIdentity.trusted_pair(
-            session.workspace_revision, session.workspace_fingerprint,
-        ).trusted:
-            result = _with_trusted_workspace_state(
-                result, revision=session.workspace_revision, fingerprint=session.workspace_fingerprint,
+            denial = denied_shell_message(call, durable=durable, managed_outputs=managed_outputs,
+                                          run_id=run_id, project=project_path, shell=session.shell)
+            if denial:
+                blocked = policy_denial_result(call, denial, reason_code="shell_authorization_denied")
+                blocked = replace(blocked, audit={**blocked.audit, "execution_disposition": "denied_before_execution"})
+                settle(identity, call, blocked, ok=False)
+                results.append(blocked)
+                continue
+            verification_blocked = _recheck_unconfirmed_workspace(session, call, recovery_ctx, execution_evidence)
+            if verification_blocked is not None:
+                verification_blocked = replace(verification_blocked, audit={
+                    **verification_blocked.audit, "execution_disposition": "denied_before_execution",
+                })
+                settle(identity, call, verification_blocked, ok=False)
+                results.append(verification_blocked)
+                continue
+            result, ok, exit_code = _run_via_delegate_or_fn(
+                delegate, runnable, session, call, name, active_turn=active_turn,
+                tool_index=base_index + offset, project_path=project_path,
             )
-        # Single settlement per effect: edits defer settlement until the
-        # authoritative bump decides the final result.
-        edit_done = _settle_edit_with_workspace_bump(
-            session, identity, call, name, result, ok,
-            exit_code=exit_code, project_path=project_path,
-            execution_evidence=execution_evidence,
-            workspace_ignored_paths=workspace_ignored_paths,
-            workspace_revision_store=workspace_revision_store,
-            settle=settle, results=results,
-        )
-        if edit_done is not None:
-            if edit_done == "unconfirmed":
-                workspace_unconfirmed = True
-            continue
-        results.append(settle(identity, call, result, ok=ok, exit_code=exit_code))
+            from codey.workspace.revision import WorkspaceIdentity
+
+            if name == "run" and exit_code is not None and WorkspaceIdentity.trusted_pair(
+                session.workspace_revision, session.workspace_fingerprint,
+            ).trusted:
+                result = _with_trusted_workspace_state(
+                    result, revision=session.workspace_revision, fingerprint=session.workspace_fingerprint,
+                )
+            # Single settlement per effect: edits defer settlement until the
+            # authoritative bump decides the final result.
+            edit_done = _settle_edit_with_workspace_bump(
+                session, identity, call, name, result, ok,
+                exit_code=exit_code, project_path=project_path,
+                execution_evidence=execution_evidence,
+                workspace_ignored_paths=workspace_ignored_paths,
+                workspace_revision_store=workspace_revision_store,
+                settle=settle, results=results,
+            )
+            if edit_done is not None:
+                if edit_done == "unconfirmed":
+                    workspace_unconfirmed = True
+                continue
+            results.append(settle(identity, call, result, ok=ok, exit_code=exit_code))
     return results
 
 

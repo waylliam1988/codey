@@ -8,6 +8,7 @@ from typing import Any
 
 from codey.policies.command_line import ShellSpec, resolve_shell
 from codey.runtime.core.models import ToolResult
+from codey.runtime.core.tool_dispatch import ToolDispatch
 from codey.utils.refs import stable_ref
 
 
@@ -91,6 +92,7 @@ class TaskSession:
     restored_effect_ids: set[str] = field(default_factory=set, repr=False, compare=False)
     shell: ShellSpec = field(default_factory=resolve_shell)
     projection_lock: RLock = field(default_factory=RLock, repr=False, compare=False)
+    tool_dispatch: ToolDispatch = field(default_factory=ToolDispatch, repr=False, compare=False)
 
     def clone_projection(self) -> TaskSession:
         """Isolate mutable projection containers, without copying capabilities."""

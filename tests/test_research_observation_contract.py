@@ -41,7 +41,8 @@ def test_no_success_fact_can_be_reconstructed_from_display_parameters_or_aliases
     session.search_results["r1"] = URL
     session.source_ids["s1"] = URL
     session.hit_targets["h1"] = {"url": URL, "offset": 0, "pages": ""}
-    before = deepcopy(vars(session), {id(session.projection_lock): session.projection_lock})
+    before = deepcopy(vars(session), {id(resource): resource for resource in
+                                      (session.projection_lock, session.tool_dispatch)})
     call = ToolCall(name, args)
     result = ToolResult(call, f"success {URL}", ok=True, canonical={"opened_url": URL})
     with pytest.raises(ValueError, match="observation"):

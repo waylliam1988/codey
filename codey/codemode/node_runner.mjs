@@ -68,7 +68,7 @@ function deniedSource(code) {
 async function execute(request) {
   const code = String(request.code ?? "");
   if (deniedSource(code)) {
-    send({ type: "done", ok: false, errorCode: "sandbox_denied", error: "direct host access is denied" });
+    send({ type: "done", ok: false, errorCode: "sandbox_denied", error: "direct host access is denied", childCalls: 0, unawaitedCalls: 0 });
     return;
   }
   const catalog = Array.isArray(request.catalog) ? request.catalog : [];
@@ -84,14 +84,10 @@ async function execute(request) {
     calls: 0,
     pending: 0,
     stateEnabled: Boolean(request.stateEnabled),
-    storeWrites: {},
   };
   const context = vm.createContext({
     tools: toolsProxy(),
-    store: (key, value) => {
-      active.storeWrites[String(key)] = value;
-      return stateCall("store", String(key), value);
-    },
+    store: (key, value) => stateCall("store", String(key), value),
     load: (key) => stateCall("load", String(key)),
     console: Object.freeze({ log() {}, error() {} }),
   });
@@ -100,12 +96,12 @@ async function execute(request) {
     const value = await script.runInContext(context, { timeout: 1_000 });
     const encoded = JSON.stringify(jsonValue(value));
     if (Buffer.byteLength(encoded ?? "null", "utf8") > active.limits.maxOutputBytes) {
-      send({ type: "done", ok: false, errorCode: "output_limit", error: "codemode output exceeds output byte limit", childCalls: active.calls });
+      send({ type: "done", ok: false, errorCode: "output_limit", error: "codemode output exceeds output byte limit", childCalls: active.calls, unawaitedCalls: pending.size });
       return;
     }
-    send({ type: "done", ok: true, value: jsonValue(value), childCalls: active.calls, storeWrites: active.storeWrites });
+    send({ type: "done", ok: true, value: jsonValue(value), childCalls: active.calls, unawaitedCalls: pending.size });
   } catch (error) {
-    send({ type: "done", ok: false, errorCode: String(error?.code ?? "execution_error"), error: String(error?.message ?? error), childCalls: active.calls });
+    send({ type: "done", ok: false, errorCode: String(error?.code ?? "execution_error"), error: String(error?.message ?? error), childCalls: active.calls, unawaitedCalls: pending.size });
   } finally {
     active = null;
   }

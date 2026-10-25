@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry
+from codey.runtime.core import cancellation
 
 ToolInvoker = Callable[[str, dict[str, object]], object]
 
@@ -45,6 +46,7 @@ class NodeWorkerRuntime:
         state_store: Any = None,
         limits: CodeModeLimits | None = None,
     ) -> CodeModeResult:
+        cancellation.check()
         active_limits = limits or CodeModeLimits()
         if len(code.encode("utf-8")) > active_limits.source_bytes:
             return CodeModeResult(False, error_code="source_limit", error="codemode source exceeds source byte limit")
@@ -55,7 +57,16 @@ class NodeWorkerRuntime:
         ) or re.search(r"\bFunction\s*\(", code)
         if denied or re.search(r"tools\s*(?:\.\s*codemode|\[\s*['\"]codemode['\"]\s*\])", code, re.IGNORECASE):
             return CodeModeResult(False, error_code="sandbox_denied", error="direct host access is denied")
-        started = time.monotonic()
+        with cancellation.linked_scope(deadline=time.monotonic() + active_limits.timeout_ms / 1000) as stop:
+            try:
+                return self._run_worker(code, catalog, invoke, state_store, active_limits, stop)
+            except cancellation.DeadlineExceeded:
+                return CodeModeResult(False, error_code="timeout", error="codemode execution timed out")
+
+    def _run_worker(
+        self, code: str, catalog: Sequence[ToolCatalogEntry], invoke: ToolInvoker,
+        state_store: Any, limits: CodeModeLimits, stop: threading.Event,
+    ) -> CodeModeResult:
         try:
             process = subprocess.Popen(
                 [self.node, "--max-old-space-size=128", str(self.runner)],
@@ -86,7 +97,6 @@ class NodeWorkerRuntime:
             messages.put({"type": "eof"})
 
         reader = threading.Thread(target=read_messages, daemon=True)
-        reader.start()
         request = {
             "type": "execute",
             "code": code,
@@ -95,48 +105,54 @@ class NodeWorkerRuntime:
                 for item in catalog
             ],
             "limits": {
-                "maxChildCalls": active_limits.max_child_calls,
-                "maxConcurrentCalls": active_limits.max_concurrent_calls,
-                "maxPendingPromises": active_limits.max_pending_promises,
-                "maxOutputBytes": active_limits.max_output_bytes,
+                "maxChildCalls": limits.max_child_calls,
+                "maxConcurrentCalls": limits.max_concurrent_calls,
+                "maxPendingPromises": limits.max_pending_promises,
+                "maxOutputBytes": limits.max_output_bytes,
             },
             "stateEnabled": state_store is not None,
         }
-        executor: ThreadPoolExecutor | None = None
         try:
-            self._write_line(stdin, request)
-            executor = ThreadPoolExecutor(max_workers=active_limits.max_concurrent_calls)
-            return self._drive(
-                process, stdin, messages, invoke, state_store, active_limits, started, executor,
-            )
+            reader.start()
+            # Host callbacks re-enter execute_turn; this pool owns no facts.
+            with ThreadPoolExecutor(max_workers=limits.max_concurrent_calls) as executor:
+                try:
+                    self._write_line(stdin, request)
+                    return self._drive(stdin, messages, invoke, state_store, limits, executor, stop)
+                finally:
+                    # Join running callbacks and reject queued work through the
+                    # same cancellation context, before releasing the parent.
+                    stop.set()
         finally:
-            if executor is not None:
-                executor.shutdown(wait=False, cancel_futures=True)
+            stop.set()
             if process.poll() is None:
                 process.kill()
             process.wait(timeout=2)
+            stdin.close()
+            if reader.ident is not None:
+                reader.join(timeout=2)
+                if reader.is_alive():
+                    raise RuntimeError("codemode worker output reader did not stop")
+            stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
 
     def _drive(
         self,
-        process: subprocess.Popen[str],
         stdin: Any,
         messages: queue.Queue[dict[str, Any]],
         invoke: ToolInvoker,
         state_store: Any,
         limits: CodeModeLimits,
-        started: float,
         executor: ThreadPoolExecutor,
+        stop: threading.Event,
     ) -> CodeModeResult:
         pending: dict[str, Future[dict[str, Any]]] = {}
-        store_writes: dict[str, object] = {}
         while True:
+            cancellation.check()
             self._flush_completed(pending, stdin)
-            elapsed = time.monotonic() - started
-            if elapsed > limits.timeout_ms / 1000:
-                process.kill()
-                return CodeModeResult(False, error_code="timeout", error="codemode execution timed out")
             try:
-                message = messages.get(timeout=min(0.1, limits.timeout_ms / 1000 - elapsed))
+                message = messages.get(timeout=0.05)
             except queue.Empty:
                 continue
             kind = message.get("type")
@@ -148,19 +164,26 @@ class NodeWorkerRuntime:
                         "errorCode": "pending_limit", "error": "codemode pending promise limit exceeded",
                     })
                 else:
-                    pending[call_id] = executor.submit(self._handle_call, message, invoke)
+                    pending[call_id] = executor.submit(
+                        self._handle_call, message, invoke, stop, cancellation.current_deadline(),
+                    )
                 continue
             if kind == "state":
-                self._handle_state(message, stdin, state_store, store_writes)
+                self._handle_state(message, stdin, state_store)
                 continue
             if kind == "done":
+                if message["ok"] is True and message["unawaitedCalls"]:
+                    return CodeModeResult(
+                        False, error_code="unawaited_calls",
+                        error="codemode returned with unawaited calls; await every tool and state call",
+                        child_calls=message["childCalls"],
+                    )
                 return CodeModeResult(
                     bool(message.get("ok")), value=message.get("value"),
                     output=str(message.get("output", "") or ""),
                     error_code=str(message.get("errorCode", "") or ""),
                     error=str(message.get("error", "") or ""),
                     child_calls=int(message.get("childCalls", 0) or 0),
-                    store_writes=store_writes,
                 )
             if kind == "error":
                 return CodeModeResult(False, error_code=str(message.get("code", "worker_error")), error=str(message.get("message", "worker error")))
@@ -169,7 +192,7 @@ class NodeWorkerRuntime:
 
     @staticmethod
     def _handle_state(
-        message: dict[str, Any], stdin: Any, state_store: Any, store_writes: dict[str, object],
+        message: dict[str, Any], stdin: Any, state_store: Any,
     ) -> None:
         call_id = str(message.get("callId", ""))
         key = str(message.get("key", ""))
@@ -185,7 +208,6 @@ class NodeWorkerRuntime:
             if operation == "store":
                 value = message.get("value")
                 state_store.store(key, value)
-                store_writes[key] = value
                 response = {"type": "stateResult", "callId": call_id, "ok": True, "value": True}
             elif operation == "load":
                 response = {
@@ -238,7 +260,7 @@ class NodeWorkerRuntime:
 
     @staticmethod
     def _handle_call(
-        message: dict[str, Any], invoke: ToolInvoker,
+        message: dict[str, Any], invoke: ToolInvoker, stop: threading.Event, deadline: float | None,
     ) -> dict[str, Any]:
         call_id = str(message.get("callId", ""))
         name = str(message.get("name", ""))
@@ -246,7 +268,9 @@ class NodeWorkerRuntime:
         if not isinstance(args, dict):
             return {"type": "result", "callId": call_id, "ok": False, "error": "tool args must be an object"}
         try:
-            value = invoke(name, dict(args))
+            with cancellation.scope(stop), cancellation.deadline_scope(deadline):
+                cancellation.check()
+                value = invoke(name, dict(args))
             return {"type": "result", "callId": call_id, "ok": True, "value": value}
         except Exception as exc:
             return {"type": "result", "callId": call_id, "ok": False, "error": str(exc)[:400]}

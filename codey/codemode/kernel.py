@@ -12,6 +12,7 @@ from codey.codemode.output import externalize_value
 from codey.codemode.protocol import codemode_error_text, parse_codemode_args
 from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry, ToolCatalogSnapshot
+from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 
 
@@ -69,18 +70,23 @@ class CodeModeKernelExecutor:
                 max_inline_bytes=self.max_inline_bytes,
             ),
         )
-        result = self.runtime.execute(
-            program.code,
-            catalog=self.catalog.entries,
-            invoke=host.invoke,
-            limits=self.limits,
-            state_store=self.state_store,
-        )
-        audit = {
+        audit: dict[str, object] = {
             "codemode_execution_id": self.execution_id,
             "catalog_digest": self.catalog.digest,
-            "child_calls": result.child_calls,
         }
+        try:
+            result = self.runtime.execute(
+                program.code,
+                catalog=self.catalog.entries,
+                invoke=host.invoke,
+                limits=self.limits,
+                state_store=self.state_store,
+            )
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded) as exc:
+            # The runtime has joined its host callbacks. Return through the
+            # normal parent settlement so committed child references survive.
+            return ToolResult(ok=False, call=call, model_text=str(exc), audit=audit)
+        audit["child_calls"] = result.child_calls
         if not result.ok:
             return ToolResult(ok=False, call=call, model_text=result.error or "codemode execution failed", audit=audit)
         try:

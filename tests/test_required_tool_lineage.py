@@ -53,7 +53,7 @@ def runtime(tmp_path, request):
         value.mutations.durable.close()
 
 
-def _execute(runtime, items, native, *, start=1):
+def _execute(runtime, items, native, *, start=1, stop=None, on_event=None):
     from codey.operations.task_effects import KernelRecordedProvider
 
     delivery = KernelRecordedProvider(SimpleNamespace(send=lambda _: "observed"), runtime.sink)
@@ -67,11 +67,11 @@ def _execute(runtime, items, native, *, start=1):
         executor = build_execute_turn_executor(session=runtime.state, snapshot=snapshot, run_id="r",
             effect_scope="task", turn=turn, project_path=runtime.project, managed_outputs=runtime.managed,
             session_id="s", durable=runtime.mutations.durable, intent_sink=runtime.sink,
-            workspace_revision_store=runtime.revisions, allow_writes=True)
+            workspace_revision_store=runtime.revisions, allow_writes=True, stop_flag=stop, on_event=on_event)
         results.extend(execute_turn(runtime.state, plan.calls, snapshot=snapshot, run_id="r", effect_scope="task",
             turn=turn, project_path=runtime.project, managed_outputs=runtime.managed, session_id="s",
             intent_sink=runtime.sink, workspace_revision_store=runtime.revisions,
-            executors={"codemode": executor}))
+            executors={"codemode": executor}, stop_flag=stop))
         # A following turn must settle the previous delivery through the
         # production provider-effect boundary, just as the task loop does.
         delivery.send("Tool results received")
@@ -232,3 +232,44 @@ def test_parallel_child_receipts_satisfy_both_targets_before_and_after_restart(r
     assert results[0].ok
     assert evaluate(runtime.state, "Read both files").complete
     assert evaluate(_restart(runtime), "Read both files").complete
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_unawaited_parent_cannot_complete_and_recovery_keeps_committed_children(runtime, native):
+    results = _execute(runtime, [_code(
+        "void tools.edit({path:'created.txt',content:'LINEAGE-729\\n'}); return 'too early';"
+    )], native)
+    assert not results[0].ok
+    assert "unawaited" in results[0].model_text
+    assert not evaluate(runtime.state, "Completed").complete
+    committed = dict(runtime.state.executed)
+    referenced = results[0].canonical["child_effect_ids"]
+    assert all(identity in committed for identity in referenced)
+    before = {path.name: path.read_bytes() for path in runtime.project.iterdir() if path.is_file()}
+    restored = _restart(runtime)
+    assert restored.executed == committed
+    assert not evaluate(restored, "Completed").complete
+    assert {path.name: path.read_bytes() for path in runtime.project.iterdir() if path.is_file()} == before
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_cancelled_parent_retains_settled_child_references_after_restart(runtime, native):
+    import threading
+
+    stop = threading.Event()
+
+    def cancel(event):
+        if event.kind == "tool_start" and event.metadata.get("parent_call_id"):
+            stop.set()
+
+    results = _execute(runtime, [_code("return await tools.read_file({path:'a.txt'});")],
+                       native, stop=stop, on_event=cancel)
+    parent = results[0]
+    assert not parent.ok
+    children = parent.canonical["child_effect_ids"]
+    assert len(children) == 1
+    assert not runtime.state.executed[children[0]]["ok"]
+    committed = dict(runtime.state.executed)
+    restored = _restart(runtime)
+    assert restored.executed == committed
+    assert any(row.get("child_effect_ids") == children for row in restored.executed.values())

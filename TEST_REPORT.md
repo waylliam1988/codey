@@ -2,6 +2,64 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Unified tool execution lifecycle (2026-10-25)
+
+Normal leaves and CodeMode children now use the same session-local admission in
+`execute_turn`. Parallel eligibility comes from the frozen ToolSpec; other leaves
+remain exclusive through workspace identity and receipt commit. Admission owns
+no persistent outcomes. Existing receipts remain authoritative during Stop and
+recovery. Linked cancellation propagates the original Stop and earliest deadline
+to host threads. Parent return, failure, timeout and Stop join admitted callbacks;
+unawaited tool/state calls cannot produce a successful parent. Cancellation retains
+committed child references through the normal parent settlement. CodeMode state
+writes use only the existing task checkpoint; worker/result write mirrors were
+removed without a compatibility reader or another runtime.
+
+The initial new regression reproduced successful parent return before its child
+finished. Final focused verification: **157 passed, 1 platform skip (60.70s)** across
+admission, cancellation/process cleanup, CodeMode, durable child lineage, restart,
+snapshots, immutable results and research projections. Acquisition-failure tests
+also verify worker and pipe cleanup. The new lifecycle regression file is included
+in the existing required machine-contract selection. Ruff, production mypy
+(520 files), Pyrefly (0 errors, 29 existing suppressions and 80 warnings), ty and
+all 54 discovered JavaScript/MJS syntax checks passed.
+After making the threaded test rendezvous explicit, the final lifecycle/cancellation
+selection also passed **24 tests, 1 skip (9.24s)**. The skip is the POSIX process-group
+contract on Windows. All 522 production Python/MJS hashes in the final live source
+manifest still match the delivered source.
+
+Local KoboldCpp Gemma4-12B was exercised with real native and text-protocol model
+requests, the production kernel/tools/receipts, and repeated fact recovery. The
+initial six-case read/write/Stop matrix passed. After retaining cancelled-parent
+child references and final worker cleanup, the final matrix passed **5/6**:
+both writes, both Stops and text reading. Stops produced no following generation,
+kept files unchanged and restored the same failed parent/child facts.
+
+The final native read case is retained as a failure: actual read receipts contain
+`AMBER-471` and `COBALT-923`, but the model explicitly used `a.value[0]` and
+`b.value[0]`, returning `A/C`. Execution and recovery checks passed; independent
+answer checking failed. A required successful read does not validate arbitrary
+answer semantics. Text write runs also exposed invalid model-written JavaScript,
+which failed explicitly before the model corrected it; no source rewriting or
+fallback was introduced. Final evidence and source hashes are under ignored
+`.e2e-artifacts/lifecycle-live-final-20261025/` (summary, requests, receipts and
+source manifest); the initial matrix is retained separately.
+
+The broader machine selection stopped at an existing Research test fixture failure:
+`test_chat_research_tools_continue_shared_kernel_without_mode_redispatch` expects
+an open result while its fake returns no required canonical research observation.
+An independent `git archive HEAD` checkout at `45f12e28` reproduces the same failure
+(`.e2e-artifacts/lifecycle-baseline-45f12e28/baseline-result.txt`). No production
+fallback was added to satisfy the obsolete fixture. This is not a green machine
+gate. An initial broad run also identified fact-copy tests trying to deep-copy
+the new admission resource; those tests now preserve execution-resource identity,
+and the relevant Research/prompt regressions passed.
+
+Full pytest was started, then stopped at the user's request for their evening run;
+it has no complete result. Its partial log is
+`.e2e-artifacts/lifecycle-full-pytest-20261025.log`. No full coverage or complete
+release matrix is claimed.
+
 ## Retry isolation and lifecycle contract cleanup (2026-10-23)
 
 Native URL and error-document presentation now retain the initiating startup

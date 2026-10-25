@@ -59,7 +59,7 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, Any] | ToolCatalogEntry])
 
 def build_catalog_from_specs(specs: Mapping[str, Any] | Iterable[Any]) -> ToolCatalogSnapshot:
     rows: list[dict[str, object]] = []
-    values = specs.values() if isinstance(specs, Mapping) else specs
+    values: Iterable[Any] = specs.values() if isinstance(specs, Mapping) else specs
     for spec in values:
         name = str(getattr(spec, "name", "") or "").strip()
         if not name:
@@ -75,7 +75,7 @@ def build_catalog_from_specs(specs: Mapping[str, Any] | Iterable[Any]) -> ToolCa
             "namespace": executor,
             "grant": str(getattr(spec, "grant", "") or ""),
             "read_only": str(getattr(spec, "replay_class", "unsafe")) == "safe",
-            "parallel_safe": str(getattr(spec, "replay_class", "unsafe")) == "safe",
+            "parallel_safe": spec.parallel_safe,
         })
     return build_catalog_snapshot(rows)
 
