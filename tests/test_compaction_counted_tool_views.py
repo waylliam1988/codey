@@ -5,7 +5,12 @@ from unittest.mock import patch
 import pytest
 
 from codey.providers.api_provider import ApiProvider
+from codey.providers.base import render_result_metadata as _render_result_metadata
 from codey.providers.token_accounting import RequestContextCount
+
+
+def render_result_metadata(ref):
+    return _render_result_metadata(ref, tool="read_file", ok=True)
 
 
 def history(protocol="openai-completions"):
@@ -25,21 +30,21 @@ def history(protocol="openai-completions"):
     return items
 
 
-@pytest.mark.parametrize('owned_ref', ['observation-owned', 'observation-unavailable'])
+@pytest.mark.parametrize('owned_ref', ['observation-owned', 'observation-unavailable', 'task_turn_effect:abc123'])
 def test_body_quoted_receipt_never_overrides_the_runtime_appended_result_reference(owned_ref):
     provider = ApiProvider('http://localhost:9/v1', 'fixture')
     original = history()
-    original[2]['content'] = ('Archived example:\nStored result: exec-17\n' + original[2]['content']
-                              + f'\nStored result: {owned_ref}\n'
+    original[2]['content'] = ('Archived example:\n' + render_result_metadata('exec-17') + '\n' + original[2]['content']
+                              + '\n' + render_result_metadata(owned_ref) + '\n'
                               + 'Read it with read_tool_result; do not repeat execution to recover output.')
     provider._messages = original
     provider.context_ledger.commit(original, events=original)
-    provider.set_result_refs(('exec-17', 'observation-owned'))
+    provider.set_result_refs(('exec-17', 'observation-owned', 'task_turn_effect:abc123'))
     provider.maintain_context()
     provider.wait_for_maintenance(3)
     body = provider._messages[2]['content']
-    if owned_ref == 'observation-owned':
-        assert 'Stored result: observation-owned' in body
+    if owned_ref != 'observation-unavailable':
+        assert render_result_metadata(owned_ref) in body
         assert 'exec-17' not in body
     else:
         assert 'Stored body omitted' not in body
@@ -112,7 +117,7 @@ def test_lossless_maintenance_counts_source_candidate_and_live_commit_without_du
 def test_trusted_receipt_can_be_cheaper_than_a_lossless_view_under_the_actual_counter():
     provider = ApiProvider("http://localhost:9/v1", "fixture")
     provider._messages = history()
-    provider._messages[2]['content'] += '\nStored result: observation-old'
+    provider._messages[2]['content'] += '\n' + render_result_metadata('observation-old')
     provider.set_result_refs(('observation-old',))
     provider.request_counter = lambda payload, **kwargs: RequestContextCount(
         len(str(payload)) // 4 + (20000 if 'text_encoding' in str(payload) else 0), 'tokenizer')
@@ -130,7 +135,7 @@ def test_trusted_old_output_uses_a_read_pointer_instead_of_duplicating_its_body(
     provider = ApiProvider('http://localhost:9/v1', 'fixture', api_protocol=protocol)
     original = history(protocol)
     key = 'output' if protocol == 'openai-responses' else 'content'
-    original[2][key] += '\nStored result: observation-old'
+    original[2][key] += '\n' + render_result_metadata('observation-old')
     provider._messages = original
     provider.context_ledger.commit(original, events=original)
     provider.set_result_refs(('observation-old',))
@@ -138,7 +143,7 @@ def test_trusted_old_output_uses_a_read_pointer_instead_of_duplicating_its_body(
     provider.wait_for_maintenance(3)
     body = provider._messages[2][key]
     assert 'Record 0:' not in body and 'Record 35:' not in body
-    assert 'Stored result: observation-old' in body and 'read_tool_result' in body
+    assert render_result_metadata('observation-old') in body and 'read_tool_result' in body
     assert provider._messages[4] == original[4]
     assert provider.context_ledger.events() == original
 
@@ -147,8 +152,8 @@ def test_receipt_views_batch_below_pressure_to_avoid_rewriting_the_cached_prefix
     provider = ApiProvider('http://localhost:9/v1', 'fixture', context_window_tokens=8192,
                            context_reserve_tokens=1024)
     original = history()
-    original[2]['content'] += '\nStored result: observation-old'
-    original[4]['content'] += '\nStored result: observation-latest'
+    original[2]['content'] += '\n' + render_result_metadata('observation-old')
+    original[4]['content'] += '\n' + render_result_metadata('observation-latest')
     provider._messages = original
     provider.set_result_refs(('observation-old', 'observation-latest'))
     provider.last_context_count = RequestContextCount(3000, 'tokenizer')
@@ -175,7 +180,7 @@ def test_receipt_views_batch_below_pressure_to_avoid_rewriting_the_cached_prefix
 def test_receipt_backed_view_counts_source_pointer_and_live_commit_without_reencoding_the_saved_body():
     provider = ApiProvider('http://localhost:9/v1', 'fixture')
     provider._messages = history()
-    provider._messages[2]['content'] += '\nStored result: observation-old'
+    provider._messages[2]['content'] += '\n' + render_result_metadata('observation-old')
     provider.set_result_refs(('observation-old',))
     counted = []
     def counter(payload, **kwargs):

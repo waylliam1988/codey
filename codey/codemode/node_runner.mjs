@@ -11,13 +11,10 @@ function send(message) {
   process.stdout.write(JSON.stringify(message) + "\n");
 }
 
-function jsonValue(value) {
-  try {
-    JSON.stringify(value);
-    return value;
-  } catch {
-    return String(value);
-  }
+function rejectConsole() {
+  const error = new Error("Console output is unavailable. Return the required data with return; console.log/error do not produce a result.");
+  error.code = "console_output_denied";
+  throw error;
 }
 
 function toolsProxy(path = []) {
@@ -89,13 +86,21 @@ async function execute(request) {
     tools: toolsProxy(),
     store: (key, value) => stateCall("store", String(key), value),
     load: (key) => stateCall("load", String(key)),
-    console: Object.freeze({ log() {}, error() {} }),
+    console: Object.freeze({ log: rejectConsole, error: rejectConsole }),
   }, { codeGeneration: { strings: false, wasm: false } });
   // Fix the ambient clock and PRNG for one durable execution. Reconstructing
   // the same program consumes exactly the same sequence after a restart.
   const epoch = Number(request.determinism?.epochMs);
   const seed = Number(request.determinism?.seed) >>> 0;
-  new vm.Script(`{
+  new vm.Script(`
+  const inputs = JSON.parse(${JSON.stringify(JSON.stringify(request.inputs))});
+  (function freezeInputs(value) {
+    if (value && typeof value === "object") {
+      for (const item of Object.values(value)) freezeInputs(item);
+      Object.freeze(value);
+    }
+  })(inputs);
+  {
     const OriginalDate = Date;
     const epoch = ${JSON.stringify(epoch)};
     OriginalDate.now = () => epoch;
@@ -114,17 +119,40 @@ async function execute(request) {
     SharedArrayBuffer = undefined;
     Atomics = undefined;
   }`).runInContext(context);
+  let compiling = true;
   try {
-    const script = new vm.Script(`(async () => {\n${code}\n})()`, { filename: "codemode-program.js" });
+    const script = new vm.Script(`(async () => {\n${code}\n})()`, { filename: "codemode-program.js", lineOffset: -1 });
+    compiling = false;
     const value = await script.runInContext(context, { timeout: 1_000 });
-    const encoded = JSON.stringify(jsonValue(value));
+    if (value === undefined && pending.size === 0) {
+      const invocation = active.calls === 0
+        ? "No child tool was executed. code is a function body: declaring a helper/main does not call it. If you define main, end with return await main(); or put the awaited tool calls directly in code. "
+        : "";
+      const error = new Error("CodeMode returned undefined. " + invocation + "A missing return OR returning a nonexistent property produces undefined. Check the declared Result<T> shape: successful tool data is inside result.value. Return an explicit JSON value; use return null only for an intentional empty result.");
+      error.code = "missing_return";
+      throw error;
+    }
+    const encoded = JSON.stringify(value, (_key, item) => {
+      if (item === undefined || ["function", "symbol", "bigint"].includes(typeof item)
+          || (typeof item === "number" && !Number.isFinite(item))) {
+        const error = new Error("CodeMode result must contain only JSON data; use explicit null for empty values.");
+        error.code = "result_encoding";
+        throw error;
+      }
+      return item;
+    });
     if (Buffer.byteLength(encoded ?? "null", "utf8") > active.limits.maxOutputBytes) {
       send({ type: "done", ok: false, errorCode: "output_limit", error: "codemode output exceeds output byte limit", childCalls: active.calls, unawaitedCalls: pending.size });
       return;
     }
-    send({ type: "done", ok: true, value: jsonValue(value), childCalls: active.calls, unawaitedCalls: pending.size });
+    send({ type: "done", ok: true, value: JSON.parse(encoded), childCalls: active.calls, unawaitedCalls: pending.size });
   } catch (error) {
-    send({ type: "done", ok: false, errorCode: String(error?.code ?? "execution_error"), error: String(error?.message ?? error), childCalls: active.calls, unawaitedCalls: pending.size });
+    const diagnostic = compiling
+      ? "JavaScript compilation failed after successful outer JSON decoding. No child tool was executed.\n"
+        + String(error?.stack ?? error).split("\n").slice(0, 4).map(line => line.slice(0, 200)).join("\n")
+        + "\nPut multiline or quoted task text in inputs and reference inputs.<field> in code. Raw line breaks inside JS single/double-quoted literals are invalid."
+      : String(error?.message ?? error);
+    send({ type: "done", ok: false, errorCode: compiling ? "syntax_error" : String(error?.code ?? "execution_error"), error: diagnostic, childCalls: active.calls, unawaitedCalls: pending.size });
   } finally {
     active = null;
   }

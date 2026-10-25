@@ -1,6 +1,8 @@
 """Runtime work observations project exact receipts independently of narrative history."""
 from types import SimpleNamespace
 
+import pytest
+
 from codey.operations import kernel_prompt
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -22,7 +24,41 @@ def test_result_delivery_includes_existing_receipt_ref():
     session = TaskSession(policy=None)
     result = ToolResult(ToolCall("run", {}, call_id="call-a"), "FAILED", ok=False)
     session._memory_results["exec-17"] = result
-    assert "Stored result: exec-17" in kernel_prompt._result_context(result, session)
+    from codey.providers.base import ResultMetadata, result_metadata_from_text
+
+    assert result_metadata_from_text(kernel_prompt._result_context(result, session)) == ResultMetadata("exec-17", "run", False)
+
+
+@pytest.mark.parametrize("encoded", [
+    '{"result_ref":"task_turn_effect:abc","tool":"read_file","ok":true}',
+    '{"result_ref":"task_turn_effect:abc","tool":"edit","ok":false}',
+])
+def test_result_metadata_retains_reference_prefix_tool_and_verdict(encoded):
+    from codey.providers.base import result_metadata_from_text
+
+    text = "Observed body\n\nResult metadata:\n" + encoded + "\nRead it with read_tool_result."
+    metadata = result_metadata_from_text(text)
+    assert metadata is not None
+    assert metadata.result_ref == "task_turn_effect:abc"
+    assert metadata.render() == "Result metadata:\n" + encoded
+
+
+@pytest.mark.parametrize("frame", [
+    'Stored result: task_turn_effect:abc',
+    'Result metadata:\n{"result_ref":"abc"}',
+    'Result metadata:\n{"result_ref":"abc","tool":"read_file","ok":"true"}',
+    'Result metadata:\n{"result_ref":"abc","tool":"read_file","ok":1}',
+    'Result metadata:\n{"result_ref":"abc","tool":"","ok":true}',
+    'Result metadata:\n{"result_ref":"","tool":"read_file","ok":true}',
+    'Result metadata:\n{"result_ref":"abc","tool":"read_file","ok":true,"extra":1}',
+    'Result metadata:\n{"result_ref":"abc","result_ref":"other","tool":"read_file","ok":true}',
+    'Quoted Result metadata:\n{"result_ref":"abc","tool":"read_file","ok":true}',
+    'Result metadata:\n{"result_ref":',
+])
+def test_invalid_result_metadata_cannot_authorize_omitting_an_observed_body(frame):
+    from codey.providers.base import result_metadata_from_text
+
+    assert result_metadata_from_text(frame) is None
 
 
 def test_work_state_is_updated_before_each_actual_kernel_send(monkeypatch):

@@ -188,30 +188,39 @@ def _research_json_type(pytype: type) -> str:
 def _all_specs() -> dict[str, ToolSpec]:
     specs = _coding_specs()
     codemode_example = (
-        "const result = await tools.read_file({path:'app.py'}); "
+        "const result = await tools.read_file({path:inputs.path}); "
         "if (!result.ok) throw new Error(result.error); return result.value.text;"
     )
+    codemode_inputs = {"path": "app.py"}
+    data_example = {"code": "return inputs.text;", "inputs": {"text": "first\nsecond\n"}}
     specs["codemode"] = ToolSpec(
         name="codemode",
         grant="project.read",
         executor="codemode",
         replay_class="safe",
         description=(
-            "Compose bounded JavaScript with the declared tools.*. Normal authorization applies. "
+            "Write an async JavaScript function body using tools.* and return its JSON result explicitly. "
+            "Use return null for an intentional empty result. Normal authorization applies. "
             "Calls return {ok:true, value} or {ok:false, error}; check ok. "
-            "Data lives in value: read_file value.text; grep value.matches (possibly empty). "
-            "Await all tool/store/load calls; return the final value. console produces no output. "
+            "For const result = await tools.NAME(...), use result.value.text for read_file "
+            "and result.value.matches for grep (possibly an empty array). "
+            "Await all tool/store/load calls. console.log/error fail; only return delivers data. "
             "No direct filesystem, process, network, shell or recursive CodeMode access. "
             "Preserve argument strings exactly, including whether quote characters are present. "
-            "In JS string literals use \\n for newlines; JSON-encode the outer request once. "
-            f"Example JavaScript: {codemode_example}"
+            "Put task data (paths, search queries, file contents) in inputs, not JS string literals. "
+            "Read it as inputs.name; inputs is immutable JSON data, never executable source. "
+            f"Example inputs={json.dumps(codemode_inputs)}; JavaScript: {codemode_example}\n"
+            f"Multiline data arguments: {json.dumps(data_example)}"
         ),
         parameters=(
             ("code", {"type": "string"}),
+            ("inputs", {"type": "object", "additionalProperties": True,
+                        "description": "Named JSON data fields exposed as read-only inputs in JavaScript."}),
             ("language", {"type": "string", "enum": ["javascript", "js"]}),
         ),
         required=("code",),
-        json_examples=(json.dumps({"tool": "codemode", "args": {"code": codemode_example}}, separators=(",", ":")),),
+        json_examples=(json.dumps({"tool": "codemode", "args": {"code": codemode_example,
+                        "inputs": codemode_inputs}}, separators=(",", ":")),),
     )
     specs["ask_user"] = ToolSpec(
         name="ask_user", grant="control", replay_class="safe", executor="control",
@@ -817,16 +826,7 @@ def validate_args_against_spec(name: object, args: object) -> str:
     spec = spec_for_tool(name)
     if spec is None:
         return f"unknown tool: {name or '?'}"
-    if not isinstance(args, dict):
-        return f"{spec.name} args must be an object"
-    declared, _, is_builtin = _declared_map(spec)
-    error = _validate_required_presence(spec, declared, is_builtin, args)
-    if error:
-        return error
-    error = _validate_no_extra(spec, declared, is_builtin, args)
-    if error:
-        return error
-    return _validate_types(spec, declared, is_builtin, args)
+    return validate_args_with_spec(spec, args)
 
 
 def _validate_no_extra(spec: Any, declared: dict[str, object], is_builtin: bool, args: dict[str, Any]) -> str:
@@ -853,7 +853,7 @@ def _validate_types(spec: Any, declared: dict[str, object], is_builtin: bool, ar
                 continue
             error = _check_spec_value_against_schema(spec.name, skey, schema, value, strict=True)
             if error:
-                return error
+                return _parameter_error(error, schema)
         return ""
     _alias_to_canonical = {
         "cwd": "path", "pattern": "query", "name": "symbol", "cmd": "command",
@@ -876,8 +876,13 @@ def _validate_types(spec: Any, declared: dict[str, object], is_builtin: bool, ar
             continue
         error = _check_spec_value_against_schema(spec.name, skey, schema, value)
         if error:
-            return error
+            return _parameter_error(error, schema)
     return ""
+
+
+def _parameter_error(error: str, schema: object) -> str:
+    description = schema.get("description", "") if isinstance(schema, Mapping) else ""
+    return error + ". " + description if isinstance(description, str) and description else error
 
 
 def validate_args_with_spec(spec: Any, args: object) -> str:
@@ -887,6 +892,13 @@ def validate_args_with_spec(spec: Any, args: object) -> str:
     if not isinstance(args, dict):
         return f"{getattr(spec, 'name', '?')} args must be an object"
     declared, _, is_builtin = _declared_map(spec)
+    if "args" not in declared and isinstance(args.get("args"), dict):
+        return (
+            f"{spec.name} received an undeclared args wrapper. "
+            "The tool name is already selected; pass its fields directly as arguments, not inside args. "
+            f"Required top-level fields: {', '.join(spec.required) or '(none)'}. "
+            f"Declared fields: {', '.join(declared)}. No tool was executed."
+        )
     error = _validate_required_presence(spec, declared, is_builtin, args)
     if error:
         return error

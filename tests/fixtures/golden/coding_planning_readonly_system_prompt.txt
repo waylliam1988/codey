@@ -16,13 +16,14 @@ Available tools:
 
   {"tool":"read_file","args":{"path":"app.py"}}
   {"tool":"read_file","args":{"path":"app.py","offset":301,"limit":300}}
-    Read one file. Large files are returned in complete-line pages.
+    Read one file. Large files are returned in complete-line pages. In CodeMode, value is an object: value.text is the page text (a string), with start_line, end_line, total_lines, next_offset and text_complete metadata.
 
   {"tool":"read_files","args":{"paths":["a.py","b.py"]}}
     Read up to 8 files in one step. Do not nest it inside parallel.
 
   {"tool":"grep","args":{"query":"login handler","path":"."}}
-    Search file contents for literal text before reading when the location is unknown. Matching is case-insensitive; regex is not supported.
+  {"tool":"grep","args":{"query":"TODO","path":"src","include":"*.{py,ts}","exclude":["src/vendor/**"]}}
+    Search file contents for literal text before reading when the location is unknown. Uses packaged ripgrep. Defaults to literal, case-insensitive matching; set literal=false for regex, case_sensitive=true for exact case, include for one positive glob, exclude for positive globs to omit, and before_context/after_context for surrounding lines. Use rg braces for alternatives, e.g. include='*.{py,ts}'; comma-separated globs are not alternatives. Globs are relative to the workspace root even when path narrows the search. Exclude directories with an array such as exclude=['src/vendor/**']. Searches hidden and ignored files within the admitted workspace scope, excluding build/VCS directories and symlinks. CodeMode value is a page object with matches and explicit coverage; column_byte is one-based UTF-8 bytes. Read matched files for context.
 
   {"tool":"find_references","args":{"symbol":"createRouter","path":"."}}
     Find bounded lexical reference hints for a simple symbol. This is not semantic resolution; use read_file before editing.

@@ -61,10 +61,10 @@ runtime_name: edit
 aliases: -
 read_only: false
 parallel_safe: false
-description: Use exactly one mode: content to create; up to 8 exact replacements to edit; or content plus base_result_ref to update a whole existing file. base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. Include surrounding lines and the target text together in old_string of the same replacement so it matches one location uniquely. Preserve those surrounding lines in new_string. Separate replacement objects do not scope one another.
+description: Edit existing files with up to 8 exact replacements, preserving unrelated code. Create new files with content. For a whole-file update, use content plus base_result_ref. base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. Include surrounding lines and the target text together in old_string of the same replacement so it matches one location uniquely. Preserve those surrounding lines in new_string. Separate replacement objects do not scope one another.
 examples:
-- {"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}
 - {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"def process():\n    return old_value\n","new_string":"def process():\n    return new_value\n"}]}}
+- {"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}
 - {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}
 
 [8] run
@@ -115,10 +115,10 @@ examples:
   {"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"query":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}
     Batch at most 4 independent read-only list_dir, read_file, or grep calls. Local results are returned in request order.
 
-  {"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}
   {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"def process():\n    return old_value\n","new_string":"def process():\n    return new_value\n"}]}}
+  {"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}
   {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}
-    Use exactly one mode: content to create; up to 8 exact replacements to edit; or content plus base_result_ref to update a whole existing file. base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. Include surrounding lines and the target text together in old_string of the same replacement so it matches one location uniquely. Preserve those surrounding lines in new_string. Separate replacement objects do not scope one another.
+    Edit existing files with up to 8 exact replacements, preserving unrelated code. Create new files with content. For a whole-file update, use content plus base_result_ref. base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. Include surrounding lines and the target text together in old_string of the same replacement so it matches one location uniquely. Preserve those surrounding lines in new_string. Separate replacement objects do not scope one another.
 
   {"tool":"run","args":{"command":"python -m unittest","path":"."}}
     Run a test, build, lint, or check. Use output_tail_lines to limit displayed output instead of a shell pipe. Other commands request user approval when available.

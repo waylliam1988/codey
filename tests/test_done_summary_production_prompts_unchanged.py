@@ -98,4 +98,4 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> Non
     assert "ask_user" in prompt
     assert "Calls return {ok:true, value}" in prompt
     assert "Only frozen read-only tools" not in prompt
-    assert _sha256(prompt) == "fdc79515c300e8af7f5405c70dffb7018851171c0026216fbd6ea790b6087307"
+    assert _sha256(prompt) == "34693c92a3a6fed490f0069dd1a62cbc7d6be14c5e0b50022245af5738ae3768"

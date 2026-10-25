@@ -100,7 +100,7 @@ def test_background_output_reduction_commits_without_a_model_request():
     provider = ApiProvider("http://localhost:9/v1", "fixture", context_keep_recent_tokens=1000)
     provider._messages = [{"role": "user", "content": "task"},
         {"role": "assistant", "tool_calls": [{"id": "a", "function": {"name": "run", "arguments": "{}"}}]},
-        {"role": "tool", "tool_call_id": "a", "content": "output " * 1000 + "\nStored result: exec-17"},
+        {"role": "tool", "tool_call_id": "a", "content": "output " * 1000 + '\nResult metadata:\n{"result_ref":"exec-17","tool":"run","ok":true}'},
         {"role": "assistant", "tool_calls": [{"id": "latest", "function": {"name": "read", "arguments": "{}"}}]},
         {"role": "tool", "tool_call_id": "latest", "content": "latest observation"},
         {"role": "assistant", "content": "recent"}, {"role": "user", "content": "continue"}]

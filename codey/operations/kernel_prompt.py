@@ -12,6 +12,7 @@ from typing import Any
 
 from codey.operations.task_session import TaskSession
 from codey.policies.command_line import COMMAND_WORKDIR_DESCRIPTION
+from codey.providers.base import render_result_metadata
 from codey.runtime.core.models import ToolResult
 from codey.utils.refs import strict_exit_code, strict_verification_success
 from codey.workspace.coding_context import CodingContext, render_coding_context
@@ -23,6 +24,15 @@ __all__ = [
 
 _NATIVE_ARGUMENTS_RULE = (
     "Pass schema properties directly as native arguments; omit the text protocol's tool/args envelope."
+)
+_NATIVE_READ_BATCH_RULE = (
+    "Group independent read-only calls into one native tool_calls turn. "
+    "Wait for their results before dependent actions. Submit verification and done separately."
+)
+_NATIVE_FINAL_RULE = (
+    "For the final answer, use done if declared: put the complete response in its summary string. "
+    "Preserve the user's requested final format inside that string. "
+    "Requested JSON is a bare document without Markdown fences inside summary, not the outer tool-call object."
 )
 
 
@@ -64,9 +74,8 @@ def kernel_prompt_for_session(
             parts.append(f"Tool contract (use exactly these shapes):\n{contract_text}")
     if native:
         parts.append(
-            "Answer directly when no action is needed. For actions, call one native tool per turn and "
-            "wait for its result before choosing the next tool. Use native tool calls, not JSON in prose. "
-            "Deliver the final answer as normal text or call done separately. " + _NATIVE_ARGUMENTS_RULE
+            "For actions, use native tool calls, not JSON in prose. "
+            + _NATIVE_READ_BATCH_RULE + " " + _NATIVE_ARGUMENTS_RULE + " " + _NATIVE_FINAL_RULE
         )
     else:
         parts.append(
@@ -117,9 +126,9 @@ def _repair_prompt(error: str, *, contract_text: str, native: bool) -> str:
     )
     if native:
         return (
-            intro + "Call exactly one of the provided native tools with schema-correct arguments. "
-            "For a final answer, use done if it is declared: put the complete answer in its summary string. "
-            "That string is delivered in the user's requested final format. "
+            intro + "Use the provided native tools with schema-correct arguments. "
+            + _NATIVE_READ_BATCH_RULE + " "
+            + _NATIVE_FINAL_RULE + " "
             "Do not place a bare answer object in tool_calls, invent a function name, or emit text tool-call tags. "
             "For an action, resend the intended call with complete arguments and concise file contents. "
             + _NATIVE_ARGUMENTS_RULE
@@ -137,17 +146,24 @@ def _repair_prompt(error: str, *, contract_text: str, native: bool) -> str:
     )
 
 
+def _completion_followup(feedback: str, *, native: bool) -> str:
+    """Render completion feedback for its transport without changing the verdict."""
+    return feedback + "\n\n" + _NATIVE_FINAL_RULE if native else feedback
+
+
 def _result_context(result: ToolResult, session: TaskSession) -> str:
     text = (result.model_text or "")
     if result.call.name == "codemode" and result.ok:
-        text = f"Result data (JSON):\n{text}\n\nResult metadata:\n"
+        text = f"Result data (JSON):\n{text}"
     result_ref = next((key for key, value in session._memory_results.items() if value is result), "")
     if result_ref:
         instruction = (
             "For omitted detail, use read_tool_result with query (a literal keyword) or a bounded offset."
             if result.truncated else "If more detail is needed, use read_tool_result."
         )
-        text += f"\nStored result: {result_ref}\n{instruction} do not repeat execution to recover output."
+        text += (f"\n\n{render_result_metadata(result_ref, tool=result.call.name, ok=result.ok)}\n"
+                 "Use the complete result_ref string verbatim, including its prefix. "
+                 f"{instruction} do not repeat execution to recover output.")
     if result.call.name == "web_search" and session.search_results:
         refs = "\n".join(f"{key}: {url}" for key, url in list(session.search_results.items())[-12:])
         return f"{text}\n\nSearch result references:\n{refs}"

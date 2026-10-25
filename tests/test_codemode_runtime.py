@@ -1,5 +1,96 @@
 from __future__ import annotations
 
+import pytest
+
+
+def test_data_inputs_preserve_text_without_javascript_source_interpretation():
+    from codey.codemode.runtime import NodeWorkerRuntime
+
+    data = {"text": "first\n'quoted' \"text\" \\t\r\n\u2028\u2029😀\x00last\n",
+            "nested": {"items": [False, None, 0, "'); process.exit(); //"]},
+            "__proto__": {"marker": "data"}}
+    result = NodeWorkerRuntime().execute("return inputs;", inputs=data,
+        catalog=(), invoke=lambda *_: pytest.fail("data must not execute"))
+    assert result.ok, result.error
+    assert result.value == data
+
+
+def test_vm_inputs_are_deeply_readonly_and_use_vm_owned_objects():
+    from codey.codemode.runtime import NodeWorkerRuntime
+
+    result = NodeWorkerRuntime().execute(
+        "return {root: Object.getPrototypeOf(inputs) === Object.prototype, "
+        "array: Object.getPrototypeOf(inputs.items) === Array.prototype, "
+        "frozen: Object.isFrozen(inputs) && Object.isFrozen(inputs.items)};",
+        inputs={"items": ["original"]}, catalog=(), invoke=lambda *_: None)
+    assert result.ok and result.value == {"root": True, "array": True, "frozen": True}
+    result = NodeWorkerRuntime().execute("'use strict'; inputs.items.push('changed'); return inputs;",
+        inputs={"items": ["original"]}, catalog=(), invoke=lambda *_: None)
+    assert not result.ok
+
+
+def test_inputs_share_source_budget_and_invalid_source_is_not_repaired():
+    from codey.codemode.runtime import NodeWorkerRuntime
+    from codey.codemode.types import CodeModeLimits
+
+    result = NodeWorkerRuntime().execute("return inputs;", inputs={"text": "字" * 20},
+        catalog=(), invoke=lambda *_: None, limits=CodeModeLimits(source_bytes=50))
+    assert not result.ok and result.error_code == "source_limit"
+    result = NodeWorkerRuntime().execute("return 'first\nsecond';", inputs={"text": "first\nsecond"},
+        catalog=(), invoke=lambda *_: pytest.fail("invalid JS must not execute a tool"))
+    assert not result.ok and result.child_calls == 0
+    assert result.error_code == "syntax_error"
+    assert "successful outer JSON decoding" in result.error
+    assert "codemode-program.js:1" in result.error and "inputs.<field>" in result.error
+
+
+@pytest.mark.parametrize("code", ["return 1n;", "return () => 1;", "return {x:undefined};",
+                                  "return NaN;", "return [Infinity];", "return Symbol('x');"])
+def test_non_json_results_fail_without_string_or_null_fallback(code):
+    from codey.codemode.runtime import NodeWorkerRuntime
+
+    result = NodeWorkerRuntime().execute(code, catalog=(), invoke=lambda *_: None)
+    assert not result.ok and result.error_code == "result_encoding"
+
+
+def test_output_budget_and_delivered_value_use_one_serialization():
+    from codey.codemode.runtime import NodeWorkerRuntime
+
+    result = NodeWorkerRuntime().execute(
+        "let count = 0; return {get value() { count += 1; return count; }};",
+        catalog=(), invoke=lambda *_: None)
+    assert result.ok and result.value == {"value": 1}
+
+
+@pytest.mark.parametrize("code", ["console.log('data');", "console.error('data'); return 'ignored';"])
+def test_console_output_is_an_explicit_error_without_an_output_channel(code):
+    from codey.codemode.runtime import NodeWorkerRuntime
+
+    result = NodeWorkerRuntime().execute(code, catalog=(), invoke=lambda *_: None)
+    assert not result.ok and result.error_code == "console_output_denied"
+    assert "Return the required data" in result.error
+    assert result.output == "" and result.value is None
+
+
+@pytest.mark.parametrize("code", ["const x = 1;", "return;", "return undefined;"])
+def test_missing_return_is_not_a_successful_null_result(code):
+    from codey.codemode.runtime import NodeWorkerRuntime
+
+    result = NodeWorkerRuntime().execute(code, catalog=(), invoke=lambda *_: None)
+    assert not result.ok and result.error_code == "missing_return"
+    assert "missing return OR returning a nonexistent property" in result.error
+    assert "result.value" in result.error
+
+
+@pytest.mark.parametrize("code,value", [("return null;", None), ("return false;", False),
+                                        ("return 0;", 0), ("return '';", "")])
+def test_explicit_empty_or_falsy_return_values_remain_exact(code, value):
+    from codey.codemode.runtime import NodeWorkerRuntime
+
+    result = NodeWorkerRuntime().execute(code, catalog=(), invoke=lambda *_: None)
+    assert result.ok and result.value == value
+    assert type(result.value) is type(value)
+
 
 def test_node_runtime_calls_host_and_returns_only_final_value() -> None:
     from codey.codemode.runtime import NodeWorkerRuntime

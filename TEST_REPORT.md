@@ -2,39 +2,54 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
-## Request input, task ownership and output contract convergence (2026-10-25)
+## CodeMode inputs, returns and repair delivery (2026-10-25)
 
-One ToolSpec generates native/text contracts and compact CodeMode parameter/result
-signatures. API request history is append-only with respect to per-turn observations
-and clocks; counting and sending share one clock projection. Task-owned baselines
-exclude unrelated Git dirt. Version-guarded whole-file updates reuse original read
-receipts and the original edit writer. Explicit JSON/schema output requirements use
-the original TaskPolicy.required_checks and completion loop.
+One ToolSpec still owns native/text contracts, CodeMode signatures and parameter
+guidance. CodeMode accepts immutable JSON inputs through the same tool and Node VM;
+the shared parser checks source plus data against the original byte budget. Console,
+undefined and non-JSON outputs fail explicitly. Syntax errors identify the JavaScript
+compile stage before child execution. Undefined diagnostics cover missing properties
+and uncalled main/helper declarations without rewriting or invoking user code.
 
-Native protocol repair previously generated guidance but delivered only short errors.
-The same guidance now follows the original paired error receipt, preserving call IDs
-and error content. Arguments are never unwrapped or rewritten to make a call execute.
+Native initial/repair/completion prompts share the done.summary transport rule.
+Frozen schema validation diagnoses an undeclared args wrapper without unwrapping it.
+Result-reference JSON metadata is a view of the original receipt, shared with context
+reduction; no second result ledger or runtime was added. Versioned whole-file edits
+still require the original complete read receipt and current version. Task-owned
+baselines exclude unrelated Git dirt; explicit output checks use the original gate.
 
-Verification: **401 focused tests and 472 subtests passed**. After the last native
-repair-delivery change, **181 tests and 405 subtests passed**. Contract/UI refinements
-also passed **79 tests and 64 subtests**. These overlapping selections are not summed.
-Architecture ceilings were not raised. Full pytest was not run, as requested.
-Final Ruff, production mypy (**532 source files**) and `git diff --check` passed.
+Final verification: **640 focused tests and 472 subtests passed** in 124.84s, covering
+CodeMode, input/output contracts, native/text repair, compaction, original 11 modules,
+search, index, read pages, lineage, architecture and four formerly failing shell nodes.
+The original 11 tests and shared shell approval fixtures were committed in `44a90f39`;
+those shell failures reproduced on the old source and came from test fixture contracts.
+Ruff, production mypy (**532 source files**), Node syntax and `git diff --check` passed.
+Architecture ceilings and task budgets were not raised. Full pytest was not run.
+Publication-contract checks separately passed **8/8** and the generated runtime file
+inventory matches the checkout. An additional full wheel cold-install probe timed out
+in build metadata and was stopped; it is not a pass or a completed installation check.
 
-Final 12B primary tasks passed **4/4**, including strict bare JSON and task-local
-verification. Multi-file work took **46.79s / 12 requests**, versus historical Codey
-**130.57s / 17 requests**. Final native boundaries passed **9/10**; the final text path
-passed **10/10** in the preceding matrix. The remaining native model failure repeatedly
-logged to console without returning values; completion was blocked at the turn limit.
-An earlier complete **20/20** matrix is retained but does not replace this last failure.
-An entirely untracked Git read task passed in **6.38s / 2 requests**, with no spurious
-verification block. Historical comparison and diagnostic failures are documented in
-[the focused report](docs/codey_input_convergence_12b.zh-CN.md).
+Final 12B boundaries passed **44/44** across both protocols and seeds 41/42/43, with
+receipt/recovery/Stop checks. Both source manifests (534 Python/MJS files) match the
+delivered source. The exact `5a6bb071` archive passed the same 34 supported samples;
+new source also passed 34/34 with no extra-request sample, 67 → 65 requests, and
+369.28s → 291.86s total. All six two-file reads used two requests. Additional whole-file
+updates and repeated creation samples passed, including corrections counted in timing.
 
-After a host crash, all further tests/model runs were sequential, with temporary files
-on E:. The interrupted run is not counted as verification. A broader old server probe
-also had four shell-related failures outside this change's final focused selection;
-their relationship to this patch was not established and they were not fixed here.
+Final primary tasks passed **4/4**; an entirely untracked Git read passed separately
+in **7.17s / 2 requests** with no false verification block. Multi-file work passed twice:
+**134.82s / 14 requests** and **70.83s / 17 requests**, versus the historical
+**130.57s / 17 requests**. The slow sample includes a 76.33s model HTTP response whose
+first byte arrived in 1.12s. Both samples are retained; faster average and fewer calls
+do not prove every run is faster. Initial tool JSON is 10,128 characters, near the
+historical 10,164; the earlier 8,810 figure is not the delivered contract's size.
+
+All new tests/model runs were serial with TEMP/TMP on E:. Earlier diagnostic failures,
+including a later 23/24 cohort, are retained rather than replaced by successful retries.
+Known functional samples now pass; arbitrary model correctness and first-retry 100%
+success are not claimed. Detailed methodology, failures and artifact paths are in
+[the current focused report](docs/codemode_input_contract_12b.zh-CN.md); the
+[previous report](docs/codey_input_convergence_12b.zh-CN.md) retains the earlier state.
 
 ## Search, persistent discovery and CodeMode recovery convergence (2026-10-25)
 

@@ -44,6 +44,10 @@ class CodeModeLimits:
 class CodeModeProgram:
     code: str
     language: str = "javascript"
+    inputs: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "inputs", _freeze_value(self.inputs))
 
 
 @dataclass(frozen=True)

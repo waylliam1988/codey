@@ -3,6 +3,31 @@ from __future__ import annotations
 import pytest
 
 
+@pytest.mark.parametrize("inputs", [None, [], {1: "key"}, {"x": float("nan")},
+                                   {"x": object()}, {"x": 9_007_199_254_740_992}])
+def test_inputs_reject_non_json_and_unsafe_numbers_without_coercion(inputs):
+    from codey.codemode.protocol import parse_codemode_args
+    from codey.codemode.runtime import NodeWorkerRuntime
+
+    with pytest.raises(ValueError, match="inputs"):
+        parse_codemode_args({"code": "return inputs;", "inputs": inputs})
+    if inputs is not None:
+        result = NodeWorkerRuntime().execute("return inputs;", inputs=inputs,
+            catalog=(), invoke=lambda *_: pytest.fail("invalid inputs must not execute"))
+        assert not result.ok
+
+
+def test_input_snapshot_is_immutable_and_not_aliased_to_callers():
+    from codey.codemode.protocol import parse_codemode_args
+
+    data = {"nested": {"lines": ["first\nsecond"]}}
+    program = parse_codemode_args({"code": "return inputs;", "inputs": data})
+    data["nested"]["lines"][0] = "changed"
+    assert program.inputs["nested"]["lines"][0] == "first\nsecond"
+    with pytest.raises(TypeError):
+        program.inputs["nested"]["lines"][0] = "changed"
+
+
 def test_parse_codemode_args_rejects_recursive_and_oversized_program() -> None:
     from codey.codemode.protocol import parse_codemode_args
 

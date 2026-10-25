@@ -98,7 +98,7 @@ def test_documented_example_propagates_a_real_child_read_failure(tmp_path, nativ
 
 
 @pytest.mark.parametrize("native", [False, True])
-@pytest.mark.parametrize("failure", ["host", "value"])
+@pytest.mark.parametrize("failure", ["host", "value", "console", "missing_return", "missing_property", "uncalled_main", "syntax"])
 def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path, native, failure):
     from types import SimpleNamespace
 
@@ -127,8 +127,15 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
     record_entry_policy(mutations, session_id="s", run_id="r", policy=policy)
     spec = next(spec for spec in build_turn_snapshot(state, native=native).frozen_specs if spec.name == "codemode")
     example = json.loads(spec.json_examples[0])["args"]
-    bad_code = ("return require('fs').readFileSync('app.py','utf8');" if failure == "host" else
-                "const a = await tools.read_file({path:'app.py'}); return a.split('\\n')[0];")
+    bad_code = {
+        "host": "return require('fs').readFileSync('app.py','utf8');",
+        "value": "const a = await tools.read_file({path:'app.py'}); return a.split('\\n')[0];",
+        "console": "const a = await tools.read_file({path:'app.py'}); console.log(a.value.text);",
+        "missing_return": "const a = await tools.read_file({path:'app.py'});",
+        "missing_property": "const a = await tools.read_file({path:'app.py'}); return a.text;",
+        "uncalled_main": "async function main() { const a = await tools.read_file({path:'app.py'}); return a.value.text; }",
+        "syntax": "const text = 'first\nsecond'; return text;",
+    }[failure]
 
     class Provider:
         native_tools = native
@@ -141,13 +148,24 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
                 name, args = "codemode", {"code": bad_code}
             elif index == 1:
                 assert spec.description in feedback
+                if failure == "syntax":
+                    assert "JavaScript compilation failed" in feedback
+                    assert "No child tool was executed" in feedback and "inputs.<field>" in feedback
                 assert not evaluate(state, "premature success").complete
                 assert not any(row.get("name") == "codemode" and row.get("ok") is True
                                for row in state.executed.values())
                 if failure == "host":
                     assert "before execution" in feedback and not state.executed
-                else:
+                elif failure == "value":
                     assert "a.split is not a function" in feedback
+                elif failure == "console":
+                    assert "Console output is unavailable" in feedback
+                elif failure == "missing_return":
+                    assert "CodeMode returned undefined" in feedback
+                elif failure == "missing_property":
+                    assert "returning a nonexistent property" in feedback and "result.value" in feedback
+                elif failure == "uncalled_main":
+                    assert "No child tool was executed" in feedback and "return await main()" in feedback
                 name, args = "codemode", example
             else:
                 assert index == 2 and "OBSERVED-729" in feedback
@@ -201,7 +219,7 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
         assert fresh.executed == recovered_rows and state.executed == before
         reads = [row for row in fresh.executed.values()
                  if tool_spec.canonical_tool_name(row.get("name")) == "read_file"]
-        assert len(reads) == (1 if failure == "host" else 2)
+        assert len(reads) == (1 if failure in {"host", "syntax", "uncalled_main"} else 2)
         assert all(":child:" in row["call_id"] for row in reads)
         parents = [row for row in fresh.executed.values() if row.get("name") == "codemode"]
         assert sorted(row["ok"] for row in parents) == ([True] if failure == "host" else [False, True])

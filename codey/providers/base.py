@@ -1,9 +1,48 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Protocol, cast
+
+
+@dataclass(frozen=True)
+class ResultMetadata:
+    result_ref: str
+    tool: str
+    ok: bool
+
+    def render(self) -> str:
+        return "Result metadata:\n" + json.dumps(asdict(self), ensure_ascii=True, separators=(",", ":"))
+
+
+def render_result_metadata(result_ref: str, *, tool: str, ok: bool) -> str:
+    """One model-facing receipt-reference format; the task owns the receipt."""
+    return ResultMetadata(result_ref, tool, ok).render()
+
+
+def result_metadata_from_text(text: str) -> ResultMetadata | None:
+    head, separator, tail = text.rpartition("Result metadata:\n")
+    if not separator or (head and not head.endswith("\n")):
+        return None
+    encoded = tail.partition("\n")[0]
+    try:
+        value = json.loads(encoded)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(value, dict) or set(value) != {"result_ref", "tool", "ok"}:
+        return None
+    ref, tool, ok = value["result_ref"], value["tool"], value["ok"]
+    if not isinstance(ref, str) or not ref or not isinstance(tool, str) or not tool or type(ok) is not bool:
+        return None
+    metadata = ResultMetadata(ref, tool, ok)
+    return metadata if metadata.render() == separator + encoded else None
+
+
+def result_ref_from_metadata(text: str) -> str | None:
+    metadata = result_metadata_from_text(text)
+    return metadata.result_ref if metadata is not None else None
 
 
 @dataclass(frozen=True)

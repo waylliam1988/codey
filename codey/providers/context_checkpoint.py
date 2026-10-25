@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import copy
 import json
-import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from os.path import commonprefix
 from typing import Any
 
 from codey.providers.api_codec import ApiCodec
+from codey.providers.base import ResultMetadata, result_metadata_from_text
 from codey.providers.context_ledger import digest
 
 
@@ -77,11 +77,11 @@ def _old_outputs(codec: ApiCodec, items: list[dict[str, Any]]) -> Iterator[tuple
                 yield item, key, text
 
 
-def _result_ref(text: str, result_refs: frozenset[str]) -> str | None:
+def _available_metadata(text: str, result_refs: frozenset[str]) -> ResultMetadata | None:
     # The runtime appends its receipt after the observed body. Quoted references
     # in that body must neither replace it nor rescue an unavailable final receipt.
-    matches = re.findall(r"^Stored result: ([A-Za-z0-9_.-]+)\r?$", text, re.MULTILINE)
-    return matches[-1] if matches and matches[-1] in result_refs else None
+    metadata = result_metadata_from_text(text)
+    return metadata if metadata is not None and metadata.result_ref in result_refs else None
 
 
 def output_reduction_ready(codec: ApiCodec, items: list[dict[str, Any]], result_refs: frozenset[str], *,
@@ -89,7 +89,7 @@ def output_reduction_ready(codec: ApiCodec, items: list[dict[str, Any]], result_
     """Treat unbacked old bodies losslessly; batch at least two backed bodies."""
     backed = 0
     for _, _, text in _old_outputs(codec, items):
-        if _result_ref(text, result_refs) is None:
+        if _available_metadata(text, result_refs) is None:
             return True
         backed += 1
     return batch_receipts and backed >= 2
@@ -99,9 +99,9 @@ def reduce_old_outputs(codec: ApiCodec, items: list[dict[str, Any]], result_refs
     """Encode old structure losslessly; only omit bodies backed by a receipt."""
     result = copy.deepcopy(items)
     for item, key, text in _old_outputs(codec, result):
-        result_ref = _result_ref(text, result_refs)
-        if result_ref:
-            item[key] = ("[Stored body omitted from this view]\n" + f"Stored result: {result_ref}\n"
+        metadata = _available_metadata(text, result_refs)
+        if metadata is not None:
+            item[key] = ("[Stored body omitted from this view]\n" + metadata.render() + "\n"
                          + "Read it with read_tool_result. Do not execute it again.")
         else:
             encoded = summary_source(text)

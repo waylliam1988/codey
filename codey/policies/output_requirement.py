@@ -6,6 +6,9 @@ import json
 from typing import Any
 
 PREFIX = "output_json"
+JSON_ANSWER_GUIDANCE = (
+    "Final answer must be JSON: one bare document without Markdown fences or surrounding prose."
+)
 
 
 def _unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -60,7 +63,7 @@ def evaluate(check: str, text: str) -> tuple[bool, str, str]:
             validate_output("final_answer", json.loads(schema), value)
     except (ValueError, TypeError, RecursionError) as exc:
         return False, "output_format_invalid", (
-            "Repair only the final answer: return one bare JSON document without Markdown fences or prose. "
+            "Repair only the final answer. " + JSON_ANSWER_GUIDANCE + " "
             "Reuse committed tool results; do not repeat tools or tests for an answer-format repair. "
             f"Validation: {str(exc)[:240]}" + (f"\nRequired schema: {schema}" if schema else "")
         )
@@ -71,7 +74,7 @@ def guidance(checks: tuple[str, ...]) -> str:
     rows = [check for check in checks if is_output_check(check)]
     if not rows:
         return ""
-    return "Final answer: one bare JSON document, without Markdown fences or prose." + "".join(
+    return JSON_ANSWER_GUIDANCE + "".join(
         "\nRequired JSON schema: " + row[len(PREFIX) + 1:] for row in rows if row != PREFIX)
 
 

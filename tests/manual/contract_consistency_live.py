@@ -10,6 +10,7 @@ import hashlib
 import json
 import subprocess
 import threading
+import time
 import zipfile
 from contextlib import closing
 from pathlib import Path
@@ -35,7 +36,9 @@ from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open
 from tools.local_model_gate_attempts import record_api_generations
 
 
-def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: str) -> dict:
+def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: str,
+          seed: int = 41, temperature: float = 0.3) -> dict:
+    started = time.monotonic()
     project, state, logdir = _dirs(directory)
     (project / "a.txt").write_text("AMBER-471\n", encoding="utf-8")
     (project / "b.txt").write_text("COBALT-923\n", encoding="utf-8")
@@ -114,6 +117,14 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
                                  context=LocalContextBudget(32768, 1024, 12000), thinking_enabled=False)
     try:
         with record_api_generations(directory / "provider.jsonl"), closing(connect_local(config=config)) as provider:
+            provider.temperature = temperature
+            configure = provider.configure_request
+
+            def sampling(payload):
+                configure(payload)
+                payload["seed"] = seed
+
+            provider.configure_request = sampling
             result = run_task_kernel(session, request=KernelRunRequest(
                 transport=KernelTransportDeps(provider=KernelRecordedProvider(provider, sink), run_id="r",
                     effect_scope="task", provider_id="local", user_task=task, stop_flag=stop),
@@ -172,7 +183,8 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
             "wire_contract_consistent": wire_consistent, "visible_tools": visible, "schema_tools": sorted(schema_names),
             "executed": list(session.executed.values()), "recovered_completion_passed": recovered_complete,
             "repeat_recovery_stable": stable, "required_child_workflow_observed": workflow_observed,
-            "requests_at_stop": requests_at_stop, "generation_requests": len(requests)}
+            "requests_at_stop": requests_at_stop, "generation_requests": len(requests),
+            "seed": seed, "temperature": temperature, "seconds": time.monotonic() - started}
         (directory / "result.json").write_text(json.dumps(row, ensure_ascii=False, indent=2), encoding="utf-8")
         return row
     finally:
@@ -185,6 +197,8 @@ def main():
     parser.add_argument("--model", required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--protocols", nargs="+", choices=("on", "off"), default=("on", "off"))
+    parser.add_argument("--seeds", nargs="+", type=int, default=(41,))
+    parser.add_argument("--temperature", type=float, default=0.3)
     parser.add_argument("--cases", nargs="+", choices=("read", "write", "replace", "cancel", "search_literal", "search_quoted", "search_regex", "search_empty", "search_context", "search_cancel"), default=("read", "write"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
@@ -198,16 +212,18 @@ def main():
             if path.suffix in {".py", ".mjs"}:
                 archive.write(path, path.as_posix())
     rows = []
-    for protocol in args.protocols:
-        for case in args.cases:
-            directory = args.output / f"{protocol}-{case}"
-            try:
-                row = probe(directory, base_url=args.base_url, model=args.model, protocol=protocol, case=case)
-            except Exception as exc:
-                row = {"protocol": protocol, "case": case, "ok": False, "error": repr(exc)}
-            rows.append(row)
-            print(json.dumps(row, ensure_ascii=False), flush=True)
-            (args.output / "summary.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    for seed in args.seeds:
+        for protocol in args.protocols:
+            for case in args.cases:
+                directory = args.output / f"seed-{seed}" / f"{protocol}-{case}"
+                try:
+                    row = probe(directory, base_url=args.base_url, model=args.model, protocol=protocol,
+                                case=case, seed=seed, temperature=args.temperature)
+                except Exception as exc:
+                    row = {"protocol": protocol, "case": case, "seed": seed, "ok": False, "error": repr(exc)}
+                rows.append(row)
+                print(json.dumps(row, ensure_ascii=False), flush=True)
+                (args.output / "summary.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
     return 0 if all(row["ok"] for row in rows) else 1
 
 

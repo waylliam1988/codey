@@ -28,11 +28,42 @@ base_result_ref。该引用必须指向本任务原收据中的完整 read_file 
 原收据。失败的 replacements 不会自动变成整文件覆盖。写入复用原原子文件替换入口；
 这是乐观版本检查，不是对任意外部进程的文件系统原子比较交换。
 
+`base_result_ref` 的原参数 schema 同时说明它来自 `readResult.result_ref`，不是
+`readResult.value` 中的文件数据。CodeMode 声明按同一 schema 投影参数说明，不另维护
+字段别名；传错字段仍失败，不猜测或补填引用。
+
 调用方可通过 output_format=json 和可选 output_schema 显式要求机器可读答案。这些输入
 编译进原 TaskPolicy.required_checks，持久化与恢复沿用原策略。原完成门在一次评估中
 校验严格 JSON 和已有 schema 子集；不剥 Markdown 围栏，不修复内容，也不新增模型循环。
 格式失败时通过原任务循环只要求返修答案。它能验证格式和声明的类型，不能普遍证明
 答案语义正确；观察内容绑定仍由原 ToolSuccessRequirement 的显式声明负责。
+
+裸 JSON 的格式说明由原输出合同定义，显式格式要求与观察值绑定共用；初始提示就说明
+无代码块，而不是等完成失败后才告知。原生协议的初始提示、协议纠错和完成返修共用
+同一条最终交付说明：有 done 声明时，答案放入它的 summary 字符串，用户要求的 JSON
+属于该字符串正文，不是工具调用外壳。完成门仍校验原字符串，不剥围栏或重写答案。
+
+CodeMode 的 `code` 只承载程序；任务数据通过同一工具 schema 的 `inputs` 对象传入。
+文件正文、搜索词和路径不必先嵌入 JS 字符串，再嵌入外层 JSON。原参数解析器生成
+不可变程序输入，Node runtime 复用它校验源码和数据的合计预算，不另维护 Python 源码
+校验路径。非 JSON 值、非有限数及超出 JavaScript 安全整数范围的整数明确拒绝。
+worker 在原 VM 内解码数据并深冻结，既不执行数据，也不向程序暴露宿主对象的原型。
+`inputs` 与 `code` 都属于原调用参数和原身份摘要，不另写入状态或恢复账本。
+
+参数校验遇到未声明的 `args` 外壳时，从本轮冻结 schema 列出必填和声明字段，明确指出
+层级错误；不剥外壳后执行。实时注册表入口也委托同一个冻结 schema 校验函数。
+参数类型错误会附带该参数原 schema 中的说明，例如 include 必须是单个 rg glob，
+多种扩展名使用花括号。完整读取引用的层级说明由同一合同常量生成 schema 和错误提示，
+不会把缺失或过期引用自动换成别的收据。
+
+生产纠错入口为 `operations/task_loop → kernel_prompt._repair_prompt`。原生提示直接要求
+顶层参数，不另在旧 `agents.protocol` 辅助函数增加字符串分类表。多个独立只读调用可使用
+原生同轮 `tool_calls`，执行和回执仍归原内核；依赖动作必须等待结果，验证和 done 分轮提交。
+
+工具结果正文后的 `Result metadata` 是由原收据投影的单行 JSON，包含完整 `result_ref`、
+工具名和成功状态。模型不必从自然语言中截取带冒号的引用。上下文压缩使用同一格式的
+读取器，只对原结果集合中可用的引用省略正文，并保留该元信息。格式无法确认或引用
+不可用时不得据此丢弃正文；没有旧标记解析分支或新增结果账本。
 
 ## 持久索引与 CodeMode 恢复的所有权（2026-10-25）
 
@@ -55,6 +86,8 @@ CodeMode 子效果通过原 durable intent 的 `parent_effect_id` 关联父效�
 原 task checkpoint 只补充程序/工具目录摘要、能力、执行范围、时钟/随机种子
 及状态操作对应的原 checkpoint revision；不存第二份 `ToolResult`，不另记子调用请求账本；参数身份由原 `execute_turn` 校验。`store/load` 的
 结果从原状态历史恢复，重放不再写一次状态。历史不一致、缺少收据或结果不确定时阻断。
+现有恢复指纹同时包含这一次执行所用 Node worker 源文件的摘要；未完成程序遇到
+worker 实现变化时阻断，不通过旧协议或重跑子效果接续。已提交父收据仍直接恢复。
 
 读工具保持并行执行，子身份按 RPC 发出顺序分配，结果按发出顺序交付；写调用先等待
 已有回调完成。每次执行的 `Date` 环境时钟固定，`Math.random` 使用该执行的固定种子，
@@ -69,6 +102,20 @@ CodeMode 成功回执的 `canonical.value` 仍保存程序的原始返回值；`
 值生成 `{"ok":true,"value":...}` JSON 展示。字符串、空串、null、布尔值和容器均保留
 原类型，内容中的引号不剥除。原 native/text 结果发送入口共用数据与元信息分区，
 重启直接恢复原完整回执；不解析旧展示文本来补造值，没有格式兼容或降级分支。
+
+同一 Node worker 拒绝 `console.log/error`，给出明确的 `console_output_denied`；没有
+等待中的调用且程序返回 undefined 时给出 `missing_return`。诊断明确区分没有 return 与
+返回不存在的属性这两种可能原因，并提示按声明从 `result.value` 读取工具数据。程序必须显式返回
+数据，确实无需数据时使用 `return null`。显式 null、false、0 和空串均保留原值。
+零子调用的 undefined 错误同时说明尚未执行子工具：声明 helper/main 不会自动调用，
+需要显式调用并返回，例如 `return await main()`；运行时不猜入口或自动调用函数。
+错误继续沿原父效果回执交付，通过原任务循环返修；console 不成为另一条结果通道。
+已开始的子调用仍按原生命周期收齐和结算，缺少 await 的错误检查保留原优先级。
+JSON 编码失败不再转成字符串；undefined 字段、函数、symbol、bigint 和非有限数明确失败。
+输出预算与交付共用同一次序列化，避免 getter 或 toJSON 被反复求值后产生不同结果。
+源码编译失败直接使用同一 Node 编译器的诊断，区分已通过的外层 JSON 解码与失败的
+JavaScript 编译，提供有界源码位置并说明此时尚未执行子工具。返修引导将任意正文放入
+`inputs`，不补引号、替换转义字符或另启解释器。
 
 `ToolSuccessRequirement.evaluate` 一次读取原执行投影和完整回执，生成本次调用内的
 不可变评估结果。完成检查状态、proof 原因码及模型返修反馈均由这一结果派生；

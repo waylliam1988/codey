@@ -31,7 +31,7 @@ def test_whole_file_update_uses_original_full_read_receipt(tmp_path, newline):
     assert not update(session, tmp_path, ref, content="new\n").ok  # stale baseline even for a no-op
 
 
-@pytest.mark.parametrize("case", ["partial", "different_file", "missing_ref", "deleted", "changed", "readonly"])
+@pytest.mark.parametrize("case", ["partial", "different_file", "missing_ref", "truncated_ref", "deleted", "changed", "readonly"])
 def test_whole_file_update_rejects_unproven_or_stale_baselines(tmp_path, case):
     (tmp_path / "a.py").write_text("one\ntwo\n")
     (tmp_path / "b.py").write_text("other\n")
@@ -40,6 +40,9 @@ def test_whole_file_update_rejects_unproven_or_stale_baselines(tmp_path, case):
     ref = read(session, tmp_path, **({"limit": 1} if case == "partial" else {}))
     if case == "missing_ref":
         ref = "missing"
+    if case == "truncated_ref":
+        assert ":" in ref
+        ref = ref.rsplit(":", 1)[1]
     if case == "deleted":
         (tmp_path / "a.py").unlink()
     if case == "changed":
@@ -51,11 +54,13 @@ def test_whole_file_update_rejects_unproven_or_stale_baselines(tmp_path, case):
         assert (tmp_path / "a.py").read_text() == ("external\n" if case == "changed" else "one\ntwo\n")
 
 
-def test_codemode_whole_file_update_reuses_child_receipt_in_same_runtime(tmp_path):
+@pytest.mark.parametrize("reference", ["result_ref", "base_result_ref"])
+@pytest.mark.parametrize("content", ["after\n", "'quotes' \"double\" \\n\nnext\r\n\u2028\u2029😀\n"])
+def test_codemode_whole_file_update_reuses_child_receipt_in_same_runtime(tmp_path, reference, content):
     from codey.codemode.kernel import build_execute_turn_executor
     from codey.operations.kernel_protocol import build_turn_snapshot
 
-    (tmp_path / "a.py").write_text("before\n")
+    (tmp_path / "a.py").write_bytes(b"before\n")
     session = TaskSession(TaskPolicy(frozenset({"project.read", "project.write"})), project=str(tmp_path))
     snapshot = build_turn_snapshot(session)
     revisions = WorkspaceRevisionStore(tmp_path.parent / (tmp_path.name + "-state"))
@@ -63,8 +68,19 @@ def test_codemode_whole_file_update_reuses_child_receipt_in_same_runtime(tmp_pat
         turn=1, project_path=tmp_path, allow_writes=True, workspace_revision_store=revisions)
     result = execute_turn(session, [ToolCall("codemode", {"code":
         "const r=await tools.read_file({path:'a.py'}); if(!r.ok) throw Error(r.error); "
-        "const w=await tools.edit({path:'a.py',content:'after\\n',base_result_ref:r.result_ref}); "
-        "if(!w.ok) throw Error(w.error); return 'updated';"})], run_id="code", effect_scope="task", turn=1,
+        f"const w=await tools.edit({{path:'a.py',content:inputs.content,base_result_ref:r.{reference}}}); "
+        "if(!w.ok) throw Error(w.error); return 'updated';", "inputs": {"content": content}})],
+        run_id="code", effect_scope="task", turn=1,
         project_path=tmp_path, executors={"codemode": parent}, snapshot=snapshot, workspace_revision_store=revisions)[0]
-    assert result.ok, result.model_text
-    assert (tmp_path / "a.py").read_text() == "after\n"
+    if reference == "result_ref":
+        assert result.ok, result.model_text
+        edits = [receipt for receipt in session._memory_results.values() if receipt.call.name == "edit"]
+        assert len(edits) == 1 and edits[0].call.args["content"] == content
+        # The original writer intentionally preserves the target's LF style;
+        # the input bridge itself must deliver the unchanged mixed-EOL text.
+        assert (tmp_path / "a.py").read_bytes() == content.replace("\r\n", "\n").encode("utf-8")
+    else:
+        assert not result.ok
+        error = result.model_text.split("Current CodeMode contract:")[0]
+        assert "readResult.result_ref" in error and "not readResult.value.result_ref" in error
+        assert (tmp_path / "a.py").read_text() == "before\n"

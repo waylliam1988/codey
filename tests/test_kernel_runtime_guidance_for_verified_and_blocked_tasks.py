@@ -19,7 +19,9 @@ def test_complete_result_is_available_without_ordering_a_redundant_receipt_read(
     result = ToolResult(ToolCall("run", {"command": "python -m unittest discover -v"}), "2 tests passed", ok=True)
     session._memory_results["exec-1"] = result
     text = _result_context(result, session)
-    assert "Stored result: exec-1" in text
+    from codey.providers.base import result_ref_from_metadata
+
+    assert result_ref_from_metadata(text) == "exec-1"
     assert "Read it with read_tool_result" not in text
     assert "If more detail" in text
 
@@ -40,7 +42,8 @@ def test_readonly_task_can_report_blocked_in_user_requested_format(native):
         task_text='Diagnose only; report JSON {"status":"blocked","reason":"..."} if edits would be required.')
     prompt = kernel_prompt_for_session(session, native=native, tool_names=build_turn_snapshot(session, native=native).tool_names)
     assert "cannot be completed within" in prompt and "blocked" in prompt
-    assert "requested final format" in prompt and "Deliver the final answer as normal text" in prompt
+    assert "requested final format" in prompt
+    assert ("summary string" if native else "Deliver the final answer as normal text") in prompt
     assert "only after the required checks have passed" not in prompt
 
 

@@ -149,7 +149,7 @@ def test_parallel_result_delivery_and_child_identity_are_deterministic():
 
 
 @pytest.mark.parametrize("read_path", ["a.py", "./a.py"])
-@pytest.mark.parametrize("tamper", [False, True])
+@pytest.mark.parametrize("tamper", [False, True, "runtime"])
 def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(tmp_path, monkeypatch, read_path, tamper):
     from codey.codemode.runtime import NodeWorkerRuntime
     from codey.operations import kernel_execution
@@ -166,14 +166,13 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(tmp_
             "code": """
         const n = (await load('count')) ?? 0;
         await store('count', n+1);
-        const r = await tools.read_file({path:'a.py'});
-        return {n,r,now:Date.now(),rand:Math.random()};
-    """
+        const r = await tools.read_file({path:inputs.path});
+        return {n,r,text:inputs.text,now:Date.now(),rand:Math.random()};
+    """, "inputs": {"path": read_path, "text": "'quoted'\n\"text\"\u2028\n"}
         },
         call_id="parent",
     )
-    call.args["code"] = call.args["code"].replace("path:'a.py'", "path:" + json.dumps(read_path))
-    if tamper:
+    if tamper is True:
         (project / "a.py").write_text("needle" * 3000)
     original_values = []
     original = NodeWorkerRuntime.execute
@@ -202,11 +201,13 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(tmp_
             durable=m.durable,
         )
     m.durable.close()
-    if tamper:
+    if tamper is True:
         artifact = max((p for p in managed.root.rglob("*") if p.is_file()), key=lambda p: p.stat().st_size)
         artifact.write_text("corrupt original receipt")
 
     monkeypatch.setattr(NodeWorkerRuntime, "execute", original)
+    if tamper == "runtime":
+        monkeypatch.setattr(NodeWorkerRuntime, "contract_digest", lambda _: "changed-worker")
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
@@ -250,6 +251,7 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(tmp_
         assert len(initial[0].canonical["child_effect_ids"]) == 1
         assert len(fresh.executed) == 2
         assert initial[0].canonical["value"] == original_values[0]
+        assert initial[0].canonical["value"]["text"] == call.args["inputs"]["text"]
         assert durable.task("r").state["codemode_state"]["count"] == 1
         assert len(deps.tool_result_delivery.load_batches("s", "r")) == 1
         assert all(

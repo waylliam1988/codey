@@ -4,6 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from codey.toolchain.constants import FULL_READ_REFERENCE_HINT
+
 
 def edit_base_version(session: Any, project: Path, path: str, ref: str) -> str:
     from codey.agents.protocol import canonical_project_path
@@ -11,8 +13,12 @@ def edit_base_version(session: Any, project: Path, path: str, ref: str) -> str:
     from codey.workspace.paths import content_hash
 
     result = session._memory_results.get(ref)
-    if result is None or result.ok is not True or result.call.name not in {"read", "read_file"}:
-        raise ValueError("base_result_ref must identify a successful read_file receipt from this task")
+    if result is None:
+        raise ValueError("base_result_ref must identify a successful read_file receipt from this task. "
+                         + FULL_READ_REFERENCE_HINT)
+    if result.ok is not True or result.call.name not in {"read", "read_file"}:
+        raise ValueError(f"base_result_ref points to {result.call.name} (ok={result.ok}), not a successful read_file. "
+                         "Read the target file completely and use that read's result_ref. " + FULL_READ_REFERENCE_HINT)
     value = result.canonical.get("value")
     validate_output("read_file", read_file_output_schema(), value)
     if (result.truncated or not value["text_complete"] or value["start_line"] != 1
@@ -35,5 +41,6 @@ def content_edit_version(session: Any, project: Path, path: str, args: dict[str,
             raise ValueError("whole-file update requires the referenced file to still exist")
         return version
     if target.exists():
-        raise ValueError(f"existing file requires replacements or content with a complete read_file base_result_ref: {path}")
+        raise ValueError(f"existing file requires replacements or content with a complete read_file base_result_ref: {path}. "
+                         "base_result_ref is missing. " + FULL_READ_REFERENCE_HINT)
     return None

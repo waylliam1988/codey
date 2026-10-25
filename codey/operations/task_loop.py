@@ -1176,7 +1176,8 @@ def _handle_done_reply(
         if type(getattr(verdict, "complete", None)) is not bool:
             raise ValueError("completion gate returned an invalid verdict")
     except Exception as exc:
-        prompt = f"Completion check failed ({exc}); cannot complete yet. Continue the task."
+        prompt = _prompt._completion_followup(
+            f"Completion check failed ({exc}); cannot complete yet. Continue the task.", native=native)
         try:
             pending = _transport._take_answered_reply(provider, reply, native, native_tools, prompt)
         except Exception as receipt_exc:
@@ -1220,11 +1221,12 @@ def _handle_done_reply(
             proof=getattr(verdict, "proof", None),
             delivery="success" if has_calls else "not_required",
         )
+    prompt = _prompt._completion_followup(verdict.followup, native=native)
     try:
-        pending = _transport._take_answered_reply(provider, reply, native, native_tools, verdict.followup)
+        pending = _transport._take_answered_reply(provider, reply, native, native_tools, prompt)
     except Exception as exc:
         return KernelResult(
             completed=False, summary=f"provider failed: {exc}",
             turns=(session.turn or 0), stop_reason="provider_failure",
         )
-    return verdict.followup, pending
+    return prompt, pending

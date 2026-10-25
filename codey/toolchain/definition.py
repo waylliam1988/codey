@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from codey.runtime.core.models import ToolCall
-from codey.toolchain.constants import EXACT_REPLACEMENT_CONTEXT_HINT, MAX_REPLACEMENTS
+from codey.toolchain.constants import EXACT_REPLACEMENT_CONTEXT_HINT, FULL_READ_REFERENCE_HINT, MAX_REPLACEMENTS
 from codey.toolchain.result_schema import read_file_output_schema, search_output_schema, text_output_schema
 
 MAX_ACCIDENTAL_TOOL_CALLS = 8
@@ -126,7 +126,8 @@ TOOL_DEFINITIONS = (
             ("limit", {"type": "integer", "minimum": 1}),
             ("literal", {"type": "boolean"}),
             ("case_sensitive", {"type": "boolean"}),
-            ("include", {"type": "string"}),
+            ("include", {"type": "string", "description":
+                "One rg glob string, not an array. Combine alternatives with braces, e.g. *.{py,ts}."}),
             ("exclude", {"type": "array", "items": {"type": "string"}}),
             ("before_context", {"type": "integer", "minimum": 0}),
             ("after_context", {"type": "integer", "minimum": 0}),
@@ -182,13 +183,13 @@ TOOL_DEFINITIONS = (
         "edit",
         permission="project_write",
         examples=(
-            '{"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}',
             '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"def process():\\n    return old_value\\n","new_string":"def process():\\n    return new_value\\n"}]}}',
+            '{"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}',
             '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}',
         ),
         description=(
-            f"Use exactly one mode: content to create; up to {MAX_REPLACEMENTS} exact replacements to edit; "
-            "or content plus base_result_ref to update a whole existing file. "
+            f"Edit existing files with up to {MAX_REPLACEMENTS} exact replacements, preserving unrelated code. "
+            "Create new files with content. For a whole-file update, use content plus base_result_ref. "
             "base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. "
             + EXACT_REPLACEMENT_CONTEXT_HINT
         ),
@@ -197,8 +198,12 @@ TOOL_DEFINITIONS = (
         repair_hint="edit",
         parameters=(
             ("path", {"type": "string"}),
-            ("content", {"type": "string"}),
-            ("base_result_ref", {"type": "string"}),
+            ("content", {"type": "string", "description":
+                "Complete file text; preserve unrelated content. Prefer replacements for focused edits."}),
+            ("base_result_ref", {
+                "type": "string",
+                "description": FULL_READ_REFERENCE_HINT,
+            }),
             (
                 "replacements",
                 {

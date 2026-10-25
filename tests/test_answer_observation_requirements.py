@@ -165,6 +165,9 @@ def test_wrong_answer_is_repaired_by_original_task_loop_without_repeating_tools(
             index = self.step
             self.step += 1
             if index == 0:
+                assert "without Markdown fences" in feedback
+                if native:
+                    assert "summary string" in feedback
                 name, args = "codemode", {"code":
                     "const a = await tools.read_file({path:'a.txt'});"
                     "const b = await tools.read_file({path:'b.txt'});" +
@@ -179,6 +182,9 @@ def test_wrong_answer_is_repaired_by_original_task_loop_without_repeating_tools(
                 assert "Final answer must be JSON" in feedback
                 assert "Execution and observation are already satisfied" in feedback
                 assert "Required execution:" not in feedback
+                if native:
+                    assert "done" in feedback and "summary string" in feedback
+                    assert "not the outer tool-call object" in feedback
                 assert len(runtime.state.executed) == 3
                 assert not evaluate(runtime.state, wrong).complete
                 name, args = "done", {"summary": correct}

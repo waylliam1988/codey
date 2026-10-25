@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import queue
-import re
 import subprocess
 import threading
 import time
@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from codey.codemode.identity import rpc_child_index
-from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry
+from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
+from codey.codemode.types import CodeModeLimits, CodeModeProgram, CodeModeResult, ToolCatalogEntry
 from codey.runtime.core import cancellation
 
 ToolInvoker = Callable[[str, dict[str, object]], object]
@@ -25,6 +26,7 @@ class CodeModeRuntime(Protocol):
         *,
         catalog: Sequence[ToolCatalogEntry],
         invoke: ToolInvoker,
+        inputs: Mapping[str, object] | None = None,
         state_store: Any = None,
         replay_context: Mapping[str, object] | None = None,
         limits: CodeModeLimits | None = None,
@@ -39,35 +41,35 @@ class NodeWorkerRuntime:
         self.node = node
         self.runner = runner or Path(__file__).with_name("node_runner.mjs")
 
+    def contract_digest(self) -> str:
+        """Bind pending control-flow recovery to this exact worker implementation."""
+        return hashlib.sha256(self.runner.read_bytes()).hexdigest()
+
     def execute(
         self,
         code: str,
         *,
         catalog: Sequence[ToolCatalogEntry],
         invoke: ToolInvoker,
+        inputs: Mapping[str, object] | None = None,
         state_store: Any = None,
         replay_context: Mapping[str, object] | None = None,
         limits: CodeModeLimits | None = None,
     ) -> CodeModeResult:
         cancellation.check()
         active_limits = limits or CodeModeLimits()
-        if len(code.encode("utf-8")) > active_limits.source_bytes:
-            return CodeModeResult(False, error_code="source_limit", error="codemode source exceeds source byte limit")
-        denied = re.search(
-            r"\b(?:process|require|import|fetch|eval|globalThis|__dirname|__filename|child_process|fs)\b",
-            code,
-            re.IGNORECASE,
-        ) or re.search(r"\bFunction\s*\(", code)
-        if denied or re.search(r"tools\s*(?:\.\s*codemode|\[\s*['\"]codemode['\"]\s*\])", code, re.IGNORECASE):
-            return CodeModeResult(False, error_code="sandbox_denied", error="direct host access is denied")
+        try:
+            program = parse_codemode_args({"code": code, "inputs": {} if inputs is None else inputs}, limits=active_limits)
+        except CodeModeInputError as exc:
+            return CodeModeResult(False, error_code=exc.code, error=str(exc))
         with cancellation.linked_scope(deadline=time.monotonic() + active_limits.timeout_ms / 1000) as stop:
             try:
-                return self._run_worker(code, catalog, invoke, state_store, active_limits, stop, replay_context)
+                return self._run_worker(program, catalog, invoke, state_store, active_limits, stop, replay_context)
             except cancellation.DeadlineExceeded:
                 return CodeModeResult(False, error_code="timeout", error="codemode execution timed out")
 
     def _run_worker(
-        self, code: str, catalog: Sequence[ToolCatalogEntry], invoke: ToolInvoker,
+        self, program: CodeModeProgram, catalog: Sequence[ToolCatalogEntry], invoke: ToolInvoker,
         state_store: Any, limits: CodeModeLimits, stop: threading.Event,
         replay_context: Mapping[str, object] | None,
     ) -> CodeModeResult:
@@ -103,7 +105,8 @@ class NodeWorkerRuntime:
         reader = threading.Thread(target=read_messages, daemon=True)
         request = {
             "type": "execute",
-            "code": code,
+            "code": program.code,
+            "inputs": self._plain_json(program.inputs),
             "catalog": [
                 {"name": item.name, "description": item.description, "parameters": self._plain_json(item.parameters)}
                 for item in catalog

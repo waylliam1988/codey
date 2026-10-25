@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from codey.policies.output_requirement import JSON_ANSWER_GUIDANCE
 from codey.policies.requirement import RequirementEvaluation
 from codey.runtime.core.models import ToolResult
 
@@ -82,7 +83,7 @@ class ToolSuccessRequirement:
         selected = f"value{self.result_pointer}"
         if self.result_line is not None:
             selected += f", absolute file line {self.result_line}"
-        return (execution + f" Final answer must be JSON: at pointer {self.answer_pointer!r}, return exactly "
+        return (execution + " " + JSON_ANSWER_GUIDANCE + f" At pointer {self.answer_pointer!r}, return exactly "
                 f"the observed {selected} from this committed result. Do not shorten or invent it. "
                 "Use the stored result rather than repeating execution to restate it. "
                 "Conflicting observations cannot establish this answer requirement.")
@@ -177,8 +178,7 @@ class ToolSuccessRequirement:
     def _answer_failure(self, reason: str, expected: Any, refs: list[str]) -> RequirementEvaluation:
         return RequirementEvaluation(reason,
             "Execution and observation are already satisfied. Do not repeat the tool execution. "
-            "Final answer must be JSON, as one bare document without Markdown fences or surrounding prose: "
-            f"repair only the answer at pointer {self.answer_pointer!r} "
+            + JSON_ANSWER_GUIDANCE + f" Repair only the answer at pointer {self.answer_pointer!r} "
             "using the committed selected value below. Preserve its JSON type and content, including literal quotes. "
             'Do not copy a truncated preview; use read_tool_result with view="value" for omitted detail.\n'
             "Expected selected value (JSON): " + _value_preview(expected) + "\n"

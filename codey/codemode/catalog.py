@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import Any, cast
 
 from codey.codemode.types import ToolCatalogEntry, ToolCatalogSnapshot
 from codey.toolchain.result_schema import schema_typescript
@@ -124,6 +124,10 @@ def render_declarations(snapshot: ToolCatalogSnapshot) -> str:
         "declare const tools: {",
     ]
     for entry in snapshot.entries:
+        properties = cast(Mapping[str, Any], entry.parameters.get("properties", {}))
+        for name, schema in properties.items():
+            if schema.get("description"):
+                lines.append(f"  // {entry.name}.{name}: {schema['description']}")
         value = schema_typescript(entry.output_schema)
         lines.append(f"  {entry.name}(args: {schema_typescript(entry.parameters)}): Result<{value}>;")
     lines.extend(("};", f"// catalog_digest={snapshot.digest}"))

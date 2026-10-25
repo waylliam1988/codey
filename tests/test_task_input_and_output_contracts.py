@@ -48,6 +48,40 @@ def test_prepared_requests_keep_history_prefix_and_count_exact_sent_payload(monk
     assert not hasattr(provider, "_working_context")
 
 
+def test_native_read_batch_uses_original_kernel_and_receipts_in_one_generation(tmp_path, monkeypatch):
+    from codey.providers import api_transport
+
+    monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", lambda *a, **kw: True)
+    (tmp_path / "a.txt").write_bytes(b"FIRST\n")
+    (tmp_path / "b.txt").write_bytes(b"SECOND\n")
+    sent = []
+
+    def generate(url, payload, *args, **kwargs):
+        sent.append(payload)
+        if len(sent) == 1:
+            assert "Group independent read-only calls" in payload["messages"][0]["content"]
+            calls = [{"id": name, "type": "function", "function": {"name": "read_file",
+                       "arguments": json.dumps({"path": name + ".txt"})}} for name in ("a", "b")]
+        else:
+            assert len(sent) == 2
+            results = [m for m in payload["messages"] if m["role"] == "tool"]
+            assert [m["tool_call_id"] for m in results] == ["a", "b"]
+            assert "FIRST" in results[0]["content"] and "SECOND" in results[1]["content"]
+            calls = [{"id": "done", "type": "function", "function": {"name": "done",
+                       "arguments": json.dumps({"summary": "FIRST / SECOND"})}}]
+        return {"choices": [{"message": {"role": "assistant", "content": "", "tool_calls": calls},
+                             "finish_reason": "tool_calls"}]}
+
+    monkeypatch.setattr(api_transport, "generate", generate)
+    session = TaskSession(TaskPolicy(frozenset({"control", "project.read"})), project=str(tmp_path), max_turns=3)
+    result = run_task_kernel(session, request=KernelRunRequest(
+        transport=KernelTransportDeps(provider=ApiProvider("http://localhost:9/v1", "fixture"),
+                                      provider_id="local", run_id="batch", user_task="Read both files."),
+        execution=KernelExecutionDeps(project_path=tmp_path)))
+    assert result.completed and result.summary == "FIRST / SECOND" and len(sent) == 2
+    assert len(session.executed) == 2 and all(row["ok"] for row in session.executed.values())
+
+
 @pytest.mark.parametrize("answer", ['```json\n{"x":1}\n```', '{"x":1,"x":2}', '{"x":NaN}', '{"x":1e999}', '{"x":"1"}'])
 def test_json_requirement_survives_policy_restore_and_rejects_invalid_answers(answer):
     schema = json.dumps({"type": "object", "required": ["x"], "additionalProperties": False,
@@ -108,7 +142,8 @@ def test_format_repair_uses_original_loop_without_repeating_read(tmp_path, monke
     assert len([r for r in session.executed.values() if r["name"] == "read_file"]) == 1
     if native:
         assert "omit the text protocol's tool/args envelope" in provider.prompts[0]
-        assert "missing required arg" in provider.results[0].content
+        assert "undeclared args wrapper" in provider.results[0].content
+        assert "Required top-level fields: path" in provider.results[0].content
         assert "omit the text protocol's tool/args envelope" in provider.results[0].user_content
         assert "Current work observations" in provider.results[1].user_content
         assert "Repair only the final answer" in provider.results[-1].content

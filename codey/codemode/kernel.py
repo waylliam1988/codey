@@ -72,6 +72,7 @@ class CodeModeKernelExecutor:
         try:
             result = self.runtime.execute(
                 program.code,
+                inputs=program.inputs,
                 catalog=self.catalog.entries,
                 invoke=host.invoke,
                 limits=self.limits,
@@ -153,13 +154,15 @@ def build_execute_turn_executor(
         from codey.operations.task_effects import KernelEffectSink
 
         child_sink = intent_sink.for_child(call, turn=turn) if isinstance(intent_sink, KernelEffectSink) else intent_sink
+        runtime = NodeWorkerRuntime()
         replay = None
         if durable is not None:
             if not isinstance(child_sink, KernelEffectSink):
                 raise ValueError("durable CodeMode requires the original effect sink")
             from codey.codemode.replay import DurableCodeModeReplay, digest
             replay = DurableCodeModeReplay(durable, str(run_id), parent_id,
-                digest({"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes}),
+                digest({"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
+                        "runtime": runtime.contract_digest()}),
                 parent_effect_id=child_sink.parent_effect_id, effect_scope=effect_scope, allow_writes=allow_writes)
 
         def execute_child(child: ToolCall) -> ToolResult:
@@ -229,6 +232,7 @@ def build_execute_turn_executor(
             execution_id=parent_id,
             catalog=catalog,
             execute_child=execute_child,
+            runtime=runtime,
             limits=limits,
             allow_writes=allow_writes,
             state_store=state_store,

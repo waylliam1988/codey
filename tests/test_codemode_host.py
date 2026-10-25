@@ -11,7 +11,8 @@ def test_catalog_from_frozen_specs_renders_namespaced_declarations() -> None:
         {
             "read_file": ToolSpec(
                 name="read_file", grant="project.read", executor="project",
-                parameters=(("path", {"type": "string"}), ("limit", {"type": "integer"})), required=("path",),
+                parameters=(("path", {"type": "string", "description": "Workspace-relative file."}),
+                            ("limit", {"type": "integer"})), required=("path",),
                 description="Read one file.", replay_class="safe",
             ),
             "codemode": ToolSpec(name="codemode", grant="project.read", executor="custom"),
@@ -23,6 +24,7 @@ def test_catalog_from_frozen_specs_renders_namespaced_declarations() -> None:
     assert "uses NAME's declared arguments" in declarations
     assert '"path": string' in declarations
     assert '"limit"?: number' in declarations
+    assert "// read_file.path: Workspace-relative file." in declarations
     assert "codemode" not in declarations
 
     with pytest.raises(TypeError):
