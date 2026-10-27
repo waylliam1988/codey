@@ -113,38 +113,45 @@ def _start_entry_kind(start: Path) -> str:
     return "other"
 
 
-def _collect_dir_entries(
+@dataclass(frozen=True)
+class DirectoryEntries:
+    paths: tuple[Path, ...]
+    entry_limited: bool
+    read_failed: bool
+
+
+def collect_bounded_dir_entries(
     current: Path,
     excluded_lower: set[str],
-    budget: BoundedScanBudget,
-) -> list[Path]:
+    max_entries: int,
+) -> DirectoryEntries:
     entries: list[Path] = []
     raw_seen = 0
-    raw_cap = max(budget.max_dir_entries * 4, budget.max_dir_entries + 100)
+    entry_limited = False
+    raw_cap = max(max_entries * 4, max_entries + 100)
     try:
         for entry in current.iterdir():
             cancellation.check()
             raw_seen += 1
             if entry.name.lower() in excluded_lower:
                 if raw_seen >= raw_cap:
-                    budget.entry_limited = True
+                    entry_limited = True
                     break
                 continue
-            if len(entries) >= budget.max_dir_entries:
-                budget.entry_limited = True
+            if len(entries) >= max_entries:
+                entry_limited = True
                 break
             entries.append(entry)
             if raw_seen >= raw_cap:
-                budget.entry_limited = True
+                entry_limited = True
                 break
     except OSError:
-        budget.read_failed = True
-        return entries
-    return entries
+        return DirectoryEntries(tuple(entries), entry_limited, True)
+    return DirectoryEntries(tuple(entries), entry_limited, False)
 
 
 def _partition_sorted_entries(
-    entries: list[Path],
+    entries: tuple[Path, ...],
     *,
     excluded_lower: set[str],
     allow_dir: Callable[[Path], bool] | None,
@@ -187,7 +194,7 @@ def iter_bounded_files(
     allow_dir: Callable[[Path], bool] | None = None,
     allow_file: Callable[[Path], bool] | None = None,
     skip_start_if_excluded: bool = True,
-    on_directory: Callable[[Path], None] | None = None,
+    on_directory: Callable[[Path, DirectoryEntries], None] | None = None,
 ) -> Iterator[Path]:
     cancellation.check()
     excluded_lower = {name.lower() for name in excluded_dirs}
@@ -215,12 +222,14 @@ def iter_bounded_files(
             budget.dir_limited = True
             return
         budget.dirs_seen += 1
+        entries = collect_bounded_dir_entries(current, excluded_lower, budget.max_dir_entries)
+        budget.entry_limited |= entries.entry_limited
+        budget.read_failed |= entries.read_failed
         if on_directory is not None:
-            on_directory(current)
-        entries = _collect_dir_entries(current, excluded_lower, budget)
+            on_directory(current, entries)
 
         dirs, yielded, stop = _partition_sorted_entries(
-            entries,
+            entries.paths,
             excluded_lower=excluded_lower,
             allow_dir=allow_dir,
             allow_file=allow_file,

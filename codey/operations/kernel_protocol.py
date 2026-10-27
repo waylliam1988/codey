@@ -182,7 +182,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
 
         catalog = build_codemode_catalog(frozen, allow_writes=session.policy.allows("project.write"))
         declarations = render_declarations(catalog)
-        frozen = tuple(replace(spec, description=spec.description + "\n" + declarations)
+        frozen = tuple(replace(spec, declarations=declarations)
                        if spec.name == "codemode" else spec for spec in frozen)
     from codey.toolchain.tool_spec import json_contract_text as _contract
 
@@ -422,7 +422,7 @@ def _validate_tool_args(
         return (dict(validated_done.args), "") if validated_done.ok else ({}, validated_done.error)
     if name == "codemode":
         try:
-            from codey.codemode.protocol import codemode_error_text, parse_codemode_args
+            from codey.codemode.protocol import parse_codemode_args
 
             program = parse_codemode_args(args if isinstance(args, dict) else {})
             from codey.runtime.core.models import canonical_json_mapping
@@ -430,9 +430,7 @@ def _validate_tool_args(
             return {"code": program.code, "language": program.language,
                     "inputs": canonical_json_mapping(program.inputs)}, ""
         except ValueError as exc:
-            # The correction repeats the contract actually sent this turn;
-            # do not invent another API example or consult the live registry.
-            return {}, codemode_error_text(str(exc), description=spec.description)
+            return {}, str(exc)
     # Custom/third-task tools: generic spec validation is sufficient.
     # They run via injected executors; no legacy coding/research repair.
     if executor not in {"project", "source", "knowledge"}:

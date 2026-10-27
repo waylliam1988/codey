@@ -67,6 +67,100 @@ def test_index_detects_new_files_in_previously_empty_directory(tmp_path):
     assert [e.path for e in discover(index, tmp_path).entries] == [nested / "new.py"]
 
 
+@pytest.mark.parametrize("reopen", [False, True])
+@pytest.mark.parametrize("change", ["create", "nested", "rename", "symlink_to_file"])
+def test_membership_changes_are_detected_with_unchanged_directory_timestamps(tmp_path, monkeypatch, reopen, change):
+    project, state = tmp_path / "project", tmp_path / "state"
+    nested = project / "nested"
+    nested.mkdir(parents=True)
+    before = nested / "before.py"
+    if change == "rename":
+        before.write_text("needle")
+    elif change == "symlink_to_file":
+        target = tmp_path / "outside.py"
+        target.write_text("outside")
+        try:
+            before.symlink_to(target)
+        except OSError as exc:
+            pytest.skip(f"symlink creation unavailable: {exc}")
+    original = IncrementalFileIndex._directory
+
+    def fixed_stamp(path):
+        name, _mtime, device, inode = original(path)
+        return name, 0, device, inode
+
+    monkeypatch.setattr(IncrementalFileIndex, "_directory", staticmethod(fixed_stamp))
+    index = IncrementalFileIndex(state)
+    assert search_files(project, ".", "needle", file_index=index).ok
+    if change == "nested":
+        destination = nested / "new_dir" / "new.py"
+        destination.parent.mkdir()
+    else:
+        destination = nested / ("before.py" if change == "symlink_to_file" else "new.py")
+    if change == "rename":
+        before.rename(destination)
+    else:
+        if change == "symlink_to_file":
+            before.unlink()
+        destination.write_text("needle")
+    if reopen:
+        index = IncrementalFileIndex(state)
+    result = search_files(project, ".", "needle", file_index=index)
+    assert result.ok
+    assert [entry["path"] for entry in result.canonical["value"]["matches"]] == [destination.relative_to(project).as_posix()]
+    assert result.canonical["value"]["scan_complete"] is True
+
+
+def test_warm_membership_validation_obeys_the_original_scope_and_entry_cap(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    left, right = tmp_path / "left", tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+    for number in range(20):
+        (left / f"{number:02}.py").write_text("needle")
+    index = IncrementalFileIndex()
+    cold = discover(index, tmp_path, left, max_dir_entries=2)
+    observed = []
+    original = Path.iterdir
+
+    def counted(path):
+        assert path == left  # Never enumerate siblings or the project root.
+        for entry in original(path):
+            observed.append(entry)
+            yield entry
+
+    monkeypatch.setattr(Path, "iterdir", counted)
+    with mock.patch("codey.workspace.file_index.iter_bounded_files", side_effect=AssertionError("walked")):
+        warm = discover(index, tmp_path, left, max_dir_entries=2)
+    assert len(observed) == 3  # Two admitted entries and the bounded overflow probe.
+    assert warm.generation == cold.generation
+    assert warm.coverage == cold.coverage and warm.coverage.entry_limited
+
+
+@pytest.mark.parametrize("reopen", [False, True])
+def test_new_entry_beyond_a_full_prefix_cannot_keep_complete_coverage(tmp_path, monkeypatch, reopen):
+    from pathlib import Path
+
+    project, state = tmp_path / "project", tmp_path / "state"
+    project.mkdir()
+    (project / "a.py").write_text("other")
+    directory, listing = IncrementalFileIndex._directory, Path.iterdir
+    monkeypatch.setattr(IncrementalFileIndex, "_directory", staticmethod(
+        lambda path: (path, 0, *directory(path)[2:])))
+    monkeypatch.setattr(Path, "iterdir", lambda path: iter(sorted(listing(path))))
+    index = IncrementalFileIndex(state)
+    with mock.patch("codey.toolchain.runtime.SEARCH_MAX_DIR_ENTRIES", 1):
+        before = search_files(project, ".", "needle", file_index=index)
+        assert before.ok and before.canonical["value"]["scan_complete"] is True
+        (project / "b.py").write_text("needle")
+        if reopen:
+            index = IncrementalFileIndex(state)
+        after = search_files(project, ".", "needle", file_index=index)
+    assert after.ok and after.canonical["value"]["scan_complete"] is False
+    assert after.canonical["value"]["coverage"]["budget_limited"] is True
+
+
 def test_index_keeps_scopes_and_policies_independent(tmp_path):
     for name in ("left", "right"):
         (tmp_path / name).mkdir()
@@ -105,6 +199,37 @@ def test_snapshot_digest_covers_omissions(tmp_path):
     file.write_text(json.dumps(raw))
     with pytest.raises(StoreCorruption, match="digest"):
         discover(IncrementalFileIndex(state), project)
+
+
+def test_snapshot_format_is_part_of_cache_identity_without_reading_old_storage(tmp_path):
+    import hashlib
+
+    project, state = tmp_path / "project", tmp_path / "state"
+    project.mkdir()
+    source = project / "new.py"
+    source.write_text("needle")
+    limits = BoundedScanBudget()
+    old_policy = [str(project.resolve()), str(project.resolve()), [], True,
+                  limits.max_files, limits.max_dirs, limits.max_dir_entries]
+    old_key = hashlib.sha256(json.dumps(old_policy, separators=(",", ":")).encode()).hexdigest()
+    obsolete = state / "search_index" / f"{old_key}.json"
+    obsolete.parent.mkdir(parents=True)
+    obsolete.write_text("obsolete schema-2 snapshot")
+    from codey.storage.local_store import read_json_strict
+
+    observed = []
+
+    def read_current(path):
+        observed.append(path)
+        assert path != obsolete  # No attempt to parse/repair an obsolete format.
+        return read_json_strict(path)
+
+    with mock.patch("codey.workspace.file_index.read_json_strict", side_effect=read_current):
+        first = discover(IncrementalFileIndex(state), project)
+        reopened = discover(IncrementalFileIndex(state), project)
+    assert first == reopened and [entry.path for entry in first.entries] == [source]
+    assert len(observed) == 2 and observed[0] == observed[1]
+    assert obsolete.read_text() == "obsolete schema-2 snapshot"
 
 
 def test_invalid_directory_metadata_is_corruption_even_with_valid_envelope(tmp_path):

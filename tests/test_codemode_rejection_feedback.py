@@ -28,7 +28,18 @@ def test_host_rejection_resends_the_captured_contract_not_a_network_workaround(m
     assert not plan.calls and plan.protocol_error
     assert "before execution" in plan.protocol_error
     assert "'fs'" in plan.protocol_error
-    assert spec.description in plan.protocol_error
+    from codey.operations.kernel_prompt import _repair_prompt
+
+    feedback = _repair_prompt(plan, snapshot=snapshot, native=native)
+    if native:
+        from codey.providers.base import tools_from_specs
+
+        assert spec.description in next(tool.description for tool in tools_from_specs(snapshot.frozen_specs)
+                                        if tool.name == "codemode")
+        assert "required arguments: code" in feedback
+    else:
+        assert spec.description in feedback
+    assert spec.declarations not in feedback
     assert "UNSENT-CONTRACT" not in plan.protocol_error
     assert "HTTP" not in plan.protocol_error and "if shell" not in plan.protocol_error
     assert state.executed == {}
@@ -46,8 +57,8 @@ def test_rejection_reports_the_actual_category_without_executing_a_tool(code, ki
                           snapshot=snapshot, executors={"codemode": lambda _: pytest.fail("must not run")})[0]
     assert not result.ok
     assert kind in result.model_text
-    assert ("recursive" in result.model_text.split("Current CodeMode contract:")[0]) == (kind == "recursive")
-    assert ("host access" in result.model_text.split("Current CodeMode contract:")[0]) == (kind == "host access")
+    assert ("recursive" in result.model_text.split("Current codemode contract:")[0]) == (kind == "recursive")
+    assert ("host access" in result.model_text.split("Current codemode contract:")[0]) == (kind == "host access")
     spec = next(spec for spec in snapshot.frozen_specs if spec.name == "codemode")
     assert spec.description in result.model_text
     assert not state.executed
@@ -72,6 +83,8 @@ def test_real_runtime_type_error_retains_the_frozen_contract_and_cannot_complete
     assert not result.ok and "a.split is not a function" in result.model_text
     assert spec.description in result.model_text
     assert "UNSENT-CONTRACT" not in result.model_text
+    assert spec.declarations not in result.model_text
+    assert result.model_text.count(spec.description) == 1
     assert not evaluate(state, "done").complete
     reads = [row for row in state.executed.values() if row.get("name") == "read_file"]
     assert len(reads) == 1 and reads[0]["ok"] is True
@@ -98,7 +111,7 @@ def test_documented_example_propagates_a_real_child_read_failure(tmp_path, nativ
 
 
 @pytest.mark.parametrize("native", [False, True])
-@pytest.mark.parametrize("failure", ["host", "value", "console", "missing_return", "missing_property", "uncalled_main", "syntax"])
+@pytest.mark.parametrize("failure", ["host", "value", "console", "missing_return", "missing_property", "nested_property", "uncalled_main", "syntax"])
 def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path, native, failure):
     from types import SimpleNamespace
 
@@ -133,6 +146,7 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
         "console": "const a = await tools.read_file({path:'app.py'}); console.log(a.value.text);",
         "missing_return": "const a = await tools.read_file({path:'app.py'});",
         "missing_property": "const a = await tools.read_file({path:'app.py'}); return a.text;",
+        "nested_property": "const a = await tools.read_file({path:'app.py'}); return {payload:a.text};",
         "uncalled_main": "async function main() { const a = await tools.read_file({path:'app.py'}); return a.value.text; }",
         "syntax": "const text = 'first\nsecond'; return text;",
     }[failure]
@@ -141,13 +155,16 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
         native_tools = native
         step = 0
 
-        def advance(self, feedback):
+        def advance(self, feedback, tools=()):
             index = self.step
             self.step += 1
             if index == 0:
                 name, args = "codemode", {"code": bad_code}
             elif index == 1:
-                assert spec.description in feedback
+                if native:
+                    assert spec.description in next(tool.description for tool in tools if tool.name == "codemode")
+                else:
+                    assert spec.description in feedback
                 if failure == "syntax":
                     assert "JavaScript compilation failed" in feedback
                     assert "No child tool was executed" in feedback and "inputs.<field>" in feedback
@@ -164,6 +181,9 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
                     assert "CodeMode returned undefined" in feedback
                 elif failure == "missing_property":
                     assert "returning a nonexistent property" in feedback and "result.value" in feedback
+                elif failure == "nested_property":
+                    assert '$["payload"]' in feedback and "undefined" in feedback
+                    assert "tools.read_file: Result<" in feedback and "tools.grep:" not in feedback
                 elif failure == "uncalled_main":
                     assert "No child tool was executed" in feedback and "return await main()" in feedback
                 name, args = "codemode", example
@@ -177,11 +197,11 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
             return self.advance(prompt)
 
         def send_turn(self, prompt, tools=None, timeout=None):
-            return self.advance(prompt)
+            return self.advance(prompt, tools)
 
         def send_tool_results(self, results, tools=None, timeout=None):
             assert results[0].call_id == f"call-{self.step - 1}"
-            return self.advance(results[0].content)
+            return self.advance("\n".join(part for part in (results[0].content, results[0].user_content) if part), tools)
 
         def acknowledge_tool_results(self, results, declared_tools, timeout=None):
             return AssistantTurn(text="OBSERVED-729")

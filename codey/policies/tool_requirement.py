@@ -188,7 +188,7 @@ class ToolSuccessRequirement:
 def _value_preview(value: Any) -> str:
     encoded = _json(value)
     if len(encoded) <= 1024:
-        return _json({"value": value})
+        return encoded
     return _json({"json_prefix": encoded[:1024], "truncated": True, "json_chars": len(encoded)})
 
 

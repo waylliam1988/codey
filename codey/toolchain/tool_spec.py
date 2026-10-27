@@ -10,12 +10,15 @@ are denied, never passed as ``control``.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, cast
 
+from codey.toolchain.constants import ARGUMENT_CONTENT_GUIDANCE
 from codey.toolchain.result_schema import text_output_schema
+from codey.toolchain.tool_prompt import json_contract_text as json_contract_text
+from codey.toolchain.tool_prompt import model_tool_description
 
 _TEXT_BATCH_TOOLS = frozenset({"parallel", "read_files"})
 
@@ -57,6 +60,7 @@ class ToolSpec:
     replay_class: str = "unsafe"
     parallel_safe: bool = False
     output_schema: Mapping[str, object] = field(default_factory=text_output_schema)
+    declarations: str = ""
 
 
 def _freeze_schema_value(value: object) -> object:
@@ -206,7 +210,7 @@ def _all_specs() -> dict[str, ToolSpec]:
             "and result.value.matches for grep (possibly an empty array). "
             "Await all tool/store/load calls. console.log/error fail; only return delivers data. "
             "No direct filesystem, process, network, shell or recursive CodeMode access. "
-            "Preserve argument strings exactly, including whether quote characters are present. "
+            f"{ARGUMENT_CONTENT_GUIDANCE} "
             "Put task data (paths, search queries, file contents) in inputs, not JS string literals. "
             "Read it as inputs.name; inputs is immutable JSON data, never executable source. "
             f"Example inputs={json.dumps(codemode_inputs)}; JavaScript: {codemode_example}\n"
@@ -529,7 +533,7 @@ def native_tools_for_snapshot(policy: Any, controller_allowed: Any = None) -> li
             "type": "function",
             "function": {
                 "name": name,
-                "description": spec.description or "\n".join(spec.json_examples),
+                "description": model_tool_description(spec),
                 "parameters": _schema_for_spec(spec),
             },
         })
@@ -906,17 +910,6 @@ def validate_args_with_spec(spec: Any, args: object) -> str:
     if error:
         return error
     return _validate_types(spec, declared, is_builtin, args)
-
-
-def json_contract_text(specs: Iterable[ToolSpec]) -> str:
-    """Render exactly the captured declarations; never select or look up tools."""
-    lines: list[str] = []
-    for spec in specs:
-        if spec.json_examples:
-            lines.extend(f"- {example}  {spec.description}".rstrip() for example in spec.json_examples)
-        else:
-            lines.append(f"- {spec.name}")
-    return "\n".join(lines)
 
 
 _CUSTOM_EXECUTORS: dict[str, Any] = {}

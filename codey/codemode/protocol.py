@@ -33,11 +33,6 @@ def _check_input_numbers(value: object) -> None:
             _check_input_numbers(item)
 
 
-def codemode_error_text(error: str, *, description: str) -> str:
-    """Render a failure with its already captured contract, without API repair."""
-    return f"{error}\nCurrent CodeMode contract:\n{description}"
-
-
 def parse_codemode_args(args: Mapping[str, Any], *, limits: CodeModeLimits | None = None) -> CodeModeProgram:
     if not isinstance(args, Mapping):
         raise CodeModeInputError("codemode args must be an object")

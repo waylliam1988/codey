@@ -132,10 +132,17 @@ async function execute(request) {
       error.code = "missing_return";
       throw error;
     }
-    const encoded = JSON.stringify(value, (_key, item) => {
+    const locations = new WeakMap();
+    const encoded = JSON.stringify(value, function (key, item) {
+      const location = locations.has(this) ? locations.get(this) + "[" + JSON.stringify(key) + "]" : "$";
+      if (item !== null && typeof item === "object") locations.set(item, location);
       if (item === undefined || ["function", "symbol", "bigint"].includes(typeof item)
           || (typeof item === "number" && !Number.isFinite(item))) {
-        const error = new Error("CodeMode result must contain only JSON data; use explicit null for empty values.");
+        const kind = typeof item === "number" ? "non-finite number" : typeof item;
+        const detail = item === undefined
+          ? " A nonexistent property produces undefined. Follow each tool's declared value type; correct the returned expression."
+          : "";
+        const error = new Error("CodeMode result must contain only JSON data: " + kind + " at " + location + "." + detail + " Use explicit null only for intentional empty values.");
         error.code = "result_encoding";
         throw error;
       }

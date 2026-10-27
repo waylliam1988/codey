@@ -8,10 +8,46 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codey.toolchain.definition import ToolDefinition
+    from codey.toolchain.tool_spec import ToolSpec
+
+
+def tool_signature(spec: ToolSpec) -> str:
+    from codey.toolchain.result_schema import schema_typescript
+    from codey.toolchain.tool_spec import _schema_for_spec
+
+    return f"{spec.name}(args: {schema_typescript(_schema_for_spec(spec))})"
+
+
+def model_tool_description(spec: ToolSpec) -> str:
+    """Compose usage and generated declarations without merging their owners."""
+    usage = spec.description or "\n".join(spec.json_examples)
+    return usage + "\n" + spec.declarations if spec.declarations else usage
+
+
+def json_contract_text(specs: Iterable[ToolSpec]) -> str:
+    """Render each frozen tool's usage once, with arguments and original examples."""
+    blocks = []
+    for spec in specs:
+        lines = [f"- {spec.name}: {spec.description}", f"  {tool_signature(spec)}"]
+        lines.extend(f"  {example}" for example in spec.json_examples)
+        if spec.declarations:
+            lines.append(spec.declarations)
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+def tool_repair_text(error: str, spec: ToolSpec) -> str:
+    """A self-contained repair for one captured tool, never its entire catalog."""
+    from codey.toolchain.tool_spec import _schema_for_spec, thaw_schema_value
+
+    schema = json.dumps(thaw_schema_value(_schema_for_spec(spec)), ensure_ascii=False, separators=(",", ":"))
+    return (f"{error}\nCurrent {spec.name} contract:\n{spec.description}\n"
+            f"Arguments (JSON Schema; only declared fields): {schema}")
 
 
 def model_visible_contract_hash(kind: str, text: object) -> str:

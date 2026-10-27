@@ -53,6 +53,23 @@ def test_non_json_results_fail_without_string_or_null_fallback(code):
     assert not result.ok and result.error_code == "result_encoding"
 
 
+@pytest.mark.parametrize("code,location,kind", [
+    ('return {payload: {text: undefined}};', '$["payload"]["text"]', "undefined"),
+    ('return {items: [false, undefined]};', '$["items"]["1"]', "undefined"),
+    ('return {"": undefined};', '$[""]', "undefined"),
+    ('return {amount: Infinity};', '$["amount"]', "non-finite number"),
+])
+def test_invalid_nested_return_identifies_the_value_without_coercion(code, location, kind):
+    from codey.codemode.runtime import NodeWorkerRuntime
+
+    result = NodeWorkerRuntime().execute(code, catalog=(), invoke=lambda *_: pytest.fail("no tool required"))
+    assert not result.ok and result.error_code == "result_encoding"
+    assert location in result.error and kind in result.error
+    if kind == "undefined":
+        assert "nonexistent property" in result.error and "declared value type" in result.error
+    assert result.value is None
+
+
 def test_output_budget_and_delivered_value_use_one_serialization():
     from codey.codemode.runtime import NodeWorkerRuntime
 

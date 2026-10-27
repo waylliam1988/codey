@@ -2,7 +2,10 @@
 import pytest
 
 from codey.operations.kernel_prompt import _repair_prompt, kernel_prompt_for_session
+from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
+from codey.runtime.core.models import ToolPlan
 
 CONTRACT = '- {"tool":"edit","args":{"path":"app.py","content":"body"}}'
 
@@ -18,16 +21,25 @@ def test_initial_prompt_uses_exactly_the_selected_protocol_contract(native):
 
 @pytest.mark.parametrize("native", [False, True])
 def test_repair_prompt_does_not_teach_a_text_wrapper_to_native_models(native):
-    prompt = _repair_prompt("invalid arguments", native=native, contract_text=CONTRACT)
-    assert (CONTRACT in prompt) is not native
+    snapshot = build_turn_snapshot(TaskSession(TaskPolicy(frozenset({"control", "project.read"}))), native=native)
+    prompt = _repair_prompt(ToolPlan(calls=[], control=None, protocol_error="invalid arguments", protocol_tool_name="grep"),
+                            native=native, snapshot=snapshot)
+    assert CONTRACT not in prompt
     if native:
+        assert "required arguments: query" in prompt
         assert "provided native" in prompt
+        assert '{"tool":"ACTUAL_TOOL_NAME"' not in prompt
+    else:
+        assert '"required":["query"]' in prompt
+        assert '{"tool":"ACTUAL_TOOL_NAME"' in prompt
 
 
 def test_native_final_answer_has_one_declared_transport_in_initial_and_repair():
     initial = kernel_prompt_for_session(TaskSession(policy=None), native=True,
         tool_names=("read_file", "done"), contract_text=CONTRACT)
-    repair = _repair_prompt("invalid arguments", native=True, contract_text=CONTRACT)
+    snapshot = build_turn_snapshot(TaskSession(TaskPolicy(frozenset({"control"}))), native=True)
+    repair = _repair_prompt(ToolPlan(calls=[], control=None, protocol_error="invalid arguments", protocol_tool_name="done"),
+                            native=True, snapshot=snapshot)
     for prompt in (initial, repair):
         assert "summary string" in prompt
         assert "not the outer tool-call object" in prompt

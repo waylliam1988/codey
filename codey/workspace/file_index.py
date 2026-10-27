@@ -12,7 +12,14 @@ from uuid import uuid4
 
 from codey.runtime.core import cancellation
 from codey.storage.local_store import StoreCorruption, read_json_strict, write_json_atomic
-from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
+from codey.workspace.bounded_scan import (
+    BoundedScanBudget,
+    DirectoryEntries,
+    collect_bounded_dir_entries,
+    iter_bounded_files,
+)
+
+_SNAPSHOT_SCHEMA = 3
 
 
 @dataclass(frozen=True)
@@ -44,7 +51,7 @@ class DiscoveryCoverage:
 class FileIndexSnapshot:
     root: Path
     entries: tuple[FileIndexEntry, ...]
-    directories: tuple[tuple[Path, int, int, int], ...]
+    directories: tuple[tuple[Path, int, int, int, str], ...]
     coverage: DiscoveryCoverage
     generation: str
 
@@ -81,14 +88,14 @@ class IncrementalFileIndex:
             budget.max_dirs,
             budget.max_dir_entries,
         ]
-        key = hashlib.sha256(json.dumps(policy, separators=(",", ":")).encode()).hexdigest()
+        key = hashlib.sha256(json.dumps([_SNAPSHOT_SCHEMA, policy], separators=(",", ":")).encode()).hexdigest()
         path = self._state_home / "search_index" / f"{key}.json" if self._state_home is not None else None
         with self._lock:
             cancellation.check()
             snapshot = self._snapshots.get(key)
             if snapshot is None and path is not None:
                 snapshot = self._load(path, policy)
-            stale = snapshot is None or self._changed(snapshot)
+            stale = snapshot is None or self._changed(snapshot, excluded_dirs, budget)
             if stale:
                 snapshot = self._refresh(start, excluded_dirs, budget, skip_start_if_excluded)
             else:
@@ -119,6 +126,26 @@ class IncrementalFileIndex:
             raise OSError(f"indexed directory changed type: {path}")
         return path, info.st_mtime_ns, info.st_dev, info.st_ino
 
+    def _directory_record(self, path: Path, entries: DirectoryEntries) -> tuple[Path, int, int, int, str]:
+        members = []
+        for entry in entries.paths:
+            cancellation.check()
+            members.append((entry.name, stat.S_IFMT(entry.lstat().st_mode)))
+        encoded = json.dumps([sorted(members), entries.entry_limited, entries.read_failed],
+                             ensure_ascii=True, separators=(",", ":"))
+        return (*self._directory(path), hashlib.sha256(encoded.encode()).hexdigest())
+
+    def _current_directory(
+        self, path: Path, excluded_dirs: set[str], limits: BoundedScanBudget,
+    ) -> tuple[Path, int, int, int, str]:
+        # Validate only previously visited directories, using the original
+        # bounded collector. Timestamps alone cannot prove membership on NTFS.
+        self._directory(path)  # Reject replaced directories/symlinks before enumeration.
+        entries = collect_bounded_dir_entries(path, {name.lower() for name in excluded_dirs}, limits.max_dir_entries)
+        if entries.read_failed:
+            raise OSError(f"cannot validate indexed directory: {path}")
+        return self._directory_record(path, entries)
+
     def _refresh(
         self, start: Path, excluded_dirs: set[str], limits: BoundedScanBudget, skip: bool
     ) -> FileIndexSnapshot:
@@ -132,23 +159,23 @@ class IncrementalFileIndex:
                 excluded_dirs=excluded_dirs,
                 budget=budget,
                 skip_start_if_excluded=skip,
-                on_directory=lambda path: directories.append(self._directory(path)),
+                on_directory=lambda path, entries: directories.append(self._directory_record(path, entries)),
             )
         )
         entries = tuple(sorted((self._entry(path) for path in files), key=lambda e: e.path.as_posix()))
-        # Capture before enumeration, then verify: a concurrent change cannot
-        # be stamped as a complete discovery of the newer directory state.
-        if any(self._directory(item[0]) != item for item in directories):
+        # Verify the actual bounded membership as well as identity and stamp.
+        # A mutation during discovery must not certify an older candidate set.
+        if any(self._current_directory(item[0], excluded_dirs, limits) != item for item in directories):
             raise OSError("workspace changed during indexed discovery; retry search")
         fields = asdict(budget)
         coverage = DiscoveryCoverage(**{name: fields[name] for name in DiscoveryCoverage.__dataclass_fields__})
         return FileIndexSnapshot(start, entries, tuple(directories), coverage, uuid4().hex)
 
-    def _changed(self, snapshot: FileIndexSnapshot) -> bool:
+    def _changed(self, snapshot: FileIndexSnapshot, excluded_dirs: set[str], limits: BoundedScanBudget) -> bool:
         if snapshot.coverage.read_failed:
             return True
         try:
-            if any(self._directory(item[0]) != item for item in snapshot.directories):
+            if any(self._current_directory(item[0], excluded_dirs, limits) != item for item in snapshot.directories):
                 return True
             # Single-file scopes have no directory walker. Also catch changes
             # of file kind even on filesystems with coarse directory timestamps.
@@ -159,13 +186,13 @@ class IncrementalFileIndex:
     @staticmethod
     def _persist(path: Path, policy: list[object], snapshot: FileIndexSnapshot) -> None:
         payload = {
-            "schema": 2,
+            "schema": _SNAPSHOT_SCHEMA,
             "policy": policy,
             "root": str(snapshot.root),
             "generation": snapshot.generation,
             "coverage": asdict(snapshot.coverage),
             "entries": [{**asdict(e), "path": str(e.path)} for e in snapshot.entries],
-            "directories": [[str(p), m, d, i] for p, m, d, i in snapshot.directories],
+            "directories": [[str(p), m, d, i, signature] for p, m, d, i, signature in snapshot.directories],
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         write_json_atomic(path, {"snapshot": payload, "sha256": hashlib.sha256(encoded.encode()).hexdigest()})
@@ -180,7 +207,7 @@ class IncrementalFileIndex:
             encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
             if raw["sha256"] != hashlib.sha256(encoded.encode()).hexdigest():
                 raise ValueError("snapshot digest mismatch")
-            if payload["schema"] != 2 or payload["policy"] != policy or payload["root"] != policy[1]:
+            if payload["schema"] != _SNAPSHOT_SCHEMA or payload["policy"] != policy or payload["root"] != policy[1]:
                 raise ValueError("snapshot policy mismatch")
             coverage = DiscoveryCoverage(**payload["coverage"])
             for name, value in asdict(coverage).items():
@@ -193,7 +220,7 @@ class IncrementalFileIndex:
             entries = tuple(
                 FileIndexEntry(Path(e["path"]), e["size"], e["mtime_ns"], e["mode"]) for e in payload["entries"]
             )
-            directories = tuple((Path(p), m, d, i) for p, m, d, i in payload["directories"])
+            directories = tuple((Path(p), m, d, i, signature) for p, m, d, i, signature in payload["directories"])
             start = Path(str(policy[1]))
             for candidate in [e.path for e in entries] + [d[0] for d in directories]:
                 if not candidate.is_absolute() or ".." in candidate.parts:
@@ -201,8 +228,11 @@ class IncrementalFileIndex:
                 candidate.relative_to(start)
             if any(type(v) is not int or v < 0 for e in entries for v in (e.size, e.mtime_ns, e.mode)):
                 raise ValueError("invalid metadata")
-            if any(type(v) is not int or v < 0 for item in directories for v in item[1:]):
+            if any(type(v) is not int or v < 0 for item in directories for v in item[1:4]):
                 raise ValueError("invalid directory metadata")
+            if any(not isinstance(item[4], str) or len(item[4]) != 64
+                   or any(char not in "0123456789abcdef" for char in item[4]) for item in directories):
+                raise ValueError("invalid directory membership")
             if (len(entries) != coverage.files_seen or len(directories) != coverage.dirs_seen
                     or coverage.dirs_seen > coverage.max_dirs or any(not stat.S_ISREG(e.mode) for e in entries)):
                 raise ValueError("inconsistent discovery coverage")

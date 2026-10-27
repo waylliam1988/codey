@@ -5,11 +5,12 @@ from types import SimpleNamespace
 import pytest
 
 from codey.operations import kernel_prompt
+from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, TurnFinish
-from codey.runtime.core.models import ToolResult
+from codey.runtime.core.models import ToolPlan, ToolResult
 
 
 def test_missing_tool_name_is_not_inferred_and_json_repair_keeps_visible_contract():
@@ -21,7 +22,7 @@ def test_missing_tool_name_is_not_inferred_and_json_repair_keeps_visible_contrac
         if len(prompts) == 1:
             return '<|tool_call>call:tool{args:{symbol:"calculate_total",path:"."}}<tool_call|>'
         assert executions == []
-        assert '"tool":"find_references"' in prompt.replace(" ", "")
+        assert 'find_references(args:' in prompt
         assert "knowledge_write" not in prompt and '"tool":"edit"' not in prompt.replace(" ", "")
         assert "tags" in prompt.lower()
         return '{"tool":"find_references","args":{"symbol":"calculate_total","path":"."}}'
@@ -66,6 +67,8 @@ def test_repair_uses_supplied_contract_without_consulting_live_registry(monkeypa
     def forbidden(*args, **kwargs):
         pytest.fail("repair must not rebuild the captured contract")
 
+    snapshot = build_turn_snapshot(TaskSession(TaskPolicy(frozenset({"control"}))))
     monkeypatch.setattr("codey.toolchain.tool_spec.tool_specs", forbidden)
-    contract = 'frozen tools: {"tool":"done","args":{"summary":"complete"}}'
-    assert contract in kernel_prompt._repair_prompt("no JSON tool call found", contract_text=contract, native=False)
+    prompt = kernel_prompt._repair_prompt(ToolPlan(calls=[], control=None, protocol_error="no JSON tool call found"),
+                                          snapshot=snapshot, native=False)
+    assert 'done(args:' in prompt and 'summary' in prompt

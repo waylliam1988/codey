@@ -9,7 +9,7 @@ from codey.codemode.catalog import build_catalog_snapshot, build_codemode_catalo
 from codey.codemode.host import CodeModeHost
 from codey.codemode.identity import parent_execution_id
 from codey.codemode.output import externalize_value
-from codey.codemode.protocol import codemode_error_text, parse_codemode_args
+from codey.codemode.protocol import parse_codemode_args
 from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.runtime.core import cancellation
@@ -90,6 +90,7 @@ class CodeModeKernelExecutor:
                 return ToolResult(ok=False, call=call, model_text=str(exc), audit=audit)
         audit["child_calls"] = result.child_calls
         if not result.ok:
+            audit["error_code"] = result.error_code
             return ToolResult(ok=False, call=call, model_text=result.error or "codemode execution failed", audit=audit)
         try:
             value = externalize_value(
@@ -244,9 +245,17 @@ def build_execute_turn_executor(
         # References only: child facts stay in their original committed receipts.
         result = replace(result, canonical={**result.canonical, "child_effect_ids": sorted(child_effect_ids)})
         if not result.ok:
-            result = replace(result, model_text=codemode_error_text(
-                result.model_text, description=specs["codemode"].description,
-            ))
+            from codey.toolchain.result_schema import schema_typescript
+            from codey.toolchain.tool_prompt import tool_repair_text
+
+            detail = result.model_text
+            if result.audit.get("error_code") in {"missing_return", "result_encoding"} and child_effect_ids:
+                names = sorted({session.executed[ref]["name"] for ref in child_effect_ids})
+                detail += "\nInvoked tool return types (Result<T> success data is result.value):\n" + "\n".join(
+                    f"tools.{name}: Result<{schema_typescript(specs[name].output_schema)}>" for name in names)
+                detail += "\nCommitted child receipts (effects already executed): " + ", ".join(child_effect_ids)
+                detail += ". Use read_tool_result to inspect their original results. Correct the returned expression."
+            result = replace(result, model_text=tool_repair_text(detail, specs["codemode"]))
         return result
 
     return run_parent

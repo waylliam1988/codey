@@ -35,7 +35,7 @@ def test_valid_receipt_only_requests_answer_repair_and_survives_restart(runtime,
     assert "Required execution:" not in verdict.followup
     assert "Do not repeat" in verdict.followup
     assert "without Markdown fences" in verdict.followup
-    assert 'Expected selected value (JSON): {"value":"PATTERN.*"}' in verdict.followup
+    assert 'Expected selected value (JSON): "PATTERN.*"' in verdict.followup
     assert "task_turn_effect:" in verdict.followup
     assert evaluate(_restart(runtime), answer).followup == verdict.followup
 
@@ -63,7 +63,7 @@ def test_feedback_and_verdict_never_reconstruct_observations_from_display(runtim
     runtime.state._memory_results[identity] = replace(receipt, model_text="display decoy")
     assert evaluate(runtime.state, '{"text":"PATTERN.*"}').complete
     verdict = evaluate(runtime.state, '{"text":"display decoy"}')
-    assert 'Expected selected value (JSON): {"value":"PATTERN.*"}' in verdict.followup
+    assert 'Expected selected value (JSON): "PATTERN.*"' in verdict.followup
     runtime.state._memory_results[identity] = replace(receipt, canonical={})
     verdict = evaluate(runtime.state, '{"text":"PATTERN.*"}')
     assert not verdict.complete and "observation_receipt_invalid" in verdict.followup
@@ -143,3 +143,8 @@ def test_legitimate_content_quotes_are_never_stripped(runtime):
     _execute(runtime, [_code("return await tools.read_file({path:'a.txt'});")], True)
     assert evaluate(runtime.state, json.dumps({"text": '"PATTERN.*"'})).complete
     assert not evaluate(runtime.state, json.dumps({"text": "PATTERN.*"})).complete
+    feedback = evaluate(runtime.state, json.dumps({"text": "PATTERN.*"})).followup
+    selected = feedback.split("Expected selected value (JSON): ")[1].splitlines()[0]
+    assert json.loads(selected) == '"PATTERN.*"'
+    actual = feedback.split("Actual answer value (JSON): ")[1].splitlines()[0]
+    assert json.loads(actual) == "PATTERN.*"

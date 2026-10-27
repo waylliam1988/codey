@@ -10,10 +10,11 @@ import pytest
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.operations import kernel_prompt
+from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.token_accounting import ContextBudget
-from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 
 pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
 
@@ -63,13 +64,14 @@ def test_initial_result_and_repair_prompt_surfaces_have_frozen_hashes() -> None:
         [ToolResult(call=ToolCall(name="read_file", args={"path": "inspect.py"}), model_text="answer", ok=True)],
         session,
     )
-    repair = kernel_prompt._repair_prompt("invalid_args", contract_text=contract, native=False)
+    repair = kernel_prompt._repair_prompt(ToolPlan(calls=[], control=None, protocol_error="invalid_args", protocol_tool_name="done"),
+                                          snapshot=build_turn_snapshot(session), native=False)
 
     assert "obtain actual source data using the authorized tools" in initial
     assert "not evidence that the host has no network access" in initial
     assert _sha256(initial) == "c56b7f57796bc20e5ec1b896e682904de23ac951e714818c257977532bca381f"
     assert _sha256(result) == "591c80828028a2103608e4d5a081bfd484d6d0fb755950c423cf8241b9876522"
-    assert _sha256(repair) == "98200f1379c53fc3d9c08cbca01c32e88181fb6aec1d32f5a341b3c51b03739c"
+    assert _sha256(repair) == "3cd8d2df39ead1d6355c2db9fa871d62043bffe29906649f424c96d90afcebad"
 
 
 def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> None:
@@ -98,4 +100,4 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> Non
     assert "ask_user" in prompt
     assert "Calls return {ok:true, value}" in prompt
     assert "Only frozen read-only tools" not in prompt
-    assert _sha256(prompt) == "34693c92a3a6fed490f0069dd1a62cbc7d6be14c5e0b50022245af5738ae3768"
+    assert _sha256(prompt) == "9bbc16011322105542e667bfa8bf04ad38b81ba045e226dfabe032bfa3c5b00b"

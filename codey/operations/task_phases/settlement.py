@@ -201,12 +201,12 @@ def _commit_durable_terminal(deps: Any, frame: RunFrame, event: dict[str, object
                 "proof_id": str(proof.get("proof_id") or ""),
                 "status": str(proof.get("status") or ""),
             }
-    stop_reason = str(event.get("stop_reason") or "")
-    if stop_reason in {"done", "max_turns"}:
+    terminal = operation_outcome_from_task_done_event(event)
+    if terminal.status == "completed":
         answer = _display_reply_text(outcome) or str(event.get("summary") or "")
         committed = durable.complete_task(run_id, answer, state=state)
         event.update(committed_task_version(committed, run_id))
-    elif stop_reason in {"approval", "question"}:
+    elif terminal.status == "suspended":
         # The provider turn yielded to an external decision.  Preserve the
         # exact logical checkpoint and park scheduler ownership; the decision
         # worker or answer admission owns the explicit wake-up/continuation.

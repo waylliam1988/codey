@@ -31,6 +31,48 @@ def test_whole_file_update_uses_original_full_read_receipt(tmp_path, newline):
     assert not update(session, tmp_path, ref, content="new\n").ok  # stale baseline even for a no-op
 
 
+@pytest.mark.parametrize("content", ["current\n", "next\n"])
+def test_stale_version_feedback_requires_a_new_observation_before_retry(tmp_path, content):
+    (tmp_path / "a.py").write_text("old\n")
+    session = TaskSession(TaskPolicy(frozenset({"project.read", "project.write"})))
+    old_ref = read(session, tmp_path)
+    (tmp_path / "a.py").write_text("current\n")
+    result = update(session, tmp_path, old_ref, content)
+    assert not result.ok and "Read the current file again with read_file" in result.model_text
+    assert "old receipt cannot authorize" in result.model_text
+    assert (tmp_path / "a.py").read_text() == "current\n"
+    assert update(session, tmp_path, read(session, tmp_path), content).ok
+    assert (tmp_path / "a.py").read_text() == content
+
+
+def test_invalid_program_return_exposes_only_invoked_frozen_types_and_child_receipt_references(tmp_path):
+    from codey.codemode.kernel import build_execute_turn_executor
+    from codey.operations.kernel_protocol import build_turn_snapshot
+
+    (tmp_path / "a.py").write_text("old\n")
+    session = TaskSession(TaskPolicy(frozenset({"project.read", "project.write"})), project=str(tmp_path))
+    snapshot = build_turn_snapshot(session)
+    revisions = WorkspaceRevisionStore(tmp_path.parent / (tmp_path.name + "-state"))
+    parent = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="return-type", effect_scope="task",
+        turn=1, project_path=tmp_path, allow_writes=True, workspace_revision_store=revisions)
+    result = execute_turn(session, [ToolCall("codemode", {
+        "code": "const r=await tools.read_file({path:'a.py'}); "
+                "const w=await tools.edit({path:'a.py',content:inputs.text,base_result_ref:r.result_ref}); "
+                "return {payload:w.value.text};",
+        "inputs": {"text": "updated\n"}})], run_id="return-type", effect_scope="task", turn=1,
+        project_path=tmp_path, executors={"codemode": parent}, snapshot=snapshot,
+        workspace_revision_store=revisions)[0]
+    assert not result.ok and result.audit["error_code"] == "result_encoding"
+    assert '$["payload"]' in result.model_text
+    assert "tools.edit: Result<string>" in result.model_text and "tools.read_file: Result<" in result.model_text
+    assert "tools.grep:" not in result.model_text and "declare const tools" not in result.model_text
+    references = result.canonical["child_effect_ids"]
+    assert len(references) == 2 and all(ref in result.model_text for ref in references)
+    children = [row for row in session.executed.values() if row["name"] != "codemode"]
+    assert len(children) == 2 and all(row["ok"] for row in children)
+    assert (tmp_path / "a.py").read_text() == "updated\n"
+
+
 @pytest.mark.parametrize("case", ["partial", "different_file", "missing_ref", "truncated_ref", "deleted", "changed", "readonly"])
 def test_whole_file_update_rejects_unproven_or_stale_baselines(tmp_path, case):
     (tmp_path / "a.py").write_text("one\ntwo\n")
@@ -55,7 +97,7 @@ def test_whole_file_update_rejects_unproven_or_stale_baselines(tmp_path, case):
 
 
 @pytest.mark.parametrize("reference", ["result_ref", "base_result_ref"])
-@pytest.mark.parametrize("content", ["after\n", "'quotes' \"double\" \\n\nnext\r\n\u2028\u2029😀\n"])
+@pytest.mark.parametrize("content", ["after\n", "'quotes' \"double\" \\n\nnext\r\n\u2028\u2029馃榾\n"])
 def test_codemode_whole_file_update_reuses_child_receipt_in_same_runtime(tmp_path, reference, content):
     from codey.codemode.kernel import build_execute_turn_executor
     from codey.operations.kernel_protocol import build_turn_snapshot
@@ -81,6 +123,6 @@ def test_codemode_whole_file_update_reuses_child_receipt_in_same_runtime(tmp_pat
         assert (tmp_path / "a.py").read_bytes() == content.replace("\r\n", "\n").encode("utf-8")
     else:
         assert not result.ok
-        error = result.model_text.split("Current CodeMode contract:")[0]
+        error = result.model_text.split("Current codemode contract:")[0]
         assert "readResult.result_ref" in error and "not readResult.value.result_ref" in error
         assert (tmp_path / "a.py").read_text() == "before\n"

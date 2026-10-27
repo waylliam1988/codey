@@ -34,7 +34,7 @@ from codey.runtime.core.models import (
 )
 from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
 from codey.storage.atomic_io import write_text_atomic
-from codey.toolchain.constants import EXACT_REPLACEMENT_CONTEXT_HINT, FULL_READ_REFERENCE_HINT, MAX_REPLACEMENTS
+from codey.toolchain.constants import EXACT_REPLACEMENT_CONTEXT_HINT, MAX_REPLACEMENTS, STALE_READ_REFERENCE_ERROR
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
 from codey.toolchain.presentation import edit_preview
 from codey.utils.references import find_reference_hints
@@ -400,7 +400,7 @@ def _write_text_after_final_path_check(
         from codey.workspace.paths import path_hash
 
         if path_hash(path) != expected_version:
-            return ToolOutcome.error("file version changed since the referenced full read; " + FULL_READ_REFERENCE_HINT)
+            return ToolOutcome.error(STALE_READ_REFERENCE_ERROR)
     write_text_atomic(path, content)
     return None
 
@@ -421,8 +421,7 @@ def write_file(root: Path, rel: str, content: str, *, expected_version: str | No
                         from codey.workspace.paths import content_hash
 
                         if content_hash(before) != expected_version:
-                            return ToolOutcome.error("file version changed since the referenced full read; "
-                                                     + FULL_READ_REFERENCE_HINT)
+                            return ToolOutcome.error(STALE_READ_REFERENCE_ERROR)
                     return ToolOutcome(f"wrote {rel} (no changes)", True)
             except (OSError, UnicodeDecodeError, ValueError):
                 # Best-effort hint only: the authoritative path check

@@ -72,10 +72,11 @@ class ProviderToolDefinition:
 
 
 def tools_from_specs(specs: tuple[Any, ...]) -> list[ProviderToolDefinition]:
+    from codey.toolchain.tool_prompt import model_tool_description
     from codey.toolchain.tool_spec import _freeze_schema_value, _schema_for_spec
 
     return sorted([
-        ProviderToolDefinition(spec.name, spec.description or "\n".join(spec.json_examples),
+        ProviderToolDefinition(spec.name, model_tool_description(spec),
                                cast(Mapping[str, object], _freeze_schema_value(_schema_for_spec(spec))))
         for spec in specs
     ], key=lambda tool: tool.name)

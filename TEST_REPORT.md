@@ -2,6 +2,45 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Contract presentation, scoped repair and discovered boundaries (2026-10-25)
+
+Current delivery passed **833 focused tests and 525 subtests** in **135.25s**;
+production mypy passed **532 files**, and Ruff, Node syntax and `git diff --check`
+passed. No full pytest was run. The frozen baseline is `a1bba7865d4f523756f1a8872b6856af8c6a0080`.
+
+Text contracts now show each tool's usage once and derive argument signatures from
+the original frozen schema. Native read/writer declarations remain identical to the
+baseline. Protocol repair selects the captured failing tool rather than repeating
+the complete catalog. Text repair includes its full schema; native repair relies
+on the same native schemas sent in that turn. CodeMode usage and generated child
+declarations remain separate views in one frozen snapshot.
+
+Observed bugs were fixed rather than excluded: coarse Windows directory timestamps
+could hide new files; an extra entry beyond an unchanged bounded prefix could keep
+false complete coverage; outer settlement could persist max_turns as completed; and
+nested undefined results lacked actionable return-type diagnostics. Directory
+validation uses the original bounded collector and its per-directory omission flags.
+Snapshot format participates in its cache identity; obsolete formats are not read or
+converted. Terminal settlement uses the existing shared outcome projection. Invalid
+returns preserve typed runtime diagnostics and show only invoked frozen result types
+and original child receipt references. Stale writes explicitly require a new read.
+
+Final serial 12B verification passed **44/44 boundaries and 4/4 primary tasks**.
+All boundary source manifests (534 Python/MJS files) and all four primary manifests
+(538 source/config files) match the delivered source. The formerly repeating nested
+undefined failure was observed and corrected in the final runs; quoted-answer
+content remains strictly checked rather than stripped or repaired by the runtime.
+
+Paired seed-41 boundaries: **38 → 38 requests**, **179.34 → 191.23s**, both 20/20.
+Current multi-file work passed in **69.06s / 13 requests**, versus earlier correct
+Codey samples **134.82s / 14 requests** and **70.83s / 17 requests**. Context,
+quoted search and glob passed in **10.40s/3**, **6.99s/2**, **10.86s/3** respectively.
+These samples do not establish a universal speedup. Intermediate failures, including
+a 42/44 cohort and failed multi-file attempts, are retained with their actual costs.
+No other reference project was rerun, and completion/authorization/version checks
+were not relaxed. Detailed measurements, fixes and artifacts are in
+[the contract feedback report](docs/contract_feedback_cost_12b.zh-CN.md).
+
 ## Wheel discovery and installed-runtime verification (2026-10-25)
 
 The metadata timeout came from setuptools' implicit namespace-package discovery.

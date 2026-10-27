@@ -201,7 +201,7 @@ def test_project_audit_uses_only_the_kernel_protocol_contract(tmp_path, native):
     assert prompt.count("Visible tools:") == 1
     if native:
         assert '"tool":"read_files"' not in prompt and '"tool":"parallel"' not in prompt
-        assert "Use native tool calls, not JSON in prose" in prompt
+        assert "use native tool calls, not JSON in prose" in prompt
         assert "read_file" in {tool.name for tool in tools}
     else:
         assert '"tool":"read_files"' in prompt

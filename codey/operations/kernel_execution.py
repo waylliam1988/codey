@@ -241,6 +241,10 @@ def execute_turn(
                 return [_error_result(item, f"tool not available in the captured turn: {call.name}") for item in calls]
             _args, error = _validate_tool_args(call.name, call.args, frozen_specs=frozen_specs)
             if error:
+                if call.name == "codemode" and frozen_specs is not None:
+                    from codey.toolchain.tool_prompt import tool_repair_text
+
+                    error = tool_repair_text(error, frozen_specs[call.name])
                 return [_error_result(item, error) for item in calls]
     runnable = dict(executors or {})
     active_turn, base_index, run_ref_str, identity_ref, delivered_map, ignores, recovery_ctx = (

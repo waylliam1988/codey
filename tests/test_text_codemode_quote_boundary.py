@@ -79,7 +79,7 @@ def test_original_loop_repairs_recorded_escape_failure_then_searches_exact_quote
             if self.step == 2:
                 assert runtime.state.executed == {} and runtime.state._memory_results == {}
                 assert "Preserve argument strings exactly" in prompt
-                assert codemode.json_examples[0] in prompt
+                assert "codemode(args:" in prompt and '"inputs"?' in prompt
                 assert "No tool in this reply was executed" in prompt
                 code = ('const r = await tools.grep({query:\'"PATTERN.*"\',path:\'.\',literal:true,'
                         "case_sensitive:true,include:'*.py'}); if (!r.ok) throw new Error(r.error); "

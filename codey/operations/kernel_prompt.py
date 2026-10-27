@@ -8,15 +8,18 @@ they never send, execute, or hold task state.
 from __future__ import annotations
 
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codey.operations.task_session import TaskSession
 from codey.policies.command_line import COMMAND_WORKDIR_DESCRIPTION
 from codey.providers.base import render_result_metadata
-from codey.runtime.core.models import ToolResult
+from codey.runtime.core.models import ToolPlan, ToolResult
 from codey.utils.refs import strict_exit_code, strict_verification_success
 from codey.workspace.coding_context import CodingContext, render_coding_context
 from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
+
+if TYPE_CHECKING:
+    from codey.operations.kernel_protocol import TurnSnapshot
 
 __all__ = [
     "kernel_prompt_for_session",
@@ -119,31 +122,27 @@ def kernel_prompt_for_session(
     return "\n\n".join(parts)
 
 
-def _repair_prompt(error: str, *, contract_text: str, native: bool) -> str:
-    intro = (
-        "Your previous reply was not a valid tool call "
-        f"({(error or 'invalid').strip()}). "
-    )
+def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> str:
+    from codey.toolchain.constants import ARGUMENT_CONTENT_GUIDANCE
+    from codey.toolchain.tool_prompt import tool_repair_text, tool_signature
+
+    error = (plan.protocol_error or "invalid tool call").strip()
+    spec = next((item for item in snapshot.frozen_specs if item.name == plan.protocol_tool_name), None)
     if native:
-        return (
-            intro + "Use the provided native tools with schema-correct arguments. "
-            + _NATIVE_READ_BATCH_RULE + " "
-            + _NATIVE_FINAL_RULE + " "
-            "Do not place a bare answer object in tool_calls, invent a function name, or emit text tool-call tags. "
-            "For an action, resend the intended call with complete arguments and concise file contents. "
-            + _NATIVE_ARGUMENTS_RULE
-        )
+        detail = (error + f"\nCorrect {spec.name}; required arguments: {', '.join(spec.required) or '(none)'}."
+                  if spec is not None else error + "\nAvailable tools: " + ", ".join(snapshot.tool_names))
+        instruction = "Use the provided native tools. " + _NATIVE_ARGUMENTS_RULE
+        if spec is None or spec.name == "done":
+            instruction += " " + _NATIVE_FINAL_RULE
     else:
+        detail = (tool_repair_text(error, spec) if spec is not None else
+                  error + "\nAvailable tool signatures:\n" + "\n".join(tool_signature(item) for item in snapshot.frozen_specs))
         instruction = (
             'Reply with exactly one JSON object using {"tool":"ACTUAL_TOOL_NAME","args":{...}}. '
             "Use double-quoted JSON keys, no prose and no tool-call tags. "
-            "The tool field must name an actual tool from the contract below, not the word 'tool'."
+            "The tool field must name an available tool, not the word 'tool'."
         )
-    return (
-        intro + instruction
-        + " Resend the same intended call and keep its intended file contents."
-        + f"\n\nCurrent authorized tool contract:\n{contract_text}"
-    )
+    return f"Protocol error: {detail}\n\n{instruction} Resend the intended call. {ARGUMENT_CONTENT_GUIDANCE} Keep other valid fields."
 
 
 def _completion_followup(feedback: str, *, native: bool) -> str:
