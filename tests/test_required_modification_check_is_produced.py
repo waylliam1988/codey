@@ -50,6 +50,8 @@ def test_required_edit_produces_check_without_excusing_verification(tmp_path, wi
 
 @pytest.mark.usefixtures("scripted_local_api_connection")
 def test_real_headless_required_edit_and_fresh_verification_finish(tmp_path, monkeypatch):
+    from tests.support.workspace_conversation import short_test_state_home
+
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     project = tmp_path / "project"
     project.mkdir()
@@ -81,7 +83,7 @@ def test_real_headless_required_edit_and_fresh_verification_finish(tmp_path, mon
             return json.dumps(next(replies))
     rows = []
     result = run_headless(
-        HeadlessRequest(project=project, state_home=tmp_path / "state", provider_id="local", intent="project",
+        HeadlessRequest(project=project, state_home=short_test_state_home(), provider_id="local", intent="project",
                         task="Fix a.py and run the tests.", max_turns=4, project_changes_required=True),
         emit_jsonl=rows.append,
         connect_provider=lambda *a, **kw: Provider(),

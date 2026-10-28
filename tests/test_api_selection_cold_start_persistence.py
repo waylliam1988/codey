@@ -50,8 +50,9 @@ def test_changed_connection_blocks_restore_but_changed_model_keeps_original(tmp_
 def test_shell_approval_keeps_zen_selection_without_local_specific_branch(tmp_path):
     from codey.app.context import AppContext
     from tests.support.shell_approval import add_pending_approval, admit_shell_task
+    from tests.support.workspace_conversation import short_test_state_home
 
-    state = AppContext(tmp_path)
+    state = AppContext(short_test_state_home())
     try:
         run = state.reserve_run(session_id="session", project=None, task="test", provider_id="zen")
         selection = ApiRunSelection("zen", "revision", "model", "openai-responses", True)

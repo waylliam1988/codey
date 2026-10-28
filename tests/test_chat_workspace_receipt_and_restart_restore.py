@@ -15,33 +15,44 @@ from codey.runs.ledger_projection import load_run_projection
 from codey.runs.receipt import task_receipt_from_payload
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.workspace.changes import collect_changes
-from tests.support.workspace_conversation import TextConversation
+from tests.support.workspace_conversation import TextConversation, admit_entry_frame, isolated_short_state_home
 from tests.test_chat_workspace_tools_and_answer_completion import workspace_frame
 
 
 @pytest.mark.parametrize("existing", [False, True])
-def test_chat_edit_has_one_truthful_receipt_and_survives_restart_restore(tmp_path, monkeypatch, existing):
+def test_chat_edit_has_one_truthful_receipt_and_survives_restart_restore(tmp_path, monkeypatch, request, existing):
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     project = tmp_path / "project"
     project.mkdir()
     path = project / "result.txt"
     if existing:
         path.write_text("original", encoding="utf-8")
+    test_dir = project / "tests"
+    test_dir.mkdir()
+    (test_dir / "test_result.py").write_text(
+        "from pathlib import Path\nimport unittest\n\n"
+        "class ResultTest(unittest.TestCase):\n"
+        "    def test_requested_content(self):\n"
+        "        self.assertEqual(Path('result.txt').read_text(encoding='utf-8'), 'changed')\n",
+        encoding="utf-8",
+    )
     edit = {"path": "result.txt", "content": "changed"}
     replies = []
     if existing:
         replies.append(json.dumps({"tool": "read_file", "args": {"path": "result.txt"}}))
         edit = {"path": "result.txt", "replacements": [{"old_string": "original", "new_string": "changed"}]}
     replies += [json.dumps({"tool": "edit", "args": edit}),
-                json.dumps({"tool": "run", "args": {"command": "python -m unittest", "path": "."}}),
+                json.dumps({"tool": "run", "args": {"command": "python -m unittest discover -s tests", "path": "."}}),
                 json.dumps({"tool": "done", "args": {"summary": "finished"}})]
     provider = TextConversation(*replies)
     frame = workspace_frame(project, provider, task="Change result.txt and run the tests.", project_changes_required=True)
     frame.request = replace(frame.request, project=str(project))
     frame.project_text = str(project)
     frame.entry_policy = TaskPolicy(frozenset({"control", "project.read", "project.write", "project.verify"}))
-    state = AppContext(tmp_path / "state")
-    ledger_store = RunLedgerStore(tmp_path / "state")
+    state_home = isolated_short_state_home(request, tmp_path)
+    state = AppContext(state_home)
+    admit_entry_frame(frame, state)
+    ledger_store = RunLedgerStore(state_home)
     ledger = ledger_store.open(session_id=frame.request.session_id, run_id=frame.run_id, project=project,
                                task=frame.request.task, provider="web", mode="agent")
     runtime = SimpleNamespace(state=state, workspace_revisions=state.workspace_revisions,
@@ -62,7 +73,7 @@ def test_chat_edit_has_one_truthful_receipt_and_survives_restart_restore(tmp_pat
     assert projection.final_changes.receipt == task_receipt_from_payload(outcome.event["receipt"])
     assert outcome.event["receipt"]["completion_proof"]["proof_id"] in projection.final_changes.receipt.verification.proof_refs
     state.close()
-    restarted = AppContext(tmp_path / "state")
+    restarted = AppContext(state_home)
     tracker = restarted.change_tracker_for(project, persistent=True)
     assert tracker.has_snapshots
     assert tracker.restore().ok

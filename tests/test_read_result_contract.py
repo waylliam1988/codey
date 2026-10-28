@@ -57,7 +57,7 @@ def test_frozen_read_result_schema_is_advertised_to_the_actual_model():
     with pytest.raises(TypeError):
         read.output_schema["properties"]["text"]["type"] = "array"
     codemode = next(spec for spec in prepared.snapshot.frozen_specs if spec.name == "codemode")
-    assert '"text": string' in codemode.description
+    assert '"text": string' in codemode.declarations
     assert "tools.read_file" in codemode.description
 
 

@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from codey.codemode import runtime as codemode_runtime
 from codey.codemode.runtime import NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
 from codey.runtime.core import cancellation
@@ -19,8 +20,16 @@ class _WaitForChild:
         assert self.started.wait(3)
 
 
-def test_parent_return_waits_for_unawaited_host_call_and_rejects_success():
+def test_parent_return_waits_for_unawaited_host_call_and_rejects_success(monkeypatch):
     started, release, finished = threading.Event(), threading.Event(), threading.Event()
+
+    class ObservedExecutor(ThreadPoolExecutor):
+        def submit(self, fn, /, *args, **kwargs):
+            future = super().submit(fn, *args, **kwargs)
+            future.add_done_callback(lambda _future: finished.set())
+            return future
+
+    monkeypatch.setattr(codemode_runtime, "ThreadPoolExecutor", ObservedExecutor)
 
     def invoke(_name, _args):
         started.set()
@@ -44,6 +53,49 @@ def test_parent_return_waits_for_unawaited_host_call_and_rejects_success():
     assert finished.is_set()
     assert not result.ok
     assert result.error_code == "unawaited_calls"
+
+
+def test_completed_but_unobserved_host_call_is_still_unawaited(monkeypatch):
+    started = threading.Event()
+    child_finished = threading.Event()
+
+    class ObservedExecutor(ThreadPoolExecutor):
+        def submit(self, fn, /, *args, **kwargs):
+            future = super().submit(fn, *args, **kwargs)
+            future.add_done_callback(lambda _future: child_finished.set())
+            return future
+
+    class _WaitForChildCompletion:
+        def store(self, _key, _value):
+            assert child_finished.wait(3)
+
+    monkeypatch.setattr(codemode_runtime, "ThreadPoolExecutor", ObservedExecutor)
+    result = NodeWorkerRuntime().execute(
+        "void tools.read_file({path:'a.txt'}); await store('barrier',true); return 'too early';",
+        catalog=(ToolCatalogEntry("read_file", "read"),),
+        invoke=lambda *_: (started.set() or "finished"),
+        state_store=_WaitForChildCompletion(),
+    )
+    assert started.is_set() and child_finished.is_set()
+    assert not result.ok and result.error_code == "unawaited_calls"
+
+
+def test_unawaited_state_call_is_rejected_even_after_it_commits():
+    stored = []
+
+    class State:
+        def store(self, key, value):
+            stored.append((key, value))
+
+        def load(self, _key):
+            return None
+
+    result = NodeWorkerRuntime().execute(
+        "void store('answer',42); return 'too early';",
+        catalog=(), invoke=lambda *_: None, state_store=State(),
+    )
+    assert stored == [("answer", 42)]
+    assert not result.ok and result.error_code == "unawaited_calls"
 
 
 @pytest.mark.parametrize("source", [

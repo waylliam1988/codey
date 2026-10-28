@@ -131,6 +131,7 @@ def probe(root):
                     from codey.operations.context import RunWork
                     from codey.operations.task_entry import run_entry_kernel
                     from codey.runtime.observe.execution_evidence import ExecutionEvidence
+                    from tests.support.workspace_conversation import admit_entry_frame
                     from tests.test_chat_workspace_tools_and_answer_completion import workspace_frame
 
                     shell_requested = True
@@ -138,6 +139,7 @@ def probe(root):
                     frame = workspace_frame("", provider, task="Check Python version")
                     events = []
                     with contextlib.closing(AppContext(root)) as state:
+                        admit_entry_frame(frame, state)
                         outcome = run_entry_kernel(
                             frame, RunWork([], ExecutionEvidence()),
                             SimpleNamespace(on_event=events.append, on_shell_request=events.append),

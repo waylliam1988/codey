@@ -99,6 +99,7 @@ def run_task(
         try:
             from codey.app.task_services import build_task_deps
             from codey.operations.task_entry import run_task_submission
+            from codey.workspace.changes import collect_changes as collect_review_changes
 
             if review_policy is None:
                 review_policy = load_review_policy()
@@ -106,6 +107,7 @@ def run_task(
                 state,
                 agent_run=agent_run,
                 collect_changes=collect_task_changes,
+                collect_review_changes=collect_review_changes,
                 review_policy=review_policy,
                 capture_provider_failure=capture_provider_failure,
             )

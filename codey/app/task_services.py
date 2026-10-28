@@ -16,6 +16,7 @@ def build_task_deps(
     *,
     agent_run: Callable[..., Any] | None = None,
     collect_changes: Callable[..., Any] | None = None,
+    collect_review_changes: Callable[..., Any] | None = None,
     capture_provider_failure: Callable[..., Any] | None = None,
     review_policy: str | None = None,
     connect_reviewer: Callable[..., Any] | None = None,
@@ -38,6 +39,8 @@ def build_task_deps(
         stores=state.task_submission_stores,
         agent_run=project_adapter.run if agent_run is None else agent_run,
         collect_changes=task_changes.collect_task_changes if collect_changes is None else collect_changes,
+        collect_review_changes=(changes.collect_changes if collect_review_changes is None
+                                else collect_review_changes),
         capture_provider_failure=diagnostics.capture_provider_failure if capture_provider_failure is None else capture_provider_failure,
         run_review=partial(review_service.run_review, state, review_policy=policy, connect_reviewer=connect_reviewer),
         run_consensus=partial(consensus_service.run_consensus, state),

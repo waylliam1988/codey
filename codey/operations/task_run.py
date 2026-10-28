@@ -69,6 +69,7 @@ class TaskRunDeps:
     run_review: Callable[..., Any]
     capture_provider_failure: Callable[..., Any]
     workspace_revisions: Any
+    collect_review_changes: Callable[..., Any] | None = None
     run_consensus: Callable[..., Any] | None = None
     run_project_audit: Callable[..., Any] | None = None
     run_research_advisors: Callable[..., Any] | None = None
@@ -98,6 +99,7 @@ class TaskRunDeps:
         collect_changes: Callable[..., Any],
         run_review: Callable[..., Any],
         capture_provider_failure: Callable[..., Any],
+        collect_review_changes: Callable[..., Any] | None = None,
         run_consensus: Callable[..., Any] | None = None,
         run_project_audit: Callable[..., Any] | None = None,
         run_research_advisors: Callable[..., Any] | None = None,
@@ -112,6 +114,7 @@ class TaskRunDeps:
             state=state,
             agent_run=agent_run,
             collect_changes=collect_changes,
+            collect_review_changes=collect_review_changes,
             run_review=run_review,
             capture_provider_failure=capture_provider_failure,
             run_consensus=run_consensus,

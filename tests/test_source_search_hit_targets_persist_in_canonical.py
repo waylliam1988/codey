@@ -73,7 +73,7 @@ def test_source_search_canonical_replays_to_same_facts():
 
 
 def test_open_hit_resolves_from_hit_targets_fact():
-    from codey.operations.kernel_facts import record_facts_for_result
+    from codey.operations.kernel_facts import bind_source_identity, record_facts_for_result
     from codey.research.ledger import ResearchLedger
     from codey.research.ledger_receipts import ledger_observation
     from codey.runtime.core.models import ToolCall, ToolResult
@@ -94,6 +94,7 @@ def test_open_hit_resolves_from_hit_targets_fact():
         ok=True, call=open_call, model_text="Title: A\nbody",
         canonical={"research_observation": ledger_observation(ledger, "open", url="https://example.com/a")},
     )
+    open_result = bind_source_identity(session, open_call, open_result, ok=True)
     record_facts_for_result(session, open_call, open_result, ok=True)
     assert "https://example.com/a" in session.opened_sources
 

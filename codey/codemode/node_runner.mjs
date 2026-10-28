@@ -18,7 +18,7 @@ function rejectConsole() {
 }
 
 function toolsProxy(path = []) {
-  const callable = async (args = {}) => {
+  const callable = (args = {}) => {
     const name = path.join(".");
     if (!active.allowed.has(name)) {
       throw new Error(`tool is not in the frozen catalog: ${name}`);
@@ -32,8 +32,9 @@ function toolsProxy(path = []) {
     const callId = `call-${++nextCall}`;
     active.calls += 1;
     active.pending += 1;
+    const result = trackedCall(callId);
     send({ type: "call", callId, name, args });
-    return await new Promise((resolve, reject) => pending.set(callId, { resolve, reject }));
+    return result;
   };
   return new Proxy(callable, {
     get(_target, property) {
@@ -52,8 +53,40 @@ function stateCall(op, key, value) {
     return Promise.reject(new Error("codemode state is unavailable"));
   }
   const callId = `state-${++nextStateCall}`;
+  const result = trackedCall(callId, true);
   send({ type: "state", callId, op, key, ...(op === "store" ? { value } : {}) });
-  return new Promise((resolve, reject) => pending.set(callId, { resolve, reject, state: true }));
+  return result;
+}
+
+function trackedCall(callId, state = false) {
+  let resolve;
+  let reject;
+  const promise = new Promise((accept, decline) => {
+    resolve = accept;
+    reject = decline;
+  });
+  const record = { resolve, reject, state, observed: false };
+  pending.set(callId, record);
+  active.issued.set(callId, record);
+  return Object.freeze({
+    then(onFulfilled, onRejected) {
+      record.observed = true;
+      return promise.then(onFulfilled, onRejected);
+    },
+    catch(onRejected) {
+      record.observed = true;
+      return promise.catch(onRejected);
+    },
+    finally(onFinally) {
+      record.observed = true;
+      return promise.finally(onFinally);
+    },
+    get [Symbol.toStringTag]() { return "Promise"; },
+  });
+}
+
+function unawaitedCallCount() {
+  return [...active.issued.values()].filter((call) => !call.observed).length;
 }
 
 function deniedSource(code) {
@@ -80,6 +113,7 @@ async function execute(request) {
     },
     calls: 0,
     pending: 0,
+    issued: new Map(),
     stateEnabled: Boolean(request.stateEnabled),
   };
   const context = vm.createContext({
@@ -149,17 +183,17 @@ async function execute(request) {
       return item;
     });
     if (Buffer.byteLength(encoded ?? "null", "utf8") > active.limits.maxOutputBytes) {
-      send({ type: "done", ok: false, errorCode: "output_limit", error: "codemode output exceeds output byte limit", childCalls: active.calls, unawaitedCalls: pending.size });
+      send({ type: "done", ok: false, errorCode: "output_limit", error: "codemode output exceeds output byte limit", childCalls: active.calls, unawaitedCalls: unawaitedCallCount() });
       return;
     }
-    send({ type: "done", ok: true, value: JSON.parse(encoded), childCalls: active.calls, unawaitedCalls: pending.size });
+    send({ type: "done", ok: true, value: JSON.parse(encoded), childCalls: active.calls, unawaitedCalls: unawaitedCallCount() });
   } catch (error) {
     const diagnostic = compiling
       ? "JavaScript compilation failed after successful outer JSON decoding. No child tool was executed.\n"
         + String(error?.stack ?? error).split("\n").slice(0, 4).map(line => line.slice(0, 200)).join("\n")
         + "\nPut multiline or quoted task text in inputs and reference inputs.<field> in code. Raw line breaks inside JS single/double-quoted literals are invalid."
       : String(error?.message ?? error);
-    send({ type: "done", ok: false, errorCode: compiling ? "syntax_error" : String(error?.code ?? "execution_error"), error: diagnostic, childCalls: active.calls, unawaitedCalls: pending.size });
+    send({ type: "done", ok: false, errorCode: compiling ? "syntax_error" : String(error?.code ?? "execution_error"), error: diagnostic, childCalls: active.calls, unawaitedCalls: unawaitedCallCount() });
   } finally {
     active = null;
   }

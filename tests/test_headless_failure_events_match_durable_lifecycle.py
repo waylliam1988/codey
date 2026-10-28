@@ -11,6 +11,7 @@ from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core import cancellation
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
+from tests.support.workspace_conversation import short_test_state_home
 
 pytestmark = pytest.mark.usefixtures("no_external_advisor_models")
 
@@ -19,7 +20,7 @@ pytestmark = pytest.mark.usefixtures("no_external_advisor_models")
 def test_failure_boundary_publishes_one_truthful_terminal_and_closes_provider(tmp_path, monkeypatch, failure):
     monkeypatch.setenv("NATIVE_TOOLS", "1")
     monkeypatch.setattr(HeadlessAppContext, "provider_failover_order", lambda self: ("local",))
-    project, state = tmp_path / "project", tmp_path / "state"
+    project, state = tmp_path / "project", short_test_state_home()
     rows = []
 
     class Provider:

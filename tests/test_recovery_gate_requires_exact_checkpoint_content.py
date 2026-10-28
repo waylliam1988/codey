@@ -3,6 +3,7 @@
 import hashlib
 import json
 
+from tests.support.workspace_conversation import short_test_state_home
 from tools.local_model_gate_attempts import GateTarget
 from tools.local_model_gate_recovery import _verify_recovery, run_recovery_case
 
@@ -10,7 +11,7 @@ from tools.local_model_gate_recovery import _verify_recovery, run_recovery_case
 def test_consistent_receipt_hash_cannot_hide_wrong_checkpoint_content(tmp_path):
     target = GateTarget("http://localhost:5001/v1", "scripted", 32768, 8192, 12000, protocol="json")
     project = tmp_path / "project"
-    (tmp_path / "input.json").write_text(json.dumps({"project": str(project), "state": str(tmp_path / "state")}))
+    (tmp_path / "input.json").write_text(json.dumps({"project": str(project), "state": str(short_test_state_home())}))
     assert run_recovery_case(target, tmp_path, scripted=True)["ok"] is True
     checkpoint = project / "checkpoint.py"
     checkpoint.write_text("VALUE = 42\n# unrequested content\n")

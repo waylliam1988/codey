@@ -116,10 +116,9 @@ class _FailingProvider(_Provider):
 
 def test_chat_research_tools_continue_shared_kernel_without_mode_redispatch() -> None:
     import json
-    from types import SimpleNamespace
 
     from codey.research.ledger import ResearchLedger
-    from codey.research.tools import ResearchToolOutput
+    from codey.research.tools import ResearchToolOutput, ResearchTools
 
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
@@ -134,14 +133,17 @@ def test_chat_research_tools_continue_shared_kernel_without_mode_redispatch() ->
             main_provider.prompts.append(text)
             return next(replies)
         main_provider.send = send
-        ledger = ResearchLedger()
-        def search(query):
-            ledger.record_search(query, [{"url": "https://example.com/version", "title": "Version"}])
-            return ResearchToolOutput("1. Version\nhttps://example.com/version", ok=True)
-        def opened(url, **kwargs):
-            ledger.record_open(url, url, "Version", "VERSION_KERNEL_MARKER")
-            return ResearchToolOutput("VERSION_KERNEL_MARKER", ok=True)
-        tools = SimpleNamespace(ledger=ledger, web_search=search, open_url=opened)
+        class FixtureResearchTools(ResearchTools):
+            def web_search(self, query):
+                self.ledger.record_search(query, [{"url": "https://example.com/version", "title": "Version"}])
+                return ResearchToolOutput("1. Version\nhttps://example.com/version", ok=True)
+
+            def open_url(self, url, **_kwargs):
+                self.ledger.record_open(url, url, "Version", "VERSION_KERNEL_MARKER")
+                return ResearchToolOutput("VERSION_KERNEL_MARKER", ok=True)
+
+        tools = FixtureResearchTools(search=None, store=None, changes=None, ledger=ResearchLedger())
+        ledger = tools.ledger
         unused = mock.Mock(side_effect=AssertionError("mode redispatch must not run"))
         with (
             mock.patch.object(state, "get_provider", return_value=main_provider),

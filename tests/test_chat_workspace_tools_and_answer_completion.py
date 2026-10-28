@@ -1,5 +1,6 @@
 """Chat uses real workspace tools and the same completion gate as project work."""
 
+import hashlib
 from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
@@ -18,6 +19,12 @@ from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes
 from tests.support.kernel_protocol_test_helpers import normalize_turn
+
+
+def _state_home(tmp_path):
+    """Keep durable checkpoint paths below Windows' legacy path limit."""
+    digest = hashlib.sha256(str(tmp_path).encode()).hexdigest()[:12]
+    return tmp_path.parent / digest
 
 
 class NativeConversation:
@@ -52,11 +59,9 @@ def workspace_frame(root, provider, *, intent="chat", task="Hello", **requiremen
 
 
 def admit_frame(frame, state):
-    from codey.operations.task_phases.lifecycle import _ensure_durable_task
+    from tests.support.workspace_conversation import admit_entry_frame
 
-    if _ensure_durable_task(state, frame.request):
-        checkpoint = state.durable.task(frame.run_id)
-        state.durable.start_task(frame.run_id, state=dict(checkpoint.state))
+    admit_entry_frame(frame, state)
 
 
 def execute_frame(frame, state):
@@ -80,7 +85,7 @@ def test_chat_creates_workspace_file_and_finishes_with_natural_answer(tmp_path, 
     )
     frame = workspace_frame(root, provider, intent=intent, task="Create result.txt; do not run commands.",
                             denied_capabilities=("project.verify", "shell.approval"))
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(_state_home(tmp_path))) as state:
         result, _ = execute_frame(frame, state)
     assert result.event["stop_reason"] == "done"
     assert result.event["turns"] == 2
@@ -92,7 +97,7 @@ def test_chat_creates_workspace_file_and_finishes_with_natural_answer(tmp_path, 
 def test_native_greeting_finishes_in_one_request_with_workspace_tools_available(tmp_path):
     provider = NativeConversation(AssistantTurn(text="Hello!"))
     frame = workspace_frame(tmp_path / "workspace", provider)
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(_state_home(tmp_path))) as state:
         result, events = execute_frame(frame, state)
     assert result.event["stop_reason"] == "done"
     assert result.event["summary"] == "Hello!"
@@ -114,7 +119,7 @@ def test_natural_answer_cannot_bypass_required_project_changes(tmp_path):
     provider = NativeConversation(AssistantTurn(text="Already finished."), AssistantTurn(text="Still finished."))
     frame = workspace_frame(tmp_path, provider, project_changes_required=True)
     frame.request = replace(frame.request, max_turns=2)
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(_state_home(tmp_path))) as state:
         result, _ = execute_frame(frame, state)
     assert result.event["stop_reason"] != "done"
     assert not frame.entry_session.edited_files
@@ -128,11 +133,12 @@ def test_unbound_chat_writes_only_in_its_managed_session_workspace(tmp_path):
     )
     frame = workspace_frame("", provider, task="Write a script; do not run commands.",
                             denied_capabilities=("project.verify", "shell.approval"))
-    with closing(AppContext(tmp_path / "state")) as state:
+    state_home = _state_home(tmp_path)
+    with closing(AppContext(state_home)) as state:
         result, _ = execute_frame(frame, state)
     assert result.event["stop_reason"] == "done"
     root = Path(frame.project_text)
-    assert root.parent == tmp_path / "state" / "workspaces"
+    assert root.parent == state_home / "workspaces"
     assert (root / "inspect.py").read_text(encoding="utf8") == "print('observed')\n"
     assert frame.request.project is None
     assert result.event["mode"] == "chat"
@@ -142,7 +148,7 @@ def test_unbound_chat_shell_uses_real_approval_without_starting_a_process(tmp_pa
     provider = NativeConversation(AssistantTurn(tool_calls=(
         ProviderToolCall("inspect", "shell", {"path": ".", "command": "python --version"}),)))
     frame = workspace_frame("", provider, task="Check Python version")
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(_state_home(tmp_path))) as state:
         result, events = execute_frame(frame, state)
     assert result.event["stop_reason"] == "approval"
     approval = next(event for event in events if getattr(event, "call_id", "") == "inspect")
@@ -183,7 +189,7 @@ def test_invalid_completion_verdict_cannot_complete_or_crash(tmp_path, monkeypat
     monkeypatch.setattr("codey.operations.completion_gate.evaluate", lambda *_, **__: verdict)
     frame = workspace_frame(tmp_path, NativeConversation(AssistantTurn(text="done")))
     frame.request = replace(frame.request, max_turns=1)
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(_state_home(tmp_path))) as state:
         result, _ = execute_frame(frame, state)
     assert result.event["stop_reason"] != "done"
 
@@ -221,7 +227,7 @@ def test_shared_chat_preserves_local_context_without_additional_inference(tmp_pa
     monkeypatch.setattr("codey.operations.ghost_context.ghost_directive", directive)
     provider = NativeConversation(AssistantTurn(text="Hello!"))
     frame = workspace_frame("", provider)
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(_state_home(tmp_path))) as state:
         result, _ = execute_frame(frame, state)
     assert result.event["stop_reason"] == "done"
     assert seen == [(frame.request.session_id, "")]
@@ -246,7 +252,7 @@ def test_shared_chat_hint_admission_never_downgrades_scoped_read(tmp_path, monke
 
     provider = NativeConversation(AssistantTurn(text="Hello!"))
     frame = workspace_frame("", provider)
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(_state_home(tmp_path))) as state:
         monkeypatch.setattr(state.ghost_inbox, "control_enabled", read)
         result, _ = execute_frame(frame, state)
     assert result.event["stop_reason"] == "done"
@@ -262,7 +268,7 @@ def test_chat_with_attached_folder_receives_existing_project_instructions(tmp_pa
     provider = NativeConversation(AssistantTurn(text="Hello!"))
     frame = workspace_frame(root, provider)
     frame.request = replace(frame.request, project=str(root))
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(_state_home(tmp_path))) as state:
         result, _ = execute_frame(frame, state)
     assert result.event["stop_reason"] == "done"
     assert "Project rule: preserve the naming convention." in provider.requests[0][0]
@@ -276,7 +282,7 @@ def test_chat_and_auto_dispatch_enter_shared_workspace_kernel(tmp_path, intent):
 
     provider = NativeConversation(AssistantTurn(text="Hello!"))
     frame = workspace_frame("", provider, intent=intent)
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(_state_home(tmp_path))) as state:
         admit_frame(frame, state)
         deps = TaskRunDeps(state=state, agent_run=lambda **_: None, collect_changes=collect_changes,
                            run_review=lambda **_: None, capture_provider_failure=lambda *_, **__: None,
@@ -301,7 +307,7 @@ def test_workspace_lock_failure_closes_native_call_without_writing(tmp_path, mon
         def broken_delivery(*args):
             raise RuntimeError("connection lost")
         provider.acknowledge_tool_results = broken_delivery
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(_state_home(tmp_path))) as state:
         def lock_failure(*args):
             raise OSError("lock storage unavailable")
         monkeypatch.setattr(state, "acquire_project_writer", lock_failure)

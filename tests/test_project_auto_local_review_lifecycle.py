@@ -7,6 +7,7 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.reviews.persistence import load_recorded_review
 from tests.support.local_review_fixture import ScriptedLocal, fixture_project, writer_turns
 from tests.support.model_preferences import enable_models
+from tests.support.workspace_conversation import short_test_state_home
 
 pytestmark = pytest.mark.usefixtures("no_external_advisor_models", "scripted_local_api_connection")
 
@@ -14,7 +15,8 @@ pytestmark = pytest.mark.usefixtures("no_external_advisor_models", "scripted_loc
 @pytest.mark.parametrize("finding", [False, True])
 @pytest.mark.parametrize("desktop_routing", [False, True])
 def test_project_automatically_reviews_with_same_local_model_and_repairs_once(tmp_path, monkeypatch, finding, desktop_routing):
-    enable_models(tmp_path / "state", local=["scripted-fixture"])
+    state_home = short_test_state_home()
+    enable_models(state_home, local=["scripted-fixture"])
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     project = fixture_project(tmp_path)
     timeline = []
@@ -43,7 +45,7 @@ def test_project_automatically_reviews_with_same_local_model_and_repairs_once(tm
     rows = []
     result = run_headless(
         HeadlessRequest(project=project, task="Fix add to return the sum and document it.",
-                        provider_id="local", intent="project", max_turns=8, state_home=tmp_path / "state"),
+                        provider_id="local", intent="project", max_turns=8, state_home=state_home),
         emit_jsonl=rows.append, connect_provider=lambda *_a, **_k: next(writers),
         connect_reviewer=None if desktop_routing else connect_reviewer,
     )
@@ -66,7 +68,7 @@ def test_project_automatically_reviews_with_same_local_model_and_repairs_once(tm
     assert terminal[0]["receipt"]["verification"]["checks_passed"] is True
     review_event = next(row for row in rows if row["type"] == "review" and isinstance(row.get("review"), dict))
     assert rows.index(review_event) < rows.index(terminal[0])
-    recorded = load_recorded_review(tmp_path / "state", result.session_id, result.run_id)
+    recorded = load_recorded_review(state_home, result.session_id, result.run_id)
     assert recorded is not None
     assert recorded[1].identity.self_review is True
     assert recorded[1].identity.model_id
@@ -78,6 +80,7 @@ def test_project_automatically_reviews_with_same_local_model_and_repairs_once(tm
 
 def test_project_unknown_review_result_is_not_retried_or_repaired(tmp_path, monkeypatch):
     monkeypatch.setenv("NATIVE_TOOLS", "0")
+    state_home = short_test_state_home()
     project = fixture_project(tmp_path)
     timeline, rows = [], []
     before = "def add(a, b):\n    return a - b\n"
@@ -85,7 +88,7 @@ def test_project_unknown_review_result_is_not_retried_or_repaired(tmp_path, monk
     writer = ScriptedLocal("writer", writer_turns(before, written), timeline)
     reviewer = ScriptedLocal("reviewer", [ConnectionError("reply lost after send")], timeline)
     result = run_headless(
-        HeadlessRequest(project=project, task="Fix addition.", provider_id="local", intent="project", max_turns=8, state_home=tmp_path / "state"),
+        HeadlessRequest(project=project, task="Fix addition.", provider_id="local", intent="project", max_turns=8, state_home=state_home),
         emit_jsonl=rows.append, connect_provider=lambda *_a, **_k: writer,
         connect_reviewer=lambda *_: reviewer,
     )
@@ -93,7 +96,7 @@ def test_project_unknown_review_result_is_not_retried_or_repaired(tmp_path, monk
     assert len(writer.prompts) == 4
     assert len(reviewer.prompts) == 1
     assert reviewer.closed == 1
-    assert load_recorded_review(tmp_path / "state", result.session_id, result.run_id) is None
+    assert load_recorded_review(state_home, result.session_id, result.run_id) is None
     assert not any(row.get("review", {}).get("status") == "complete" for row in rows)
     assert any(row.get("type") == "review" and "unavailable" in row.get("text", "").lower() for row in rows)
 

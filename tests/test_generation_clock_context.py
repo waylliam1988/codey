@@ -62,7 +62,7 @@ def test_initial_and_tool_continuation_count_and_send_same_clock_without_rewriti
     assert counted == sent
     key = "messages" if protocol == "openai-completions" else "input"
     for index, payload in enumerate(sent, 1):
-        assert payload[key][0] == {"role": "system", "content": f"<request_context>clock-{index}</request_context>"}
+        assert payload[key][-1] == {"role": "user", "content": f"<request_context>clock-{index}</request_context>"}
         assert json.dumps(payload).count("<request_context>") == 1
         assert prompt in json.dumps(payload)
     assert provider._messages[:len(first_history)] == first_history
@@ -79,7 +79,10 @@ def test_other_generation_entries_have_clock_context(monkeypatch, purpose):
     if purpose == "compaction":
         provider = provider.fork_auxiliary()
     assert provider.send("Retain the historical date 2024-05-22.") == "ok"
-    assert payloads[0]["messages"][0]["content"] == "<request_context>aux</request_context>"
+    messages = payloads[0]["messages"]
+    assert messages[-1] == {"role": "user", "content": "<request_context>aux</request_context>"}
+    assert any(message.get("content") == "Retain the historical date 2024-05-22."
+               for message in messages[:-1])
     assert "<request_context>" not in json.dumps(provider._messages)
 
 

@@ -5,9 +5,12 @@ the model HTTP peer, never the provider or task lifecycle.
 """
 from __future__ import annotations
 
+import hashlib
 import http.cookiejar
 import json
 import os
+import shutil
+import tempfile
 import threading
 import time
 import urllib.error
@@ -86,12 +89,22 @@ def gate_application(target: GateTarget, directory: Path):
     # so successful shell cases do not collide with copytree(directory/state).
     input_path = directory / "input.json"
     inputs = json.loads(input_path.read_text(encoding="utf8")) if input_path.is_file() else {}
-    state_root = Path(inputs["state"]) if inputs.get("state") else directory / "state"
+    if inputs.get("state"):
+        state_root = Path(inputs["state"])
+        cleanup_state_root = False
+    else:
+        state_root = Path(tempfile.gettempdir()) / (
+            "sg-" + hashlib.sha256(str(directory).encode()).hexdigest()[:12]
+        )
+        state_root.mkdir(parents=True, exist_ok=False)
+        cleanup_state_root = True
     events = []
     env = {"NATIVE_TOOLS": "1"}
     if target.provider_id == "local":
         env.update(LOCAL_OPENAI_BASE_URL=target.base_url, LOCAL_OPENAI_MODEL=target.model)
     with ExitStack() as stack:
+        if cleanup_state_root:
+            stack.callback(shutil.rmtree, state_root, ignore_errors=True)
         stack.enter_context(patch.dict(os.environ, env))
         stack.enter_context(patch.object(local_config, "DEFAULT_STATE_HOME", state_root))
         if target.provider_id == "local":

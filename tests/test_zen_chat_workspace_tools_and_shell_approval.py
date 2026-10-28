@@ -4,6 +4,7 @@ from contextlib import closing
 import pytest
 
 from codey.app.context import AppContext
+from tests.support.workspace_conversation import short_test_state_home
 from tests.test_chat_workspace_tools_and_answer_completion import execute_frame, workspace_frame
 from tests.test_zen_transport_declarations_never_grant_execution import provider_with_responses, response
 
@@ -21,7 +22,7 @@ def test_muse_chat_uses_shared_workspace_tools_without_provider_core_branch(tmp_
     if case == "edit":
         from dataclasses import replace
         frame.request = replace(frame.request, denied_capabilities=("project.verify",))
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(short_test_state_home())) as state:
         result, events = execute_frame(frame, state)
     assert result.event["stop_reason"] == ("approval" if case == "shell" else "done")
     assert len(requests) == (2 if case == "edit" else 1)

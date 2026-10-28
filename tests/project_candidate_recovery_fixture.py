@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import tempfile
 from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
 COMMAND = 'python -m unittest discover -v'
@@ -59,7 +62,11 @@ def scenario(tmp_path, *, kind='stagnant', source=GOOD, fault='', max_turns=20,
     project.mkdir()
     (project / 'names.py').write_text(initial, encoding='utf-8')
     (project / 'test_names.py').write_text(visible, encoding='utf-8')
-    state = server.AppContext(tmp_path / 'state')
+    state_home = Path(tempfile.gettempdir()) / (
+        'cc-' + hashlib.sha256(str(tmp_path).encode()).hexdigest()[:12]
+    )
+    state_home.mkdir(parents=True, exist_ok=False)
+    state = server.AppContext(state_home)
     calls, reviews, events = [], [], []
 
     def observe(event, downstream, stop_flag):
@@ -143,10 +150,12 @@ def scenario(tmp_path, *, kind='stagnant', source=GOOD, fault='', max_turns=20,
     with mock.patch.object(state, 'get_provider', return_value=ScriptedProvider([])):
         run_task_submission(runner, TaskSubmission('s', str(project), task, max_turns, False, 'deepseek',
                                                   intent='project', denied_capabilities=denials))
-    rows = [json.loads(line) for path in (tmp_path / 'state' / 'run_ledgers').rglob('*.jsonl')
+    rows = [json.loads(line) for path in (state_home / 'run_ledgers').rglob('*.jsonl')
             for line in path.read_text(encoding='utf-8').splitlines()]
     terminal = state.run_registry.last_terminal_event()
     trace = json.loads(state.run_traces.path_for('s', terminal['run_id']).read_text(encoding='utf-8'))
+    state.close()
+    shutil.rmtree(state_home, ignore_errors=True)
     return {'terminal': state.run_registry.last_terminal_event(), 'calls': calls, 'reviews': reviews,
             'events': events, 'ledger': rows, 'project': project, 'proofs': trace['completion_proofs']}
 

@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from tests.support.workspace_conversation import short_test_state_home
 from tools.local_model_gate_attempts import GateTarget
 from tools.local_model_release_gate import _worker
 
@@ -30,7 +31,7 @@ def test_recovery_gate_restarts_and_finishes_without_repeating_edit(tmp_path, pr
     from tools.local_model_gate_recovery import run_recovery_case
 
     target = GateTarget("http://localhost:5001/v1", "scripted", 32768, 8192, 12000, protocol=protocol)
-    config = {"project": str(tmp_path / "project"), "state": str(tmp_path / "state")}
+    config = {"project": str(tmp_path / "project"), "state": str(short_test_state_home())}
     (tmp_path / "input.json").write_text(json.dumps(config), encoding="utf-8")
     result = run_recovery_case(target, tmp_path, scripted=True)
     assert result["ok"] is True, result

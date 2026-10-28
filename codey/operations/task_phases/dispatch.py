@@ -154,7 +154,7 @@ def connect_and_build_frame(
 def review_flow_deps(deps: TaskRunDeps) -> ReviewFlowDeps:
     return ReviewFlowDeps(
         state=deps.state,
-        collect_changes=deps.collect_changes,
+        collect_changes=deps.collect_review_changes or deps.collect_changes,
         run_review=deps.run_review,
         is_git_repository=deps.is_git_repository or (lambda _project: False),
         review_log_lines=deps.review_log_lines,

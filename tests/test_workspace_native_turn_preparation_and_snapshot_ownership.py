@@ -1,4 +1,5 @@
 """Workspace first turns prepare once and retain frozen tools and session ownership."""
+import hashlib
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -16,6 +17,7 @@ from codey.runtime.core.models import ToolResult
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.toolchain import tool_spec
 from codey.workspace.changes import collect_changes
+from tests.support.workspace_conversation import admit_entry_frame
 from tests.test_chat_workspace_tools_and_answer_completion import NativeConversation, workspace_frame
 
 
@@ -50,7 +52,9 @@ def test_workspace_turn_prepares_once_and_executes_original_snapshot(tmp_path, m
     frame.fresh_chat = True
     frame.entry_policy = TaskPolicy(frozenset({"control", "project.read", "project.write"}),
                                    denied_capabilities=frozenset({"project.verify", "shell.approval"}))
-    state = AppContext(tmp_path / "state")
+    state_home = tmp_path.parent / f"s-{hashlib.sha256(str(tmp_path).encode()).hexdigest()[:10]}"
+    state = AppContext(state_home)
+    admit_entry_frame(frame, state)
     refreshes, executions = [], []
     real_refresh = project_prompt_context.refresh_verification_candidates
     real_execute = task_loop._call_execute_turn

@@ -1,5 +1,6 @@
 """Allow and deny resume Chat in its original task and authorization."""
 from contextlib import closing
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -10,7 +11,7 @@ from codey.app.task_services import build_task_deps
 from codey.operations.task_entry import run_task_submission
 from codey.storage.local_store import session_key
 from codey.task.model import TaskSubmission
-from tests.support.workspace_conversation import TextConversation
+from tests.support.workspace_conversation import TextConversation, short_test_state_home
 
 pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
 
@@ -20,7 +21,7 @@ pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
 def test_shell_decision_resumes_chat_without_project_workflow(tmp_path, monkeypatch, approved, attached):
     root = tmp_path / "project"
     root.mkdir()
-    home = tmp_path / "state"
+    home = short_test_state_home()
     provider = TextConversation('{"tool":"shell","args":{"command":"echo workspace-approved","path":"."}}')
     with closing(AppContext(home)) as state:
         monkeypatch.setattr(state, "get_provider", lambda *args: provider)
@@ -31,7 +32,7 @@ def test_shell_decision_resumes_chat_without_project_workflow(tmp_path, monkeypa
         assert len(pending) == 1
         approval_id, record = next(iter(pending.items()))
         workspace = root if attached else home / "workspaces" / session_key("chat-shell")
-        assert record["project"] == str(workspace)
+        assert Path(record["project"]).resolve() == workspace.resolve()
         submitted = Mock(return_value="unexpected-new-task")
         status, payload = shell_approval_response(state, {"id": approval_id, "approved": approved},
                                                  submit_task_after_slot_release=submitted)

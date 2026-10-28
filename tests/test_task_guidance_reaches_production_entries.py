@@ -36,6 +36,7 @@ def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, stri
     from codey.app.context import AppContext
     from codey.operations.task_entry import run_entry_kernel
     from codey.task.model import TaskSubmission
+    from tests.support.workspace_conversation import admit_entry_frame
 
     provider = CaptureProvider()
     submission = TaskSubmission("s", str(tmp_path), "inspect", 1, False, "deepseek",
@@ -45,8 +46,13 @@ def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, stri
                             recovered_tool_outcomes=(), settled_tool_outcomes=(), recovered_tool_result_batch_id="",
                             entry_initial_turn=None, window_action=None)
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
-    deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=AppContext(tmp_path / "state"))
-    outcome = run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]), hooks, deps)
+    state = AppContext(tmp_path / "state")
+    admit_entry_frame(frame, state)
+    deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=state)
+    try:
+        outcome = run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]), hooks, deps)
+    finally:
+        state.close()
     assert len(provider.sent) == 1
     assert ("Research evidence rules" in provider.sent[0]) is strict
     if strict:

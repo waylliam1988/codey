@@ -132,5 +132,9 @@ def test_responses_replays_assistant_message_after_call_before_its_result():
         provider = ApiProvider(url, "fixture", api_protocol="openai-responses")
         provider.send_turn("read the fixture", [READ])
         assert provider.send_tool_results([ProviderToolResult("call1", "contents")], [READ]).text == "Read."
-    assert requests[1][2]["input"][0]["content"].startswith("<request_context>")
-    assert requests[1][2]["input"][2:] == [call, commentary, {"type": "function_call_output", "call_id": "call1", "output": "contents"}]
+    payload_input = requests[1][2]["input"]
+    assert payload_input[0] == {"role": "user", "content": "read the fixture"}
+    assert payload_input[1:4] == [call, commentary,
+                                  {"type": "function_call_output", "call_id": "call1", "output": "contents"}]
+    assert payload_input[-1]["role"] == "user"
+    assert payload_input[-1]["content"].startswith("<request_context>")

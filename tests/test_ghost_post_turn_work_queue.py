@@ -233,6 +233,20 @@ def _seed_review_item(state: server.AppContext, project: Path) -> str:
     return item.id
 
 
+def _seed_interrupted_project_task(state: server.AppContext, project: Path, task: str) -> None:
+    from types import SimpleNamespace
+
+    from codey.operations.task_changes import task_change_tracker
+    from tests.support.workspace_conversation import admit_entry_frame
+
+    request = TaskSubmission("s1", str(project), task, 8, False, "deepseek",
+                             intent="project", run_id="run-old")
+    admit_entry_frame(SimpleNamespace(request=request, run_id=request.run_id), state)
+    task_change_tracker(state, project, request.run_id)
+    checkpoint = state.durable.task(request.run_id)
+    state.durable.fail_task(request.run_id, "interrupted", state=dict(checkpoint.state))
+
+
 def _last_trace_payload(state: server.AppContext) -> dict[str, object]:
     assert state.run_traces is not None
     run_id = str(state.run_registry.last_terminal_event()["run_id"])
@@ -458,6 +472,7 @@ def test_project_followup_item_consumes_into_project_mode() -> None:
         (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
         state = server.AppContext(Path(td, "state"))
         assert state.ghost_work_queue is not None
+        _seed_interrupted_project_task(state, project, "Fix the failing parser test")
         checkpoints = WorkCheckpointStore(state.state_home)
         checkpoint = checkpoints.start(
             run_id="run-old",
@@ -523,6 +538,7 @@ def test_project_followup_without_proof_blocks_item() -> None:
         project.mkdir()
         state = server.AppContext(Path(td, "state"))
         assert state.ghost_work_queue is not None
+        _seed_interrupted_project_task(state, project, "Fix the failing parser test")
         checkpoints = WorkCheckpointStore(state.state_home)
         checkpoint = checkpoints.start(
             run_id="run-old",

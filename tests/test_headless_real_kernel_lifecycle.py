@@ -10,6 +10,7 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core.operation_state import RuntimeOperationStore
+from tests.support.workspace_conversation import short_test_state_home
 
 pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
 
@@ -38,7 +39,7 @@ class ScriptedProvider:
 
 def test_explicit_planning_enters_running_before_durable_provider_send(tmp_path, monkeypatch):
     monkeypatch.setenv("NATIVE_TOOLS", "0")
-    project, state = tmp_path / "project", tmp_path / "state"
+    project, state = tmp_path / "project", short_test_state_home()
     project.mkdir()
     (project / "pricing.py").write_text("READONLY_MARKER = 42\n", encoding="utf-8")
     provider = ScriptedProvider([
@@ -70,7 +71,7 @@ def test_explicit_planning_enters_running_before_durable_provider_send(tmp_path,
 
 def test_headless_shell_denial_cancels_without_transition_error(tmp_path, monkeypatch):
     monkeypatch.setenv("NATIVE_TOOLS", "0")
-    project, state = tmp_path / "project", tmp_path / "state"
+    project, state = tmp_path / "project", short_test_state_home()
     project.mkdir()
     provider = ScriptedProvider([
         {"tool": "shell", "args": {"command": "mkdir -p unapproved", "path": "."}},

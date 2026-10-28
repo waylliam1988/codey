@@ -10,6 +10,7 @@ from codey.app.headless_runner import HeadlessAppContext
 from codey.env_names import REVIEW_POLICY_ENV
 from tests.support.local_review_fixture import ScriptedLocal, fixture_project, writer_turns
 from tests.support.model_preferences import enable_models
+from tests.support.workspace_conversation import short_test_state_home
 
 
 @pytest.mark.usefixtures("no_external_advisor_models", "scripted_local_api_connection")
@@ -22,7 +23,8 @@ def test_desktop_and_real_cli_automatically_review_and_repair_equally(tmp_path, 
     for entry in ("desktop", "cli"):
         root = tmp_path / entry
         root.mkdir()
-        enable_models(root / "state", local=["scripted-fixture"])
+        state_home = short_test_state_home()
+        enable_models(state_home, local=["scripted-fixture"])
         project = fixture_project(root)
         before = "def add(a, b):\n    return a - b\n"
         written = "def add(a, b):\n    return a + b\n"
@@ -40,7 +42,7 @@ def test_desktop_and_real_cli_automatically_review_and_repair_equally(tmp_path, 
         task = "Fix add to return the sum and document it."
         if entry == "desktop":
             rows = []
-            state = AppContext(root / "state")
+            state = AppContext(state_home)
             monkeypatch.setattr(state, "get_provider", lambda *_, writers=writers: next(writers))
             monkeypatch.setattr(state, "_on_event_emitted", rows.append)
             try:
@@ -58,7 +60,7 @@ def test_desktop_and_real_cli_automatically_review_and_repair_equally(tmp_path, 
         else:
             monkeypatch.setattr(HeadlessAppContext, "get_provider", lambda *_, writers=writers: next(writers))
             exit_code = cli.main(["agent", "--provider", "local", "--project", str(project),
-                                  "--state-home", str(root / "state"), "--max-turns", "8", "--json", task])
+                                  "--state-home", str(state_home), "--max-turns", "8", "--json", task])
             assert exit_code == 0
             rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
         assert reviewer.chats == (2 if finding else 1), (entry, rows)

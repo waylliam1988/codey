@@ -9,14 +9,14 @@ from codey.runs.ledger import RunLedgerStore
 from codey.runs.ledger_projection import load_run_projection
 from codey.runs.trace import RunTraceStore
 from codey.storage.local_store import session_key
-from tests.support.workspace_conversation import TextConversation
+from tests.support.workspace_conversation import TextConversation, short_test_state_home
 
 pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
 
 
 @pytest.mark.parametrize("attached", [False, True])
 def test_chat_submission_records_edit_in_original_workspace_and_run_details(tmp_path, attached):
-    root, home = tmp_path / "project", tmp_path / "state"
+    root, home = tmp_path / "project", short_test_state_home()
     root.mkdir()
     provider = TextConversation('{"tool":"edit","args":{"path":"result.txt","content":"actual"}}',
                                 "Created result.txt.")
@@ -30,7 +30,7 @@ def test_chat_submission_records_edit_in_original_workspace_and_run_details(tmp_
     assert (workspace / "result.txt").read_text(encoding="utf8") == "actual"
     projection = load_run_projection(RunLedgerStore(home), result.session_id, result.run_id)
     assert projection is not None
-    assert Path(projection.project) == workspace
+    assert Path(projection.project).resolve() == workspace.resolve()
     assert projection.tool_counts.get("edit") == 1
     assert projection.final_changes.changed_count == 1
     details = load_run_details(run_ledgers=RunLedgerStore(home), run_traces=RunTraceStore(home),

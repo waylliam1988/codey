@@ -310,6 +310,7 @@ def _run_headless_task(
             state.knowledge_store = KnowledgeStore(request.research_store_root)
         deps = build_task_deps(
             state, agent_run=agent_run, collect_changes=collect_changes,
+            collect_review_changes=collect_changes,
             capture_provider_failure=capture_provider_failure,
             connect_reviewer=connect_reviewer, review_policy=review_policy,
             # Route production execution through the headless context owner.
