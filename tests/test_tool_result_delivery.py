@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from codey.agents.request import AgentRequest
 from codey.durable.errors import CommitConflict
