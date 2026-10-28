@@ -13,6 +13,17 @@ from codey.storage.atomic_io import encode_with_original_eol, write_text_atomic
 
 
 class AtomicWriteTests(unittest.TestCase):
+    def test_short_manifest_in_deep_directory_can_be_written_atomically(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            folder_chars = 230 - len(str(root)) - 1
+            directory = root / ("d" * folder_chars)
+            directory.mkdir()
+            target = directory / "manifest.json"
+            write_text_atomic(target, "saved")
+            self.assertEqual(target.read_text(encoding="utf-8"), "saved")
+            self.assertEqual(list(directory.iterdir()), [target])
+
     def test_long_valid_filename_does_not_make_the_staging_filename_invalid(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

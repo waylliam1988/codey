@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
 from codey.runtime.core.operation_payload import (
+    RuntimeExecutionCounters,
     RuntimeOperationTransitionError,
     _parse_final_delivery,
     _parse_model_selection,
@@ -26,7 +27,7 @@ from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_projection import RuntimeProjection
 from codey.storage.local_store import project_key, session_key
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 KIND = "runtime_operation_state"
 
 LEAF_ACCEPTED = "accepted"
@@ -153,7 +154,7 @@ _KNOWN_PAYLOAD_KEYS = frozenset({
     "model_selection", "reviewer_selection", "final_delivery",
     "writer_attempt", "candidate_validation_attempted", "turns_used", "stop_reason",
     "completion_proof_ref", "completion_proof_status", "repair_rounds",
-    "repair_context_ref", "blocked_reason", "driver", "turn", "tool_index", "terminal", "response_ref",
+    "repair_context_ref", "blocked_reason", "driver", "turn", "tool_index", "terminal", "response_ref", "counters",
 })
 _KNOWN_TERMINAL_KEYS = frozenset(
     {
@@ -251,6 +252,7 @@ class RuntimeOperationState:
     turn: int = 0
     tool_index: int = 0
     response_ref: str = ""
+    counters: RuntimeExecutionCounters = field(default_factory=RuntimeExecutionCounters)
     terminal: RuntimeOperationTerminal | None = None
 
     def to_payload(self) -> dict[str, object]:
@@ -281,6 +283,7 @@ class RuntimeOperationState:
             "driver": self.driver,
             "turn": self.turn,
             "tool_index": self.tool_index,
+            "counters": self.counters.to_payload(),
         }
         if self.final_delivery != "not_required":
             payload["final_delivery"] = _parse_final_delivery(self.final_delivery)
@@ -391,6 +394,7 @@ class RuntimeOperationState:
                 turn=turn,
                 tool_index=tool_index,
                 response_ref=response_ref,
+                counters=RuntimeExecutionCounters.from_payload(payload.get("counters")),
                 terminal=terminal,
             )
         except RuntimeOperationTransitionError:
@@ -728,7 +732,8 @@ def mark_writer_running(
         if attempt <= state.writer_attempt or state.stop_reason != "done" or state.completion_proof_ref:
             raise RuntimeOperationTransitionError("writer restart requires a new attempt after done before final proof")
         return _transition(state, LEAF_WRITER_RUNNING, provider_id=provider,
-                           writer_attempt=attempt, turns_used=state.turns_used, stop_reason="")
+                           writer_attempt=attempt, turns_used=state.turns_used, stop_reason="",
+                           counters=RuntimeExecutionCounters())
     if state.leaf in {LEAF_WRITER_RUNNING, LEAF_TOOL_DELIVERY_PENDING}:
         # Rebinding a writer changes transport metadata, never acknowledges
         # delivery or restarts the task state machine.
@@ -766,7 +771,8 @@ def mark_candidate_validation_running(
             or state.task_kind != "project"):
         raise RuntimeOperationTransitionError("stopped candidate validation admission is unavailable")
     return _transition(state, LEAF_REPAIR_RUNNING if repair else LEAF_WRITER_RUNNING,
-                       writer_attempt=attempt, candidate_validation_attempted=True, stop_reason="")
+                       writer_attempt=attempt, candidate_validation_attempted=True, stop_reason="",
+                       counters=RuntimeExecutionCounters())
 
 
 def mark_writer_settled(
@@ -950,6 +956,7 @@ def mark_repair_running(
         LEAF_REPAIR_RUNNING,
         provider_id=_text(provider_id, "provider_id"),
         repair_rounds=state.repair_rounds + 1,
+        counters=RuntimeExecutionCounters(),
     )
 
 

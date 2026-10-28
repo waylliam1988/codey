@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
 from codey.operations import kernel_events as _events
@@ -37,6 +37,7 @@ from codey.policies.command_line import ShellSpec
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult, TurnFinish, tools_from_specs
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
+from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.workspace.coding_context import render_coding_context
 from codey.workspace.context_admission import GhostContextSource, admit_ghost_context
 from codey.workspace.context_epoch import ContextEpoch, context_epoch_id
@@ -141,8 +142,7 @@ class _ProviderTurnState:
     prompt: str
     pending_reply: Any = None
     pending_messages: list[ProviderToolResult] | None = None
-    invalid_turns: int = 0
-    length_continuation_used: bool = False
+    counters: RuntimeExecutionCounters = field(default_factory=RuntimeExecutionCounters)
 
 
 @dataclass(frozen=True)
@@ -237,6 +237,9 @@ def _receive_turn_plan(
     never loops, executes tools, or accepts completion.
     """
     try:
+        bind_counters = getattr(provider, "bind_kernel_counters", None)
+        if callable(bind_counters) and state.pending_reply is None:
+            bind_counters(state.counters)
         bind_request = getattr(provider, "bind_kernel_request", None)
         if callable(bind_request) and state.pending_reply is None:
             bind_request(snapshot, logical_turn=turn, window_ref=window_ref)
@@ -265,12 +268,12 @@ def _receive_turn_plan(
         return cast(_ReceivedPlan | KernelResult | None, cancelled)
     _events._emit_turn_event(on_event, turn, reply)
     length_action = _length_reply_action(
-        reply, native=native, used=state.length_continuation_used, turns=turn,
+        reply, native=native, used=state.counters.length_continuation_used, turns=turn,
     )
     if isinstance(length_action, KernelResult):
         return length_action
     if length_action is not None:
-        state.length_continuation_used = True
+        state.counters = replace(state.counters, length_continuation_used=True)
         state.prompt = length_action
         state.pending_reply = None
         return None
@@ -280,14 +283,21 @@ def _receive_turn_plan(
                 snapshot=snapshot, plan=plan, native=native)
     protocol_action = _kernel_handle_protocol(
         plan, provider, reply, native, native_tools, stagnant_turns=stagnant_turns,
-        invalid_turns=state.invalid_turns, turn=turn, snapshot=snapshot,
+        invalid_turns=state.counters.invalid_turns, turn=turn, snapshot=snapshot, counters=state.counters,
     )
     if isinstance(protocol_action, KernelResult):
         return protocol_action
     if protocol_action is not None:
-        state.prompt, state.pending_reply, state.invalid_turns = protocol_action
+        state.prompt, state.pending_reply, invalid_turns = protocol_action
+        state.counters = replace(state.counters, invalid_turns=invalid_turns)
         return None
-    state.invalid_turns = 0
+    state.counters = replace(state.counters, invalid_turns=0)
+    if callable(bind_counters):
+        bind_counters(state.counters)
+    if callable(bind_request):
+        # A rejection receipt can return the next logical turn immediately.
+        # Its request keeps this snapshot but must survive with that turn id.
+        bind_request(snapshot, logical_turn=turn + 1, window_ref=window_ref)
     return _ReceivedPlan(plan, reply)
 
 
@@ -442,11 +452,15 @@ def _kernel_handle_protocol(
     invalid_turns: int,
     turn: int,
     snapshot: kernel_protocol.TurnSnapshot,
+    counters: RuntimeExecutionCounters,
 ) -> Any:
     """Handle one protocol error; None means proceed to tools."""
     if not getattr(plan, "protocol_error", ""):
         return None
     invalid_turns += 1
+    bind_counters = getattr(provider, "bind_kernel_counters", None)
+    if callable(bind_counters):
+        bind_counters(replace(counters, invalid_turns=invalid_turns))
     if stagnant_turns is not None and invalid_turns >= max(1, stagnant_turns):
         # 阈值终止走同一有界关闭：回答当前 id 及后续新调用，不执行工具。
         # 关闭失败必须反馈 provider failure。
@@ -467,6 +481,9 @@ def _kernel_handle_protocol(
         )
     prompt = _prompt._repair_prompt(plan, snapshot=snapshot, native=native)
     try:
+        bind_request = getattr(provider, "bind_kernel_request", None)
+        if callable(bind_request):
+            bind_request(snapshot, logical_turn=turn + 1, window_ref=getattr(provider, "window_ref", None))
         pending_reply = _transport.repair_native_dangling(
             provider, reply, native, native_tools, plan.protocol_error, instruction=prompt)
     except Exception as exc:
@@ -621,12 +638,16 @@ def _kernel_startup(
         native_tool_messages=_transport._native_tool_results,
         replayed_result_ids=replayed_result_ids,
     )
+    read_counters = getattr(provider, "kernel_counters", None)
+    counters = read_counters() if callable(read_counters) else RuntimeExecutionCounters()
+    if not isinstance(counters, RuntimeExecutionCounters):
+        raise TypeError("provider returned invalid execution counters")
     return _KernelStartup(
         executors=runnable, delivered=delivered_map, max_turns=max_turns,
         native=native, identity_ref=identity_ref,
         state=_ProviderTurnState(prompt=prompt,
                                  pending_reply=initial_turn.reply if initial_turn is not None else None,
-                                 pending_messages=pending_native_messages),
+                                 pending_messages=pending_native_messages, counters=counters),
         native_tools=native_tools, snapshot=initial_snapshot, pending_recovery=bool(pending_initial),
         attempt_gate_bound=attempt_gate_bound,
         # Keep the exact reference carried by the approval/recovery row.  The
@@ -753,7 +774,8 @@ def run_task_kernel(
     native = startup.native
     native_tools = startup.native_tools
     window_ref = startup.window_ref or transport.window_ref
-    progress = KernelProgress(stagnant_turns)
+    progress = KernelProgress(stagnant_turns, snapshot=state.counters.progress)
+    state.counters = replace(state.counters, progress=progress.snapshot())
     prev_contract = startup.snapshot.contract_text
     for turn in range(resume_start, startup.max_turns + 1):
         stopped = _stop_at_turn_start(
@@ -878,6 +900,8 @@ def run_task_kernel(
                 propagate=propagate_provider_failure,
             )
         results = results_or_failure
+        state.counters = _observe_progress(progress, results, session, provider, intent_sink,
+                                           state.counters, stop_flag)
         boundary_prompt = _call_boundary(
             on_boundary, "post_tools", turns_used, propagate=propagate_provider_failure,
         )
@@ -902,7 +926,7 @@ def run_task_kernel(
         state.pending_messages, state.prompt = advance
         stopped = _stop_no_progress(progress, results, session, provider, state.pending_messages,
                                     turns_used, stop_flag=stop_flag, propagate=propagate_provider_failure,
-                                    declared_tools=native_tools)
+                                    declared_tools=native_tools, already_observed=True)
         if stopped is not None:
             return _settle_at_boundary(stopped, "final", on_boundary, turns_used,
                 propagate=propagate_provider_failure, only_stop_reasons=("no_progress", "blocked"))
@@ -991,10 +1015,28 @@ def _cancel_after_send(stop_flag: Any, provider: Any, reply: Any, native: Any, t
     return KernelResult(False, "stopped", turns_used, "stopped")
 
 
+def _observe_progress(
+    progress: KernelProgress, results: Any, session: Any, provider: Any, sink: Any,
+    counters: RuntimeExecutionCounters, stop_flag: Any,
+) -> RuntimeExecutionCounters:
+    if _stop_requested(stop_flag):
+        return counters
+    previous = progress.snapshot()
+    progress.observe(results, session, batch_id=getattr(sink, "delivery_batch_id", "") if sink is not None else "")
+    record = getattr(sink, "record_progress", None)
+    if callable(record):
+        record(previous, progress.snapshot())
+    counters = replace(counters, progress=progress.snapshot())
+    bind = getattr(provider, "bind_kernel_counters", None)
+    if callable(bind):
+        bind(counters)
+    return counters
+
+
 def _stop_no_progress(progress: Any, results: Any, session: Any, provider: Any, messages: Any, turns_used: Any, *, propagate: Any,
-                      stop_flag: Any = None, declared_tools: Any = ()) -> Any:
+                      stop_flag: Any = None, declared_tools: Any = (), already_observed: bool = False) -> Any:
     cancelled = _stop_requested(stop_flag)
-    if not cancelled and not progress.observe(results, session):
+    if not cancelled and not (progress.stopped if already_observed else progress.observe(results, session)):
         return None
     if messages:
         try:

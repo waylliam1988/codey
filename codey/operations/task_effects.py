@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 from codey.operations.provider_session import ProviderAdapter
 from codey.providers.base import AssistantTurn
 from codey.runtime.core.models import ToolCall
+from codey.runtime.core.operation_payload import RuntimeExecutionCounters
+from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
@@ -168,6 +170,18 @@ class KernelEffectSink:
         self._request_context = {"logical_turn": logical_turn, "snapshot": snapshot_description(snapshot),
                                  "window": window_ref.to_payload() if window_ref is not None else None}
 
+    def counters(self) -> RuntimeExecutionCounters:
+        from codey.durable.checkpoint import operation_from_checkpoint
+
+        state = operation_from_checkpoint(self.durable.task(self.run_id), self.session_id)
+        if state is None:
+            raise RuntimeEffectError("execution counters require an admitted operation")
+        return state.counters
+
+    def record_progress(self, expected: ProgressSnapshot, observed: ProgressSnapshot) -> None:
+        self.mutations.record_progress(self.session_id, self.run_id, batch_id=self.delivery_batch_id,
+                                       expected=expected, observed=observed)
+
     def record_response(self, effect_id: str, reply: Any) -> None:
         from codey.operations.provider_receipts import RESPONSE_KIND, encode_reply, write_provider_artifact
 
@@ -291,6 +305,23 @@ class KernelRecordedProvider(ProviderAdapter):
     def __init__(self, provider: Any, sink: KernelEffectSink) -> None:
         super().__init__(provider)
         self.sink = sink
+        self._counter_update: tuple[RuntimeExecutionCounters, RuntimeExecutionCounters] | None = None
+
+    def kernel_counters(self) -> RuntimeExecutionCounters:
+        return self._counter_update[1] if self._counter_update is not None else self.sink.counters()
+
+    def bind_kernel_counters(self, counters: RuntimeExecutionCounters) -> None:
+        self._counter_update = (self.sink.counters(), counters)
+
+    def reserve_kernel_closing_round(self) -> None:
+        from dataclasses import replace
+
+        from codey.operations.kernel_transport import NativeBudgetExhausted
+
+        counters = self.kernel_counters()
+        if counters.closing_round >= 4:
+            raise NativeBudgetExhausted("native tool chain exceeded durable budget drain limit")
+        self.bind_kernel_counters(replace(counters, closing_round=counters.closing_round + 1))
 
     def bind_kernel_request(self, snapshot: Any, *, logical_turn: int, window_ref: Any = None) -> None:
         self.sink.bind_request(snapshot, logical_turn=logical_turn, window_ref=window_ref)
@@ -328,7 +359,10 @@ class KernelRecordedProvider(ProviderAdapter):
             sink.session_id, sink.run_id, intent,
             delivery_batch_id=sink.delivery_batch_id,
             artifacts=(request_artifact,),
+            expected_counters=self._counter_update[0] if self._counter_update is not None else None,
+            counters=self._counter_update[1] if self._counter_update is not None else None,
         )
+        self._counter_update = None
         try:
             reply = getattr(self.provider, name)(*args, **kwargs)
         except Exception as exc:

@@ -7,8 +7,9 @@ It does not perform I/O and does not import business layers.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.runtime.core.operation_state import (
     LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
@@ -25,7 +26,9 @@ from codey.runtime.core.operation_state import (
     LEAVES,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
+    operation_state_entry,
 )
+from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
@@ -63,6 +66,51 @@ class OperationSettlement:
     abandoned_batch_ids: tuple[str, ...] = ()
 
 
+def admit_request_counters(
+    current: RuntimeExecutionCounters, proposed: RuntimeExecutionCounters,
+) -> RuntimeExecutionCounters:
+    proposed = RuntimeExecutionCounters.from_payload(proposed.to_payload())
+    if (proposed.closing_round < current.closing_round
+            or proposed.closing_round > current.closing_round + 1
+            or (current.length_continuation_used and not proposed.length_continuation_used)
+            or proposed.invalid_turns not in {0, current.invalid_turns, current.invalid_turns + 1}):
+        raise RuntimeOperationTransitionError("request cannot reset or skip execution budgets")
+    if (current.progress != proposed.progress and (current.progress.last_batch_id
+            or replace(current.progress, limit=proposed.progress.limit) != proposed.progress)):
+        raise RuntimeOperationTransitionError("request cannot replace committed batch progress")
+    return proposed
+
+
+def _progress_reference_valid(view: SessionView) -> bool:
+    if view.state is None or not view.state.counters.progress.last_batch_id:
+        return True
+    batch = _batch_by_id(view.batches, view.state.counters.progress.last_batch_id)
+    return batch is not None and _batch_fully_settled(batch, view.effects)
+
+
+def record_progress_observation(
+    view: SessionView, *, batch_id: str, expected: ProgressSnapshot, observed: ProgressSnapshot,
+) -> tuple[dict[str, object], ...]:
+    """Accept a bounded reduction of one complete original result batch."""
+    state = view.state
+    if state is None or state.leaf == LEAF_TERMINAL:
+        raise RuntimeOperationTransitionError("progress requires an open operation")
+    current = state.counters.progress
+    if current.last_batch_id == batch_id:
+        if current != observed:
+            raise RuntimeOperationTransitionError("batch progress is immutable")
+        return ()
+    if current != expected or observed.last_batch_id != batch_id or not batch_id:
+        raise RuntimeOperationTransitionError("progress observation has stale counters or identity")
+    batch = _batch_by_id(view.batches, batch_id)
+    if (state.leaf != LEAF_TOOL_DELIVERY_PENDING or pending_for(view).delivery_batch_id != batch_id
+            or batch is None or not _batch_fully_settled(batch, view.effects)
+            or any(_external_outcome_unknown(effect) for effect in view.effects)):
+        raise RuntimeOperationTransitionError("progress requires the current complete result batch")
+    counters = replace(state.counters, progress=ProgressSnapshot.from_payload(observed.to_payload()))
+    return (operation_state_entry(replace(state, counters=counters)),)
+
+
 def prepare_operation_settlement(view: SessionView) -> OperationSettlement:
     """Validate lifecycle settlement against receipts without inventing them.
 
@@ -72,6 +120,8 @@ def prepare_operation_settlement(view: SessionView) -> OperationSettlement:
     state = view.state
     if state is None:
         raise RuntimeOperationTransitionError("missing operation state")
+    if not _progress_reference_valid(view):
+        raise RuntimeOperationTransitionError("progress refers to an unavailable result batch")
     if any(effect.settlement is None for effect in view.effects):
         raise RuntimeOperationTransitionError("operation retains pending effects")
     if any(_external_outcome_unknown(effect) for effect in view.effects):
@@ -103,6 +153,8 @@ def next_runtime_action(view: SessionView) -> RuntimeAction:
         return RuntimeAction(ACTION_FAIL_INVARIANT, reason="missing_operation_state")
     if state.leaf not in LEAVES:
         return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="unknown_leaf")
+    if not _progress_reference_valid(view):
+        return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="progress_batch_missing_or_incomplete")
     effects = view.effects
     delivery_batches = view.batches
     pending = pending_for(view)

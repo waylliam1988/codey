@@ -3,10 +3,42 @@ from __future__ import annotations
 
 import copy
 import json
+from dataclasses import dataclass, field
+
+from codey.runtime.core.progress import ProgressSnapshot
 
 
 class RuntimeOperationTransitionError(Exception):
     """An operation state transition violated the closed leaf table."""
+
+
+@dataclass(frozen=True)
+class RuntimeExecutionCounters:
+    """Bounded execution history; it carries no independent execution phase."""
+
+    invalid_turns: int = 0
+    length_continuation_used: bool = False
+    closing_round: int = 0
+    progress: ProgressSnapshot = field(default_factory=ProgressSnapshot)
+
+    def to_payload(self) -> dict[str, object]:
+        return {"invalid_turns": self.invalid_turns,
+                "length_continuation_used": self.length_continuation_used,
+                "closing_round": self.closing_round, "progress": self.progress.to_payload()}
+
+    @classmethod
+    def from_payload(cls, value: object) -> RuntimeExecutionCounters:
+        if (not isinstance(value, dict)
+                or set(value) != {"invalid_turns", "length_continuation_used", "closing_round", "progress"}
+                or type(value["invalid_turns"]) is not int or value["invalid_turns"] < 0
+                or type(value["length_continuation_used"]) is not bool
+                or type(value["closing_round"]) is not int or not 0 <= value["closing_round"] <= 4):
+            raise RuntimeOperationTransitionError("invalid operation execution counters")
+        try:
+            progress = ProgressSnapshot.from_payload(value["progress"])
+        except ValueError as exc:
+            raise RuntimeOperationTransitionError(str(exc)) from exc
+        return cls(value["invalid_turns"], value["length_continuation_used"], value["closing_round"], progress)
 
 
 def _parse_final_delivery(value: object) -> str:

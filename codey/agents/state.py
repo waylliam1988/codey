@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
+from codey.runtime.core.progress import ToolAttemptRecord
 from codey.utils.refs import parse_int
 
 
@@ -41,23 +40,15 @@ class SeenInfoLRU:
     def clear(self) -> None:
         self._order.clear()
 
+    def keys(self) -> tuple[tuple[str, str, str], ...]:
+        return tuple(self._order)
+
 
 def seen_info_key(tool_name: str, path: str, model_text: str) -> tuple[str, str, str]:
     import hashlib
 
     digest = hashlib.sha256((model_text or "").encode("utf-8", errors="surrogatepass")).hexdigest()[:24]
     return ((tool_name or ""), (path or ""), digest)
-
-
-@dataclass(frozen=True)
-class ToolAttemptRecord:
-    tool: str
-    call_fp: str
-    result_fp: str
-    ok: bool
-    changed: bool
-    turn: int
-    edit_epoch: int = 0
 
 
 __all__ = ["SeenInfoLRU", "ToolAttemptRecord", "seen_info_key"]

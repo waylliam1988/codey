@@ -457,6 +457,7 @@
     "codey/runtime/core/outcome.py",
     "codey/runtime/core/output_capture.py",
     "codey/runtime/core/ports.py",
+    "codey/runtime/core/progress.py",
     "codey/runtime/core/protocol_window.py",
     "codey/runtime/core/reasoning.py",
     "codey/runtime/core/run_result.py",

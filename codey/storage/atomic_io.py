@@ -23,6 +23,17 @@ from typing import Any
 MAX_ATOMIC_JSON_BYTES = 8 * 1024 * 1024
 
 
+def _staging_directory(directory: Path) -> Path:
+    if os.name != "nt":
+        return directory
+    absolute = str(directory.resolve())
+    if absolute.startswith("\\\\?\\"):
+        return Path(absolute)
+    # A manifest can fit under MAX_PATH while its unique staging file cannot.
+    # Use the Windows filesystem namespace so entropy never depends on depth.
+    return Path("\\\\?\\UNC\\" + absolute[2:] if absolute.startswith("\\\\") else "\\\\?\\" + absolute)
+
+
 def encode_with_original_eol(target: Path, text: str, *, encoding: str = "utf-8") -> bytes:
     """Encode ``text`` matching the target file's recorded newline style."""
 
@@ -45,9 +56,7 @@ def write_bytes_atomic(
     target = Path(path)
     directory = target.parent if str(target.parent) else Path(".")
     directory.mkdir(parents=True, exist_ok=True)
-    # A temp name needs uniqueness, not a copy of the target's filename.
-    # Keep valid Windows paths from exceeding MAX_PATH only while staging.
-    tmp = directory / f".{uuid.uuid4().hex}.tmp"
+    tmp = _staging_directory(directory) / f".{uuid.uuid4().hex}.tmp"
     initial_identity = _target_identity(target)
     existing_mode = _existing_mode(target)
     creation_mode = (

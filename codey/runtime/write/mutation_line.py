@@ -15,7 +15,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from codey.durable.model import ArtifactRecord
 
-from codey.runtime.core.operation_reducer import prepare_operation_settlement
+from codey.runtime.core.operation_payload import RuntimeExecutionCounters
+from codey.runtime.core.operation_reducer import prepare_operation_settlement, record_progress_observation
 from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,
     RuntimeOperationState,
@@ -57,6 +58,7 @@ from codey.runtime.core.operation_state import (
 from codey.runtime.core.operation_state import (
     mark_writer_settled as state_mark_writer_settled,
 )
+from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
@@ -387,6 +389,8 @@ class RuntimeMutationLine:
         delivery_batch_id: str = "",
         supersede_effect_id: str = "",
         artifacts: tuple[ArtifactRecord, ...] = (),
+        counters: RuntimeExecutionCounters | None = None,
+        expected_counters: RuntimeExecutionCounters | None = None,
     ) -> RuntimeEffectIntent:
         committed: RuntimeEffectIntent | None = None
 
@@ -402,6 +406,8 @@ class RuntimeMutationLine:
                 driver=driver,
                 delivery_batch_id=delivery_batch_id,
                 supersede_effect_id=supersede_effect_id,
+                counters=counters,
+                expected_counters=expected_counters,
             )
             committed = prepared
             return rows
@@ -410,6 +416,16 @@ class RuntimeMutationLine:
         if committed is None:
             raise RuntimeEffectError("provider effect intent was not committed")
         return committed
+
+    def record_progress(
+        self, session_id: str, run_id: str, *, batch_id: str,
+        expected: ProgressSnapshot, observed: ProgressSnapshot,
+    ) -> None:
+        def mutation(projection: Any, entries: Any) -> Any:
+            view = load_session_view(entries, session_id=session_id, run_id=run_id)
+            return record_progress_observation(view, batch_id=batch_id, expected=expected, observed=observed)
+
+        self._mutate(session_id, run_id, mutation)
 
     def record_provider_response(
         self, session_id: str, run_id: str, *, effect_id: str, artifact: ArtifactRecord,

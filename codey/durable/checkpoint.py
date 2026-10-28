@@ -40,10 +40,16 @@ def operation_from_checkpoint(task: TaskCheckpoint, session_id: str) -> RuntimeO
         return None
     if isinstance(payload, dict) and "task_policy" in task.state:
         payload["task_policy"] = thaw_json(task.state["task_policy"])
-    # Version 1 has no response-ready leaf or response reference. The migration
-    # preserves its exact execution position; it never invents received data.
-    if isinstance(payload, dict) and type(payload.get("schema_version")) is int and payload["schema_version"] == 1:
-        payload = {**payload, "schema_version": 2}
+    # Older formats have no durable counters. Preserve their exact execution
+    # position; migration never invents a received reply or restarts execution.
+    if isinstance(payload, dict) and type(payload.get("schema_version")) is int and payload["schema_version"] in {1, 2}:
+        from codey.runtime.core.operation_payload import RuntimeExecutionCounters
+
+        safe_positions = {"accepted", "terminal", "writer_settled", "repair_settled",
+                          "completion_proof_recorded", "repair_context_admitted"}
+        if payload.get("leaf") not in safe_positions or payload.get("stop_reason") in {"approval", "question"}:
+            raise RuntimeOperationTransitionError("legacy execution counters are unavailable; migration cannot reset budgets")
+        payload = {**payload, "schema_version": 3, "counters": RuntimeExecutionCounters().to_payload()}
     state = RuntimeOperationState.from_payload(payload)
     if state is None or state.run_id != task.task_id or state.session_id != session_id:
         raise RuntimeOperationTransitionError("invalid durable operation checkpoint")

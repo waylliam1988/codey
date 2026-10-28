@@ -180,6 +180,9 @@ def _drain_native_budget(
     NativeBudgetExhausted; the caller maps both to terminal results.
     """
     for _ in range(4):
+        reserve = getattr(provider, "reserve_kernel_closing_round", None)
+        if callable(reserve):
+            reserve()
         # The task has ended: close ids without inviting another tool call.
         # Still bound and receipt calls from an endpoint ignoring withdrawal.
         reply = call_provider_acknowledge_results(provider, messages, list(declared_tools), window_ref=window_ref)

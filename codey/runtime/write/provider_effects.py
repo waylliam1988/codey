@@ -7,8 +7,11 @@ mutation line commits their rows atomically.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
+from codey.runtime.core.operation_payload import RuntimeExecutionCounters
+from codey.runtime.core.operation_reducer import admit_request_counters
 from codey.runtime.core.operation_state import (
     RuntimeOperationTransitionError,
     mark_provider_effect_pending,
@@ -20,6 +23,7 @@ from codey.runtime.effects.effect_records import (
     SENT_STATE_NOT_SENT,
     SENT_STATE_SETTLED,
     SETTLEMENT_STATUS_ERROR,
+    RuntimeEffectError,
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
     effect_intent_entry,
@@ -84,8 +88,14 @@ def build_provider_begin_rows(
     driver: str = "",
     delivery_batch_id: str = "",
     supersede_effect_id: str = "",
+    counters: RuntimeExecutionCounters | None = None,
+    expected_counters: RuntimeExecutionCounters | None = None,
 ) -> tuple[tuple[dict[str, object], ...], RuntimeEffectIntent]:
     state = require_open_view(projection, view)
+    if counters is not None:
+        if state.counters != expected_counters:
+            raise RuntimeEffectError("provider request counters changed before admission")
+        state = replace(state, counters=admit_request_counters(state.counters, counters))
     prepared = prepare_intent(session_id, run_id, intent)
     if delivery_batch_id and prepared.delivery_batch_id != delivery_batch_id:
         from dataclasses import replace as _replace
