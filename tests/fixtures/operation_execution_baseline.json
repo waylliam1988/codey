@@ -1,0 +1,1102 @@
+{
+  "baseline_commit": "1e3ea09995faa87e80224acf58e1e648ab1431e9",
+  "python": "3.12.8",
+  "repeats": 3,
+  "cases": {
+    "text_read_done": {
+      "trace": [
+        {
+          "event": "send",
+          "reply": "read_file",
+          "tools": [],
+          "call_ids": []
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": ""
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        },
+        {
+          "event": "send",
+          "reply": "done",
+          "tools": [],
+          "call_ids": []
+        },
+        {
+          "event": "boundary",
+          "kind": "final"
+        }
+      ],
+      "stop_reason": "done",
+      "turns": 2,
+      "completed": true,
+      "provider_calls": 2,
+      "tool_executions": 1,
+      "tool_receipts": 1,
+      "pending_effects": [],
+      "history_kinds": [
+        "user_message"
+      ],
+      "metrics": {
+        "commits": 6,
+        "elapsed_seconds": 0.020475000001169974,
+        "checkpoint_bytes": 2078
+      }
+    },
+    "text_protocol_repair": {
+      "trace": [
+        {
+          "event": "send",
+          "reply": "unknown_tool",
+          "tools": [],
+          "call_ids": []
+        },
+        {
+          "event": "send",
+          "reply": "done",
+          "tools": [],
+          "call_ids": []
+        },
+        {
+          "event": "boundary",
+          "kind": "final"
+        }
+      ],
+      "stop_reason": "done",
+      "turns": 2,
+      "completed": true,
+      "provider_calls": 2,
+      "tool_executions": 0,
+      "tool_receipts": 0,
+      "pending_effects": [],
+      "history_kinds": [
+        "user_message"
+      ],
+      "metrics": {
+        "commits": 4,
+        "elapsed_seconds": 0.010729300000093644,
+        "checkpoint_bytes": 1141
+      }
+    },
+    "text_question": {
+      "trace": [
+        {
+          "event": "send",
+          "reply": "ask_user",
+          "tools": [],
+          "call_ids": []
+        },
+        {
+          "event": "question",
+          "id": "question_a10a01707b113e1098b4725b"
+        }
+      ],
+      "stop_reason": "question",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 1,
+      "tool_executions": 0,
+      "tool_receipts": 0,
+      "pending_effects": [
+        "provider_send"
+      ],
+      "history_kinds": [
+        "user_message"
+      ],
+      "metrics": {
+        "commits": 1,
+        "elapsed_seconds": 0.0038300000014714897,
+        "checkpoint_bytes": 1180
+      }
+    },
+    "text_approval": {
+      "trace": [
+        {
+          "event": "send",
+          "reply": "shell",
+          "tools": [],
+          "call_ids": []
+        },
+        {
+          "event": "approval",
+          "call_id": "",
+          "turn": 1,
+          "tool_index": 0,
+          "command": "echo trace-approval"
+        },
+        {
+          "event": "boundary",
+          "kind": "approval"
+        }
+      ],
+      "stop_reason": "approval",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 1,
+      "tool_executions": 0,
+      "tool_receipts": 0,
+      "pending_effects": [
+        "tool_call"
+      ],
+      "history_kinds": [
+        "user_message"
+      ],
+      "metrics": {
+        "commits": 3,
+        "elapsed_seconds": 0.00874630000180332,
+        "checkpoint_bytes": 2058
+      }
+    },
+    "text_cancel_after_response": {
+      "trace": [
+        {
+          "event": "send",
+          "reply": "read_file",
+          "tools": [],
+          "call_ids": []
+        }
+      ],
+      "stop_reason": "stopped",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 1,
+      "tool_executions": 0,
+      "tool_receipts": 0,
+      "pending_effects": [
+        "provider_send"
+      ],
+      "history_kinds": [
+        "user_message"
+      ],
+      "metrics": {
+        "commits": 1,
+        "elapsed_seconds": 0.0036217000015312806,
+        "checkpoint_bytes": 1180
+      }
+    },
+    "text_cancel_after_tool": {
+      "trace": [
+        {
+          "event": "send",
+          "reply": "read_file",
+          "tools": [],
+          "call_ids": []
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": ""
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        }
+      ],
+      "stop_reason": "stopped",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 1,
+      "tool_executions": 1,
+      "tool_receipts": 1,
+      "pending_effects": [],
+      "history_kinds": [
+        "user_message"
+      ],
+      "metrics": {
+        "commits": 4,
+        "elapsed_seconds": 0.01219199999832199,
+        "checkpoint_bytes": 1984
+      }
+    },
+    "text_no_progress": {
+      "trace": [
+        {
+          "event": "send",
+          "reply": "read_file",
+          "tools": [],
+          "call_ids": []
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": ""
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        },
+        {
+          "event": "send",
+          "reply": "read_file",
+          "tools": [],
+          "call_ids": []
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": ""
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        },
+        {
+          "event": "send",
+          "reply": "read_file",
+          "tools": [],
+          "call_ids": []
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": ""
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        },
+        {
+          "event": "boundary",
+          "kind": "settle"
+        }
+      ],
+      "stop_reason": "no_progress",
+      "turns": 3,
+      "completed": false,
+      "provider_calls": 3,
+      "tool_executions": 3,
+      "tool_receipts": 3,
+      "pending_effects": [],
+      "history_kinds": [
+        "user_message"
+      ],
+      "metrics": {
+        "commits": 13,
+        "elapsed_seconds": 0.049256800000875955,
+        "checkpoint_bytes": 3858
+      }
+    },
+    "native_read_done": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "read_file",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": "call-1"
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        },
+        {
+          "event": "send_tool_results",
+          "reply": "done",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": [
+            "call-1"
+          ]
+        },
+        {
+          "event": "acknowledge",
+          "call_ids": [
+            "call-2"
+          ],
+          "errors": [
+            false
+          ]
+        },
+        {
+          "event": "boundary",
+          "kind": "final"
+        }
+      ],
+      "stop_reason": "done",
+      "turns": 2,
+      "completed": true,
+      "provider_calls": 3,
+      "tool_executions": 1,
+      "tool_receipts": 1,
+      "pending_effects": [],
+      "history_kinds": [
+        "user_message",
+        "tool_result",
+        "tool_call",
+        "tool_call"
+      ],
+      "metrics": {
+        "commits": 8,
+        "elapsed_seconds": 0.024892000001273118,
+        "checkpoint_bytes": 2078
+      }
+    },
+    "native_protocol_repair": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "unknown_tool",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "send_tool_results",
+          "reply": "done",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": [
+            "call-1"
+          ]
+        },
+        {
+          "event": "acknowledge",
+          "call_ids": [
+            "call-2"
+          ],
+          "errors": [
+            false
+          ]
+        },
+        {
+          "event": "boundary",
+          "kind": "final"
+        }
+      ],
+      "stop_reason": "done",
+      "turns": 2,
+      "completed": true,
+      "provider_calls": 3,
+      "tool_executions": 0,
+      "tool_receipts": 0,
+      "pending_effects": [],
+      "history_kinds": [
+        "user_message",
+        "tool_call",
+        "tool_call"
+      ],
+      "metrics": {
+        "commits": 6,
+        "elapsed_seconds": 0.013893300001655007,
+        "checkpoint_bytes": 1141
+      }
+    },
+    "native_question": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "ask_user",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "acknowledge",
+          "call_ids": [
+            "call-1"
+          ],
+          "errors": [
+            false
+          ]
+        },
+        {
+          "event": "question",
+          "id": "question_a10a01707b113e1098b4725b"
+        }
+      ],
+      "stop_reason": "question",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 2,
+      "tool_executions": 0,
+      "tool_receipts": 0,
+      "pending_effects": [
+        "provider_send"
+      ],
+      "history_kinds": [
+        "user_message",
+        "tool_call"
+      ],
+      "metrics": {
+        "commits": 3,
+        "elapsed_seconds": 0.006340500000078464,
+        "checkpoint_bytes": 1180
+      }
+    },
+    "native_approval": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "shell",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result",
+            "shell"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "approval",
+          "call_id": "call-1",
+          "turn": 1,
+          "tool_index": 0,
+          "command": "echo trace-approval"
+        },
+        {
+          "event": "boundary",
+          "kind": "approval"
+        }
+      ],
+      "stop_reason": "approval",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 1,
+      "tool_executions": 0,
+      "tool_receipts": 0,
+      "pending_effects": [
+        "tool_call"
+      ],
+      "history_kinds": [
+        "user_message",
+        "tool_call"
+      ],
+      "metrics": {
+        "commits": 3,
+        "elapsed_seconds": 0.008558100002119318,
+        "checkpoint_bytes": 2058
+      }
+    },
+    "native_cancel_after_response": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "read_file",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "acknowledge",
+          "call_ids": [
+            "call-1"
+          ],
+          "errors": [
+            true
+          ]
+        }
+      ],
+      "stop_reason": "stopped",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 2,
+      "tool_executions": 0,
+      "tool_receipts": 0,
+      "pending_effects": [
+        "provider_send"
+      ],
+      "history_kinds": [
+        "user_message",
+        "tool_call"
+      ],
+      "metrics": {
+        "commits": 3,
+        "elapsed_seconds": 0.006182199998875149,
+        "checkpoint_bytes": 1180
+      }
+    },
+    "native_cancel_after_tool": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "read_file",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": "call-1"
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        },
+        {
+          "event": "acknowledge",
+          "call_ids": [
+            "call-1"
+          ],
+          "errors": [
+            false
+          ]
+        }
+      ],
+      "stop_reason": "stopped",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 2,
+      "tool_executions": 1,
+      "tool_receipts": 1,
+      "pending_effects": [
+        "provider_send"
+      ],
+      "history_kinds": [
+        "user_message",
+        "tool_result",
+        "tool_call"
+      ],
+      "metrics": {
+        "commits": 5,
+        "elapsed_seconds": 0.01428210000085528,
+        "checkpoint_bytes": 2098
+      }
+    },
+    "native_no_progress": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "read_file",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": "call-1"
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        },
+        {
+          "event": "send_tool_results",
+          "reply": "read_file",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": [
+            "call-1"
+          ]
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": "call-2"
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        },
+        {
+          "event": "send_tool_results",
+          "reply": "read_file",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": [
+            "call-2"
+          ]
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": "call-3"
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        },
+        {
+          "event": "acknowledge",
+          "call_ids": [
+            "call-3"
+          ],
+          "errors": [
+            false
+          ]
+        },
+        {
+          "event": "boundary",
+          "kind": "settle"
+        }
+      ],
+      "stop_reason": "no_progress",
+      "turns": 3,
+      "completed": false,
+      "provider_calls": 4,
+      "tool_executions": 3,
+      "tool_receipts": 3,
+      "pending_effects": [],
+      "history_kinds": [
+        "user_message",
+        "tool_result",
+        "tool_call",
+        "tool_result",
+        "tool_call",
+        "tool_result",
+        "tool_call"
+      ],
+      "metrics": {
+        "commits": 14,
+        "elapsed_seconds": 0.05779139999867766,
+        "checkpoint_bytes": 3957
+      }
+    },
+    "native_length_once": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "output_limit",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "send_turn",
+          "reply": "done",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "acknowledge",
+          "call_ids": [
+            "call-2"
+          ],
+          "errors": [
+            false
+          ]
+        },
+        {
+          "event": "boundary",
+          "kind": "final"
+        }
+      ],
+      "stop_reason": "done",
+      "turns": 2,
+      "completed": true,
+      "provider_calls": 3,
+      "tool_executions": 0,
+      "tool_receipts": 0,
+      "pending_effects": [],
+      "history_kinds": [
+        "user_message",
+        "tool_call"
+      ],
+      "metrics": {
+        "commits": 6,
+        "elapsed_seconds": 0.013826400001562433,
+        "checkpoint_bytes": 1141
+      }
+    },
+    "native_length_twice": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "output_limit",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "send_turn",
+          "reply": "output_limit",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        }
+      ],
+      "stop_reason": "provider_failure",
+      "turns": 2,
+      "completed": false,
+      "provider_calls": 2,
+      "tool_executions": 0,
+      "tool_receipts": 0,
+      "pending_effects": [
+        "provider_send"
+      ],
+      "history_kinds": [
+        "user_message"
+      ],
+      "metrics": {
+        "commits": 3,
+        "elapsed_seconds": 0.008421399998042034,
+        "checkpoint_bytes": 1180
+      }
+    },
+    "native_budget_close": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "read_file",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": "call-1"
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        },
+        {
+          "event": "acknowledge",
+          "call_ids": [
+            "call-1"
+          ],
+          "errors": [
+            false
+          ]
+        },
+        {
+          "event": "acknowledge",
+          "call_ids": [
+            "closing-1"
+          ],
+          "errors": [
+            true
+          ]
+        },
+        {
+          "event": "acknowledge",
+          "call_ids": [
+            "closing-0"
+          ],
+          "errors": [
+            true
+          ]
+        },
+        {
+          "event": "boundary",
+          "kind": "settle"
+        }
+      ],
+      "stop_reason": "max_turns",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 4,
+      "tool_executions": 1,
+      "tool_receipts": 1,
+      "pending_effects": [],
+      "history_kinds": [
+        "user_message",
+        "tool_result",
+        "tool_call",
+        "tool_call",
+        "tool_call"
+      ],
+      "metrics": {
+        "commits": 10,
+        "elapsed_seconds": 0.02791810000053374,
+        "checkpoint_bytes": 2079
+      }
+    },
+    "native_fault_response_returned": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "read_file",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        }
+      ],
+      "stop_reason": "interrupted",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 1,
+      "tool_executions": 0,
+      "tool_receipts": 0,
+      "pending_effects": [
+        "provider_send"
+      ],
+      "history_kinds": [
+        "user_message"
+      ],
+      "metrics": {
+        "commits": 1,
+        "elapsed_seconds": 0.0035797999989881646,
+        "checkpoint_bytes": 1180
+      }
+    },
+    "native_fault_tool_started": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "read_file",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": "call-1"
+        }
+      ],
+      "stop_reason": "interrupted",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 1,
+      "tool_executions": 1,
+      "tool_receipts": 0,
+      "pending_effects": [
+        "provider_send",
+        "tool_call"
+      ],
+      "history_kinds": [
+        "user_message"
+      ],
+      "metrics": {
+        "commits": 2,
+        "elapsed_seconds": 0.007089300001098309,
+        "checkpoint_bytes": 2038
+      }
+    },
+    "native_fault_before_post_tools": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "read_file",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": "call-1"
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        }
+      ],
+      "stop_reason": "interrupted",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 1,
+      "tool_executions": 1,
+      "tool_receipts": 1,
+      "pending_effects": [
+        "provider_send"
+      ],
+      "history_kinds": [
+        "user_message",
+        "tool_result"
+      ],
+      "metrics": {
+        "commits": 3,
+        "elapsed_seconds": 0.009649200001149438,
+        "checkpoint_bytes": 2003
+      }
+    },
+    "native_fault_after_post_tools": {
+      "trace": [
+        {
+          "event": "send_turn",
+          "reply": "read_file",
+          "tools": [
+            "ask_user",
+            "codemode",
+            "done",
+            "find_references",
+            "grep",
+            "list_dir",
+            "read_file",
+            "read_tool_result"
+          ],
+          "call_ids": []
+        },
+        {
+          "event": "execute",
+          "name": "read_file",
+          "call_id": "call-1"
+        },
+        {
+          "event": "boundary",
+          "kind": "post_tools"
+        }
+      ],
+      "stop_reason": "interrupted",
+      "turns": 1,
+      "completed": false,
+      "provider_calls": 1,
+      "tool_executions": 1,
+      "tool_receipts": 1,
+      "pending_effects": [],
+      "history_kinds": [
+        "user_message",
+        "tool_result",
+        "tool_call"
+      ],
+      "metrics": {
+        "commits": 4,
+        "elapsed_seconds": 0.011839299997518538,
+        "checkpoint_bytes": 1984
+      }
+    }
+  }
+}
