@@ -115,3 +115,62 @@ git diff --check 通过。没有运行全量 pytest。
 
 仍未宣称阶段二或后续阶段全部验收：最后一项工具回执提交后、进度归约提交前的恢复，
 必须由统一 driver 识别未完成归约并补交；不能在旧恢复入口另添执行循环来掩盖此窗口。
+
+## 阶段三进展：冻结请求与显式 provider 动作
+
+operation schema 4 增加 `provider_request_ready`，没有独立 Kernel phase。
+`request_ref` 指向已有 managed output 存储中的一份冻结请求：在外部 intent 接纳前，
+仅靠 effect 还无法表达这份待发送工作，因此执行位置必须保留此引用。接纳后，
+原 provider effect 的 `request_ref` 接替引用，operation 随阶段前进清除请求引用。
+effect intent schema 2 只增加该引用，原 version 1 按原格式解码，不改写已有 effect 身份。
+
+冻结请求由 task 拥有；原始回复仍由已接纳的 effect 拥有。不先制造一个 effect 来满足
+artifact 外键，也不建立第二张动作账本。冻结内容中的 intent 是待接纳动作的定义，
+只有现有 effect 表中的 intent 才表示已经接纳。正文先原子落盘，再在现有 durable
+事务内登记 artifact 和 operation 引用；失败前留下的未登记文件不成为执行事实。
+
+`operations/kernel_driver.py` 接替 provider wrapper 原来的接纳、调用和结果提交职责。
+正常请求和恢复到冻结请求都由现有 reducer 选择同一组明确动作：
+
+```text
+provider_request_ready
+  → 必要时 CommitGenerationBoundary(before_provider_request)
+  → SubmitProviderRequest
+  → provider_effect_pending
+  → 保存原始回复
+  → provider_response_ready
+```
+
+该内部边界只关闭上一代，不放置用户 submission。需要关闭上一代时，operation
+暂时保留其原 response_ref；结算后只清除该旧引用，不能丢掉下一请求。请求的稳定
+effect 身份、原调用方式、参数、声明、窗口和预算接纳条件都随冻结内容恢复。
+恢复不会用当前工具注册表替换请求声明；原工具执行继续使用已有快照校验机制。
+
+只有确实新接纳的调用方拿到外部执行权。接纳成功但回执丢失时，可以识别原 intent，
+不会创建新 effect 或再次请求；没有可靠回复的原 intent 继续按未知规则处理。
+外部调用后的 CAS 重试仅重提结果，不包含 provider 调用。
+
+已删除 `KernelRecordedProvider._send` 隐含结算上一代的代码、内存 send_index，
+以及 `defer_generation_settlement` 开关和立即结算成功回复的另一条路径。
+所有成功回复均先保存，业务结算由明确边界负责。恢复装载器遇到待发送请求时，
+只转交原请求，随后由同一 provider driver 接纳和执行。
+
+真实 SQLite 子进程退出覆盖首次冻结、后续请求冻结、上一代刚结算、intent 刚接纳、
+回复刚保存五个边界，并重复恢复两次。另验证丢失提交确认、损坏请求、冻结后的取消、
+原生 bound 调用参数/声明/窗口，以及内部边界不会提前放置插话。
+
+对照 `fca2f35d` 的不可变代码副本，同机串行测量 21 条轨迹：请求、工具执行、回执、
+轮数、历史和停止结果均未变化。三次测量的中位数仅作本机诊断：
+
+| 场景 | 提交次数（前→后） | 耗时秒（前→后） | 最终 checkpoint 字节 |
+|---|---:|---:|---:|
+| 文本 read→done | 9→11 | 0.153→0.170 | 2489→2489 |
+| 原生 read→done | 12→15 | 0.220→0.249 | 2489→2489 |
+| 原生协议修复 | 9→12 | 0.209→0.222 | 1316→1316 |
+
+每个 provider 动作多一次冻结提交，换取 intent 前与上一代结算之间的可恢复位置。
+这些数据不代替最终性能验收，也不代表完成 pi/DeepSeek 的等价故障比较。
+
+本阶段仍未完成整个主链迁移：旧 task loop、控制分支、恢复层直接执行工具和外层
+生命周期选择尚需移交统一 driver。最后一项工具回执与进度归约之间的故障窗口、
+审批取消收尾及输出/历史的物理去重仍保留为未验收事项。

@@ -31,7 +31,7 @@ def runtime(tmp_path, *, sqlite=False):
     mutations.mark_writer_running("s", "r", provider_id="local")
     outputs = ManagedOutputStore(tmp_path)
     sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local", durable=durable,
-                            managed_outputs=outputs, defer_generation_settlement=True)
+                            managed_outputs=outputs)
     return durable, mutations, outputs, sink
 
 
@@ -59,7 +59,7 @@ def test_receiving_response_does_not_place_history_or_settle_generation(tmp_path
         assert decode_reply(read_provider_artifact(outputs, artifact, kind=RESPONSE_KIND,
             session_id="s", run_id="r", effect_id=effect.effect_id)) == original
         sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local", durable=durable,
-                                managed_outputs=outputs, defer_generation_settlement=True)
+                                managed_outputs=outputs)
         pending = sink.pending_provider_settlement()
         assert pending is not None and pending[0].effect_id == effect.effect_id
         assert sink.pending_provider_settlement() == pending
@@ -214,7 +214,7 @@ raise AssertionError('fault did not exit')
         assert (tmp_path / "sent").read_text(encoding="utf-8") == "once"
         assert len(durable.effects("r")) == 1
         sink = KernelEffectSink(RuntimeMutationLine(durable=durable), session_id="s", run_id="r", provider_id="local",
-            durable=durable, managed_outputs=ManagedOutputStore(tmp_path), defer_generation_settlement=True)
+            durable=durable, managed_outputs=ManagedOutputStore(tmp_path))
         assert (sink.pending_provider_settlement() is not None) == received
         assert durable.entries("s")[-1].kind == "user_message"
         assert (operation_from_checkpoint(durable.task("r"), "s").response_ref != "") == received
@@ -267,7 +267,7 @@ KernelRecordedProvider(Provider(), sink).send('inspect')
     line = RuntimeMutationLine(durable=durable)
     line.mark_writer_running("s", "r", provider_id="local")
     sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable,
-        managed_outputs=ManagedOutputStore(tmp_path), defer_generation_settlement=True)
+        managed_outputs=ManagedOutputStore(tmp_path))
     order = []
 
     class Provider:

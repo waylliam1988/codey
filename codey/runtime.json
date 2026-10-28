@@ -201,6 +201,7 @@
     "codey/operations/generation_boundary.py",
     "codey/operations/ghost_context.py",
     "codey/operations/ghost_post_turn.py",
+    "codey/operations/kernel_driver.py",
     "codey/operations/kernel_errors.py",
     "codey/operations/kernel_events.py",
     "codey/operations/kernel_execution.py",

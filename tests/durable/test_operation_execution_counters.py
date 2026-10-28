@@ -31,7 +31,7 @@ def _reopen(path):
     durable.claim_task("r")
     line = RuntimeMutationLine(durable=durable)
     sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable,
-        managed_outputs=ManagedOutputStore(path), defer_generation_settlement=True)
+        managed_outputs=ManagedOutputStore(path))
     return durable, line, sink
 
 

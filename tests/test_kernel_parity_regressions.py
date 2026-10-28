@@ -290,23 +290,15 @@ def test_run_result_never_reports_an_earlier_green_after_a_later_edit():
 
 
 @pytest.mark.parametrize("wrappers", ["conversation", "recorded", "both"])
-def test_explicit_provider_normalizer_survives_production_wrappers(wrappers):
+def test_explicit_provider_normalizer_survives_production_wrappers(wrappers, tmp_path):
     from codey.operations.kernel_transport import call_provider_send
     from codey.operations.provider_session import ConversationProvider
     from codey.operations.task_effects import KernelRecordedProvider
     from codey.providers.local_response_codec import normalize_local_reply
+    from tests.durable.test_provider_response_receipts import runtime
 
     normalized = []
-    mutations = SimpleNamespace(begin_provider_effect=lambda *_a, **_k: None,
-                                settle_provider_effect=lambda *_a, **_k: None)
-    sink = SimpleNamespace(send_index=0, run_id="r", session_id="s", phase="writer", provider_id="local",
-                           delivery_batch_id="", mutations=mutations,
-                               durable=None,
-                           pending_provider_settlement=lambda: None,
-                           clear_provider_settlement=lambda: None,
-                           defer_generation_settlement=False,
-                           _record_durable_intent=lambda *_a, **_k: None,
-                           _settle_durable=lambda *_a, **_k: None)
+    durable, _, _, sink = runtime(tmp_path)
 
     def normalize(reply):
         normalized.append(reply)
@@ -318,7 +310,10 @@ def test_explicit_provider_normalizer_survives_production_wrappers(wrappers):
         provider = KernelRecordedProvider(provider, sink)
     if wrappers in {"conversation", "both"}:
         provider = ConversationProvider(provider, SimpleNamespace(record_exchange=lambda *_a: None))
-    reply = call_provider_send(provider, "read")
+    try:
+        reply = call_provider_send(provider, "read")
+    finally:
+        durable.close()
     assert isinstance(reply, AssistantTurn)
     assert reply.tool_calls[0].arguments == {"path": "a.py"}
     assert len(normalized) == 1

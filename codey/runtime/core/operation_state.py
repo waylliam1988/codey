@@ -27,11 +27,12 @@ from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_projection import RuntimeProjection
 from codey.storage.local_store import project_key, session_key
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 KIND = "runtime_operation_state"
 
 LEAF_ACCEPTED = "accepted"
 LEAF_WRITER_RUNNING = "writer_running"
+LEAF_PROVIDER_REQUEST_READY = "provider_request_ready"
 LEAF_PROVIDER_EFFECT_PENDING = "provider_effect_pending"
 LEAF_PROVIDER_RESPONSE_READY = "provider_response_ready"
 LEAF_TOOL_EFFECT_PENDING = "tool_effect_pending"
@@ -50,6 +51,7 @@ DRIVERS = frozenset({DRIVER_WRITER, DRIVER_REPAIR})
 LEAVES = frozenset({
     LEAF_ACCEPTED,
     LEAF_WRITER_RUNNING,
+    LEAF_PROVIDER_REQUEST_READY,
     LEAF_PROVIDER_EFFECT_PENDING,
     LEAF_PROVIDER_RESPONSE_READY,
     LEAF_TOOL_EFFECT_PENDING,
@@ -63,6 +65,7 @@ LEAVES = frozenset({
 })
 
 _PENDING_LEAVES = frozenset({
+    LEAF_PROVIDER_REQUEST_READY,
     LEAF_PROVIDER_EFFECT_PENDING,
     LEAF_PROVIDER_RESPONSE_READY,
     LEAF_TOOL_EFFECT_PENDING,
@@ -72,6 +75,7 @@ _PENDING_LEAVES = frozenset({
 _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     LEAF_ACCEPTED: frozenset({LEAF_WRITER_RUNNING, LEAF_TERMINAL}),
     LEAF_WRITER_RUNNING: frozenset({
+        LEAF_PROVIDER_REQUEST_READY,
         LEAF_PROVIDER_EFFECT_PENDING,
         LEAF_PROVIDER_RESPONSE_READY,
         LEAF_TOOL_EFFECT_PENDING,
@@ -88,6 +92,7 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
         LEAF_TERMINAL,
     }),
     LEAF_PROVIDER_RESPONSE_READY: frozenset({
+        LEAF_PROVIDER_REQUEST_READY,
         LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING, LEAF_TOOL_EFFECT_PENDING,
         LEAF_TOOL_DELIVERY_PENDING, LEAF_TERMINAL,
     }),
@@ -97,6 +102,7 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
         LEAF_TERMINAL,
     }),
     LEAF_TOOL_DELIVERY_PENDING: frozenset({
+        LEAF_PROVIDER_REQUEST_READY,
         LEAF_PROVIDER_EFFECT_PENDING,
         LEAF_WRITER_RUNNING,
         LEAF_REPAIR_RUNNING,
@@ -109,6 +115,7 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     }),
     LEAF_REPAIR_CONTEXT_ADMITTED: frozenset({LEAF_REPAIR_RUNNING, LEAF_TERMINAL}),
     LEAF_REPAIR_RUNNING: frozenset({
+        LEAF_PROVIDER_REQUEST_READY,
         LEAF_PROVIDER_EFFECT_PENDING,
         LEAF_PROVIDER_RESPONSE_READY,
         LEAF_TOOL_EFFECT_PENDING,
@@ -118,6 +125,7 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     }),
     LEAF_REPAIR_SETTLED: frozenset({LEAF_REPAIR_RUNNING, LEAF_COMPLETION_PROOF_RECORDED, LEAF_TERMINAL}),
     LEAF_TERMINAL: frozenset({LEAF_TERMINAL}),
+    LEAF_PROVIDER_REQUEST_READY: frozenset({LEAF_PROVIDER_EFFECT_PENDING}),
 }
 
 MAX_TEXT_CHARS = 80
@@ -154,7 +162,7 @@ _KNOWN_PAYLOAD_KEYS = frozenset({
     "model_selection", "reviewer_selection", "final_delivery",
     "writer_attempt", "candidate_validation_attempted", "turns_used", "stop_reason",
     "completion_proof_ref", "completion_proof_status", "repair_rounds",
-    "repair_context_ref", "blocked_reason", "driver", "turn", "tool_index", "terminal", "response_ref", "counters",
+    "repair_context_ref", "blocked_reason", "driver", "turn", "tool_index", "terminal", "response_ref", "request_ref", "counters",
 })
 _KNOWN_TERMINAL_KEYS = frozenset(
     {
@@ -252,6 +260,7 @@ class RuntimeOperationState:
     turn: int = 0
     tool_index: int = 0
     response_ref: str = ""
+    request_ref: str = ""
     counters: RuntimeExecutionCounters = field(default_factory=RuntimeExecutionCounters)
     terminal: RuntimeOperationTerminal | None = None
 
@@ -289,6 +298,8 @@ class RuntimeOperationState:
             payload["final_delivery"] = _parse_final_delivery(self.final_delivery)
         if self.response_ref:
             payload["response_ref"] = self.response_ref
+        if self.request_ref:
+            payload["request_ref"] = self.request_ref
         if self.model_selection:
             payload["model_selection"] = _parse_model_selection(self.model_selection)
         if self.reviewer_selection:
@@ -313,8 +324,12 @@ class RuntimeOperationState:
                 raise RuntimeOperationTransitionError("runtime operation state carries unknown keys")
             session_id, run_id, operation_id, lane, leaf = _parse_operation_identity(payload)
             response_ref = _text(payload.get("response_ref", ""), "response_ref", allow_empty=True)
-            if bool(response_ref) != (leaf == LEAF_PROVIDER_RESPONSE_READY):
+            if ((leaf == LEAF_PROVIDER_RESPONSE_READY and not response_ref)
+                    or (response_ref and leaf not in {LEAF_PROVIDER_RESPONSE_READY, LEAF_PROVIDER_REQUEST_READY})):
                 raise RuntimeOperationTransitionError("response reference does not match operation leaf")
+            request_ref = _text(payload.get("request_ref", ""), "request_ref", allow_empty=True)
+            if bool(request_ref) != (leaf == LEAF_PROVIDER_REQUEST_READY):
+                raise RuntimeOperationTransitionError("request reference does not match operation leaf")
             turn_budget, max_repair_rounds, turns_used, repair_rounds, turn, tool_index = (
                 _parse_operation_counts(payload)
             )
@@ -394,6 +409,7 @@ class RuntimeOperationState:
                 turn=turn,
                 tool_index=tool_index,
                 response_ref=response_ref,
+                request_ref=request_ref,
                 counters=RuntimeExecutionCounters.from_payload(payload.get("counters")),
                 terminal=terminal,
             )
@@ -718,7 +734,7 @@ def mark_writer_running(
 ) -> RuntimeOperationState:
     provider = _text(provider_id, "provider_id")
     attempt = state.writer_attempt if writer_attempt is None else _count(writer_attempt, "writer_attempt", minimum=1)
-    if state.leaf in {LEAF_PROVIDER_EFFECT_PENDING, LEAF_PROVIDER_RESPONSE_READY, LEAF_TOOL_EFFECT_PENDING}:
+    if state.leaf in {LEAF_PROVIDER_REQUEST_READY, LEAF_PROVIDER_EFFECT_PENDING, LEAF_PROVIDER_RESPONSE_READY, LEAF_TOOL_EFFECT_PENDING}:
         if state.driver != DRIVER_WRITER or state.provider_id != provider or state.writer_attempt != attempt:
             raise RuntimeOperationTransitionError("pending writer identity cannot be rebound")
         return state
@@ -791,6 +807,18 @@ def mark_writer_settled(
     )
 
 
+def mark_provider_request_ready(
+    state: RuntimeOperationState, *, request_ref: str, driver: str, turn: int,
+) -> RuntimeOperationState:
+    """Freeze outbound work before closing the preceding received generation."""
+    if driver not in DRIVERS:
+        raise RuntimeOperationTransitionError("prepared request requires a writer or repair identity")
+    return _transition(state, LEAF_PROVIDER_REQUEST_READY,
+        request_ref=_text(request_ref, "request_ref"), driver=driver,
+        turn=_count(turn, "turn"), tool_index=0,
+        response_ref=state.response_ref if state.leaf == LEAF_PROVIDER_RESPONSE_READY else "")
+
+
 def mark_provider_effect_pending(
     state: RuntimeOperationState,
     *,
@@ -817,6 +845,8 @@ def mark_provider_effect_settled(
     # final boundary. Tool intents can therefore be pending while the
     # provider effect is still unsettled. The effect projection proves which
     # provider record is being settled; preserve the tool delivery state here.
+    if state.leaf == LEAF_PROVIDER_REQUEST_READY:
+        return replace(state, response_ref="", updated_at=_now())
     if state.leaf in {LEAF_TOOL_EFFECT_PENDING, LEAF_TOOL_DELIVERY_PENDING}:
         return state
     if state.leaf in {LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING}:
@@ -1114,8 +1144,10 @@ def _transition(
         raise RuntimeOperationTransitionError(f"illegal transition {state.leaf} -> {next_leaf}")
     if state.blocked_reason and next_leaf != LEAF_TERMINAL:
         raise RuntimeOperationTransitionError("blocked verdict may only finish")
-    if next_leaf != LEAF_PROVIDER_RESPONSE_READY:
+    if next_leaf not in {LEAF_PROVIDER_RESPONSE_READY, LEAF_PROVIDER_REQUEST_READY}:
         updates.setdefault("response_ref", "")
+    if next_leaf != LEAF_PROVIDER_REQUEST_READY:
+        updates.setdefault("request_ref", "")
     if next_leaf not in _PENDING_LEAVES:
         updates.setdefault("driver", "")
         updates.setdefault("turn", 0)
@@ -1136,7 +1168,7 @@ def _validate_pending_leaf(
         return
     if driver not in DRIVERS:
         raise RuntimeOperationTransitionError("pending leaf requires driver")
-    if leaf in {LEAF_PROVIDER_EFFECT_PENDING, LEAF_PROVIDER_RESPONSE_READY} and tool_index:
+    if leaf in {LEAF_PROVIDER_REQUEST_READY, LEAF_PROVIDER_EFFECT_PENDING, LEAF_PROVIDER_RESPONSE_READY} and tool_index:
         raise RuntimeOperationTransitionError("provider pending cannot carry tool index")
 
 
@@ -1260,6 +1292,7 @@ __all__ = [
     "LEAF_ACCEPTED",
     "LEAF_COMPLETION_PROOF_RECORDED",
     "LEAF_PROVIDER_EFFECT_PENDING",
+    "LEAF_PROVIDER_REQUEST_READY",
     "LEAF_REPAIR_CONTEXT_ADMITTED",
     "LEAF_REPAIR_RUNNING",
     "LEAF_REPAIR_SETTLED",
@@ -1279,6 +1312,7 @@ __all__ = [
     "mark_completion_blocked",
     "mark_completion_proof_recorded",
     "mark_provider_effect_pending",
+    "mark_provider_request_ready",
     "mark_provider_effect_settled",
     "mark_repair_context_admitted",
     "mark_repair_running",

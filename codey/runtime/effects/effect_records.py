@@ -30,6 +30,7 @@ from codey.runtime.effects.replay_policy import (
 from codey.storage.local_store import session_key
 
 SCHEMA_VERSION = 1
+INTENT_SCHEMA_VERSION = 2
 EFFECT_KIND = "runtime_effect"
 
 RECORD_KIND_INTENT = "intent"
@@ -89,6 +90,7 @@ _INTENT_PAYLOAD_KEYS = frozenset({
     "call_id",
     "args_digest",
     "display_ref",
+    "request_ref",
     "delivery_batch_id",
     "parent_effect_id",
     "replay_class",
@@ -237,6 +239,7 @@ class RuntimeEffectIntent:
     call_id: str = ""
     args_digest: str = ""
     display_ref: str = ""
+    request_ref: str = ""
     # Durable recovery uses the batch identity to avoid replaying one safe
     # effect from a mixed batch that also contains an unsafe effect.
     delivery_batch_id: str = ""
@@ -245,11 +248,14 @@ class RuntimeEffectIntent:
     replay_args: dict[str, object] | None = None
     created_at: str = ""
     record_kind: str = RECORD_KIND_INTENT
-    schema_version: int = SCHEMA_VERSION
+    schema_version: int = INTENT_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if type(self.schema_version) is not int or self.schema_version != SCHEMA_VERSION:
+        if type(self.schema_version) is not int or self.schema_version not in {1, INTENT_SCHEMA_VERSION}:
             raise RuntimeEffectError(f"invalid schema_version: {self.schema_version}")
+        _require_bounded_str(self.request_ref, "request_ref", MAX_REF_CHARS, allow_empty=True)
+        if self.request_ref and (self.schema_version == 1 or self.effect_category != EFFECT_CATEGORY_PROVIDER_SEND):
+            raise RuntimeEffectError("request reference requires a version-2 provider intent")
         _require_bounded_str(self.effect_id, "effect_id", MAX_EFFECT_ID_CHARS)
         _require_bounded_str(self.session_id, "session_id", MAX_REF_CHARS)
         _require_bounded_str(self.run_id, "run_id", MAX_REF_CHARS)
@@ -312,6 +318,8 @@ class RuntimeEffectIntent:
         }
         if self.call_id:
             payload["call_id"] = self.call_id
+        if self.request_ref:
+            payload["request_ref"] = self.request_ref
         if self.delivery_batch_id:
             payload["delivery_batch_id"] = self.delivery_batch_id
         if self.parent_effect_id:
@@ -328,7 +336,7 @@ class RuntimeEffectIntent:
         if payload.get("effect_kind") != EFFECT_KIND or payload.get("record_kind") != RECORD_KIND_INTENT:
             raise RuntimeEffectError("invalid payload kind for RuntimeEffectIntent")
         version = payload.get("schema_version")
-        if type(version) is not int or version != SCHEMA_VERSION:
+        if type(version) is not int or version not in {1, INTENT_SCHEMA_VERSION}:
             raise RuntimeEffectError(f"unsupported schema version: {version}")
         effect_id = _require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS)
         _require_ref(payload, f"effect:{effect_id}")
@@ -358,13 +366,14 @@ class RuntimeEffectIntent:
             call_id=_require_bounded_str(payload.get("call_id") or "", "call_id", MAX_CALL_ID_CHARS, allow_empty=True),
             args_digest=_require_bounded_str(payload.get("args_digest") or "", "args_digest", MAX_ARGS_DIGEST_CHARS, allow_empty=True),
             display_ref=_require_bounded_str(payload.get("display_ref") or "", "display_ref", MAX_TEXT_CHARS, allow_empty=True),
+            request_ref=_require_bounded_str(payload.get("request_ref", ""), "request_ref", MAX_REF_CHARS, allow_empty=True),
             delivery_batch_id=_require_bounded_str(payload.get("delivery_batch_id") or "", "delivery_batch_id", MAX_REF_CHARS, allow_empty=True),
             parent_effect_id=_require_bounded_str(payload.get("parent_effect_id") or "", "parent_effect_id", MAX_EFFECT_ID_CHARS, allow_empty=True),
             replay_class=replay_class,
             replay_args=replay_args,
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
             record_kind=RECORD_KIND_INTENT,
-            schema_version=SCHEMA_VERSION,
+            schema_version=version,
         )
 
 

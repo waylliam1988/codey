@@ -49,7 +49,11 @@ def operation_from_checkpoint(task: TaskCheckpoint, session_id: str) -> RuntimeO
                           "completion_proof_recorded", "repair_context_admitted"}
         if payload.get("leaf") not in safe_positions or payload.get("stop_reason") in {"approval", "question"}:
             raise RuntimeOperationTransitionError("legacy execution counters are unavailable; migration cannot reset budgets")
-        payload = {**payload, "schema_version": 3, "counters": RuntimeExecutionCounters().to_payload()}
+        payload = {**payload, "schema_version": 4, "counters": RuntimeExecutionCounters().to_payload()}
+    if isinstance(payload, dict) and type(payload.get("schema_version")) is int and payload["schema_version"] == 3:
+        # Schema 4 only adds a prepared-request position. Existing schema-3
+        # positions and budgets keep their meaning; no execution is inferred.
+        payload = {**payload, "schema_version": 4}
     state = RuntimeOperationState.from_payload(payload)
     if state is None or state.run_id != task.task_id or state.session_id != session_id:
         raise RuntimeOperationTransitionError("invalid durable operation checkpoint")

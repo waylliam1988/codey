@@ -80,16 +80,19 @@ def write_provider_artifact(store: ManagedOutputStore, *, session_id: str, run_i
                             effect_id: str, kind: str, payload: object) -> ArtifactRecord:
     if kind not in {REQUEST_KIND, RESPONSE_KIND}:
         raise ValueError("unknown provider artifact kind")
-    envelope = {"schema_version": 1, "kind": kind, "effect_id": effect_id, "payload": payload}
+    # A request may be frozen before its external intent is admitted. Its
+    # task owns this one body; the later effect references it. Responses are
+    # still owned by the already-admitted effect.
+    prepared = kind == REQUEST_KIND
+    envelope = {"schema_version": 2 if prepared else 1, "kind": kind, "effect_id": effect_id, "payload": payload}
     ref = store.write_json_artifact(session_id=session_id, run_id=run_id, payload=envelope)
-    return store.json_artifact_record(ref, owner_task_id=run_id, owner_effect_id=effect_id,
+    return store.json_artifact_record(ref, owner_task_id=run_id, owner_effect_id=None if prepared else effect_id,
                                       metadata={"kind": kind})
 
 
 def read_provider_artifact(store: ManagedOutputStore, record: ArtifactRecord, *, kind: str,
                            session_id: str, run_id: str, effect_id: str) -> Any:
-    if (record.owner_task_id != run_id or record.owner_effect_id != effect_id
-            or record.metadata.get("kind") != kind):
+    if record.owner_task_id != run_id or record.metadata.get("kind") != kind:
         raise RuntimeEffectError("provider artifact ownership mismatch")
     raw_ref = thaw_json(record.metadata.get("ref"))
     if not isinstance(raw_ref, dict) or raw_ref.get("session_id") != session_id or raw_ref.get("run_id") != run_id:
@@ -99,10 +102,27 @@ def read_provider_artifact(store: ManagedOutputStore, record: ArtifactRecord, *,
         raise RuntimeEffectError("provider artifact digest reference mismatch")
     payload = store.read_json_artifact(ref)
     if (not isinstance(payload, dict) or set(payload) != {"schema_version", "kind", "effect_id", "payload"}
-            or type(payload["schema_version"]) is not int or payload["schema_version"] != 1
+            or type(payload["schema_version"]) is not int
+            or payload["schema_version"] not in ({1, 2} if kind == REQUEST_KIND else {1})
             or payload["kind"] != kind or payload["effect_id"] != effect_id):
         raise RuntimeEffectError("provider artifact envelope mismatch")
+    expected_owner = None if kind == REQUEST_KIND and payload["schema_version"] == 2 else effect_id
+    if record.owner_effect_id != expected_owner:
+        raise RuntimeEffectError("provider artifact ownership mismatch")
     return payload["payload"]
+
+
+def request_artifact_for_effect(durable: Any, effect: Any) -> ArtifactRecord:
+    """Resolve the explicit reference, or decode the version-1 ownership format."""
+    if effect.intent.request_ref:
+        return cast(ArtifactRecord, durable.artifact(effect.intent.request_ref))
+    if effect.intent.schema_version != 1:
+        raise RuntimeEffectError("provider intent has no frozen request reference")
+    requests = [artifact for artifact in durable.artifacts_for_effect(effect.intent.effect_id)
+                if artifact.metadata.get("kind") == REQUEST_KIND]
+    if len(requests) != 1:
+        raise RuntimeEffectError("legacy provider intent has no unique frozen request")
+    return cast(ArtifactRecord, requests[0])
 
 
 def snapshot_description(snapshot: Any) -> dict[str, object]:

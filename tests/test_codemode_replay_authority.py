@@ -275,7 +275,6 @@ def test_terminal_native_receipt_drain_settles_received_generation_before_writer
     from codey.providers.base import AssistantTurn, ProviderToolCall
 
     project, state, logdir, m, managed, revs, sink, session = fixture(tmp_path)
-    sink.defer_generation_settlement = True
     session.max_turns = 4 if ending == "no_progress" else 1
     monkeypatch.setenv("NATIVE_TOOLS", "1")
 

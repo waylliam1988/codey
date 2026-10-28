@@ -200,7 +200,6 @@ def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, An
             recovered_batch_id=str(getattr(frame, "recovered_tool_result_batch_id", "") or ""),
             managed_outputs=getattr(deps, "managed_outputs", None),
             durable=admitted_durable(deps.state, frame.run_id),
-            defer_generation_settlement=admitted_durable(deps.state, frame.run_id) is not None,
         )
         active_provider = KernelRecordedProvider(active_provider, intent_sink)
     if getattr(frame, "conversation", None) is not None:

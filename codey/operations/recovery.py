@@ -27,6 +27,7 @@ from codey.runtime.core.operation_reducer import (
     ACTION_REDELIVER_SETTLED_BATCH,
     ACTION_REPLAY_SAFE_TOOL_BATCH,
     ACTION_SETTLE_PROVIDER_UNKNOWN,
+    ACTION_SUBMIT_PROVIDER_REQUEST,
     ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS,
 )
 from codey.runtime.effects.effect_records import (
@@ -208,6 +209,12 @@ def _recover_pending_effects(
     )
     if terminal is not None:
         return terminal
+    if (durable_decision.kind == ACTION_SUBMIT_PROVIDER_REQUEST
+            or (durable_decision.kind == ACTION_COMMIT_GENERATION_BOUNDARY
+                and durable_decision.reason == "before_provider_request")):
+        # Loading must not execute a prepared request. Kernel startup enters
+        # the same driver used by normal sends, with the original invocation.
+        return ResumeRecoveryResult(ok=True)
     if durable_decision.kind == ACTION_COMMIT_GENERATION_BOUNDARY:
         try:
             from codey.operations.task_effects import KernelEffectSink
@@ -217,7 +224,7 @@ def _recover_pending_effects(
             task = durable.task(run_id)
             sink = KernelEffectSink(mutations, session_id=session_id, run_id=run_id,
                 provider_id=str(task.provider_snapshot.get("provider_id") or "local"),
-                durable=durable, managed_outputs=_managed_output_store(deps), defer_generation_settlement=True)
+                durable=durable, managed_outputs=_managed_output_store(deps))
             pending = sink.pending_provider_settlement()
             if pending is None:
                 raise ValueError("generation boundary has no reliable provider response")

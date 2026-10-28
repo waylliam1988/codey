@@ -70,7 +70,9 @@ from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent, aban
 from codey.runtime.log.session_view import load_session_view
 from codey.runtime.write.delivery_recovery import build_delivery_recovered_rows
 from codey.runtime.write.provider_effects import (
+    ProviderAdmission,
     build_provider_begin_rows,
+    build_provider_prepare_rows,
     build_provider_settle_rows,
 )
 from codey.runtime.write.tool_batches import (
@@ -379,6 +381,21 @@ class RuntimeMutationLine:
             abandoned_reason="operation_terminal",
         )
 
+    def prepare_provider_request(
+        self, session_id: str, run_id: str, *, expected: RuntimeOperationState,
+        artifact: ArtifactRecord, turn: int,
+    ) -> None:
+        if (artifact.owner_task_id != run_id or artifact.owner_effect_id is not None
+                or artifact.metadata.get("kind") != "provider_request"):
+            raise RuntimeEffectError("prepared provider request requires a task-owned artifact")
+
+        def mutation(projection: Any, entries: Any) -> Any:
+            view = load_session_view(entries, session_id=session_id, run_id=run_id)
+            return build_provider_prepare_rows(projection, view, expected=expected,
+                                                request_ref=artifact.handle, turn=turn)
+
+        self._mutate(session_id, run_id, mutation, artifacts=(artifact,))
+
     def begin_provider_effect(
         self,
         session_id: str,
@@ -392,7 +409,29 @@ class RuntimeMutationLine:
         counters: RuntimeExecutionCounters | None = None,
         expected_counters: RuntimeExecutionCounters | None = None,
     ) -> RuntimeEffectIntent:
-        committed: RuntimeEffectIntent | None = None
+        return self._admit_provider_effect(session_id, run_id, intent, driver=driver,
+            delivery_batch_id=delivery_batch_id, supersede_effect_id=supersede_effect_id,
+            artifacts=artifacts, counters=counters, expected_counters=expected_counters).intent
+
+    def admit_provider_request(
+        self, session_id: str, run_id: str, intent: RuntimeEffectIntent, *,
+        expected_counters: RuntimeExecutionCounters, counters: RuntimeExecutionCounters,
+    ) -> ProviderAdmission:
+        if not intent.request_ref:
+            raise RuntimeEffectError("provider request admission requires its frozen reference")
+        return self._admit_provider_effect(session_id, run_id, intent,
+            delivery_batch_id=intent.delivery_batch_id, expected_request_ref=intent.request_ref,
+            expected_counters=expected_counters, counters=counters)
+
+    def _admit_provider_effect(
+        self, session_id: str, run_id: str, intent: RuntimeEffectIntent, *,
+        driver: str = "", delivery_batch_id: str = "", supersede_effect_id: str = "",
+        artifacts: tuple[ArtifactRecord, ...] = (),
+        counters: RuntimeExecutionCounters | None = None,
+        expected_counters: RuntimeExecutionCounters | None = None,
+        expected_request_ref: str = "",
+    ) -> ProviderAdmission:
+        committed: ProviderAdmission | None = None
 
         def mutation(projection: Any, entries: Any) -> Any:
             nonlocal committed
@@ -408,8 +447,9 @@ class RuntimeMutationLine:
                 supersede_effect_id=supersede_effect_id,
                 counters=counters,
                 expected_counters=expected_counters,
+                expected_request_ref=expected_request_ref,
             )
-            committed = prepared
+            committed = ProviderAdmission(prepared, bool(rows))
             return rows
 
         self._mutate(session_id, run_id, mutation, artifacts=artifacts)

@@ -125,7 +125,7 @@ def observe_trace(
                           turn_budget=max_turns, max_repair_rounds=1, task_kind="project")
     line.mark_writer_running("trace-session", "trace-run", provider_id="scripted")
     sink = KernelEffectSink(line, session_id="trace-session", run_id="trace-run", provider_id="scripted",
-                            durable=durable, defer_generation_settlement=True,
+                            durable=durable,
                             managed_outputs=ManagedOutputStore(project / ".state"))
     provider = TraceProvider(steps, native=native, trace=trace, stop=stop,
                              cancel_after_reply=cancel_after_reply, close_steps=close_steps)

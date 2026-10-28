@@ -7,15 +7,18 @@ mutation line commits their rows atomically.
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
-from codey.runtime.core.operation_reducer import admit_request_counters
+from codey.runtime.core.operation_reducer import ACTION_FAIL_INVARIANT, admit_request_counters, next_runtime_action
 from codey.runtime.core.operation_state import (
+    LEAF_PROVIDER_REQUEST_READY,
+    RuntimeOperationState,
     RuntimeOperationTransitionError,
     mark_provider_effect_pending,
     mark_provider_effect_settled,
+    mark_provider_request_ready,
     operation_state_entry,
 )
 from codey.runtime.effects.effect_records import (
@@ -43,6 +46,35 @@ from codey.runtime.log.session_view import (
     driver_for_state,
     require_open_view,
 )
+
+
+@dataclass(frozen=True)
+class ProviderAdmission:
+    intent: RuntimeEffectIntent
+    newly_admitted: bool
+
+
+def build_provider_prepare_rows(
+    projection: Any, view: SessionView, *, expected: RuntimeOperationState,
+    request_ref: str, turn: int,
+) -> tuple[dict[str, object], ...]:
+    state = require_open_view(projection, view)
+    if state.leaf == LEAF_PROVIDER_REQUEST_READY and state.request_ref == request_ref:
+        return ()
+    if state != expected:
+        raise RuntimeEffectError("operation changed before request preparation")
+    decision = next_runtime_action(view)
+    if decision.kind == ACTION_FAIL_INVARIANT:
+        raise RuntimeEffectError(f"request preparation violates operation facts: {decision.reason}")
+    expected_turn = max((effect.intent.turn for effect in view.effects
+                         if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND), default=0) + 1
+    if turn != expected_turn:
+        raise RuntimeEffectError("prepared request must retain the next provider send identity")
+    if any(effect.settlement is None and effect.intent.effect_category != EFFECT_CATEGORY_PROVIDER_SEND
+           for effect in view.effects):
+        raise RuntimeEffectError("request preparation cannot bypass pending tools")
+    return (operation_state_entry(mark_provider_request_ready(state, request_ref=request_ref,
+                driver=driver_for_state(state), turn=turn)),)
 
 
 def _require_supersedable_not_sent(
@@ -90,13 +122,27 @@ def build_provider_begin_rows(
     supersede_effect_id: str = "",
     counters: RuntimeExecutionCounters | None = None,
     expected_counters: RuntimeExecutionCounters | None = None,
+    expected_request_ref: str = "",
 ) -> tuple[tuple[dict[str, object], ...], RuntimeEffectIntent]:
     state = require_open_view(projection, view)
+    prepared = prepare_intent(session_id, run_id, intent)
+    if expected_request_ref:
+        if prepared.request_ref != expected_request_ref:
+            raise RuntimeEffectError("provider admission has a different frozen request")
+        existing = next((effect for effect in view.effects if effect.intent.effect_id == prepared.effect_id), None)
+        if existing is not None:
+            if existing.intent != prepared:
+                raise RuntimeEffectError("prepared provider identity conflicts with the admitted effect")
+            return (), existing.intent
+        if (state.leaf != LEAF_PROVIDER_REQUEST_READY or state.request_ref != expected_request_ref
+                or state.response_ref or any(effect.settlement is None for effect in view.effects)
+                or prepared.turn != state.turn or prepared.provider_id != state.provider_id
+                or ((prepared.phase == "repair") != (state.driver == "repair"))):
+            raise RuntimeEffectError("provider admission requires its prepared request after the previous boundary")
     if counters is not None:
         if state.counters != expected_counters:
             raise RuntimeEffectError("provider request counters changed before admission")
         state = replace(state, counters=admit_request_counters(state.counters, counters))
-    prepared = prepare_intent(session_id, run_id, intent)
     if delivery_batch_id and prepared.delivery_batch_id != delivery_batch_id:
         from dataclasses import replace as _replace
 

@@ -17,8 +17,6 @@ from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
-    SENT_STATE_MAYBE_SENT,
-    SENT_STATE_NOT_SENT,
     SENT_STATE_SETTLED,
     SETTLEMENT_STATUS_ERROR,
     SETTLEMENT_STATUS_OK,
@@ -27,7 +25,6 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectSettlement,
     RuntimeEffectStore,
     compute_args_digest,
-    new_effect_id,
 )
 from codey.runtime.effects.replay_policy import ReplayClass, tool_replay_policy
 from codey.runtime.effects.safe_tool_replay import replay_args_for_tool_call
@@ -77,8 +74,7 @@ class KernelEffectSink:
                  recovered_batch_id: str = "",
                  managed_outputs: Any = None,
                  durable: Any = None,
-                 parent_effect_id: str = "",
-                 defer_generation_settlement: bool = False) -> None:
+                 parent_effect_id: str = "") -> None:
         self.mutations = mutations
         self.session_id = session_id
         self.run_id = run_id
@@ -88,12 +84,9 @@ class KernelEffectSink:
         self.managed_outputs = managed_outputs
         self.durable = durable
         self.parent_effect_id = parent_effect_id
-        self.defer_generation_settlement = defer_generation_settlement
         self._request_context: dict[str, object] = {}
         store = RuntimeEffectStore(durable=durable)
         previous = store.load_effects(session_id, run_id)
-        self.send_index = max((row.intent.turn for row in previous
-                               if row.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND), default=0)
         self._replay_classes = {row.intent.effect_id: row.intent.replay_class for row in previous}
         self._old_pending = {row.intent.effect_id for row in previous if row.is_pending}
 
@@ -192,7 +185,7 @@ class KernelEffectSink:
         self.mutations.record_provider_response(self.session_id, self.run_id, effect_id=effect_id, artifact=artifact,
                                                 messages=_reply_messages(reply))
 
-    def resume_response(self, session: Any, *, window_ref: Any = None) -> Any:
+    def resume_response(self, session: Any, *, provider: Any, window_ref: Any = None) -> Any:
         from codey.operations.kernel_errors import RecoveryFailed
         from codey.operations.kernel_protocol import ReceivedProviderTurn
         from codey.operations.provider_receipts import (
@@ -200,26 +193,40 @@ class KernelEffectSink:
             RESPONSE_KIND,
             decode_reply,
             read_provider_artifact,
+            request_artifact_for_effect,
             restore_snapshot,
         )
         from codey.runtime.core.operation_reducer import (
+            ACTION_COMMIT_GENERATION_BOUNDARY,
             ACTION_CONTINUE,
             ACTION_INTERPRET_PROVIDER_RESPONSE,
             ACTION_REDELIVER_SETTLED_BATCH,
+            ACTION_SUBMIT_PROVIDER_REQUEST,
         )
         from codey.runtime.core.protocol_window import ProtocolWindowRef
         from codey.runtime.write.drive import peek_next_action
 
         action = peek_next_action(self.durable, session_id=self.session_id, run_id=self.run_id)
+        if (action.kind == ACTION_SUBMIT_PROVIDER_REQUEST
+                or (action.kind == ACTION_COMMIT_GENERATION_BOUNDARY and action.reason == "before_provider_request")):
+            from codey.operations.kernel_driver import drive_provider_request, load_prepared_request
+
+            prepared, _intent = load_prepared_request(self, action.request_ref)
+            snapshot = restore_snapshot(prepared.get("snapshot"))
+            window = ProtocolWindowRef.from_payload(prepared["window"]) if prepared.get("window") is not None else None
+            if snapshot.policy != session.policy or window != window_ref:
+                raise RuntimeEffectError("prepared request authorization or protocol window changed")
+            if not snapshot.implementation_compatible:
+                raise RuntimeEffectError("prepared request executor implementation changed")
+            drive_provider_request(self, provider, action.request_ref)
+            action = peek_next_action(self.durable, session_id=self.session_id, run_id=self.run_id)
         if action.kind != ACTION_INTERPRET_PROVIDER_RESPONSE:
             if action.kind in {ACTION_CONTINUE, ACTION_REDELIVER_SETTLED_BATCH}:
                 return None
             raise RecoveryFailed(f"operation requires {action.kind}: {action.reason}")
-        artifacts = self.durable.artifacts_for_effect(action.effect_id)
-        requests = [artifact for artifact in artifacts if artifact.metadata.get("kind") == REQUEST_KIND]
-        if len(requests) != 1:
-            raise RuntimeEffectError("received response has no unique frozen request")
-        request = read_provider_artifact(self.managed_outputs, requests[0], kind=REQUEST_KIND,
+        effect = next(effect for effect in RuntimeEffectStore(durable=self.durable).load_effects(self.session_id, self.run_id)
+                      if effect.intent.effect_id == action.effect_id)
+        request = read_provider_artifact(self.managed_outputs, request_artifact_for_effect(self.durable, effect), kind=REQUEST_KIND,
             session_id=self.session_id, run_id=self.run_id, effect_id=action.effect_id)
         response = read_provider_artifact(self.managed_outputs, self.durable.artifact(action.response_ref),
             kind=RESPONSE_KIND, session_id=self.session_id, run_id=self.run_id, effect_id=action.effect_id)
@@ -327,85 +334,14 @@ class KernelRecordedProvider(ProviderAdapter):
         self.sink.bind_request(snapshot, logical_turn=logical_turn, window_ref=window_ref)
 
     def resume_kernel_response(self, session: Any) -> Any:
-        return self.sink.resume_response(session, window_ref=getattr(self.provider, "window_ref", None))
+        return self.sink.resume_response(session, provider=self.provider, window_ref=getattr(self.provider, "window_ref", None))
 
     def _send(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        from codey.operations.provider_receipts import REQUEST_KIND, json_value, write_provider_artifact
+        from codey.operations.kernel_driver import drive_provider_request, prepare_provider_request
 
-        sink = self.sink
-        pending = sink.pending_provider_settlement()
-        if pending is not None:
-            previous, previous_messages = pending
-            sink.mutations.settle_provider_effect(
-                sink.session_id, sink.run_id, previous, messages=previous_messages,
-            )
-        sink.send_index += 1
-        effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, sink.run_id)
-        if sink.managed_outputs is None:
-            raise RuntimeEffectError("provider requests require managed output storage")
-        request_payload = {"method": name, "args": json_value(args), "kwargs": json_value(kwargs),
-                           **sink._request_context}
-        request_artifact = write_provider_artifact(sink.managed_outputs, session_id=sink.session_id, run_id=sink.run_id,
-            effect_id=effect_id, kind=REQUEST_KIND, payload=request_payload)
-        surface = json.dumps(request_payload, ensure_ascii=False, sort_keys=True)
-        intent = RuntimeEffectIntent(
-            effect_id=effect_id, effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-            session_id=sink.session_id, run_id=sink.run_id, phase=sink.phase,
-            provider_id=sink.provider_id, turn=sink.send_index, display_ref=name,
-            args_digest=compute_args_digest(surface), replay_class=ReplayClass.UNSAFE,
-            delivery_batch_id=sink.delivery_batch_id,
-        )
-        sink.mutations.begin_provider_effect(
-            sink.session_id, sink.run_id, intent,
-            delivery_batch_id=sink.delivery_batch_id,
-            artifacts=(request_artifact,),
-            expected_counters=self._counter_update[0] if self._counter_update is not None else None,
-            counters=self._counter_update[1] if self._counter_update is not None else None,
-        )
+        request_ref = prepare_provider_request(self.sink, name, args, kwargs, counters=self._counter_update)
         self._counter_update = None
-        try:
-            reply = getattr(self.provider, name)(*args, **kwargs)
-        except Exception as exc:
-            try:
-                from codey.providers import error_classification as errors
-
-                overflow_or_prep = isinstance(
-                    exc, (errors.ContextOverflowError, errors.RequestPrepError)
-                )
-            except Exception:
-                overflow_or_prep = False
-            # Overflow deterministically produced no usable reply and prep
-            # failures sent nothing: settle NOT_SENT so the same batch can
-            # safely retry/supersede. All other faults stay MAYBE_SENT.
-            not_sent = (
-                overflow_or_prep
-                or isinstance(exc, StopIteration)
-                or getattr(exc, "provider_failure_kind", "") == "not_submitted"
-            )
-            sent_state = SENT_STATE_NOT_SENT if not_sent else SENT_STATE_MAYBE_SENT
-            settlement = RuntimeEffectSettlement(
-                    effect_id=effect_id, effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-                    session_id=sink.session_id, run_id=sink.run_id,
-                    status=SETTLEMENT_STATUS_ERROR, error_code=type(exc).__name__[:80],
-                    sent_state=sent_state,
-                )
-            sink.mutations.settle_provider_effect(
-                sink.session_id, sink.run_id,
-                settlement,
-            )
-            raise
-        settlement = RuntimeEffectSettlement(
-                effect_id=effect_id, effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-                session_id=sink.session_id, run_id=sink.run_id,
-                status=SETTLEMENT_STATUS_OK, sent_state=SENT_STATE_SETTLED,
-            )
-        sink.record_response(effect_id, reply)
-        if not sink.defer_generation_settlement:
-            sink.mutations.settle_provider_effect(
-                sink.session_id, sink.run_id, settlement,
-            )
-        sink.delivery_batch_id = ""
-        return reply
+        return drive_provider_request(self.sink, self.provider, request_ref)
 
 
 def _reply_messages(reply: Any) -> tuple[tuple[str, dict[str, object]], ...]:

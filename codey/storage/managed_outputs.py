@@ -306,7 +306,7 @@ class ManagedOutputStore:
         return json.loads(raw.decode("utf-8"))
 
     def json_artifact_record(
-        self, ref: ManagedJsonArtifactRef, *, owner_task_id: str, owner_effect_id: str,
+        self, ref: ManagedJsonArtifactRef, *, owner_task_id: str, owner_effect_id: str | None,
         metadata: dict[str, object],
     ) -> ArtifactRecord:
         """Register a verified JSON body through the existing artifact ledger."""

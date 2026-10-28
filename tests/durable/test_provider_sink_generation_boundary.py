@@ -108,7 +108,7 @@ def test_failed_boundary_keeps_pending_settlement_for_recovery() -> None:
     assert sink.pending is not None
 
 
-def test_all_provider_workflows_defer_and_attach_boundary() -> None:
+def test_all_provider_workflows_attach_the_shared_boundary() -> None:
     for relative in (
         "codey/operations/project_adapter.py",
         "codey/operations/research_iteration.py",
@@ -121,9 +121,6 @@ def test_all_provider_workflows_defer_and_attach_boundary() -> None:
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "KernelEffectSink"
         ]
         assert sink_calls, relative
-        assert any(
-            any(keyword.arg == "defer_generation_settlement" for keyword in call.keywords) for call in sink_calls
-        ), relative
         observation_calls = [
             node
             for node in ast.walk(tree)

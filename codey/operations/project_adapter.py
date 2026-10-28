@@ -176,7 +176,6 @@ def _wrap_provider_with_sink(request: AgentRequest, provider: Any) -> tuple[Any,
             recovered_batch_id=request.recovered_tool_result_batch_id,
             managed_outputs=request.managed_outputs,
             durable=request.durable,
-            defer_generation_settlement=request.durable is not None,
         )
         provider = KernelRecordedProvider(provider, intent_sink)
     if request.conversation is not None:

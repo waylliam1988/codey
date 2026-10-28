@@ -95,7 +95,6 @@ def run_evidence_followup(
                 provider_id=provider_id, phase="research",
                 durable=durable,
                 managed_outputs=managed_outputs,
-                defer_generation_settlement=durable is not None,
             )
             active_provider = KernelRecordedProvider(provider, sink)
         outcome = run_task_kernel(

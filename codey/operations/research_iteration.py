@@ -194,7 +194,6 @@ def run_research_iteration(
             provider_id=provider_id, phase="research",
             managed_outputs=getattr(deps, "managed_outputs", None),
             durable=admitted,
-            defer_generation_settlement=admitted is not None,
         )
         active_provider = KernelRecordedProvider(provider, intent_sink)
     topic_source = source_from_value(

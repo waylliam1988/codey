@@ -63,7 +63,6 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         self.durable.admit_input(conversation_id=self.session_id, request_id="request-run-1", task_id=self.run_id,
                                  text="runtime test", provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
         self.durable.start_task(self.run_id, state={"task_kind": "project"})
-        self.durable.advance_task(task_id=self.run_id, phase="assistant_response_pending", state={"task_kind": "project"})
         self.line = RuntimeMutationLine(durable=self.durable)
         self.operations = RuntimeOperationStore(durable=self.durable)
         self.store = RuntimeEffectStore(durable=self.durable)
@@ -131,12 +130,6 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
                 sent_state="settled",
             ),
         )
-        # An interrupted provider generation is resumed at the next provider
-        # boundary before admitting a new tool batch.
-        self.durable.advance_task(
-            task_id=self.run_id, phase="assistant_response_pending", state={"task_kind": "project"}
-        )
-
         settled = self.operations.load(self.session_id, self.run_id)
         effects = self.store.load_effects(self.session_id, self.run_id)
         assert settled is not None

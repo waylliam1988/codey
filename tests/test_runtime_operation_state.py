@@ -11,6 +11,7 @@ from codey.runtime.core.operation_state import (
     LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
     LEAF_PROVIDER_EFFECT_PENDING,
+    LEAF_PROVIDER_REQUEST_READY,
     LEAF_PROVIDER_RESPONSE_READY,
     LEAF_REPAIR_CONTEXT_ADMITTED,
     LEAF_REPAIR_RUNNING,
@@ -29,6 +30,7 @@ from codey.runtime.core.operation_state import (
     mark_completion_proof_recorded,
     mark_provider_effect_pending,
     mark_provider_effect_settled,
+    mark_provider_request_ready,
     mark_provider_response_ready,
     mark_repair_context_admitted,
     mark_repair_running,
@@ -199,8 +201,8 @@ class RuntimeOperationStateTests(unittest.TestCase):
         self.assertEqual(projection.operations[terminal.operation_id].outcome, "completed")
         self.assertEqual(projection.lanes[terminal.lane].open_operation_id, "")
 
-    def test_operation_state_payload_is_closed_schema_v1(self) -> None:
-        self.assertEqual(SCHEMA_VERSION, 3)
+    def test_operation_state_payload_is_closed_and_versioned(self) -> None:
+        self.assertEqual(SCHEMA_VERSION, 4)
         payload = _state(LEAF_ACCEPTED).to_payload()
         self.assertEqual(payload["schema_version"], SCHEMA_VERSION)
         self.assertEqual(payload["kind"], KIND)
@@ -440,6 +442,7 @@ class RuntimeOperationStateTests(unittest.TestCase):
             LEAF_ACCEPTED,
             LEAF_WRITER_RUNNING,
             LEAF_PROVIDER_EFFECT_PENDING,
+            LEAF_PROVIDER_REQUEST_READY,
             LEAF_PROVIDER_RESPONSE_READY,
             LEAF_TOOL_EFFECT_PENDING,
             LEAF_TOOL_DELIVERY_PENDING,
@@ -464,6 +467,22 @@ class RuntimeOperationStateTests(unittest.TestCase):
         settled = mark_provider_effect_settled(ready)
         self.assertEqual(settled.leaf, LEAF_WRITER_RUNNING)
         self.assertEqual(settled.response_ref, "")
+
+    def test_prepared_request_survives_the_explicit_previous_generation_boundary(self) -> None:
+        pending = mark_provider_effect_pending(_state(LEAF_WRITER_RUNNING), driver=DRIVER_WRITER,
+                                               provider_id="deepseek", turn=3)
+        received = mark_provider_response_ready(pending, response_ref="artifact_" + "a" * 24)
+        ready = mark_provider_request_ready(received, request_ref="artifact_" + "b" * 24,
+                                            driver=DRIVER_WRITER, turn=4)
+        self.assertEqual(ready.leaf, LEAF_PROVIDER_REQUEST_READY)
+        self.assertEqual(RuntimeOperationState.from_payload(ready.to_payload()), ready)
+        payload = ready.to_payload()
+        payload.pop("request_ref")
+        self.assertIsNone(RuntimeOperationState.from_payload(payload))
+        closed = mark_provider_effect_settled(ready)
+        self.assertEqual(closed.request_ref, ready.request_ref)
+        self.assertEqual(closed.leaf, ready.leaf)
+        self.assertEqual(closed.response_ref, "")
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ from codey.runtime.core.operation_state import (
     LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
     LEAF_PROVIDER_EFFECT_PENDING,
+    LEAF_PROVIDER_REQUEST_READY,
     LEAF_PROVIDER_RESPONSE_READY,
     LEAF_REPAIR_CONTEXT_ADMITTED,
     LEAF_REPAIR_RUNNING,
@@ -47,6 +48,7 @@ ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS = "synthesize_interrupted_effects"
 ACTION_TERMINAL = "terminal"
 ACTION_INTERPRET_PROVIDER_RESPONSE = "interpret_provider_response"
 ACTION_COMMIT_GENERATION_BOUNDARY = "commit_generation_boundary"
+ACTION_SUBMIT_PROVIDER_REQUEST = "submit_provider_request"
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,7 @@ class RuntimeAction:
     delivery_batch_id: str = ""
     driver: str = ""
     response_ref: str = ""
+    request_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -126,7 +129,7 @@ def prepare_operation_settlement(view: SessionView) -> OperationSettlement:
         raise RuntimeOperationTransitionError("operation retains pending effects")
     if any(_external_outcome_unknown(effect) for effect in view.effects):
         raise RuntimeOperationTransitionError("operation retains unknown external outcomes")
-    if state.leaf in {LEAF_PROVIDER_EFFECT_PENDING, LEAF_PROVIDER_RESPONSE_READY, LEAF_TOOL_EFFECT_PENDING}:
+    if state.leaf in {LEAF_PROVIDER_REQUEST_READY, LEAF_PROVIDER_EFFECT_PENDING, LEAF_PROVIDER_RESPONSE_READY, LEAF_TOOL_EFFECT_PENDING}:
         raise RuntimeOperationTransitionError("pending operation position has no matching unsettled effect")
     open_batches = tuple(batch for batch in view.batches if not batch.is_terminal)
     if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
@@ -168,6 +171,17 @@ def next_runtime_action(view: SessionView) -> RuntimeAction:
         if unsettled:
             return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="terminal_retains_pending_effects")
         return RuntimeAction(ACTION_TERMINAL, leaf=state.leaf)
+
+    if state.leaf == LEAF_PROVIDER_REQUEST_READY:
+        providers = tuple(effect for effect in unsettled if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND)
+        if len(providers) == 1 and len(unsettled) == 1 and state.response_ref:
+            return RuntimeAction(ACTION_COMMIT_GENERATION_BOUNDARY, leaf=state.leaf,
+                effect_id=providers[0].intent.effect_id, response_ref=state.response_ref,
+                request_ref=state.request_ref, driver=state.driver, reason="before_provider_request")
+        if unsettled or state.response_ref or not state.request_ref:
+            return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="prepared_request_effects_mismatch")
+        return RuntimeAction(ACTION_SUBMIT_PROVIDER_REQUEST, leaf=state.leaf,
+                             request_ref=state.request_ref, driver=state.driver)
 
     if state.leaf == LEAF_PROVIDER_EFFECT_PENDING:
         return _provider_pending_action(state, effects, pending)
@@ -411,6 +425,7 @@ __all__ = [
     "ACTION_TERMINAL",
     "ACTION_INTERPRET_PROVIDER_RESPONSE",
     "ACTION_COMMIT_GENERATION_BOUNDARY",
+    "ACTION_SUBMIT_PROVIDER_REQUEST",
     "RuntimeAction",
     "next_runtime_action",
     "OperationSettlement",

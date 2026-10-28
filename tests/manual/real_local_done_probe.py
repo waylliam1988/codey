@@ -24,9 +24,40 @@ from tests.manual.codey_vs_pi_agent_stability_ab import MODEL_ID, _Proxy
 
 PROMPT = (
     "This is a termination protocol probe. Do not read, edit, write, or run "
-    "anything. The task is already complete. Call the native done tool now "
+    "anything. The task is already complete. Use the declared done protocol now "
     "with a short summary. Do not output ordinary text."
 )
+
+
+def execution_observations(durable, outputs, session_id: str, run_id: str) -> dict[str, object]:
+    """Score saved execution replies; a final SSE chunk is not a full reply."""
+    from codey.durable.checkpoint import operation_from_checkpoint
+    from codey.operations.provider_receipts import RESPONSE_KIND, decode_reply, read_provider_artifact
+    from codey.providers.base import AssistantTurn
+    effects = durable.effects(run_id)
+    done_calls = 0
+    for artifact in durable.artifacts_for_task(run_id):
+        if artifact.metadata.get("kind") != RESPONSE_KIND:
+            continue
+        if not artifact.owner_effect_id:
+            raise ValueError("saved provider response has no owning effect")
+        reply = decode_reply(read_provider_artifact(outputs, artifact, kind=RESPONSE_KIND,
+            session_id=session_id, run_id=run_id, effect_id=artifact.owner_effect_id))
+        if isinstance(reply, AssistantTurn):
+            done_calls += int(any(call.name == "done" for call in reply.tool_calls))
+        else:
+            try:
+                value = json.loads(reply)
+            except ValueError:
+                continue
+            done_calls += int(isinstance(value, dict) and value.get("tool") == "done")
+    state = operation_from_checkpoint(durable.task(run_id), session_id)
+    return {"done_call_requests": done_calls, "operation_leaf": state.leaf if state is not None else "",
+        "provider_actions": [{"method": effect.intent.get("display_ref"),
+            "sent_state": effect.settlement.get("sent_state") if effect.settlement is not None else None}
+            for effect in effects if effect.category == "provider_send"],
+        "pending_effects": [effect.effect_id for effect in effects if effect.settlement is None],
+        "tool_effects": [effect.effect_id for effect in effects if effect.category == "tool_call"]}
 
 
 def main() -> int:
@@ -37,6 +68,7 @@ def main() -> int:
     parser.add_argument("--model", default=MODEL_ID)
     parser.add_argument("--max-turns", type=int, default=3)
     parser.add_argument("--max-tokens", type=int, default=512)
+    parser.add_argument("--protocol", choices=("native", "text"), default="native")
     args = parser.parse_args()
 
     run_dir = args.run_dir.resolve()
@@ -56,7 +88,7 @@ def main() -> int:
     env = os.environ.copy()
     env.update({
         "PYTHONUNBUFFERED": "1",
-        "NATIVE_TOOLS": "1",
+        "NATIVE_TOOLS": "1" if args.protocol == "native" else "0",
         "LOCAL_OPENAI_BASE_URL": f"http://127.0.0.1:{args.proxy_port}/v1",
         "LOCAL_OPENAI_MODEL": args.model,
         "LOCAL_OPENAI_API_KEY": "local",
@@ -70,6 +102,7 @@ def main() -> int:
         "codey",
         "agent",
         "--json",
+        "--readonly",
         "--provider",
         "local",
         "--project",
@@ -96,30 +129,26 @@ def main() -> int:
             for line in proc.stdout.splitlines()
             if line.lstrip().startswith("{")
         ]
-        done_calls = []
-        for record in proxy.records:
-            response = record.get("response")
-            if not isinstance(response, dict):
-                continue
-            choices = response.get("choices")
-            if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-                continue
-            message = choices[0].get("message")
-            if not isinstance(message, dict) or not isinstance(message.get("tool_calls"), list):
-                continue
-            if any(
-                isinstance(call, dict)
-                and str((call.get("function") or {}).get("name") or "") == "done"
-                for call in message["tool_calls"]
-            ):
-                done_calls.append(record)
+        starts = [row for row in rows if row.get("type") == "task_start"]
+        observations = {}
+        if len(starts) == 1:
+            from codey.durable import DurableSession, SQLiteDurableStore
+            from codey.storage.managed_outputs import ManagedOutputStore
+
+            durable = DurableSession(SQLiteDurableStore(state_home / "durable.sqlite3"))
+            try:
+                observations = execution_observations(durable, ManagedOutputStore(state_home),
+                    starts[0]["session_id"], starts[0]["run_id"])
+            finally:
+                durable.close()
         result = {
             "model": args.model,
+            "protocol": args.protocol,
             "prompt": PROMPT,
             "project": str(project),
             "wall_time_seconds": round(time.perf_counter() - started, 3),
             "process_returncode": proc.returncode,
-            "done_call_requests": len(done_calls),
+            **observations,
             "task_done_events": [row for row in rows if row.get("type") == "task_done"],
             "events": rows,
             "proxy_records": proxy.records,
@@ -128,7 +157,11 @@ def main() -> int:
         }
         (run_dir / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 0 if result["done_call_requests"] == 1 else 2
+        passed = (proc.returncode == 0 and result.get("done_call_requests") == 1
+                  and result.get("operation_leaf") == "terminal" and not result.get("pending_effects")
+                  and not result.get("tool_effects") and len(result["task_done_events"]) == 1
+                  and result["task_done_events"][0].get("stop_reason") == "done")
+        return 0 if passed else 2
     finally:
         proxy.shutdown()
         proxy.server_close()
