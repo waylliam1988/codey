@@ -77,10 +77,18 @@ def test_question_answer_resumes_without_repeating_the_original_call(tmp_path, p
     project = tmp_path / "project"
     project.mkdir()
     (project / "pyproject.toml").write_text('[project]\nname="question-test"\n', encoding="utf-8")
+    gate_dir = tmp_path / "gate"
+    gate_dir.mkdir()
+    # gate_application normally gives each invocation a disposable state root.
+    # This test simulates a process restart, so point both app instances at the
+    # same test-owned durable state directory instead of deleting it on close.
+    (gate_dir / "input.json").write_text(
+        json.dumps({"state": str(tmp_path / "durable-state")}), encoding="utf-8"
+    )
     with question_peer(protocol) as (url, requests, errors):
         target = GateTarget(url, "question-fixture", 32768, 8192, 12000, api_protocol=protocol, request_timeout=15)
         with ExitStack() as stack:
-            httpd, ctx, events = stack.enter_context(gate_application(target, tmp_path / "gate"))
+            httpd, ctx, events = stack.enter_context(gate_application(target, gate_dir))
             client = GateHTTPClient(httpd)
             source = client.post("/api/run", {"session_id": "question-chat", "project": str(project), "intent": intent,
                 "input": {"kind": "start_task", "text": "先询问检查范围，再只读分析 pyproject.toml；不要修改文件，不要运行命令。"},
@@ -91,7 +99,7 @@ def test_question_answer_resumes_without_repeating_the_original_call(tmp_path, p
             assert question is not None
             if restart:
                 stack.close()
-                httpd, ctx, events = stack.enter_context(gate_application(target, tmp_path / "gate"))
+                httpd, ctx, events = stack.enter_context(gate_application(target, gate_dir))
                 client = GateHTTPClient(httpd)
                 assert ctx.user_questions.pending("question-chat")["id"] == question["id"]
             accepted = client.post("/api/questions", {"id": question["id"], "revision": question["revision"], "answer": "只读文档"})

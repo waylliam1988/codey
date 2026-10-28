@@ -44,10 +44,14 @@ def _durable_requested_approval(
                 task_id=source_run_id, phase="assistant_response_pending", state={}
             )
     assert state.managed_outputs is not None
+    from codey.agents.shell_approval import ShellApprovalRequest
+
+    command_request = ShellApprovalRequest(cwd=".", command=command)
     artifact = state.managed_outputs.write_json_artifact(
         session_id="session",
         run_id=source_run_id,
         payload={
+            **command_request.to_payload(),
             "command": command,
             "cwd": ".",
             "project": str(state.state_home),

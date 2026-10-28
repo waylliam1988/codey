@@ -1191,23 +1191,36 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         )
         return batch_id
 
-    def _deps(self) -> Mock:
+    def _deps(self) -> SimpleNamespace:
         self._sync_runtime_to_durable()
-        deps = Mock()
-        deps.runtime_effects = self.effects
-        deps.tool_result_delivery = self.delivery
-        deps.runtime_mutations = self.line
-        deps.state = SimpleNamespace(durable=self.durable)
-        return deps
+        return SimpleNamespace(
+            runtime_effects=self.effects,
+            tool_result_delivery=self.delivery,
+            runtime_mutations=self.line,
+            managed_outputs=None,
+            workspace_revisions=None,
+            state=SimpleNamespace(
+                durable=self.durable,
+                managed_outputs=None,
+                workspace_revisions=None,
+            ),
+        )
 
-    def _fresh_restart_deps(self) -> tuple[Mock, RuntimeSessionLog, RuntimeOperationStore]:
+    def _fresh_restart_deps(self) -> tuple[SimpleNamespace, RuntimeSessionLog, RuntimeOperationStore]:
         self._sync_runtime_to_durable()
         log = RuntimeSessionLog(self.project_dir / "state")
-        deps = Mock()
-        deps.runtime_effects = RuntimeEffectStore(durable=self.durable)
-        deps.tool_result_delivery = ToolResultDeliveryStore(durable=self.durable)
-        deps.runtime_mutations = RuntimeMutationLine(durable=self.durable)
-        deps.state = SimpleNamespace(durable=self.durable)
+        deps = SimpleNamespace(
+            runtime_effects=RuntimeEffectStore(durable=self.durable),
+            tool_result_delivery=ToolResultDeliveryStore(durable=self.durable),
+            runtime_mutations=RuntimeMutationLine(durable=self.durable),
+            managed_outputs=None,
+            workspace_revisions=None,
+            state=SimpleNamespace(
+                durable=self.durable,
+                managed_outputs=None,
+                workspace_revisions=None,
+            ),
+        )
         return deps, log, RuntimeOperationStore(durable=self.durable)
 
     def _durable_snapshot(
