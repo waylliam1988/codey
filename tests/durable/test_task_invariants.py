@@ -14,7 +14,7 @@ from codey.durable.reducer import with_effect_intents
 
 def _checkpoint(
     *,
-    phase: str = "assistant_response_pending",
+    phase: str = "running",
     status: TaskStatus | str | None = None,
     state: dict[str, object] | None = None,
     pending_effect_id: str | None = None,
@@ -52,7 +52,7 @@ def test_completion_phase_owns_completing_scheduler_status() -> None:
 
 def test_tool_effect_intents_can_be_committed_as_each_call_is_admitted() -> None:
     current = _checkpoint(
-        phase="tool_effect_running",
+        phase="running",
         state={"pending_effect_ids": ["effect-1"]},
         pending_effect_id="effect-1",
     )
@@ -70,13 +70,13 @@ def test_tool_effect_intents_can_be_committed_as_each_call_is_admitted() -> None
             ),
         ),
     )
-    assert next_checkpoint.phase == "tool_effect_running"
+    assert next_checkpoint.phase == "running"
     assert next_checkpoint.state["pending_effect_ids"] == ("effect-1", "effect-2")
 
 
 def test_tool_effect_intent_can_overlap_deferred_provider_settlement() -> None:
     current = _checkpoint(
-        phase="assistant_intent_committed",
+        phase="running",
         state={"pending_effect_ids": ["provider-1"]},
         pending_effect_id="provider-1",
     )
@@ -94,7 +94,7 @@ def test_tool_effect_intent_can_overlap_deferred_provider_settlement() -> None:
             ),
         ),
     )
-    assert next_checkpoint.phase == "tool_effect_running"
+    assert next_checkpoint.phase == "running"
     assert next_checkpoint.state["pending_effect_ids"] == ("provider-1", "tool-1")
 
 

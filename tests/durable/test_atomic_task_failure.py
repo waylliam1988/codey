@@ -1,4 +1,4 @@
-"""Task termination settles all unknown effects in the same transaction."""
+"""Scheduler termination preserves effects and atomically updates submissions."""
 
 import subprocess
 import sys
@@ -13,8 +13,6 @@ def running_tools(session: DurableSession) -> None:
     session.admit_input(conversation_id="conversation", request_id="request", task_id="task",
                         text="inspect", provider_snapshot={"provider_id": "local"})
     session.start_task("task", state={})
-    session.advance_task(task_id="task", phase="assistant_intent_committed", state={})
-    session.advance_task(task_id="task", phase="assistant_response_pending", state={})
     session.record_effect_intents("task", tuple(
         EffectRecord(f"effect-{index}", "task", "tool_call", "unsafe", f"digest-{index}", "pending", {
             "lane": "writer", "operation_id": "operation", "session_id": "conversation", "run_id": "task",
@@ -23,56 +21,54 @@ def running_tools(session: DurableSession) -> None:
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
-def test_failure_settles_all_effects_checkpoint_submission_and_events_once(backend: str, tmp_path: Path) -> None:
+def test_failure_preserves_effects_and_commits_checkpoint_submission_once(backend: str, tmp_path: Path) -> None:
     store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     running_tools(session)
     before = session.commit_sequence()
+    effects = session.effects("task")
 
     result = session.fail_task("task", "worker stopped", state={"reason": "cancelled externally"})
 
     assert result.sequence == before + 1
     task = session.task("task")
-    assert task.phase == "failed" and task.pending_effect_id is None
-    assert task.state["pending_effect_ids"] == ()
+    assert task.phase == "failed" and task.pending_effect_id == "effect-1"
+    assert task.state["pending_effect_ids"] == ("effect-0", "effect-1")
     assert store.submission(task.submission_id).status is SubmissionStatus.UNANSWERED
-    assert {effect.status for effect in session.effects("task")} == {"interrupted"}
+    assert session.effects("task") == effects
     [record] = session.commits_after(before)
     projections = record.to_payload()["projections"]
-    assert sum(event["type"] == "effect_settled" for event in projections) == 2
+    assert sum(event["type"] == "effect_settled" for event in projections) == 0
     assert sum(event["type"] == "submission_completed" for event in projections) == 1
 
 
-def test_failure_during_second_settlement_rolls_back_first_effect_too(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_failure_during_submission_update_rolls_back_task_stop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import codey.durable.sqlite as sqlite_store
 
     path = tmp_path / "durable.sqlite3"
     session = DurableSession(SQLiteDurableStore(path))
     running_tools(session)
     before = session.commit_sequence()
-    original_write = sqlite_store._write_effect
-    calls = 0
+    original_write = sqlite_store._write_submission_update
 
-    def crash_on_second(database, effect, expected_status):
-        nonlocal calls
-        if effect is not None:
-            calls += 1
-            if calls == 2:
-                raise OSError("crash during second effect settlement")
-        return original_write(database, effect, expected_status)
+    def crash_on_submission(database, update, entries):
+        original_write(database, update, entries)
+        if update is not None:
+            raise OSError("crash during submission update")
 
-    monkeypatch.setattr(sqlite_store, "_write_effect", crash_on_second)
-    with pytest.raises(OSError, match="second effect settlement"):
+    monkeypatch.setattr(sqlite_store, "_write_submission_update", crash_on_submission)
+    with pytest.raises(OSError, match="submission update"):
         session.fail_task("task", "worker stopped", state={})
 
     reopened = DurableSession(SQLiteDurableStore(path))
     assert reopened.commit_sequence() == before
-    assert reopened.task("task").phase == "tool_effect_running"
+    assert reopened.task("task").phase == "running"
     assert {effect.status for effect in reopened.effects("task")} == {"pending"}
+    assert reopened.store.submission(reopened.task("task").submission_id).status is SubmissionStatus.RUNNING
     assert reopened.commits_after(before) == ()
 
 
-def test_process_death_after_first_effect_write_rolls_back_the_whole_failure(tmp_path: Path) -> None:
+def test_process_death_after_task_write_rolls_back_the_whole_failure(tmp_path: Path) -> None:
     path = tmp_path / "durable.sqlite3"
     session = DurableSession(SQLiteDurableStore(path))
     running_tools(session)
@@ -82,18 +78,19 @@ def test_process_death_after_first_effect_write_rolls_back_the_whole_failure(tmp
 import os, sys
 import codey.durable.sqlite as storage
 from codey.durable import DurableSession, SQLiteDurableStore
-original = storage._write_effect
-def crash(database, effect, expected_status):
-    result = original(database, effect, expected_status)
-    if effect is not None:
+original = storage._write_task
+def crash(database, task):
+    result = original(database, task)
+    if task is not None:
         os._exit(74)
     return result
-storage._write_effect = crash
+storage._write_task = crash
 DurableSession(SQLiteDurableStore(sys.argv[1])).fail_task('task', 'stopped', state={})
 """
     result = subprocess.run([sys.executable, "-c", script, str(path)], timeout=20)
     assert result.returncode == 74
     reopened = DurableSession(SQLiteDurableStore(path))
     assert reopened.commit_sequence() == before
-    assert reopened.task("task").phase == "tool_effect_running"
+    assert reopened.task("task").phase == "running"
     assert {effect.status for effect in reopened.effects("task")} == {"pending"}
+    assert reopened.store.submission(reopened.task("task").submission_id).status is SubmissionStatus.RUNNING

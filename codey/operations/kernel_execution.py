@@ -234,6 +234,9 @@ def execute_turn(
 
     frozen_specs = frozen_spec_map(snapshot)
     if snapshot is not None:
+        if not snapshot.implementation_compatible:
+            return [_error_result(call, "captured tool implementation cannot be verified after restart; call not executed")
+                    for call in calls]
         if session.policy != snapshot.policy:
             return [_error_result(call, "turn policy differs from the captured authorization") for call in calls]
         for call in calls:

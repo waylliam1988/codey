@@ -8,6 +8,7 @@ from contextlib import suppress
 from dataclasses import replace
 from typing import Any
 
+from codey.durable.errors import DurableStoreError
 from codey.durable.events import committed_task_version
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.ghost_post_turn import (
@@ -27,6 +28,7 @@ from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderActionError
 from codey.runs.ledger import RunLedgerWriter
 from codey.runs.ledger_projection import event_with_projected_receipt
+from codey.runtime.core.operation_state import RuntimeOperationTransitionError
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.observe.terminalizer import (
     operation_outcome_from_task_done_event,
@@ -260,6 +262,17 @@ def _seal_cancel_before_runtime(deps: Any, run_id: str, event: dict[str, object]
     return True
 
 
+def _finish_failed_operation(deps: Any, work: RunWork | None, event: dict[str, object]) -> None:
+    """Report an uncommittable stop while retaining its authoritative position."""
+    if work is None:
+        return
+    try:
+        finish_run_operation(deps, work, event)
+    except (OSError, ValueError, DurableStoreError, RuntimeOperationTransitionError) as exc:
+        event["runtime_settlement_error"] = {"source": "checkpoint_commit", "type": type(exc).__name__,
+                                             "message": str(exc)}
+
+
 def settle_cancelled_run(
     deps: Any,
     state: TaskState,
@@ -304,8 +317,7 @@ def settle_cancelled_run(
         deps.run_ledgers, stopped_event, session_id=session_id, run_id=run_id
     )
     cancelled = _seal_cancel_before_runtime(deps, run_id, stopped_event)
-    if work is not None:
-        finish_run_operation(deps, work, stopped_event)
+    _finish_failed_operation(deps, work, stopped_event)
     # A provider can observe the stop barrier without a separate durable
     # ``request_cancel`` transition (for example headless cancellation during
     # a native send).  The terminal event still owns the task outcome, so
@@ -369,7 +381,7 @@ def settle_error_run(
                 replace(conversation.snapshot, provider_id=provider_id, blocker=str(exc))
             )
     failure = None
-    if not isinstance(exc, ToolResultDeliveryError):
+    if not isinstance(exc, (ToolResultDeliveryError, RuntimeOperationTransitionError, DurableStoreError)):
         failure = (
             exc.failure
             if isinstance(exc, ProviderActionError)
@@ -407,8 +419,7 @@ def settle_error_run(
         deps.run_ledgers, error_event, session_id=session_id, run_id=run_id
     )
     cancelled = _seal_cancel_before_runtime(deps, run_id, error_event)
-    if work is not None:
-        finish_run_operation(deps, work, error_event)
+    _finish_failed_operation(deps, work, error_event)
     finish_trace(error_event)
     if not cancelled:
         _fail_durable_task(deps, run_id, error_event)
@@ -473,8 +484,11 @@ def _finish_mode_outcome(
         session_id=frame.request.session_id,
         run_id=frame.run_id,
     )
-    _seal_cancel_before_runtime(deps, frame.run_id, event)
-    finish_run_operation(deps, work, event)
+    cancelled = _seal_cancel_before_runtime(deps, frame.run_id, event)
+    if cancelled:
+        _finish_failed_operation(deps, work, event)
+    else:
+        finish_run_operation(deps, work, event)
     finish_trace(event)
     _commit_durable_terminal(deps, frame, event, outcome)
     # SQLite owns the checkpoint/answer commit above. The run report and

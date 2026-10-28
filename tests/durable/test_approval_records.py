@@ -35,7 +35,7 @@ def test_shell_approval_admission_is_durable_before_audit_projection(tmp_path: P
         # can claim an external effect.
         state.durable.start_task("task-1", state={})
         state.durable.advance_task(
-            task_id="task-1", phase="assistant_response_pending", state={}
+            task_id="task-1", phase="running", state={}
         )
         artifact = state.managed_outputs.write_json_artifact(
             session_id="conversation-1",
@@ -83,7 +83,7 @@ def test_shell_approval_claim_uses_durable_state_when_audit_projection_is_missin
         )
         state.durable.start_task("task-1", state={})
         state.durable.advance_task(
-            task_id="task-1", phase="assistant_response_pending", state={}
+            task_id="task-1", phase="running", state={}
         )
         artifact = state.managed_outputs.write_json_artifact(
             session_id="conversation-1",
@@ -403,7 +403,7 @@ def test_approval_decision_and_task_checkpoint_share_one_commit(backend: str, tm
     current = session.task("task-1")
     next_task = replace(
         current,
-        phase="assistant_response_pending",
+        phase="running",
         revision=current.revision + 1,
         status=TaskStatus.RUNNING,
         state=dict(current.state),
@@ -416,7 +416,7 @@ def test_approval_decision_and_task_checkpoint_share_one_commit(backend: str, tm
         task=next_task,
     )
     assert session.commit_sequence() == before + 1
-    assert session.task("task-1").phase == "assistant_response_pending"
+    assert session.task("task-1").phase == "running"
     assert session.approval("approval-1").status == ApprovalStatus.APPROVED
     session.close()
 
@@ -433,7 +433,7 @@ def test_approval_claim_and_shell_effect_intent_are_one_durable_commit(
     session.create_approval(requested)
     approved = replace(requested, status=ApprovalStatus.APPROVED, revision=1)
     session.transition_approval("approval-atomic", approved, expected_status=ApprovalStatus.REQUESTED)
-    session.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
     effect = EffectRecord(
         effect_id="shell-effect-1", task_id="task-1", category="shell",
         replay_class="unsafe", args_digest="sha256:args", status="pending",
@@ -465,7 +465,7 @@ def test_approval_claim_failure_leaves_authorization_and_effect_untouched(
         "approval-rollback", replace(requested, status=ApprovalStatus.APPROVED, revision=1),
         expected_status=ApprovalStatus.REQUESTED,
     )
-    session.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
     effect = EffectRecord(
         "shell-effect-rollback", "task-1", "shell", "unsafe", "sha256:args", "pending",
         {"approval_id": "approval-rollback", "session_id": "conversation-1",
@@ -485,7 +485,7 @@ def test_approval_claim_failure_leaves_authorization_and_effect_untouched(
     reopened.close()
 
 
-def test_claimed_shell_effect_is_marked_unknown_after_restart(tmp_path: Path) -> None:
+def test_claimed_shell_without_operation_is_preserved_for_diagnosis(tmp_path: Path) -> None:
     from types import SimpleNamespace
 
     from codey.operations.recovery import recover_effects_for_resume
@@ -497,7 +497,7 @@ def test_claimed_shell_effect_is_marked_unknown_after_restart(tmp_path: Path) ->
         text="shell", provider_snapshot={"provider_id": "local"},
     )
     session.start_task("task-1", state={})
-    session.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
     requested = ApprovalRecord(
         "approval-restart", "task-1", "conversation-1", ApprovalStatus.REQUESTED,
         "sha256:command", "artifact:command", "E:/project",
@@ -524,6 +524,6 @@ def test_claimed_shell_effect_is_marked_unknown_after_restart(tmp_path: Path) ->
         session_id="conversation-1", run_id="task-1", project="", task_kind="chat",
     )
     assert result.ok is False
-    assert reopened.effect("shell-effect-restart").status == "interrupted"
-    assert reopened.task("task-1").phase == "failed"
+    assert reopened.effect("shell-effect-restart").status == "pending"
+    assert reopened.task("task-1").phase == "running"
     reopened.close()

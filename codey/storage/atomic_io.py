@@ -45,7 +45,9 @@ def write_bytes_atomic(
     target = Path(path)
     directory = target.parent if str(target.parent) else Path(".")
     directory.mkdir(parents=True, exist_ok=True)
-    tmp = directory / f".{target.name}.{uuid.uuid4().hex}.tmp"
+    # A temp name needs uniqueness, not a copy of the target's filename.
+    # Keep valid Windows paths from exceeding MAX_PATH only while staging.
+    tmp = directory / f".{uuid.uuid4().hex}.tmp"
     initial_identity = _target_identity(target)
     existing_mode = _existing_mode(target)
     creation_mode = (

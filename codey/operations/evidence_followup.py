@@ -50,6 +50,7 @@ def run_evidence_followup(
     round_index: int = 1,
     runtime_mutations: Any = None,
     durable: Any = None,
+    managed_outputs: Any = None,
     on_event: Any = None,
 ) -> EvidenceFollowupResult:
     fresh_urls = tuple(getattr(material, "fresh_source_urls", ()) or ())
@@ -93,6 +94,7 @@ def run_evidence_followup(
                 runtime_mutations, session_id=session_id, run_id=run_id,
                 provider_id=provider_id, phase="research",
                 durable=durable,
+                managed_outputs=managed_outputs,
                 defer_generation_settlement=durable is not None,
             )
             active_provider = KernelRecordedProvider(provider, sink)

@@ -41,15 +41,18 @@ def checkpoint_payload(task: TaskCheckpoint) -> dict[str, object]:
 
 
 def checkpoint_from_payload(raw: Mapping[str, object]) -> TaskCheckpoint:
+    from codey.durable.model import migrate_checkpoint_phase
+
+    phase, version = migrate_checkpoint_phase(str(raw["phase"]), cast(int, raw["schema_version"]))
     return TaskCheckpoint(
         task_id=str(raw["task_id"]), conversation_id=str(raw["conversation_id"]),
-        submission_id=str(raw["submission_id"]), phase=str(raw["phase"]),
+        submission_id=str(raw["submission_id"]), phase=phase,
         revision=cast(int, raw["revision"]),
         provider_snapshot=cast(Mapping[str, object], raw["provider_snapshot"]),
         state=cast(Mapping[str, object], raw["state"]),
         current_turn_id=cast(str | None, raw["current_turn_id"]),
         pending_effect_id=cast(str | None, raw["pending_effect_id"]),
-        status=str(raw["status"]), schema_version=cast(int, raw["schema_version"]),
+        status=str(raw["status"]), schema_version=version,
     )
 
 

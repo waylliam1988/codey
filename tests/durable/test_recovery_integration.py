@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from codey.durable import DurableSession, EffectRecord, MemoryDurableStore
 from codey.durable.model import thaw_json
 from codey.operations.recovery import recover_effects_for_resume
-from codey.runtime.core.models import ToolCall
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
@@ -16,7 +15,7 @@ from codey.runtime.effects.replay_policy import ReplayClass
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 
-def test_provider_unknown_recovery_uses_durable_facts_without_runtime_log() -> None:
+def test_missing_operation_preserves_unconfirmed_provider_facts() -> None:
     durable = DurableSession(MemoryDurableStore())
     durable.admit_input(
         conversation_id="conversation-1",
@@ -58,11 +57,11 @@ def test_provider_unknown_recovery_uses_durable_facts_without_runtime_log() -> N
     )
 
     assert result.ok is False
-    assert durable.store.effect("effect-1").status == "interrupted"
-    assert durable.task("task-1").phase == "failed"
+    assert durable.store.effect("effect-1").status == "pending"
+    assert durable.task("task-1").phase == "running"
 
 
-def test_settled_maybe_sent_provider_checkpoint_is_sealed_without_replay() -> None:
+def test_missing_operation_does_not_hide_an_already_unknown_provider_outcome() -> None:
     durable = DurableSession(MemoryDurableStore())
     durable.admit_input(
         conversation_id="conversation-1",
@@ -122,19 +121,19 @@ def test_settled_maybe_sent_provider_checkpoint_is_sealed_without_replay() -> No
     )
 
     assert result.ok is False
-    assert durable.task("task-1").phase == "failed"
+    assert durable.task("task-1").phase == "running"
     assert durable.store.effect("effect-1").settlement["sent_state"] == "maybe_sent"
 
 
-def test_unsafe_tool_recovery_fails_closed_before_projection_can_replay(tmp_path: Path) -> None:
+def test_missing_operation_does_not_synthesize_an_unsafe_tool_outcome(tmp_path: Path) -> None:
     durable = DurableSession(MemoryDurableStore())
     durable.admit_input(
         conversation_id="conversation-1", request_id="request-1", task_id="task-1",
         text="edit a file", provider_snapshot={"provider_id": "local"},
     )
     durable.start_task("task-1", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_intent_committed", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
     durable.record_effect_intent(
         "task-1",
         EffectRecord(
@@ -159,8 +158,8 @@ def test_unsafe_tool_recovery_fails_closed_before_projection_can_replay(tmp_path
     )
 
     assert result.ok is False
-    assert durable.store.effect("effect-1").status == "interrupted"
-    assert durable.task("task-1").phase == "failed"
+    assert durable.store.effect("effect-1").status == "pending"
+    assert durable.task("task-1").phase == "running"
 
 
 def test_task_policy_is_recovered_from_checkpoint_and_cannot_be_replaced() -> None:
@@ -237,8 +236,8 @@ def test_pending_durable_tool_intent_cannot_be_overruled_by_idle_runtime_log(tmp
         text="read a file", provider_snapshot={"provider_id": "local"},
     )
     durable.start_task("task-1", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_intent_committed", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
     durable.record_effect_intent(
         "task-1",
         EffectRecord(
@@ -264,7 +263,7 @@ def test_pending_durable_tool_intent_cannot_be_overruled_by_idle_runtime_log(tmp
     assert result.ok is False
 
 
-def test_safe_tool_recovery_uses_durable_intent_without_runtime_projection(tmp_path: Path) -> None:
+def test_safe_tool_requires_operation_and_delivery_facts_before_replay(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
     (project / "a.txt").write_text("durable read", encoding="utf-8")
@@ -274,8 +273,8 @@ def test_safe_tool_recovery_uses_durable_intent_without_runtime_projection(tmp_p
         text="read a file", provider_snapshot={"provider_id": "local"},
     )
     durable.start_task("task-1", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_intent_committed", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
     raw_intent = RuntimeEffectIntent(
         effect_id="effect-1", effect_category=EFFECT_CATEGORY_TOOL_CALL,
         session_id="conversation-1", run_id="task-1", phase="writer",
@@ -303,14 +302,13 @@ def test_safe_tool_recovery_uses_durable_intent_without_runtime_projection(tmp_p
         session_id="conversation-1", run_id="task-1", project=str(project), task_kind="project",
     )
 
-    assert result.ok is True
-    assert len(result.recovered_tool_outcomes) == 1
-    assert result.recovered_tool_outcomes[0].call == ToolCall("read", {"path": "a.txt"})
-    assert "durable read" in result.recovered_tool_outcomes[0].outcome.model_text
-    assert durable.store.effect("effect-1").status == "ok"
+    assert result.ok is False
+    assert result.recovered_tool_outcomes == ()
+    assert (project / "a.txt").read_text(encoding="utf-8") == "durable read"
+    assert durable.store.effect("effect-1").status == "pending"
 
 
-def test_safe_tool_recovery_ignores_unbound_runtime_batch(tmp_path: Path) -> None:
+def test_safe_tool_recovery_blocks_an_intent_unbound_to_the_operation(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
     (project / "a.txt").write_text("projection repair", encoding="utf-8")
@@ -321,8 +319,8 @@ def test_safe_tool_recovery_ignores_unbound_runtime_batch(tmp_path: Path) -> Non
     )
     durable.claim_task("task-1")
     durable.start_task("task-1", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_intent_committed", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
     intent = prepare_intent(
         "conversation-1", "task-1",
         RuntimeEffectIntent(
@@ -357,10 +355,10 @@ def test_safe_tool_recovery_ignores_unbound_runtime_batch(tmp_path: Path) -> Non
         session_id="conversation-1", run_id="task-1", project=str(project), task_kind="project",
     )
 
-    assert result.ok is True
+    assert result.ok is False
     assert result.recovered_tool_result_batch_id == ""
-    assert len(result.recovered_tool_outcomes) == 1
-    assert durable.store.effect("effect-1").status == "ok"
+    assert result.recovered_tool_outcomes == ()
+    assert durable.store.effect("effect-1").status == "pending"
 
 
 def test_safe_tool_recovery_reuses_existing_runtime_intent_and_batch(tmp_path: Path) -> None:
@@ -381,8 +379,8 @@ def test_safe_tool_recovery_reuses_existing_runtime_intent_and_batch(tmp_path: P
         text="read a file", provider_snapshot={"provider_id": "local"},
     )
     durable.start_task("task-1", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_intent_committed", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
     intent = prepare_intent(
         "conversation-1", "task-1",
         RuntimeEffectIntent(
@@ -430,7 +428,7 @@ def test_safe_tool_recovery_reuses_existing_runtime_intent_and_batch(tmp_path: P
     assert projections[0].settlement.replayed_from_effect_id == "effect-1"
 
 
-def test_mixed_durable_effect_batch_fails_closed_without_replaying_safe_member(
+def test_mixed_unknown_effects_preserve_the_unsettled_member_without_replay(
     tmp_path: Path,
 ) -> None:
     project = tmp_path / "project"
@@ -442,8 +440,8 @@ def test_mixed_durable_effect_batch_fails_closed_without_replaying_safe_member(
         text="mixed batch", provider_snapshot={"provider_id": "local"},
     )
     durable.start_task("task-1", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_intent_committed", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
     safe_intent = prepare_intent(
         "conversation-1", "task-1",
         RuntimeEffectIntent(
@@ -489,5 +487,5 @@ def test_mixed_durable_effect_batch_fails_closed_without_replaying_safe_member(
     )
 
     assert result.ok is False
-    assert durable.store.effect("effect-safe").status == "interrupted"
-    assert durable.task("task-1").phase == "failed"
+    assert durable.store.effect("effect-safe").status == "pending"
+    assert durable.task("task-1").phase == "running"

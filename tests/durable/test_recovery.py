@@ -1,46 +1,37 @@
-from codey.durable import EffectRecord, TaskCheckpoint, decide_recovery
+"""Durable retains lifecycle/effect integrity; operation owns recovery choices."""
+from dataclasses import replace
+
+import pytest
+
+from codey.durable import EffectRecord, TaskCheckpoint
+from codey.durable.model import TASK_PHASE_TRANSITIONS, migrate_checkpoint_phase
+from codey.durable.reducer import with_effect_intents, with_effect_settlement
 
 
-def _task(phase: str) -> TaskCheckpoint:
-    return TaskCheckpoint(
-        "task-1", "conversation-1", "submission-1", phase, 2,
-        {"provider_id": "local"}, {},
-    )
+@pytest.mark.parametrize("phase", [
+    "provider_prepared", "assistant_intent_committed", "assistant_response_pending",
+    "assistant_response_unknown", "tool_intent_committed", "tool_effect_running",
+    "tool_outcome_ready", "effect_unknown", "verification_pending",
+])
+def test_version_one_execution_phase_migrates_without_inventing_an_outcome(phase):
+    migrated = migrate_checkpoint_phase(phase, 1)
+    assert migrated == ("running", 2)
+    assert migrate_checkpoint_phase(*migrated) == migrated
+    with pytest.raises(ValueError, match="unknown task phase"):
+        migrate_checkpoint_phase(phase, 2)
 
 
-def _effect(category: str, *, settled: bool = False, replay_class: str = "unsafe") -> EffectRecord:
-    return EffectRecord(
-        f"{category}-1", "task-1", category, replay_class, "digest-1",
-        "settled" if settled else "pending", {},
-        {"status": "ok"} if settled else None,
-    )
+def test_task_lifecycle_contains_no_provider_or_tool_execution_position():
+    assert set(TASK_PHASE_TRANSITIONS) == {
+        "accepted", "dispatching", "running", "completion_pending", "completed", "failed", "cancelled",
+    }
 
 
-def test_recovery_marks_uncertain_provider_call_unknown_without_retry() -> None:
-    decision = decide_recovery(_task("assistant_intent_committed"), (_effect("provider_send"),))
-    assert decision.action == "settle_provider_unknown"
-    assert decision.effect_ids == ("provider_send-1",)
-
-
-def test_recovery_routes_pending_safe_tools_to_durable_recovery() -> None:
-    decision = decide_recovery(_task("tool_effect_running"), (_effect("tool_call", replay_class="safe"),))
-    assert decision.action == "recover_tool_effects"
-
-
-def test_recovery_settles_pending_unsafe_tools_without_replay() -> None:
-    decision = decide_recovery(_task("tool_effect_running"), (_effect("tool_call"),))
-    assert decision.action == "settle_tool_unknown"
-
-
-def test_recovery_rejects_effects_that_do_not_match_checkpoint() -> None:
-    decision = decide_recovery(_task("assistant_response_pending"), (_effect("tool_call"),))
-    assert decision.action == "fail_invariant"
-
-
-def test_recovery_reconciles_deferred_provider_after_tool_receipt() -> None:
-    task = _task("tool_effect_running")
-    provider = _effect("provider_send")
-    tool = _effect("tool_call", settled=True)
-    decision = decide_recovery(task, (provider, tool))
-    assert decision.action == "reconcile_provider_generation"
-    assert decision.effect_ids == ("provider_send-1",)
+def test_effect_receipt_updates_indexes_without_another_execution_phase():
+    task = TaskCheckpoint("t", "c", "s", "running", 1, {}, {})
+    effect = EffectRecord("provider-1", "t", "provider_send", "unsafe", "digest", "pending", {})
+    admitted = with_effect_intents(task, (effect,))
+    assert admitted.phase == task.phase and admitted.pending_effect_id == effect.effect_id
+    settled = with_effect_settlement(admitted, replace(effect, status="interrupted", settlement={"sent_state": "maybe_sent"}))
+    assert settled.phase == task.phase and settled.pending_effect_id is None
+    assert not any(key in settled.state for key in {"provider_settlement_state", "provider_response_unknown"})

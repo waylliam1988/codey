@@ -14,8 +14,8 @@ def session(request: pytest.FixtureRequest, tmp_path: Path) -> DurableSession:
     session = DurableSession(store)
     session.admit_input(conversation_id="c", request_id="r", task_id="t", text="read", provider_snapshot={})
     session.start_task("t", state={})
-    session.advance_task(task_id="t", phase="assistant_intent_committed", state={})
-    session.advance_task(task_id="t", phase="assistant_response_pending", state={})
+    session.advance_task(task_id="t", phase="running", state={})
+    session.advance_task(task_id="t", phase="running", state={})
     return session
 
 
@@ -67,19 +67,14 @@ def test_settlement_requires_an_outcome_and_cannot_erase_the_pending_effect(sess
     assert session.task("t").pending_effect_id == "e"
 
 
-@pytest.mark.parametrize("sent_state,phase", [("maybe_sent", "assistant_response_unknown"), ("not_sent", "provider_prepared")])
-def test_provider_transport_uncertainty_determines_the_next_allowed_phase(session: DurableSession, sent_state: str, phase: str) -> None:
+@pytest.mark.parametrize("sent_state", ["maybe_sent", "not_sent"])
+def test_provider_transport_uncertainty_is_an_effect_fact_not_a_task_phase(session: DurableSession, sent_state: str) -> None:
     effect = EffectRecord("provider", "t", "provider_send", "unsafe", "digest", "pending", {})
     session.record_effect_intent("t", effect)
     session.settle_effect("t", replace(effect, status="error", settlement={"sent_state": sent_state}))
-    assert session.task("t").phase == phase
-    if sent_state == "maybe_sent":
-        before = session.commit_sequence()
-        with pytest.raises(CommitConflict, match="phase"):
-            session.record_effect_intent("t", replace(effect, effect_id="retry"))
-        assert session.commit_sequence() == before
-    else:
-        session.record_effect_intent("t", replace(effect, effect_id="retry"))
+    assert session.task("t").phase == "running"
+    assert session.effect("provider").settlement == {"sent_state": sent_state}
+    assert session.task("t").pending_effect_id is None
 
 
 def test_terminal_settlement_cannot_be_overwritten_even_with_its_current_status(session: DurableSession) -> None:

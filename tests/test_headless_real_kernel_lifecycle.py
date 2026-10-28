@@ -69,7 +69,7 @@ def test_explicit_planning_enters_running_before_durable_provider_send(tmp_path,
     assert (project / "pricing.py").read_text() == "READONLY_MARKER = 42\n"
 
 
-def test_headless_shell_denial_cancels_without_transition_error(tmp_path, monkeypatch):
+def test_headless_shell_denial_stops_without_fabricating_execution_receipts(tmp_path, monkeypatch):
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     project, state = tmp_path / "project", short_test_state_home()
     project.mkdir()
@@ -88,7 +88,9 @@ def test_headless_shell_denial_cancels_without_transition_error(tmp_path, monkey
                             provider_id="local", intent="project", max_turns=3, state_home=state),
             emit_jsonl=rows.append, connect_provider=lambda *a, **kw: provider,
         )
-    assert result.stop_reason == "stopped", rows
+    assert result.stop_reason == "stopped", [
+        (row.get("stop_reason"), row.get("summary")) for row in rows if row.get("type") == "task_done"
+    ]
     assert result.exit_code == 1
     assert any(row.get("type") == "shell_rejected" for row in rows)
     assert not (project / "unapproved").exists()
@@ -98,8 +100,16 @@ def test_headless_shell_denial_cancels_without_transition_error(tmp_path, monkey
             result.session_id, result.run_id
         )
         assert operation is not None
-        assert operation.leaf == "terminal"
-        assert operation.terminal.stop_reason == "stopped"
+        # The stop occurred inside approval publication. Neither the original
+        # shell call nor its provider boundary committed a settlement. A
+        # scheduler cancellation cannot manufacture them to seal operation.
+        assert operation.leaf == "tool_effect_pending"
+        assert operation.terminal is None
+        effects = durable.effects(result.run_id)
+        assert len(effects) == 2 and all(effect.settlement is None for effect in effects)
+        assert any(artifact.metadata.get("kind") == "provider_response"
+                   for artifact in durable.artifacts_for_task(result.run_id))
+        assert len(provider.prompts) == 1
         # Cancellation is a first-class durable terminal state; the
         # user-facing stop_reason remains ``stopped``.
         assert durable.task(result.run_id).phase == "cancelled"

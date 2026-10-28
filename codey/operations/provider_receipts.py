@@ -1,0 +1,185 @@
+"""Provider request/response artifacts in the existing managed output store.
+
+The body has one owner. Checkpoints and durable artifact rows carry references;
+conversation history is produced separately at its generation boundary.
+"""
+from __future__ import annotations
+
+import hashlib
+from collections.abc import Mapping
+from dataclasses import fields, is_dataclass
+from enum import Enum
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, cast
+
+from codey.durable.model import ArtifactRecord, thaw_json
+from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
+from codey.runtime.effects.effect_records import RuntimeEffectError
+from codey.storage.managed_outputs import ManagedOutputStore
+
+REQUEST_KIND = "provider_request"
+RESPONSE_KIND = "provider_response"
+
+
+def json_value(value: object) -> object:
+    """Freeze transport data without lossy default=str or callable encoding."""
+    if value is None or type(value) in (str, bool, int, float):
+        return value
+    if isinstance(value, Enum):
+        return json_value(value.value)
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise ValueError("provider receipt object keys must be strings")
+        return {key: json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        values = sorted(value) if isinstance(value, (set, frozenset)) else value
+        return [json_value(item) for item in values]
+    if is_dataclass(value) and not isinstance(value, type):
+        return {field.name: json_value(getattr(value, field.name)) for field in fields(value)}
+    raise ValueError(f"provider receipt cannot encode {type(value).__name__}")
+
+
+def encode_reply(reply: object) -> dict[str, object]:
+    if isinstance(reply, str):
+        return {"protocol": "text", "text": reply}
+    if not isinstance(reply, AssistantTurn):
+        raise ValueError("provider returned an unsupported response type")
+    return {"protocol": "native", "text": reply.text, "reasoning": reply.reasoning,
+            "finish": reply.finish.value, "raw": json_value(reply.raw),
+            "tool_calls": [{"id": call.id, "name": call.name, "arguments": json_value(call.arguments)}
+                           for call in reply.tool_calls]}
+
+
+def decode_reply(payload: object) -> str | AssistantTurn:
+    if not isinstance(payload, dict) or not isinstance(payload.get("text"), str):
+        raise ValueError("provider response payload is invalid")
+    if payload.get("protocol") == "text" and set(payload) == {"protocol", "text"}:
+        return cast(str, payload["text"])
+    if payload.get("protocol") != "native" or set(payload) != {
+        "protocol", "text", "reasoning", "finish", "raw", "tool_calls",
+    }:
+        raise ValueError("provider response protocol is invalid")
+    calls = payload["tool_calls"]
+    if (not isinstance(calls, list) or not isinstance(payload["raw"], dict)
+            or not isinstance(payload["reasoning"], str)):
+        raise ValueError("provider native response is invalid")
+    parsed = []
+    for call in calls:
+        if (not isinstance(call, dict) or set(call) != {"id", "name", "arguments"}
+                or not isinstance(call["id"], str) or not isinstance(call["name"], str)
+                or not isinstance(call["arguments"], dict)):
+            raise ValueError("provider response call is invalid")
+        # Invalid/missing ids remain raw protocol errors; this codec does not repair them.
+        parsed.append(ProviderToolCall(call["id"], call["name"], call["arguments"]))
+    return AssistantTurn(text=payload["text"], tool_calls=tuple(parsed), raw=payload["raw"],
+                         reasoning=payload["reasoning"], finish=TurnFinish(payload["finish"]))
+
+
+def write_provider_artifact(store: ManagedOutputStore, *, session_id: str, run_id: str,
+                            effect_id: str, kind: str, payload: object) -> ArtifactRecord:
+    if kind not in {REQUEST_KIND, RESPONSE_KIND}:
+        raise ValueError("unknown provider artifact kind")
+    envelope = {"schema_version": 1, "kind": kind, "effect_id": effect_id, "payload": payload}
+    ref = store.write_json_artifact(session_id=session_id, run_id=run_id, payload=envelope)
+    return store.json_artifact_record(ref, owner_task_id=run_id, owner_effect_id=effect_id,
+                                      metadata={"kind": kind})
+
+
+def read_provider_artifact(store: ManagedOutputStore, record: ArtifactRecord, *, kind: str,
+                           session_id: str, run_id: str, effect_id: str) -> Any:
+    if (record.owner_task_id != run_id or record.owner_effect_id != effect_id
+            or record.metadata.get("kind") != kind):
+        raise RuntimeEffectError("provider artifact ownership mismatch")
+    raw_ref = thaw_json(record.metadata.get("ref"))
+    if not isinstance(raw_ref, dict) or raw_ref.get("session_id") != session_id or raw_ref.get("run_id") != run_id:
+        raise RuntimeEffectError("provider artifact scope mismatch")
+    ref = cast(dict[str, object], raw_ref)
+    if ref.get("handle") != record.handle or ref.get("sha256") != record.sha256:
+        raise RuntimeEffectError("provider artifact digest reference mismatch")
+    payload = store.read_json_artifact(ref)
+    if (not isinstance(payload, dict) or set(payload) != {"schema_version", "kind", "effect_id", "payload"}
+            or type(payload["schema_version"]) is not int or payload["schema_version"] != 1
+            or payload["kind"] != kind or payload["effect_id"] != effect_id):
+        raise RuntimeEffectError("provider artifact envelope mismatch")
+    return payload["payload"]
+
+
+def snapshot_description(snapshot: Any) -> dict[str, object]:
+    """Persist the captured contract, never Python callables or a live registry."""
+    return {"schema_version": 1, "implementation_id": runtime_implementation_id(), "allowed": json_value(snapshot.allowed),
+            "contract_text": snapshot.contract_text, "tool_names": list(snapshot.tool_names),
+            "policy": snapshot.policy.to_payload(), "specs": json_value(snapshot.frozen_specs),
+            "executors": [{"name": name, "binding": None if fn is None else {
+                "module": getattr(fn, "__module__", ""), "name": getattr(fn, "__qualname__", ""),
+                "version": getattr(fn, "__codey_tool_version__", None),
+            }} for name, fn in snapshot.custom_executors]}
+
+
+@lru_cache(maxsize=1)
+def runtime_implementation_id() -> str:
+    """Conservative identity for the installed built-in execution code.
+
+    Computed once per process. External executors require their own explicit
+    version; their Python names alone do not prove restart compatibility.
+    """
+    root = Path(__file__).resolve().parents[1]
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*.py")):
+        digest.update(path.relative_to(root).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def restore_snapshot(payload: object) -> Any:
+    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.policies.task_policy import TaskPolicy
+    from codey.toolchain.tool_spec import ToolSpec, custom_executor_for, freeze_spec_parameters
+
+    expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors"}
+    if not isinstance(payload, dict) or set(payload) != expected or type(payload["schema_version"]) is not int or payload["schema_version"] != 1:
+        raise ValueError("invalid captured turn snapshot version/shape")
+    names = payload["tool_names"]
+    allowed = payload["allowed"]
+    if (not isinstance(names, list) or any(not isinstance(name, str) or not name for name in names)
+            or len(set(names)) != len(names) or not isinstance(payload["contract_text"], str)
+            or (allowed is not None and (not isinstance(allowed, list) or any(not isinstance(n, str) for n in allowed)))
+            or not isinstance(payload["specs"], list) or not isinstance(payload["executors"], list)):
+        raise ValueError("invalid captured turn contract")
+    specs = []
+    spec_fields = {field.name for field in fields(ToolSpec)}
+    for raw in payload["specs"]:
+        if not isinstance(raw, dict) or set(raw) != spec_fields:
+            raise ValueError("invalid captured tool specification")
+        row = dict(raw)
+        for key in ("aliases", "required", "json_examples"):
+            if not isinstance(row[key], list) or any(not isinstance(value, str) for value in row[key]):
+                raise ValueError("invalid captured tool sequence")
+            row[key] = tuple(row[key])
+        row["parameters"] = tuple(tuple(pair) for pair in row["parameters"])
+        specs.append(freeze_spec_parameters(ToolSpec(**row)))
+    if [spec.name for spec in specs] != names:
+        raise ValueError("captured definitions do not match tool names")
+    compatible = payload["implementation_id"] == runtime_implementation_id()
+    bindings = []
+    for row in payload["executors"]:
+        if not isinstance(row, dict) or set(row) != {"name", "binding"} or row["name"] not in names:
+            raise ValueError("invalid captured executor descriptor")
+        name, binding = row["name"], row["binding"]
+        current = custom_executor_for(name)
+        if binding is None:
+            compatible = compatible and current is None
+        else:
+            if not isinstance(binding, dict) or set(binding) != {"module", "name", "version"}:
+                raise ValueError("invalid captured executor identity")
+            compatible = compatible and bool(binding["version"]) and current is not None and binding == {
+                "module": getattr(current, "__module__", ""), "name": getattr(current, "__qualname__", ""),
+                "version": getattr(current, "__codey_tool_version__", None),
+            }
+        bindings.append((name, current))
+    if [name for name, _ in bindings] != names:
+        raise ValueError("captured executor descriptors do not match tool names")
+    return TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=payload["contract_text"],
+        tool_names=tuple(names), policy=TaskPolicy.from_payload(payload["policy"]), frozen_specs=tuple(specs),
+        custom_executors=tuple(bindings), implementation_compatible=bool(compatible))

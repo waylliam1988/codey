@@ -422,6 +422,25 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             self.assertIn("mark_writer_settled", str(event["summary"]))
             self.assertEqual(_operation(state, run_id).leaf, LEAF_TERMINAL)
 
+    def test_terminal_commit_failure_reports_error_and_keeps_operation_position(self) -> None:
+        writer = ObservingWriter(
+            ([_edit_event(), _run_event(True)], RunResult("implemented", "done", 3)),
+        )
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            project = _pytest_project(Path(td))
+            state = server.AppContext(Path(td) / "state")
+            assert state.runtime_mutations is not None
+            with mock.patch.object(state.runtime_mutations, "mark_terminal",
+                                   side_effect=RuntimeOperationTransitionError("terminal commit refused")):
+                event = _run(_runner(state, writer), state, project, writer)
+            run_id = str(event["run_id"])
+            self.assertEqual(event["stop_reason"], "error")
+            self.assertEqual(event["runtime_settlement_error"]["message"], "terminal commit refused")
+            self.assertNotEqual(_operation(state, run_id).leaf, LEAF_TERMINAL)
+            self.assertIsNone(_operation(state, run_id).terminal)
+            self.assertEqual(state.durable.task(run_id).phase, "failed")
+            self.assertFalse(state.is_busy())
+
     def test_completion_proof_mutation_failure_skips_repair(self) -> None:
         writer = ObservingWriter(
             ([_edit_event(), _run_event(False)], RunResult("done?", "done", 4)),

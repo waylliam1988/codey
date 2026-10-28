@@ -1557,7 +1557,7 @@ class DurableSession:
     def start_task(self, task_id: str, *, state: Mapping[str, object]) -> CommitResult:
         return self.advance_task(
             task_id=task_id,
-            phase="provider_prepared",
+            phase="running",
             state=state,
             submission_status=SubmissionStatus.RUNNING,
         )
@@ -1680,8 +1680,7 @@ class DurableSession:
             current,
             phase="cancelled",
             revision=current.revision + 1,
-            state={**_release_attempt_state(state), "pending_effect_ids": []},
-            pending_effect_id=None,
+            state=_release_attempt_state(state),
             status=TaskStatus.CANCELLED,
         )
         submission = self.store.submission(current.submission_id)
@@ -1695,7 +1694,6 @@ class DurableSession:
             current.conversation_id,
             revision,
             task=next_task,
-            settlements=tuple(interrupted_effect(current, effect) for effect in pending),
             submission_update=update,
             # Cancellation is the recovery winner: it may close a running
             # attempt left by a dead process, so bind the terminal commit to
@@ -1964,10 +1962,17 @@ class DurableSession:
         state: Mapping[str, object],
         expected_attempt_token: str | None = None,
     ) -> CommitResult:
-        """Settle unknown effects and fail the task/submission in one commit."""
+        """Stop scheduling and fail the submission without asserting effect outcomes.
+
+        Unknown outcomes are resolved explicitly by operation recovery rules.
+        A lifecycle failure preserves pending receipts and execution position.
+        """
         current = self.store.task(task_id)
         _head, revision = self.store.head(current.conversation_id)
         pending = tuple(effect for effect in self.store.effects_for_task(task_id) if effect.settlement is None)
+        for key in ("operation", "delivery_batches", "pending_effect_ids", "approvals"):
+            if key in state and thaw_json(state[key]) != thaw_json(current.state.get(key)):
+                raise CommitConflict(f"task failure cannot replace authoritative {key}")
         pending_ids = current.state.get("pending_effect_ids", ())
         if not isinstance(pending_ids, tuple) or {effect.effect_id for effect in pending} != set(pending_ids):
             raise CommitConflict("task checkpoint and pending effects disagree")
@@ -1975,8 +1980,8 @@ class DurableSession:
             current,
             phase="failed",
             revision=current.revision + 1,
-            state={**_release_attempt_state({**dict(current.state), **dict(state)}), "pending_effect_ids": []},
-            pending_effect_id=None,
+            state=_release_attempt_state({**dict(current.state), **dict(state),
+                                          "pending_effect_ids": list(pending_ids)}),
             status=TaskStatus.FAILED,
         )
         submission = self.store.submission(current.submission_id)
@@ -1985,7 +1990,6 @@ class DurableSession:
                 conversation_id=current.conversation_id,
                 expected_revision=revision,
                 task=next_task,
-                settlements=tuple(interrupted_effect(current, effect) for effect in pending),
                 submission_update=SubmissionUpdate(
                     submission.submission_id, current.conversation_id,
                     submission.status, SubmissionStatus.UNANSWERED, reason=reason,
@@ -2005,6 +2009,8 @@ class DurableSession:
         current = self.store.task(task_id)
         if current.state.get("cancel_requested"):
             raise CommitConflict("task cancellation barrier is active")
+        if current.status != TaskStatus.RUNNING:
+            raise CommitConflict("only a running task admits unapproved effects")
         _head, revision = self.store.head(current.conversation_id)
         next_task = with_effect_intents(current, effects)
         return self._commit(

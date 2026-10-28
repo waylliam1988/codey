@@ -44,16 +44,19 @@ class TurnSnapshot:
     policy: Any = None
     frozen_specs: tuple[Any, ...] = ()
     custom_executors: tuple[tuple[str, Any], ...] = ()
+    implementation_compatible: bool = True
 
 
 @dataclass(frozen=True)
-class InitialNativeTurn:
-    """An already received first turn with the exact declarations sent upstream."""
+class ReceivedProviderTurn:
+    """A received response with its original request's declarations and turn."""
 
-    reply: AssistantTurn
+    reply: AssistantTurn | str
     snapshot: TurnSnapshot
     prompt: str
     owner_session: TaskSession
+    logical_turn: int = 1
+    window_ref: Any = None
 
 
 def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:

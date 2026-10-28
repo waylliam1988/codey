@@ -38,7 +38,7 @@ def test_workflow_fork_refuses_a_checkpoint_with_unsettled_external_work(tmp_pat
     try:
         session.admit_input(conversation_id="c", request_id="r", task_id="t", text="go", provider_snapshot={})
         session.start_task("t", state={})
-        session.advance_task(task_id="t", phase="assistant_response_pending", state={})
+        session.advance_task(task_id="t", phase="running", state={})
         pending = session.record_effect_intent("t", EffectRecord("shell", "t", "shell", "unsafe", "digest", "pending", {}))
         with pytest.raises(CommitConflict, match="unsettled"):
             session.fork_task("t", pending.sequence, conversation_id="child", task_id="new", request_id="fork", instruction="retry")

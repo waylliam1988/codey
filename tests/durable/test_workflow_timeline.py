@@ -16,7 +16,7 @@ def test_timeline_reconstructs_checkpoint_and_effects_at_the_same_commit(backend
     admitted = durable.admit_input(conversation_id="c", request_id="request", task_id="task", text="read",
                                    provider_snapshot={"provider_id": "frozen"})
     durable.start_task("task", state={"step": 1})
-    durable.advance_task(task_id="task", phase="assistant_response_pending", state={"step": 2})
+    durable.advance_task(task_id="task", phase="running", state={"step": 2})
     effect = EffectRecord("read-1", "task", "tool_call", "safe_read", "digest", "pending", {"tool": "read"})
     intent = durable.record_effect_intent("task", effect)
     expected = durable.task("task")
@@ -29,7 +29,7 @@ def test_timeline_reconstructs_checkpoint_and_effects_at_the_same_commit(backend
         assert first.effects == ()
         assert pending.task == expected
         assert pending.effects == (effect,)
-        assert complete.task.phase == "tool_outcome_ready"
+        assert complete.task.phase == "running"
         assert complete.effects[0].settlement == {"output": "one"}
         assert first.head_entry_id == durable.entries("c")[0].entry_id
         assert [point.commit_seq for point in durable.task_timeline("task")] == sorted(

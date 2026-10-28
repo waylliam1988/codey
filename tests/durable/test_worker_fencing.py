@@ -24,7 +24,7 @@ def test_old_worker_cannot_settle_after_restart_reclaims_attempt() -> None:
     _admitted(old_worker)
     old_attempt = old_worker.task("task").attempt_token
     old_worker.start_task("task", state={})
-    old_worker.advance_task(task_id="task", phase="assistant_response_pending", state={})
+    old_worker.advance_task(task_id="task", phase="running", state={})
     old_worker.record_effect_intent(
         "task",
         EffectRecord(

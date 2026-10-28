@@ -11,7 +11,7 @@ from codey.agents.request import RecoveredToolOutcome
 from codey.agents.shell_approval import ShellApprovalRequest
 from codey.ghost.work_queue_model import GhostWorkItem
 from codey.operations.conversation_window import WindowAction
-from codey.operations.kernel_protocol import InitialNativeTurn
+from codey.operations.kernel_protocol import ReceivedProviderTurn
 from codey.providers.diagnostics import ProviderFailure
 from codey.runs.ledger import RunLedgerWriter
 from codey.runs.work_checkpoint import WorkCheckpoint, WorkCheckpointStore
@@ -47,7 +47,7 @@ class RunFrame:
     settled_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
     entry_session: Any | None = None
     entry_research_tools: Any | None = None
-    entry_initial_turn: InitialNativeTurn | None = None
+    entry_initial_turn: ReceivedProviderTurn | None = None
 
 
 @dataclass

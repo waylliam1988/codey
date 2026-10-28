@@ -56,8 +56,8 @@ def test_replayed_submission_does_not_publish_an_uncommitted_task_identity(sessi
 def test_effect_settlement_event_and_checkpoint_have_one_commit(session: DurableSession) -> None:
     admit(session)
     session.start_task("task", state={})
-    session.advance_task(task_id="task", phase="assistant_intent_committed", state={})
-    session.advance_task(task_id="task", phase="assistant_response_pending", state={})
+    session.advance_task(task_id="task", phase="running", state={})
+    session.advance_task(task_id="task", phase="running", state={})
     session.record_effect_intent("task", EffectRecord("effect", "task", "tool_call", "safe", "digest", "pending", {}))
     before = session.commits_after(0)[-1].sequence
     result = session.settle_effect("task", EffectRecord("effect", "task", "tool_call", "safe", "digest", "ok", {}, {"ok": True}))
@@ -65,7 +65,7 @@ def test_effect_settlement_event_and_checkpoint_have_one_commit(session: Durable
     assert record.sequence == result.sequence
     events = record.to_payload()["projections"]
     assert any(event["type"] == "effect_settled" and event["effect_id"] == "effect" for event in events)
-    assert any(event["type"] == "task_progressed" and event["phase"] == "tool_outcome_ready" for event in events)
+    assert any(event["type"] == "task_progressed" and event["phase"] == "running" for event in events)
 
 
 def test_restart_after_commit_before_publication_replays_identical_event(tmp_path: Path) -> None:

@@ -7,54 +7,32 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import cast
 
-TASK_PHASE_TRANSITIONS: Mapping[str, frozenset[str]] = MappingProxyType(
-    {
-        "accepted": frozenset({"dispatching", "provider_prepared", "failed", "cancelled"}),
-        "dispatching": frozenset({"accepted", "provider_prepared", "failed", "cancelled"}),
-        "provider_prepared": frozenset(
-            {
-                "assistant_intent_committed",
-                "assistant_response_pending",
-                "completion_pending",
-                "failed",
-                "cancelled",
-            }
-        ),
-        "assistant_intent_committed": frozenset(
-            {
-                "provider_prepared", "assistant_response_pending", "tool_effect_running",
-                "assistant_response_unknown", "failed", "cancelled",
-            }
-        ),
-        "assistant_response_pending": frozenset(
-            {
-                "assistant_intent_committed",
-                "tool_intent_committed",
-                "tool_effect_running",
-                "tool_outcome_ready",
-                "verification_pending",
-                "completion_pending",
-                "assistant_response_unknown",
-                "failed",
-                "cancelled",
-            }
-        ),
-        "assistant_response_unknown": frozenset({"failed", "cancelled"}),
-        "tool_intent_committed": frozenset({"tool_effect_running", "failed", "cancelled"}),
-        "tool_effect_running": frozenset({"tool_outcome_ready", "effect_unknown", "failed", "cancelled"}),
-        "effect_unknown": frozenset({"failed", "cancelled"}),
-        "tool_outcome_ready": frozenset(
-            {"provider_prepared", "assistant_intent_committed", "verification_pending", "completion_pending", "failed", "cancelled"}
-        ),
-        "verification_pending": frozenset({"provider_prepared", "completion_pending", "failed", "cancelled"}),
-        "completion_pending": frozenset({"completed", "failed", "cancelled"}),
-        "completed": frozenset(),
-        "failed": frozenset(),
-        "cancelled": frozenset(),
-    }
-)
+TASK_PHASE_TRANSITIONS: Mapping[str, frozenset[str]] = MappingProxyType({
+    "accepted": frozenset({"dispatching", "running", "failed", "cancelled"}),
+    "dispatching": frozenset({"accepted", "running", "failed", "cancelled"}),
+    # Task lifecycle only; operation owns provider/tool execution position.
+    "running": frozenset({"completion_pending", "failed", "cancelled"}),
+    "completion_pending": frozenset({"completed", "failed", "cancelled"}),
+    "completed": frozenset(), "failed": frozenset(), "cancelled": frozenset(),
+})
 
-TASK_CHECKPOINT_SCHEMA_VERSION = 1
+TASK_CHECKPOINT_SCHEMA_VERSION = 2
+_V1_EXECUTION_PHASES = frozenset({
+    "provider_prepared", "assistant_intent_committed", "assistant_response_pending",
+    "assistant_response_unknown", "tool_intent_committed", "tool_effect_running",
+    "tool_outcome_ready", "effect_unknown", "verification_pending",
+})
+
+
+def migrate_checkpoint_phase(phase: str, schema_version: int) -> tuple[str, int]:
+    """Versioned format migration; operation/effects retain execution facts."""
+    if type(schema_version) is not int or schema_version not in {1, TASK_CHECKPOINT_SCHEMA_VERSION}:
+        raise ValueError(f"unsupported task checkpoint schema: {schema_version!r}")
+    if schema_version == 1 and phase in _V1_EXECUTION_PHASES:
+        return "running", TASK_CHECKPOINT_SCHEMA_VERSION
+    if phase not in TASK_PHASE_TRANSITIONS:
+        raise ValueError(f"unknown task phase: {phase}")
+    return phase, TASK_CHECKPOINT_SCHEMA_VERSION
 FROZEN_TASK_STATE_KEYS = (
     "input_entry_id",
     "input_identity",

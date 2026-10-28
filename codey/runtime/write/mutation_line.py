@@ -15,10 +15,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from codey.durable.model import ArtifactRecord
 
+from codey.runtime.core.operation_reducer import prepare_operation_settlement
 from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,
-    LEAF_TOOL_DELIVERY_PENDING,
-    LEAF_TOOL_EFFECT_PENDING,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
     new_operation_state,
@@ -53,9 +52,6 @@ from codey.runtime.core.operation_state import (
     mark_tool_delivery_settled as state_mark_tool_delivery_settled,
 )
 from codey.runtime.core.operation_state import (
-    mark_tool_effect_settled as state_mark_tool_effect_settled,
-)
-from codey.runtime.core.operation_state import (
     mark_writer_running as state_mark_writer_running,
 )
 from codey.runtime.core.operation_state import (
@@ -69,7 +65,6 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectSettlement,
 )
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent, abandoned_entry
-from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_view import load_session_view
 from codey.runtime.write.delivery_recovery import build_delivery_recovered_rows
 from codey.runtime.write.provider_effects import (
@@ -81,26 +76,6 @@ from codey.runtime.write.tool_batches import (
     build_tool_batch_rows,
     build_tool_settle_rows,
 )
-
-
-def _resolve_abandoned_delivery(
-    state: RuntimeOperationState,
-) -> RuntimeOperationState:
-    """Resolve a delivery the driver stopped inside of before settling.
-
-    A run stopped from inside tool delivery (e.g. headless denied a shell
-    request) leaves the leaf at tool_delivery_pending. Settling the writer or
-    repair directly from there is illegal and would mask the real stop with a
-    transition error, so the abandoned delivery is resolved back to its driver
-    first. The denial itself stays recorded in events; this only unblocks the
-    honest settle. The pure machine stays strict: this composition lives only
-    in the two settle entries that own a driver lifecycle end.
-    """
-    if state.leaf == LEAF_TOOL_EFFECT_PENDING:
-        state = state_mark_tool_effect_settled(state, has_remaining=False)
-    if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
-        return state_mark_tool_delivery_settled(state)
-    return state
 
 
 class RuntimeMutationLine:
@@ -179,55 +154,18 @@ class RuntimeMutationLine:
         session_id: str,
         run_id: str,
         transition: Callable[[RuntimeOperationState], RuntimeOperationState],
-    ) -> RuntimeOperationState | None:
-        committed: RuntimeOperationState | None = None
-
-        def mutation(projection: Any, entries: Any) -> Any:
-            nonlocal committed
-            current = _require_state(entries, session_id=session_id, run_id=run_id)
-            op = projection.operations.get(current.operation_id)
-            if op is not None and op.status != "open":
-                if current.leaf == LEAF_TERMINAL:
-                    next_state = transition(current)
-                    if next_state == current:
-                        committed = current
-                        return ()
-                    raise RuntimeOperationTransitionError("terminal operation is immutable")
-                raise RuntimeOperationTransitionError("operation already settled")
-            operation_is_open(projection, current)
-            next_state = transition(current)
-            if next_state == current:
-                committed = current
-                return ()
-            rows = [operation_state_entry(next_state)]
-            if next_state.leaf == LEAF_TERMINAL:
-                rows.append(_operation_settled_entry(next_state))
-            committed = next_state
-            return tuple(rows)
-
-        self._mutate(session_id, run_id, mutation)
-        return committed
-
-    def _commit_settle(
-        self,
-        session_id: str,
-        run_id: str,
-        transition: Callable[[RuntimeOperationState], RuntimeOperationState],
         *,
-        abandoned_reason: str,
+        abandoned_reason: str = "",
     ) -> RuntimeOperationState | None:
-        """Settle writer/repair, closing any undelivered batch as abandoned.
-
-        The abandoned receipt and the operation settle commit in the same
-        mutation: the batch never hangs as pending, and replay never treats
-        it as recoverable. Abandoned is terminal, never disguised as
-        delivered/recovered.
-        """
         committed: RuntimeOperationState | None = None
 
         def mutation(projection: Any, entries: Any) -> Any:
             nonlocal committed
-            current = _require_state(entries, session_id=session_id, run_id=run_id)
+            view = load_session_view(entries, session_id=session_id, run_id=run_id)
+            current = view.state
+            if current is None:
+                raise RuntimeOperationTransitionError("operation state is missing")
+            prepared = prepare_operation_settlement(view) if abandoned_reason else None
             op = projection.operations.get(current.operation_id)
             if op is not None and op.status != "open":
                 if current.leaf == LEAF_TERMINAL:
@@ -239,22 +177,14 @@ class RuntimeMutationLine:
                 raise RuntimeOperationTransitionError("operation already settled")
             operation_is_open(projection, current)
             rows: list[dict[str, object]] = []
-            if current.leaf == LEAF_TOOL_DELIVERY_PENDING:
-                view = load_session_view(entries, session_id=session_id, run_id=run_id)
-                for batch in view.batches:
-                    if batch.intent.turn != current.turn:
-                        continue
-                    if batch.is_terminal:
-                        continue
-                    entry = abandoned_entry(
-                        session_id,
-                        run_id,
-                        batch_id=batch.intent.batch_id,
-                        reason=abandoned_reason,
-                        batches=view.batches,
-                    )
+            if prepared is not None:
+                for batch_id in prepared.abandoned_batch_ids:
+                    entry = abandoned_entry(session_id, run_id, batch_id=batch_id,
+                                            reason=abandoned_reason, batches=view.batches)
                     if entry is not None:
                         rows.append(entry)
+                if prepared.abandoned_batch_ids:
+                    current = state_mark_tool_delivery_settled(current)
             next_state = transition(current)
             if next_state == current and not rows:
                 committed = current
@@ -319,11 +249,11 @@ class RuntimeMutationLine:
         turns_used: int,
         stop_reason: str,
     ) -> RuntimeOperationState | None:
-        return self._commit_settle(
+        return self._commit_state(
             session_id,
             run_id,
             lambda state: state_mark_writer_settled(
-                _resolve_abandoned_delivery(state),
+                state,
                 provider_id=provider_id,
                 turns_used=turns_used,
                 stop_reason=stop_reason,
@@ -388,11 +318,11 @@ class RuntimeMutationLine:
         blocked_reason: str = "",
         turns_used: int | None = None,
     ) -> RuntimeOperationState | None:
-        return self._commit_settle(
+        return self._commit_state(
             session_id,
             run_id,
             lambda state: state_mark_repair_settled(
-                _resolve_abandoned_delivery(state),
+                state,
                 provider_id=provider_id,
                 stop_reason=stop_reason,
                 blocked_reason=blocked_reason,
@@ -433,7 +363,7 @@ class RuntimeMutationLine:
             session_id,
             run_id,
             lambda state: state_mark_terminal(
-                _resolve_abandoned_delivery(state),
+                state,
                 stop_reason=stop_reason,
                 summary_chars=summary_chars,
                 turns=turns,
@@ -444,6 +374,7 @@ class RuntimeMutationLine:
                 proof_ref=proof_ref,
                 proof_status=proof_status,
             ),
+            abandoned_reason="operation_terminal",
         )
 
     def begin_provider_effect(
@@ -455,6 +386,7 @@ class RuntimeMutationLine:
         driver: str = "",
         delivery_batch_id: str = "",
         supersede_effect_id: str = "",
+        artifacts: tuple[ArtifactRecord, ...] = (),
     ) -> RuntimeEffectIntent:
         committed: RuntimeEffectIntent | None = None
 
@@ -474,10 +406,35 @@ class RuntimeMutationLine:
             committed = prepared
             return rows
 
-        self._mutate(session_id, run_id, mutation)
+        self._mutate(session_id, run_id, mutation, artifacts=artifacts)
         if committed is None:
             raise RuntimeEffectError("provider effect intent was not committed")
         return committed
+
+    def record_provider_response(
+        self, session_id: str, run_id: str, *, effect_id: str, artifact: ArtifactRecord,
+        messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
+    ) -> None:
+        """Admit a received body without settling input/history generation boundaries."""
+        from codey.runtime.core.operation_state import mark_provider_response_ready, operation_state_entry
+        from codey.runtime.effects.effect_records import find_effect
+        from codey.runtime.log.session_view import require_open_view
+
+        def mutation(projection: Any, entries: Any) -> Any:
+            view = load_session_view(entries, session_id=session_id, run_id=run_id)
+            state = require_open_view(projection, view)
+            effect = find_effect(view.effects, effect_id)
+            if (effect.intent.effect_category != "provider_send" or effect.settlement is not None
+                    or artifact.owner_task_id != run_id or artifact.owner_effect_id != effect_id
+                    or artifact.metadata.get("kind") != "provider_response"):
+                raise RuntimeEffectError("provider response does not match its pending effect")
+            if state.response_ref == artifact.handle:
+                return ()
+            if state.turn != effect.intent.turn:
+                raise RuntimeEffectError("provider response does not match its operation turn")
+            return (operation_state_entry(mark_provider_response_ready(state, response_ref=artifact.handle)),)
+
+        self._mutate(session_id, run_id, mutation, artifacts=(artifact,), messages=messages)
 
     def settle_provider_effect(
         self,
@@ -679,22 +636,6 @@ def _replace_task_policy(state: RuntimeOperationState, policy: dict[str, object]
     from dataclasses import replace
 
     return replace(state, task_policy=dict(policy))
-
-
-def _require_state(
-    entries: tuple[RuntimeLogEntry, ...],
-    *,
-    session_id: str,
-    run_id: str,
-) -> RuntimeOperationState:
-    state = operation_state_from_entries(
-        entries,
-        session_id=session_id,
-        run_id=run_id,
-    )
-    if state is None:
-        raise RuntimeOperationTransitionError("operation state is missing")
-    return state
 
 
 __all__ = [

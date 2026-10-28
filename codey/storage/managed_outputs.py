@@ -305,6 +305,19 @@ class ManagedOutputStore:
             raise ValueError("json artifact digest mismatch")
         return json.loads(raw.decode("utf-8"))
 
+    def json_artifact_record(
+        self, ref: ManagedJsonArtifactRef, *, owner_task_id: str, owner_effect_id: str,
+        metadata: dict[str, object],
+    ) -> ArtifactRecord:
+        """Register a verified JSON body through the existing artifact ledger."""
+        from codey.durable.model import ArtifactRecord
+
+        self.read_json_artifact(ref)
+        path = self._handle_path(ref.session_id, ref.run_id, _safe_artifact_handle(ref.handle), ".json")
+        return ArtifactRecord(handle=ref.handle, sha256=ref.sha256, byte_count=path.stat().st_size,
+            storage_path=str(path), owner_task_id=owner_task_id, owner_effect_id=owner_effect_id,
+            created_at=_now(), metadata={**metadata, "ref": ref.to_payload()})
+
     def _run_dir(self, session_id: str, run_id: str) -> Path:
         root = self.root.resolve()
         path = root / session_key(session_id) / _safe_component(run_id, "run")

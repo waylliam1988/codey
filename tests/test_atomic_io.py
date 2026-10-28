@@ -13,6 +13,16 @@ from codey.storage.atomic_io import encode_with_original_eol, write_text_atomic
 
 
 class AtomicWriteTests(unittest.TestCase):
+    def test_long_valid_filename_does_not_make_the_staging_filename_invalid(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            name_length = min(230, 248 - len(str(root))) if os.name == "nt" else 230
+            path = root / ("a" * name_length)
+            path.write_bytes(b"before")
+            write_text_atomic(path, "after")
+            self.assertEqual(path.read_bytes(), b"after")
+            self.assertEqual(list(root.iterdir()), [path])
+
     def test_write_is_atomic_and_replaces_content(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = Path(td, "app.py")

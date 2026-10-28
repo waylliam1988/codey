@@ -8,7 +8,7 @@ import pytest
 from codey.app.context import AppContext
 from codey.operations import project_prompt_context, task_loop
 from codey.operations.context import RunWork
-from codey.operations.kernel_protocol import InitialNativeTurn, build_turn_snapshot
+from codey.operations.kernel_protocol import ReceivedProviderTurn, build_turn_snapshot
 from codey.operations.task_entry import run_entry_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
@@ -93,7 +93,7 @@ def test_initial_turn_from_another_session_is_rejected_even_with_equal_policy(tm
     other = TaskSession(policy=policy, task_kind="planning_readonly", project=str(tmp_path), max_turns=1)
     (tmp_path / "private.txt").write_text("belongs to another task", encoding="utf8")
     first = AssistantTurn(tool_calls=(ProviderToolCall("read-1", "read_file", {"path": "private.txt"}),))
-    initial = InitialNativeTurn(first, build_turn_snapshot(original, native=True), "Read the original project", owner_session=original)
+    initial = ReceivedProviderTurn(first, build_turn_snapshot(original, native=True), "Read the original project", owner_session=original)
     provider = NativeConversation(first)
     result = task_loop.run_task_kernel(other, request=task_loop.KernelRunRequest(
         transport=task_loop.KernelTransportDeps(provider=provider, initial_turn=initial),

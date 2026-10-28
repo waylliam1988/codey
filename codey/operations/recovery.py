@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -16,11 +15,20 @@ from codey.agents.tool_execution import (
     policy_denied,
 )
 from codey.agents.tools import build_project_tool_fns
-from codey.durable import decide_recovery
 from codey.durable.model import ArtifactRecord, EffectRecord, thaw_json
 from codey.durable.session import DurableSession
 from codey.policies.permissions import profile_for_task_kind
 from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
+from codey.runtime.core.operation_reducer import (
+    ACTION_COMMIT_GENERATION_BOUNDARY,
+    ACTION_CONTINUE,
+    ACTION_FAIL_INVARIANT,
+    ACTION_INTERPRET_PROVIDER_RESPONSE,
+    ACTION_REDELIVER_SETTLED_BATCH,
+    ACTION_REPLAY_SAFE_TOOL_BATCH,
+    ACTION_SETTLE_PROVIDER_UNKNOWN,
+    ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS,
+)
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     SETTLEMENT_STATUS_ERROR,
@@ -33,6 +41,7 @@ from codey.runtime.effects.effect_records import (
 from codey.runtime.effects.replay_policy import ReplayClass
 from codey.runtime.effects.safe_tool_replay import candidate_from_intent
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
+from codey.runtime.write.drive import peek_next_action
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 logger = logging.getLogger(__name__)
@@ -199,11 +208,21 @@ def _recover_pending_effects(
     )
     if terminal is not None:
         return terminal
-    if durable_decision.action == "reconcile_provider_generation":
+    if durable_decision.kind == ACTION_COMMIT_GENERATION_BOUNDARY:
         try:
-            _reconcile_provider_generation(
-                durable, task_id=run_id, mutations=mutations, session_id=session_id,
-            )
+            from codey.operations.task_effects import KernelEffectSink
+
+            if mutations is None:
+                raise RuntimeError("generation boundary requires runtime mutations")
+            task = durable.task(run_id)
+            sink = KernelEffectSink(mutations, session_id=session_id, run_id=run_id,
+                provider_id=str(task.provider_snapshot.get("provider_id") or "local"),
+                durable=durable, managed_outputs=_managed_output_store(deps), defer_generation_settlement=True)
+            pending = sink.pending_provider_settlement()
+            if pending is None:
+                raise ValueError("generation boundary has no reliable provider response")
+            mutations.settle_provider_effect_at_boundary(session_id, run_id, pending[0],
+                                                         boundary=durable_decision.reason, messages=pending[1])
             recovered_batch_id = _recover_settled_delivery(
                 durable, mutations=mutations, session_id=session_id, run_id=run_id,
             )
@@ -212,14 +231,14 @@ def _recover_pending_effects(
         return ResumeRecoveryResult(
             ok=True, recovered_tool_result_batch_id=recovered_batch_id,
         )
-    if durable_decision.action == "recover_tool_effects":
+    if durable_decision.kind == ACTION_REPLAY_SAFE_TOOL_BATCH:
         return _recover_durable_tool_effects(
             durable, run_id=run_id, project=project,
             task_kind=task_kind, deps=deps, mutations=mutations, ignored_paths=ignored_paths,
         )
-    if durable_decision.action in {"continue", "settle_provider_unknown", "settle_tool_unknown"}:
+    if durable_decision.kind in {ACTION_CONTINUE, ACTION_INTERPRET_PROVIDER_RESPONSE, ACTION_REDELIVER_SETTLED_BATCH}:
         recovered_batch_id = ""
-        if durable_decision.action == "continue":
+        if durable_decision.kind != ACTION_INTERPRET_PROVIDER_RESPONSE:
             recovered_batch_id = _recover_settled_delivery(
                 durable, mutations=mutations, session_id=session_id, run_id=run_id,
             )
@@ -228,101 +247,6 @@ def _recover_pending_effects(
             recovered_tool_result_batch_id=recovered_batch_id,
         )
     return ResumeRecoveryResult(ok=False)
-
-
-def _reconcile_provider_generation(
-    durable: DurableSession,
-    *,
-    task_id: str,
-    mutations: RuntimeMutationLine | None,
-    session_id: str,
-) -> None:
-    """Close a deferred provider generation proved by committed tool facts.
-
-    A generation settlement is normally committed at ``post_tools`` together
-    with inbox placement.  A crash after a tool receipt commits but before
-    that boundary leaves the provider intent pending.  The settled tool
-    receipt is durable evidence that the provider response was observed, so
-    recovery seals that provider effect and reconstructs the assistant tool
-    call from the receipt before the next provider request is built.
-    """
-    if mutations is None:
-        raise RuntimeError("provider generation recovery requires runtime mutations")
-    task, effects = durable.task_facts(task_id)
-    from codey.durable.effects import nested_effect_ids
-
-    nested = nested_effect_ids(effects)
-    provider = next(
-        effect for effect in effects
-        if effect.category == "provider_send" and effect.settlement is None
-    )
-
-    def tool_order(effect: EffectRecord) -> tuple[int, int]:
-        intent = RuntimeEffectIntent.from_payload(_intent_object(effect))
-        return intent.turn, intent.tool_index
-
-    tool_effects = sorted(
-        (
-            effect for effect in effects
-            if effect.category == EFFECT_CATEGORY_TOOL_CALL
-            and effect.settlement is not None
-            and effect.effect_id not in nested
-        ),
-        key=tool_order,
-    )
-    if not tool_effects:
-        raise ValueError("deferred provider generation has no settled tool receipt")
-    recovered_messages: list[tuple[str, dict[str, object]]] = []
-    for effect in tool_effects:
-        intent = effect.intent
-        call_id = str(intent.get("call_id") or "")
-        if not call_id:
-            # Text-originated tool calls have no provider chain id. Their
-            # results are delivered through the recovered delivery batch as a
-            # follow-up prompt; synthesizing a tool_call/tool_result pair with
-            # an empty id would corrupt the next provider request.
-            continue
-        raw_payload = effect.settlement.get("result_payload") if effect.settlement else None
-        if not isinstance(raw_payload, str) or not raw_payload:
-            raise ValueError("settled tool receipt has no recoverable arguments")
-        payload = json.loads(raw_payload)
-        args = payload.get("args") if isinstance(payload, dict) else None
-        if not isinstance(args, dict):
-            raise ValueError("settled tool receipt arguments are invalid")
-        call: dict[str, object] = {
-            "id": call_id,
-            "type": "function",
-            "function": {
-                "name": str(intent.get("tool_name") or ""),
-                "arguments": json.dumps(args, ensure_ascii=False),
-            },
-        }
-        tool_settlement = effect.settlement or {}
-        recovered_messages.append(("tool_call", {"content": "", "tool_calls": [call]}))
-        recovered_messages.append(("tool_result", {
-            "call_id": call_id,
-            "content": str(tool_settlement.get("result_text") or tool_settlement.get("result_excerpt") or ""),
-            "is_error": tool_settlement.get("status") != SETTLEMENT_STATUS_OK,
-            "result_ref": str(tool_settlement.get("result_ref") or ""),
-        }))
-    raw_intent = provider.intent
-    settlement = RuntimeEffectSettlement(
-        effect_id=provider.effect_id,
-        effect_category=provider.category,
-        session_id=str(raw_intent.get("session_id") or session_id),
-        run_id=str(raw_intent.get("run_id") or task.task_id),
-        status=SETTLEMENT_STATUS_OK,
-        lane=str(raw_intent.get("lane") or ""),
-        operation_id=str(raw_intent.get("operation_id") or ""),
-        sent_state="settled",
-        replay_class=provider.replay_class,
-    )
-    mutations.settle_provider_effect(
-        session_id,
-        task_id,
-        settlement,
-        messages=tuple(recovered_messages),
-    )
 
 
 def _settled_delivery_batch_id(
@@ -648,47 +572,19 @@ def _apply_durable_recovery(
     mutations: RuntimeMutationLine | None,
     session_id: str,
 ) -> tuple[Any, ResumeRecoveryResult | None]:
-    """Apply recovery decisions that need no runtime projection.
-
-    This boundary is intentionally small: durable facts decide whether a
-    task may continue, while the legacy runtime projection can only provide
-    receipts for replay/redelivery after that decision.
-    """
+    """Use the operation reducer; durable task phases never select execution."""
     try:
-        decision = decide_recovery(durable.task(task_id), durable.effects(task_id))
-    except (KeyError, ValueError, TypeError):
+        decision = peek_next_action(durable, session_id=session_id, run_id=task_id)
+    except (KeyError, ValueError, TypeError, RuntimeOperationTransitionError):
         return None, ResumeRecoveryResult(ok=False)
-    if decision.action == "fail_invariant":
-        try:
-            task = durable.task(task_id)
-            pending = tuple(effect for effect in durable.effects(task_id) if effect.settlement is None)
-            for effect in pending:
-                raw_intent = thaw_json(effect.intent)
-                _settle_unknown_effect(
-                    durable, task_id, effect.effect_id, mutations=mutations,
-                    session_id=(
-                        str(raw_intent.get("session_id") or session_id)
-                        if isinstance(raw_intent, dict)
-                        else session_id
-                    ),
-                )
-            # A provider can already have a durable ``maybe_sent`` settlement;
-            # there is then nothing left to settle, but the unknown checkpoint
-            # still has to be sealed so restart cannot quietly continue it.
-            if task.phase not in {"completed", "failed", "cancelled"}:
-                checkpoint = durable.task(task_id)
-                durable.fail_task(
-                    task_id,
-                    f"durable recovery invariant failed: {decision.reason}",
-                    state=dict(checkpoint.state),
-                )
-        except Exception:
-            return decision, ResumeRecoveryResult(ok=False)
+    if decision.kind == ACTION_FAIL_INVARIANT:
+        # Preserve contradictory/unknown facts for diagnosis. A fallback must
+        # not manufacture settlements merely to make terminalization legal.
         return decision, ResumeRecoveryResult(ok=False)
-    if decision.action not in {"settle_provider_unknown", "settle_tool_unknown"}:
+    if decision.kind not in {ACTION_SETTLE_PROVIDER_UNKNOWN, ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS}:
         return decision, None
     try:
-        for effect_id in decision.effect_ids:
+        for effect_id in decision.effect_ids or (decision.effect_id,):
             _settle_unknown_effect(
                 durable, task_id, effect_id,
                 mutations=mutations, session_id=session_id,
@@ -698,7 +594,7 @@ def _apply_durable_recovery(
             task_id,
             (
                 "provider response was unknown after process restart; request was not replayed"
-                if decision.action == "settle_provider_unknown"
+                if decision.kind == ACTION_SETTLE_PROVIDER_UNKNOWN
                 else "tool effect outcome was unknown after process restart; effect was not replayed"
             ),
             state=dict(checkpoint.state),

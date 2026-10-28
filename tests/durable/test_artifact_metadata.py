@@ -80,8 +80,8 @@ def test_artifact_requires_an_existing_owner(backend: str, tmp_path: Path) -> No
 def test_effect_settlement_and_artifact_metadata_share_one_commit(backend: str, tmp_path: Path) -> None:
     session = _session(backend, tmp_path)
     try:
-        session.advance_task(task_id="t", phase="assistant_intent_committed", state={})
-        session.advance_task(task_id="t", phase="assistant_response_pending", state={})
+        session.advance_task(task_id="t", phase="running", state={})
+        session.advance_task(task_id="t", phase="running", state={})
         effect = EffectRecord("e", "t", "tool_call", "safe", "digest", "pending", {"tool": "read"})
         session.record_effect_intent("t", effect)
         settled = replace(effect, status="ok", settlement={"handle": "artifact-1"})

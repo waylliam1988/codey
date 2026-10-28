@@ -30,6 +30,7 @@ from codey.durable.model import (
     SubmissionUpdate,
     TaskCheckpoint,
     TaskStatus,
+    migrate_checkpoint_phase,
     same_submission,
     thaw_json,
     valid_execution_attempt,
@@ -693,7 +694,7 @@ def _validate_task(
     ):
         raise CommitConflict("task must belong to a committed submission")
     row = database.execute(
-        "SELECT conversation_id, submission_id, revision, provider_snapshot, phase, status, state FROM tasks WHERE id=?",
+        "SELECT conversation_id, submission_id, revision, provider_snapshot, phase, status, state, schema_version FROM tasks WHERE id=?",
         (task.task_id,),
     ).fetchone()
     if row is None and task.revision != 0:
@@ -756,7 +757,7 @@ def _validate_existing_task(
         raise CommitConflict("task identity is immutable")
     if not valid_frozen_task_state(json.loads(row["state"]), task.state):
         raise CommitConflict("admitted task state is immutable")
-    previous_phase = str(row["phase"])
+    previous_phase, _version = migrate_checkpoint_phase(str(row["phase"]), int(row["schema_version"]))
     consumed = valid_input_consumption(previous_phase, str(row["status"]), previous_state, task)
     if not consumed and not valid_task_transition(previous_phase, task.phase):
         raise CommitConflict(f"invalid task phase transition: {previous_phase} -> {task.phase}")

@@ -36,7 +36,6 @@ def _intent():
 
 def test_runtime_continues_and_reopens_without_reading_or_writing_jsonl(tmp_path, monkeypatch):
     durable, line = _runtime(tmp_path)
-    durable.advance_task(task_id="r", phase="assistant_response_pending", state={})
 
     line.begin_provider_effect("s", "r", _intent())
     before = durable.commit_sequence()
@@ -44,7 +43,7 @@ def test_runtime_continues_and_reopens_without_reading_or_writing_jsonl(tmp_path
         "p1", "provider_send", "s", "r", "ok", sent_state="settled"))
     assert durable.commit_sequence() == before + 1
     assert durable.effect("p1").status == "ok"
-    assert durable.task("r").phase == "assistant_response_pending"
+    assert durable.task("r").phase == "running"
     assert durable.task("r").state["operation"]["leaf"] == "writer_running"
     durable.close()
     reopened = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
@@ -154,7 +153,6 @@ def test_settled_recovery_reads_receipt_from_durable_without_runtime_projection(
 
     durable, line = _runtime(tmp_path)
     sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable)
-    durable.advance_task(task_id="r", phase="assistant_response_pending", state={})
     call = ToolCall("read", {"path": "a.txt"}, call_id="call-1")
     batch_items = (DeliveryBatchItem(0, "read", "read-1", "safe"),)
     line.begin_tool_batch(

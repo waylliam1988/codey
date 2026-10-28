@@ -49,7 +49,7 @@ RECORD_KINDS = frozenset({
     RECORD_KIND_ABANDONED,
 })
 
-ABANDONED_REASONS = frozenset({"writer_settled", "repair_settled"})
+ABANDONED_REASONS = frozenset({"writer_settled", "repair_settled", "operation_terminal"})
 
 MAX_BATCH_ID_CHARS = 128
 MAX_EFFECT_ID_CHARS = 128

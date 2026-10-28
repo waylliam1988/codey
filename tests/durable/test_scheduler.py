@@ -51,7 +51,7 @@ def test_scheduler_retries_durable_task_when_worker_queue_is_full(tmp_path: Path
         scheduler._reconcile()
         assert accepted.is_set()
         assert attempts[:2] == ["task-1", "task-1"]
-        assert session.task("task-1").phase == "provider_prepared"
+        assert session.task("task-1").phase == "running"
     finally:
         scheduler.close()
         session.close()
@@ -161,7 +161,7 @@ def test_scheduler_reopens_nonterminal_running_task_for_recovery(tmp_path: Path)
     first = DurableSession(SQLiteDurableStore(path))
     _admit(first, "task-1")
     first.start_task("task-1", state={"next": "resume"})
-    first.advance_task(task_id="task-1", phase="assistant_response_pending", state={"next": "resume"})
+    first.advance_task(task_id="task-1", phase="running", state={"next": "resume"})
     first.close()
 
     restarted = DurableSession(SQLiteDurableStore(path))
@@ -177,7 +177,7 @@ def test_scheduler_reopens_nonterminal_running_task_for_recovery(tmp_path: Path)
     scheduler.start()
     try:
         assert done.wait(2)
-        assert dispatched == [("task-1", "assistant_response_pending")]
+        assert dispatched == [("task-1", "running")]
         assert restarted.task("task-1").status == TaskStatus.RUNNING
     finally:
         scheduler.close()
@@ -224,7 +224,7 @@ def test_waiting_task_is_not_redispatched_until_explicitly_requeued(tmp_path: Pa
         scheduler._reconcile()
         assert seen == []
         assert session.task("task-wait").status == TaskStatus.WAITING
-        session.advance_task(task_id="task-wait", phase="provider_prepared", state={"next": "resume"})
+        session.advance_task(task_id="task-wait", phase="running", state={"next": "resume"})
         session.unclaim_task("task-wait")
         scheduler.notify("task-wait")
         scheduler._reconcile()
@@ -261,7 +261,7 @@ def test_cancel_barrier_rejects_old_worker_progress(tmp_path: Path) -> None:
     session.request_cancel("task-cancel", reason="stop")
     with session.execution("task-cancel", token):
         try:
-            session.advance_task(task_id="task-cancel", phase="assistant_intent_committed", state={})
+            session.advance_task(task_id="task-cancel", phase="running", state={})
         except CommitConflict:
             pass
         else:

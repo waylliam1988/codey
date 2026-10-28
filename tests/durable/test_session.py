@@ -59,12 +59,12 @@ def test_task_checkpoint_rejects_unknown_schema_version() -> None:
     with pytest.raises(ValueError, match="unsupported task checkpoint schema"):
         TaskCheckpoint(
             "task-1", "conversation-1", "submission-1", "accepted", 0,
-            {"provider_id": "local"}, {}, schema_version=2,
+            {"provider_id": "local"}, {}, schema_version=999,
         )
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
-def test_fail_task_settles_pending_effects_before_terminal_checkpoint(
+def test_fail_task_preserves_pending_effects_when_stopping_scheduler(
     backend: str, tmp_path: Path
 ) -> None:
     store = (
@@ -81,8 +81,8 @@ def test_fail_task_settles_pending_effects_before_terminal_checkpoint(
         provider_snapshot={"provider_id": "local"},
     )
     session.start_task("task-1", state={})
-    session.advance_task(task_id="task-1", phase="assistant_intent_committed", state={})
-    session.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
     session.record_effect_intent(
         "task-1",
         EffectRecord(
@@ -104,16 +104,16 @@ def test_fail_task_settles_pending_effects_before_terminal_checkpoint(
     session.fail_task("task-1", "worker crashed", state={"summary": "worker crashed"})
 
     assert session.task("task-1").phase == "failed"
-    assert session.task("task-1").state["pending_effect_ids"] == ()
-    assert session.task("task-1").pending_effect_id is None
+    assert session.task("task-1").state["pending_effect_ids"] == ("effect-1",)
+    assert session.task("task-1").pending_effect_id == "effect-1"
     effect = session.effects("task-1")[0]
-    assert effect.status == "interrupted"
-    assert effect.settlement is not None
+    assert effect.status == "pending"
+    assert effect.settlement is None
     session.close()
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
-def test_cancel_task_settles_pending_effects_and_submission_atomically(
+def test_cancel_task_preserves_pending_effects_and_cancels_submission_atomically(
     backend: str, tmp_path: Path
 ) -> None:
     store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
@@ -123,8 +123,8 @@ def test_cancel_task_settles_pending_effects_and_submission_atomically(
         text="write", provider_snapshot={"provider_id": "local"},
     )
     session.start_task("task-1", state={})
-    session.advance_task(task_id="task-1", phase="assistant_intent_committed", state={})
-    session.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
     session.record_effect_intent(
         "task-1", EffectRecord(
             "effect-1", "task-1", "tool_call", "unsafe", "digest-1", "pending",
@@ -135,8 +135,9 @@ def test_cancel_task_settles_pending_effects_and_submission_atomically(
     session.cancel_task("task-1", reason="user stopped")
     task = session.task("task-1")
     assert task.status == TaskStatus.CANCELLED
-    assert task.state["pending_effect_ids"] == ()
-    assert session.effects("task-1")[0].status == "interrupted"
+    assert task.state["pending_effect_ids"] == ("effect-1",)
+    assert session.effects("task-1")[0].status == "pending"
+    assert session.effects("task-1")[0].settlement is None
     assert session.store.submission(task.submission_id).status is SubmissionStatus.CANCELLED
     session.close()
 
@@ -148,8 +149,8 @@ def test_settling_one_effect_keeps_multi_effect_task_running(tmp_path: Path) -> 
         text="two reads", provider_snapshot={"provider_id": "local"},
     )
     session.start_task("task-1", state={})
-    session.advance_task(task_id="task-1", phase="assistant_intent_committed", state={})
-    session.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
     effects = tuple(
         EffectRecord(
             effect_id,
@@ -169,7 +170,7 @@ def test_settling_one_effect_keeps_multi_effect_task_running(tmp_path: Path) -> 
     )
     session.record_effect_intents("task-1", effects)
     session.settle_unknown_effect("task-1", "effect-1")
-    assert session.task("task-1").phase == "tool_effect_running"
+    assert session.task("task-1").phase == "running"
     assert session.task("task-1").state["pending_effect_ids"] == ("effect-2",)
     session.close()
 
@@ -240,15 +241,15 @@ def test_task_lifecycle_api_commits_task_and_submission_together(tmp_path: Path)
     )
 
     session.start_task("task-1", state={"next": "generate"})
-    assert session.task("task-1").phase == "provider_prepared"
+    assert session.task("task-1").phase == "running"
     task = session.task("task-1")
     assert session.store.submission(task.submission_id).status is SubmissionStatus.RUNNING
 
     with pytest.raises(CommitConflict):
         session.finish_task("task-1", "answer", state={"next": "done"})
 
-    session.advance_task(task_id="task-1", phase="assistant_intent_committed", state={"next": "response"})
-    session.advance_task(task_id="task-1", phase="assistant_response_pending", state={"next": "complete"})
+    session.advance_task(task_id="task-1", phase="running", state={"next": "response"})
+    session.advance_task(task_id="task-1", phase="running", state={"next": "complete"})
     session.advance_task(task_id="task-1", phase="completion_pending", state={"next": "commit"})
     session.complete_task("task-1", "answer", state={"next": "done"})
     assert session.task("task-1").phase == "completed"
@@ -267,8 +268,8 @@ def test_effect_intent_and_settlement_are_durable_and_cas_checked(tmp_path: Path
         provider_snapshot={"provider_id": "local"},
     )
     session.start_task("task-1", state={"next": "provider"})
-    session.advance_task(task_id="task-1", phase="assistant_intent_committed", state={"next": "response"})
-    session.advance_task(task_id="task-1", phase="assistant_response_pending", state={"next": "tool"})
+    session.advance_task(task_id="task-1", phase="running", state={"next": "response"})
+    session.advance_task(task_id="task-1", phase="running", state={"next": "tool"})
     intent = EffectRecord(
         effect_id="effect-1",
         task_id="task-1",
@@ -279,7 +280,7 @@ def test_effect_intent_and_settlement_are_durable_and_cas_checked(tmp_path: Path
         intent={"tool": "read_file"},
     )
     session.record_effect_intent("task-1", intent)
-    assert session.task("task-1").phase == "tool_effect_running"
+    assert session.task("task-1").phase == "running"
     assert session.task("task-1").state["pending_effect_ids"] == ("effect-1",)
     session.settle_effect(
         "task-1",
@@ -295,7 +296,7 @@ def test_effect_intent_and_settlement_are_durable_and_cas_checked(tmp_path: Path
         ),
     )
     assert session.task("task-1").state["pending_effect_ids"] == ()
-    assert session.task("task-1").phase == "tool_outcome_ready"
+    assert session.task("task-1").phase == "running"
     session.close()
 
     restarted = DurableSession(SQLiteDurableStore(path))
@@ -325,8 +326,8 @@ def test_effect_batch_and_task_checkpoint_share_one_commit(backend: str, tmp_pat
         text="inspect both files", provider_snapshot={"provider_id": "local"},
     )
     session.start_task("task-1", state={})
-    session.advance_task(task_id="task-1", phase="assistant_intent_committed", state={})
-    session.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
     before = session.store.commits_after(0)[-1].sequence
 
     result = session.record_effect_intents(
@@ -340,7 +341,7 @@ def test_effect_batch_and_task_checkpoint_share_one_commit(backend: str, tmp_pat
     checkpoint = session.task("task-1")
     assert result.sequence == before + 1
     assert {effect.effect_id for effect in session.effects("task-1")} == {"effect-1", "effect-2"}
-    assert checkpoint.phase == "tool_effect_running"
+    assert checkpoint.phase == "running"
     assert checkpoint.revision == 4
     assert set(checkpoint.state["pending_effect_ids"]) == {"effect-1", "effect-2"}
 
@@ -357,8 +358,8 @@ def test_effect_batch_failure_rolls_back_task_checkpoint_and_all_effects(
         text="inspect", provider_snapshot={"provider_id": "local"},
     )
     session.start_task("task-1", state={})
-    session.advance_task(task_id="task-1", phase="assistant_intent_committed", state={})
-    session.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
 
     def fail_after_task_write(*args: object, **kwargs: object) -> None:
         raise sqlite_store.sqlite3.OperationalError("injected crash")
@@ -374,11 +375,11 @@ def test_effect_batch_failure_rolls_back_task_checkpoint_and_all_effects(
         )
 
     reopened = DurableSession(SQLiteDurableStore(path))
-    assert reopened.task("task-1").phase == "assistant_response_pending"
+    assert reopened.task("task-1").phase == "running"
     assert reopened.effects("task-1") == ()
 
 
-def test_provider_effect_advances_checkpoint_to_response_pending(tmp_path: Path) -> None:
+def test_provider_effect_keeps_task_lifecycle_running(tmp_path: Path) -> None:
     session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
     session.admit_input(
         conversation_id="conversation-1",
@@ -398,7 +399,7 @@ def test_provider_effect_advances_checkpoint_to_response_pending(tmp_path: Path)
         intent={"provider": "local"},
     )
     session.record_effect_intent("task-1", intent)
-    assert session.task("task-1").phase == "assistant_intent_committed"
+    assert session.task("task-1").phase == "running"
     session.settle_effect(
         "task-1",
         EffectRecord(
@@ -412,7 +413,7 @@ def test_provider_effect_advances_checkpoint_to_response_pending(tmp_path: Path)
             settlement={"status": "ok", "sent_state": "settled"},
         ),
     )
-    assert session.task("task-1").phase == "assistant_response_pending"
+    assert session.task("task-1").phase == "running"
 
 
 def test_reviewer_selection_is_durable_and_immutable(tmp_path: Path) -> None:
@@ -445,8 +446,8 @@ def test_same_arguments_across_turns_are_distinct_effects(backend: str, tmp_path
         text="run the check", provider_snapshot={"provider_id": "local"},
     )
     session.start_task("task-1", state={})
-    session.advance_task(task_id="task-1", phase="assistant_intent_committed", state={})
-    session.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
+    session.advance_task(task_id="task-1", phase="running", state={})
     for effect_id in ("effect-1", "effect-2"):
         session.record_effect_intent(
             "task-1",
@@ -460,8 +461,8 @@ def test_same_arguments_across_turns_are_distinct_effects(backend: str, tmp_path
             ),
         )
         if effect_id == "effect-1":
-            session.advance_task(task_id="task-1", phase="provider_prepared", state={})
-            session.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+            session.advance_task(task_id="task-1", phase="running", state={})
+            session.advance_task(task_id="task-1", phase="running", state={})
     assert {effect.effect_id for effect in session.effects("task-1")} == {"effect-1", "effect-2"}
     if backend == "sqlite":
         session.close()

@@ -83,14 +83,15 @@ class KernelEffectSink:
         self.provider_id = provider_id
         self.phase = phase
         self.delivery_batch_id = recovered_batch_id
-        self.send_index = 0
         self.managed_outputs = managed_outputs
         self.durable = durable
         self.parent_effect_id = parent_effect_id
         self.defer_generation_settlement = defer_generation_settlement
-        self._pending_provider_settlement: tuple[RuntimeEffectSettlement, tuple[tuple[str, dict[str, object]], ...]] | None = None
+        self._request_context: dict[str, object] = {}
         store = RuntimeEffectStore(durable=durable)
         previous = store.load_effects(session_id, run_id)
+        self.send_index = max((row.intent.turn for row in previous
+                               if row.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND), default=0)
         self._replay_classes = {row.intent.effect_id: row.intent.replay_class for row in previous}
         self._old_pending = {row.intent.effect_id for row in previous if row.is_pending}
 
@@ -161,22 +162,90 @@ class KernelEffectSink:
     def has_unsettled(self, identity: str) -> bool:
         return identity in self._old_pending
 
-    def defer_provider_settlement(
-        self,
-        settlement: RuntimeEffectSettlement,
-        messages: tuple[tuple[str, dict[str, object]], ...] = (),
-    ) -> None:
-        if not self.defer_generation_settlement:
-            raise RuntimeEffectError("provider settlement deferral is disabled")
-        if self._pending_provider_settlement is not None:
-            raise RuntimeEffectError("a provider generation settlement is already pending")
-        self._pending_provider_settlement = (settlement, messages)
+    def bind_request(self, snapshot: Any, *, logical_turn: int, window_ref: Any = None) -> None:
+        from codey.operations.provider_receipts import snapshot_description
+
+        self._request_context = {"logical_turn": logical_turn, "snapshot": snapshot_description(snapshot),
+                                 "window": window_ref.to_payload() if window_ref is not None else None}
+
+    def record_response(self, effect_id: str, reply: Any) -> None:
+        from codey.operations.provider_receipts import RESPONSE_KIND, encode_reply, write_provider_artifact
+
+        if self.managed_outputs is None:
+            raise RuntimeEffectError("provider responses require managed output storage")
+        artifact = write_provider_artifact(self.managed_outputs, session_id=self.session_id, run_id=self.run_id,
+            effect_id=effect_id, kind=RESPONSE_KIND, payload=encode_reply(reply))
+        self.mutations.record_provider_response(self.session_id, self.run_id, effect_id=effect_id, artifact=artifact,
+                                                messages=_reply_messages(reply))
+
+    def resume_response(self, session: Any, *, window_ref: Any = None) -> Any:
+        from codey.operations.kernel_errors import RecoveryFailed
+        from codey.operations.kernel_protocol import ReceivedProviderTurn
+        from codey.operations.provider_receipts import (
+            REQUEST_KIND,
+            RESPONSE_KIND,
+            decode_reply,
+            read_provider_artifact,
+            restore_snapshot,
+        )
+        from codey.runtime.core.operation_reducer import (
+            ACTION_CONTINUE,
+            ACTION_INTERPRET_PROVIDER_RESPONSE,
+            ACTION_REDELIVER_SETTLED_BATCH,
+        )
+        from codey.runtime.core.protocol_window import ProtocolWindowRef
+        from codey.runtime.write.drive import peek_next_action
+
+        action = peek_next_action(self.durable, session_id=self.session_id, run_id=self.run_id)
+        if action.kind != ACTION_INTERPRET_PROVIDER_RESPONSE:
+            if action.kind in {ACTION_CONTINUE, ACTION_REDELIVER_SETTLED_BATCH}:
+                return None
+            raise RecoveryFailed(f"operation requires {action.kind}: {action.reason}")
+        artifacts = self.durable.artifacts_for_effect(action.effect_id)
+        requests = [artifact for artifact in artifacts if artifact.metadata.get("kind") == REQUEST_KIND]
+        if len(requests) != 1:
+            raise RuntimeEffectError("received response has no unique frozen request")
+        request = read_provider_artifact(self.managed_outputs, requests[0], kind=REQUEST_KIND,
+            session_id=self.session_id, run_id=self.run_id, effect_id=action.effect_id)
+        response = read_provider_artifact(self.managed_outputs, self.durable.artifact(action.response_ref),
+            kind=RESPONSE_KIND, session_id=self.session_id, run_id=self.run_id, effect_id=action.effect_id)
+        if not isinstance(request, dict) or type(request.get("logical_turn")) is not int or request["logical_turn"] < 1:
+            raise RuntimeEffectError("received response has no original logical turn")
+        snapshot = restore_snapshot(request.get("snapshot"))
+        if snapshot.policy != session.policy:
+            raise RuntimeEffectError("received response authorization does not match the task")
+        window = ProtocolWindowRef.from_payload(request["window"]) if request.get("window") is not None else None
+        if window != window_ref:
+            raise RuntimeEffectError("received response belongs to another protocol window")
+        args = request.get("args")
+        prompt = args[0] if isinstance(args, list) and args and isinstance(args[0], str) else ""
+        self._request_context = {"logical_turn": request["logical_turn"], "snapshot": request["snapshot"],
+                                 "window": request.get("window")}
+        return ReceivedProviderTurn(decode_reply(response), snapshot, prompt, owner_session=session,
+                                    logical_turn=request["logical_turn"], window_ref=window)
 
     def pending_provider_settlement(self) -> tuple[RuntimeEffectSettlement, tuple[tuple[str, dict[str, object]], ...]] | None:
-        return self._pending_provider_settlement
+        """Derive the open boundary from durable response facts, including after restart."""
+        from codey.operations.provider_receipts import RESPONSE_KIND, decode_reply, read_provider_artifact
 
-    def clear_provider_settlement(self) -> None:
-        self._pending_provider_settlement = None
+        pending = [effect for effect in self.durable.effects(self.run_id)
+                   if effect.category == EFFECT_CATEGORY_PROVIDER_SEND and effect.settlement is None]
+        if len(pending) > 1:
+            raise RuntimeEffectError("multiple provider generations are pending")
+        if not pending:
+            return None
+        effect = pending[0]
+        responses = [artifact for artifact in self.durable.artifacts_for_effect(effect.effect_id)
+                     if artifact.metadata.get("kind") == RESPONSE_KIND]
+        if not responses:
+            return None
+        if len(responses) != 1:
+            raise RuntimeEffectError("provider generation has conflicting responses")
+        decode_reply(read_provider_artifact(self.managed_outputs, responses[0], kind=RESPONSE_KIND,
+            session_id=self.session_id, run_id=self.run_id, effect_id=effect.effect_id))
+        return RuntimeEffectSettlement(effect_id=effect.effect_id, effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+            session_id=self.session_id, run_id=self.run_id, status=SETTLEMENT_STATUS_OK,
+            sent_state=SENT_STATE_SETTLED), ()
 
     def settle(self, identity: str, ok: bool, *, result: Any = None, exit_code: int | None = None) -> None:
         from codey.operations.kernel_receipts import result_receipt_fields, tool_history_messages
@@ -223,7 +292,15 @@ class KernelRecordedProvider(ProviderAdapter):
         super().__init__(provider)
         self.sink = sink
 
+    def bind_kernel_request(self, snapshot: Any, *, logical_turn: int, window_ref: Any = None) -> None:
+        self.sink.bind_request(snapshot, logical_turn=logical_turn, window_ref=window_ref)
+
+    def resume_kernel_response(self, session: Any) -> Any:
+        return self.sink.resume_response(session, window_ref=getattr(self.provider, "window_ref", None))
+
     def _send(self, name: str, *args: Any, **kwargs: Any) -> Any:
+        from codey.operations.provider_receipts import REQUEST_KIND, json_value, write_provider_artifact
+
         sink = self.sink
         pending = sink.pending_provider_settlement()
         if pending is not None:
@@ -231,10 +308,15 @@ class KernelRecordedProvider(ProviderAdapter):
             sink.mutations.settle_provider_effect(
                 sink.session_id, sink.run_id, previous, messages=previous_messages,
             )
-            sink.clear_provider_settlement()
         sink.send_index += 1
         effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, sink.run_id)
-        surface = json.dumps(args, ensure_ascii=False, default=str)
+        if sink.managed_outputs is None:
+            raise RuntimeEffectError("provider requests require managed output storage")
+        request_payload = {"method": name, "args": json_value(args), "kwargs": json_value(kwargs),
+                           **sink._request_context}
+        request_artifact = write_provider_artifact(sink.managed_outputs, session_id=sink.session_id, run_id=sink.run_id,
+            effect_id=effect_id, kind=REQUEST_KIND, payload=request_payload)
+        surface = json.dumps(request_payload, ensure_ascii=False, sort_keys=True)
         intent = RuntimeEffectIntent(
             effect_id=effect_id, effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
             session_id=sink.session_id, run_id=sink.run_id, phase=sink.phase,
@@ -245,6 +327,7 @@ class KernelRecordedProvider(ProviderAdapter):
         sink.mutations.begin_provider_effect(
             sink.session_id, sink.run_id, intent,
             delivery_batch_id=sink.delivery_batch_id,
+            artifacts=(request_artifact,),
         )
         try:
             reply = getattr(self.provider, name)(*args, **kwargs)
@@ -282,12 +365,10 @@ class KernelRecordedProvider(ProviderAdapter):
                 session_id=sink.session_id, run_id=sink.run_id,
                 status=SETTLEMENT_STATUS_OK, sent_state=SENT_STATE_SETTLED,
             )
-        messages = _reply_messages(reply) if sink.durable is not None else ()
-        if sink.defer_generation_settlement:
-            sink.defer_provider_settlement(settlement, messages)
-        else:
+        sink.record_response(effect_id, reply)
+        if not sink.defer_generation_settlement:
             sink.mutations.settle_provider_effect(
-                sink.session_id, sink.run_id, settlement, messages=messages,
+                sink.session_id, sink.run_id, settlement,
             )
         sink.delivery_batch_id = ""
         return reply
@@ -303,8 +384,8 @@ def _reply_messages(reply: Any) -> tuple[tuple[str, dict[str, object]], ...]:
     # Plain assistant text is committed by terminal task settlement. Keeping
     # it out of the provider effect settlement gives each logical answer one
     # durable owner and prevents a provider receipt plus completion commit
-    # from producing duplicate history entries. Tool calls remain here because
-    # they are context facts needed before the next provider turn.
+    # from producing duplicate history entries. Tool calls are projected in
+    # the response commit, before their tool results can enter history.
     return ()
 
 

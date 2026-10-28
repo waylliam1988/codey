@@ -62,3 +62,25 @@ effect、delivery、submission/approval 和输出存储分别拥有各自事实�
 附件中的 pytest 失败按现行契约逐项分类并回测相关文件；不恢复已删除的生产接口来迁就旧测试。
 只运行相关测试，不执行全量 pytest。六阶段完成还需要本地 Gemma 原生/文本冒烟、
 真实重启恢复及与 pi/DeepSeek 的等价场景比较，当前阶段未声称这些已完成。
+
+## 阶段二进展：回复事实与停止完整性
+
+已将 TaskCheckpoint.phase 收窄为调度生命周期，删除独立的 durable recovery 决策器。
+operation schema 2 增加 provider_response_ready 与受管理输出引用；请求 artifact 保存
+原始请求、逻辑轮次、冻结工具契约和协议窗口，回复 artifact 保留原始错误参数。
+回复可靠保存后恢复使用原回复，不再依赖内存中的 pending provider settlement。
+原生工具调用历史随回复先于工具结果提交，聊天投影不参与恢复结果判定。
+
+停止调度不再制造 provider/tool 回执或清空 pending effect。writer、repair 和 terminal
+结算共同核验原始回执；只有已知且完整的结果批次可以原子标记为 abandoned。
+pending/unknown 状态阻止运行阶段被强行结算，提交失败保留 operation 引用及错误来源。
+已增加 SQLite 子进程退出、提交成功但返回失败、重复恢复及终态完整性测试。
+
+本次收口验证：相关停止/生命周期测试 125 通过，最终完整性测试 113 通过、38 subtests；
+生产 mypy 检查 532 文件通过，相关 Ruff 与 git diff --check 通过。
+这些结果不代表全部六阶段已经验收。
+
+尚未完成的工作：协议错误、截断、关闭和进度计数持久化；唯一 driver；删除旧 loop、
+隐含 provider 请求和恢复执行控制。特别是审批期间取消，当前诚实保留未结算事实，
+仍需通过统一关闭动作完成原调用拒绝回执和 generation boundary，不能把此中间状态
+当成已完整实现取消收尾。外部输出正文与历史投影的物理去重也需单独验收。

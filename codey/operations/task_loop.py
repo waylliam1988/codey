@@ -26,7 +26,7 @@ from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_execution import execute_turn as _execute_turn
 from codey.operations.kernel_preparation import prepare_kernel_turn
 from codey.operations.kernel_progress import KernelProgress
-from codey.operations.kernel_protocol import InitialNativeTurn
+from codey.operations.kernel_protocol import ReceivedProviderTurn
 from codey.operations.kernel_protocol import normalize_turn as _normalize_turn
 from codey.operations.kernel_recovery import apply_recovery_first as _apply_recovery_first
 from codey.operations.kernel_trace import record_outbound, record_turn
@@ -35,7 +35,7 @@ from codey.operations.task_session import effect_coordinates
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.policies.command_line import ShellSpec
 from codey.protocols.text_turn import decode_text_turn
-from codey.providers.base import ProviderToolDefinition, ProviderToolResult, TurnFinish, tools_from_specs
+from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult, TurnFinish, tools_from_specs
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.workspace.coding_context import render_coding_context
 from codey.workspace.context_admission import GhostContextSource, admit_ghost_context
@@ -86,7 +86,7 @@ class KernelTransportDeps:
     start_turn: int | None = None
     initial_results: list[ToolResult] | None = None
     provider_session_changed: bool = False
-    initial_turn: InitialNativeTurn | None = None
+    initial_turn: ReceivedProviderTurn | None = None
     window_ref: Any = None
     replayed_result_ids: frozenset[str] = frozenset()
 
@@ -164,6 +164,7 @@ class _KernelStartup:
     pending_recovery: bool
     attempt_gate_bound: bool = False
     window_ref: Any = None
+    start_turn: int | None = None
 
 
 def _payload_strings(value: Any) -> list[str]:
@@ -236,6 +237,9 @@ def _receive_turn_plan(
     never loops, executes tools, or accepts completion.
     """
     try:
+        bind_request = getattr(provider, "bind_kernel_request", None)
+        if callable(bind_request) and state.pending_reply is None:
+            bind_request(snapshot, logical_turn=turn, window_ref=window_ref)
         if state.pending_reply is None:
             refs = getattr(provider, "set_result_refs", None)
             if callable(refs):
@@ -565,7 +569,7 @@ def _kernel_startup(
     initial_results: list[ToolResult] | None,
     provider_session_changed: bool,
     delivered: Mapping[str, ToolResult] | None,
-    initial_turn: InitialNativeTurn | None = None,
+    initial_turn: ReceivedProviderTurn | None = None,
     replayed_result_ids: frozenset[str] = frozenset(),
     attempt_gate_bound: bool = False,
 ) -> _KernelStartup:
@@ -588,7 +592,12 @@ def _kernel_startup(
             raise ValueError("shell result belongs to another protocol window")
     native = _transport.provider_uses_native(provider, provider_id=provider_id)
     identity_ref = f"{run_id}:{effect_scope}" if effect_scope else run_id
-    if initial_turn is not None and (not native or pending_initial or initial_turn.owner_session is not session
+    resume_response = getattr(provider, "resume_kernel_response", None)
+    restored_turn = resume_response(session) if callable(resume_response) else None
+    if initial_turn is not None and restored_turn is not None:
+        raise ValueError("multiple initial provider responses")
+    initial_turn = restored_turn if restored_turn is not None else initial_turn
+    if initial_turn is not None and (native != isinstance(initial_turn.reply, AssistantTurn) or pending_initial or initial_turn.owner_session is not session
                                      or initial_turn.snapshot.policy != session.policy):
         raise ValueError("initial native turn does not match the authorized task session")
     if initial_turn is not None:
@@ -624,6 +633,7 @@ def _kernel_startup(
         # caller may not reconstruct it from the current provider binding when
         # a continuation crossed a run boundary.
         window_ref=recovered_window or active_window,
+        start_turn=initial_turn.logical_turn if initial_turn is not None else None,
     )
 
 
@@ -737,7 +747,8 @@ def run_task_kernel(
         return KernelResult(
             completed=False, summary=f"controller configuration error: {exc}", turns=0, stop_reason="controller_failure"
         )
-    turns_used = 0
+    resume_start = startup.start_turn or resume_start
+    turns_used = resume_start - 1
     state = startup.state
     native = startup.native
     native_tools = startup.native_tools
@@ -816,7 +827,10 @@ def run_task_kernel(
         done_action = _finish_or_steer(done_action, on_boundary, turn, startup.max_turns,
                                       propagate=propagate_provider_failure)
         if isinstance(done_action, KernelResult):
-            return done_action
+            return _settle_at_boundary(
+                done_action, "settle", on_boundary, turns_used,
+                propagate=propagate_provider_failure, only_stop_reasons=("question",),
+            )
         if done_action is not None:
             state.prompt, state.pending_reply = done_action
             continue

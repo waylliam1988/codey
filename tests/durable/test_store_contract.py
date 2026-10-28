@@ -317,7 +317,7 @@ def test_task_identity_and_provider_snapshot_are_immutable(
                     task_id="task-1",
                     conversation_id="conversation-1",
                     submission_id="submission-1",
-                    phase="provider_prepared",
+                    phase="running",
                     revision=1,
                     provider_snapshot={"provider_id": "local", "model_id": "model-b"},
                     state={"next": "generate"},
@@ -403,10 +403,10 @@ def test_provider_effect_can_start_after_tool_outcome(tmp_path: Path) -> None:
         provider_snapshot={"provider_id": "local"},
     )
     session.start_task("task-turn", state={})
-    session.advance_task(task_id="task-turn", phase="assistant_response_pending", state={})
-    session.advance_task(task_id="task-turn", phase="tool_effect_running", state={})
-    session.advance_task(task_id="task-turn", phase="tool_outcome_ready", state={})
-    session.advance_task(task_id="task-turn", phase="assistant_intent_committed", state={})
+    session.advance_task(task_id="task-turn", phase="running", state={})
+    session.advance_task(task_id="task-turn", phase="running", state={})
+    session.advance_task(task_id="task-turn", phase="running", state={})
+    session.advance_task(task_id="task-turn", phase="running", state={})
 
 
 def test_effect_settlement_requires_matching_current_status(
@@ -487,7 +487,7 @@ def test_submission_and_task_lifecycle_share_atomic_commits(
             "conversation-1",
             1,
             task=TaskCheckpoint(
-                "task-1", "conversation-1", "submission-1", "provider_prepared", 1,
+                "task-1", "conversation-1", "submission-1", "running", 1,
                 {"provider_id": "local", "model_id": "model"}, {},
             ),
             submission_update=SubmissionUpdate(
@@ -496,7 +496,7 @@ def test_submission_and_task_lifecycle_share_atomic_commits(
         )
     )
     assert store.submission("submission-1").status is SubmissionStatus.RUNNING
-    assert store.task("task-1").phase == "provider_prepared"
+    assert store.task("task-1").phase == "running"
 
     with pytest.raises(CommitConflict):
         store.commit(
@@ -504,7 +504,7 @@ def test_submission_and_task_lifecycle_share_atomic_commits(
                 "conversation-1",
                 1,
                 task=TaskCheckpoint(
-                    "task-1", "conversation-1", "submission-1", "assistant_intent_committed", 2,
+                    "task-1", "conversation-1", "submission-1", "running", 2,
                     {"provider_id": "local", "model_id": "model"}, {},
                 ),
                 submission_update=SubmissionUpdate(
@@ -514,7 +514,7 @@ def test_submission_and_task_lifecycle_share_atomic_commits(
             )
         )
     assert store.submission("submission-1").status is SubmissionStatus.RUNNING
-    assert store.task("task-1").phase == "provider_prepared"
+    assert store.task("task-1").phase == "running"
 
     settled = store.commit(
         DurableMutation(
@@ -653,12 +653,12 @@ def test_task_and_effect_commit_atomically_with_entry(
     assert result.sequence == 1
     assert result.submission_id == "submission-1"
     assert store.task("task-1").phase == "accepted"
-    prepared = TaskCheckpoint("task-1", "conversation-1", "submission-1", "provider_prepared", 1, {"provider_id": "test", "model_id": "model"}, {"next": "request"})
+    prepared = TaskCheckpoint("task-1", "conversation-1", "submission-1", "running", 1, {"provider_id": "test", "model_id": "model"}, {"next": "request"})
     store.commit(DurableMutation("conversation-1", 1, task=prepared))
-    for revision, phase in enumerate(("assistant_intent_committed", "assistant_response_pending"), start=2):
+    for revision, phase in enumerate(("running", "running"), start=2):
         prepared = TaskCheckpoint("task-1", "conversation-1", "submission-1", phase, revision, {"provider_id": "test", "model_id": "model"}, {"next": "request"})
         store.commit(DurableMutation("conversation-1", 1, task=prepared))
-    tool_intent = TaskCheckpoint("task-1", "conversation-1", "submission-1", "tool_intent_committed", 4, {"provider_id": "test", "model_id": "model"}, {"next": "tool"})
+    tool_intent = TaskCheckpoint("task-1", "conversation-1", "submission-1", "running", 4, {"provider_id": "test", "model_id": "model"}, {"next": "tool"})
     store.commit(
         DurableMutation(
             "conversation-1",
@@ -667,7 +667,7 @@ def test_task_and_effect_commit_atomically_with_entry(
             effect=EffectRecord("effect-1", "task-1", "shell", "never", "digest-1", "intent", {"command": "echo run"}),
         )
     )
-    running = TaskCheckpoint("task-1", "conversation-1", "submission-1", "tool_effect_running", 5, {"provider_id": "test", "model_id": "model"}, {"next": "settle"})
+    running = TaskCheckpoint("task-1", "conversation-1", "submission-1", "running", 5, {"provider_id": "test", "model_id": "model"}, {"next": "settle"})
     store.commit(DurableMutation("conversation-1", 1, task=running))
 
     settled = store.commit(
@@ -678,7 +678,7 @@ def test_task_and_effect_commit_atomically_with_entry(
                 task_id="task-1",
                 conversation_id="conversation-1",
                 submission_id="submission-1",
-                phase="tool_outcome_ready",
+                phase="running",
                 revision=6,
                 provider_snapshot={"provider_id": "test", "model_id": "model"},
                 state={"next": "continue"},
@@ -697,7 +697,7 @@ def test_task_and_effect_commit_atomically_with_entry(
         )
     )
     assert settled.sequence == 7
-    assert store.task("task-1").phase == "tool_outcome_ready"
+    assert store.task("task-1").phase == "running"
     assert store.effect("effect-1").settlement == {"exit_code": 0}
 
 

@@ -51,7 +51,6 @@ def durable_generation_boundary_callback(
                 boundary=boundary,
                 messages=messages,
             )
-            sink.clear_provider_settlement()
         else:
             placed = durable.commit_generation_boundary(
                 session_id,

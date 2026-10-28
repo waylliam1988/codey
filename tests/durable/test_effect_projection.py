@@ -19,7 +19,7 @@ def test_production_effect_projection_reads_durable_record_without_jsonl(tmp_pat
         provider_snapshot={"provider_id": "local"},
     )
     durable.start_task("task-1", state={})
-    durable.advance_task(task_id="task-1", phase="assistant_response_pending", state={})
+    durable.advance_task(task_id="task-1", phase="running", state={})
     intent = prepare_intent(
         "conversation-1",
         "task-1",

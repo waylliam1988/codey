@@ -17,6 +17,7 @@ from codey.runtime.core.operation_state import (
     DRIVER_REPAIR,
     DRIVER_WRITER,
     LEAF_PROVIDER_EFFECT_PENDING,
+    LEAF_PROVIDER_RESPONSE_READY,
     LEAF_REPAIR_CONTEXT_ADMITTED,
     LEAF_REPAIR_RUNNING,
     LEAF_REPAIR_SETTLED,
@@ -66,7 +67,7 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
     turn = state.turn
     unsettled = tuple(effect for effect in view.effects if effect.settlement is None)
     current_batches = tuple(batch for batch in view.batches if batch.intent.turn == turn)
-    if state.leaf == LEAF_PROVIDER_EFFECT_PENDING:
+    if state.leaf in {LEAF_PROVIDER_EFFECT_PENDING, LEAF_PROVIDER_RESPONSE_READY}:
         ids = tuple(
             effect.intent.effect_id
             for effect in unsettled

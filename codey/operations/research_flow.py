@@ -364,6 +364,7 @@ def run_research_pipeline(
             round_index=followup_index,
             runtime_mutations=deps.runtime_mutations,
             durable=getattr(deps.state, "durable", None),
+            managed_outputs=deps.managed_outputs,
             on_event=hooks.on_event,
             parent_policy=parent_policy if parent_policy is not None else getattr(frame, "entry_policy", None),
         )

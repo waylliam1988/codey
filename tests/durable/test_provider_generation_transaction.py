@@ -18,7 +18,7 @@ def _runtime(tmp_path: Path) -> tuple[DurableSession, RuntimeMutationLine, str]:
     )
     durable.claim_task("r")
     durable.start_task("r", state=dict(durable.task("r").state))
-    durable.advance_task(task_id="r", phase="assistant_response_pending", state={})
+    durable.advance_task(task_id="r", phase="running", state={})
     durable.admit_input(
         conversation_id="s", request_id="steer", task_id="steer", text="change",
         provider_snapshot={"provider_id": "local"}, placement=SubmissionPlacement.QUEUED,

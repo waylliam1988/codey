@@ -23,7 +23,7 @@ def _waiting_approval(path: Path, backend: str, *, approved: bool, park: bool) -
                         provider_snapshot={"provider_id": "original"}, task_state={"task_policy": {"shell": "ask"}})
     session.claim_task("t")
     session.start_task("t", state={})
-    session.advance_task(task_id="t", phase="assistant_response_pending", state={})
+    session.advance_task(task_id="t", phase="running", state={})
     session.append_message("c", "tool_call", {"tool_calls": [
         {"id": "call", "type": "function", "function": {"name": "shell", "arguments": "{}"}}]})
     request = ApprovalRecord("a", "t", "c", ApprovalStatus.REQUESTED, "command-digest", "command-ref", ".")

@@ -27,7 +27,6 @@ from codey.durable.model import (
     TaskCheckpoint,
     TaskStatus,
 )
-from codey.durable.recovery import RecoveryDecision, decide_recovery
 from codey.durable.scheduler import AbortInvocation, DurableTaskScheduler
 from codey.durable.session import DurableSession
 from codey.durable.sqlite import SQLiteDurableStore
@@ -49,7 +48,6 @@ __all__ = [
     "DurableMutation",
     "DurableSession",
     "DurableTaskScheduler",
-    "RecoveryDecision",
     "DurableStore",
     "EffectRecord",
     "EntryDraft",
@@ -67,7 +65,6 @@ __all__ = [
     "TASK_CHECKPOINT_SCHEMA_VERSION",
     "TaskStatus",
     "build_context",
-    "decide_recovery",
     "WorkflowDefinition",
     "workflow_digest",
 ]

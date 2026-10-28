@@ -18,6 +18,7 @@ from codey.durable.model import (
     SubmissionRecord,
     SubmissionStatus,
     TaskCheckpoint,
+    migrate_checkpoint_phase,
 )
 
 
@@ -34,18 +35,19 @@ def entry_from_row(row: sqlite3.Row) -> EntryDraft:
 
 
 def task_from_row(row: sqlite3.Row) -> TaskCheckpoint:
+    phase, schema_version = migrate_checkpoint_phase(str(row["phase"]), int(row["schema_version"]))
     return TaskCheckpoint(
         task_id=str(row["id"]),
         conversation_id=str(row["conversation_id"]),
         submission_id=str(row["submission_id"]),
-        phase=str(row["phase"]),
+        phase=phase,
         revision=int(row["revision"]),
         provider_snapshot=json.loads(str(row["provider_snapshot"])),
         state=json.loads(str(row["state"])),
         current_turn_id=row["current_turn_id"],
         pending_effect_id=row["pending_effect_id"],
         status=str(row["status"]),
-        schema_version=int(row["schema_version"]),
+        schema_version=schema_version,
     )
 
 

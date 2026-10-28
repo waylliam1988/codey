@@ -28,7 +28,7 @@ def test_internal_observer_failure_fails_session_after_durable_commit() -> None:
     with pytest.raises(RuntimeError, match="scheduler adoption failed"):
         session.start_task("task", state={})
 
-    assert session.store.task("task").phase == "provider_prepared"
+    assert session.store.task("task").phase == "running"
     with pytest.raises(SessionFailedError) as failure:
         session.task("task")
     assert isinstance(failure.value.cause, RuntimeError)
@@ -44,7 +44,7 @@ def test_external_projection_failure_is_reported_without_failing_session() -> No
     session.subscribe_commits(broken)
     session.start_task("task", state={})
 
-    assert session.task("task").phase == "provider_prepared"
+    assert session.task("task").phase == "running"
 
 
 def test_close_seals_admission_before_notifying_and_is_idempotent() -> None:

@@ -34,7 +34,6 @@ def admit_shell_task(ctx, *, session_id: str, run_id: str, task: str = "shell ap
     # external tool outcome.  Keep the fixture on that canonical checkpoint
     # so tests exercise the same effect admission boundary as production.
     ctx.durable.start_task(run_id, state={})
-    ctx.durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={})
 
 
 def add_pending_approval(ctx, approval_id: str, pending: dict[str, object]) -> None:

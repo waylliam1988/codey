@@ -120,7 +120,7 @@ def run_task(
             if run_id:
                 with contextlib.suppress(Exception):
                     checkpoint = state.durable.task(run_id)
-                    if checkpoint.phase == "provider_prepared":
+                    if checkpoint.phase == "running" and not state.durable.effects(run_id):
                         state.durable.fail_task(run_id, "task initialization failed", state=dict(checkpoint.state))
                     state.release_run(run_id)
             raise

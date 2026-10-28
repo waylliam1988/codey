@@ -54,14 +54,9 @@ class _Sink:
     def __init__(self, mutations: _Mutations) -> None:
         self.mutations = mutations
         self.pending = (object(), ())
-        self.cleared = False
 
     def pending_provider_settlement(self) -> object:
         return self.pending
-
-    def clear_provider_settlement(self) -> None:
-        self.cleared = True
-        self.pending = None
 
 
 def test_provider_settlement_and_boundary_use_one_mutation() -> None:
@@ -80,7 +75,6 @@ def test_provider_settlement_and_boundary_use_one_mutation() -> None:
     assert callback("post_tools") == "steer this turn"
     assert mutations.calls[0][0:2] == ("session", "run")
     assert mutations.calls[0][3] == "post_tools"
-    assert sink.cleared is True
     assert durable.calls == []
 
 
@@ -111,7 +105,6 @@ def test_failed_boundary_keeps_pending_settlement_for_recovery() -> None:
         assert str(exc) == "injected boundary failure"
     else:
         raise AssertionError("boundary failure should propagate")
-    assert sink.cleared is False
     assert sink.pending is not None
 
 

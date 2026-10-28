@@ -103,7 +103,7 @@ def test_store_rejects_nonterminal_mutation_after_durable_cancel_barrier(session
     with pytest.raises(CommitConflict, match="cancellation"):
         session.store.commit(DurableMutation(
             "chat", revision,
-            task=replace(current, revision=current.revision + 1, phase="assistant_response_pending"),
+            task=replace(current, revision=current.revision + 1, phase="running"),
             expected_attempt_token=current.attempt_token,
         ))
 

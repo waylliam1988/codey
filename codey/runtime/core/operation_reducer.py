@@ -13,6 +13,7 @@ from codey.runtime.core.operation_state import (
     LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
     LEAF_PROVIDER_EFFECT_PENDING,
+    LEAF_PROVIDER_RESPONSE_READY,
     LEAF_REPAIR_CONTEXT_ADMITTED,
     LEAF_REPAIR_RUNNING,
     LEAF_REPAIR_SETTLED,
@@ -23,6 +24,7 @@ from codey.runtime.core.operation_state import (
     LEAF_WRITER_SETTLED,
     LEAVES,
     RuntimeOperationState,
+    RuntimeOperationTransitionError,
 )
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
@@ -40,6 +42,8 @@ ACTION_REDELIVER_SETTLED_BATCH = "redeliver_settled_batch"
 ACTION_SETTLE_PROVIDER_UNKNOWN = "settle_provider_unknown"
 ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS = "synthesize_interrupted_effects"
 ACTION_TERMINAL = "terminal"
+ACTION_INTERPRET_PROVIDER_RESPONSE = "interpret_provider_response"
+ACTION_COMMIT_GENERATION_BOUNDARY = "commit_generation_boundary"
 
 
 @dataclass(frozen=True)
@@ -51,6 +55,46 @@ class RuntimeAction:
     effect_ids: tuple[str, ...] = ()
     delivery_batch_id: str = ""
     driver: str = ""
+    response_ref: str = ""
+
+
+@dataclass(frozen=True)
+class OperationSettlement:
+    abandoned_batch_ids: tuple[str, ...] = ()
+
+
+def prepare_operation_settlement(view: SessionView) -> OperationSettlement:
+    """Validate lifecycle settlement against receipts without inventing them.
+
+    Stopping a scheduler does not establish any external outcome. Only a
+    complete, known tool result batch may be explicitly abandoned here.
+    """
+    state = view.state
+    if state is None:
+        raise RuntimeOperationTransitionError("missing operation state")
+    if any(effect.settlement is None for effect in view.effects):
+        raise RuntimeOperationTransitionError("operation retains pending effects")
+    if any(_external_outcome_unknown(effect) for effect in view.effects):
+        raise RuntimeOperationTransitionError("operation retains unknown external outcomes")
+    if state.leaf in {LEAF_PROVIDER_EFFECT_PENDING, LEAF_PROVIDER_RESPONSE_READY, LEAF_TOOL_EFFECT_PENDING}:
+        raise RuntimeOperationTransitionError("pending operation position has no matching unsettled effect")
+    open_batches = tuple(batch for batch in view.batches if not batch.is_terminal)
+    if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
+        batch = _batch_by_id(view.batches, pending_for(view).delivery_batch_id)
+        if (batch is None or len(open_batches) != 1
+                or not _batch_fully_settled(batch, view.effects)):
+            raise RuntimeOperationTransitionError("operation has no unique complete result batch to abandon")
+        return OperationSettlement((batch.intent.batch_id,))
+    if open_batches:
+        raise RuntimeOperationTransitionError("operation retains an unexpected undelivered batch")
+    return OperationSettlement()
+
+
+def _external_outcome_unknown(effect: RuntimeEffectProjection) -> bool:
+    receipt = effect.settlement
+    return receipt is not None and (
+        receipt.sent_state == "maybe_sent" or receipt.error_code == "interrupted_by_crash"
+    )
 
 
 def next_runtime_action(view: SessionView) -> RuntimeAction:
@@ -62,17 +106,36 @@ def next_runtime_action(view: SessionView) -> RuntimeAction:
     effects = view.effects
     delivery_batches = view.batches
     pending = pending_for(view)
+    unsettled = tuple(effect for effect in effects if effect.settlement is None)
+    unknown = tuple(effect for effect in effects if _external_outcome_unknown(effect))
+    if unknown:
+        return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="external_outcome_unknown",
+                             effect_ids=tuple(effect.intent.effect_id for effect in unknown))
 
     if state.leaf == LEAF_TERMINAL:
+        if unsettled:
+            return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="terminal_retains_pending_effects")
         return RuntimeAction(ACTION_TERMINAL, leaf=state.leaf)
 
     if state.leaf == LEAF_PROVIDER_EFFECT_PENDING:
         return _provider_pending_action(state, effects, pending)
 
+    if state.leaf == LEAF_PROVIDER_RESPONSE_READY:
+        if len(pending.effect_ids) != 1 or not state.response_ref:
+            return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="missing_provider_response_fact")
+        return RuntimeAction(ACTION_INTERPRET_PROVIDER_RESPONSE, leaf=state.leaf,
+                             effect_id=pending.effect_ids[0], response_ref=state.response_ref, driver=state.driver)
+
     if state.leaf == LEAF_TOOL_EFFECT_PENDING:
         return _tool_pending_action(state, effects, delivery_batches, pending)
 
     if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
+        providers = tuple(effect for effect in unsettled if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND)
+        if providers:
+            if len(providers) != 1 or len(unsettled) != 1:
+                return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="generation_boundary_effects_mismatch")
+            return RuntimeAction(ACTION_COMMIT_GENERATION_BOUNDARY, leaf=state.leaf,
+                                 effect_id=providers[0].intent.effect_id, reason="post_tools")
         return _delivery_pending_action(state, effects, delivery_batches, pending)
 
     if state.leaf in {
@@ -84,6 +147,8 @@ def next_runtime_action(view: SessionView) -> RuntimeAction:
         LEAF_REPAIR_RUNNING,
         LEAF_REPAIR_SETTLED,
     }:
+        if unsettled:
+            return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="unexpected_pending_effects")
         return RuntimeAction(ACTION_CONTINUE, leaf=state.leaf)
 
     return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="unhandled_leaf")
@@ -292,6 +357,10 @@ __all__ = [
     "ACTION_SETTLE_PROVIDER_UNKNOWN",
     "ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS",
     "ACTION_TERMINAL",
+    "ACTION_INTERPRET_PROVIDER_RESPONSE",
+    "ACTION_COMMIT_GENERATION_BOUNDARY",
     "RuntimeAction",
     "next_runtime_action",
+    "OperationSettlement",
+    "prepare_operation_settlement",
 ]

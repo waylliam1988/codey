@@ -257,28 +257,25 @@ def finish_run_operation(deps: Any, work: RunWork, event: dict[str, object]) -> 
     if event.get("stop_reason") in {"approval", "question"}:
         return
     max_turns = coerce_int(event.get("max_turns") or 0)
-    try:
-        mutations = getattr(deps, "runtime_mutations", None)
-        if mutations is None:
-            raise RuntimeOperationTransitionError("runtime mutation line is missing")
-        receipt = event.get("receipt")
-        proof = receipt.get("completion_proof") if isinstance(receipt, dict) else None
-        proof = proof if isinstance(proof, dict) else dict[str, object]()
-        delivery = event.get("final_delivery")
-        work.operation = mutations.mark_terminal(
-            work.operation.session_id,
-            work.operation.run_id,
-            stop_reason=str(event.get("stop_reason") or ""),
-            summary_chars=len(str(event.get("summary") or "")),
-            turns=terminal_turns(work, turns=event.get("turns"), max_turns=max_turns),
-            max_turns=max_turns,
-            provider=str(event.get("provider") or ""),
-            final_delivery=delivery if isinstance(delivery, str) else None,
-            proof_ref=str(proof.get("proof_id") or ""),
-            proof_status=str(proof.get("status") or ""),
-        )
-    except (OSError, ValueError, RuntimeOperationTransitionError):
-        work.operation = None
+    mutations = getattr(deps, "runtime_mutations", None)
+    if mutations is None:
+        raise RuntimeOperationTransitionError("runtime mutation line is missing")
+    receipt = event.get("receipt")
+    proof = receipt.get("completion_proof") if isinstance(receipt, dict) else None
+    proof = proof if isinstance(proof, dict) else dict[str, object]()
+    delivery = event.get("final_delivery")
+    work.operation = mutations.mark_terminal(
+        work.operation.session_id,
+        work.operation.run_id,
+        stop_reason=str(event.get("stop_reason") or ""),
+        summary_chars=len(str(event.get("summary") or "")),
+        turns=terminal_turns(work, turns=event.get("turns"), max_turns=max_turns),
+        max_turns=max_turns,
+        provider=str(event.get("provider") or ""),
+        final_delivery=delivery if isinstance(delivery, str) else None,
+        proof_ref=str(proof.get("proof_id") or ""),
+        proof_status=str(proof.get("status") or ""),
+    )
 
 
 def _update_checkpoint_safely(deps: Any, work: RunWork, reason: str) -> None:

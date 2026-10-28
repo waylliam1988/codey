@@ -11,6 +11,7 @@ from codey.runtime.core.operation_state import (
     LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
     LEAF_PROVIDER_EFFECT_PENDING,
+    LEAF_PROVIDER_RESPONSE_READY,
     LEAF_REPAIR_CONTEXT_ADMITTED,
     LEAF_REPAIR_RUNNING,
     LEAF_REPAIR_SETTLED,
@@ -28,6 +29,7 @@ from codey.runtime.core.operation_state import (
     mark_completion_proof_recorded,
     mark_provider_effect_pending,
     mark_provider_effect_settled,
+    mark_provider_response_ready,
     mark_repair_context_admitted,
     mark_repair_running,
     mark_terminal,
@@ -198,7 +200,7 @@ class RuntimeOperationStateTests(unittest.TestCase):
         self.assertEqual(projection.lanes[terminal.lane].open_operation_id, "")
 
     def test_operation_state_payload_is_closed_schema_v1(self) -> None:
-        self.assertEqual(SCHEMA_VERSION, 1)
+        self.assertEqual(SCHEMA_VERSION, 2)
         payload = _state(LEAF_ACCEPTED).to_payload()
         self.assertEqual(payload["schema_version"], SCHEMA_VERSION)
         self.assertEqual(payload["kind"], KIND)
@@ -433,11 +435,12 @@ class RuntimeOperationStateTests(unittest.TestCase):
         self.assertIs(completion_proof_satisfied(failed), False)
         self.assertNotIn("completion_proof_satisfied", complete.to_payload())
 
-    def test_all_v1_leaves_have_real_transition_coverage(self) -> None:
+    def test_all_leaves_have_real_transition_coverage(self) -> None:
         reached = {
             LEAF_ACCEPTED,
             LEAF_WRITER_RUNNING,
             LEAF_PROVIDER_EFFECT_PENDING,
+            LEAF_PROVIDER_RESPONSE_READY,
             LEAF_TOOL_EFFECT_PENDING,
             LEAF_TOOL_DELIVERY_PENDING,
             LEAF_WRITER_SETTLED,
@@ -449,6 +452,18 @@ class RuntimeOperationStateTests(unittest.TestCase):
         }
         self.assertEqual(LEAVES, reached)
         self.assertEqual(operation_id_for_run("run-1")[:5], "task:")
+
+    def test_received_response_requires_a_reference_and_preserves_generation(self) -> None:
+        pending = mark_provider_effect_pending(_state(LEAF_WRITER_RUNNING), driver=DRIVER_WRITER,
+                                               provider_id="deepseek", turn=3)
+        ready = mark_provider_response_ready(pending, response_ref="artifact_" + "a" * 24)
+        self.assertEqual(RuntimeOperationState.from_payload(ready.to_payload()), ready)
+        payload = ready.to_payload()
+        payload.pop("response_ref")
+        self.assertIsNone(RuntimeOperationState.from_payload(payload))
+        settled = mark_provider_effect_settled(ready)
+        self.assertEqual(settled.leaf, LEAF_WRITER_RUNNING)
+        self.assertEqual(settled.response_ref, "")
 
 
 if __name__ == "__main__":

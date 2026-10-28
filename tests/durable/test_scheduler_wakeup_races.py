@@ -143,7 +143,7 @@ def test_requeue_after_dispatch_snapshot_is_not_lost(tmp_path, monkeypatch):
             # The worker parks and an approval resumes the same task after
             # the dispatcher read RUNNING, before it updates volatile sets.
             session.wait_task(task_id, state={"wait_reason": "approval"})
-            session.advance_task(task_id=task_id, phase="provider_prepared", state={"next": "resume"})
+            session.advance_task(task_id=task_id, phase="running", state={"next": "resume"})
             session.unclaim_task(task_id)
             scheduler.notify(task_id, start=False)
         return current
