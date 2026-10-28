@@ -372,7 +372,7 @@ def search(root: Path, files: Iterable[Path], budget: BoundedScanBudget, *, quer
         matches: list[dict[str, object]] = []
         contexts: list[dict[str, object]] = []
         seen = 0
-        batches = _batches(scan.files, [executable, query]) if scan.files else [[]]
+        batches: Iterable[list[str]] = _batches(scan.files, [executable, query]) if scan.files else [[]]
         for batch in batches:
             cancellation.check()
             rows, context_rows = executor.search_batch(root.resolve(), [Path(item) for item in batch], query, literal,

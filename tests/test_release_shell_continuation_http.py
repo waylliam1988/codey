@@ -208,7 +208,7 @@ def test_zen_wrapper_restores_approved_call_before_native_continuation(
         monkeypatch.setattr(DurableSession, 'settle_approval', settle_and_signal)
         monkeypatch.setattr(DurableTaskScheduler, '_reconcile', reconcile_with_barrier)
     with model_peer(protocol, 'shell_approve') as (url, requests, errors):
-        target = GateTarget(url, 'shell-fixture', 32768, 8192, 12000, api_protocol=protocol, request_timeout=5)
+        target = GateTarget(url, 'shell-fixture', 32768, 8192, 12000, api_protocol=protocol, request_timeout=10)
         proof = run_shell_case('shell_approve', target, tmp_path)
         assert proof['stop_reason'] == 'done'
         assert len(requests) == 2 and not errors

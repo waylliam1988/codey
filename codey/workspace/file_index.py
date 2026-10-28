@@ -79,7 +79,7 @@ class IncrementalFileIndex:
     ) -> FileIndexSnapshot:
         root, start = root.resolve(), start.resolve()
         start.relative_to(root)
-        policy = [
+        policy: list[object] = [
             str(root),
             str(start),
             sorted(name.lower() for name in excluded_dirs),
@@ -167,8 +167,17 @@ class IncrementalFileIndex:
         # A mutation during discovery must not certify an older candidate set.
         if any(self._current_directory(item[0], excluded_dirs, limits) != item for item in directories):
             raise OSError("workspace changed during indexed discovery; retry search")
-        fields = asdict(budget)
-        coverage = DiscoveryCoverage(**{name: fields[name] for name in DiscoveryCoverage.__dataclass_fields__})
+        coverage = DiscoveryCoverage(
+            max_files=budget.max_files,
+            max_dirs=budget.max_dirs,
+            max_dir_entries=budget.max_dir_entries,
+            files_seen=budget.files_seen,
+            dirs_seen=budget.dirs_seen,
+            file_limited=budget.file_limited,
+            dir_limited=budget.dir_limited,
+            entry_limited=budget.entry_limited,
+            read_failed=budget.read_failed,
+        )
         return FileIndexSnapshot(start, entries, tuple(directories), coverage, uuid4().hex)
 
     def _changed(self, snapshot: FileIndexSnapshot, excluded_dirs: set[str], limits: BoundedScanBudget) -> bool:

@@ -139,11 +139,10 @@ def resolve_shell(*, platform: str | None = None, environ: Mapping[str, str] | N
     mode = env.get(SHELL_STARTUP_ENV, "noninteractive")
     if mode not in {"noninteractive", "login"}:
         raise ValueError("shell startup must be noninteractive or login")
+    startup: Literal["noninteractive", "login"] = "login" if mode == "login" else "noninteractive"
     from codey.runtime.core.shell_discovery import discover_shell
-    kind, executable, version, fingerprint = discover_shell(host, env)
-    if kind == "cmd" and mode == "login":
-        raise ValueError("unsupported shell startup mode: cmd does not support login")
-    return ShellSpec(kind, executable, version, "login" if mode == "login" else "noninteractive", fingerprint)
+    kind, executable, version, fingerprint = discover_shell(host, env, startup=startup)
+    return ShellSpec(kind, executable, version, startup, fingerprint)
 
 
 def _is_windows(platform: str) -> bool:

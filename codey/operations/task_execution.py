@@ -347,8 +347,11 @@ class ExecutionDelegate:
             version = content_edit_version(self.session, project_path, canonical, args)
             if self.change_tracker is not None:
                 self.change_tracker.capture_before(path)
-            kwargs = {"expected_version": version} if version is not None else {}
-            outcome = self.tool_fns.write_file(project_path, path, str(args.get("content") or ""), **kwargs)
+            content = str(args.get("content") or "")
+            if version is None:
+                outcome = self.tool_fns.write_file(project_path, path, content)
+            else:
+                outcome = self.tool_fns.write_file(project_path, path, content, expected_version=version)
             if outcome.ok and outcome.changed and self.change_tracker is not None:
                 self.change_tracker.capture_after(path)
             return outcome

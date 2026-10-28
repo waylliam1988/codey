@@ -19,7 +19,12 @@ _NAMES: dict[str, ShellKind] = {"cmd": "cmd", "powershell": "powershell", "pwsh"
                                "bash": "bash", "zsh": "zsh", "sh": "sh", "dash": "sh"}
 
 
-def discover_shell(platform: str, env: Mapping[str, str]) -> tuple[ShellKind, str, str | None, str]:
+def discover_shell(
+    platform: str,
+    env: Mapping[str, str],
+    *,
+    startup: Literal["noninteractive", "login"] | None = None,
+) -> tuple[ShellKind, str, str | None, str]:
     selected = env.get(SHELL_EXECUTABLE_ENV, "").strip()
     if not selected:
         selected = ((env.get("COMSPEC") or str(PureWindowsPath(env.get("SystemRoot", r"C:\Windows"), "System32", "cmd.exe")))
@@ -28,6 +33,8 @@ def discover_shell(platform: str, env: Mapping[str, str]) -> tuple[ShellKind, st
     kind = _NAMES.get(name)
     if kind is None:
         raise ValueError(f"unsupported shell executable: {name}")
+    if kind == "cmd" and startup == "login":
+        raise ValueError("unsupported shell startup mode: cmd does not support login")
     candidate = selected if os.path.isabs(selected) else shutil.which(selected, path=env.get("PATH"))
     if candidate is None and platform == "win32" and name in {"bash", "sh"}:
         git = shutil.which("git", path=env.get("PATH"))

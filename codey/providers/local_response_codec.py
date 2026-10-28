@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from typing import cast
 
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.providers.local_literal import parse_mapping
@@ -50,7 +51,7 @@ def parse_local_tool_markup(text: str) -> ProviderToolCall | None:
     if "args" in arguments:
         if len(arguments) != 1 or type(arguments["args"]) is not dict:
             return None
-        arguments = arguments["args"]
+        arguments = cast(dict[str, object], arguments["args"])
     if any(type(key) is not str for key in arguments):
         return None
     call_id = "local-" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]

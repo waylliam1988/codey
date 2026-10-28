@@ -40,11 +40,12 @@ class DurableCodeModeState:
             raise ValueError("CodeMode state limits must be positive integers")
 
     def store(self, key: str, value: object) -> None:
+        def update(current: TaskCheckpoint) -> dict[str, object]:
+            return {"codemode_state": self.prepare_store(current, key, value)}
+
         self.durable.transform_task_state(
             self.task_id,
-            lambda current: {
-                "codemode_state": self.prepare_store(current, key, value),
-            },
+            update,
         )
 
     def prepare_store(self, current: TaskCheckpoint, key: str, value: object) -> dict[str, object]:

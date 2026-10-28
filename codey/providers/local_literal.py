@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import cast
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _NUMBER = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
@@ -125,6 +126,6 @@ def parse_mapping(source: str) -> dict[str, object] | None:
         if parser.pos != len(source) or type(value) is not dict:
             return None
         json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
-        return value
+        return cast(dict[str, object], value)
     except (SyntaxError, ValueError, TypeError, MemoryError, RecursionError):
         return None
