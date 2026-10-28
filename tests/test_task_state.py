@@ -92,14 +92,15 @@ class MovedGlueTests(unittest.TestCase):
         self.assertTrue(events[2]["providers"])
 
     def test_claim_shell_ticket_mints_under_gate(self) -> None:
+        from codey.agents.shell_approval import ShellApprovalRequest
+
         gate = threading.Lock()
         lock = threading.Lock()
         approvals = mock.Mock()
         approvals.pop_shell.return_value = {
             "_approval_generation": 3,
             "project": ".",
-            "cwd": ".",
-            "command": "echo hi",
+            **ShellApprovalRequest(cwd=".", command="echo hi").to_payload(),
         }
         approvals.current_generation.return_value = 3
         run_registry = SimpleNamespace(stop_flag=SimpleNamespace(is_set=lambda: False))

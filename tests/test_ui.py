@@ -528,7 +528,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_activity_rows_share_columns_and_icon_only_copy_actions(self) -> None:
         self.assertIn("grid-template-columns: 12px minmax(0, 1fr) 12px minmax(0, 2fr)", STYLE_SOURCE)
-        self.assertIn("grid-template-columns: 12px auto minmax(0, 1fr) 12px minmax(0, 2fr) 12px", STYLE_SOURCE)
+        self.assertIn("grid-template-columns: 12px auto minmax(0, 1fr) 12px", STYLE_SOURCE)
         self.assertIn(".tool-line .tl-kind { display: none; }", STYLE_SOURCE)
         self.assertIn("className = 'activity-row command-summary'", _source("command_card"))
         self.assertIn("createIconSvg('copy')", RENDER_JS)

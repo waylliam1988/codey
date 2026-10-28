@@ -122,12 +122,15 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     )
     events: list[object] = []
     hooks = SimpleNamespace(on_event=events.append, on_shell_request=events.append)
-    managed = object()
     mutations = SimpleNamespace(
         mark_writer_running=lambda *_args, **_kwargs: None,
         set_task_policy=lambda *_args, **_kwargs: None,
     )
     state = AppContext(tmp_path / ".codey")
+    from tests.support.workspace_conversation import admit_entry_frame
+
+    admit_entry_frame(frame, state)
+    managed = state.managed_outputs
     deps = SimpleNamespace(
         knowledge_store=None, search_factory=None, runtime_mutations=mutations,
         managed_outputs=managed, state=state,
@@ -169,6 +172,9 @@ def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
     state = AppContext(tmp_path / "state")
     deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=state)
+    from tests.support.workspace_conversation import admit_entry_frame
+
+    admit_entry_frame(frame, state)
     with patch("codey.operations.task_loop.run_task_kernel",
                return_value=KernelResult(True, "done", 1, "done")) as kernel:
         run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),

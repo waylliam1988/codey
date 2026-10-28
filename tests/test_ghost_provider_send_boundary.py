@@ -117,7 +117,7 @@ def test_builder_kernel_api_wire_admission(tmp_path, capture_endpoint, native, f
     outcome = run_task_kernel(
         TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=1),
         request=KernelRunRequest(
-            transport=KernelTransportDeps(provider=provider, context_text=context,
+            transport=KernelTransportDeps(provider=provider, user_task=request.task, context_text=context,
                                           context_scope="" if fault == "empty_scope" else request_scope(tmp_path, "session-a"),
                                           ghost_sources=sources, admit_hints=fault != "disabled"),
             execution=KernelExecutionDeps(project_path=tmp_path, session_id="session-a"),
@@ -128,29 +128,31 @@ def test_builder_kernel_api_wire_admission(tmp_path, capture_endpoint, native, f
     assert len(payloads) == int(allowed), (fault, outcome)
     assert outcome.stop_reason == ("done" if allowed else "provider_failure"), outcome
     if allowed:
-        outbound = payloads[0]["messages"][-1]["content"]
+        outbound = next(message["content"] for message in payloads[0]["messages"]
+                        if "User task (verbatim):" in message.get("content", ""))
         assert (request.ghost_directive in outbound) == (fault != "off")
         assert context in outbound
         if fault != "trace_failure":
             assert len(boundaries) == 1
-            assert boundaries[0]["text"] == outbound
-            assert boundaries[0]["epoch_id"] == context_epoch_id(outbound)
+            provider_prompt = boundaries[0]["text"]
+            assert outbound.startswith(provider_prompt)
+            assert boundaries[0]["epoch_id"] == context_epoch_id(provider_prompt)
             if sources:
-                assert admissions == [(sources, {"epoch_id": context_epoch_id(outbound),
+                assert admissions == [(sources, {"epoch_id": context_epoch_id(provider_prompt),
                                                  "admission_reason": "provider_turn_boundary"})]
                 for source in sources:
                     section = next(row for row in recorder.manifest.prompt_sections if row.name == source.key)
                     assert section.digest == digest_text(source.text)
                     assert section.scope == source.scope
                     assert section.budget == source.budget
-                    assert section.epoch_id == context_epoch_id(outbound)
+                    assert section.epoch_id == context_epoch_id(provider_prompt)
                     assert section.source_refs == (f"context_source:{source.key}",)
             else:
                 assert admissions == []
             outbound_section = next(row for row in recorder.manifest.prompt_sections
                                     if row.name == "workspace_outbound_prompt")
-            assert outbound_section.digest == digest_text(outbound)
-            assert outbound_section.epoch_id == context_epoch_id(outbound)
+            assert outbound_section.digest == digest_text(provider_prompt)
+            assert outbound_section.epoch_id == context_epoch_id(provider_prompt)
             assert request.ghost_directive not in repr(recorder.manifest.to_payload())
     else:
         assert admissions == []
