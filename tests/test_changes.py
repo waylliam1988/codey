@@ -13,6 +13,7 @@ from unittest import mock
 
 from codey.agents.request import AgentRequest
 from codey.operations.project_adapter import run as _agent_kernel_request
+from codey.storage.local_store import StoreCorruption
 from codey.workspace import changes
 from codey.workspace.changes import ChangeTracker, SnapshotStore
 
@@ -410,7 +411,7 @@ class ChangeTrackerTests(unittest.TestCase):
             self.assertFalse(tracker.has_snapshots)
             self.assertEqual(path.read_bytes(), b"\xff\xfe\x00")
 
-    def test_unreadable_after_state_does_not_discard_recovery_baseline(self) -> None:
+    def test_oversized_after_state_raises_without_discarding_recovery_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             root = Path(td)
             path = root / "new.py"
@@ -419,13 +420,18 @@ class ChangeTrackerTests(unittest.TestCase):
             tracker.capture_before("new.py")
             path.write_text("large", encoding="utf-8")
             tracker.capture_after("new.py")
+            manifest_before = store.path_for(root).read_bytes()
 
-            with mock.patch("codey.workspace.changes.MAX_SNAPSHOT_FILE_BYTES", 2):
-                changes = tracker.collect()
+            with (
+                mock.patch("codey.workspace.changes.MAX_SNAPSHOT_FILE_BYTES", 2),
+                self.assertRaisesRegex(ValueError, "file too large for snapshot"),
+            ):
+                tracker.collect()
 
-            self.assertEqual(changes["changed_count"], 0)
             self.assertTrue(tracker.has_snapshots)
-            self.assertTrue(store.path_for(root).is_file())
+            self.assertEqual(store.path_for(root).read_bytes(), manifest_before)
+            self.assertEqual(path.read_text(encoding="utf-8"), "large")
+            self.assertEqual(ChangeTracker(root, store).collect()["changed_count"], 1)
 
     def test_collect_is_read_only_and_prune_clean_is_explicit(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
@@ -617,15 +623,15 @@ class ChangeTrackerTests(unittest.TestCase):
                 original.replace('"baseline":', '"extra":true,"baseline":'),
                 encoding="utf-8",
             )
-            with_extra_key = ChangeTracker(root, store)
-            self.assertFalse(with_extra_key.has_snapshots)
+            with self.assertRaisesRegex(StoreCorruption, "unknown baseline entry fields"):
+                ChangeTracker(root, store)
 
             manifest.write_text(
                 '{"schema_version":1,"files":{"app.py":{"after_hash":"missing"}}}',
                 encoding="utf-8",
             )
-            missing_baseline_key = ChangeTracker(root, store)
-            self.assertFalse(missing_baseline_key.has_snapshots)
+            with self.assertRaisesRegex(StoreCorruption, "missing baseline reference"):
+                ChangeTracker(root, store)
 
             manifest.write_text(
                 original.replace(
@@ -634,8 +640,11 @@ class ChangeTrackerTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            wrong_baseline_ref = ChangeTracker(root, store)
-            self.assertFalse(wrong_baseline_ref.has_snapshots)
+            damaged = manifest.read_bytes()
+            with self.assertRaisesRegex(StoreCorruption, "baseline reference mismatch"):
+                ChangeTracker(root, store)
+            self.assertEqual(manifest.read_bytes(), damaged)
+            self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
 
     def test_snapshot_survives_abrupt_process_exit(self) -> None:
         script = (
@@ -972,7 +981,7 @@ class ChangeTrackerTests(unittest.TestCase):
             # Start view said old, end state is old: no change to report.
             self.assertEqual(result["snapshots"], [])
 
-    def test_single_dirty_entry_does_not_wipe_whole_baseline(self) -> None:
+    def test_invalid_entry_blocks_load_without_wiping_baselines(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             root = Path(td)
             store = SnapshotStore(state_td)
@@ -988,10 +997,15 @@ class ChangeTrackerTests(unittest.TestCase):
             payload["files"]["bad.py"]["after_hash"] = "not-a-hash"
             manifest.write_text(json.dumps(payload), encoding="utf-8")
 
-            before, _ = SnapshotStore(state_td).load(root)
+            damaged = manifest.read_bytes()
+            with self.assertRaisesRegex(StoreCorruption, "invalid produced version"):
+                SnapshotStore(state_td).load(root)
 
-            self.assertIn("good.py", before)
-            self.assertNotIn("bad.py", before)
+            self.assertEqual(manifest.read_bytes(), damaged)
+            for name in ("good.py", "bad.py"):
+                self.assertEqual(store._baseline_path(root, name).read_text(encoding="utf-8"),
+                                 name.removesuffix(".py") + "\n")
+
     def test_corrupt_manifest_blocks_and_keeps_file(self) -> None:
         from codey.storage.local_store import StoreCorruption
 
@@ -1046,7 +1060,7 @@ class ChangeTrackerTests(unittest.TestCase):
             self.assertIn("a.py", before)
             self.assertIn("b.py", before)
 
-    def test_dirty_entry_does_not_consume_total_budget(self) -> None:
+    def test_oversized_baseline_blocks_load_without_discarding_entries(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             root = Path(td)
             store = SnapshotStore(state_td)
@@ -1057,15 +1071,16 @@ class ChangeTrackerTests(unittest.TestCase):
             tracker.capture_before("good.py")
 
             manifest = store.path_for(root)
-            payload = json.loads(manifest.read_text(encoding="utf-8"))
-            payload["files"]["big.py"]["after_hash"] = "not-a-hash"
-            manifest.write_text(json.dumps(payload), encoding="utf-8")
+            original = manifest.read_bytes()
+            with (
+                mock.patch.object(changes, "MAX_SNAPSHOT_TOTAL_BYTES", 100),
+                self.assertRaisesRegex(StoreCorruption, "baseline total budget exceeded"),
+            ):
+                SnapshotStore(state_td).load(root)
 
-            with mock.patch.object(changes, "MAX_SNAPSHOT_TOTAL_BYTES", 100):
-                before, _ = SnapshotStore(state_td).load(root)
-
-            self.assertNotIn("big.py", before)
-            self.assertIn("good.py", before)
+            self.assertEqual(manifest.read_bytes(), original)
+            before, _ = SnapshotStore(state_td).load(root)
+            self.assertEqual(before, {"big.py": "x" * 2000, "good.py": "y\n"})
 
     def test_set_after_hash_requires_existing_entry(self) -> None:
         from codey.storage.local_store import StoreCorruption
@@ -1220,13 +1235,16 @@ class ChangeTrackerTests(unittest.TestCase):
             body = store._baseline_path(root, "app.py")
             self.assertTrue(body.exists())
             body.unlink()
-            # Load skips the damaged entry, but the next capture must fail
-            # closed instead of forking an in-memory-only baseline.
-            tracker = ChangeTracker(root, store)
-            self.assertNotIn("app.py", tracker._before)
+            manifest = store.path_for(root)
+            damaged = manifest.read_bytes()
+            # A missing body blocks loading before another tracker can edit.
+            with self.assertRaisesRegex(StoreCorruption, "baseline body unavailable"):
+                ChangeTracker(root, store)
             with self.assertRaises(StoreCorruption):
-                tracker.capture_before("app.py")
-            self.assertNotIn("app.py", tracker._before)
+                store.put_baseline(root, "app.py", "current\n")
+            self.assertEqual(manifest.read_bytes(), damaged)
+            self.assertFalse(body.exists())
+            self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "current\n")
 
     def test_project_writer_lease_is_scoped_to_state_home(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:

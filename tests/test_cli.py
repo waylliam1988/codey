@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import io
 import json
 import tempfile
@@ -97,18 +96,9 @@ class ProviderCliTests(unittest.TestCase):
 
     def test_cmd_agent_propagates_headless_failure(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            args = argparse.Namespace(
-                provider="deepseek",
-                port=9222,
-                project=td,
-                task=["fix"],
-                max_turns=4,
-                json=False,
-                readonly=False,
-                auto=False,
-                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None, model="", effort=None,
-                state_home=td,
-            )
+            args = [
+                "agent", "--provider", 'deepseek', "--project", td, "--max-turns", "4", "--state-home", td, 'fix',
+            ]
 
             with (
                 mock.patch(
@@ -117,22 +107,13 @@ class ProviderCliTests(unittest.TestCase):
                 ),
                 self.assertRaisesRegex(RuntimeError, "offline"),
             ):
-                cli.cmd_agent(args)
+                cli.main(args)
 
     def test_cmd_agent_plain_mode_prints_human_summary(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            args = argparse.Namespace(
-                provider="deepseek",
-                port=9222,
-                project=td,
-                task=["fix"],
-                max_turns=4,
-                json=False,
-                readonly=False,
-                auto=False,
-                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None, model="", effort=None,
-                state_home=td,
-            )
+            args = [
+                "agent", "--provider", 'deepseek', "--project", td, "--max-turns", "4", "--state-home", td, 'fix',
+            ]
             stdout = io.StringIO()
             stderr = io.StringIO()
 
@@ -161,7 +142,7 @@ class ProviderCliTests(unittest.TestCase):
                 mock.patch("sys.stdout", stdout),
                 mock.patch("sys.stderr", stderr),
             ):
-                exit_code = cli.cmd_agent(args)
+                exit_code = cli.main(args)
 
             self.assertEqual(exit_code, 0)
             self.assertEqual(stdout.getvalue(), "plain summary\n")
@@ -170,18 +151,9 @@ class ProviderCliTests(unittest.TestCase):
 
     def test_cmd_agent_json_emits_machine_readable_events(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            args = argparse.Namespace(
-                provider="qwen",
-                port=9222,
-                project=td,
-                task=["fix", "tests"],
-                max_turns=4,
-                json=True,
-                readonly=False,
-                auto=False,
-                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None, model="", effort=None,
-                state_home="",
-            )
+            args = [
+                "agent", "--provider", 'qwen', "--project", td, "--max-turns", "4", '--json', 'fix', 'tests',
+            ]
             stdout = io.StringIO()
             stderr = io.StringIO()
 
@@ -206,7 +178,7 @@ class ProviderCliTests(unittest.TestCase):
                 mock.patch("sys.stdout", stdout),
                 mock.patch("sys.stderr", stderr),
             ):
-                exit_code = cli.cmd_agent(args)
+                exit_code = cli.main(args)
 
         self.assertEqual(exit_code, 0)
         rows = [json.loads(line) for line in stdout.getvalue().splitlines()]
@@ -222,18 +194,9 @@ class ProviderCliTests(unittest.TestCase):
 
     def test_cmd_agent_plain_mode_still_prints_summary_text(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            args = argparse.Namespace(
-                provider="deepseek",
-                port=9222,
-                project=td,
-                task=["fix"],
-                max_turns=4,
-                json=False,
-                readonly=False,
-                auto=False,
-                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None, model="", effort=None,
-                state_home=td,
-            )
+            args = [
+                "agent", "--provider", 'deepseek', "--project", td, "--max-turns", "4", "--state-home", td, 'fix',
+            ]
             stdout = io.StringIO()
 
             def fake_headless(request, *, emit_jsonl):
@@ -252,25 +215,16 @@ class ProviderCliTests(unittest.TestCase):
                 mock.patch("codey.app.headless_runner.run_headless", side_effect=fake_headless),
                 mock.patch("sys.stdout", stdout),
             ):
-                exit_code = cli.cmd_agent(args)
+                exit_code = cli.main(args)
 
             self.assertEqual(exit_code, 0)
             self.assertEqual(stdout.getvalue(), "plain summary\n")
 
     def test_cmd_agent_json_readonly_maps_to_headless_intent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            args = argparse.Namespace(
-                provider="qwen",
-                port=9222,
-                project=td,
-                task=["explain"],
-                max_turns=4,
-                json=True,
-                readonly=True,
-                auto=False,
-                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None, model="", effort=None,
-                state_home="",
-            )
+            args = [
+                "agent", "--provider", 'qwen', "--project", td, "--max-turns", "4", '--json', '--readonly', 'explain',
+            ]
             stdout = io.StringIO()
 
             with (
@@ -280,25 +234,16 @@ class ProviderCliTests(unittest.TestCase):
                 ) as run_headless,
                 mock.patch("sys.stdout", stdout),
             ):
-                exit_code = cli.cmd_agent(args)
+                exit_code = cli.main(args)
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(run_headless.call_args.args[0].intent, "planning_readonly")
 
     def test_cmd_agent_json_auto_maps_to_headless_intent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            args = argparse.Namespace(
-                provider="qwen",
-                port=9222,
-                project=td,
-                task=["route", "this"],
-                max_turns=4,
-                json=True,
-                readonly=False,
-                auto=True,
-                intent=None, session_id="", review_source_run_id="", allow_web=False, allow_write=False, continue_task=False, review_policy=None, model="", effort=None,
-                state_home="",
-            )
+            args = [
+                "agent", "--provider", 'qwen', "--project", td, "--max-turns", "4", '--json', '--auto', 'route', 'this',
+            ]
             stdout = io.StringIO()
 
             with (
@@ -308,7 +253,7 @@ class ProviderCliTests(unittest.TestCase):
                 ) as run_headless,
                 mock.patch("sys.stdout", stdout),
             ):
-                exit_code = cli.cmd_agent(args)
+                exit_code = cli.main(args)
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(run_headless.call_args.args[0].intent, "auto")
