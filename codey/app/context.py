@@ -699,9 +699,9 @@ class AppContext(GhostStoreAccessors):
         return pending
 
     def resolve_shell_approval(self, approval_id: str) -> dict[str, Any] | None:
-        from codey.app.shell_approval_state import resolve_shell_approval
+        from codey.operations.shell_approval_receipt import resolve_shell_approval
 
-        return resolve_shell_approval(self, approval_id)
+        return resolve_shell_approval(self.durable, self.managed_outputs, approval_id)
 
     def approval_generation(self) -> int:
         with self.lock:

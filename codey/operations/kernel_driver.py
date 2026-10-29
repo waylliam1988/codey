@@ -59,7 +59,9 @@ def prepare_provider_request(
     intent = prepare_intent(sink.session_id, sink.run_id, RuntimeEffectIntent(
         effect_id=new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, sink.run_id),
         effect_category=EFFECT_CATEGORY_PROVIDER_SEND, session_id=sink.session_id, run_id=sink.run_id,
-        phase=sink.phase, provider_id=sink.provider_id, turn=turn, display_ref=method,
+        phase=sink.phase, provider_id=sink.provider_id, turn=turn,
+        display_ref="closing_acknowledgement" if sink._request_context.get("delivery_purpose") == "closing"
+            and method.startswith("acknowledge_tool_results") else method,
         args_digest=compute_args_digest(json.dumps(transport, ensure_ascii=False, sort_keys=True)),
         replay_class=ReplayClass.UNSAFE, delivery_batch_id=sink.delivery_batch_id,
     ))
@@ -215,9 +217,7 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
         while True:
             view = context.load_view()
             state = view.state
-            closing = bool(state.work_ref and context.decision(state).get("purpose") == "closing")
-            action = rules.next_runtime_action(view, rules.RuntimeDecisionInputs(
-                cancel_requested=context.cancelled(), closing_intent=closing))
+            action = rules.next_runtime_action(view, context.decision_inputs(view))
             if action.kind == rules.ACTION_RETURN_KERNEL_RESULT:
                 decision = context.decision(state)
                 result = kernel_control.result_from_payload(decision["result"])
@@ -253,6 +253,11 @@ def _execute_kernel_action(context: KernelContext, view: Any, action: Any) -> Ke
     state = view.state
     if action.kind == rules.ACTION_BEGIN_CLOSING:
         context.close(state, KernelResult(False, "stopped", state.logical_turn, "stopped"))
+    elif action.kind == rules.ACTION_RESUME_QUESTION:
+        from codey.runtime.core.operation_state import LEAF_REPAIR_RUNNING, LEAF_WRITER_RUNNING
+        context.advance(state, LEAF_REPAIR_RUNNING if state.driver == "repair" else LEAF_WRITER_RUNNING)
+    elif action.kind == rules.ACTION_RETURN_WAITING:
+        return KernelResult(False, "shell command requires approval", state.logical_turn, "approval")
     elif action.kind == rules.ACTION_PREPARE_TURN:
         context.prepare_turn(state)
     elif action.kind in {rules.ACTION_SUBMIT_PROVIDER_REQUEST, rules.ACTION_COMMIT_GENERATION_BOUNDARY}:
@@ -296,5 +301,13 @@ def _execute_kernel_action(context: KernelContext, view: Any, action: Any) -> Ke
                 RuntimeEffectSettlement.from_payload(receipt))
         raise RecoveryFailed("external outcome is unknown; the original action was not replayed")
     else:
-        raise RecoveryFailed(f"kernel cannot advance {action.kind} at {action.leaf}")
+        _execute_wait_action(context, state, action)
     return None
+
+
+def _execute_wait_action(context: KernelContext, state: Any, action: Any) -> None:
+    from codey.runtime.core.operation_reducer import ACTION_RECONCILE_APPROVAL
+
+    if action.kind != ACTION_RECONCILE_APPROVAL:
+        raise RecoveryFailed(f"kernel cannot advance {action.kind} at {action.leaf}")
+    context.reconcile_approval(state, action.effect_id, cancelled=action.reason == "stopped")

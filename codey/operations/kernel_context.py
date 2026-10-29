@@ -55,6 +55,72 @@ class KernelContext:
         flag = self.transport.stop_flag
         return bool(task.state.get("cancel_requested")) or (flag is not None and bool(flag.is_set()))
 
+    def decision_inputs(self, view: Any) -> Any:
+        from codey.operations.shell_approval_receipt import read_approval_command
+        from codey.runtime.core.operation_reducer import RuntimeDecisionInputs
+        from codey.runtime.effects.effect_records import compute_args_digest
+
+        task = self.durable.task(self.sink.run_id)
+        state = view.state
+        question = task.state.get("question", {})
+        decision = self.decision(state) if state.work_ref else {}
+        approval = None
+        if state.leaf == positions.LEAF_TOOL_EFFECT_PENDING:
+            for identity in task.state.get("approvals", {}):
+                record = self.durable.approval(identity)
+                command = read_approval_command(self.sink.managed_outputs, record)
+                matching = [effect for effect in view.effects if effect.intent.effect_category == "tool_call"
+                    and effect.settlement is None and effect.intent.turn == command.get("turn")
+                    and effect.intent.tool_index == command.get("tool_index")
+                    and effect.intent.call_id == command.get("call_id", "")
+                    and effect.intent.tool_name == command.get("tool_name")
+                    and effect.intent.args_digest == compute_args_digest(command.get("tool_args"))]
+                if matching:
+                    if approval is not None or len(matching) != 1:
+                        raise RecoveryFailed("ambiguous approval continuation")
+                    approval = record
+        return RuntimeDecisionInputs(cancel_requested=self.cancelled(), closing_intent=decision.get("purpose") == "closing",
+            question_answered=decision.get("purpose") == "question" and question.get("id") == decision.get("question_id")
+                and question.get("state") == "answered",
+            approval_ref=approval.approval_id if approval is not None else "",
+            approval_ready=approval is not None and str(approval.status) in {"execution_settled", "denied"},
+            approval_outcome_unknown=approval is not None and str(approval.status) == "execution_claimed")
+
+    def reconcile_approval(self, state: Any, identity: str, *, cancelled: bool) -> None:
+        from codey.operations.kernel_receipts import result_receipt_fields
+        from codey.operations.shell_approval_receipt import read_approval_command, resolve_shell_approval
+        from codey.runtime.core.models import ToolCall, ToolResult
+        from codey.runtime.effects.effect_records import RuntimeEffectSettlement, compute_args_digest
+
+        record = self.durable.approval(identity)
+        command = read_approval_command(self.sink.managed_outputs, record)
+        payload = resolve_shell_approval(self.durable, self.sink.managed_outputs, identity)
+        if payload is None and not cancelled:
+            raise RecoveryFailed("approval has no reliable execution receipt")
+        call = ToolCall(command["tool_name"], command["tool_args"], call_id=command.get("call_id", ""))
+        matching = [effect for effect in self.load_view().effects if effect.intent.effect_category == "tool_call"
+            and effect.intent.turn == command["turn"] and effect.intent.tool_index == command["tool_index"]
+            and effect.intent.args_digest == compute_args_digest(call.args) and effect.intent.call_id == call.call_id]
+        if len(matching) != 1 or record.task_id != self.sink.run_id or record.conversation_id != self.sink.session_id:
+            raise RecoveryFailed("approval does not identify its original invocation")
+        effect = matching[0]
+        if effect.settlement is not None:
+            return
+        if payload is None:
+            if str(record.status) not in {"requested", "approved", "cancelled", "expired"}:
+                raise RecoveryFailed("approval execution outcome is unknown")
+            text, ok, code = "ERROR: command cancelled before execution", False, None
+        else:
+            text, ok, code = payload["model_text"], payload["ok"], payload["exit_code"]
+        result = ToolResult(call, text, ok=ok, audit={"exit_code": code})
+        receipt = RuntimeEffectSettlement(effect_id=effect.intent.effect_id, effect_category="tool_call",
+            session_id=self.sink.session_id, run_id=self.sink.run_id, status="ok" if ok else "error",
+            error_code="" if ok else "cancelled" if payload is None else payload["error_code"] or "shell_error",
+            replay_class=effect.intent.replay_class, exit_code=code,
+            **result_receipt_fields(result, store=self.sink.managed_outputs,
+                session_id=self.sink.session_id, run_id=self.sink.run_id, effect_id=effect.intent.effect_id))
+        self.sink.mutations.settle_tool_effect(self.sink.session_id, self.sink.run_id, receipt)
+
     def advance(self, state: Any, leaf: str, *, data: dict[str, Any] | None = None,
                 logical_turn: int | None = None, counters: RuntimeExecutionCounters | None = None) -> None:
         artifact = None
@@ -146,6 +212,7 @@ class KernelContext:
         self.snapshots[turn] = snapshot
         self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window)
         self.sink._request_context["close_reply"] = acknowledge
+        self.sink._request_context["delivery_purpose"] = self.decision(state).get("purpose", "") if state.work_ref else ""
         self.sink._request_context["work_ref"] = state.work_ref if acknowledge else ""
         self.sink._request_context["source_response_ref"] = (
             self.response_reference(state) if state.response_ref or acknowledge else "")
@@ -211,7 +278,9 @@ class KernelContext:
             invalid = state.counters.invalid_turns + 1
             threshold = self.transport.stagnant_turns
             if threshold is not None and invalid >= max(1, threshold):
-                self.close(state, KernelResult(False, f"stopped after {invalid} invalid tool requests: {plan.protocol_error}", turn, "protocol"))
+                self.advance(state, positions.LEAF_CLOSING, counters=replace(state.counters, invalid_turns=invalid),
+                    data={"purpose": "closing", "result": json_value(KernelResult(False,
+                        f"stopped after {invalid} invalid tool requests: {plan.protocol_error}", turn, "protocol"))})
                 return
             prompt = kernel_prompt._repair_prompt(plan, snapshot=snapshot, native=self.native)
             self.retry(state, prompt, error=plan.protocol_error, counters=replace(state.counters, invalid_turns=invalid))

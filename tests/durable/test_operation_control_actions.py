@@ -212,3 +212,73 @@ def test_cancellation_during_completion_check_prevents_success_ack(tmp_path, mon
         assert len(acknowledgements) == 1 and acknowledgements[0].startswith("ERROR:")
     finally:
         durable.close()
+
+
+@pytest.mark.parametrize("cancelled", [False, "active", "parked"])
+def test_approval_resume_uses_original_call_and_never_executes_shell(tmp_path, cancelled):
+    from codey.durable import ApprovalRecord, ApprovalStatus
+    from codey.operations.provider_receipts import json_value
+
+    durable, _, outputs, sink = runtime(tmp_path)
+    original = {"command": "echo hi", "path": "."}
+    sent = []
+
+    def request_approval(request):
+        command = outputs.write_json_artifact(session_id="s", run_id="r", payload={
+            **json_value(request), "tool_name": request.tool_name, "tool_args": original,
+            "turn": request.turn, "tool_index": request.tool_index})
+        durable.create_approval(ApprovalRecord("approval", "r", "s", ApprovalStatus.REQUESTED,
+            command.sha256, command.handle, "."))
+
+    class Provider:
+        native_tools = True
+
+        def send_turn(self, prompt, tools):
+            return AssistantTurn(tool_calls=(ProviderToolCall("original-shell", "shell", original),))
+
+        def send_tool_results(self, results, tools):
+            sent.extend(results)
+            return AssistantTurn(tool_calls=(ProviderToolCall("done", "done", {"summary": "reported"}),))
+
+        def acknowledge_tool_results(self, results, tools):
+            sent.extend(results)
+            return AssistantTurn()
+
+    def forbidden(call):
+        raise AssertionError("the command must be owned by the approval workflow")
+
+    session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.verify", "shell.approval"})), max_turns=4)
+    req = request_for(durable, sink, Provider(), executors={"shell": forbidden})
+    req = replace(req, execution=replace(req.execution, project_path=tmp_path),
+        observation=replace(req.observation, on_shell_request=request_approval))
+    try:
+        first = run_task_kernel(session, request=req)
+        assert first.stop_reason == "approval", first
+        if cancelled:
+            if cancelled == "parked":
+                durable.wait_task("r", state={"stop_reason": "approval"})
+            durable.request_cancel("r")
+            if cancelled == "parked":
+                durable.claim_task("r")
+            stopped = run_task_kernel(session, request=req)
+            assert stopped.stop_reason == "stopped", stopped
+            assert sent[0].call_id == "original-shell"
+            assert all(effect.settlement is not None for effect in durable.effects("r"))
+            assert not any(effect.category == "shell" for effect in durable.effects("r"))
+            return
+        durable.wait_task("r", state={"stop_reason": "approval"})
+        approval = durable.approval("approval")
+        durable.transition_approval("approval", replace(approval, status=ApprovalStatus.DENIED, revision=1),
+                                    expected_status=ApprovalStatus.REQUESTED)
+        result = outputs.write_json_artifact(session_id="s", run_id="r", payload={"ok": False,
+            "status": "denied", "output": "Denied by user", "exit_code": None})
+        durable.settle_approval("approval", settlement={"result_ref": result.handle, "result_digest": result.sha256}, resume=True)
+        durable.claim_task("r")
+        resumed = run_task_kernel(session, request=req)
+        assert resumed.completed, resumed
+        assert sent[0].call_id == "original-shell" and sent[0].content
+        effects = [effect for effect in durable.effects("r") if effect.category == "tool_call"]
+        assert len(effects) == 1 and effects[0].settlement is not None
+        assert not any(effect.category == "shell" for effect in durable.effects("r"))
+    finally:
+        durable.close()

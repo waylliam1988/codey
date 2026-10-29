@@ -345,64 +345,6 @@ def claim_pending_shell_approval_locked(
 
 
 
-def resolve_shell_approval(ctx: Any, approval_id: str) -> dict[str, Any] | None:
-    """Build a bounded redelivery payload from settled durable facts.
-
-    This is read-only and is used by ``ResolveShellApproval`` task input.
-    It never executes the command and refuses requested/claimed/abandoned
-    facts or missing/tampered artifacts.
-    """
-    durable = getattr(ctx, "durable", None)
-    lookup = getattr(durable, "approval", None)
-    if not callable(lookup):
-        return None
-    try:
-        record = lookup(approval_id)
-    except (AttributeError, KeyError, OSError, TypeError, ValueError):
-        record = None
-    facts = approval_record_facts(record) if record is not None else ()
-    if not facts or ctx.managed_outputs is None:
-        return None
-    requested = next((fact for fact in facts if fact.kind == "requested"), None)
-    settled = next((fact for fact in reversed(facts)
-                    if fact.kind in {"execution_settled", "denied"}), None)
-    if requested is None or settled is None or not settled.result_ref:
-        return None
-    try:
-        command = ctx.managed_outputs.read_json_artifact({
-            "session_id": requested.session_id,
-            "run_id": requested.source_run_id,
-            "handle": requested.command_ref,
-            "sha256": requested.command_digest,
-            "schema_version": 1,
-        })
-        result = ctx.managed_outputs.read_json_artifact({
-            "session_id": settled.session_id,
-            "run_id": settled.source_run_id,
-            "handle": settled.result_ref,
-            "sha256": settled.result_digest,
-            "schema_version": 1,
-        })
-    except (OSError, ValueError, TypeError):
-        return None
-    if not isinstance(command, dict) or not isinstance(result, dict):
-        return None
-    return {
-        "call_id": str(command.get("call_id") or ""),
-        "tool_name": str(command.get("tool_name") or "shell"),
-        "tool_args": command.get("tool_args"),
-        "command": str(command.get("command") or ""),
-        "cwd": str(command.get("cwd") or "."),
-        "model_text": str(result.get("output") or result.get("error") or ""),
-        "ok": result.get("ok") is True and settled.kind == "execution_settled",
-        "exit_code": result.get("exit_code") if type(result.get("exit_code")) is int else None,
-        "error_code": str(result.get("status") or result.get("error") or ""),
-        "truncated": bool(result.get("truncated")),
-        "window_ref": command.get("window_ref"),
-        "approval_id": approval_id,
-        "source_run_id": requested.source_run_id,
-    }
-
 def expire_shell_results_locked(ctx: Any, **kwargs: Any) -> tuple[dict[str, Any], ...]:
     """Persist an abandoned verdict before removing in-memory approvals."""
     from codey.runtime.effects.shell_approval_records import ShellApprovalFact

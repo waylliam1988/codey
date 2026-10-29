@@ -62,12 +62,19 @@ ACTION_PREPARE_CONTROL_DELIVERY = "prepare_control_delivery"
 ACTION_CLOSE_PROTOCOL = "close_protocol"
 ACTION_RETURN_KERNEL_RESULT = "return_kernel_result"
 ACTION_BEGIN_CLOSING = "begin_closing"
+ACTION_RESUME_QUESTION = "resume_question"
+ACTION_RETURN_WAITING = "return_waiting"
+ACTION_RECONCILE_APPROVAL = "reconcile_approval"
 
 
 @dataclass(frozen=True)
 class RuntimeDecisionInputs:
     cancel_requested: bool = False
     closing_intent: bool = False
+    question_answered: bool = False
+    approval_ref: str = ""
+    approval_ready: bool = False
+    approval_outcome_unknown: bool = False
 
 
 _NO_DECISION_INPUTS = RuntimeDecisionInputs()
@@ -213,6 +220,9 @@ def next_runtime_action(view: SessionView, inputs: RuntimeDecisionInputs = _NO_D
         return RuntimeAction(ACTION_INTERPRET_PROVIDER_RESPONSE, leaf=state.leaf,
                              effect_id=pending.effect_ids[0], response_ref=state.response_ref, driver=state.driver)
 
+    if state.leaf == LEAF_KERNEL_SETTLED and inputs.question_answered:
+        return RuntimeAction(ACTION_RESUME_QUESTION, leaf=state.leaf, work_ref=state.work_ref)
+
     execution_actions = {
         LEAF_PLAN_READY: ACTION_EXECUTE_TOOL_PLAN,
         LEAF_COMPLETION_PENDING: ACTION_EVALUATE_COMPLETION,
@@ -227,6 +237,8 @@ def next_runtime_action(view: SessionView, inputs: RuntimeDecisionInputs = _NO_D
                              work_ref=state.work_ref, driver=state.driver)
 
     if state.leaf == LEAF_TOOL_EFFECT_PENDING:
+        if inputs.approval_ref:
+            return _approval_action(state, inputs, unsettled)
         return _tool_pending_action(state, effects, delivery_batches, pending)
 
     if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
@@ -247,6 +259,19 @@ def next_runtime_action(view: SessionView, inputs: RuntimeDecisionInputs = _NO_D
                              else ACTION_CONTINUE, leaf=state.leaf)
 
     return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="unhandled_leaf")
+
+
+def _approval_action(state: RuntimeOperationState, inputs: RuntimeDecisionInputs,
+                     unsettled: tuple[RuntimeEffectProjection, ...]) -> RuntimeAction:
+    if inputs.approval_outcome_unknown:
+        return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="approval_execution_outcome_unknown")
+    if inputs.approval_ready or inputs.cancel_requested:
+        return RuntimeAction(ACTION_RECONCILE_APPROVAL, leaf=state.leaf, effect_id=inputs.approval_ref,
+                             reason="stopped" if inputs.cancel_requested else "")
+    provider = tuple(effect for effect in unsettled if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND)
+    if provider:
+        return RuntimeAction(ACTION_COMMIT_GENERATION_BOUNDARY, leaf=state.leaf, reason="approval")
+    return RuntimeAction(ACTION_RETURN_WAITING, leaf=state.leaf, reason="approval", effect_id=inputs.approval_ref)
 
 
 def _provider_pending_action(

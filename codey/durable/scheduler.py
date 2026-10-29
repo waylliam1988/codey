@@ -17,7 +17,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 
 from codey.durable.errors import CommitConflict
-from codey.durable.model import CommitResult, TaskCheckpoint, TaskStatus
+from codey.durable.model import CommitResult, TaskCheckpoint, TaskStatus, kernel_cleanup_required
 from codey.durable.session import DurableSession
 from codey.durable.workflow import WorkflowDefinition
 
@@ -368,7 +368,7 @@ class DurableTaskScheduler:
                     continue
                 with self._lock:
                     self._blocked.pop(task_id, None)
-                if task.state.get("cancel_requested"):
+                if task.state.get("cancel_requested") and not kernel_cleanup_required(task):
                     self._session.cancel_task(
                         task_id,
                         reason=str(task.state.get("cancel_reason") or "cancelled"),
@@ -403,7 +403,7 @@ class DurableTaskScheduler:
                             self._invocations.pop(task_id, None)
                 if accepted:
                     current = self._session.task(task_id)
-                    if current.state.get("cancel_requested"):
+                    if current.state.get("cancel_requested") and not kernel_cleanup_required(current):
                         self._session.cancel_task(
                             task_id,
                             reason=str(current.state.get("cancel_reason") or "cancelled"),

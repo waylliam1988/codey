@@ -1383,7 +1383,7 @@ class DurableSession:
             current_approval,
             status=next_status,
             revision=current_approval.revision + 1,
-            settlement=dict(settlement) if next_status == ApprovalStatus.EXECUTION_SETTLED else current_approval.settlement,
+            settlement=dict(settlement),
             continuation_status="started" if resume else "not_required",
             continuation_run_id=continuation_id,
         )
@@ -1636,9 +1636,12 @@ class DurableSession:
                 task=replace(current, revision=current.revision + 1, state=state, status=status),
                 expected_attempt_token=current.attempt_token,
             ))
-        if current.status == TaskStatus.RUNNING:
+        from codey.durable.model import kernel_cleanup_required
+
+        if current.status == TaskStatus.RUNNING or kernel_cleanup_required(current):
             _head, revision = self.store.head(current.conversation_id)
-            next_task = replace(current, revision=current.revision + 1, state=state)
+            next_task = replace(current, revision=current.revision + 1, state=state,
+                                status=current.status if current.status == TaskStatus.RUNNING else TaskStatus.PENDING)
             return self._commit(DurableMutation(
                 current.conversation_id, revision, task=next_task,
                 expected_attempt_token=current.attempt_token,
@@ -1751,7 +1754,9 @@ class DurableSession:
                         expected_attempt_token=task.attempt_token,
                     )
                     continue
-                if task.state.get("cancel_requested"):
+                from codey.durable.model import kernel_cleanup_required
+
+                if task.state.get("cancel_requested") and not kernel_cleanup_required(task):
                     self._cancel_terminal(
                         task,
                         state={**dict(task.state), "cancel_requested": True},
@@ -1798,6 +1803,10 @@ class DurableSession:
         if current.status not in {TaskStatus.RUNNING, TaskStatus.PENDING}:
             raise ValueError(f"task is not live: {current.status}")
         if current.state.get("cancel_requested"):
+            from codey.durable.model import kernel_cleanup_required
+
+            if kernel_cleanup_required(current):
+                return self.unclaim_task(task_id)
             return self._cancel_terminal(
                 current, state={**dict(current.state), **dict(state or {})},
                 reason=str(current.state.get("cancel_reason") or "cancelled"),

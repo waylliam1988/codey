@@ -154,4 +154,3 @@ def close_protocol(context: Any, view: Any) -> None:
         raise ValueError("kernel settlement requires the durable generation boundary")
     boundary = "final" if result.stop_reason == "done" and result.turns < context.session.max_turns else "settle"
     context.observation.on_boundary(GenerationBoundaryRequest(boundary, settle_kernel=True, expected=state))
-
