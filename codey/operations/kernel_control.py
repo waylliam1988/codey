@@ -103,7 +103,8 @@ def evaluate_completion(context: Any, state: Any) -> None:
             "workspace_revision": context.session.workspace_revision, "workspace_fingerprint": context.session.workspace_fingerprint})
     else:
         context.advance(state, positions.LEAF_CONTROL_READY, data={"purpose": "retry",
-            "prompt": kernel_prompt._completion_followup(followup, native=context.native), "error": "",
+            "prompt": kernel_prompt._completion_followup(followup, native=context.native,
+                structured_report="report_sections" in context.session.last_done_args), "error": "",
             "counters": state.counters.to_payload(), "error_source": error_source, "error_type": error_type})
 
 

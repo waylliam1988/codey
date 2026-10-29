@@ -24,6 +24,8 @@ def test_failed_writes_and_search_hits_never_become_saved_or_opened_facts():
     assert state["recent_receipts"] == [{"result_ref": "failed-write", "tool": "knowledge_write",
                                           "ok": False, "error": "ERROR: excerpt missing"}]
     assert "Registration is not reported efficacy" in text
+    assert "A broad single word may find the wrong passage" in text
+    assert "Do not reuse an earlier quote for a different finding" in text
 
 
 def test_observations_are_bounded_and_preserve_saved_claim_source_and_stance():

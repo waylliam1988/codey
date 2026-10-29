@@ -157,6 +157,10 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
             parts.append("Unbound report statements:\n" + "\n".join("- " + line for line in unbound[:4]))
             saved = list(dict.fromkeys(item.claim for item in ledger.evidence_items if item.stance == "supports"))
             parts.append("Saved claim wording available:\n" + "\n".join("- " + line[:240] for line in saved[:6]))
+            parts.append("Next action: revise the unbound paragraphs to use the saved claim wording, "
+                         "one finding per paragraph with its own citation. Keep the saved conditions and limits; "
+                         "do not add unsupported elaborations. With report_sections, summary is conclusion text only, "
+                         "without Markdown headings.")
     if "research_report_sections" in failed:
         from codey.reviews.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
 

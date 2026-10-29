@@ -679,3 +679,19 @@ research-guidance digest changes; ordinary prompt baselines passed unchanged.
 The strengthened manual validator requires premise reads before candidate
 creation and preserves scope/origin during revision. A fresh same-config lifecycle
 is running in `artifacts/research-three-stage-json-cjk-20261030`; not yet accepted.
+
+That run exposed another real failure: the model paired the single-writer claim
+with the reader-concurrency quote, and then alternated valid structured reports
+with heading-bearing summaries. The completion follow-up itself supplied a
+heading-bearing summary example, contradicting the submitted report_sections
+format. The failed diagnostic was stopped through request_cancel and retained.
+
+The shared renderer now preserves the submitted format explicitly, using an
+argument supplied by the existing control path, without research-specific
+branching. Text-binding repair requests one cited finding per paragraph using
+saved wording, rather than adding unsupported elaboration. Receipt guidance
+also asks for distinctive in-source queries and forbids reusing an unrelated
+quote for a different finding. These remain instructions, not a semantic proof
+of evidence entailment. 76 focused prompt/report/completion tests and Ruff,
+mypy, Pyrefly and ty passed. A fresh real browser WAL task is running in
+`artifacts/research-live-wal-focused-20261030`; acceptance remains pending.

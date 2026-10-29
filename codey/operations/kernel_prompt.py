@@ -176,11 +176,14 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
     return f"Protocol error: {detail}\n\n{instruction} Resend the intended call. {ARGUMENT_CONTENT_GUIDANCE} Keep other valid fields."
 
 
-def _completion_followup(feedback: str, *, native: bool) -> str:
+def _completion_followup(feedback: str, *, native: bool, structured_report: bool = False) -> str:
     """Render completion feedback for its transport without changing the verdict."""
     rule = (_NATIVE_ARGUMENTS_RULE + " " + _NATIVE_FINAL_RULE if native else
-            r'Encode paragraph line breaks once as \n inside the JSON string, e.g. "summary":"## 结论\ntext". '
+            r'Preserve the requested answer format. Encode any needed line breaks once as \n inside JSON strings. '
             "Fenced examples are answer text and do not execute tools.")
+    if structured_report:
+        rule += (" Preserve report_sections: summary contains only the conclusion, without Markdown headings; "
+                 "keep the existing paragraph arrays. Repair the reported defect without switching formats.")
     return feedback + "\n\n" + rule
 
 

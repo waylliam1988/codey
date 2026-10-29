@@ -49,8 +49,9 @@ def render_research_observations(session: "TaskSession") -> str:
         )
     if session.policy.allows("web.read"):
         guidance += (
-            "If a quote fails, locate it with source_search and read the returned passage "
-            "rather than guessing another quote."
+            "Locate missing evidence with source_search using distinctive terms for the actual finding, "
+            "and read the returned passage. A broad single word may find the wrong passage; refine it "
+            "if the requested fact is absent. Do not reuse an earlier quote for a different finding."
         )
     return guidance
 

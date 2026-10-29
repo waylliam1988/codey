@@ -154,3 +154,14 @@ def test_kernel_prompt_has_no_domain_branch_or_completion_dependencies():
                  "codey.operations.project_verification")
     imports = [node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
     assert not any(name.startswith(forbidden) for name in imports)
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_completion_followup_preserves_submitted_report_format(native):
+    text = kernel_prompt._completion_followup("Fix the unbound sentence.", native=native, structured_report=True)
+    assert "without Markdown headings" in text
+    assert "without switching formats" in text
+    assert '"summary":"##' not in text
+    ordinary = kernel_prompt._completion_followup("Fix the requested answer.", native=native)
+    assert "Preserve report_sections" not in ordinary
+    assert "## 结论" not in ordinary
