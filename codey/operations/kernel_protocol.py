@@ -184,7 +184,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     if session.policy.strict_research:
         from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE
 
-        frozen = tuple(replace(spec, json_examples=(*spec.json_examples, STRUCTURED_REPORT_EXAMPLE))
+        frozen = tuple(replace(spec, json_examples=(STRUCTURED_REPORT_EXAMPLE,))
                        if spec.name == "done" else spec for spec in frozen)
     if "codemode" in names:
         from codey.codemode.catalog import build_codemode_catalog, render_declarations

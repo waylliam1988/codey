@@ -25,8 +25,8 @@ def test_full_research_guidance_reviewed_prompt_digest():
     policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
                         strict_research=True)
     assert hashlib.sha256(_guidance(policy).encode()).hexdigest() == (
-        # Reviewed: missing requested topic/kind requires target search before revision.
-        "e04584bba16331396aeafe12c01a8946de5883c11ceccf62f9f219c239158097"
+        # Reviewed: scoped claims use report language; excerpts keep their original language.
+        "47a90814bf5d76666369b4b5995bbddd06134f2efb30e9f82533954504f7d6e4"
     )
 
 
@@ -165,3 +165,15 @@ def test_completion_followup_preserves_submitted_report_format(native):
     ordinary = kernel_prompt._completion_followup("Fix the requested answer.", native=native)
     assert "Preserve report_sections" not in ordinary
     assert "## 结论" not in ordinary
+
+
+def test_strict_report_has_one_preferred_example_without_changing_ordinary_done():
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE
+
+    strict = TaskSession(policy=TaskPolicy(grants=frozenset({"control"}), strict_research=True))
+    ordinary = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
+    def examples(session):
+        return next(spec.json_examples for spec in build_turn_snapshot(session).frozen_specs if spec.name == "done")
+    assert examples(strict) == (STRUCTURED_REPORT_EXAMPLE,)
+    assert STRUCTURED_REPORT_EXAMPLE not in examples(ordinary)

@@ -55,11 +55,16 @@ def research_method_guidance(question: str) -> str:
         "Clarify the question, constraints and what evidence would change the answer. Search saved knowledge, "
         "then investigate direct evidence and competing explanations. Use additional mechanism/constraint queries "
         "to discover relevant knowledge even when exact terms differ. A new connection remains a candidate until checked.",
+        "Cover each comparison and constraint explicitly requested by the user. For each, obtain a direct passage "
+        "and save its finding, or report that specific evidence gap. One saved general fact does not answer "
+        "the remaining questions; investigate them before drafting. Do not claim coverage of unread passages.",
         "Preserve observed results, author interpretations, user statements and model inferences separately. "
         "For knowledge_write, conditions can use {name:{state:reported,value:...}} or state "
         "not_reported/not_extracted/not_applicable. Leave unknown information unknown; never fill a template by guessing.",
         "After reading a useful passage, save the supported finding with knowledge_write and its exact original "
         "excerpt before drafting the report. Copy source_url exactly from opened source references. "
+        "Write evidence[].claim in the requested answer language, while keeping excerpt in its original language. "
+        "Use complete, scoped claim sentences that can be reused in the report, not topic labels. "
         "If the page is mostly navigation or the passage is omitted, use source_search and a bounded read; "
         "a title or search snippet is not the full study. Wait for each tool result; proposed calls are not saved facts.",
         "Before done, check important claims against original evidence, contrary findings, scope and time. "

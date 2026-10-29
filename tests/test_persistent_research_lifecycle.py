@@ -120,6 +120,8 @@ def test_reference_check_is_mechanical_and_does_not_prove_interpretation(tmp_pat
         guidance = research_method_guidance("研究某种数据库医疗产品的商业前景与治疗效果")
         assert all(name + ": sources" in guidance for name in ("software", "clinical", "business"))
         assert "Old answers" in guidance and "not_reported" in guidance
+        assert "Cover each comparison and constraint" in guidance
+        assert "claim in the requested answer language" in guidance
     finally:
         store.close()
 

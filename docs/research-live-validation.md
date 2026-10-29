@@ -695,3 +695,19 @@ quote for a different finding. These remain instructions, not a semantic proof
 of evidence entailment. 76 focused prompt/report/completion tests and Ruff,
 mypy, Pyrefly and ty passed. A fresh real browser WAL task is running in
 `artifacts/research-live-wal-focused-20261030`; acceptance remains pending.
+
+The focused WAL run fixed its invalid note reference after a real knowledge_read,
+but still drafted a broad report after saving just one English concurrency
+finding. It omitted the long-reader/checkpoint limitation and suggested that
+BEGIN EXCLUSIVE reduces write conflict. The gate rejected unbound statements;
+the model rewrote instead of collecting the missing evidence. The diagnostic
+was cancelled through the durable barrier and is not a passing report.
+
+Research methods now explicitly require each requested comparison/constraint to
+have a saved direct finding or a named gap. Reusable claim sentences use the
+requested answer language, with original-language excerpts unchanged. Strict
+report snapshots show only the preferred structured example; ordinary done
+examples and the alternative Markdown interface remain supported unchanged.
+53 focused lifecycle/prompt/report tests passed and all four static checks
+passed after fixing a test helper style issue. These changes are guidance, not
+a guarantee of model compliance or semantic entailment.
