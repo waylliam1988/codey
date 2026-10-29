@@ -857,6 +857,12 @@ def abort_response(response: Any) -> None:
 
 
 def _json_object(raw: bytes) -> dict[str, Any]:
+    if raw.lstrip().startswith((b"HTTP/1.", b"HTTP/2 ")):
+        raise GenerationUnknownError(
+            "upstream returned HTTP headers inside the JSON response body; "
+            "repair or restart the model server before a new task; not resent",
+            reason_code="response_http_headers_in_body",
+        )
     try:
         body = json.loads(raw)
     except (ValueError, UnicodeDecodeError) as exc:

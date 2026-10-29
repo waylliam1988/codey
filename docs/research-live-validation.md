@@ -317,3 +317,19 @@ The patch exposes `ungated_evidence_patch`; a no-op still returns the original
 result unchanged. Regression coverage includes ordinary and minimal merges,
 idempotency and pipeline selection. The focused merge/pipeline/golden set passed
 37 tests. Reviewed golden prompts already match; no fixture update was needed.
+
+
+The first explicitly enabled/bounded thinking run reached real tool execution,
+then received HTTP status/headers embedded inside the generation JSON body.
+It was not resent. A clean server was started with the original user config;
+`research-three-stage-thinking-clean-20261030` is the next isolated run.
+KoboldCpp 1.117.1's server source reuses a handler object per worker; Python's
+header buffer survives a failed flush. This explains a plausible connection
+with earlier interrupted requests, but remains a diagnosis to validate rather
+than a general server fix. No external software/configuration was edited.
+
+Transport now reports this exact framing defect with a bounded diagnostic and
+`response_http_headers_in_body`, while keeping the unknown-generation boundary.
+It neither strips headers nor retries inference. The corresponding one-send
+regression and 29 focused transport tests passed. Separately, 53 knowledge,
+shared-kernel, Local codec and subprocess continuation tests passed.
