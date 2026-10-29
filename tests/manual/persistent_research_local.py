@@ -24,7 +24,7 @@ URLS = ("https://www.sqlite.org/wal.html", "https://www.sqlite.org/isolation.htm
 
 def stage(directory, name, upstream, model, native=False, live_web=False, question="", max_turns=12, thinking=False,
           temperature=0.3, seed=73, diagnostic_stacks=False, reasoning_effort=None, session_id=None,
-          provider_timeout=600):
+          provider_timeout=600, constrained_text=False):
     from unittest.mock import patch
 
     from codey.app import headless_runner
@@ -45,6 +45,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         "reasoning_effort": reasoning_effort,
         "session_id": session_id,
         "provider_timeout": provider_timeout,
+        "constrained_text": constrained_text,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     events = directory / f"{name}-events.jsonl"
     wire = directory / f"{name}-wire.jsonl"
@@ -63,6 +64,11 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         return decode_json(raw)
 
     class ObservedProvider(ApiProvider):
+        def fork_auxiliary(self):
+            client = super().fork_auxiliary()
+            client.configure_request = self.unconstrained_configure
+            return client
+
         def _generate(self, messages, tools=None, **kwargs):
             record({"event": "generation_start", "messages": messages, "tools": [t.name for t in tools or ()]})
             started = time.monotonic()
@@ -103,9 +109,16 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             payload.update(seed=seed)
             record({"event": "admitted_payload", "payload": payload})
 
+        def constrained(payload):
+            payload["response_format"] = {"type": "json_schema", "json_schema": {
+                "name": "text_tool_call", "strict": True, "schema": {"type": "object", "properties": {
+                    "tool": {"type": "string"}, "args": {"type": "object"}},
+                    "required": ["tool", "args"], "additionalProperties": False}}}
+            configure(payload)
+
         counter, window = admitted_counter(upstream + "/v1", "", "openai-completions", 32768)
         record({"event": "connection_budget", "counter": counter, "window": window})
-        return ObservedProvider(upstream + "/v1", model, timeout=provider_timeout, temperature=temperature,
+        client = ObservedProvider(upstream + "/v1", model, timeout=provider_timeout, temperature=temperature,
                            thinking_enabled=thinking, reasoning_effort=reasoning_effort,
                            output_tokens=5000 if thinking or reasoning_effort else 2500, context_reserve_tokens=5500, native_tools=native,
                            stream=native, context_window_tokens=window,
@@ -113,7 +126,9 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
                            usage_parser=parser_for("openai-completions"),
                            budget_source="server_and_configuration" if counter == "koboldcpp" else "configuration",
                            text_decoder=normalize_local_reply,
-                           configure_request=configure)
+                           configure_request=constrained if constrained_text else configure)
+        client.unconstrained_configure = configure
+        return client
 
     tasks = {
         "research": question,
@@ -142,6 +157,21 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             "expected_revision 必须来自读取结果。不要编造实验，最后说明这只是适用条件修订。"
         ),
     }
+
+    revision_baseline = {}
+    if name == "revise":
+        from codey.knowledge.store import KnowledgeStore
+
+        before = KnowledgeStore(directory / "knowledge")
+        try:
+            for row in before.index._read_conn().execute("SELECT id,revision FROM knowledge_heads"):
+                version = before.repository.read(row[0], row[1])
+                if version.value.kind == "inference" and version.value.status == "candidate":
+                    revision_baseline[version.value.id] = version.to_dict()
+        finally:
+            before.close()
+        (directory / "revise-baseline.json").write_text(
+            json.dumps(revision_baseline, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def emit(payload):
         with events.open("a", encoding="utf-8") as stream:
@@ -217,7 +247,11 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
                            for v in versions)
         else:
             accepted = {"knowledge_read", "knowledge_commit"} <= observed and any(
-                           v.revision >= 2 and v.value.conditions.get("workload", {}).get("state") == "not_extracted"
+                           (old := revision_baseline.get(v.value.id)) is not None
+                           and v.revision == old["revision"] + 1 and v.value.status == "candidate"
+                           and v.value.content == old["content"]
+                           and v.value.to_dict()["references"] == old["references"]
+                           and v.value.conditions.get("workload", {}).get("state") == "not_extracted"
                            and v.value.provenance.get("interpretation") == "analogy_requires_queue_measurement"
                            for v in versions)
         if not accepted:
@@ -233,6 +267,8 @@ def main():
     parser.add_argument("--stage", choices=("first", "recall", "revise", "research"))
     parser.add_argument("--session-id", help="Use a fresh conversation for a diagnostic retry on the same knowledge store")
     parser.add_argument("--native", action="store_true", help="Use the server's structured tool protocol")
+    parser.add_argument("--constrained-text", action="store_true",
+                        help="Diagnostic: request a JSON tool/args envelope from the server's grammar sampler")
     parser.add_argument("--thinking", action="store_true", help="Enable the model's reasoning mode")
     parser.add_argument("--reasoning-effort", choices=("minimal", "low", "medium", "high"),
                          help="Set the reasoning budget; combine with --thinking to enable model reasoning")
@@ -246,6 +282,8 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.3, help="Local production default; recorded per stage")
     parser.add_argument("--seed", type=int, default=73, help="Fixed sampling seed for reproducible diagnostics")
     args = parser.parse_args()
+    if args.constrained_text and (args.native or args.thinking):
+        parser.error("constrained-text diagnostics require text protocol with thinking disabled")
     directory = args.directory.resolve()
     directory.mkdir(parents=True, exist_ok=True)
     with urlopen(args.upstream + "/v1/models", timeout=5) as response:
@@ -256,7 +294,7 @@ def main():
             parser.error("research requires --live-web and --question-file")
         stage(directory, args.stage, args.upstream, model, args.native, args.live_web, question, args.max_turns,
               args.thinking, args.temperature, args.seed, args.diagnostic_stacks, args.reasoning_effort, args.session_id,
-              args.provider_timeout)
+              args.provider_timeout, args.constrained_text)
         return
     documents = []
     from codey.research.extract import extract_text, extract_title
@@ -277,6 +315,7 @@ def main():
                         "--directory", str(directory), "--upstream", args.upstream, "--stage", name,
                         "--temperature", str(args.temperature), "--seed", str(args.seed),
                         "--provider-timeout", str(args.provider_timeout),
+                        *(["--constrained-text"] if args.constrained_text else []),
                         "--max-turns", str(args.max_turns), *(["--native"] if args.native else []),
                         *(["--diagnostic-stacks"] if args.diagnostic_stacks else []),
                         *(["--reasoning-effort", args.reasoning_effort] if args.reasoning_effort else []),

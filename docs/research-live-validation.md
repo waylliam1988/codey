@@ -510,3 +510,31 @@ visible after protocol errors.
 protocol/entry/recovery tests passed. Ruff, mypy and ty passed. Pyrefly identified
 one implicit Any in the new DOM boolean check; an explicit object annotation
 fixed it and its rerun passed with unchanged existing warnings/suppressions.
+
+
+## Exact premise feedback and constrained-text diagnostic
+
+The eighth recall attempt (thinking/medium) again reached a successful read but
+failed on malformed commit nesting and max_turns. The ninth attempt requested
+KoboldCpp response_format=json_schema for only the tool/args envelope, with
+thinking disabled. Syntax errors disappeared, but a mistyped premise identity
+and a scope without an owner still prevented saving. It remains a failed run;
+constrained decoding is not proof of semantic correctness.
+
+Missing premise references now receive the same bounded, scope-filtered exact
+identity suggestions as missing reads, before any knowledge writes. Candidates
+are never chosen or read automatically. Same-batch references and idempotent
+replay retain the repository validation path. Regression coverage includes
+private candidate filtering, no partial commit, and explicit resubmission.
+26 focused knowledge/repository/lifecycle tests passed; Ruff, mypy, Pyrefly and
+ty passed (existing warnings/suppressions unchanged). Commit eb367245.
+
+The manual probe adds --constrained-text as an explicit diagnostic only. It
+constrains neither tool names nor argument contents, disables the constraint
+for auxiliary compaction requests, and rejects mixing it with native/thinking
+modes. It has not yet been integrated as a production setting. Revision
+acceptance now snapshots candidates before execution and requires the same
+identity, exactly one revision increment, unchanged content/references and
+candidate status, in addition to the requested condition/provenance update.
+The tenth fresh recall process has actually committed a candidate and read the
+correct original claim; its final completion and revision are still pending.
