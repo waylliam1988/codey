@@ -51,6 +51,28 @@ class _RouteProvider:
 
 @pytest.mark.usefixtures("no_external_advisor_models")
 class HeadlessRunnerTests(unittest.TestCase):
+    def test_mixed_task_recalls_explicit_knowledge_store_after_reopening(self) -> None:
+        from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
+        from codey.knowledge.store import KnowledgeStore
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td, "vault")
+            store = KnowledgeStore(root)
+            store.repository.commit("seed", [KnowledgeMutation(KnowledgeObject("known-mechanism", "claim",
+                "A unique commit gate serializes writers.", "model_inference", aliases=("unique gate",)))])
+            store.close()
+            provider = _RouteProvider([json.dumps({"tool": "knowledge_read", "args": {"id": "known-mechanism"}}),
+                json.dumps({"tool": "done", "args": {"summary": "The saved candidate requires workload verification.",
+                                                      "knowledge_refs": [{"id": "known-mechanism", "revision": 1}]}})])
+            rows = []
+            result = run_headless(HeadlessRequest(project=None, task="Explain the unique gate mechanism", intent="hybrid",
+                provider_id="qwen", max_turns=3, session_id="new-session", state_home=Path(td, "state"),
+                research_store_root=root, requested_capabilities=("knowledge.read",)),
+                emit_jsonl=rows.append, connect_provider=lambda *_a, **_kw: provider)
+            self.assertEqual(result.exit_code, 0, (rows[-1], provider.prompts[-1]))
+            self.assertIn("known-mechanism", provider.prompts[0])
+            self.assertTrue(any(row.get("tool_name") == "knowledge_read" and row.get("ok") for row in rows))
+
     def test_research_request_can_use_an_explicit_isolated_knowledge_root(self) -> None:
         from codey.knowledge.store import KnowledgeStore
 

@@ -165,7 +165,7 @@ def test_research_restart_preserves_material_invocations_and_note_ids(tmp_path, 
     first, state = _run(tmp_path, resume=True)
     assert first.followup_rounds == 2, first
     assert first.new_evidence_count == 2
-    assert len(first.final_result.notes_created) == 2
+    assert len(first.final_result.notes_created) == 3
     before = (tmp_path / "observations.jsonl").read_bytes()
     notes = {str(path): path.read_bytes() for path in (tmp_path / "knowledge").rglob("*.md")}
     second, again = _run(tmp_path, resume=True)

@@ -123,6 +123,7 @@ class ResearchPipeline:
         research_changes_sink: Callable[..., None] | None = None,
         execute_plan: Callable[[PlanExecutor, ResearchPlan, ResearchTools], PlanExecutionResult] | None = None,
         investigate: Callable[[ResearchPlan, ResearchTools, str], tuple[PlanExecutionResult, EvidenceFollowupResult]] | None = None,
+        project_result: Callable[[ResearchRunResult, ResearchTools], ResearchRunResult] | None = None,
         policy: object,
     ) -> None:
         self.context = context
@@ -135,6 +136,7 @@ class ResearchPipeline:
         self.research_changes_sink = research_changes_sink
         self.execute_plan = execute_plan
         self.investigate = investigate
+        self.project_result = project_result
         # 原任务授权：补研究与合成均不得超越此边界
         self.policy = policy
 
@@ -371,6 +373,8 @@ class ResearchPipeline:
         total_attempted_fresh_sources: int,
         total_attempted_new_evidence: int,
     ) -> ResearchPipelineResult:
+        if followup_rounds and best_tools is not None and self.project_result is not None:
+            best = self.project_result(best, best_tools)
         ledger_result = self._append_final_record(best)
         self.context.trace.record_evidence_ledger_write(ledger_result)
         if self.ledger_event_sink is not None and ledger_result is not None:

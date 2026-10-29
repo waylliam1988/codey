@@ -575,6 +575,13 @@ def build_unified_research_graph(
     node_limit = _bounded_int(node_limit, DEFAULT_NODE_LIMIT, 8, 200)
     edge_limit = _bounded_int(edge_limit, DEFAULT_EDGE_LIMIT, 8, 400)
 
+    from codey.knowledge.version_graph import build_version_graph
+
+    versioned = build_version_graph(store, session_id, focus_ids=focus_ids, depth=depth,
+                                    node_limit=node_limit, edge_limit=edge_limit)
+    if versioned is not None:
+        return versioned
+
     evidence_depth = 0 if depth == 1 else 1
     include_sources = depth >= 3
     evidence = KnowledgeGraphBuilder(store).build_for_session(

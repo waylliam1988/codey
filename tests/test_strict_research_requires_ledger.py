@@ -2,8 +2,8 @@
 
 Locks: missing ledger, unreadable ledger, or evidence/sources outside the
 ledger never complete; a complete ledger with opened sources, citable
-evidence, and a valid report does complete; ordinary source tasks keep
-their ledger-free behaviour.
+evidence, and a valid report does complete. Ordinary source requirements
+also use the observation ledger, without strict report requirements.
 """
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ def test_strict_research_evidence_outside_opened_sources_cannot_complete():
     assert verdict.complete is False
 
 
-def test_ordinary_source_task_without_ledger_keeps_legacy_behaviour():
+def test_ordinary_source_task_requires_observed_ledger_without_strict_report():
     policy = TaskPolicy(
         grants=frozenset({"control", "web.read"}),
         sources_open_required=True,
@@ -90,4 +90,9 @@ def test_ordinary_source_task_without_ledger_keeps_legacy_behaviour():
     session = TaskSession(policy=policy, task_kind="project", max_turns=3)
     session.record_open("https://example.com/a")
     verdict = evaluate(session, "done", context={})
-    assert verdict.complete is True
+    assert verdict.complete is False
+    from codey.research.ledger import ResearchLedger
+
+    ledger = ResearchLedger()
+    ledger.record_open("https://example.com/a", "https://example.com/a", "A", "Observed source")
+    assert evaluate(session, "done", context={"research_ledger": ledger}).complete

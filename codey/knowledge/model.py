@@ -60,6 +60,8 @@ class KnowledgeObject:
             raise ValueError("inference must retain model_inference origin")
         if any(not isinstance(alias, str) or not alias.strip() for alias in self.aliases):
             raise ValueError("aliases must be nonempty strings")
+        if not isinstance(self.conditions, dict):
+            raise ValueError("conditions must be an object: {name:{state:reported,value:...}}")
         for key, condition in self.conditions.items():
             if (not key or not isinstance(condition, dict) or condition.get("state") not in CONDITION_STATES
                     or set(condition) - {"state", "value"}

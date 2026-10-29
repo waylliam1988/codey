@@ -1,7 +1,7 @@
 """Research graph read model.
 
-The Markdown vault remains authoritative. This module only turns the current
-SQLite index into a bounded graph artifact for the Research drawer.
+SQLite owns knowledge. This module projects legacy documents for the Research
+drawer; structured knowledge uses version_graph and the same artifact contract.
 """
 
 from __future__ import annotations
@@ -94,6 +94,7 @@ class GraphEdge:
     label: str = ""
     weight: float = 1.0
     virtual: bool = False
+    detail: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -104,6 +105,7 @@ class GraphEdge:
             "label": self.label or self.kind,
             "weight": self.weight,
             "virtual": self.virtual,
+            **({"detail": self.detail} if self.detail else {}),
         }
 
 

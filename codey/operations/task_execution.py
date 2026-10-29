@@ -536,7 +536,9 @@ class ExecutionDelegate:
                     "updated": [item for item in tools.updated_ids if item not in updated_before],
                     "proposals": proposals,
                 }
-                self._staged_note_receipt(tools, created, proposals, evidence_canonical)
+                target = str(lowered.get("id") or "")
+                affected = list(dict.fromkeys([*created, *([target] if target in tools.updated_ids else [])]))
+                self._staged_note_receipt(tools, affected, proposals, evidence_canonical)
                 ledger = getattr(tools, "ledger", None)
                 if isinstance(ledger, ResearchLedger):
                     evidence_canonical["research_observation"] = ledger_observation(ledger, name, evidence_start=before)
@@ -559,8 +561,9 @@ class ExecutionDelegate:
         from codey.providers.response_record import json_value
         from codey.research.tools import StagedKnowledgeStore
 
-        if isinstance(tools.store, StagedKnowledgeStore):
+        if isinstance(getattr(tools, "store", None), StagedKnowledgeStore):
             proposals.extend(json_value(tools.store._staged_notes[identity]) for identity in created)
+            canonical["knowledge_bases"] = {identity: tools.store._staged_bases[identity] for identity in created}
             canonical["knowledge_batches"] = {
                 identity: {"commit_id": batch[0], "mutations": [
                     {"value": mutation.value.to_dict(), "expected_revision": mutation.expected_revision}

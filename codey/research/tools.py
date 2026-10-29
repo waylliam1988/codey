@@ -212,7 +212,9 @@ class ResearchTools:
             return ResearchToolOutput("ERROR: knowledge scope mismatch", ok=False)
         if note.type == "source" and any(s in self.sources_read for s in note.sources):
             self.grounded_ids.add(note.id)
-        return ResearchToolOutput(note.to_markdown(), ok=True)
+        references: list[dict[str, Any]] = self.store.note_references(note.id, revision) if hasattr(self.store, "note_references") else []
+        return ResearchToolOutput(note.to_markdown() + "\n\nStructured knowledge versions (use these for knowledge_refs):\n"
+                                  + canonical_json(references), ok=True)
 
     def knowledge_commit(self, args: dict[str, Any]) -> ResearchToolOutput:
         """The common tool dispatcher owns this effect; the repository only commits."""
@@ -253,7 +255,8 @@ class ResearchTools:
                             self.ledger.source_record_for_url(url) is None or value.content != self.ledger.source_text_for_url(url)
                         ):
                             raise ValueError("source content must match an opened source")
-                receipt = self.store.repository.commit(identity, mutations)
+            receipt = self.store.commit_knowledge(identity, mutations, changes=self.changes,
+                                                   session_id=self.session_id, project=self.project)
             return ResearchToolOutput(canonical_json({"commit_id": commit_id, "versions": receipt}), ok=True)
         except (ValueError, TypeError, KeyError) as exc:
             return ResearchToolOutput(f"ERROR: {exc}", ok=False)
@@ -305,7 +308,7 @@ class ResearchTools:
             self.session_id,
             self.project,
         )
-        from codey.knowledge.archive import note_knowledge
+        from codey.research.knowledge_archive import note_knowledge
 
         commit_id, mutations = note_knowledge(note, self.ledger, evidence_preparation, self.store.repository,
                                              conditions=args.get("conditions"))
@@ -319,6 +322,11 @@ class ResearchTools:
             relation_warnings,
             rel,
         )
+        versions = [{"id": mutation.value.id, "revision": mutation.expected_revision + 1,
+                     "kind": mutation.value.kind, "status": mutation.value.status} for mutation in mutations]
+        versions.sort(key=lambda row: 0 if row["kind"] in {"claim", "inference", "question"} else 1)
+        model_text += "\nStructured knowledge versions:\n" + canonical_json(versions[:24])
+        model_text += "\nFor knowledge_read and done.knowledge_refs use these object ids and revisions, not note_id."
         return ResearchToolOutput(model_text, ok=True)
 
     def knowledge_link(self, src: str, dst: str, kind: str = "relates") -> ResearchToolOutput:
@@ -633,6 +641,7 @@ class StagedKnowledgeStore:
         self._staged_notes: dict[str, KnowledgeNote] = {}
         self._staged_links: list[tuple[str, str, str]] = []
         self._staged_knowledge: dict[str, tuple[str, list[KnowledgeMutation]]] = {}
+        self._staged_bases: dict[str, str | None] = {}
 
     @property
     def root(self) -> Path:
@@ -654,6 +663,23 @@ class StagedKnowledgeStore:
 
     def publish_note(self, note: KnowledgeNote, commit_id: str, mutations: list[KnowledgeMutation],
                      *, changes: KnowledgeChanges | None = None) -> str:
+        previous = self._staged_knowledge.get(note.id)
+        if previous is not None:
+            from codey.knowledge.archive import stable_identity
+
+            merged = {mutation.value.id: mutation for mutation in previous[1]}
+            for mutation in mutations:
+                old = merged.get(mutation.value.id)
+                if old is not None:
+                    if old.expected_revision != mutation.expected_revision:
+                        raise ValueError("staged knowledge changed its original revision")
+                    value = replace(mutation.value, references=tuple(dict.fromkeys(
+                        (*old.value.references, *mutation.value.references))))
+                    mutation = KnowledgeMutation(value, mutation.expected_revision)
+                merged[mutation.value.id] = mutation
+            mutations = list(merged.values())
+            commit_id = stable_identity("archive", note.id, canonical_json([
+                {"value": m.value.to_dict(), "expected_revision": m.expected_revision} for m in mutations]))
         self._staged_knowledge[note.id] = (commit_id, mutations)
         return self.write_note(note, changes=changes)
 
@@ -691,6 +717,9 @@ class StagedKnowledgeStore:
         *,
         changes: KnowledgeChanges | None = None,
     ) -> str:
+        if note.id not in self._staged_bases:
+            original = self._parent.read_note(note.id)
+            self._staged_bases[note.id] = original.to_markdown() if original else None
         self._staged_notes[note.id] = note
         if changes is not None:
             record_staged = getattr(changes, "record_staged_note", None)
@@ -719,6 +748,8 @@ class StagedKnowledgeStore:
                     batch = self._staged_knowledge.get(note.id)
                     original = target_store.read_note(note.id)
                     unchanged = original is not None and replace(original, updated=note.updated).to_markdown() == note.to_markdown()
+                    if not unchanged and (original.to_markdown() if original else None) != self._staged_bases[note.id]:
+                        raise ValueError("staged document revision conflict")
                     if batch is not None:
                         if unchanged and target_store.repository.committed(batch[0], batch[1]) is not None:
                             continue
@@ -738,6 +769,7 @@ class StagedKnowledgeStore:
         self._staged_notes.clear()
         self._staged_links.clear()
         self._staged_knowledge.clear()
+        self._staged_bases.clear()
 
 
 class StagedKnowledgeChanges:

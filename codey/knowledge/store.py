@@ -132,21 +132,38 @@ class KnowledgeStore:
         snapshot = changes.snapshot() if changes is not None else None
         try:
             with self.index.transaction():
-                if changes is not None:
-                    for mutation in mutations:
-                        previous = self.repository.read(mutation.value.id)
-                        rel = f"_knowledge/{mutation.value.id}.json"
-                        changes.capture_content(rel, canonical_json(previous.value.to_dict()) if previous else None)
-                versions: dict[str, int] = self.repository.commit(commit_id, mutations, shared_staged=shared_staged) if mutations else {}
+                references = {str(row["target"]): int(row["revision"]) for row in self.note_references(note.id)}
+                versions = self.commit_knowledge(commit_id, mutations, changes=changes, session_id=note.session_id,
+                                                 project=note.project, shared_staged=shared_staged) if mutations else {}
+                references.update(versions)
                 rel = self.write_note(note, changes=changes)
                 found = self.documents.get(note.id)
                 if found:
                     self.index._read_conn().executemany("INSERT OR IGNORE INTO note_knowledge_refs VALUES(?,?,?,?)",
-                        [(note.id, found[2], identity, revision) for identity, revision in versions.items()])
+                        [(note.id, found[2], identity, revision) for identity, revision in references.items()])
+                return rel
+        except BaseException:
+            if changes is not None and snapshot is not None:
+                changes.restore_snapshot(snapshot)
+            raise
+
+    def commit_knowledge(self, commit_id: str, mutations: list[KnowledgeMutation], *,
+                         changes: KnowledgeChanges | None = None, session_id: str = "", project: str = "",
+                         shared_staged: bool = False) -> dict[str, int]:
+        """Commit facts and their undo/context projections in the same transaction."""
+        snapshot = changes.snapshot() if changes is not None else None
+        try:
+            with self.index.transaction() as conn:
+                if changes is not None:
+                    for mutation in mutations:
+                        previous = self.repository.read(mutation.value.id, mutation.expected_revision) if mutation.expected_revision else None
+                        changes.capture_content(f"_knowledge/{mutation.value.id}.json", canonical_json(previous.value.to_dict()) if previous else None)
+                versions = self.repository.commit(commit_id, mutations, shared_staged=shared_staged)
+                conn.execute("INSERT OR IGNORE INTO knowledge_commit_context VALUES(?,?,?)", (commit_id, session_id, project))
                 if changes is not None:
                     for mutation in mutations:
                         changes.record_content(f"_knowledge/{mutation.value.id}.json", canonical_json(mutation.value.to_dict()))
-                return rel
+                return versions
         except BaseException:
             if changes is not None and snapshot is not None:
                 changes.restore_snapshot(snapshot)
@@ -241,6 +258,31 @@ class KnowledgeStore:
                         path.unlink()
                 except ValueError:
                     continue
+
+    def purge_knowledge(self, identities: list[str]) -> set[str]:
+        """Erase knowledge and linked document history/exports.
+
+        Operation receipts, external backups and managed outputs have separate
+        retention controls; this method covers the knowledge authority only.
+        """
+        with self.index.transaction() as conn:
+            removed = self.repository.purge(identities)
+            notes = {str(row[0]) for identity in removed for row in conn.execute(
+                "SELECT DISTINCT note_id FROM note_knowledge_refs WHERE target=?", (identity,))}
+            for note_id in notes:
+                self.delete_note(note_id, purge=True)
+            for identity in removed:
+                conn.execute("DELETE FROM note_knowledge_refs WHERE target=?", (identity,))
+        # The pre-migration index is an obsolete, rebuildable projection which
+        # may still contain the deleted text. Never use it as a fallback.
+        if removed:
+            for name in ("index.db", "index.db-wal", "index.db-shm"):
+                legacy = self.root / ".codey" / name
+                if legacy.exists():
+                    if self.root not in legacy.resolve().parents:
+                        raise ValueError("legacy index escapes knowledge root")
+                    legacy.unlink()
+        return removed
 
     def close(self) -> None:
         self.index.close()

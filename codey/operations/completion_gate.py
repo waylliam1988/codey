@@ -370,6 +370,9 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     checks: list[CompletionCheck] = []
     checks.extend(project_completion_checks(session, context))
     checks.extend(source_requirement_checks(session, context))
+    from codey.operations.research_completion_checks import knowledge_reference_checks
+
+    checks.extend(knowledge_reference_checks(session, context))
     checks.extend(citation_checks)
     checks.extend(strict_research_checks(session, text, context))
     tool_checks, tool_evaluations = _required_tool_checks(session, text)
@@ -433,6 +436,16 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
         "Collect the missing local evidence or fresh verification, then propose done again. "
         "Model claims alone do not complete."
     )
+    if reason == "knowledge_reference_invalid":
+        followup += (" knowledge_refs must cite structured object ids with their saved revisions from knowledge_search/read/write, "
+                     "not document note_ids or old answer objects. Read the source note to find its structured versions.")
+    if reason == "research_report_quality_failed":
+        from codey.research.report_quality import review_report_quality
+
+        review = review_report_quality(text, ledger=_context_get(context, "research_ledger"),
+            opened_sources=set(getattr(session, "opened_sources", ())),
+            search_result_urls=set(getattr(session, "search_results", {}).values()))
+        followup += " " + review.message
     return GateVerdict(complete=False, followup=followup, proof=proof)
 
 __all__ = [

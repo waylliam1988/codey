@@ -76,7 +76,9 @@ it('wakes a settled graph during drag, keeps its neighbors moving and cleans up 
             { id: 'one', label: 'One' },
             { id: 'two', label: 'Two' },
           ],
-          edges: [{ src: 'one', dst: 'two' }],
+          edges: [
+            { src: 'one', dst: 'two', kind: 'supported_by', detail: 'Pinned evidence version 1; conditions: WAL' },
+          ],
         },
       }),
     }),
@@ -104,6 +106,13 @@ it('wakes a settled graph during drag, keeps its neighbors moving and cleans up 
   };
   const x = positions[0].x * zoom + tx,
     y = positions[0].y * zoom + ty;
+  const edgeX = ((positions[0].x + positions[1].x) / 2) * zoom + tx;
+  const edgeY = ((positions[0].y + positions[1].y) / 2) * zoom + ty;
+  pointer('pointerdown', edgeX, edgeY);
+  pointer('pointerup', edgeX, edgeY);
+  expect(panel.querySelector('.research-graph-detail-body')?.textContent).toContain('Pinned evidence version 1');
+  expect(panel.querySelector('.research-graph-detail-title')?.textContent).toBe('One → Two');
+  for (let count = 0; frames.size && count < 2000; count++) step();
   pointer('pointerdown', x, y, 2, 2);
   expect(frames.size).toBe(0);
   pointer('pointerdown', x, y);
@@ -117,7 +126,7 @@ it('wakes a settled graph during drag, keeps its neighbors moving and cleans up 
   expect(captured.has(1)).toBe(true);
   pointer('pointercancel', x + 100, y + 60);
   expect(captured.size).toBe(0);
-  expect(panel.querySelector('.research-graph-detail')?.textContent).toBe('Select a node');
+  expect(panel.querySelector('.research-graph-detail-title')?.textContent).toBe('One → Two');
   expect(canvas.classList.contains('dragging')).toBe(false);
-  expect((context as unknown as { fillStyle: string }).fillStyle).toBe('Highlight');
+  expect((context as unknown as { fillStyle: string }).fillStyle).toBe('CanvasText');
 });

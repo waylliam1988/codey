@@ -51,6 +51,8 @@ export interface GraphOptions {
     src: string;
     dst: string;
     kind?: string;
+    detail?: string;
+    virtual?: boolean;
     source?: GraphNode;
     target?: GraphNode;
   }
@@ -403,6 +405,21 @@ export interface GraphOptions {
       return null;
     }
 
+    function edgeAt(event: PointerEvent): GraphEdge | null {
+      const point = worldPoint(event);
+      for (const edge of edges) {
+        if (!edge.detail) continue;
+        const a = edge.source,
+          b = edge.target;
+        const dx = b.x - a.x,
+          dy = b.y - a.y;
+        const length = dx * dx + dy * dy;
+        const t = length ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / length)) : 0;
+        if (Math.hypot(point.x - a.x - t * dx, point.y - a.y - t * dy) <= 7 / state.scale) return edge;
+      }
+      return null;
+    }
+
     function onPointerDown(event: PointerEvent): void {
       if (event.button !== 0 || pointerId !== null) return;
       event.preventDefault();
@@ -458,6 +475,26 @@ export interface GraphOptions {
       if (select) {
         state.selected = hit;
         setDetail(detail, hit, options);
+        if (!hit) {
+          const edge = edgeAt(event);
+          if (edge?.source) {
+            state.selected = edge.source;
+            setDetail(
+              detail,
+              {
+                ...edge.source,
+                id: `${edge.src}->${edge.dst}`,
+                url: '',
+                path: '',
+                virtual: true,
+                label: `${edge.source.label || edge.src} → ${edge.target?.label || edge.dst}`,
+                kind: edge.kind,
+                excerpt: edge.detail,
+              },
+              options,
+            );
+          }
+        }
       }
       draw();
     }
@@ -623,11 +660,23 @@ export interface GraphOptions {
           : 0.32;
     ctx.strokeStyle = hoverActive ? colors.ok : selectedActive ? colors.text : colors.faint;
     ctx.lineWidth = active ? 1.35 : edge.kind === 'cites' || edge.kind === 'tagged' ? 0.7 : 1;
-    if (edge.kind === 'contradicts') ctx.setLineDash([5, 5]);
+    if (edge.kind === 'contradicts' || edge.kind === 'refuted_by' || edge.virtual) ctx.setLineDash([5, 5]);
     ctx.beginPath();
     ctx.moveTo(edge.source.x, edge.source.y);
     ctx.lineTo(edge.target.x, edge.target.y);
     ctx.stroke();
+    if (edge.detail) {
+      const angle = Math.atan2(edge.target.y - edge.source.y, edge.target.x - edge.source.x);
+      const radius = graphNodeRadius(edge.target) + 3;
+      const x = edge.target.x - Math.cos(angle) * radius;
+      const y = edge.target.y - Math.sin(angle) * radius;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(x - Math.cos(angle - 0.45) * 7, y - Math.sin(angle - 0.45) * 7);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x - Math.cos(angle + 0.45) * 7, y - Math.sin(angle + 0.45) * 7);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

@@ -37,7 +37,7 @@ class _ModeProjection:
 _INTENT_RULES: dict[str, _IntentRule] = {
     "auto": _IntentRule(with_project="chat", without_project="chat"),
     "chat": _IntentRule(with_project="chat", without_project="chat"),
-    "hybrid": _IntentRule(with_project="hybrid", without_project="research"),
+    "hybrid": _IntentRule(with_project="hybrid", without_project="hybrid"),
     "planning": _IntentRule(with_project="planning_readonly", without_project="chat"),
     "planning_readonly": _IntentRule(with_project="planning_readonly", without_project="chat"),
     "project": _IntentRule(with_project="project", without_project="chat"),

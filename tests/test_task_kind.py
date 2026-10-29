@@ -30,7 +30,7 @@ def _submission(intent: str, project: str | None) -> TaskSubmission:
     [
         ("auto", "chat", "chat"),
         ("chat", "chat", "chat"),
-        ("hybrid", "hybrid", "research"),
+        ("hybrid", "hybrid", "hybrid"),
         ("planning", "planning_readonly", "chat"),
         ("planning_readonly", "planning_readonly", "chat"),
         ("project", "project", "chat"),

@@ -23,6 +23,22 @@ def _context_get(context: Any, key: str) -> Any:
     return getattr(context, key, None)
 
 
+def knowledge_reference_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
+    raw = getattr(session, "last_done_args", {}).get("knowledge_refs")
+    if not raw:
+        return []
+    from codey.knowledge.answer_refs import answer_references
+
+    try:
+        answer_references(raw, _context_get(context, "knowledge_store"),
+                          project=str(_context_get(context, "knowledge_project") or ""),
+                          session_id=str(_context_get(context, "knowledge_session_id") or ""))
+    except (ValueError, TypeError, KeyError):
+        return [CompletionCheck("knowledge_versions", CHECK_FAIL, "knowledge_reference_invalid")]
+    # A locator/version check cannot prove an interpretation or applicability.
+    return [CompletionCheck("knowledge_versions", CHECK_PASS)]
+
+
 def source_requirement_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
     """普通联网任务的来源要求：只检查任务要求的来源是否实际打开。"""
     policy = getattr(session, "policy", None)

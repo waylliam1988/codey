@@ -365,6 +365,18 @@ def run_research_pipeline(
         partial(build_research_context, deps)
     )
     ledger_sink = record_ledger_write or record_evidence_ledger_write
+
+    def project_result(result: Any, tools: Any) -> Any:
+        from codey.operations.research_iteration import _persist_synthesis
+
+        identity = _persist_synthesis(tools, request.task, result.summary, session_id=request.session_id,
+            project=frame.project_text, run_id=frame.run_id, on_event=hooks.on_event,
+            policy=frame.entry_policy, projection="final")
+        if not identity:
+            return result
+        return replace(result, synthesis_id=identity, notes_created=list(tools.created_ids),
+                       research_record=replace(result.research_record, synthesis_id=identity) if result.research_record else None)
+
     pipeline = ResearchPipeline(
         context=context_builder(
             frame,
@@ -374,6 +386,7 @@ def run_research_pipeline(
         run_iteration=iteration,
         search_factory=deps.search_factory,
         investigate=investigate,
+        project_result=project_result,
         evidence_ledgers=deps.evidence_ledgers,
         config=ResearchPipelineConfig(),
         ledger_event_sink=lambda result: ledger_sink(hooks, result),

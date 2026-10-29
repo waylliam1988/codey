@@ -93,7 +93,7 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
         else:
             base = None
     if base is not None:
-        base = (*base, "ask_user")
+        base = (*base, "ask_user", "read_tool_result")
     # Reference aliases require an observed target, in ordinary and strict
     # tasks alike. The resulting list drives both wire protocols and execution.
     for alias, facts in (("open_result", "search_results"),

@@ -59,6 +59,41 @@ generic research methods. Markdown is interchange, never a competing authority.
 
 Update this file in each implementation commit with results and remaining work.
 
+## Versioned reports, graphs and lifecycle
+
+- Reports now save independent answer objects and pin adopted knowledge versions;
+  done.knowledge_refs is mechanically checked for existence, scope and type.
+  Settled report projection identities/digests prevent silent rewrites on replay.
+- Session graphs use the same pinned versions and evidence relations. Node/edge
+  details expose conditions, origins, references and review flags. The frontend
+  supports edge inspection and candidate styling; built assets are published.
+- Explicit knowledge commits participate in undo. Privacy purge removes dependent
+  knowledge, document history, indexes and managed note exports, and tombstones
+  affected commits against resurrection. Application execution receipts, external
+  backups and managed acquisition outputs retain their separate lifecycle.
+- Research-specific evidence extraction lives in research/knowledge_archive.py;
+  the shared knowledge layer has no upward research imports.
+- Fixed mixed tasks without project directories being forced into strict research.
+  Ordinary coding/chat/planning can read scoped knowledge; explicit denial wins.
+  An explicit headless knowledge root now applies to mixed and ordinary tasks.
+- Initial kernel failures propagate their original diagnosis; strict research can
+  read stored long results. Conditions have consistent object schemas. Tool writes
+  expose structured ids, distinct from document ids. EOF errors request a complete
+  corrected JSON request without repairing model data automatically.
+- Repeated staged updates retain earlier evidence and their original document
+  preconditions; receipts preserve cumulative proposals for restart.
+- Validation so far: 79 knowledge/pipeline/lifecycle tests; 36 protocol/replay/
+  recovery tests; 65 knowledge/system-action/completion tests passed. Expanded
+  entry suite: 151 passed, with an unrelated existing policy-recovery test failure.
+  Frontend: 280 tests and build/publish checks passed. Production mypy passed
+  (550 files); Ruff passed. Final expanded checks still pending.
+- Local Gemma4 probe uses production headless/kernel in separate processes and a
+  frozen public SQLite documentation corpus. Evidence acquisition/storage works;
+  text protocol attempts exposed malformed JSON and tool-token output, and one
+  unknown generation outcome was correctly not resent. Complete live three-stage
+  acceptance has NOT passed yet. Native protocol experiment and final verification
+  remain in progress; failures are retained under ignored artifacts/ directories.
+
 ## Shared investigation integration
 
 - Production follow-up now proposes searches, reads and evidence writes through

@@ -181,6 +181,8 @@ def _research_specs() -> dict[str, ToolSpec]:
 
 
 def _research_json_type(pytype: type) -> str:
+    if pytype is dict:
+        return "object"
     if pytype is int:
         return "integer"
     if pytype is float:
@@ -256,6 +258,9 @@ def _all_specs() -> dict[str, ToolSpec]:
             if coding_done is not None:
                 specs["done"] = replace(coding_done, parameters=(
                     *coding_done.parameters, ("open_questions", {"type": "array", "items": {"type": "string"}}),
+                    ("knowledge_refs", {"type": "array", "items": {"type": "object", "required": ["id", "revision"],
+                        "properties": {"id": {"type": "string"}, "revision": {"type": "integer", "minimum": 1}},
+                        "additionalProperties": False}}),
                 ))
             continue
         specs[name] = spec

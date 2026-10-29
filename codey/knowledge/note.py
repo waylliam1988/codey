@@ -1,8 +1,9 @@
-"""Markdown knowledge notes.
+"""Knowledge document values and their Markdown interchange format.
 
 The user-facing feature is Research, but the internal store is broader than
 research reports: decisions, implementation receipts, and verification evidence
-all become small Markdown artifacts with explicit provenance.
+all become versioned SQLite documents with explicit provenance. Markdown is
+an explicit import/export format.
 """
 
 from __future__ import annotations

@@ -179,6 +179,8 @@ def build_task_policy(
     grants: set[str] = {"control"}
 
     if kind in {"project", "hybrid", "chat", "auto"}:
+        grants.add("knowledge.read")
+        grants.update(requested & {"knowledge.read", "knowledge.write", "knowledge.link"})
         if has_project:
             grants.update({"project.read", "project.verify", "shell.approval"})
             # Strict Research with a project defaults to read/verify; write
@@ -211,6 +213,7 @@ def build_task_policy(
         if "project.write" in requested and has_project:
             grants.add("project.write")
     elif kind in {"planning", "planning_readonly", "readonly"}:
+        grants.add("knowledge.read")
         if has_project:
             grants.add("project.read")
         if "web.read" in requested:

@@ -45,6 +45,9 @@ class KnowledgeRepository:
                 "payload TEXT NOT NULL,recorded_at TEXT NOT NULL,commit_id TEXT NOT NULL,PRIMARY KEY(id,revision))",
                 "CREATE TABLE IF NOT EXISTS knowledge_commits(id TEXT PRIMARY KEY,digest TEXT NOT NULL,"
                 "result TEXT NOT NULL,recorded_at TEXT NOT NULL)",
+                "CREATE TABLE IF NOT EXISTS knowledge_commit_context(commit_id TEXT NOT NULL,session_id TEXT NOT NULL,"
+                "project TEXT NOT NULL,PRIMARY KEY(commit_id,session_id,project))",
+                "CREATE TABLE IF NOT EXISTS knowledge_purged_commits(id TEXT PRIMARY KEY)",
                 "CREATE TABLE IF NOT EXISTS knowledge_refs(id TEXT NOT NULL,revision INTEGER NOT NULL,"
                 "target TEXT NOT NULL,target_revision INTEGER NOT NULL,relation TEXT NOT NULL,"
                 "PRIMARY KEY(id,revision,target,target_revision,relation))",
@@ -71,10 +74,11 @@ class KnowledgeRepository:
         changed = conn.execute(
             "WITH RECURSIVE dependencies(id,revision) AS (VALUES(?,?) UNION "
             "SELECT r.target,r.target_revision FROM knowledge_refs r JOIN dependencies d "
-            "ON r.id=d.id AND r.revision=d.revision) "
+            "ON r.id=d.id AND r.revision=d.revision LIMIT 257) "
             "SELECT 1 FROM dependencies d LEFT JOIN knowledge_heads h ON h.id=d.id "
             "LEFT JOIN knowledge_versions v ON v.id=h.id AND v.revision=h.revision "
-            "WHERE h.revision IS NULL OR h.revision!=d.revision OR v.status IN ('withdrawn','stale','contradicted') LIMIT 1",
+            "WHERE h.revision IS NULL OR h.revision!=d.revision OR v.status IN ('withdrawn','stale','contradicted','superseded') "
+            "OR (SELECT COUNT(*) FROM dependencies)>=257 LIMIT 1",
             (identity, row["revision"]),
         ).fetchone()
         return KnowledgeVersion(value, int(row["revision"]), str(row["recorded_at"]), str(row["commit_id"]), bool(changed))
@@ -87,6 +91,7 @@ class KnowledgeRepository:
             raise ValueError("duplicate identity in knowledge commit")
         digest = self.batch_digest(mutations)
         with self.index.transaction() as conn:
+            self._check_not_purged(commit_id)
             old_commit = conn.execute("SELECT digest,result FROM knowledge_commits WHERE id=?", (commit_id,)).fetchone()
             if old_commit:
                 if old_commit["digest"] != digest:
@@ -114,6 +119,7 @@ class KnowledgeRepository:
         ]).encode()).hexdigest()
 
     def committed(self, commit_id: str, mutations: Sequence[KnowledgeMutation]) -> dict[str, int] | None:
+        self._check_not_purged(commit_id)
         row = self.index._read_conn().execute("SELECT digest,result FROM knowledge_commits WHERE id=?", (commit_id,)).fetchone()
         if row is None:
             return None
@@ -121,6 +127,10 @@ class KnowledgeRepository:
             raise ValueError("knowledge commit identity reused with different content")
         result: dict[str, int] = json.loads(row["result"])
         return result
+
+    def _check_not_purged(self, commit_id: str) -> None:
+        if self.index._read_conn().execute("SELECT 1 FROM knowledge_purged_commits WHERE id=?", (commit_id,)).fetchone():
+            raise ValueError("knowledge commit contains purged content and cannot be replayed")
 
     def _check_revisions(self, mutations: Sequence[KnowledgeMutation], *, shared_staged: bool = False) -> dict[str, tuple[KnowledgeObject, int]]:
         versions: dict[str, tuple[KnowledgeObject, int]] = {}
@@ -229,6 +239,8 @@ class KnowledgeRepository:
                     break
                 removed.update(more)
             for identity in removed:
+                conn.execute("INSERT OR IGNORE INTO knowledge_purged_commits SELECT commit_id FROM knowledge_versions WHERE id=?", (identity,))
+                conn.execute("DELETE FROM knowledge_commit_context WHERE commit_id IN (SELECT id FROM knowledge_purged_commits)")
                 conn.execute("DELETE FROM knowledge_refs WHERE id=? OR target=?", (identity, identity))
                 conn.execute("DELETE FROM knowledge_versions WHERE id=?", (identity,))
                 conn.execute("DELETE FROM knowledge_heads WHERE id=?", (identity,))

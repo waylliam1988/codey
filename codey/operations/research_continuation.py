@@ -48,19 +48,28 @@ def restore_note_proposals(tools: Any, canonical: Mapping[str, object]) -> None:
     proposals = payload["proposals"]
     if not isinstance(proposals, list) or (proposals and not isinstance(tools.store, StagedKnowledgeStore)):
         raise ResearchContinuationError("knowledge proposals require their original staging store")
+    bases = canonical.get("knowledge_bases", {})
+    affected = {*payload["created"], *payload["updated"]}
+    if (not isinstance(bases, dict) or set(bases) - affected
+            or any(value is not None and not isinstance(value, str) for value in bases.values())):
+        raise ResearchContinuationError("invalid staged document base")
     for raw in proposals:
         if not isinstance(raw, dict) or set(raw) != {field.name for field in fields(KnowledgeNote)}:
             raise ResearchContinuationError("invalid staged note proposal")
         note = KnowledgeNote(**raw)
-        if json_value(note) != raw or note.id not in payload["created"]:
+        if json_value(note) != raw or note.id not in affected:
             raise ResearchContinuationError("staged proposal changed its original identity or content")
         existing = tools.store._staged_notes.get(note.id)
-        if existing is not None and existing != note:
+        if existing is not None and existing != note and note.id not in payload["updated"]:
             raise ResearchContinuationError("conflicting staged note proposal")
         committed = tools.store._parent.read_note(note.id)
-        if (committed is not None
+        if (committed is not None and note.id not in bases and note.id not in payload["updated"]
                 and replace(committed, updated=note.updated).to_markdown() != note.to_markdown()):
             raise ResearchContinuationError("committed note differs from its original proposal")
+        if note.id in bases:
+            if note.id in tools.store._staged_bases and tools.store._staged_bases[note.id] != bases[note.id]:
+                raise ResearchContinuationError("staged document changed its original base")
+            tools.store._staged_bases[note.id] = bases[note.id]
         tools.store.write_note(note, changes=tools.changes)
     batches = canonical.get("knowledge_batches", {})
     if not isinstance(batches, dict):
@@ -68,7 +77,7 @@ def restore_note_proposals(tools: Any, canonical: Mapping[str, object]) -> None:
     from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
 
     for identity, batch in batches.items():
-        if (identity not in payload["created"] or not isinstance(batch, dict)
+        if (identity not in {*payload["created"], *payload["updated"]} or not isinstance(batch, dict)
                 or set(batch) != {"commit_id", "mutations"}):
             raise ResearchContinuationError("invalid knowledge batch proposal")
         tools.store._staged_knowledge[identity] = (batch["commit_id"], [

@@ -301,8 +301,7 @@ def _run_headless_task(
     """Run the submission; the caller owns shutdown so close never masks this."""
     try:
         if (
-            _request_intent(request.intent) == "research"
-            and request.research_store_root is not None
+            request.research_store_root is not None
             and state.knowledge_store is None
         ):
             from codey.knowledge.store import KnowledgeStore

@@ -62,6 +62,8 @@ def research_method_guidance(question: str) -> str:
         "Record unresolved questions and limitations; search absence is not a negative finding. "
         "Multiple reports of one study are not independent evidence. Old answers, Ghost affinity and "
         "graph proximity cannot increase evidence strength. Read current versions before revising knowledge.",
+        "When done uses saved knowledge, include knowledge_refs:[{id:...,revision:...}] for the exact versions "
+        "used. These pin provenance, not proof of interpretation; cite original premises rather than old answers.",
     ]
     for method in selected[:4]:
         lines.append(f"{method.name}: sources: {method.sources}. Extract when available: "

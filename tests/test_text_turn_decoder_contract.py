@@ -65,3 +65,11 @@ def test_decoder_keeps_multiple_json_data_objects_as_the_existing_protocol_error
     assert isinstance(decoded, TextError)
     assert decoded.kind == "invalid_json"
     assert decoded.message == "incomplete or malformed JSON response"
+
+
+def test_truncated_object_requests_a_complete_reply_without_repairing_data() -> None:
+    decoded = decode_text_turn('{"tool":"knowledge_write","args":{"conditions":{"mode":{"state":"not_extracted"}}}')
+    assert isinstance(decoded, TextError)
+    assert decoded.kind == "invalid_json"
+    assert "outer tool request object" in decoded.message
+    assert "No tool in this reply was executed" in decoded.message

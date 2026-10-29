@@ -1704,6 +1704,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 "knowledge_search",
                 "knowledge_read",
                 "knowledge_write",
+                "knowledge_commit",
                 "knowledge_link",
                 "done",
             },

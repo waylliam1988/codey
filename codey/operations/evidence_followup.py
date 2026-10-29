@@ -100,6 +100,7 @@ def run_evidence_followup(
                     "proposals": proposals,
                 }
                 if isinstance(tools.store, StagedKnowledgeStore):
+                    canonical["knowledge_bases"] = {identity: tools.store._staged_bases[identity] for identity in created}
                     canonical["knowledge_batches"] = {
                         identity: {"commit_id": batch[0], "mutations": [
                             {"value": mutation.value.to_dict(), "expected_revision": mutation.expected_revision}

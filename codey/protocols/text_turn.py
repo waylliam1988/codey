@@ -59,7 +59,12 @@ def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
 def _json_error(source: str, exc: json.JSONDecodeError) -> TextError:
     """Locate the failure without guessing a repaired request or changing data."""
     detail = f"invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}."
-    if exc.msg.startswith("Invalid control character"):
+    if exc.pos >= len(source.rstrip()) and exc.msg.startswith(("Expecting ',' delimiter", "Expecting property name", "Expecting value")):
+        detail += (
+            " The reply ended before the JSON request was complete. Close every opened object and array,"
+            " including the outer tool request object. Resend the complete request; do not send only its missing suffix."
+        )
+    elif exc.msg.startswith("Invalid control character"):
         detail += (
             r" Escape line breaks and tabs inside JSON strings as \n, \r and \t;"
             r' for example, "content":"first line\nsecond line\n".'

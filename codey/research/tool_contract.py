@@ -91,7 +91,8 @@ TOOL_CONTRACTS = {
         required={"id": str},
         optional={"revision": ToolArg(int, None)},
         example='{"tool":"knowledge_read","args":{"id":"<note id>"}}',
-        description="read one existing note in full. " + knowledge_read_id_guidance(),
+        description=("read a structured object and its pinned revision, conditions, provenance and references; "
+                     "also accepts legacy note ids. " + knowledge_read_id_guidance()),
         parallel_safe=True,
     ),
     "knowledge_write": ToolContract(
@@ -112,7 +113,10 @@ TOOL_CONTRACTS = {
             "conditions": ToolArg(dict, None),
         },
         example='{"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"relations":[{"src":"war","dst":"helium supply","kind":"affects"}],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}',
-        description="save small source/fact/hypothesis/conclusion/question notes; final reports must use done",
+        description="save small source/fact/hypothesis/conclusion/question notes; final reports must use done. "
+                    "conditions must be an object: {name:{state:reported,value:...}} or state "
+                    "not_reported/not_extracted/not_applicable. Keep unknowns unknown. "
+                    "confidence is not evidence strength. Use knowledge_commit with restricted scope for user observations.",
     ),
     "knowledge_link": ToolContract(
         name="knowledge_link",
@@ -139,7 +143,8 @@ TOOL_CONTRACTS = {
     "done": ToolContract(
         name="done",
         required={"summary": str},
-        optional={"open_questions": ToolArg(list, None, singleton_dict=True, list_item_type=str)},
+        optional={"open_questions": ToolArg(list, None, singleton_dict=True, list_item_type=str),
+                  "knowledge_refs": ToolArg(list, None, list_item_type=dict)},
         example='{"tool":"done","args":{"summary":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}',
         description="",
     ),
@@ -196,6 +201,8 @@ def research_tool_contract_hash(*, include_source_search: bool = True) -> str:
 
 
 def _json_type(pytype: type) -> str:
+    if pytype is dict:
+        return "object"
     if pytype is str:
         return "string"
     if pytype is int:
@@ -327,6 +334,8 @@ def _coerce(
                 return _invalid(f"{tool}.{name} must be a list of objects")
             return _invalid(f"{tool}.{name} has invalid list item type")
         return ContractResult(True, args={name: parsed_list})
+    if expected is dict and not isinstance(value, dict):
+        return _invalid(f"{tool}.{name} must be an object; conditions use {{name:{{state:reported,value:...}}}}")
     return ContractResult(True, args={name: value})
 
 

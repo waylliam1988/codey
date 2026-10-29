@@ -32,7 +32,7 @@ def _stable_synthesis_id(run_id: str) -> str:
 def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
                        project: str, run_id: str,
                        on_event: Callable[[RunEvent], None], open_questions: Any = (),
-                       policy: Any) -> str:
+                       policy: Any, projection: str = "initial", knowledge_refs: Any = ()) -> str:
     """Persist one synthesis note under the parent task policy (required).
 
     ``policy=None`` denies like any non-allowing policy (fail-closed). The
@@ -53,12 +53,23 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         except Exception:
             pass
         return ""
-    note_id = _stable_synthesis_id(run_id)
-    if tools.store.exists(note_id):
-        tools.synthesis_id = note_id
-        if note_id not in tools.created_ids:
-            tools.created_ids.append(note_id)
-        return note_id
+    import hashlib
+
+    from codey.knowledge.archive import stable_identity
+    from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference
+
+    note_id = _stable_synthesis_id(run_id if projection == "initial" else run_id + ":" + projection)
+    answer_id = stable_identity("answer", run_id, projection)
+    summary_digest = hashlib.sha256(summary.encode("utf-8")).hexdigest()
+    previous = tools.store.repository.read(answer_id)
+    if previous is not None:
+        if previous.value.provenance.get("summary_digest") != summary_digest:
+            raise ValueError("settled research projection changed its original summary")
+        if tools.store.exists(note_id):
+            tools.synthesis_id = note_id
+            if note_id not in tools.created_ids:
+                tools.created_ids.append(note_id)
+            return note_id
     from codey.knowledge.note import KnowledgeNote, clean_open_questions
     from codey.research.synthesis import run_concept_tags as _run_concept_tags
     from codey.research.synthesis import synthesis_body as _synthesis_body
@@ -77,8 +88,22 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         open_questions=clean_open_questions(open_questions)[:4],
         id=note_id,
     )
+    from codey.knowledge.answer_refs import answer_references
+
+    references = list(answer_references(knowledge_refs, tools.store, project=project, session_id=session_id))
+    for related_id in note_ids:
+        for row in tools.store.note_references(related_id):
+            version = tools.store.repository.read(str(row["target"]), int(row["revision"]))
+            if version is not None and version.value.kind != "answer":
+                references.append(KnowledgeReference(version.value.id, version.revision, "uses"))
+    scope, scope_id = ("project", project) if project else (("session", session_id) if session_id else ("global", ""))
+    answer = KnowledgeObject(answer_id, "answer", summary, "model_inference", title=note.title,
+        status="active", scope=scope, scope_id=scope_id, references=tuple(dict.fromkeys(references)),
+        provenance={"run_id": run_id, "session_id": session_id, "summary_digest": summary_digest,
+                    "basis": "settled_kernel_projection", "projection": projection})
     try:
-        tools.store.write_note(note, changes=tools.changes)
+        tools.store.publish_note(note, stable_identity("answer-commit", run_id, projection),
+                                 [KnowledgeMutation(answer)], changes=tools.changes)
     except OSError:
         return ""
     if note_id not in tools.created_ids:
@@ -252,15 +277,20 @@ def run_research_iteration(
             ),
         ),
     )
+    if outcome.stop_reason in {"recovery_failure", "controller_failure", "delivery_pending", "provider_failure"}:
+        from codey.research.pipeline import ResearchContinuationError
+
+        raise ResearchContinuationError(outcome.summary)
     ledger = tools.ledger
     synthesis_id = ""
     if outcome.completed:
-        # 幂等恢复：稳定 run 身份使“写入成功、交付失败”后重试复用原笔记，
-        # 绝不产生第二条合成（store.exists 命中即直接返回原 ID）。
+        # Deterministic projection of the settled driver output; the stored
+        # digest rejects changes to that original output on replay.
         synthesis_id = _persist_synthesis(
             tools, task, outcome.summary, session_id=session_id,
             project=project, run_id=run_id, on_event=on_event,
             open_questions=session.last_done_args.get("open_questions", ()),
+            knowledge_refs=session.last_done_args.get("knowledge_refs", ()),
             policy=policy,
         )
     quality = None
