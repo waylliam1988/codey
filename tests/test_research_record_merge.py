@@ -458,7 +458,10 @@ def test_merge_evidence_patch_handles_unparseable_or_protocol_initial_summary() 
             material = PlanExecutionResult(fresh_source_urls=("https://example.com/fresh",))
 
             merged = merge_evidence_patch(initial_result, tools, material)
-            assert merged.stop_reason == "done"
+            assert merged.stop_reason == "partial"
+            assert merged.research_record.answer_status != "answered"
+            assert merged.completion_proof is None
+            assert "incomplete_evidence_reconstruction" in merged.quality_warnings
             assert "## 结论" in merged.summary
             assert "## 关键证据" in merged.summary
             assert "https://example.com/fresh" in merged.summary
@@ -556,9 +559,9 @@ def test_merge_evidence_patch_builds_minimal_candidate_from_protocol_result_with
 
             merged = merge_evidence_patch(initial_result, tools, material)
 
-            assert merged.stop_reason == "done"
+            assert merged.stop_reason == "partial"
             assert merged.research_record is not None
-            assert merged.research_record.answer_status in {"answered", "partial"}
+            assert merged.research_record.answer_status == "partial"
             assert merged.research_record.unsupported_claim_count == 0
             assert len(merged.research_record.sources) == 2
             assert len(merged.research_record.evidence) == 2

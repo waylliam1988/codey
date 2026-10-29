@@ -184,3 +184,20 @@ def test_local_frame_uses_json_escape_semantics_including_slash_and_surrogate_pa
 def test_local_frame_rejects_nonfinite_values_and_unpaired_surrogates():
     for body in (r'{query:"\ud800"}', '{query:1e309}'):
         assert parse_local_tool_markup('<|tool_call>call:grep'+body+'<tool_call|>') is None
+
+
+def test_malformed_native_enum_requests_quoted_strings_without_coercing_the_call():
+    from codey.operations.kernel_prompt import _repair_prompt
+    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+
+    snapshot = build_turn_snapshot(TaskSession(TaskPolicy(grants=frozenset({"control", "knowledge.write"}))), native=True)
+    raw = '<|tool_call>call:knowledge_write{body:"Evidence note",title:"Finding",type:fact}<tool_call|>'
+    rejected = normalize_turn(normalize_local_reply(raw), snapshot=snapshot)
+    assert rejected.protocol_error and not rejected.calls
+    feedback = _repair_prompt(rejected, snapshot=snapshot, native=True)
+    assert "including enum choices" in feedback and "quoted string" in feedback
+    corrected = normalize_turn(normalize_local_reply(raw.replace("type:fact", 'type:"fact"')), snapshot=snapshot)
+    assert not corrected.protocol_error
+    assert corrected.calls[0].args == {"body": "Evidence note", "title": "Finding", "type": "fact"}

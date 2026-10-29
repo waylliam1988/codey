@@ -6,6 +6,7 @@ from unittest import mock
 import pytest
 
 from codey.knowledge.changes import KnowledgeChanges
+from codey.knowledge.model import KnowledgeObject
 from codey.knowledge.store import KnowledgeStore
 from codey.research import browser_search
 from codey.research.ledger import ResearchLedger
@@ -55,3 +56,36 @@ def test_missing_sources_feedback_repairs_omission_without_reopening_or_relabell
         assert repaired.ok and len(tools.ledger.evidence_items) == 1
     finally:
         store.close()
+
+
+@pytest.mark.parametrize("evidence", [None, []])
+def test_omitted_evidence_does_not_promote_page_navigation_to_support(tmp_path, evidence):
+    store = KnowledgeStore(tmp_path)
+    try:
+        tools = ResearchTools(None, store, KnowledgeChanges(root=store.root))
+        tools.sources_read.add(URL)
+        tools.ledger.record_open(URL, URL, "Database guide", "DB Home Docs Search. Only one writer at a time.")
+        args = {"type": "fact", "title": "Database behavior", "body": "Readers never block a writer.",
+                "sources": [URL], "evidence": evidence}
+        rejected = tools.knowledge_write(args)
+        assert not rejected.ok and "require explicit evidence" in rejected.model_text
+        assert not tools.ledger.evidence_items and store.index.count() == 0
+        # Cataloging a source remains possible but does not manufacture a claim.
+        catalog = tools.knowledge_write({**args, "type": "source"})
+        assert catalog.ok and not tools.ledger.evidence_items
+        assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='claim'").fetchone()[0] == 0
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("conditions, path", [
+    ({"name": "WAL", "state": "reported", "value": "active"}, "conditions.name"),
+    ({"mode": {"state": "unknown"}}, "conditions.mode.state"),
+    ({"mode": {"state": [], "value": "WAL"}}, "conditions.mode.state"),
+    ({"mode": {"state": "reported", "value": 5}}, "conditions.mode"),
+    ({"mode": {"state": "not_extracted", "name": "workload"}}, "conditions.mode"),
+])
+def test_condition_errors_identify_path_and_show_nested_repair(conditions, path):
+    with pytest.raises(ValueError) as caught:
+        KnowledgeObject("claim-one", "claim", "A conditional claim", "source", conditions=conditions)
+    assert path in str(caught.value) and '"workload":{"state":"not_extracted"}' in str(caught.value)

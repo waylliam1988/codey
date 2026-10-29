@@ -115,6 +115,8 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             "knowledge_write.sources必须是已读取的URL字符串数组，不能填工具回执引用。"
             "使用提供的 SQLite 官方文档；先读取来源，再用 knowledge_write 保存准确引文、条件和限制，"
             "必须同时保存读写并发和仅单一写者两个结论的直接证据。"
+            "若单写者原文不在首段，用source_search查找writer并打开返回的offset；"
+            "不能用多个事务可追加到WAL这句话替代同一时刻只有一个写者的直接陈述。"
             "evidence.claim用中文概述，evidence.excerpt保持官方英文原文；报告沿用已保存的中文主张。"
             "将WAL模式这一适用前提存入conditions，workload未实测，标为not_extracted。"
             "标签至少含 SQLite 和 写者串行化，别名含 嵌入式数据文件。"

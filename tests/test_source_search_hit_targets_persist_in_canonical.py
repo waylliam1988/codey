@@ -52,6 +52,12 @@ def test_source_search_canonical_replays_to_same_facts():
     live_targets = dict(session.hit_targets)
     assert live_targets["h1"]["offset"] == 120
 
+    from codey.operations.kernel_prompt import _result_context
+
+    guidance = _result_context(result, session)
+    assert 'open_hit({"hit_id":"h1"})' in guidance
+    assert "offsets refer to source text, not tool receipts" in guidance
+
     # Recovered facts from the same receipt canonical must match live.
     fresh = _session()
     record_facts_for_result(fresh, call, result, ok=ok)

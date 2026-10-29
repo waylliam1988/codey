@@ -1265,6 +1265,7 @@ def test_knowledge_write_update_merges_existing_provenance_and_scope() -> None:
         )
         source = "https://example.com/source"
         tools.sources_read.add(source)
+        tools.ledger.record_open(source, source, "Source", "Original observed result. Updated observed result.")
         created = tools.knowledge_write({
             "id": "fact-a",
             "type": "fact",
@@ -1272,6 +1273,7 @@ def test_knowledge_write_update_merges_existing_provenance_and_scope() -> None:
             "body": "Original body.",
             "tags": ["original"],
             "sources": [source],
+            "evidence": [{"source_url": source, "excerpt": "Original observed result."}],
             "relations": [{"src": "alpha", "dst": "beta", "kind": "affects"}],
             "aliases": ["Alpha"],
             "confidence": 0.7,
@@ -1284,6 +1286,7 @@ def test_knowledge_write_update_merges_existing_provenance_and_scope() -> None:
             "id": note_id,
             "title": "Updated fact",
             "body": "Updated body.",
+            "evidence": [{"source_url": source, "excerpt": "Updated observed result."}],
         }).model_text
         note = store.read_note(note_id)
         assert note is not None
@@ -1315,12 +1318,14 @@ def test_knowledge_write_update_rejects_cross_session_owner() -> None:
         )
         source = "https://example.com/source"
         first.sources_read.add(source)
+        first.ledger.record_open(source, source, "Source", "Original observed result.")
         first.knowledge_write({
             "id": "fact-a",
             "type": "fact",
             "title": "Original fact",
             "body": "Original body.",
             "sources": [source],
+            "evidence": [{"source_url": source, "excerpt": "Original observed result."}],
         })
         note_id = first.created_ids[0]
         second = ResearchTools(

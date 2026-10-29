@@ -2,6 +2,46 @@
 
 Work in progress. Do not infer a live acceptance pass from deterministic tests.
 
+## Continuation: explicit evidence and backend parser diagnosis
+
+- The earlier `research-live-wal-action-20261030` returned `done`, but manual
+  inspection rejected it: its reconstructed answer omitted major questions and
+  its evidence included site navigation. It is **not** a quality acceptance pass.
+- Removed the omitted-evidence fallback that guessed a source passage and marked
+  it as support. Sourced findings now require explicit matching excerpts. Source
+  catalog notes can be saved without creating a supporting claim. Updated legacy
+  write fixtures to supply actual opened observations instead of a bare URL.
+- Condition validation now identifies the exact failing path and shows the
+  nested name-to-object mapping, including an unknown/not-extracted condition.
+  The native schema describes the same shape. Invalid conditions cannot publish
+  a partial note or claim.
+- Evidence merging no longer promotes a failed/budget-stopped investigation to
+  `done`. Minimal reconstruction is `partial`, and changed summaries discard
+  the old completion proof. More evidence alone does not prove answer completion.
+- Clarified native summary/report_sections alternatives, quoted enum repair, and
+  source-locator offsets versus receipt offsets. Locator feedback gives a real
+  open_hit example from recorded hit targets.
+- `research-three-stage-counted-20261030`: failed no_progress after repeated flat
+  conditions. `research-three-stage-explicit-20261030`: first four turns ran, then
+  a generation timed out after the initial SSE role event. No request was resent.
+  py-spy on the actual KoboldCpp process showed its active thread stuck in
+  `read_object -> fix_unquoted_keys -> parse_gemma4 -> repack_toolcall_tags`.
+  Backend inference had already completed (399 tokens, about 12.6 s); the parser
+  remained active for several minutes. This is a separate server-side hang.
+- `research-three-stage-text-20261030` queued behind that stuck server thread,
+  so it also failed; this is not a text-protocol capability result. Restarted
+  only the wedged KoboldCpp server using its saved `Gemma4-12B-QAT/2.kcpps`
+  settings and `--skiplauncher`, with hidden window and logs under artifacts.
+  User config files and project dependency declarations were not modified.
+- Verification so far: 216 research/storage/merge/protocol tests plus 7 subtests;
+  140 expanded contract/native-guidance/continuation/report tests. Ruff, mypy
+  (551 files), Pyrefly (same existing warnings), and ty passed. Intentional prompt
+  snapshots/assertions were reviewed for the report_sections protocol change.
+
+Next: fresh text-protocol three-process probe, actual SQLite browser research,
+and actual non-software research. Inspect report contents and stored evidence;
+none of these fresh live acceptance outcomes has been established yet.
+
 ## Environment
 
 - KoboldCpp 1.117.1, localhost:5001, Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.

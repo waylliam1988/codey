@@ -60,15 +60,24 @@ class KnowledgeObject:
             raise ValueError("inference must retain model_inference origin")
         if any(not isinstance(alias, str) or not alias.strip() for alias in self.aliases):
             raise ValueError("aliases must be nonempty strings")
+        example = ('Expected a map from condition names to objects, for example '
+                   '{"journal_mode":{"state":"reported","value":"WAL"},'
+                   '"workload":{"state":"not_extracted"}}. '
+                   'Do not use a flat {"name":...,"state":...,"value":...} object.')
         if not isinstance(self.conditions, dict):
-            raise ValueError("conditions must be an object: {name:{state:reported,value:...}}")
+            raise ValueError(f"conditions must be an object. {example}")
         for key, condition in self.conditions.items():
-            if (not key or not isinstance(condition, dict) or condition.get("state") not in CONDITION_STATES
-                    or set(condition) - {"state", "value"}
-                    or any(not isinstance(value, str) for value in condition.values())):
-                raise ValueError("conditions require state: reported/not_reported/not_extracted/not_applicable")
+            path = f"conditions.{key}"
+            if not isinstance(key, str) or not key or not isinstance(condition, dict):
+                raise ValueError(f"{path} must be a condition object. {example}")
+            if not isinstance(condition.get("state"), str) or condition["state"] not in CONDITION_STATES:
+                raise ValueError(f"{path}.state must be one of {', '.join(sorted(CONDITION_STATES))}. {example}")
+            if set(condition) - {"state", "value"}:
+                raise ValueError(f"{path} permits only state and value. {example}")
+            if any(not isinstance(value, str) for value in condition.values()):
+                raise ValueError(f"{path}.state and value must be strings. {example}")
             if condition["state"] == "reported" and not condition.get("value", "").strip():
-                raise ValueError("reported condition needs a value")
+                raise ValueError(f"{path}: reported condition needs a value")
         canonical_json(self.to_dict())  # Reject non-JSON values and NaN at the boundary.
 
     def to_dict(self) -> dict[str, Any]:

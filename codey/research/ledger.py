@@ -303,24 +303,10 @@ class ResearchLedger:
                 ))
             return EvidencePreparation(tuple(prepared))
 
-        prepared = []
-        fallback_stance = "context" if note_type == "question" else "supports"
-        for source in fallback_sources:
-            if not source.startswith(("http://", "https://")):
-                continue
-            final_url = self.canonical_opened_url(source)
-            if not final_url:
-                continue
-            excerpt, page = self.best_excerpt_with_page(final_url, fallback_body or fallback_claim)
-            prepared.append(EvidenceItem(
-                claim=_clip(fallback_claim or fallback_body, MAX_CLAIM_CHARS),
-                source_url=final_url,
-                excerpt=excerpt,
-                stance=fallback_stance,
-                page=page,
-                locator=_locator(page),
-            ))
-        return EvidencePreparation(tuple(prepared))
+        # A URL or a matching keyword cannot establish which passage supports
+        # a claim. In particular, never promote page headers/navigation or a
+        # guessed "best" excerpt to supporting evidence when evidence is absent.
+        return EvidencePreparation(())
 
     def add_evidence_items(self, items: list[EvidenceItem], *, note_id: str = "") -> None:
         for item in items:

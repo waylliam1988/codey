@@ -2351,12 +2351,15 @@ class ResearchBoundaryTests(unittest.TestCase):
                 }
             ).model_text
             tools.sources_read.add("https://example.com/helium")
+            tools.ledger.record_open("https://example.com/helium", "https://example.com/helium",
+                                     "Helium", "Helium is useful.")
             accepted = tools.knowledge_write(
                 {
                     "type": "fact",
                     "title": "Helium",
                     "body": "Helium is useful.",
                     "sources": ["https://example.com/helium"],
+                    "evidence": [{"source_url": "https://example.com/helium", "excerpt": "Helium is useful."}],
                 }
             ).model_text
             store.close()
@@ -2429,6 +2432,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                     "title": "Helium",
                     "body": "Helium is useful.",
                     "sources": ["https://example.com/helium"],
+                    "evidence": [{"source_url": "https://example.com/helium", "excerpt": "Helium is useful."}],
                 },
             )
 
@@ -2978,6 +2982,8 @@ class ResearchBoundaryTests(unittest.TestCase):
                         "title": "Helium source",
                         "body": "Helium comes from gas processing.",
                         "sources": ["s1"],
+                        "evidence": [{"source_url": url, "claim": "Helium supply depends on gas processing.",
+                                      "excerpt": "Helium is separated from natural gas streams."}],
                     },
                 }
             ),
@@ -3075,6 +3081,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             )
             url = "https://example.com/helium"
             tools.sources_read.add(url)
+            tools.ledger.record_open(url, url, "Helium", "Helium is useful.")
 
             saved = tools.knowledge_write(
                 {
@@ -3082,6 +3089,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                     "title": "Helium",
                     "body": "Helium is useful.",
                     "sources": [url],
+                    "evidence": [{"source_url": url, "excerpt": "Helium is useful."}],
                     "session_id": "attacker",
                     "project": "E:/other",
                 }
@@ -3862,6 +3870,8 @@ class ResearchBoundaryTests(unittest.TestCase):
                         "title": "Helium source",
                         "body": "Helium comes from gas processing.",
                         "sources": ["s1"],
+                        "evidence": [{"source_url": url, "claim": "Helium supply depends on gas processing.",
+                                      "excerpt": "Helium is separated from natural gas streams."}],
                     },
                 }
             ),

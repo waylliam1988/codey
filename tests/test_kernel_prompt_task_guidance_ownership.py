@@ -25,7 +25,7 @@ def test_full_research_guidance_preserves_existing_prompt_bytes():
     policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
                         strict_research=True)
     assert hashlib.sha256(_guidance(policy).encode()).hexdigest() == (
-        "a12196236980017040833f30e7c39dbe6932eeb4f867c5c2d668d7e2cac453a4"
+        "4cb5a9970d2357d8751d7ffe176ac06e8019f466398e08c8d99ea98553a3915d"
     )
 
 
@@ -75,7 +75,7 @@ def test_ordinary_web_task_has_no_strict_research_guidance():
 ])
 def test_research_guidance_does_not_direct_unauthorized_tools(grants, forbidden):
     text = _guidance(TaskPolicy(grants=frozenset(grants), strict_research=True))
-    assert "Report format is strict" in text
+    assert "report format is strict" in text.lower()
     for name in forbidden:
         assert name not in text
 

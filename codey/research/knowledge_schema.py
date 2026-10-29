@@ -15,7 +15,10 @@ def _array(items: dict[str, Any]) -> dict[str, Any]:
 
 def parameter_schemas(tool: str) -> dict[str, Any]:
     text: dict[str, Any] = {"type": "string"}
-    conditions = {"type": "object", "additionalProperties": _object({
+    conditions = {"type": "object", "description": 'Map condition names to objects, e.g. '
+                  '{"journal_mode":{"state":"reported","value":"WAL"},'
+                  '"workload":{"state":"not_extracted"}}. Never a flat name/state/value object.',
+                  "additionalProperties": _object({
         "state": {"type": "string", "enum": sorted(CONDITION_STATES)}, "value": text}, "state")}
     reference = _object({"target": text, "revision": {"type": "integer", "minimum": 1}, "relation": text},
                         "target", "revision", "relation")
@@ -38,7 +41,8 @@ def parameter_schemas(tool: str) -> dict[str, Any]:
                             "p": {"type": "integer", "minimum": 1}, "locator": text})
         return {"body": {"type": "string", "description": "Required note text, even when evidence is supplied."},
                 "type": {"type": "string", "enum": list(NOTE_TYPES)},
-                "sources": _array(text), "tags": _array(text), "aliases": _array(text), "evidence": _array(evidence),
+                "sources": _array(text), "tags": _array(text), "aliases": _array(text),
+                "evidence": {**_array(evidence), "description": "Required for sourced findings. Each excerpt must be an exact contiguous passage from an opened source; never a page title or navigation text."},
                 "conditions": conditions}
     if tool == "done":
         from codey.reviews.report_sections import REQUIRED_SECTIONS

@@ -35,9 +35,9 @@ _NATIVE_READ_BATCH_RULE = (
     "Wait for their results before dependent actions. Submit verification and done separately."
 )
 _NATIVE_FINAL_RULE = (
-    "For the final answer, use done if declared: put the complete response in its summary string. "
-    "For a structured research report, summary is the conclusion and report_sections contains the remaining parts. "
-    "Preserve the user's requested final format inside that string. "
+    "For the final answer, use done with a summary string if declared. Without report_sections, summary contains the complete response "
+    "in the user's requested final format. With report_sections, summary contains only the conclusion; "
+    "put the remaining report parts in report_sections, without duplicating the full report in summary. "
     "Requested JSON is a bare document without Markdown fences inside summary, not the outer tool-call object."
 )
 _TEXT_ACTION_RULE = (
@@ -146,6 +146,11 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
         detail = (error + f"\nCorrect {spec.name}; required arguments: {', '.join(spec.required) or '(none)'}."
                   if spec is not None else error + "\nAvailable tools: " + ", ".join(snapshot.tool_names))
         instruction = "Use the provided native tools. " + _NATIVE_ARGUMENTS_RULE
+        if error == "provider returned malformed tool calls":
+            instruction += (
+                " Every text value, including enum choices, must be a quoted string; "
+                "do not emit bare words such as state:reported. Use booleans only for boolean parameters."
+            )
         if spec is None or spec.name == "done":
             instruction += " " + _NATIVE_FINAL_RULE
     else:
@@ -192,7 +197,11 @@ def _result_context(result: ToolResult, session: TaskSession) -> str:
             f"{key}: {target.get('url')} offset={target.get('offset')} pages={target.get('pages')}"
             for key, target in list(session.hit_targets.items())[-12:]
         )
-        return f"{text}\n\nSource locator references:\n{refs}"
+        example = next(iter(session.hit_targets))
+        return (f"{text}\n\nSource locator references:\n{refs}\n"
+                f'Open the passage with open_hit({{"hit_id":"{example}"}}), or open_url with the source URL and its offset. '
+                "These offsets refer to source text, not tool receipts; do not pass them to read_tool_result. "
+                "Use read_tool_result only to inspect omitted locator-list output.")
     if result.call.name in {"open_url", "open_result", "open_hit", "reopen_source"} and session.source_ids:
         refs = "\n".join(f"{key}: {url}" for key, url in list(session.source_ids.items())[-12:])
         return f"{text}\n\nOpened source references for citations:\n{refs}"

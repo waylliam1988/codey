@@ -51,6 +51,10 @@ def merge_evidence_patch(
 
     sections = parse_sections(initial.summary)
     minimal_rebuild = _needs_minimal_evidence_rebuild(initial, initial_record, sections)
+    # An evidence patch does not run an answer synthesis or the completion
+    # gate. Recover useful findings without promoting a failed/budget-limited
+    # investigation to "done", or reusing proof for a different summary.
+    stop_reason = "partial" if minimal_rebuild else initial.stop_reason
     if not sections:
         sections = _blank_sections()
 
@@ -98,7 +102,7 @@ def merge_evidence_patch(
         ledger=ledger,
         review=quality_review,
         synthesis_id=merge_synthesis_id,
-        stop_reason="done",
+        stop_reason=stop_reason,
     )
 
     seen_final: set[str] = set()
@@ -120,7 +124,9 @@ def merge_evidence_patch(
         citations = tuple(parse_citation_rows(merged_sections.get("sources", ""), ledger))
     citation_map = [item.to_dict() for item in citations]
     coverage = ledger.coverage_payload()
-    warnings = list(getattr(quality_review, "warnings", ()) or ())
+    warnings: list[str] = list(getattr(quality_review, "warnings", ()) or ())
+    if minimal_rebuild:
+        warnings.append("incomplete_evidence_reconstruction")
 
     merged_queries = list(
         dict.fromkeys(
@@ -185,7 +191,8 @@ def merge_evidence_patch(
         synthesis_id=merge_synthesis_id,
         turns=initial.turns,
         max_turns_used=initial.max_turns_used,
-        stop_reason="done",
+        stop_reason=stop_reason,
+        completion_proof=None,
     )
 
 

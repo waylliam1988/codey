@@ -277,6 +277,12 @@ class ResearchTools:
         sources, sources_error = _prepare_write_sources(self, args, existing_note, updating, note_type)
         if sources_error:
             return ResearchToolOutput(sources_error, ok=False)
+        if note_type in _CITED_TYPES and any(_looks_like_url(source) for source in sources) and not args.get("evidence"):
+            return ResearchToolOutput(
+                'ERROR: sourced findings require explicit evidence=[{"claim":"supported conclusion",'
+                '"source_url":"opened URL","excerpt":"exact contiguous source text","stance":"supports"}]. '
+                'Use source_search to locate a passage, then copy it exactly. '
+                'A URL alone is not evidence; no inferred quote or supporting claim was saved.', ok=False)
         evidence_preparation = self.ledger.prepare_evidence_items(
             args.get("evidence"),
             fallback_sources=sources,
@@ -309,8 +315,11 @@ class ResearchTools:
         )
         from codey.research.knowledge_archive import note_knowledge
 
-        commit_id, mutations = note_knowledge(note, self.ledger, evidence_preparation, self.store.repository,
-                                             conditions=args.get("conditions"))
+        try:
+            commit_id, mutations = note_knowledge(note, self.ledger, evidence_preparation, self.store.repository,
+                                                 conditions=args.get("conditions"))
+        except (ValueError, TypeError) as exc:
+            return ResearchToolOutput(f"ERROR: {exc}", ok=False)
         rel = self.store.publish_note(note, commit_id, mutations, changes=self.changes)
         model_text = _finalize_write_note(
             self,
