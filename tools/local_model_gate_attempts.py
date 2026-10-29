@@ -21,6 +21,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from codey.providers.api_provider import ApiProvider
+from codey.providers.local_response_codec import normalize_local_reply
 from codey.runtime.core.cancellation import start_process, wait_process
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -115,6 +116,7 @@ class RecordingProvider(ApiProvider):
             context_reserve_tokens=target.context_reserve_tokens,
             context_keep_recent_tokens=target.context_keep_recent_tokens,
             api_protocol=target.api_protocol,
+            text_decoder=normalize_local_reply,
         )
         self.directory = directory
         self.exchange_number = 0

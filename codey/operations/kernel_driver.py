@@ -33,6 +33,7 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectError,
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
+    RuntimeEffectStore,
     compute_args_digest,
     new_effect_id,
     prepare_intent,
@@ -152,6 +153,36 @@ def load_prepared_request(sink: Any, request_ref: str) -> tuple[dict[str, Any], 
     if intent.args_digest != compute_args_digest(json.dumps(transport, ensure_ascii=False, sort_keys=True)):
         raise RuntimeEffectError("prepared request differs from its frozen intent")
     return payload, replace(intent, request_ref=request_ref)
+
+
+def restore_provider_window(sink: Any, provider: Any, state: Any) -> None:
+    """Rebuild the window projection from this operation's frozen request."""
+    from codey.operations.provider_receipts import request_artifact_for_effect
+
+    if state.request_ref:
+        payload, _ = load_prepared_request(sink, state.request_ref)
+    elif state.response_ref:
+        response = sink.durable.artifact(state.response_ref)
+        effect = next(row for row in RuntimeEffectStore(durable=sink.durable).load_effects(sink.session_id, sink.run_id)
+                      if row.intent.effect_id == response.owner_effect_id)
+        payload = read_provider_artifact(sink.managed_outputs, request_artifact_for_effect(sink.durable, effect),
+            kind=REQUEST_KIND, session_id=sink.session_id, run_id=sink.run_id, effect_id=effect.intent.effect_id)
+    else:
+        return
+    if not isinstance(payload, dict):
+        raise RecoveryFailed("frozen request has no protocol window data")
+    window = payload.get("window")
+    if window is None:
+        return
+    ref = ProtocolWindowRef.from_payload(window)
+    if getattr(provider, "window_ref", None) == ref:
+        return
+    restore = getattr(provider, "restore_protocol_window", None)
+    if not callable(restore):
+        raise RecoveryFailed("provider cannot restore the original protocol window")
+    restore(ref)
+    if getattr(provider, "window_ref", None) != ref:
+        raise RecoveryFailed("provider did not restore the original protocol window")
 
 
 def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> Any:

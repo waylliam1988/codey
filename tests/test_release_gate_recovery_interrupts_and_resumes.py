@@ -40,11 +40,21 @@ def test_recovery_gate_restarts_and_finishes_without_repeating_edit(tmp_path, pr
     assert result["edit_executions"] == 1
     assert result["original_result_delivered"] is True
     assert result["policy_preserved"] is True
+    assert result["protocol_window_preserved"] is True
     assert result["stop_reason"] == "done"
     assert result["verification"]["ok"] is True
     if protocol == "native":
         assert result["original_call_id_preserved"] is True
         assert result["delivery_mode"] == "same_window_native_resume"
+    else:
+        assert result["delivery_mode"] == "same_window_text_resume"
+        requests = [json.loads(line) for line in (tmp_path / "scripted-requests.jsonl").read_text(encoding="utf-8").splitlines()]
+        for request in requests[1:]:
+            prompt = next(message["content"] for message in reversed(request["messages"])
+                          if message["role"] == "user" and not message["content"].startswith("<request_context>"))
+            assert "Tool contract (use exactly these shapes):" in prompt
+            assert 'run(args: { "command": string;' in prompt
+            assert prompt.count("For actions, reply with exactly one bare JSON tool call") == 1
 
 
 def test_recovery_is_reported_as_restart_safety_not_storage_control_plane():

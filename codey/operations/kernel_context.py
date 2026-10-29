@@ -44,6 +44,8 @@ class KernelContext:
         self.effect_scope = self.transport.effect_scope
         self.provider = self.transport.provider
         self.native = kernel_transport.provider_uses_native(self.provider, provider_id=self.transport.provider_id)
+        from codey.operations.kernel_driver import restore_provider_window
+        restore_provider_window(self.sink, self.provider, admitted)
         self.window = getattr(self.provider, "window_ref", None) or self.transport.window_ref
         self.completion_context = wiring._completion_context_with_ignores(
             self.observation.completion_context, self.execution.workspace_ignored_paths)
@@ -277,6 +279,8 @@ class KernelContext:
                counters: RuntimeExecutionCounters | None = None) -> None:
         from codey.operations.kernel_driver import prepare_provider_request
 
+        if not self.native and state.leaf not in {positions.LEAF_WRITER_RUNNING, positions.LEAF_REPAIR_RUNNING}:
+            prompt = kernel_prompt._text_request_prompt(prompt, snapshot)
         self.snapshots[turn] = snapshot
         self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window)
         self.sink._request_context["effect_scope"] = self.effect_scope
@@ -463,10 +467,6 @@ class KernelContext:
         else:
             prompt = "\n\n".join(part for part in (prompt, observations) if part)
         snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native)
-        if not self.native and state.response_ref:
-            old = self.response(state).snapshot.contract_text
-            if snapshot.contract_text and snapshot.contract_text != old:
-                prompt = f"Visible tools changed (controller state advanced): {', '.join(snapshot.tool_names)}\nTool contract (use exactly these shapes):\n{snapshot.contract_text}\n\n{prompt}"
         self.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages)
 
     def boundary_text(self) -> str:

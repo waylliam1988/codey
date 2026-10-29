@@ -15,8 +15,9 @@ def test_unicode_recovery_receipts_are_read_with_explicit_utf8(tmp_path, monkeyp
     checkpoint.write_text(CONTENT, encoding="utf-8")
     policy = {"grants": ["control", "project.write", "project.verify"]}
     original = {"pid": 101, "result_text": "\u5df2\u521b\u5efa checkpoint.py", "policy": policy,
+                "protocol": "json", "window_ref": {"window_id": "original"},
                 "file_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest()}
-    resumed = {"pid": 202, "policy": policy, "stop_reason": "done",
+    resumed = {"pid": 202, "policy": policy, "stop_reason": "done", "window_ref": original["window_ref"],
                "original_result_delivered": True, "original_call_id_preserved": True}
     for name, row in (("interruption.json", original), ("resume-result.json", resumed),
                       ("executions.jsonl", {"tool": "edit", "detail": "\u7f16\u8f91\u6210\u529f"}),

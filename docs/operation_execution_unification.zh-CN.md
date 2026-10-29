@@ -257,9 +257,9 @@ Gemma4 12B / KoboldCpp 的原生协议 smoke 4/4 通过，证据位于
 这些是选定的 smoke，不是完整发布矩阵。
 
 文本协议 smoke 的聊天和读取通过；重启用例未进入注入故障点。原始回包连续四次为
-Gemma 的 `<|tool_call>` 格式，违反 JSON 契约，系统按协议错误停止。
-证据位于 `artifacts/operation-json-20261029-final2`。没有放宽解析、增加 fallback，
-也没有把该项标为恢复成功。
+Gemma 的 `<|tool_call>` 格式，系统按协议错误停止。证据位于
+`artifacts/operation-json-20261029-final2`。当时归因于模型未遵循 JSON 契约；下节根因复核
+发现测试连接遗漏了正式本地连接已有的解码器。这项旧结果仍为失败，原归因已更正。
 
 ### 阶段六收口：research 多 invocation 恢复
 
@@ -303,5 +303,60 @@ followup 笔记提议随原 knowledge_write 回执保存，恢复只重建原 st
 主研究与 followup 共 12 次真实请求，无 HTTP 重试；这项验证协议执行，不评定答案质量。
 
 按本次约定，六阶段工程迁移以定向／重点 pytest 和四项静态检查验收，全量 pytest 留给
-GitHub CI。此前记录的文本协议模型不遵循 JSON 契约问题仍保留为未通过结果；未添加解析
-fallback。pi/DeepSeek 的等价故障比较尚未进行，不将缺少数据写成比较结论。
+GitHub CI。此前文本协议失败样本仍保留，归因由下节实测更正。pi/DeepSeek 的等价故障
+比较尚未进行，不将缺少数据写成比较结论。
+
+## JSON 恢复根因复核（2026-10-29）
+
+失败包含三个连续暴露的缺口，不能只归因于模型不遵约。
+
+1. **测试连接遗漏正式本地解码器。** 2026-10-08 的 `7c751f26` 将 Gemma 解码改为
+   `ApiProvider.text_decoder` 显式配置，正式 `local_connection` 同时接入，但
+   `RecordingProvider` 漏接。旧失败回包是完整的
+   `<|tool_call>call:edit{args:{content:"VALUE = 42\n",path:"checkpoint.py"}}<tool_call|>`。
+   原有 `normalize_local_reply` 可以原样解出正确内容和稳定 call id；测试连接却将其
+   直接送入 JSON 边界。已补上同一个现有解码器，未新增宽松解析或第二套执行路径。
+2. **冷启动窗口与原请求不一致。** `463ff32b` 迁移后的 driver 严格校验原回复窗口，
+   但入口仍给冷 provider 打开新窗口。文本结果交付读取原快照时因此失败。现在唯一
+   driver 根据 operation 的请求／回复引用装载原请求窗口，校验 session 和完整 provider
+   binding 后，仅重建 provider 的内存投影。已接受的 live history 不能换绑；原
+   `load_response` 的授权和窗口相等检查继续保留。没有新增持久化字段或恢复账本。
+3. **文本后续请求依赖丢失的首轮契约。** 首轮执行 prompt 带工具签名、JSON 示例和规则，
+   durable 对话的用户消息保存原用户任务。冷启动恢复该语义投影后，后续请求只有任务、
+   结果和工作观察，没有完整工具契约。模型连续将 `run` 放入 Markdown fence；这些示例
+   按既有规则不会执行，完成检查一直缺少验证，最终耗尽预算。现在文本后续请求在
+   `freeze` 时都从本次冻结快照渲染契约，正常执行和恢复共用同一路径，替换原先
+   “仅工具列表变化时补契约”的分支。完成拒绝提示补充示例不执行的说明；JSON 解码、
+   fence 不执行及 completion gate 的判定没有放宽。首轮 prompt 的既有 hash 保持不变。
+
+真实请求 A/B 位于 `artifacts/operation-json-contract-ab-20261029`：回放同一条失败的
+恢复请求，保持模型、历史消息、时间上下文、temperature=0 和 max_tokens=8192；仅给
+该请求补上原冻结快照的工具契约及 JSON 输出规则。原请求输出 fenced `run`，补契约后
+输出裸 JSON `run`。
+该实验只请求模型，不执行工具。完整端到端成功样本位于
+`artifacts/operation-json-frozen-contract-20261029`：exit 75 后由另一 PID 恢复，原窗口、
+call id、工具结果均保留，edit_executions=1，实际执行 unittest 后 done，3 次请求、无重试。
+
+恢复检查器过去将 `delivery_mode` 固定写成 `same_window_native_resume`，却只核验 call id
+和结果，没有比较窗口身份。现按实际协议标注，并将 `protocol_window_preserved` 纳入通过
+条件；旧成功样本不能作为窗口身份未变化的证明。
+
+历史可确认的较早文本任务通过记录是 2026-09-30 的
+`tests/manual/KERNEL_UNIFICATION_AB_REPORT.zh-CN.md` 中 r3/r4；报告明确未注入重启。
+已检查的本地记录没有找到更早的等价 JSON 进程恢复通过证据，因此不推断该用例最后一次
+通过的具体日期。旧本地 provider 默认带解码器，也解释了为什么以前能执行这些文本帧。
+
+最终验证：
+
+- 定向 provider／prompt／窗口／重启组：199 passed。
+- 定向控制／审批／完成／恢复边界组：106 passed，6 subtests。
+- Ruff 通过；mypy 539 文件通过；Pyrefly 0 errors（35 suppressed，77 warnings）；ty 通过。
+- Gemma4 12B / KoboldCpp JSON smoke 3/3：chat、read、recovery，证据位于
+  `artifacts/operation-json-root-cause-final-20261029`。
+- 同模型原生 smoke 2/2：recovery、shell_approve，证据位于
+  `artifacts/operation-native-root-cause-final-20261029`。
+- 两种协议的真实恢复均保留原窗口、原结果及原 call id，edit_executions=1，三次请求且
+  无 HTTP 重试；原生批准续跑 shell_results=1。全量 pytest 按约定留给 GitHub CI。
+
+文本后续请求现在每次携带冻结声明，单次请求增加了相应契约 token；这是消除对进程内
+首轮历史依赖的明确成本。以上是选定 smoke，不是完整发布矩阵或性能基准。

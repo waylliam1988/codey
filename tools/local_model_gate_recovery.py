@@ -118,6 +118,7 @@ def _stage(directory: Path, stage: str, *, scripted: bool) -> int:
             policy = policy_from_durable_task(context.durable, task_id=RUN_ID)
             write_json(directory / "interruption.json", {
                 "pid": os.getpid(), "effect_id": identity, "call_id": result.call.call_id,
+                "protocol": target.protocol, "window_ref": self._request_context["window"],
                 "result_text": result.model_text, "policy": policy.to_payload(),
                 "file_sha256": hashlib.sha256((project / "checkpoint.py").read_bytes()).hexdigest(),
             })
@@ -144,6 +145,7 @@ def _stage(directory: Path, stage: str, *, scripted: bool) -> int:
                                  for batch in batches)
         write_json(directory / f"{stage}-result.json", {
             "pid": os.getpid(), "stop_reason": terminal.get("stop_reason"), "terminal": terminal,
+            "window_ref": provider.window_ref.to_payload() if provider.window_ref is not None else None,
             "policy": policy.to_payload(), "original_result_delivered": original_delivered,
             "original_call_id_preserved": recovered is not None and recovered.intent.call_id == original.get("call_id"),
         })
@@ -175,15 +177,17 @@ def _verify_recovery(directory: Path, project: Path, prepare_exit: int) -> dict:
     delivered_text = any(original["result_text"] in json.dumps(row.get("messages", row.get("input", [])), ensure_ascii=False)
                          for row in requests)
     policy_preserved = resumed["policy"] == original["policy"]
+    window_preserved = original["window_ref"] is not None and resumed["window_ref"] == original["window_ref"]
     checks = (prepare_exit == INTERRUPTED_EXIT, original["pid"] != resumed["pid"], edit_executions == 1,
               unchanged, artifact_correct, verification["ok"], policy_preserved, resumed["original_result_delivered"], delivered_text,
-              resumed["original_call_id_preserved"], resumed["stop_reason"] == "done")
+              resumed["original_call_id_preserved"], window_preserved, resumed["stop_reason"] == "done")
     return {
         "case": "recovery", "ok": all(checks), "prepare_exit_code": prepare_exit,
         "prepare_pid": original["pid"], "resume_pid": resumed["pid"], "edit_executions": edit_executions,
         "original_result_delivered": resumed["original_result_delivered"] and delivered_text,
         "original_call_id_preserved": resumed["original_call_id_preserved"],
-        "delivery_mode": "same_window_native_resume", "policy_preserved": policy_preserved,
+        "delivery_mode": f"same_window_{'native' if original['protocol'] == 'native' else 'text'}_resume",
+        "protocol_window_preserved": window_preserved, "policy_preserved": policy_preserved,
         "artifact_correct": artifact_correct,
         "stop_reason": resumed["stop_reason"], "verification": verification,
         "failure_stage": "" if all(checks) else "recovery_contract",

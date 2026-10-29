@@ -357,6 +357,34 @@ class ApiProvider:
             self._durable_source_entry_ids = (None,) * prefix + tuple(encoded_ids)
             self._history_revision += 1
 
+    def restore_protocol_window(self, ref: ProtocolWindowRef) -> None:
+        """Bind a cold durable projection to its original request's identity.
+
+        This changes only the in-memory provider view. The frozen request is
+        the authority; accepted live exchanges may never be rebound this way.
+        """
+        if not self._send_lock.acquire(blocking=False):
+            raise RuntimeError("API provider busy: cannot restore protocol window")
+        try:
+            with self._state_lock:
+                if ref.session_id != self._context_session or ref.binding != self._binding():
+                    raise ValueError("restored protocol window binding mismatch")
+                if self._window_ref == ref:
+                    return
+                ids = self._durable_source_entry_ids
+                prefix = 1 if self.system_prompt and self._messages else 0
+                if (self._active_response is not None or self._active_control is not None
+                        or len(ids) != len(self._messages) or any(identity is None for identity in ids[prefix:])):
+                    raise ValueError("cannot rebind live protocol history")
+                ledger = ContextLedger(identity=f"protocol:{ref.session_id}", window_ref=ref)
+                ledger.commit(self._messages, window_ref=ref)
+                self.context_ledger = ledger
+                self._window_ref = ref
+                self._generation += 1
+                self._history_revision += 1
+        finally:
+            self._send_lock.release()
+
     def send_turn(self, prompt: str, tools: list[ProviderToolDefinition] | None = None,
                   timeout: float | None = None) -> AssistantTurn:
         return self._exchange([{"role": "user", "content": prompt}], tools, timeout=timeout)

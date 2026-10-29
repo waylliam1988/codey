@@ -37,6 +37,24 @@ _NATIVE_FINAL_RULE = (
     "Preserve the user's requested final format inside that string. "
     "Requested JSON is a bare document without Markdown fences inside summary, not the outer tool-call object."
 )
+_TEXT_ACTION_RULE = (
+    "For actions, reply with exactly one bare JSON tool call per turn and wait for its result. "
+    "Do not wrap executable calls in code fences."
+)
+
+
+def _tool_contract_parts(tool_names: tuple[str, ...], contract_text: str, *, native: bool) -> list[str]:
+    parts = [f"Visible tools: {', '.join(tool_names) or 'none'}"]
+    if contract_text:
+        parts.append("Use the provided native tool schemas for tool names and arguments." if native else
+                     f"Tool contract (use exactly these shapes):\n{contract_text}")
+    return parts
+
+
+def _text_request_prompt(prompt: str, snapshot: TurnSnapshot) -> str:
+    """Every text continuation carries its own frozen executable contract."""
+    return "\n\n".join([*_tool_contract_parts(snapshot.tool_names, snapshot.contract_text, native=False),
+                         prompt, _TEXT_ACTION_RULE])
 
 
 def kernel_prompt_for_session(
@@ -54,7 +72,6 @@ def kernel_prompt_for_session(
     handoff = str(getattr(session, "handoff", "") or "").strip()
     project = str(getattr(session, "project", "") or "").strip() or "-"
     visible_names = tool_names
-    names = ", ".join(visible_names) or "none"
     parts = [
         f"User task (verbatim):\n{task_text or '(no task text)'}\n",
         f"Workspace: {project}\nTask kind: {getattr(session, 'task_kind', '')}",
@@ -69,12 +86,7 @@ def kernel_prompt_for_session(
             parts.append(current)
     if task_guidance:
         parts.append(task_guidance)
-    parts.append(f"Visible tools: {names}")
-    if contract_text:
-        if native:
-            parts.append("Use the provided native tool schemas for tool names and arguments.")
-        else:
-            parts.append(f"Tool contract (use exactly these shapes):\n{contract_text}")
+    parts.extend(_tool_contract_parts(visible_names, contract_text, native=native))
     if native:
         parts.append(
             "For actions, use native tool calls, not JSON in prose. "
@@ -82,8 +94,7 @@ def kernel_prompt_for_session(
         )
     else:
         parts.append(
-            "Answer directly when no action is needed. For actions, reply with exactly one bare JSON tool call "
-            "per turn and wait for its result. Do not wrap executable calls in code fences. "
+            "Answer directly when no action is needed. " + _TEXT_ACTION_RULE + " "
             "Deliver the final answer as normal text or call done. "
             r"Escape line breaks and tabs inside JSON strings as \n and \t. "
             r'For example: "content":"first line\nsecond line\n".'
@@ -147,7 +158,8 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
 
 def _completion_followup(feedback: str, *, native: bool) -> str:
     """Render completion feedback for its transport without changing the verdict."""
-    return feedback + "\n\n" + _NATIVE_FINAL_RULE if native else feedback
+    rule = _NATIVE_FINAL_RULE if native else "Fenced examples are answer text and do not execute tools."
+    return feedback + "\n\n" + rule
 
 
 def _result_context(result: ToolResult, session: TaskSession) -> str:

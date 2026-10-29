@@ -103,3 +103,44 @@ def test_bound_tool_delivery_rejects_wrong_window_before_transport(tmp_path, mon
     monkeypatch.setattr("codey.providers.api_transport.generate", lambda *a, **k: (_ for _ in ()).throw(AssertionError("HTTP")))
     with pytest.raises(ValueError, match="window reference"):
         provider.send_tool_results_bound([ProviderToolResult("call-1", "ok")], wrong)
+
+
+def test_cold_durable_projection_restores_original_request_window_without_new_history() -> None:
+    from codey.providers.api_provider import ApiProvider
+
+    original = ApiProvider("http://fixture/v1", "model")
+    original.bind_context("s")
+    ref = original.window_ref
+    assert ref is not None
+    restored = ApiProvider("http://fixture/v1", "model")
+    restored.bind_context("s")
+    messages = [{"role": "user", "content": "original task"}, {"role": "assistant", "content": "original reply"}]
+    restored.load_durable_context(messages, source_entry_ids=("user-entry", "reply-entry"))
+    assert restored.window_ref != ref
+    restored.restore_protocol_window(ref)
+    assert restored.window_ref == ref
+    assert restored.context_ledger.window_ref == ref
+    assert restored.context_ledger.view == messages
+    assert restored._durable_source_entry_ids == ("user-entry", "reply-entry")
+    before = restored.export_work_state()
+    restored.restore_protocol_window(ref)
+    assert restored.export_work_state() == before
+
+
+@pytest.mark.parametrize("mismatch", ["session", "binding", "live_history"])
+def test_restore_request_window_never_rebinds_another_session_model_or_live_exchange(mismatch) -> None:
+    from codey.providers.api_provider import ApiProvider
+
+    original = ApiProvider("http://fixture/v1", "model")
+    original.bind_context("s")
+    ref = original.window_ref
+    assert ref is not None
+    current = ApiProvider("http://fixture/v1", "other-model" if mismatch == "binding" else "model")
+    current.bind_context("another-session" if mismatch == "session" else "s")
+    if mismatch == "live_history":
+        current._messages = [{"role": "assistant", "content": "accepted live reply"}]
+        current._durable_source_entry_ids = (None,)
+    before = (current.window_ref, current.export_work_state())
+    with pytest.raises(ValueError, match="binding mismatch|live protocol history"):
+        current.restore_protocol_window(ref)
+    assert (current.window_ref, current.export_work_state()) == before
