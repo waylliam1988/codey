@@ -23,7 +23,9 @@ def render_research_observations(session: "TaskSession") -> str:
         recent.append({"result_ref": identity, "tool": name, "ok": result.ok,
                        **({"error": result.model_text[:400]} if not result.ok else {})})
         if result.ok:
-            items = result.canonical.get("evidence_items")
+            observation = result.canonical.get("research_observation")
+            items = (observation.get("evidence") if isinstance(observation, dict)
+                     else result.canonical.get("evidence_items"))
             if isinstance(items, list):
                 for item in items:
                     if isinstance(item, dict):

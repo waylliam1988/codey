@@ -213,7 +213,16 @@ class ResearchTools:
         if note.type == "source" and any(s in self.sources_read for s in note.sources):
             self.grounded_ids.add(note.id)
         references: list[dict[str, Any]] = self.store.note_references(note.id, revision) if hasattr(self.store, "note_references") else []
-        return ResearchToolOutput(note.to_markdown() + "\n\nStructured knowledge versions (use these for knowledge_refs):\n"
+        answer_refs = []
+        access = KnowledgeAccess(self.project, self.session_id, self.store.owner_id)
+        for ref in references:
+            target = self.store.repository.read(str(ref["target"]), int(ref["revision"]))
+            if target is not None and access.allows(target) and target.value.kind in {"claim", "inference", "question"}:
+                answer_refs.append({"id": target.value.id, "revision": target.revision})
+        preface = ("Legacy document note; its note_id is not a done.knowledge_refs object id.\n"
+                   "Answer reference candidates (use only versions actually adopted):\n"
+                   + canonical_json({"knowledge_refs": answer_refs[:6]}) + "\n\n") if answer_refs else ""
+        return ResearchToolOutput(preface + note.to_markdown() + "\n\nStructured knowledge versions (use these for knowledge_refs):\n"
                                   + canonical_json(references), ok=True)
 
     def _missing_knowledge_identity(self, identity: str) -> str:

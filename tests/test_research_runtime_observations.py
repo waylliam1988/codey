@@ -33,8 +33,9 @@ def test_observations_are_bounded_and_preserve_saved_claim_source_and_stance():
         session.record_evidence(f"https://example.com/{n}", "measured result")
         session._memory_results[f"receipt-{n}"] = ToolResult(
             call=ToolCall(name="knowledge_write", args={}), ok=True, model_text="saved",
-            canonical={"evidence_items": [{"claim": f"claim-{n}", "source_url": f"https://example.com/{n}",
-                                            "excerpt": "x" * 1000, "stance": "limits"}]})
+            canonical={"evidence_items": [{"source_url": f"https://example.com/{n}", "excerpt": "x" * 600}],
+                       "research_observation": {"evidence": [{"claim": f"claim-{n}",
+                            "source_url": f"https://example.com/{n}", "excerpt": "x" * 1000, "stance": "limits"}]}})
     state = json.loads(render_research_observations(session).split("summaries):\n", 1)[1].split("\n", 1)[0])
     assert len(state["opened_sources"]) == 10 and state["saved_evidence_count"] == 20
     assert len(state["recent_receipts"]) == 4 and len(state["saved_findings"]) == 6

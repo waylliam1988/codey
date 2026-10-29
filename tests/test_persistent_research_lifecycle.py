@@ -194,6 +194,12 @@ def test_repeated_staged_note_updates_keep_prior_evidence(tmp_path):
         claim = store.repository.read(stable_identity("claim", note_id, "Serialized writer"))
         assert {ref.relation for ref in claim.value.references} == {"supported_by", "limited_by"}
         assert len(store.note_references(note_id)) == 4
+        read = tools.knowledge_read(note_id)
+        assert read.ok and read.model_text.startswith("Legacy document note")
+        read_refs = next(json.loads(line)["knowledge_refs"] for line in read.model_text.splitlines()
+                         if line.startswith('{"knowledge_refs":'))
+        assert read_refs == [{"id": claim.value.id, "revision": claim.revision}]
+        assert read.model_text.index('"knowledge_refs"') < read.model_text.index("type: fact")
     finally:
         store.close()
 

@@ -628,3 +628,16 @@ strict final-report checks. No policy grants or completion checks were relaxed.
 only the reviewed ordinary done-repair hash changed. A fresh WAL live run is
 in progress and has actually searched/opened official documentation, saved
 evidence and read its saved note; final quality remains unaccepted.
+
+
+The repaired WAL live run saved a real official-source claim at turn 3, but
+repeatedly reused its document id in done.knowledge_refs after reading the note.
+It is unaccepted and was cancelled through the durable request_cancel barrier
+for a fresh diagnostic run; no process was killed or uncertain call replayed.
+Legacy note reads now lead with a bounded id/revision knowledge_refs fragment
+for accessible underlying claims/inferences/questions, before the document
+front matter. This is a candidate list, never an automatic choice. The runtime
+observation renderer now uses the lossless research_observation.evidence receipt
+for claim/stance; the smaller evidence_items projection contains only URL/quote.
+181 focused knowledge/research tests and seven subtests passed, plus all four
+static checks. Further live acceptance remains pending.
