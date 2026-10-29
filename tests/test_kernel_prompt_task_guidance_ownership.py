@@ -21,11 +21,11 @@ def _guidance(policy):
     return task_guidance_for_policy(policy)
 
 
-def test_full_research_guidance_preserves_existing_prompt_bytes():
+def test_full_research_guidance_reviewed_prompt_digest():
     policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
                         strict_research=True)
     assert hashlib.sha256(_guidance(policy).encode()).hexdigest() == (
-        "4cb5a9970d2357d8751d7ffe176ac06e8019f466398e08c8d99ea98553a3915d"
+        "6e9b242383c8821dc5eb70d8942a13f942b5c8e491138a064ffc5cf60f98500e"
     )
 
 

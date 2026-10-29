@@ -85,6 +85,28 @@ def test_commit_safe_replay_returns_original_receipt_after_restart(tmp_path):
         store.close()
 
 
+def test_mistyped_identity_suggestions_are_scoped_and_never_choose_a_match(tmp_path):
+    store = KnowledgeStore(tmp_path)
+    try:
+        prefix = "entity-0123456789"
+        for i in range(12):
+            store.repository.commit(f"private-prefix-{i}", [M(K(prefix + f"{i:02d}" + "c" * 24,
+                "entity", "Secret", "source", title="Private", scope="project", scope_id="hidden"))])
+        public = [prefix + "a" * 24, prefix + "b" * 24]
+        store.repository.commit("visible-prefix", [M(K(identity, "entity", "Public", "source", title="Visible"))
+                                                   for identity in public])
+        tools = ResearchTools(None, store, None, project="public-project", session_id="chat")
+        result = tools.knowledge_read(prefix + "wrong-spelling")
+        assert not result.ok and "not read or selected" in result.model_text
+        assert all(identity in result.model_text for identity in public)
+        assert "Private" not in result.model_text and "hidden" not in result.model_text
+        assert tools.knowledge_read(public[0]).ok
+        missing_revision = tools.knowledge_read(public[0], revision=99)
+        assert not missing_revision.ok and '"revision":1' in missing_revision.model_text
+    finally:
+        store.close()
+
+
 def test_candidate_note_is_preserved_as_uncertain_and_undo_withdraws(tmp_path):
     store = KnowledgeStore(tmp_path)
     try:

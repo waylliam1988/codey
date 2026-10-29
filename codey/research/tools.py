@@ -13,7 +13,7 @@ from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import clean_relations, normalize_concept
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, canonical_json
 from codey.knowledge.note import LINK_KINDS, NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
-from codey.knowledge.recall import KnowledgeAccess, render_recall
+from codey.knowledge.recall import KnowledgeAccess, KnowledgeHit, render_recall
 from codey.knowledge.store import KnowledgeLinkResult, KnowledgeStore
 from codey.research.ledger import EvidencePreparation, ResearchLedger
 from codey.research.source_gateway import (
@@ -206,7 +206,14 @@ class ResearchTools:
             return ResearchToolOutput(canonical_json(payload), ok=True)
         note = self.store.read_note((note_id or "").strip(), **({"revision": revision} if revision is not None else {}))
         if note is None:
-            return ResearchToolOutput(f"ERROR: no note with id {note_id}", ok=False)
+            hints: list[KnowledgeHit] = (
+                self.store.search(note_id[:16], project=self.project, session_id=self.session_id, depth=0, limit=3)
+                if len(note_id) >= 24 else [])
+            suggestion = ("\nPossible exact ids (not read or selected; verify with knowledge_read):\n" +
+                canonical_json([{"id": hit.version.value.id, "revision": hit.version.revision,
+                                 "title": hit.version.value.title} for hit in hints])) if hints else ""
+            return ResearchToolOutput(f"ERROR: no knowledge object or note with id {note_id} at the requested version. "
+                "Copy an exact id and revision from knowledge_search; do not guess or shorten it." + suggestion, ok=False)
         if (note.project and note.project != self.project
                 or not note.project and note.session_id and note.session_id != self.session_id):
             return ResearchToolOutput("ERROR: knowledge scope mismatch", ok=False)
@@ -444,7 +451,7 @@ def _prepare_write_sources(
     updating: bool,
     note_type: str,
 ) -> tuple[list[str], str | None]:
-    sources = (
+    sources: list[str] = (
         _as_str_list(args.get("sources"))
         if "sources" in args
         else list(existing_note.sources if existing_note is not None else [])

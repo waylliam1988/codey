@@ -368,3 +368,41 @@ repairs. That branch now gives the same targeted repair instruction; unrelated
 source/verification failures retain their original instruction. Not-applicable
 checks do not count as failures for this feedback choice. 12 focused completion
 tests passed, including preservation of an unbound claim and targeted feedback.
+
+
+## Cross-session recall failures and repairs
+
+The clean first stage is followed by retained `recall-attempt1` through
+`recall-attempt4` artifacts. These are failures: Gemma returned proposed commit
+JSON as report examples, sometimes after misspelling a long knowledge identity,
+and no candidate was persisted. The absence of project edits meant the ordinary
+completion checks could not prove this natural-language save instruction.
+The harness correctly rejected these mechanically completed answers. The
+second attempt also reused the failed conversation; stages now have distinct
+session names and --session-id permits an explicitly fresh diagnostic retry.
+
+Added common, permission-aware knowledge action guidance. It tells the model
+to execute requested saves and await success, read versions before adopting or
+revising, and retain candidate status. Read-only/denied capabilities are not
+advertised. The reviewed task-guidance digest was intentionally updated.
+
+The text-protocol kernel now asks for explicit delivery when prose contains a
+knowledge write/commit request: either execute one bare request, or intentionally
+deliver the example inside done.summary. It never executes extracted prose or
+fenced examples. Native prose and JSON answer data remain non-executable. This
+is a framing repair, not a semantic guarantee that an explicitly submitted done
+satisfies every user instruction.
+
+Missing-id errors now suggest up to three scoped literal-prefix candidates,
+without selecting or reading one. Search supports bounded literal id prefixes;
+identity, scope, revision checks and optimistic concurrency remain unchanged.
+Regression coverage checks ambiguous public candidates, more than a page of
+private candidates, and a missing historical revision. Private IDs are filtered
+before the candidate limit. No fuzzy identity resolution was introduced.
+
+33 decoder/knowledge/guidance tests and 66 production-entry/Local/API tests
+passed; the earlier expanded guidance set passed 110 tests. Ruff, mypy and ty
+passed. Pyrefly initially found two missing local list annotations; those were
+added and its rerun passed with unchanged existing warnings/suppressions.
+The current `research-recall-guarded` run is the first fresh process containing
+both the framing check and missing-id suggestions; outcome remains pending.

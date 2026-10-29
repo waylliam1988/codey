@@ -58,6 +58,10 @@ class KnowledgeRecall:
                 "ON v.id=h.id AND v.revision=h.revision ")
         where = f" AND {scope} AND v.status NOT IN ('withdrawn','superseded') "
         seeds: list[tuple[str, int, str]] = []
+        if re.fullmatch(r"[a-z][a-z0-9_-]{15,127}", query):
+            rows = conn.execute(head + "WHERE v.id GLOB ?" + where + "ORDER BY v.id LIMIT ?",
+                                (query + "*", *args, limit)).fetchall()
+            seeds.extend((str(r[0]), int(r[1]), "literal id prefix; confirm the exact identity") for r in rows)
         # Explicit aliases can be multilingual and ambiguous. Return all candidates;
         # do not merge them or invent semantic identity from proximity.
         rows = conn.execute(head + "WHERE EXISTS (SELECT 1 FROM knowledge_aliases a WHERE a.id=v.id "

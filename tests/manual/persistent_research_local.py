@@ -23,7 +23,7 @@ URLS = ("https://www.sqlite.org/wal.html", "https://www.sqlite.org/isolation.htm
 
 
 def stage(directory, name, upstream, model, native=False, live_web=False, question="", max_turns=12, thinking=False,
-          temperature=0.3, seed=73, diagnostic_stacks=False, reasoning_effort=None):
+          temperature=0.3, seed=73, diagnostic_stacks=False, reasoning_effort=None, session_id=None):
     from unittest.mock import patch
 
     from codey.app import headless_runner
@@ -35,12 +35,14 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
     from codey.providers.model_preferences import ModelPreferences
 
     documents = [] if live_web else json.loads((directory / "sources.json").read_text(encoding="utf-8"))
+    session_id = session_id or f"research-{name}"
     (directory / f"{name}-control.json").write_text(json.dumps({
         "model": model, "temperature": temperature, "seed": seed, "native_tools": native,
         "stream": native, "thinking": thinking, "live_web": live_web, "max_turns": max_turns,
         "question": question,
         "diagnostic_stacks": diagnostic_stacks,
         "reasoning_effort": reasoning_effort,
+        "session_id": session_id,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     events = directory / f"{name}-events.jsonl"
     wire = directory / f"{name}-wire.jsonl"
@@ -154,7 +156,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         local_config.save_local_config(local_config.LocalProviderConfig(base_url=upstream + "/v1", model=model,
             native_tools_mode="on" if native else "off", thinking_enabled=thinking, connection_revision="persistent-research-probe"))
         request = headless_runner.HeadlessRequest(project=None, task=tasks[name], provider_id="local",
-            max_turns=max_turns, session_id="research-first" if name in {"first", "research"} else "research-later",
+            max_turns=max_turns, session_id=session_id,
             state_home=directory / "state", research_store_root=directory / "knowledge",
             intent="research" if name in {"first", "research"} else "hybrid", sources_open_required=live_web,
             requested_capabilities=("knowledge.read", "knowledge.write", "web.read"))
@@ -187,8 +189,8 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
         if result.exit_code:
             raise RuntimeError(f"{name} failed: {vars(result)}")
+        observed = {row.get("tool_name") for row in events_seen if row.get("type") == "tool" and row.get("ok")}
         if name == "research":
-            observed = {row.get("tool_name") for row in events_seen if row.get("type") == "tool" and row.get("ok")}
             if (not {"web_search", "knowledge_write"} <= observed
                     or not observed.intersection({"open_url", "open_result", "open_hit"})
                     or not any(any(r.relation == "supported_by" for r in v.value.references) for v in versions)):
@@ -205,10 +207,12 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
                         and any("嵌入式数据文件" in v.value.aliases for v in versions)
                         and any(v.value.conditions.get("workload", {}).get("state") == "not_extracted" for v in versions))
         elif name == "recall":
-            accepted = any(v.value.status == "candidate" and any(r.relation == "depends_on" for r in v.value.references)
+            accepted = {"knowledge_search", "knowledge_read", "knowledge_commit"} <= observed and any(
+                           v.value.status == "candidate" and any(r.relation == "depends_on" for r in v.value.references)
                            for v in versions)
         else:
-            accepted = any(v.revision >= 2 and v.value.conditions.get("workload", {}).get("state") == "not_extracted"
+            accepted = {"knowledge_read", "knowledge_commit"} <= observed and any(
+                           v.revision >= 2 and v.value.conditions.get("workload", {}).get("state") == "not_extracted"
                            and v.value.provenance.get("interpretation") == "analogy_requires_queue_measurement"
                            for v in versions)
         if not accepted:
@@ -222,6 +226,7 @@ def main():
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--upstream", default="http://127.0.0.1:5001")
     parser.add_argument("--stage", choices=("first", "recall", "revise", "research"))
+    parser.add_argument("--session-id", help="Use a fresh conversation for a diagnostic retry on the same knowledge store")
     parser.add_argument("--native", action="store_true", help="Use the server's structured tool protocol")
     parser.add_argument("--thinking", action="store_true", help="Enable the model's reasoning mode")
     parser.add_argument("--reasoning-effort", choices=("minimal", "low", "medium", "high"),
@@ -243,7 +248,7 @@ def main():
         if args.stage == "research" and (not args.live_web or not question.strip()):
             parser.error("research requires --live-web and --question-file")
         stage(directory, args.stage, args.upstream, model, args.native, args.live_web, question, args.max_turns,
-              args.thinking, args.temperature, args.seed, args.diagnostic_stacks, args.reasoning_effort)
+              args.thinking, args.temperature, args.seed, args.diagnostic_stacks, args.reasoning_effort, args.session_id)
         return
     documents = []
     from codey.research.extract import extract_text, extract_title

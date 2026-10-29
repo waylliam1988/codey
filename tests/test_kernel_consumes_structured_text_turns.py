@@ -38,3 +38,24 @@ def test_kernel_rejects_raw_text_without_running_the_text_decoder() -> None:
     assert plan.calls == []
     assert plan.protocol_error_kind == "raw_text"
     assert "decoded" in plan.protocol_error
+
+
+def test_embedded_knowledge_action_requires_explicit_delivery_without_executing_example():
+    import json
+
+    from codey.providers.base import AssistantTurn
+
+    policy = TaskPolicy(grants=frozenset({"control", "knowledge.write"}))
+    text = 'Candidate inference:\n```json\n{"tool":"knowledge_commit","args":{}}\n```'
+    plan = normalize_turn(decode_text_turn(text), policy=policy)
+    assert plan.protocol_error_kind == "embedded_tool_request" and not plan.calls
+    assert "not executed" in plan.protocol_error and "done.summary" in plan.protocol_error
+    explicit = normalize_turn(decode_text_turn(json.dumps({"tool": "done", "args": {"summary": text}})), policy=policy)
+    assert not explicit.protocol_error and explicit.control.body == text
+    # Native prose and JSON answer data do not become executable or get reinterpreted.
+    native = normalize_turn(AssistantTurn(text=text), policy=policy)
+    assert not native.protocol_error and not native.calls and native.control.body == text
+    data = normalize_turn(decode_text_turn('{"example":{"tool":"knowledge_commit","args":{}}}'), policy=policy)
+    assert not data.protocol_error and not data.calls
+    readonly = normalize_turn(decode_text_turn(text), policy=POLICY)
+    assert not readonly.protocol_error and not readonly.calls
