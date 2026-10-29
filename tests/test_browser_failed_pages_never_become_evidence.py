@@ -18,6 +18,9 @@ URL = "https://example.com/article"
 @pytest.mark.parametrize("transport", ["http", "browser"])
 @pytest.mark.parametrize("html,failure", [
     ("<html><title>Blank</title><body></body></html>", "page_blank"),
+    ('<html><body>Show glossary<div aria-hidden="true"><p>Clinical trial glossary definitions.</p>'
+     '<div style="display:none">' + "Unrelated definitions. " * 100 + '</div></div>'
+     '<app-root></app-root></body></html>', "page_blank"),
     ("<html><body>Checking your browser before accessing this article</body></html>", "page_unavailable"),
     ("<html><body>ERROR: sample diagnostic explained by this documentation article.</body></html>", ""),
 ])

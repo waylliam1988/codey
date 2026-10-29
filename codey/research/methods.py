@@ -58,6 +58,10 @@ def research_method_guidance(question: str) -> str:
         "Preserve observed results, author interpretations, user statements and model inferences separately. "
         "For knowledge_write, conditions can use {name:{state:reported,value:...}} or state "
         "not_reported/not_extracted/not_applicable. Leave unknown information unknown; never fill a template by guessing.",
+        "After reading a useful passage, save the supported finding with knowledge_write and its exact original "
+        "excerpt before drafting the report. Copy source_url exactly from opened source references. "
+        "If the page is mostly navigation or the passage is omitted, use source_search and a bounded read; "
+        "a title or search snippet is not the full study. Wait for each tool result; proposed calls are not saved facts.",
         "Before done, check important claims against original evidence, contrary findings, scope and time. "
         "Record unresolved questions and limitations; search absence is not a negative finding. "
         "Multiple reports of one study are not independent evidence. Old answers, Ghost affinity and "

@@ -16,6 +16,8 @@ _HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 _DELETED_TAGS = {"s", "del", "strike"}
 _MULTI_BLANK_RE = re.compile(r"\n{3,}")
 _SPACES_RE = re.compile(r"[ \t\f\v]+")
+_HIDDEN_STYLE_RE = re.compile(r"(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\s*(?:!important\s*)?(?:;|$)", re.I)
+_VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
 
 
 class _Extractor(HTMLParser):
@@ -27,8 +29,16 @@ class _Extractor(HTMLParser):
         self._in_title = False
         self._in_head = False
         self._title_seen = False
+        self._hidden_tags: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: Any) -> None:
+        attributes = dict(attrs)
+        hidden = ("hidden" in attributes or (attributes.get("aria-hidden") or "").lower() == "true"
+                  or _HIDDEN_STYLE_RE.search(attributes.get("style", "") or ""))
+        if self._hidden_tags or hidden:
+            if tag not in _VOID_TAGS:
+                self._hidden_tags.append(tag)
+            return
         if tag == "head":
             self._in_head = True
         if tag in _SKIP_TAGS:
@@ -45,6 +55,13 @@ class _Extractor(HTMLParser):
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
+        if self._hidden_tags:
+            if tag in self._hidden_tags:
+                # Tolerate omitted/mismatched HTML end tags without consuming
+                # the next visible sibling as hidden content.
+                index = len(self._hidden_tags) - 1 - self._hidden_tags[::-1].index(tag)
+                del self._hidden_tags[index:]
+            return
         if tag == "head":
             self._in_head = False
         if tag in _SKIP_TAGS and self._skip_depth > 0:
@@ -57,6 +74,8 @@ class _Extractor(HTMLParser):
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
+        if self._hidden_tags:
+            return
         if self._in_title:
             self.title += data
             return

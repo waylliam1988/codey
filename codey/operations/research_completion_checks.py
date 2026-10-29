@@ -118,6 +118,10 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
                      "A hypothesis without source excerpts does not satisfy this requirement. "
                      "The excerpt must support the actual predicate and conditions of the claim; "
                      "use source_search or an offset read if the relevant passage was omitted.")
+        parts.append("Save a scoped finding and wait for a successful knowledge_write result before another done. "
+                     "Previously proposed or displayed calls are not saved evidence. Report formatting and "
+                     "citation repairs can follow after evidence is actually saved.")
+        return "\n\n".join(parts)
     if "research_claim_bindings" in failed:
         parts.append("Some conclusion/evidence statements could not be linked to saved claim excerpts. "
                      "This is a text-binding check, not a verdict that the statement is false. "

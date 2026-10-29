@@ -432,3 +432,37 @@ Verification: 113 focused entry, policy recovery, codec and durable tests passed
 Production Pyrefly and ty passed (existing warnings/suppressions unchanged);
 Ruff and mypy also passed before this expanded run. Live medicine research is
 still running and has searched/opened original sources; this is not acceptance.
+
+
+## Live web acquisition and feedback diagnosis
+
+The medicine run really opened Nature, Cancers/MDPI, a PMC preprint and a
+ClinicalTrials.gov URL. Browser DOM inspection found the registry app-root empty
+while a large aria-hidden glossary made acquisition look successful. Generic
+HTML extraction now excludes hidden, aria-hidden and inline display/visibility
+hidden subtrees. The captured page reduces from about 40 KB to "Show glossary";
+the existing bounded settle/fallback rejects it as page_blank, so it cannot
+become citable study evidence. Browser and HTTP gateway regressions cover this
+shell and confirm that no opened-source/evidence ledger entry is created.
+This repairs false content availability; it does not make the registry's JS
+application load or certify study identity.
+
+The same run proposed multiple writes without executing them, then repeatedly
+returned an ungrounded report. Missing-evidence feedback now prioritizes one
+actual sourced save instead of simultaneously telling the model to repair using
+already-saved evidence. Common research guidance asks for exact passage capture
+after reading and exact opened URLs. No treatment conclusions or quotes are
+inserted by these changes; live report quality remains unaccepted.
+
+The medicine run ended at turn 12 with an unknown generation outcome, exactly
+180 seconds after send (WinError 10038 following the deadline socket shutdown).
+It did not save evidence and failed acceptance. The manual probe had an
+artificial 180-second request cap while production ApiProvider defaults to 600;
+--provider-timeout now records/exposes the actual setting and defaults to the
+production budget. This is a harness correction, not a production timeout fix
+or a replay of the unknown request. The generated medical prose also contained
+unsupported clinical generalizations and must not be treated as verified.
+
+Focused checks for hidden source content, gateway, completion feedback, report
+shape and knowledge lifecycle passed 63 tests; prompt ownership/golden/repair
+checks passed 23 tests. Ruff, mypy (551 files), Pyrefly and ty passed.

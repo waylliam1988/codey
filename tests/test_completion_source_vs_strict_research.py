@@ -123,6 +123,20 @@ def test_missing_evidence_and_wrong_knowledge_id_receive_specific_repair_guidanc
     assert "hypothesis without source excerpts" in text
 
 
+def test_missing_evidence_feedback_prioritizes_actual_save_over_report_formatting():
+    from codey.completion.contract import CHECK_FAIL, CHECK_NOT_RUN, CompletionCheck
+    from codey.operations.research_completion_checks import research_completion_feedback
+
+    text = research_completion_feedback(_session(TaskPolicy(grants=frozenset({"control"}))), "", None, [
+        CompletionCheck("research_evidence_saved", CHECK_NOT_RUN, "research_evidence_missing"),
+        CompletionCheck("research_claim_bindings", CHECK_FAIL, "report_claim_binding_incomplete"),
+        CompletionCheck("research_report_sections", CHECK_FAIL, "report_unmapped_numeric_refs"),
+    ])
+    assert "successful knowledge_write result before another done" in text
+    assert "using the evidence already saved" not in text
+    assert "Saved claim wording available" not in text
+
+
 def test_complete_sections_with_bad_source_table_get_citation_not_heading_feedback():
     from codey.completion.contract import CHECK_FAIL, CompletionCheck
     from codey.operations.research_completion_checks import research_completion_feedback

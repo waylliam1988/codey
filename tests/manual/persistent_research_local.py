@@ -23,7 +23,8 @@ URLS = ("https://www.sqlite.org/wal.html", "https://www.sqlite.org/isolation.htm
 
 
 def stage(directory, name, upstream, model, native=False, live_web=False, question="", max_turns=12, thinking=False,
-          temperature=0.3, seed=73, diagnostic_stacks=False, reasoning_effort=None, session_id=None):
+          temperature=0.3, seed=73, diagnostic_stacks=False, reasoning_effort=None, session_id=None,
+          provider_timeout=600):
     from unittest.mock import patch
 
     from codey.app import headless_runner
@@ -43,6 +44,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         "diagnostic_stacks": diagnostic_stacks,
         "reasoning_effort": reasoning_effort,
         "session_id": session_id,
+        "provider_timeout": provider_timeout,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     events = directory / f"{name}-events.jsonl"
     wire = directory / f"{name}-wire.jsonl"
@@ -103,7 +105,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
 
         counter, window = admitted_counter(upstream + "/v1", "", "openai-completions", 32768)
         record({"event": "connection_budget", "counter": counter, "window": window})
-        return ObservedProvider(upstream + "/v1", model, timeout=180, temperature=temperature,
+        return ObservedProvider(upstream + "/v1", model, timeout=provider_timeout, temperature=temperature,
                            thinking_enabled=thinking, reasoning_effort=reasoning_effort,
                            output_tokens=5000 if thinking or reasoning_effort else 2500, context_reserve_tokens=5500, native_tools=native,
                            stream=native, context_window_tokens=window,
@@ -239,6 +241,8 @@ def main():
     parser.add_argument("--question-file", type=Path)
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument("--stage-timeout", type=int, default=900)
+    parser.add_argument("--provider-timeout", type=float, default=600,
+                        help="Per-request deadline; defaults to the production ApiProvider budget")
     parser.add_argument("--temperature", type=float, default=0.3, help="Local production default; recorded per stage")
     parser.add_argument("--seed", type=int, default=73, help="Fixed sampling seed for reproducible diagnostics")
     args = parser.parse_args()
@@ -251,7 +255,8 @@ def main():
         if args.stage == "research" and (not args.live_web or not question.strip()):
             parser.error("research requires --live-web and --question-file")
         stage(directory, args.stage, args.upstream, model, args.native, args.live_web, question, args.max_turns,
-              args.thinking, args.temperature, args.seed, args.diagnostic_stacks, args.reasoning_effort, args.session_id)
+              args.thinking, args.temperature, args.seed, args.diagnostic_stacks, args.reasoning_effort, args.session_id,
+              args.provider_timeout)
         return
     documents = []
     from codey.research.extract import extract_text, extract_title
@@ -271,6 +276,7 @@ def main():
         subprocess.run([sys.executable, "-X", "utf8", "-m", "tests.manual.persistent_research_local",
                         "--directory", str(directory), "--upstream", args.upstream, "--stage", name,
                         "--temperature", str(args.temperature), "--seed", str(args.seed),
+                        "--provider-timeout", str(args.provider_timeout),
                         "--max-turns", str(args.max_turns), *(["--native"] if args.native else []),
                         *(["--diagnostic-stacks"] if args.diagnostic_stacks else []),
                         *(["--reasoning-effort", args.reasoning_effort] if args.reasoning_effort else []),
