@@ -479,7 +479,15 @@ class ExecutionDelegate:
             if name in {"open_result", "reopen_source", "open_hit"}:
                 url = self._resolve_alias_url(name, args)
                 if not url:
-                    return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown {name} id"), False, None
+                    field, available = {
+                        "open_result": ("result_id", self.session.search_results),
+                        "reopen_source": ("source_id", self.session.source_ids),
+                        "open_hit": ("hit_id", self.session.hit_targets),
+                    }[name]
+                    detail = (f"ERROR: unknown {name} id. Use {field} from these observed ids: "
+                              + ", ".join(list(available)[-12:])
+                              + ". A tool result_ref or out_ artifact handle is not a source locator.")
+                    return ToolResult(ok=False, call=call, model_text=detail), False, None
                 target = (getattr(self.session, "hit_targets", {}) or {}).get(
                     str(args.get("hit_id") or "").lower(), {}
                 ) if name == "open_hit" else dict[str, Any]()

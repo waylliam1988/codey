@@ -102,6 +102,48 @@ def strict_research_checks(session: Any, done_text: str, context: Any = None) ->
     return _ledger_checks(session, done_text, context)
 
 
+def research_completion_feedback(session: Any, text: str, context: Any, checks: list[CompletionCheck]) -> str:
+    """Explain failed report checks without rewriting the proposed answer."""
+    failed = {row.check_id for row in checks if row.status != CHECK_PASS}
+    parts: list[str] = []
+    if "knowledge_versions" in failed:
+        parts.append("done.knowledge_refs must use the structured object id and revision from "
+                     "Structured knowledge versions or knowledge_read, not a note_id, Markdown path, "
+                     "source id, tool result_ref or old answer. Read the cited object before resubmitting; "
+                     "do not guess an id or a revision.")
+    if "research_evidence_saved" in failed:
+        parts.append("No citable evidence has been saved. Use knowledge_write with type=fact, "
+                     "sources=[an opened URL], and evidence=[{claim:your conclusion,source_url:the same URL,"
+                     "excerpt:exact text read from that page,stance:supports}]. "
+                     "A hypothesis without source excerpts does not satisfy this requirement. "
+                     "The excerpt must support the actual predicate and conditions of the claim; "
+                     "use source_search or an offset read if the relevant passage was omitted.")
+    if "research_report_sections" in failed:
+        from codey.reviews.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
+
+        sections = parse_sections(text)
+        missing = [section_title(key) for key in REQUIRED_SECTIONS if not sections.get(key, "").strip()]
+        parts.append("Repair report formatting using the evidence already saved; this alone does not require another search. "
+                     "Each required heading must be on its own line, followed by its content. "
+                     "Missing sections: " + ", ".join(missing) + ". Required headings:\n" +
+                     "\n".join("## " + section_title(key) for key in REQUIRED_SECTIONS))
+        if "\\n" in text and "\n" not in text:
+            parts.append("The summary contains literal backslash+n text, not line breaks. "
+                         "Resend summary with actual paragraph newlines after argument decoding. "
+                         "Prefer done.report_sections: put the conclusion in summary, and supply "
+                         "evidence, counter, source_quality, coverage, sources as arrays of paragraphs. "
+                         "The application adds headings and paragraph breaks. "
+                         "Keep the report content and citations; no automatic text repair was applied.")
+    ledger = _context_get(context, "research_ledger")
+    if "research_report_quality" in failed and ledger is not None:
+        from codey.research.report_quality import review_report_quality
+
+        review = review_report_quality(text, ledger=ledger, opened_sources=ledger.final_url_set(),
+                                      search_result_urls=set(getattr(session, "search_results", {}).values()))
+        parts.append(review.message)
+    return "\n\n".join(parts)
+
+
 def _ledger_checks(session: Any, done_text: str, context: Any) -> list[CompletionCheck]:
     def get(key: str) -> Any:
         return _context_get(context, key)

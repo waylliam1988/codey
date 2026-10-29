@@ -25,7 +25,8 @@ def read_tool_result(delegate: Any, call: ToolCall) -> ToolResult:
             raise ValueError("view must be output or value")
         result = delegate.session._memory_results.get(identity)
         if result is None:
-            raise ValueError("stored result unavailable in this task")
+            raise ValueError("stored result unavailable in this task; copy the complete result_ref from Result metadata, "
+                             "not an out_ artifact handle, search result id or source id")
         text = result.model_text
         managed = result.audit.get("managed_output")
         clipped = result.truncated

@@ -11,7 +11,10 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
     if policy.allows("web.read"):
         rules += "Use web_search, then open_result or open_url before citing a source. "
     if policy.allows("knowledge.write"):
-        rules += "Save short exact excerpts with knowledge_write. "
+        rules += ("Save short exact excerpts with knowledge_write: type=fact, sources=[opened URL], "
+                  "evidence=[{claim:conclusion,source_url:the same URL,excerpt:exact original text,stance:supports}]. "
+                  "Each excerpt must support the actual claim, not merely mention the same topic. "
+                  "Read omitted passages with source_search or offset reads before quoting them. ")
     rules += (
         "Use only local tool results as evidence, including when a web model has built-in browsing. "
         f"Finish with done and these report sections: {', '.join(titles)}. "
@@ -27,8 +30,8 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         )
     if policy.allows("knowledge.read"):
         checklist += (
-            "After a completion rejection, use knowledge_read to inspect the saved evidence "
-            "and repair the report before trying done again. "
+            "After a completion rejection, repair the specific reported defect. "
+            "Use knowledge_read only if saved evidence needs inspection; formatting errors require no new reads. "
         )
     else:
         checklist += "After a completion rejection, repair the report using the available tool results. "
@@ -40,12 +43,19 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         if policy.allows("knowledge.read"):
             checklist += knowledge_read_id_guidance(source_tool="knowledge_write")
     report = (
-        "Report format is strict: use these literal Markdown headings, each on its own line: "
+        "Preferred report arguments: done.summary is the conclusion with [1]-style citations; "
+        "done.report_sections={evidence:[text],counter:[text],source_quality:[text],coverage:[text],sources:[text]}. "
+        "Each array contains the paragraphs for that section. The application adds headings and actual line breaks, "
+        "so these values need no manually encoded newline separators. "
+        "Alternatively supply a complete Markdown report in summary alone. "
+        "When using summary alone, report format is strict: use these literal Markdown headings, each on its own line: "
         f"{', '.join('## ' + title for title in titles)}. "
         "Do not replace headings with bold labels or inline prose. Put [1]-style citations "
         "in 结论 and 关键证据; 反证与限制 must cite [n] or explicitly say 未找到强反证 "
         "and state what was searched. A valid no-counter example is exactly: "
         "- 未找到强反证；本轮仅检索并打开上述来源。[1]. In 来源, list each cited source as "
         "[1] Title - https://...; use only URLs opened and saved in this run."
+        " Preserve deleted/struck-through text as historical, not current guidance; check adjacent version exceptions. "
+        "When using summary alone, it must contain actual multiline Markdown after argument decoding."
     )
     return "\n\n".join((rules, checklist.rstrip(), report))

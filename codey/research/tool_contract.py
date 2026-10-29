@@ -114,6 +114,9 @@ TOOL_CONTRACTS = {
         },
         example='{"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"relations":[{"src":"war","dst":"helium supply","kind":"affects"}],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}',
         description="save small source/fact/hypothesis/conclusion/question notes; final reports must use done. "
+                    "For sourced findings use type=fact, sources=[opened URL strings], and "
+                    "evidence=[{claim:your conclusion,source_url:opened URL,excerpt:exact original text,stance:supports}]. "
+                    "Do not relabel an unsupported fact as hypothesis to bypass missing sources. "
                     "conditions must be an object: {name:{state:reported,value:...}} or state "
                     "not_reported/not_extracted/not_applicable. Keep unknowns unknown. "
                     "confidence is not evidence strength. Use knowledge_commit with restricted scope for user observations.",
@@ -144,9 +147,12 @@ TOOL_CONTRACTS = {
         name="done",
         required={"summary": str},
         optional={"open_questions": ToolArg(list, None, singleton_dict=True, list_item_type=str),
-                  "knowledge_refs": ToolArg(list, None, list_item_type=dict)},
+                  "knowledge_refs": ToolArg(list, None, list_item_type=dict), "report_sections": ToolArg(dict, None)},
         example='{"tool":"done","args":{"summary":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}',
-        description="",
+        description="For a structured research report, summary is the conclusion with citations, and "
+                    "report_sections supplies evidence, counter, source_quality, coverage, sources as arrays of text paragraphs. "
+                    "The application adds the six headings and paragraph breaks; all evidence checks still apply. "
+                    "Without report_sections, summary is the complete final answer.",
     ),
 }
 
@@ -290,6 +296,13 @@ def validate_tool_args(tool: str, args: dict[str, Any]) -> ContractResult:
         output[name] = coerced.args[name]
     if tool == "knowledge_write" and str(output.get("type") or "").strip().lower() == "synthesis":
         return _invalid("done required for final synthesis; knowledge_write.type must not be 'synthesis'")
+    if tool == "done" and "report_sections" in output:
+        from codey.reviews.report_sections import render_done_report
+
+        try:
+            render_done_report(output["summary"], output["report_sections"])
+        except ValueError as exc:
+            return _invalid(str(exc))
     return ContractResult(True, args=output)
 
 

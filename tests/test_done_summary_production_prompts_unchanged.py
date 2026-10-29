@@ -71,7 +71,8 @@ def test_initial_result_and_repair_prompt_surfaces_have_frozen_hashes() -> None:
     assert "not evidence that the host has no network access" in initial
     assert _sha256(initial) == "c56b7f57796bc20e5ec1b896e682904de23ac951e714818c257977532bca381f"
     assert _sha256(result) == "591c80828028a2103608e4d5a081bfd484d6d0fb755950c423cf8241b9876522"
-    assert _sha256(repair) == "3cd8d2df39ead1d6355c2db9fa871d62043bffe29906649f424c96d90afcebad"
+    # Reviewed addition: pinned knowledge references and structured report arguments.
+    assert _sha256(repair) == "85ac38526495a924edb1804eb2c939ee4b56719d4807a66b4cf0cbc10eaddc3d"
 
 
 def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> None:
@@ -95,10 +96,10 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> Non
     assert len(provider.prompts) == 1
     prompt = (provider.prompts[0].replace(str(project), "<PROJECT>")
               .replace(json.dumps(str(project))[1:-1], "<PROJECT>"))
-    # Reproduced on the immutable 1e3ea099 baseline with the current Windows shell version.
+    # Reviewed with pinned knowledge references and structured report arguments.
     # The live prompt is hashed as one canonical surface so CodeMode/tool
     # contract changes cannot be silently accepted by a stale fixture.
     assert "ask_user" in prompt
     assert "Calls return {ok:true, value}" in prompt
     assert "Only frozen read-only tools" not in prompt
-    assert _sha256(prompt) == "797db30ccae0e17bcbf3266ab213cbf1a74b777677e9122c5a342bb8c078d6e6"
+    assert _sha256(prompt) == "271a76c8d82cb2aae8d55e41b718028b02f39e5c3078e94fab609f72fed12c5e"

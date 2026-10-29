@@ -30,13 +30,20 @@ def parameter_schemas(tool: str) -> dict[str, Any]:
         return {"changes": _array(_object({"expected_revision": {"type": "integer", "minimum": 0}, "value": value},
                                            "expected_revision", "value"))}
     if tool == "knowledge_write":
+        from codey.knowledge.note import NOTE_TYPES
+
         # Preserve the ledger's legacy field aliases and optional fallback claim.
         evidence = _object({"claim": text, "source_url": text, "source": text, "excerpt": text, "quote": text,
                             "stance": text, "page": {"type": "integer", "minimum": 1},
                             "p": {"type": "integer", "minimum": 1}, "locator": text})
-        return {"sources": _array(text), "tags": _array(text), "aliases": _array(text), "evidence": _array(evidence),
+        return {"type": {"type": "string", "enum": list(NOTE_TYPES)},
+                "sources": _array(text), "tags": _array(text), "aliases": _array(text), "evidence": _array(evidence),
                 "conditions": conditions}
     if tool == "done":
+        from codey.reviews.report_sections import REQUIRED_SECTIONS
+
+        keys = REQUIRED_SECTIONS[1:]
         return {"knowledge_refs": _array(_object({"id": text, "revision": {"type": "integer", "minimum": 1}},
-                                                  "id", "revision"))}
+                                                  "id", "revision")),
+                "report_sections": _object({key: _array(text) for key in keys}, *keys)}
     return {}

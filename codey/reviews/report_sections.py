@@ -44,6 +44,21 @@ REQUIRED_SECTIONS = (
     "coverage",
     "sources",
 )
+
+
+def render_done_report(summary: str, sections: object) -> str:
+    """Render explicitly supplied report parts; never decode or invent content."""
+    keys = REQUIRED_SECTIONS[1:]
+    if not isinstance(sections, dict) or set(sections) != set(keys):
+        raise ValueError("report_sections requires exactly: " + ", ".join(keys))
+    bodies = {"conclusion": summary}
+    for key in keys:
+        rows = sections[key]
+        if (not isinstance(rows, list) or not 1 <= len(rows) <= 32
+                or any(not isinstance(row, str) or not row.strip() or len(row) > 16000 for row in rows)):
+            raise ValueError(f"report_sections.{key} requires 1..32 nonempty text paragraphs of at most 16000 characters")
+        bodies[key] = "\n\n".join(rows)
+    return "\n\n".join(f"## {section_title(key)}\n{bodies[key]}" for key in REQUIRED_SECTIONS)
 _SECTION_KEY_ORDER = (
     "source_quality",
     "conclusion",

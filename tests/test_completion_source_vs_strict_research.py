@@ -84,3 +84,39 @@ def test_same_facts_strict_research_still_blocks_without_evidence_report() -> No
     )
     verdict = gate.evaluate(sess, "只有结论没有来源章节" if False else "plain summary without sections", context=None)
     assert not verdict.complete
+
+
+def test_required_report_failure_explains_literal_newlines_without_rewriting():
+    from codey.research.ledger import ResearchLedger
+
+    url = "https://example.com/a"
+    ledger = ResearchLedger()
+    ledger.record_open(url, url, "Experiment", "One writer commits at a time.")
+    prepared = ledger.prepare_evidence_items(
+        [{"claim": "One writer commits at a time.", "source_url": url, "excerpt": "One writer commits at a time."}],
+        fallback_sources=[url], fallback_claim="", fallback_body="", note_type="fact")
+    ledger.add_evidence_items(list(prepared.items), note_id="original")
+    policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"}), strict_research=True,
+                        required_checks=("research_sources_opened", "research_evidence_saved", "research_report_sections"))
+    session = _session(policy, task_kind="research", opened_sources={url})
+    summary = r"## 结论\nOne writer commits at a time. [1]\n## 来源\n[1] Experiment - https://example.com/a"
+    verdict = gate.evaluate(session, summary, context={"research_ledger": ledger})
+    assert not verdict.complete
+    assert "required check 'research_report_sections'" in verdict.followup
+    assert "literal backslash+n" in verdict.followup
+    assert "## 结论\n## 关键证据\n## 反证与限制" in verdict.followup
+    assert "does not require another search" in verdict.followup
+    assert "\n" not in summary  # The gate did not silently decode the submitted data.
+
+
+def test_missing_evidence_and_wrong_knowledge_id_receive_specific_repair_guidance():
+    from codey.completion.contract import CHECK_FAIL, CompletionCheck
+    from codey.operations.research_completion_checks import research_completion_feedback
+
+    text = research_completion_feedback(_session(TaskPolicy(grants=frozenset({"control"}))), "", None, [
+        CompletionCheck("knowledge_versions", CHECK_FAIL, "knowledge_reference_invalid"),
+        CompletionCheck("research_evidence_saved", CHECK_FAIL, "research_evidence_missing"),
+    ])
+    assert "not a note_id" in text
+    assert "type=fact" in text and "source_search" in text
+    assert "hypothesis without source excerpts" in text

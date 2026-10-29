@@ -8,47 +8,62 @@ a small capability probe, not a general research-quality benchmark.
 from __future__ import annotations
 
 import argparse
+import faulthandler
 import hashlib
 import json
 import os
 import subprocess
 import sys
-from html.parser import HTMLParser
+import time
+from contextlib import ExitStack
 from pathlib import Path
 from urllib.request import urlopen
 
 URLS = ("https://www.sqlite.org/wal.html", "https://www.sqlite.org/isolation.html")
 
 
-class TextParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.parts, self.hidden = [], 0
-
-    def handle_starttag(self, tag, attrs):
-        if tag in {"script", "style"}:
-            self.hidden += 1
-
-    def handle_endtag(self, tag):
-        if tag in {"script", "style"}:
-            self.hidden = max(0, self.hidden - 1)
-
-    def handle_data(self, data):
-        if not self.hidden and data.strip():
-            self.parts.append(data.strip())
-
-
-def stage(directory, name, upstream, model, native=False):
+def stage(directory, name, upstream, model, native=False, live_web=False, question="", max_turns=12, thinking=False):
     from unittest.mock import patch
 
     from codey.app import headless_runner
-    from codey.providers import local_config
+    from codey.providers import api_transport, local_config
     from codey.providers.api_provider import ApiProvider
     from codey.providers.local_response_codec import normalize_local_reply
     from codey.providers.model_preferences import ModelPreferences
 
-    documents = json.loads((directory / "sources.json").read_text(encoding="utf-8"))
+    documents = [] if live_web else json.loads((directory / "sources.json").read_text(encoding="utf-8"))
+    (directory / f"{name}-control.json").write_text(json.dumps({
+        "model": model, "temperature": 0.2, "seed": 73, "native_tools": native,
+        "stream": native, "thinking": thinking, "live_web": live_web, "max_turns": max_turns,
+        "question": question,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
     events = directory / f"{name}-events.jsonl"
+    wire = directory / f"{name}-wire.jsonl"
+    stacks = (directory / f"{name}-stacks.txt").open("a", encoding="utf-8")
+    faulthandler.dump_traceback_later(60, repeat=True, file=stacks)
+
+    def record(row):
+        with wire.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"time": time.time(), **row}, ensure_ascii=False, default=str) + "\n")
+
+    decode_json = api_transport._json_object
+
+    def observed_json(raw):
+        record({"event": "response_bytes", "bytes": len(raw), "text": raw.decode("utf-8", "replace")[:16000]})
+        return decode_json(raw)
+
+    class ObservedProvider(ApiProvider):
+        def _generate(self, messages, tools=None, **kwargs):
+            record({"event": "generation_start", "messages": messages, "tools": [t.name for t in tools or ()]})
+            started = time.monotonic()
+            try:
+                body = super()._generate(messages, tools, **kwargs)
+            except Exception as exc:
+                record({"event": "generation_failure", "error": repr(exc), "cause": repr(exc.__cause__),
+                        "seconds": time.monotonic() - started})
+                raise
+            record({"event": "generation_response", "body": body, "seconds": time.monotonic() - started})
+            return body
 
     class Search:
         def search(self, query, limit=8):
@@ -73,24 +88,30 @@ def stage(directory, name, upstream, model, native=False):
     def connect(provider_id, **kwargs):
         if provider_id != "local":
             raise ValueError("probe permits local model only")
-        return ApiProvider(upstream + "/v1", model, temperature=0.2, thinking_enabled=False,
-                           output_tokens=2500, context_reserve_tokens=3000, native_tools=native,
+        def configure(payload):
+            payload.update(seed=73)
+            record({"event": "admitted_payload", "payload": payload})
+
+        return ObservedProvider(upstream + "/v1", model, timeout=180, temperature=0.2, thinking_enabled=thinking,
+                           output_tokens=5000 if thinking else 2500, context_reserve_tokens=5500, native_tools=native,
+                           stream=native,
                            text_decoder=normalize_local_reply,
-                           configure_request=lambda payload: payload.update(seed=73))
+                           configure_request=configure)
 
     tasks = {
+        "research": question,
         "first": (
             "研究 SQLite WAL 在并发读写时的限制，重点是为什么多个读者可并发、写者仍会竞争。"
-            "按顺序调用web_search、open_result、knowledge_write，最后done。"
+            "先搜索并打开官方资料；关键原文若不在当前片段中，继续定位读取，再保存证据并回答。"
             "knowledge_write.sources必须是已读取的URL字符串数组，不能填工具回执引用。"
             "使用提供的 SQLite 官方文档；先读取来源，再用 knowledge_write 保存准确引文、条件和限制，"
             "必须同时保存读写并发和仅单一写者两个结论的直接证据。"
             "evidence.claim用中文概述，evidence.excerpt保持官方英文原文；报告沿用已保存的中文主张。"
             "标签至少含 SQLite 和 写者串行化，别名含 嵌入式数据文件。"
             "不要保存只有报告摘要的笔记。最后给出简短、带来源的研究报告，明确何时不能外推。"
-            "报告不超过500字，使用结论、关键证据、反证与限制、来源质量、搜索覆盖、来源六个标题。"
+            "报告不超过500字，优先用done.report_sections提交各部分，由系统排版六个标题。"
             "报告只概述证据并引用[1]，无需重复带双引号的英文引文；引用表使用[1]和实际URL。"
-            "JSON summary中用单次JSON编码的换行，不要把字面的反斜杠n当段落。"
+            "使用report_sections时summary只填结论，不要再塞入完整报告或手动编码换行。"
             "knowledge_refs使用工具返回的结构化对象id，不是note_id。"
         ),
         "recall": (
@@ -112,20 +133,25 @@ def stage(directory, name, upstream, model, native=False):
         with events.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
 
-    with (patch.object(headless_runner, "HeadlessAppContext", Context),
-          patch.object(local_config, "DEFAULT_STATE_HOME", directory / "state"),
-          patch.dict(os.environ, {"LOCAL_OPENAI_BASE_URL": upstream + "/v1", "LOCAL_OPENAI_MODEL": model}),
-          patch("codey.research.search_factory.default_research_search_provider", Search),
-          patch("codey.app.task_services.default_research_search_provider", Search, create=True)):
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(headless_runner, "HeadlessAppContext", Context))
+        stack.enter_context(patch.object(api_transport, "_json_object", observed_json))
+        stack.enter_context(patch.object(local_config, "DEFAULT_STATE_HOME", directory / "state"))
+        stack.enter_context(patch.dict(os.environ, {"LOCAL_OPENAI_BASE_URL": upstream + "/v1", "LOCAL_OPENAI_MODEL": model}))
+        if not live_web:
+            stack.enter_context(patch("codey.research.search_factory.default_research_search_provider", Search))
+            stack.enter_context(patch("codey.app.task_services.default_research_search_provider", Search, create=True))
         local_config.save_local_config(local_config.LocalProviderConfig(base_url=upstream + "/v1", model=model,
-            native_tools_mode="on" if native else "off", thinking_enabled=False, connection_revision="persistent-research-probe"))
+            native_tools_mode="on" if native else "off", thinking_enabled=thinking, connection_revision="persistent-research-probe"))
         request = headless_runner.HeadlessRequest(project=None, task=tasks[name], provider_id="local",
-            max_turns=12, session_id="research-first" if name == "first" else "research-later",
+            max_turns=max_turns, session_id="research-first" if name in {"first", "research"} else "research-later",
             state_home=directory / "state", research_store_root=directory / "knowledge",
-            intent="research" if name == "first" else "hybrid", sources_open_required=False,
+            intent="research" if name in {"first", "research"} else "hybrid", sources_open_required=live_web,
             requested_capabilities=("knowledge.read", "knowledge.write", "web.read"))
         result = headless_runner.run_headless(request, emit_jsonl=emit, connect_provider=connect,
-                                             connect_reviewer=connect if name != "first" else None)
+                                             connect_reviewer=connect if name in {"recall", "revise"} else None)
+    faulthandler.cancel_dump_traceback_later()
+    stacks.close()
     (directory / f"{name}-result.json").write_text(json.dumps(vars(result), ensure_ascii=False, indent=2), encoding="utf-8")
     if result.exit_code:
         raise RuntimeError(f"{name} failed: {vars(result)}")
@@ -136,8 +162,26 @@ def stage(directory, name, upstream, model, native=False):
         rows = store.index._read_conn().execute(
             "SELECT v.id,v.revision FROM knowledge_versions v JOIN knowledge_heads h "
             "ON h.id=v.id AND h.revision=v.revision WHERE v.kind=?",
-            ("claim" if name == "first" else "inference",)).fetchall()
+            ("claim" if name in {"first", "research"} else "inference",)).fetchall()
         versions = [store.repository.read(row[0], row[1]) for row in rows]
+        snapshot = []
+        for version in versions:
+            row = version.to_dict()
+            row["referenced_versions"] = [
+                target.to_dict() for ref in version.value.references
+                if (target := store.repository.read(ref.target, ref.revision)) is not None
+            ]
+            snapshot.append(row)
+        (directory / f"{name}-knowledge.json").write_text(
+            json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+        if name == "research":
+            events_seen = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines()]
+            observed = {row.get("tool_name") for row in events_seen if row.get("type") == "tool" and row.get("ok")}
+            if (not {"web_search", "knowledge_write"} <= observed
+                    or not observed.intersection({"open_url", "open_result", "open_hit"})
+                    or not any(any(r.relation == "supported_by" for r in v.value.references) for v in versions)):
+                raise RuntimeError("live research must actually search, open a page and persist sourced claims")
+            return
         if name == "first":
             accepted = len([v for v in versions if any(r.relation == "supported_by" for r in v.value.references)]) >= 2
         elif name == "recall":
@@ -157,32 +201,43 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--upstream", default="http://127.0.0.1:5001")
-    parser.add_argument("--stage", choices=("first", "recall", "revise"))
+    parser.add_argument("--stage", choices=("first", "recall", "revise", "research"))
     parser.add_argument("--native", action="store_true", help="Use the server's structured tool protocol")
+    parser.add_argument("--thinking", action="store_true", help="Enable the model's reasoning mode")
+    parser.add_argument("--live-web", action="store_true", help="Use production search and browser page acquisition")
+    parser.add_argument("--question-file", type=Path)
+    parser.add_argument("--max-turns", type=int, default=12)
+    parser.add_argument("--stage-timeout", type=int, default=900)
     args = parser.parse_args()
     directory = args.directory.resolve()
     directory.mkdir(parents=True, exist_ok=True)
     with urlopen(args.upstream + "/v1/models", timeout=5) as response:
         model = json.load(response)["data"][0]["id"]
     if args.stage:
-        stage(directory, args.stage, args.upstream, model, args.native)
+        question = args.question_file.read_text(encoding="utf-8") if args.question_file else ""
+        if args.stage == "research" and (not args.live_web or not question.strip()):
+            parser.error("research requires --live-web and --question-file")
+        stage(directory, args.stage, args.upstream, model, args.native, args.live_web, question, args.max_turns, args.thinking)
         return
     documents = []
+    from codey.research.extract import extract_text, extract_title
+
     for url in URLS:
         with urlopen(url, timeout=30) as response:
             html = response.read().decode("utf-8")
-        parsed = TextParser()
-        parsed.feed(html)
-        text = "\n".join(parsed.parts)
-        documents.append({"url": url, "title": parsed.parts[0], "text": text,
+        text = extract_text(html)
+        documents.append({"url": url, "title": extract_title(html), "text": text,
                           "sha256": hashlib.sha256(text.encode()).hexdigest()})
     (directory / "sources.json").write_text(json.dumps(documents, ensure_ascii=False), encoding="utf-8")
     (directory / "control.json").write_text(json.dumps({"model": model, "temperature": 0.2, "seed": 73,
-        "native_tools": args.native, "source_mode": "frozen public documentation", "processes": ["first", "recall", "revise"]}, indent=2), encoding="utf-8")
+        "native_tools": args.native, "thinking": args.thinking, "source_mode": "frozen public documentation",
+        "processes": ["first", "recall", "revise"]}, indent=2), encoding="utf-8")
     for name in ("first", "recall", "revise"):
         subprocess.run([sys.executable, "-X", "utf8", "-m", "tests.manual.persistent_research_local",
                         "--directory", str(directory), "--upstream", args.upstream, "--stage", name,
-                        *(["--native"] if args.native else [])], check=True, timeout=420)
+                        "--max-turns", str(args.max_turns), *(["--native"] if args.native else []),
+                        *(["--thinking"] if args.thinking else [])],
+                       check=True, timeout=args.stage_timeout)
 
 
 if __name__ == "__main__":

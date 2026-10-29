@@ -11,7 +11,7 @@ over-cap proof fails closed to blocked, never complete.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from codey.completion.contract import (
@@ -30,6 +30,7 @@ from codey.operations.project_completion_checks import project_completion_checks
 from codey.operations.research_completion_checks import (
     citation_requirement_checks,
     finalize_research_text,
+    research_completion_feedback,
     source_requirement_checks,
     strict_research_checks,
 )
@@ -384,7 +385,8 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     # must prove its own checks ran, not just any globally registered check.
     required_block = _required_checks_verdict(session, deduped, tool_evaluations)
     if required_block is not None:
-        return required_block
+        feedback = research_completion_feedback(session, text, context, deduped)
+        return replace(required_block, followup=required_block.followup + ("\n\n" + feedback if feedback else ""))
     domain = _domain_for_session(session)
     subject = _contract_subject(session, profile, context)
     evidence_refs = _proof_evidence_refs(session, context)
@@ -439,13 +441,9 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     if reason == "knowledge_reference_invalid":
         followup += (" knowledge_refs must cite structured object ids with their saved revisions from knowledge_search/read/write, "
                      "not document note_ids or old answer objects. Read the source note to find its structured versions.")
-    if reason == "research_report_quality_failed":
-        from codey.research.report_quality import review_report_quality
-
-        review = review_report_quality(text, ledger=_context_get(context, "research_ledger"),
-            opened_sources=set(getattr(session, "opened_sources", ())),
-            search_result_urls=set(getattr(session, "search_results", {}).values()))
-        followup += " " + review.message
+    feedback = research_completion_feedback(session, text, context, deduped)
+    if feedback:
+        followup += "\n\n" + feedback
     return GateVerdict(complete=False, followup=followup, proof=proof)
 
 __all__ = [

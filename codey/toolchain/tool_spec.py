@@ -167,7 +167,13 @@ def _research_specs() -> dict[str, ToolSpec]:
             replay_class="safe" if grant in {"web.read", "knowledge.read"} or name == "knowledge_commit" else "unsafe",
             parallel_safe=contract.parallel_safe,
         )
-    for alias, (canonical, id_arg) in _CONTROLLER_ALIAS_ID_ARG.items():
+    for alias, (_canonical, id_arg) in _CONTROLLER_ALIAS_ID_ARG.items():
+        reference_help = {
+            "open_result": "Open a web_search hit. result_id is r1, r2, etc. from Search result references; "
+                           "never pass a tool result_ref or URL. For a URL use open_url(url).",
+            "reopen_source": "Read an opened source again. source_id is s1, s2, etc. from Opened source references.",
+            "open_hit": "Read a located passage. hit_id is the exact id returned by source_search.",
+        }
         specs[alias] = ToolSpec(
             name=alias,
             aliases=(),
@@ -175,7 +181,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             parameters=((id_arg, {"type": "string"}),),
             required=(id_arg,),
             json_examples=(f'{{"tool":"{alias}","args":{{"{id_arg}":"..."}}}}',),
-            description=f"controller alias lowering to {canonical}",
+            description=reference_help[alias],
             executor="source",
             replay_class="safe",
         )
@@ -246,11 +252,12 @@ def _all_specs() -> dict[str, ToolSpec]:
             # summary stays canonical; retain the research completion metadata.
             coding_done = specs.get("done")
             if coding_done is not None:
-                specs["done"] = replace(coding_done, parameters=(
+                specs["done"] = replace(coding_done, description=coding_done.description + " " + spec.description, parameters=(
                     *coding_done.parameters, ("open_questions", {"type": "array", "items": {"type": "string"}}),
                     ("knowledge_refs", {"type": "array", "items": {"type": "object", "required": ["id", "revision"],
                         "properties": {"id": {"type": "string"}, "revision": {"type": "integer", "minimum": 1}},
                         "additionalProperties": False}}),
+                    ("report_sections", dict(spec.parameters)["report_sections"]),
                 ))
             continue
         specs[name] = spec

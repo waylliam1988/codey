@@ -541,6 +541,10 @@ def _plan_from_tool_objects(
             if error:
                 return _invalid_plan(error, tool=tool)
             text = str(validated.get("summary" if tool == "done" else "question") or "").strip()
+            if tool == "done" and "report_sections" in validated:
+                from codey.reviews.report_sections import render_done_report
+
+                text = render_done_report(text, validated["report_sections"])
             return ToolPlan(calls=[], control=Control(kind=tool, body=text), control_args=validated)
         if not _policy_allows(policy, tool, frozen_specs):
             return _disallowed_plan(tool)

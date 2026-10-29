@@ -26,7 +26,9 @@ __all__ = [
 ]
 
 _NATIVE_ARGUMENTS_RULE = (
-    "Pass schema properties directly as native arguments; omit the text protocol's tool/args envelope."
+    "Pass schema properties directly as native arguments; omit the text protocol's tool/args envelope. "
+    "String values contain the requested text itself, including actual line breaks for multiline content; "
+    "do not manually pre-escape or JSON-encode the string value. The transport handles serialization."
 )
 _NATIVE_READ_BATCH_RULE = (
     "Group independent read-only calls into one native tool_calls turn. "
@@ -34,6 +36,7 @@ _NATIVE_READ_BATCH_RULE = (
 )
 _NATIVE_FINAL_RULE = (
     "For the final answer, use done if declared: put the complete response in its summary string. "
+    "For a structured research report, summary is the conclusion and report_sections contains the remaining parts. "
     "Preserve the user's requested final format inside that string. "
     "Requested JSON is a bare document without Markdown fences inside summary, not the outer tool-call object."
 )
@@ -158,7 +161,9 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
 
 def _completion_followup(feedback: str, *, native: bool) -> str:
     """Render completion feedback for its transport without changing the verdict."""
-    rule = _NATIVE_FINAL_RULE if native else "Fenced examples are answer text and do not execute tools."
+    rule = (_NATIVE_ARGUMENTS_RULE + " " + _NATIVE_FINAL_RULE if native else
+            r'Encode paragraph line breaks once as \n inside the JSON string, e.g. "summary":"## 结论\ntext". '
+            "Fenced examples are answer text and do not execute tools.")
     return feedback + "\n\n" + rule
 
 
@@ -173,11 +178,15 @@ def _result_context(result: ToolResult, session: TaskSession) -> str:
             if result.truncated else "If more detail is needed, use read_tool_result."
         )
         text += (f"\n\n{render_result_metadata(result_ref, tool=result.call.name, ok=result.ok)}\n"
-                 "Use the complete result_ref string verbatim, including its prefix. "
+                 "For read_tool_result only, copy the complete result_ref including its prefix. "
+                 f'Read omitted detail with read_tool_result({{"result_ref":"{result_ref}","query":"literal keyword"}}). '
                  f"{instruction} do not repeat execution to recover output.")
     if result.call.name == "web_search" and session.search_results:
         refs = "\n".join(f"{key}: {url}" for key, url in list(session.search_results.items())[-12:])
-        return f"{text}\n\nSearch result references:\n{refs}"
+        example = next(iter(session.search_results))
+        return (f"{text}\n\nSearch result references:\n{refs}\nUse these rN ids with open_result. "
+                f'Example opening a hit: open_result({{"result_id":"{example}"}}). '
+                "result_ref reads a tool receipt; it cannot open a web page.")
     if result.call.name == "source_search" and session.hit_targets:
         refs = "\n".join(
             f"{key}: {target.get('url')} offset={target.get('offset')} pages={target.get('pages')}"
