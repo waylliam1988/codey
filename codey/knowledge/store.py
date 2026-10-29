@@ -13,7 +13,10 @@ from typing import Any
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.documents import KnowledgeDocuments
 from codey.knowledge.index import KnowledgeIndex
+from codey.knowledge.model import KnowledgeMutation, canonical_json
 from codey.knowledge.note import LINK_KINDS, KnowledgeNote, is_safe_id, now_iso, wikilink
+from codey.knowledge.recall import KnowledgeAccess, KnowledgeHit, KnowledgeRecall
+from codey.knowledge.repository import KnowledgeRepository
 from codey.storage.atomic_io import write_text_atomic
 
 RELATED_HEADING = "## Related"
@@ -32,6 +35,7 @@ class KnowledgeStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self.index = KnowledgeIndex(self.root / ".codey" / "knowledge.db")
         self.documents = KnowledgeDocuments(self.index)
+        self.repository = KnowledgeRepository(self.index)
         self._import_legacy_once()
 
     def path_for(self, note: KnowledgeNote) -> Path:
@@ -47,6 +51,18 @@ class KnowledgeStore:
 
     def exists(self, note_id: str) -> bool:
         return self.documents.get(note_id) is not None
+
+    def search(self, query: str, *, project: str = "", session_id: str = "",
+               limit: int = 8, depth: int = 1) -> list[KnowledgeHit]:
+        return KnowledgeRecall(self.repository).search(query, access=KnowledgeAccess(project, session_id),
+                                                       limit=limit, depth=depth)
+
+    def search_notes(self, query: str, *, project: str = "", session_id: str = "") -> list[dict[str, Any]]:
+        rows = self.index.search(query, limit=32)
+        return [row for row in rows if (
+            row.get("project") == project if row.get("project") else
+             not row.get("session_id") or row.get("session_id") == session_id
+        )][:8]
 
     def write_note(
         self,
@@ -110,6 +126,38 @@ class KnowledgeStore:
         self.write_note(src, changes=changes)
         self.index.add_link(src_id, dst_id, kind)
         return KnowledgeLinkResult(True, f"linked: {src_id} -> {dst_id} ({kind})", created=True)
+
+    def publish_note(self, note: KnowledgeNote, commit_id: str, mutations: list[KnowledgeMutation],
+                     *, changes: KnowledgeChanges | None = None) -> str:
+        snapshot = changes.snapshot() if changes is not None else None
+        try:
+            with self.index.transaction():
+                if changes is not None:
+                    for mutation in mutations:
+                        previous = self.repository.read(mutation.value.id)
+                        rel = f"_knowledge/{mutation.value.id}.json"
+                        changes.capture_content(rel, canonical_json(previous.value.to_dict()) if previous else None)
+                versions: dict[str, int] = self.repository.commit(commit_id, mutations) if mutations else {}
+                rel = self.write_note(note, changes=changes)
+                found = self.documents.get(note.id)
+                if found:
+                    self.index._read_conn().executemany("INSERT OR IGNORE INTO note_knowledge_refs VALUES(?,?,?,?)",
+                        [(note.id, found[2], identity, revision) for identity, revision in versions.items()])
+                if changes is not None:
+                    for mutation in mutations:
+                        changes.record_content(f"_knowledge/{mutation.value.id}.json", canonical_json(mutation.value.to_dict()))
+                return rel
+        except BaseException:
+            if changes is not None and snapshot is not None:
+                changes.restore_snapshot(snapshot)
+            raise
+
+    def note_references(self, note_id: str, revision: int | None = None) -> list[dict[str, Any]]:
+        found = self.documents.get(note_id, revision)
+        if not found:
+            return []
+        return [dict(row) for row in self.index._read_conn().execute(
+            "SELECT target,revision FROM note_knowledge_refs WHERE note_id=? AND note_revision=?", (note_id, found[2]))]
 
     def read_note(self, note_id: str, *, revision: int | None = None) -> KnowledgeNote | None:
         found = self.documents.get(note_id, revision)
@@ -181,6 +229,7 @@ class KnowledgeStore:
                 self.index.upsert(note, path=path, content_hash=_content_hash(note.to_markdown()))
             for note, _path, _version in notes:
                 self._index_body_links(note)
+            self.repository.rebuild()
         return len(notes)
 
     def delete_note(self, note_id: str, *, purge: bool = False) -> None:

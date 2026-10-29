@@ -85,7 +85,7 @@ def run_evidence_followup(
                 last_error = clip(result.model_text, 200)
             from codey.research.ledger_receipts import ledger_observation
 
-            canonical = {"research_observation": ledger_observation(staged.ledger, call.name, evidence_start=before)} if result.ok else {}
+            canonical: dict[str, Any] = {"research_observation": ledger_observation(staged.ledger, call.name, evidence_start=before)} if result.ok else {}
             if result.ok:
                 from codey.providers.response_record import json_value
                 from codey.research.tools import StagedKnowledgeStore
@@ -99,6 +99,13 @@ def run_evidence_followup(
                     "updated": [identity for identity in tools.updated_ids if identity not in prior_updated],
                     "proposals": proposals,
                 }
+                if isinstance(tools.store, StagedKnowledgeStore):
+                    canonical["knowledge_batches"] = {
+                        identity: {"commit_id": batch[0], "mutations": [
+                            {"value": mutation.value.to_dict(), "expected_revision": mutation.expected_revision}
+                            for mutation in batch[1]]}
+                        for identity, batch in tools.store._staged_knowledge.items() if identity in created
+                    }
             return ToolResult(call=call, model_text=result.model_text, ok=result.ok, canonical=canonical)
 
         session = TaskSession(

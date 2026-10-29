@@ -16,10 +16,11 @@ from codey.toolchain.definition import (
 )
 
 SAFE_RUNTIME_TOOL_NAMES = READ_ONLY_RUNTIME_TOOL_NAMES
+IDEMPOTENT_RUNTIME_TOOL_NAMES = frozenset({"knowledge_commit"})
 UNSAFE_RUNTIME_TOOL_NAMES = SUPPORTED_RUNTIME_TOOL_NAMES - SAFE_RUNTIME_TOOL_NAMES
 # CodeMode is a resumable container. Its recovery still re-enters the kernel;
 # it is never passed to the information-tool dispatcher.
-REPLAYABLE_SAFE_TOOL_NAMES = SAFE_RUNTIME_TOOL_NAMES | {"codemode"}
+REPLAYABLE_SAFE_TOOL_NAMES = SAFE_RUNTIME_TOOL_NAMES | IDEMPOTENT_RUNTIME_TOOL_NAMES | {"codemode"}
 
 
 def is_replayable_safe_tool(tool_name: str) -> bool:
@@ -68,6 +69,8 @@ def tool_replay_policy(
             replay_class=ReplayClass.SAFE,
             reason="read_only_tool",
         )
+    if canonical_name in IDEMPOTENT_RUNTIME_TOOL_NAMES:
+        return ReplayDecision(replay_class=ReplayClass.SAFE, reason="idempotent_knowledge_transaction")
     if canonical_name in UNSAFE_RUNTIME_TOOL_NAMES:
         return ReplayDecision(
             replay_class=ReplayClass.UNSAFE,

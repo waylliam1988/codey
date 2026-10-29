@@ -21,13 +21,15 @@ class KnowledgeDocuments:
                 "CREATE TABLE IF NOT EXISTS note_revisions(id TEXT NOT NULL,revision INTEGER NOT NULL,"
                 "markdown TEXT,path TEXT NOT NULL,recorded_at TEXT NOT NULL,reason TEXT NOT NULL,"
                 "PRIMARY KEY(id,revision))",
+                "CREATE TABLE IF NOT EXISTS note_knowledge_refs(note_id TEXT NOT NULL,note_revision INTEGER NOT NULL,"
+                "target TEXT NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(note_id,note_revision,target,revision))",
             ):
                 conn.execute(sql)
 
     def initialized(self) -> bool:
-        return self.index._read_conn().execute(
+        return bool(self.index._read_conn().execute(
             "SELECT 1 FROM knowledge_meta WHERE key='documents_initialized'"
-        ).fetchone() is not None
+        ).fetchone() is not None)
 
     def initialize(self, notes: list[tuple[KnowledgeNote, str]]) -> None:
         with self.index.transaction() as conn:
@@ -78,6 +80,7 @@ class KnowledgeDocuments:
             conn.execute("DELETE FROM note_documents WHERE id=?", (note_id,))
             if purge:
                 conn.execute("DELETE FROM note_revisions WHERE id=?", (note_id,))
+                conn.execute("DELETE FROM note_knowledge_refs WHERE note_id=?", (note_id,))
             self.index.remove(note_id)
 
     def history(self, note_id: str) -> list[dict[str, Any]]:

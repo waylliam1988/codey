@@ -490,10 +490,13 @@ class ExecutionDelegate:
             if name == "knowledge_search":
                 from codey.research.text_args import first_text_arg
 
-                outcome = tools.knowledge_search(first_text_arg(args, "query"))
+                outcome = tools.knowledge_search(first_text_arg(args, "query"), depth=args.get("depth", 1))
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
             if name == "knowledge_read":
-                outcome = tools.knowledge_read(str(args.get("id") or ""))
+                outcome = tools.knowledge_read(str(args.get("id") or ""), revision=args.get("revision"))
+                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
+            if name == "knowledge_commit":
+                outcome = tools.knowledge_commit(args)
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
             if name == "knowledge_write":
                 before = len(getattr(getattr(tools, "ledger", None), "evidence_items", ()) or ())

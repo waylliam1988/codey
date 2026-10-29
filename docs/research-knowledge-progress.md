@@ -39,7 +39,22 @@ generic research methods. Markdown is interchange, never a competing authority.
   filesystem compensation. Undo creates compensation revisions with conflict checks.
 - Validation: 100 targeted tests passed (knowledge, SQLite authority, changes,
   continuation contracts, pipeline). Ruff and targeted strict mypy passed.
-- Remaining: structured claims/evidence commits, shared recall/tools and graph,
-  acquisition/synthesis effect boundaries, expanded static/restart/model checks.
+- Step 2 implemented: independent long-term object/version model, pinned typed
+  references, explicit origins and unknown-condition states, idempotent commits,
+  optimistic revision checks, scope validation and cyclic-premise rejection.
+  Verified knowledge_write excerpts automatically archive full source versions,
+  fragments and claims in the note transaction. Reports remain documents.
+  Staged proposal receipts now preserve their original structured batches.
+- Step 3 in progress: shared-kernel fresh prompts and knowledge_search/read use
+  bounded alias/text/relationship recall, with reasons, conditions and transitive
+  dependency review flags. knowledge_commit uses the existing safe effect replay
+  path because its transaction ID and digest make it idempotent. No new runtime.
+- Validation: 256 existing focused tests passed before adding shared recall; 56
+  focused storage/recall/protocol tests passed after integration. Full production
+  Ruff, mypy, Pyrefly and ty passed (Pyrefly retains existing warnings).
+- Remaining: provenance graph UI, general research guidance and checks,
+  acquisition/synthesis effect boundaries, driver crash-window tests, local model
+  experiment, targeted expansion and final checks. Privacy purge covers knowledge
+  objects/dependents; existing durable outputs/receipts retain their own lifecycle.
 
 Update this file in each implementation commit with results and remaining work.

@@ -85,6 +85,7 @@ PERMISSION_PROFILES = {
             "knowledge_search",
             "knowledge_read",
             "knowledge_write",
+            "knowledge_commit",
             "knowledge_link",
             "web_search",
             "open_url",

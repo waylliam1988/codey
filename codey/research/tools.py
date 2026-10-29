@@ -11,7 +11,9 @@ from typing import Any
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import clean_relations, normalize_concept
+from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, canonical_json
 from codey.knowledge.note import LINK_KINDS, NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
+from codey.knowledge.recall import KnowledgeAccess, render_recall
 from codey.knowledge.store import KnowledgeLinkResult, KnowledgeStore
 from codey.research.ledger import EvidencePreparation, ResearchLedger
 from codey.research.source_gateway import (
@@ -173,32 +175,88 @@ class ResearchTools:
             return ResearchToolOutput(f"ERROR: {outcome.detail}", ok=False)
         return ResearchToolOutput(render_results(list(outcome.hits)), ok=True)
 
-    def knowledge_search(self, query: str) -> ResearchToolOutput:
+    def knowledge_search(self, query: str, *, depth: int = 1) -> ResearchToolOutput:
         if self.store is None:
             return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         query = (query or "").strip()
         if not query:
             return ResearchToolOutput("ERROR: knowledge_search needs a query", ok=False)
-        rows = self.store.index.search(query)
+        hits = self.store.search(query, project=self.project, session_id=self.session_id, depth=depth)
+        recalled = render_recall(hits)
+        rows = self.store.search_notes(query, project=self.project, session_id=self.session_id)
         if not rows:
-            return ResearchToolOutput("no local notes yet on this topic", ok=True)
-        lines = []
+            return ResearchToolOutput(recalled or "no local notes yet on this topic", ok=True)
+        lines = [recalled] if recalled else []
         for row in rows:
-            conf = "" if row.get("confidence") is None else f" conf={row['confidence']}"
             status = row.get("status") or "active"
             snippet = _clip_tail(str(row.get("snippet") or ""), 140)
-            lines.append(f"[{row['type']}] {row['title']} (id={row['id']}, {status}{conf})\n   {snippet}".rstrip())
+            lines.append(f"[{row['type']}] {row['title']} (id={row['id']}, {status}; legacy document, verify evidence)\n   {snippet}".rstrip())
         return ResearchToolOutput("\n".join(lines), ok=True)
 
-    def knowledge_read(self, note_id: str) -> ResearchToolOutput:
+    def knowledge_read(self, note_id: str, *, revision: int | None = None) -> ResearchToolOutput:
         if self.store is None:
             return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
-        note = self.store.read_note((note_id or "").strip())
+        version = self.store.repository.read(note_id, revision)
+        if version is not None:
+            if not KnowledgeAccess(self.project, self.session_id).allows(version):
+                return ResearchToolOutput("ERROR: knowledge scope mismatch", ok=False)
+            payload = version.to_dict()
+            payload["content_complete"] = len(version.value.content) <= 12000
+            payload["content"] = version.value.content[:12000]
+            return ResearchToolOutput(canonical_json(payload), ok=True)
+        note = self.store.read_note((note_id or "").strip(), **({"revision": revision} if revision is not None else {}))
         if note is None:
             return ResearchToolOutput(f"ERROR: no note with id {note_id}", ok=False)
+        if (note.project and note.project != self.project
+                or not note.project and note.session_id and note.session_id != self.session_id):
+            return ResearchToolOutput("ERROR: knowledge scope mismatch", ok=False)
         if note.type == "source" and any(s in self.sources_read for s in note.sources):
             self.grounded_ids.add(note.id)
         return ResearchToolOutput(note.to_markdown(), ok=True)
+
+    def knowledge_commit(self, args: dict[str, Any]) -> ResearchToolOutput:
+        """The common tool dispatcher owns this effect; the repository only commits."""
+        if self.store is None or isinstance(self.store, StagedKnowledgeStore):
+            return ResearchToolOutput("ERROR: durable knowledge commit requires the authoritative store", ok=False)
+        try:
+            raw = args.get("changes")
+            if not isinstance(raw, list) or not raw:
+                raise ValueError("changes must be a nonempty list of {value, expected_revision}")
+            mutations: list[KnowledgeMutation] = []
+            access = KnowledgeAccess(self.project, self.session_id)
+            for row in raw:
+                if not isinstance(row, dict) or set(row) != {"value", "expected_revision"}:
+                    raise ValueError("each change needs value and expected_revision")
+                value = KnowledgeObject.from_dict(row["value"])
+                if (value.scope != "global" and not (
+                    value.scope == "project" and self.project and value.scope_id == self.project
+                    or value.scope in {"session", "personal"} and self.session_id and value.scope_id == self.session_id
+                )):
+                    raise ValueError("knowledge scope mismatch")
+                old = self.store.repository.read(value.id)
+                if old is not None and not access.allows(old):
+                    raise ValueError("knowledge scope mismatch")
+                mutations.append(KnowledgeMutation(value, row["expected_revision"]))
+            commit_id = str(args.get("commit_id") or "").strip()
+            if not commit_id:
+                raise ValueError("commit_id required")
+            identity = f"tool:{self.session_id}:{commit_id}"
+            receipt = self.store.repository.committed(identity, mutations)
+            if receipt is None:
+                for mutation in mutations:
+                    value = mutation.value
+                    if value.kind == "source":
+                        url = str(value.provenance.get("url") or "")
+                        old = self.store.repository.read(value.id)
+                        unchanged_content = old and old.value.content == value.content and old.value.provenance == value.provenance
+                        if not unchanged_content and (
+                            self.ledger.source_record_for_url(url) is None or value.content != self.ledger.source_text_for_url(url)
+                        ):
+                            raise ValueError("source content must match an opened source")
+                receipt = self.store.repository.commit(identity, mutations)
+            return ResearchToolOutput(canonical_json({"commit_id": commit_id, "versions": receipt}), ok=True)
+        except (ValueError, TypeError, KeyError) as exc:
+            return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 
     def knowledge_write(self, args: dict[str, Any]) -> ResearchToolOutput:
         if self.store is None:
@@ -247,7 +305,11 @@ class ResearchTools:
             self.session_id,
             self.project,
         )
-        rel = self.store.write_note(note, changes=self.changes)
+        from codey.knowledge.archive import note_knowledge
+
+        commit_id, mutations = note_knowledge(note, self.ledger, evidence_preparation, self.store.repository,
+                                             conditions=args.get("conditions"))
+        rel = self.store.publish_note(note, commit_id, mutations, changes=self.changes)
         model_text = _finalize_write_note(
             self,
             note,
@@ -570,6 +632,7 @@ class StagedKnowledgeStore:
         self._parent = parent_store
         self._staged_notes: dict[str, KnowledgeNote] = {}
         self._staged_links: list[tuple[str, str, str]] = []
+        self._staged_knowledge: dict[str, tuple[str, list[KnowledgeMutation]]] = {}
 
     @property
     def root(self) -> Path:
@@ -578,6 +641,21 @@ class StagedKnowledgeStore:
     @property
     def index(self) -> object:
         return self._parent.index
+
+    @property
+    def repository(self) -> Any:
+        return self._parent.repository
+
+    def search(self, query: str, **kwargs: Any) -> Any:
+        return self._parent.search(query, **kwargs)
+
+    def search_notes(self, query: str, **kwargs: Any) -> Any:
+        return self._parent.search_notes(query, **kwargs)
+
+    def publish_note(self, note: KnowledgeNote, commit_id: str, mutations: list[KnowledgeMutation],
+                     *, changes: KnowledgeChanges | None = None) -> str:
+        self._staged_knowledge[note.id] = (commit_id, mutations)
+        return self.write_note(note, changes=changes)
 
     def path_for(self, note: KnowledgeNote) -> Path:
         return self._parent.path_for(note)
@@ -638,6 +716,10 @@ class StagedKnowledgeStore:
         try:
             with target_store.index.transaction():
                 for note in self._staged_notes.values():
+                    batch = self._staged_knowledge.get(note.id)
+                    if batch is not None:
+                        target_store.publish_note(note, batch[0], batch[1], changes=changes)
+                        continue
                     original = target_store.read_note(note.id)
                     if original is not None and replace(original, updated=note.updated).to_markdown() == note.to_markdown():
                         continue
@@ -652,6 +734,7 @@ class StagedKnowledgeStore:
             raise
         self._staged_notes.clear()
         self._staged_links.clear()
+        self._staged_knowledge.clear()
 
 
 class StagedKnowledgeChanges:

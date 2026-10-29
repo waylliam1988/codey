@@ -38,7 +38,7 @@ _REPLAY_ARG_SPECS = {
         required=frozenset({"path", "symbol"}),
     ),
 }
-REPLAY_ARG_TOOL_NAMES = frozenset(_REPLAY_ARG_SPECS) | {"codemode"}
+REPLAY_ARG_TOOL_NAMES = frozenset(_REPLAY_ARG_SPECS) | {"codemode", "knowledge_commit"}
 
 
 def _validate_replay_text_arg(value: object, key: str) -> str:
@@ -76,6 +76,25 @@ def _validate_replay_positive_int(value: object, key: str, maximum: int) -> int:
     return value
 
 
+def _validate_knowledge_commit(args: Mapping[str, object]) -> dict[str, object]:
+    import json
+
+    if set(args) != {"commit_id", "changes"} or not isinstance(args["changes"], list):
+        raise ValueError("knowledge replay requires its original commit_id and changes")
+    _validate_replay_text_arg(args["commit_id"], "commit_id")
+    if not 1 <= len(args["changes"]) <= 128:
+        raise ValueError("knowledge replay batch is out of bounds")
+    for row in args["changes"]:
+        if (not isinstance(row, dict) or set(row) != {"value", "expected_revision"}
+                or not isinstance(row["value"], dict)
+                or type(row["expected_revision"]) is not int or row["expected_revision"] < 0):
+            raise ValueError("invalid knowledge replay mutation")
+    # Domain validation remains in the knowledge executor. Recovery preserves the
+    # exact JSON payload; no alias repair, model call or speculative rewriting.
+    json.dumps(dict(args), allow_nan=False)
+    return dict(args)
+
+
 def validate_replay_args_shape(
     tool_name: str,
     args: object,
@@ -86,6 +105,8 @@ def validate_replay_args_shape(
         raise ValueError(f"tool is not replayable: {canonical_name}")
     if not isinstance(args, Mapping):
         raise ValueError("replay args must be a mapping")
+    if canonical_name == "knowledge_commit":
+        return _validate_knowledge_commit(args)
     if canonical_name == "codemode":
         from codey.codemode.protocol import parse_codemode_args
         from codey.toolchain.tool_spec import spec_for_tool

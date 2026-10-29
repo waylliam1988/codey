@@ -139,6 +139,7 @@ def _research_specs() -> dict[str, ToolSpec]:
         "knowledge_search": "knowledge.read",
         "knowledge_read": "knowledge.read",
         "knowledge_write": "knowledge.write",
+        "knowledge_commit": "knowledge.write",
         "knowledge_link": "knowledge.link",
         "done": "control",
     }
@@ -149,7 +150,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             continue
         params: list[tuple[str, object]] = []
         for arg_name in contract.required:
-            params.append((arg_name, {"type": "string"}))
+            params.append((arg_name, {"type": _research_json_type(contract.required[arg_name])}))
         for arg_name, arg in contract.optional.items():
             params.append((arg_name, {"type": _research_json_type(arg.type)}))
         specs[name] = ToolSpec(
@@ -161,7 +162,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             json_examples=(contract.example,),
             description=contract.description,
             executor="source" if grant == "web.read" else "knowledge",
-            replay_class="safe" if grant in {"web.read", "knowledge.read"} else "unsafe",
+            replay_class="safe" if grant in {"web.read", "knowledge.read"} or name == "knowledge_commit" else "unsafe",
             parallel_safe=contract.parallel_safe,
         )
     for alias, (canonical, id_arg) in _CONTROLLER_ALIAS_ID_ARG.items():
@@ -468,7 +469,7 @@ def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None,
             allowed = None
     order = ("list_dir", "read_file", "read_files", "grep", "find_references", "parallel", "codemode", "edit", "run", "shell",
              "web_search", "open_url", "source_search", "knowledge_search", "knowledge_read",
-             "knowledge_write", "knowledge_link", "read_tool_result", "done")
+             "knowledge_write", "knowledge_commit", "knowledge_link", "read_tool_result", "done")
     names: list[str] = []
     for name in order:
         if native and is_text_batch_tool(name):

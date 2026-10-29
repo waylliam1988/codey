@@ -62,6 +62,19 @@ def restore_note_proposals(tools: Any, canonical: Mapping[str, object]) -> None:
                 and replace(committed, updated=note.updated).to_markdown() != note.to_markdown()):
             raise ResearchContinuationError("committed note differs from its original proposal")
         tools.store.write_note(note, changes=tools.changes)
+    batches = canonical.get("knowledge_batches", {})
+    if not isinstance(batches, dict):
+        raise ResearchContinuationError("invalid knowledge batches")
+    from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
+
+    for identity, batch in batches.items():
+        if (identity not in payload["created"] or not isinstance(batch, dict)
+                or set(batch) != {"commit_id", "mutations"}):
+            raise ResearchContinuationError("invalid knowledge batch proposal")
+        tools.store._staged_knowledge[identity] = (batch["commit_id"], [
+            KnowledgeMutation(KnowledgeObject.from_dict(row["value"]), row["expected_revision"])
+            for row in batch["mutations"]
+        ])
 
 
 class ResearchContinuation:

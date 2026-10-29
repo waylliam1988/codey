@@ -148,40 +148,67 @@ class KnowledgeChanges:
         return result
 
     def _restore_database(self) -> RestoreResult:
+        import hashlib
+        import json
+        from dataclasses import replace
+
+        from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, canonical_json
         from codey.knowledge.note import KnowledgeNote
         from codey.knowledge.store import KnowledgeStore
 
         store = KnowledgeStore(self.root)
         restored: list[str] = []
         conflicts: list[str] = []
+        plans: list[tuple[str, str | None, str | None]] = []
+        mutations: list[KnowledgeMutation] = []
         try:
             with store.index.transaction():
                 for rel in sorted(self._touched):
                     try:
                         _safe_join(self.root, rel, label="knowledge root")
-                        found = store.documents.by_path(rel)
-                        current = found[0].to_markdown() if found else None
+                        if rel.startswith("_knowledge/"):
+                            identity = Path(rel).stem
+                            version = store.repository.read(identity)
+                            current = canonical_json(version.value.to_dict()) if version else None
+                        else:
+                            found = store.documents.by_path(rel)
+                            current = found[0].to_markdown() if found else None
                         original = self._before.get(rel)
-                        if _content_hash(current) == _content_hash(original):
-                            self._forget(rel)
-                            continue
-                        if self._after_hashes.get(rel) != _content_hash(current):
-                            conflicts.append(rel)
-                            continue
-                        if original is None:
+                        if _content_hash(current) != _content_hash(original):
+                            if self._after_hashes.get(rel) != _content_hash(current):
+                                conflicts.append(rel)
+                            else:
+                                plans.append((rel, original, current))
+                    except ValueError:
+                        conflicts.append(rel)
+                if not conflicts:
+                    for rel, original, _current in plans:
+                        if rel.startswith("_knowledge/"):
+                            version = store.repository.read(Path(rel).stem)
+                            if version is not None:
+                                value = (KnowledgeObject.from_dict(json.loads(original)) if original is not None
+                                         else replace(version.value, status="withdrawn"))
+                                mutations.append(KnowledgeMutation(value, version.revision))
+                        elif original is None:
+                            found = store.documents.by_path(rel)
                             if found:
                                 store.delete_note(found[0].id)
-                        else:
+                    for rel, original, _current in plans:
+                        if not rel.startswith("_knowledge/") and original is not None:
                             note = KnowledgeNote.from_markdown(original)
                             store.documents.write(note, rel, reason="compensation")
                             store._index_body_links(note)
-                        restored.append(rel)
-                    except ValueError:
-                        conflicts.append(rel)
+                    if mutations:
+                        digest = hashlib.sha256(canonical_json([
+                            {"value": m.value.to_dict(), "expected_revision": m.expected_revision} for m in mutations
+                        ]).encode()).hexdigest()
+                        store.repository.commit("compensation:" + digest, mutations)
+                    restored = [rel for rel, _original, _current in plans]
         finally:
             store.close()
-        for rel in restored:
-            self._forget(rel)
+        if not conflicts:
+            for rel in list(self._touched):
+                self._forget(rel)
         result = RestoreResult(ok=not conflicts, restored=restored, conflicts=conflicts,
                                error="restore conflict" if conflicts else None)
         self.last_restore_result = result

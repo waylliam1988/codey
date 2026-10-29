@@ -80,13 +80,16 @@ TOOL_CONTRACTS = {
     "knowledge_search": ToolContract(
         name="knowledge_search",
         required={"query": str},
+        optional={"depth": ToolArg(int, 1)},
         example='{"tool":"knowledge_search","args":{"query":"..."}}',
-        description="search your existing local notes FIRST",
+        description="search scoped knowledge FIRST; returns pinned versions, evidence, conditions and recall paths. "
+                    "Try mechanism or constraint queries to investigate cross-topic links; a path is not proof.",
         parallel_safe=True,
     ),
     "knowledge_read": ToolContract(
         name="knowledge_read",
         required={"id": str},
+        optional={"revision": ToolArg(int, None)},
         example='{"tool":"knowledge_read","args":{"id":"<note id>"}}',
         description="read one existing note in full. " + knowledge_read_id_guidance(),
         parallel_safe=True,
@@ -106,6 +109,7 @@ TOOL_CONTRACTS = {
             "retrieved_at": ToolArg(str, None),
             "valid_until": ToolArg(str, None),
             "status": ToolArg(str, "active"),
+            "conditions": ToolArg(dict, None),
         },
         example='{"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"relations":[{"src":"war","dst":"helium supply","kind":"affects"}],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}',
         description="save small source/fact/hypothesis/conclusion/question notes; final reports must use done",
@@ -116,6 +120,21 @@ TOOL_CONTRACTS = {
         optional={"kind": ToolArg(str, "relates")},
         example='{"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id or exact title>","kind":"supports"}}',
         description="",
+    ),
+    "knowledge_commit": ToolContract(
+        name="knowledge_commit", required={"commit_id": str, "changes": list},
+        example='{"tool":"knowledge_commit","args":{"commit_id":"question-1","changes":[{"expected_revision":0,"value":{"id":"open-question-1","kind":"question","content":"What would refute this explanation?","origin":"model_inference"}}]}}',
+        description="atomically create or revise long-term objects. Reuse commit_id only for identical content. "
+                    "Each change has expected_revision (0 for new) and value: id, kind "
+                    "(entity/source/evidence/observation/claim/inference/question/answer), content, origin "
+                    "(source/observed_result/author_interpretation/model_inference/user_statement/experiment); "
+                    "optional title, status (candidate/active/stale/withdrawn/superseded/contradicted), aliases, "
+                    "scope (global/project/session/personal), scope_id, conditions, provenance, references. "
+                    "References use {target,revision,relation}: about, from_source, supported_by, refuted_by, "
+                    "limited_by, depends_on, uses, motivated_by, supersedes, same_study. "
+                    "Conditions use {name:{state:reported/not_reported/not_extracted/not_applicable,value:...}}. "
+                    "Read before revising; never merge by similarity. User statements require restricted scope. "
+                    "Active claims require evidence; hypotheses stay candidates. Old answers cannot support claims.",
     ),
     "done": ToolContract(
         name="done",
@@ -135,6 +154,7 @@ def research_tool_names(*, include_source_search: bool = True) -> tuple[str, ...
         "knowledge_read",
         "knowledge_write",
         "knowledge_link",
+        "knowledge_commit",
         "done",
     )
     if not include_source_search:
@@ -148,6 +168,7 @@ def research_tool_names(*, include_source_search: bool = True) -> tuple[str, ...
         "knowledge_read",
         "knowledge_write",
         "knowledge_link",
+        "knowledge_commit",
         "done",
     )
 

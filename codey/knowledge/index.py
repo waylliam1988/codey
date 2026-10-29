@@ -6,7 +6,7 @@ import contextlib
 import json
 import sqlite3
 import threading
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +59,7 @@ class KnowledgeIndex:
         return conn
 
     @contextlib.contextmanager
-    def transaction(self) -> Iterator[sqlite3.Connection]:
+    def transaction(self) -> Generator[sqlite3.Connection, None, None]:
         """Serialize a knowledge transaction, including its derived projections."""
         with self._lock:
             self._ensure_open_locked()

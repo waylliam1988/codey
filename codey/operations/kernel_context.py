@@ -299,8 +299,12 @@ class KernelContext:
         if turn > self.session.max_turns:
             self.close(state, KernelResult(False, self.session.last_done_text or "max turns reached", turn - 1, "max_turns"))
             return
+        from codey.operations.knowledge_context import knowledge_background
+
+        recalled = knowledge_background(self.execution.research_tools, self.session, str(self.transport.user_task or ""))
         prepared = prepare_kernel_turn(self.session, user_task=str(self.transport.user_task or ""),
-            context_text=self.transport.context_text, native=self.native, task_guidance=self.request.task_guidance,
+            context_text="\n\n".join(part for part in (self.transport.context_text, recalled) if part),
+            native=self.native, task_guidance=self.request.task_guidance,
             completion_context=self.completion_context)
         prompt = prepared.prompt
         if state.logical_turn and self.boundary_text():
