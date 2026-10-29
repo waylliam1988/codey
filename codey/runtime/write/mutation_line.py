@@ -89,6 +89,30 @@ class RuntimeMutationLine:
             raise ValueError("a runtime mutation line requires durable storage")
         self.durable = durable
 
+    def advance_execution(
+        self, session_id: str, run_id: str, *, expected: RuntimeOperationState,
+        leaf: str, artifact: ArtifactRecord | None = None,
+        logical_turn: int | None = None, counters: RuntimeExecutionCounters | None = None,
+    ) -> None:
+        from codey.runtime.core.operation_state import advance_execution
+
+        def mutation(projection: Any, entries: Any) -> Any:
+            view = load_session_view(entries, session_id=session_id, run_id=run_id)
+            current = view.state
+            if current is None:
+                raise RuntimeEffectError("execution requires an admitted operation")
+            work_ref = artifact.handle if artifact is not None else None
+            proposed = advance_execution(expected, leaf, logical_turn=logical_turn,
+                                         work_ref=work_ref, counters=counters)
+            if current == proposed:
+                return ()
+            if current != expected:
+                raise RuntimeEffectError("execution action has a stale operation identity")
+            operation_is_open(projection, current)
+            return (operation_state_entry(proposed),)
+
+        self._mutate(session_id, run_id, mutation, artifacts=(artifact,) if artifact is not None else ())
+
     def _mutate(self, session_id: str, run_id: str, mutation: Callable[..., Any], *,
                 messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
                 artifacts: tuple[ArtifactRecord, ...] = ()) -> None:
@@ -187,7 +211,7 @@ class RuntimeMutationLine:
                                             reason=abandoned_reason, batches=view.batches)
                     if entry is not None:
                         rows.append(entry)
-                if prepared.abandoned_batch_ids:
+                if prepared.abandoned_batch_ids and current.leaf == "tool_delivery_pending":
                     current = state_mark_tool_delivery_settled(current)
             next_state = transition(current)
             if next_state == current and not rows:
@@ -383,7 +407,7 @@ class RuntimeMutationLine:
 
     def prepare_provider_request(
         self, session_id: str, run_id: str, *, expected: RuntimeOperationState,
-        artifact: ArtifactRecord, turn: int,
+        artifact: ArtifactRecord, turn: int, logical_turn: int | None = None,
     ) -> None:
         if (artifact.owner_task_id != run_id or artifact.owner_effect_id is not None
                 or artifact.metadata.get("kind") != "provider_request"):
@@ -392,7 +416,7 @@ class RuntimeMutationLine:
         def mutation(projection: Any, entries: Any) -> Any:
             view = load_session_view(entries, session_id=session_id, run_id=run_id)
             return build_provider_prepare_rows(projection, view, expected=expected,
-                                                request_ref=artifact.handle, turn=turn)
+                                                request_ref=artifact.handle, turn=turn, logical_turn=logical_turn)
 
         self._mutate(session_id, run_id, mutation, artifacts=(artifact,))
 

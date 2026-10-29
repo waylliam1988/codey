@@ -12,7 +12,12 @@ from dataclasses import dataclass, replace
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.runtime.core.operation_state import (
     LEAF_ACCEPTED,
+    LEAF_CLOSING,
+    LEAF_COMPLETION_PENDING,
     LEAF_COMPLETION_PROOF_RECORDED,
+    LEAF_CONTROL_READY,
+    LEAF_KERNEL_SETTLED,
+    LEAF_PLAN_READY,
     LEAF_PROVIDER_EFFECT_PENDING,
     LEAF_PROVIDER_REQUEST_READY,
     LEAF_PROVIDER_RESPONSE_READY,
@@ -49,6 +54,13 @@ ACTION_TERMINAL = "terminal"
 ACTION_INTERPRET_PROVIDER_RESPONSE = "interpret_provider_response"
 ACTION_COMMIT_GENERATION_BOUNDARY = "commit_generation_boundary"
 ACTION_SUBMIT_PROVIDER_REQUEST = "submit_provider_request"
+ACTION_PREPARE_TURN = "prepare_turn"
+ACTION_EXECUTE_TOOL_PLAN = "execute_tool_plan"
+ACTION_OBSERVE_BATCH_PROGRESS = "observe_batch_progress"
+ACTION_EVALUATE_COMPLETION = "evaluate_completion"
+ACTION_PREPARE_CONTROL_DELIVERY = "prepare_control_delivery"
+ACTION_CLOSE_PROTOCOL = "close_protocol"
+ACTION_RETURN_KERNEL_RESULT = "return_kernel_result"
 
 
 @dataclass(frozen=True)
@@ -62,6 +74,7 @@ class RuntimeAction:
     driver: str = ""
     response_ref: str = ""
     request_ref: str = ""
+    work_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -132,8 +145,9 @@ def prepare_operation_settlement(view: SessionView) -> OperationSettlement:
     if state.leaf in {LEAF_PROVIDER_REQUEST_READY, LEAF_PROVIDER_EFFECT_PENDING, LEAF_PROVIDER_RESPONSE_READY, LEAF_TOOL_EFFECT_PENDING}:
         raise RuntimeOperationTransitionError("pending operation position has no matching unsettled effect")
     open_batches = tuple(batch for batch in view.batches if not batch.is_terminal)
-    if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
-        batch = _batch_by_id(view.batches, pending_for(view).delivery_batch_id)
+    if state.leaf in {LEAF_TOOL_DELIVERY_PENDING, LEAF_KERNEL_SETTLED} and open_batches:
+        batch = (open_batches[0] if state.leaf == LEAF_KERNEL_SETTLED
+                 else _batch_by_id(view.batches, pending_for(view).delivery_batch_id))
         if (batch is None or len(open_batches) != 1
                 or not _batch_fully_settled(batch, view.effects)):
             raise RuntimeOperationTransitionError("operation has no unique complete result batch to abandon")
@@ -173,15 +187,7 @@ def next_runtime_action(view: SessionView) -> RuntimeAction:
         return RuntimeAction(ACTION_TERMINAL, leaf=state.leaf)
 
     if state.leaf == LEAF_PROVIDER_REQUEST_READY:
-        providers = tuple(effect for effect in unsettled if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND)
-        if len(providers) == 1 and len(unsettled) == 1 and state.response_ref:
-            return RuntimeAction(ACTION_COMMIT_GENERATION_BOUNDARY, leaf=state.leaf,
-                effect_id=providers[0].intent.effect_id, response_ref=state.response_ref,
-                request_ref=state.request_ref, driver=state.driver, reason="before_provider_request")
-        if unsettled or state.response_ref or not state.request_ref:
-            return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="prepared_request_effects_mismatch")
-        return RuntimeAction(ACTION_SUBMIT_PROVIDER_REQUEST, leaf=state.leaf,
-                             request_ref=state.request_ref, driver=state.driver)
+        return _prepared_request_action(state, unsettled)
 
     if state.leaf == LEAF_PROVIDER_EFFECT_PENDING:
         return _provider_pending_action(state, effects, pending)
@@ -192,10 +198,28 @@ def next_runtime_action(view: SessionView) -> RuntimeAction:
         return RuntimeAction(ACTION_INTERPRET_PROVIDER_RESPONSE, leaf=state.leaf,
                              effect_id=pending.effect_ids[0], response_ref=state.response_ref, driver=state.driver)
 
+    execution_actions = {
+        LEAF_PLAN_READY: ACTION_EXECUTE_TOOL_PLAN,
+        LEAF_COMPLETION_PENDING: ACTION_EVALUATE_COMPLETION,
+        LEAF_CONTROL_READY: ACTION_PREPARE_CONTROL_DELIVERY,
+        LEAF_CLOSING: ACTION_CLOSE_PROTOCOL,
+        LEAF_KERNEL_SETTLED: ACTION_RETURN_KERNEL_RESULT,
+    }
+    if state.leaf in execution_actions:
+        if state.leaf in {LEAF_CONTROL_READY, LEAF_CLOSING, LEAF_KERNEL_SETTLED} and not state.work_ref:
+            return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="execution_input_missing")
+        return RuntimeAction(execution_actions[state.leaf], leaf=state.leaf, response_ref=state.response_ref,
+                             work_ref=state.work_ref, driver=state.driver)
+
     if state.leaf == LEAF_TOOL_EFFECT_PENDING:
         return _tool_pending_action(state, effects, delivery_batches, pending)
 
     if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
+        batch = _batch_by_id(delivery_batches, pending.delivery_batch_id)
+        if (batch is not None and _batch_fully_settled(batch, effects)
+                and state.counters.progress.last_batch_id != batch.intent.batch_id):
+            return RuntimeAction(ACTION_OBSERVE_BATCH_PROGRESS, leaf=state.leaf,
+                effect_ids=batch.intent.tool_refs, delivery_batch_id=batch.intent.batch_id, driver=state.driver)
         providers = tuple(effect for effect in unsettled if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND)
         if providers:
             if len(providers) != 1 or len(unsettled) != 1:
@@ -215,7 +239,8 @@ def next_runtime_action(view: SessionView) -> RuntimeAction:
     }:
         if unsettled:
             return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="unexpected_pending_effects")
-        return RuntimeAction(ACTION_CONTINUE, leaf=state.leaf)
+        return RuntimeAction(ACTION_PREPARE_TURN if state.leaf in {LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING}
+                             else ACTION_CONTINUE, leaf=state.leaf)
 
     return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="unhandled_leaf")
 
@@ -431,3 +456,15 @@ __all__ = [
     "OperationSettlement",
     "prepare_operation_settlement",
 ]
+
+
+def _prepared_request_action(state: RuntimeOperationState, unsettled: tuple[RuntimeEffectProjection, ...]) -> RuntimeAction:
+    providers = tuple(effect for effect in unsettled if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND)
+    if len(providers) == 1 and len(unsettled) == 1 and state.response_ref:
+        return RuntimeAction(ACTION_COMMIT_GENERATION_BOUNDARY, leaf=state.leaf,
+            effect_id=providers[0].intent.effect_id, response_ref=state.response_ref,
+            request_ref=state.request_ref, driver=state.driver, reason="before_provider_request")
+    if unsettled or state.response_ref or not state.request_ref:
+        return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="prepared_request_effects_mismatch")
+    return RuntimeAction(ACTION_SUBMIT_PROVIDER_REQUEST, leaf=state.leaf,
+                         request_ref=state.request_ref, driver=state.driver)

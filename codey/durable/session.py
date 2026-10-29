@@ -813,7 +813,12 @@ class DurableSession:
             raise CommitConflict("generation boundary task state is corrupt")
         next_active = replace(
             mutation.task,
-            state={**dict(active_state), "generation_boundary": at},
+            state={**dict(active_state), "generation_boundary": at,
+                   "generation_boundary_receipt": {"at": at,
+                       "provider_effect_ids": [effect.effect_id for effect in mutation.settlements
+                                               if effect.category == "provider_send"],
+                       "submission_ids": [item.submission_id for item in selected],
+                       "conversation_revision": mutation.expected_revision + len(mutation.entries) + len(rebased_entries)}},
         )
         boundary_updates = tuple(
             update for update in boundary.task_updates if update.task_id != task_id

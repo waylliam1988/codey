@@ -174,3 +174,21 @@ effect 身份、原调用方式、参数、声明、窗口和预算接纳条件�
 本阶段仍未完成整个主链迁移：旧 task loop、控制分支、恢复层直接执行工具和外层
 生命周期选择尚需移交统一 driver。最后一项工具回执与进度归约之间的故障窗口、
 审批取消收尾及输出/历史的物理去重仍保留为未验收事项。
+
+## 阶段三：主链进入唯一 operation driver
+
+`task_loop.py` 已替换为直接委托入口；删除内存 pending 控制槽与旧 for 循环。
+现有 operation schema 5 增加 plan/completion/control/closing/kernel_settled 执行位置，
+没有第二个 phase。`logical_turn` 保存原逻辑预算位置；现有 `turn` 仍是 provider
+或工具 effect 的坐标。`work_ref` 仅引用已形成的控制决定与完成检查结果，
+正文及 proof 存在现有 managed artifact，供确认失败后恢复而无需重做完成检查。
+
+新增 contracts 接替旧入口的依赖数据类型；actions 接替旧 loop 的工具接线与提示构造；
+context 接替资源装载、动作输入恢复与执行；control 接替旧 done/question/close 辅助流程。
+reducer 统一选择工具执行、进度、边界、交付动作，恢复装载入口不再执行工具。
+原生会话已重放的工具结果不会被当成新的工具结果再次发送。
+
+阶段验证：原行为轨迹 22 项、主入口进程恢复和 headless 生命周期 3 项、新增 SQLite
+子进程退出与重复恢复 4 项通过。新故障点覆盖 plan、tool intent、最后回执和完成决定。
+这些结果只是本阶段主链验证；审批等待、取消事务、完成与插话竞态、旧测试接线迁移、
+旧恢复实现删除、完整回归及 Gemma 实机尚未完成，不代表六阶段全部验收。

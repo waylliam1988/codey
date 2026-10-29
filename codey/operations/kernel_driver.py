@@ -12,6 +12,8 @@ from dataclasses import replace
 from typing import Any
 
 from codey.durable.checkpoint import operation_from_checkpoint
+from codey.operations.kernel_context import KernelContext
+from codey.operations.kernel_contracts import KernelResult, KernelRunRequest
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.provider_receipts import REQUEST_KIND, json_value, read_provider_artifact, write_provider_artifact
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
@@ -66,7 +68,8 @@ def prepare_provider_request(
         "expected_counters": before.to_payload(), "counters": proposed.to_payload()}}
     artifact = write_provider_artifact(sink.managed_outputs, session_id=sink.session_id, run_id=sink.run_id,
                                       effect_id=intent.effect_id, kind=REQUEST_KIND, payload=payload)
-    sink.mutations.prepare_provider_request(sink.session_id, sink.run_id, expected=state, artifact=artifact, turn=turn)
+    sink.mutations.prepare_provider_request(sink.session_id, sink.run_id, expected=state, artifact=artifact, turn=turn,
+                                           logical_turn=sink._request_context.get("logical_turn"))
     return str(artifact.handle)
 
 
@@ -194,3 +197,93 @@ def _execute_provider(sink: Any, provider: Any, intent: RuntimeEffectIntent,
     sink.record_response(intent.effect_id, reply)
     sink.delivery_batch_id = ""
     return reply
+
+
+def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
+    """Run normal work and restart work through one operation decision loop."""
+    from codey.operations import kernel_control
+    from codey.operations.kernel_actions import _provider_failure
+    from codey.operations.kernel_context import KernelContext
+    from codey.operations.kernel_contracts import KernelResult
+    from codey.runtime.core import operation_reducer as rules
+
+    try:
+        context = KernelContext(session, request)
+    except Exception as exc:
+        return KernelResult(False, f"controller configuration error: {exc}", 0, "controller_failure")
+    try:
+        while True:
+            view = context.load_view()
+            state = view.state
+            action = rules.next_runtime_action(view)
+            if action.kind == rules.ACTION_RETURN_KERNEL_RESULT:
+                return kernel_control.result_from_payload(context.decision(state)["result"])
+            if action.kind == rules.ACTION_FAIL_INVARIANT:
+                raise RecoveryFailed(f"{action.reason}: {action.effect_ids}")
+            result = _execute_kernel_action(context, view, action)
+            if result is not None:
+                return result
+            after = context.load_view()
+            if after == view:
+                raise RecoveryFailed(f"operation action made no progress: {action.kind}")
+    except RecoveryFailed as exc:
+        return KernelResult(False, f"recovery failed: {exc}", session.turn, "recovery_failure")
+    except Exception as exc:
+        return _provider_failure(exc, session.turn, propagate=request.observation.propagate_provider_failure)
+
+
+def _execute_kernel_action(context: KernelContext, view: Any, action: Any) -> KernelResult | None:
+    from codey.operations import kernel_control
+    from codey.runtime.core import operation_reducer as rules
+    from codey.runtime.core import operation_state as positions
+
+    state = view.state
+    if (context.cancelled() and state.leaf in {positions.LEAF_PLAN_READY, positions.LEAF_PROVIDER_REQUEST_READY,
+            positions.LEAF_COMPLETION_PENDING, positions.LEAF_WRITER_RUNNING, positions.LEAF_REPAIR_RUNNING}
+            and not (state.work_ref and context.decision(state).get("purpose") in {"done", "question", "closing"})):
+        context.close(state, KernelResult(False, "stopped", state.logical_turn, "stopped"))
+    elif action.kind == rules.ACTION_PREPARE_TURN:
+        context.prepare_turn(state)
+    elif action.kind in {rules.ACTION_SUBMIT_PROVIDER_REQUEST, rules.ACTION_COMMIT_GENERATION_BOUNDARY}:
+        if action.kind == rules.ACTION_SUBMIT_PROVIDER_REQUEST or action.reason == "before_provider_request":
+            reply = drive_provider_request(context.sink, context.provider, state.request_ref)
+            current = context.load_view().state
+            received = context.sink.load_response(context.session, current.response_ref, window_ref=context.window)
+            snapshot = context.snapshots.get(received.logical_turn, received.snapshot)
+            context.responses[current.response_ref] = replace(received, reply=reply, snapshot=snapshot)
+        else:
+            context.boundary(action)
+    elif action.kind == rules.ACTION_INTERPRET_PROVIDER_RESPONSE:
+        context.interpret(state)
+    elif action.kind in {rules.ACTION_EXECUTE_TOOL_PLAN, rules.ACTION_REPLAY_SAFE_TOOL_BATCH}:
+        if action.delivery_batch_id:
+            context.sink.delivery_batch_id = action.delivery_batch_id
+        result = context.execute_tools(state)
+        if result is not None:
+            return result
+    elif action.kind == rules.ACTION_OBSERVE_BATCH_PROGRESS:
+        context.observe_progress(view, action)
+    elif action.kind == rules.ACTION_REDELIVER_SETTLED_BATCH:
+        context.deliver_results(view, action)
+    elif action.kind == rules.ACTION_EVALUATE_COMPLETION:
+        kernel_control.evaluate_completion(context, state)
+    elif action.kind == rules.ACTION_PREPARE_CONTROL_DELIVERY:
+        kernel_control.prepare_control_delivery(context, state)
+    elif action.kind == rules.ACTION_CLOSE_PROTOCOL:
+        kernel_control.close_protocol(context, view)
+    elif action.kind in {rules.ACTION_SETTLE_PROVIDER_UNKNOWN, rules.ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS}:
+        from codey.durable.effects import interrupted_effect
+        from codey.durable.model import thaw_json
+
+        task, effects = context.durable.task_facts(context.sink.run_id)
+        for identity in action.effect_ids or (action.effect_id,):
+            original = next(effect for effect in effects if effect.effect_id == identity)
+            receipt = thaw_json(interrupted_effect(task, original).settlement)
+            if not isinstance(receipt, dict):
+                raise RecoveryFailed("interrupted effect has no settlement")
+            context.sink.mutations.settle_effect(context.sink.session_id, context.sink.run_id,
+                RuntimeEffectSettlement.from_payload(receipt))
+        raise RecoveryFailed("external outcome is unknown; the original action was not replayed")
+    else:
+        raise RecoveryFailed(f"kernel cannot advance {action.kind} at {action.leaf}")
+    return None

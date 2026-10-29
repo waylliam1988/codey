@@ -185,8 +185,7 @@ class KernelEffectSink:
         self.mutations.record_provider_response(self.session_id, self.run_id, effect_id=effect_id, artifact=artifact,
                                                 messages=_reply_messages(reply))
 
-    def resume_response(self, session: Any, *, provider: Any, window_ref: Any = None) -> Any:
-        from codey.operations.kernel_errors import RecoveryFailed
+    def load_response(self, session: Any, response_ref: str, *, window_ref: Any = None) -> Any:
         from codey.operations.kernel_protocol import ReceivedProviderTurn
         from codey.operations.provider_receipts import (
             REQUEST_KIND,
@@ -196,52 +195,26 @@ class KernelEffectSink:
             request_artifact_for_effect,
             restore_snapshot,
         )
-        from codey.runtime.core.operation_reducer import (
-            ACTION_COMMIT_GENERATION_BOUNDARY,
-            ACTION_CONTINUE,
-            ACTION_INTERPRET_PROVIDER_RESPONSE,
-            ACTION_REDELIVER_SETTLED_BATCH,
-            ACTION_SUBMIT_PROVIDER_REQUEST,
-        )
         from codey.runtime.core.protocol_window import ProtocolWindowRef
-        from codey.runtime.write.drive import peek_next_action
 
-        action = peek_next_action(self.durable, session_id=self.session_id, run_id=self.run_id)
-        if (action.kind == ACTION_SUBMIT_PROVIDER_REQUEST
-                or (action.kind == ACTION_COMMIT_GENERATION_BOUNDARY and action.reason == "before_provider_request")):
-            from codey.operations.kernel_driver import drive_provider_request, load_prepared_request
-
-            prepared, _intent = load_prepared_request(self, action.request_ref)
-            snapshot = restore_snapshot(prepared.get("snapshot"))
-            window = ProtocolWindowRef.from_payload(prepared["window"]) if prepared.get("window") is not None else None
-            if snapshot.policy != session.policy or window != window_ref:
-                raise RuntimeEffectError("prepared request authorization or protocol window changed")
-            if not snapshot.implementation_compatible:
-                raise RuntimeEffectError("prepared request executor implementation changed")
-            drive_provider_request(self, provider, action.request_ref)
-            action = peek_next_action(self.durable, session_id=self.session_id, run_id=self.run_id)
-        if action.kind != ACTION_INTERPRET_PROVIDER_RESPONSE:
-            if action.kind in {ACTION_CONTINUE, ACTION_REDELIVER_SETTLED_BATCH}:
-                return None
-            raise RecoveryFailed(f"operation requires {action.kind}: {action.reason}")
-        effect = next(effect for effect in RuntimeEffectStore(durable=self.durable).load_effects(self.session_id, self.run_id)
-                      if effect.intent.effect_id == action.effect_id)
-        request = read_provider_artifact(self.managed_outputs, request_artifact_for_effect(self.durable, effect), kind=REQUEST_KIND,
-            session_id=self.session_id, run_id=self.run_id, effect_id=action.effect_id)
-        response = read_provider_artifact(self.managed_outputs, self.durable.artifact(action.response_ref),
-            kind=RESPONSE_KIND, session_id=self.session_id, run_id=self.run_id, effect_id=action.effect_id)
+        artifact = self.durable.artifact(response_ref)
+        effect_id = artifact.owner_effect_id
+        effect = next((row for row in RuntimeEffectStore(durable=self.durable).load_effects(self.session_id, self.run_id)
+                       if row.intent.effect_id == effect_id), None)
+        if effect is None or effect.intent.effect_category != EFFECT_CATEGORY_PROVIDER_SEND:
+            raise RuntimeEffectError("response has no original provider intent")
+        request = read_provider_artifact(self.managed_outputs, request_artifact_for_effect(self.durable, effect),
+            kind=REQUEST_KIND, session_id=self.session_id, run_id=self.run_id, effect_id=effect_id)
+        response = read_provider_artifact(self.managed_outputs, artifact, kind=RESPONSE_KIND,
+            session_id=self.session_id, run_id=self.run_id, effect_id=effect_id)
         if not isinstance(request, dict) or type(request.get("logical_turn")) is not int or request["logical_turn"] < 1:
-            raise RuntimeEffectError("received response has no original logical turn")
+            raise RuntimeEffectError("response has no original logical turn")
         snapshot = restore_snapshot(request.get("snapshot"))
-        if snapshot.policy != session.policy:
-            raise RuntimeEffectError("received response authorization does not match the task")
         window = ProtocolWindowRef.from_payload(request["window"]) if request.get("window") is not None else None
-        if window != window_ref:
-            raise RuntimeEffectError("received response belongs to another protocol window")
+        if snapshot.policy != session.policy or window != window_ref:
+            raise RuntimeEffectError("response authorization or protocol window changed")
         args = request.get("args")
         prompt = args[0] if isinstance(args, list) and args and isinstance(args[0], str) else ""
-        self._request_context = {"logical_turn": request["logical_turn"], "snapshot": request["snapshot"],
-                                 "window": request.get("window")}
         return ReceivedProviderTurn(decode_reply(response), snapshot, prompt, owner_session=session,
                                     logical_turn=request["logical_turn"], window_ref=window)
 
@@ -333,15 +306,11 @@ class KernelRecordedProvider(ProviderAdapter):
     def bind_kernel_request(self, snapshot: Any, *, logical_turn: int, window_ref: Any = None) -> None:
         self.sink.bind_request(snapshot, logical_turn=logical_turn, window_ref=window_ref)
 
-    def resume_kernel_response(self, session: Any) -> Any:
-        return self.sink.resume_response(session, provider=self.provider, window_ref=getattr(self.provider, "window_ref", None))
-
     def _send(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        from codey.operations.kernel_driver import drive_provider_request, prepare_provider_request
+        # The operation driver owns freezing, admission and recording. This
+        # adapter only exposes its sink to callers assembling dependencies.
+        return super()._send(name, *args, **kwargs)
 
-        request_ref = prepare_provider_request(self.sink, name, args, kwargs, counters=self._counter_update)
-        self._counter_update = None
-        return drive_provider_request(self.sink, self.provider, request_ref)
 
 
 def _reply_messages(reply: Any) -> tuple[tuple[str, dict[str, object]], ...]:

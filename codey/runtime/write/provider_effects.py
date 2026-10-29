@@ -56,7 +56,7 @@ class ProviderAdmission:
 
 def build_provider_prepare_rows(
     projection: Any, view: SessionView, *, expected: RuntimeOperationState,
-    request_ref: str, turn: int,
+    request_ref: str, turn: int, logical_turn: int | None = None,
 ) -> tuple[dict[str, object], ...]:
     state = require_open_view(projection, view)
     if state.leaf == LEAF_PROVIDER_REQUEST_READY and state.request_ref == request_ref:
@@ -73,8 +73,13 @@ def build_provider_prepare_rows(
     if any(effect.settlement is None and effect.intent.effect_category != EFFECT_CATEGORY_PROVIDER_SEND
            for effect in view.effects):
         raise RuntimeEffectError("request preparation cannot bypass pending tools")
-    return (operation_state_entry(mark_provider_request_ready(state, request_ref=request_ref,
-                driver=driver_for_state(state), turn=turn)),)
+    prepared = mark_provider_request_ready(state, request_ref=request_ref,
+                                          driver=driver_for_state(state), turn=turn)
+    prepared = replace(prepared, response_ref=state.response_ref if any(
+        effect.settlement is None and effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND
+        for effect in view.effects) else "",
+        logical_turn=state.logical_turn if logical_turn is None else logical_turn)
+    return (operation_state_entry(prepared),)
 
 
 def _require_supersedable_not_sent(

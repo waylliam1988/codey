@@ -77,13 +77,10 @@ def recover_effects_for_resume(
     if durable is None:
         return ResumeRecoveryResult(ok=False)
     _recover_shell_approval(deps, durable=durable, session_id=session_id, run_id=run_id)
-    pending = _recover_pending_effects(
-        deps, session_id=session_id, run_id=run_id, project=project,
-        task_kind=task_kind, ignored_paths=ignored_paths,
-        durable=durable,
-    )
-    if not pending.ok:
-        return pending
+    # Loading restores observations only. The operation driver owns pending
+    # execution, progress reduction, generation boundaries and redelivery.
+    # In particular, never run a tool from this entry pre-pass.
+    pending = ResumeRecoveryResult(ok=True)
     # Durable effect records are sufficient to reconstruct settled receipts.
     # A runtime JSONL projection may be absent after a clean cold start or
     # deliberately disabled in recovery tests; that must not erase facts.
