@@ -4,6 +4,7 @@ import unittest
 
 from codey.utils.citation_scanner import (
     citation_ref_items,
+    normalize_citation_groups,
     source_id_ref_items,
     source_id_refs,
 )
@@ -25,7 +26,14 @@ class CitationScannerTests(unittest.TestCase):
             (1, ()),
             (2, ()),
             (3, ()),
+            (1, ()),
+            (2, ()),
         ])
+
+    def test_explicit_group_normalization_does_not_guess_ranges_or_array_indices(self) -> None:
+        self.assertEqual(normalize_citation_groups("Sources [2, 7，10]."), "Sources [2][7][10].")
+        untouched = "array[1,2]; ![1,2](image); [1,2](url); [[1,2]]; [1-3]; [1 p.2,3]"
+        self.assertEqual(normalize_citation_groups(untouched), untouched)
 
     def test_source_id_refs_cover_bracket_and_context_only(self) -> None:
         refs = source_id_ref_items("plain s1 remains prose; [s2 p.5] and source_id=s3 are refs")

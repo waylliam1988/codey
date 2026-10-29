@@ -71,8 +71,8 @@ def test_initial_result_and_repair_prompt_surfaces_have_frozen_hashes() -> None:
     assert "not evidence that the host has no network access" in initial
     assert _sha256(initial) == "c56b7f57796bc20e5ec1b896e682904de23ac951e714818c257977532bca381f"
     assert _sha256(result) == "591c80828028a2103608e4d5a081bfd484d6d0fb755950c423cf8241b9876522"
-    # Reviewed addition: pinned knowledge references and structured report arguments.
-    assert _sha256(repair) == "85ac38526495a924edb1804eb2c939ee4b56719d4807a66b4cf0cbc10eaddc3d"
+    # Reviewed: pinned references and the explicit done nesting repair example.
+    assert _sha256(repair) == "58304d95aace37278f2715e7ab2e8ec4de598b2d480146d6e7e1a17fa0b64c37"
 
 
 def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> None:

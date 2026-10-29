@@ -9,6 +9,9 @@ _CITATION_RE = re.compile(
     r"(?<![A-Za-z0-9_!])\[(\d+)(?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*(\d+(?:\s*-\s*\d+)?))?\]",
     re.IGNORECASE,
 )
+_CITATION_GROUP_RE = re.compile(
+    r"(?<![A-Za-z0-9_!\[])[\[]([0-9]{1,9}(?:[ \t]*[,，、][ \t]*[0-9]{1,9}){1,31})\](?![\](])"
+)
 _SOURCE_ID_BRACKET_RE = re.compile(
     r"(?<![A-Za-z0-9_!])\[\[?(s\d+)"
     r"((?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*\d+(?:\s*-\s*\d+)?)?)\]\]?",
@@ -64,9 +67,15 @@ def citation_refs(text: str) -> set[int]:
     return {item.number for item in citation_ref_items(text)}
 
 
+def normalize_citation_groups(text: str) -> str:
+    """Expand an explicit comma list without supplying or selecting citations."""
+    return _CITATION_GROUP_RE.sub(
+        lambda match: "".join(f"[{value.strip()}]" for value in re.split("[,，、]", match.group(1))), text)
+
+
 def citation_ref_items(text: str) -> list[CitationRef]:
     refs: list[CitationRef] = []
-    for value, pages in _CITATION_RE.findall(text or ""):
+    for value, pages in _CITATION_RE.findall(normalize_citation_groups(text or "")):
         try:
             number = int(value)
         except ValueError:

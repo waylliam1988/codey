@@ -111,6 +111,14 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
                      "Structured knowledge versions or knowledge_read, not a note_id, Markdown path, "
                      "source id, tool result_ref or old answer. Read the cited object before resubmitting; "
                      "do not guess an id or a revision.")
+        from codey.knowledge.model import canonical_json
+
+        raw_refs = getattr(session, "last_done_args", {}).get("knowledge_refs", ())
+        if isinstance(raw_refs, (tuple, list)):
+            requests = [canonical_json({"tool": "knowledge_read", "args": {"id": row["id"]}})
+                        for row in raw_refs[:3] if isinstance(row, dict) and isinstance(row.get("id"), str)]
+            if requests:
+                parts.append("Inspect the cited object or legacy note to obtain its structured versions:\n" + "\n".join(requests))
     if "research_evidence_saved" in failed:
         parts.append("No citable evidence has been saved. Use knowledge_write with type=fact, "
                      "sources=[an opened URL], and evidence=[{claim:your conclusion,source_url:the same URL,"
@@ -129,6 +137,9 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
                      "Putting two findings in a note body with only one evidence item does not support both. "
                      "Do not relabel a sourced finding as a hypothesis to bypass the missing evidence. "
                      "The report has been preserved, not silently reduced to its supported subset.")
+        parts.append("Every factual evidence paragraph needs its own inline [n] citation to the numbered source table. "
+                     "Citations in summary or a source list do not cite an uncited evidence paragraph. "
+                     "A wording match alone is insufficient without the source citation.")
         ledger = _context_get(context, "research_ledger")
         if ledger is not None:
             from codey.research.object_model import build_research_record

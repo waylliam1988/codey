@@ -538,3 +538,49 @@ identity, exactly one revision increment, unchanged content/references and
 candidate status, in addition to the requested condition/provenance update.
 The tenth fresh recall process has actually committed a candidate and read the
 correct original claim; its final completion and revision are still pending.
+
+
+## Controlled lifecycle result and production JSON compatibility mode
+
+Fresh constrained recall completed at turn 7; its premise read happened after
+the candidate commit, so this is persistence/lifecycle acceptance, not proof of
+ideal research ordering or careful analogy quality. Separate-process revision
+completed at turn 5. Manual inspection confirms the same inference identity,
+revision 1 -> 2, unchanged content/references and personal owner scope, candidate
+status, workload not_extracted and analogy_requires_queue_measurement. The
+scoped revision graph contains seven nodes and seven edges. Artifact:
+research-three-stage-thinking-clean-20261030/lifecycle-inspection.json.
+
+The JSON option now uses the production provider and shared task freeze path,
+not a harness-only payload patch. Local Tool calling has an explicit
+JSON constrained (thinking off) mode, persisted as native_tools_mode=json. It
+uses Chat Completions response_format=json_schema only for task sends; ordinary
+chat sends and auxiliary summaries remain prose. Frozen API selections retain
+the format and frozen provider invocations retain the per-send flag. Native,
+Responses and thinking combinations are rejected. This constrains syntax only;
+it neither selects tools/arguments nor adds permissions or changes validation.
+Unsupported server formats surface their actual rejection without switching
+protocols or replaying uncertain generations. Plain remains the default.
+
+Four new tests cover config validation, selection restore after changed defaults,
+ordinary/auxiliary isolation and real headless/kernel request admission. Expanded
+provider lifecycle/entry checks passed 58 tests. Local config/model/cold-start
+checks passed 61 after updating the expected allowed-mode diagnostic. Ruff,
+mypy, Pyrefly and ty passed; frontend typecheck/build and dist validation passed.
+
+The first real WAL JSON run searched/opened official and secondary pages and
+saved three sourced claims, but failed at max_turns after repeating invalid
+report citations and a legacy note identity. It is NOT accepted. Its subsequent
+investigation also failed to extract useful new evidence. The run exposed
+comma-group citations [1, 2] being ignored. The shared scanner and finalizer
+now expand explicit lists without selecting or supplying references; unknown
+numbers still fail, and ranges/array indexes are not inferred. Feedback now
+explains that evidence paragraphs each need inline citations and offers explicit
+read requests for supplied legacy references. Strict research snapshots include
+a complete report-shape example. 212 focused research/prompt/report tests and
+seven subtests passed; no full pytest run. A pre-existing stale done-repair
+prompt hash was verified identical between HEAD and working code and updated
+to the reviewed explicit nesting-repair surface.
+
+The next live medicine task uses the production JSON mode and these citation
+repairs. Its result and a repaired WAL rerun remain pending.

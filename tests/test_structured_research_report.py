@@ -80,6 +80,30 @@ def test_literal_escape_sequences_in_report_content_are_preserved():
     assert args["report_sections"]["coverage"][0] in plan.control.body
 
 
+def test_grouped_citations_are_compiled_but_unobserved_numbers_still_fail():
+    from codey.research.done_finalizer import finalize_done_answer
+    from codey.utils.citation_scanner import citation_refs
+
+    args = arguments()
+    second = "https://example.com/replication"
+    args["summary"] = "One writer commits at a time. [1, 2]"
+    args["report_sections"]["evidence"] = ["One writer commits at a time. [1, 2]"]
+    args["report_sections"]["sources"].append(f"[2] Replication - {second}")
+    ledger = ResearchLedger()
+    for url in (URL, second):
+        ledger.record_open(url, url, "Experiment", "One writer commits at a time.")
+        prepared = ledger.prepare_evidence_items(
+            [{"claim": "One writer commits at a time.", "source_url": url, "excerpt": "One writer commits at a time."}],
+            fallback_sources=[url], fallback_claim="", fallback_body="", note_type="fact")
+        ledger.add_evidence_items(list(prepared.items), note_id=url)
+    state, plan = plan_for(args, False)
+    finalized = finalize_done_answer(plan.control.body, ledger)
+    assert "[1][2]" in finalized.text and citation_refs(finalized.text) == {1, 2}
+    assert completion_gate.evaluate(state, finalized.text, context={"research_ledger": ledger}).complete
+    bad = finalize_done_answer(plan.control.body.replace("[1, 2]", "[1, 9]"), ledger)
+    assert bad.reason == "unmapped_numeric_refs"
+
+
 @pytest.mark.parametrize("native", [True, False])
 @pytest.mark.parametrize("separator", ["\n", r"\n"])
 def test_duplicated_full_report_is_rejected_with_specific_repair(native, separator):

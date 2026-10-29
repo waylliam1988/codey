@@ -14,6 +14,7 @@ from codey.research.urls import opened_url
 from codey.reviews.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
 from codey.utils.citation_scanner import (
     citation_ref_items,
+    normalize_citation_groups,
     source_id_ref_items,
     source_id_refs,
 )
@@ -283,7 +284,7 @@ def _rewrite_numeric_refs(
         new_number = number_map.get(old_number)
         return f"[{new_number}{match.group(2)}]" if new_number is not None else match.group(0)
 
-    return _NUMERIC_REF_RE.sub(repl, text)
+    return _NUMERIC_REF_RE.sub(repl, normalize_citation_groups(text))
 
 
 def _referenced_urls(
