@@ -79,5 +79,8 @@ def test_chinese_report_reminder_preserves_permission_and_evidence_only_boundari
     session.task_kind = "evidence_followup"
     text = render_research_observations(session)
     assert "knowledge_write" not in text and "done 使用 report_sections" not in text
+    assert "本轮要求中文研究报告" not in text
+    assert "本轮只补充证据，不撰写最终报告" in text
+    assert "结束时用 done.summary 简述" in text
     session.task_text = "Investigate competing explanations"
     assert "本轮要求中文" not in render_research_observations(session)

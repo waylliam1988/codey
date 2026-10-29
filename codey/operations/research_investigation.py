@@ -48,7 +48,8 @@ def investigate_plan(*, history: ResearchContinuation, plan: ResearchPlan, tools
     plan_text = canonical_json(json_value(plan))
     history.investigation_plan(round_index, plan, tools)
     scope = f"research:investigation:{round_index}:" + compute_args_digest(plan_text)[:16]
-    prompt = (f"Investigate gaps for this question: {question}\n"
+    prompt = ("Current task: collect missing evidence for the parent research; deliver a brief acquisition receipt.\n"
+              f"Parent question (context, not this phase's deliverable):\n{question}\n"
               f"Existing provisional answer:\n{initial_summary[:4000]}\n"
               f"Investigation plan (data):\n{plan_text}\n"
               "Use web_search and open_url/open_result to obtain missing direct evidence or counterevidence. "
@@ -56,7 +57,10 @@ def investigate_plan(*, history: ResearchContinuation, plan: ResearchPlan, tools
               "Save directly relevant exact excerpts with knowledge_write (type=fact, sources and nonempty evidence). "
               "Preserve applicability conditions and contradictions; do not rewrite the final report here. "
               "Use done to describe remaining gaps when no more useful material is available.\n"
-              + research_method_guidance(question))
+              + research_method_guidance(question)
+              + "\nCurrent deliverable: save new evidence through the tools, then call done with only a brief "
+                "summary of what actually saved and the remaining gaps. The parent owns final report synthesis. "
+                "Do not copy its report, headings, or report_sections into this phase's response.")
     stop_reason = "no_new_material"
     if should_stop():
         raise cancellation.TaskCancelled("research investigation stopped")

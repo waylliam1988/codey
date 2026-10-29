@@ -181,7 +181,15 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
 
     names = tuple(visible_tool_names_for_snapshot(session.policy, allowed, native=native))
     frozen = _frozen_specs_for_names(names)
-    if session.policy.strict_research:
+    if getattr(session, "task_kind", "") == "evidence_followup":
+        frozen = tuple(replace(spec,
+            parameters=tuple(item for item in spec.parameters if item[0] == "summary"),
+            required=("summary",),
+            json_examples=('{"tool":"done","args":{"summary":"Saved findings and remaining evidence gaps"}}',),
+            description="End this evidence investigation with a brief receipt of saved findings and remaining gaps. "
+                        "The parent task owns the final report. Do not draft its report in this phase.")
+            if spec.name == "done" else spec for spec in frozen)
+    elif session.policy.strict_research:
         from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE
 
         frozen = tuple(replace(spec, json_examples=(STRUCTURED_REPORT_EXAMPLE,),

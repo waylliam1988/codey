@@ -975,3 +975,24 @@ The fresh scoped-contract lifecycle graph has also been exported and inspected:
 `research-three-stage-scoped-contract-20261030/revise-graph.json`, seven nodes,
 seven edges, candidate inference at version 2, original premise at version 1.
 This is version/provenance acceptance, not proof of the queue analogy.
+
+## Evidence investigation phase contract
+
+The current-state medicine run retained one observation snapshot per request,
+but still confused related mechanisms and attempted full reports inside an
+evidence-only follow-up. Its process was interrupted during the session/tool
+environment transition; no final result artifact exists. KoboldCpp is idle and
+no manual-probe process remains. Do not treat it as a completed research task.
+
+A concrete instruction conflict was found: the follow-up embedded the parent's
+request for a Chinese research report, its Chinese observation reminder demanded
+that report again, and its shared done description still offered report_sections.
+Evidence-only snapshots now expose only done.summary with an acquisition receipt
+description. Text and native validation reject report_sections in this phase;
+parent research retains the full report contract. The Chinese reminder and the
+investigation's closing instruction now ask only for actual saved findings and
+remaining gaps. No executor, recovery state or completion check was bypassed.
+
+Validation: 66 focused snapshot/protocol/observation/follow-up/subprocess-restart
+tests passed. Ruff, mypy (555 files), Pyrefly and ty passed. Fresh real-browser
+WAL task: `research-live-wal-phase-contract-20261030`, in progress, not accepted.
