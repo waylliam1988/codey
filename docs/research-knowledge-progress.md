@@ -32,6 +32,14 @@ generic research methods. Markdown is interchange, never a competing authority.
   results. Material acquisition and synthesis/staged writes still need scrutiny.
 - Existing KnowledgeStore reads Markdown; index rebuild scans files. Existing
   common context only recalls the current session's synthesis.
-- Implementation and validation: pending.
+- Step 1 implemented: `.codey/knowledge.db` owns document heads and immutable
+  revisions; old Markdown and index.db remain unchanged during one-time migration.
+  Explicit import requires an expected revision; exports cannot change the DB.
+  Rebuild uses canonical documents. Staged batches use SQLite rollback rather than
+  filesystem compensation. Undo creates compensation revisions with conflict checks.
+- Validation: 100 targeted tests passed (knowledge, SQLite authority, changes,
+  continuation contracts, pipeline). Ruff and targeted strict mypy passed.
+- Remaining: structured claims/evidence commits, shared recall/tools and graph,
+  acquisition/synthesis effect boundaries, expanded static/restart/model checks.
 
 Update this file in each implementation commit with results and remaining work.

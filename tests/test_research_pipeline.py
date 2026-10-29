@@ -819,7 +819,7 @@ def test_pipeline_staging_commits_accepted_followup_side_effects() -> None:
         assert len(initial_tools.ledger.evidence_items) == 1
         assert "https://example.com/accepted" in initial_tools.sources_read
         assert len(initial_tools.created_ids) == 1
-        assert len(list(store.root.glob("**/*.md"))) == 1
+        assert store.index.count() == 1
 
 
 
@@ -1356,7 +1356,7 @@ def test_staged_knowledge_store_rollback_on_partial_failure() -> None:
         existing_note = KnowledgeNote(id="existing-note", title="Original Title", body="Original Body", type="hypothesis")
         target_store.write_note(existing_note)
         orig_existing_path = target_store.path_for(existing_note)
-        orig_existing_bytes = orig_existing_path.read_bytes()
+        orig_existing_bytes = target_store.read_note(existing_note.id).to_markdown()
 
         staged_store = StagedKnowledgeStore(target_store)
 
@@ -1393,8 +1393,9 @@ def test_staged_knowledge_store_rollback_on_partial_failure() -> None:
         # Verify moved path (facts/existing-note.md) was cleaned up, and original (hypotheses/existing-note.md) is 100% byte-exact
         moved_path = target_store.path_for(modified_existing)
         assert moved_path.exists() is False
-        assert orig_existing_path.exists() is True
-        assert orig_existing_path.read_bytes() == orig_existing_bytes
+        assert not orig_existing_path.exists()
+        assert target_store.read_note(existing_note.id).to_markdown() == orig_existing_bytes
+        assert len(target_store.documents.history(existing_note.id)) == 1
 
         # Verify SQLite index is 100% clean
         assert target_store.exists("note-1") is False

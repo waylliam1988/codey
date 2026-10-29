@@ -1,8 +1,4 @@
-"""SQLite index over the Markdown knowledge vault.
-
-Markdown files are authoritative. SQLite is a rebuildable cache for search,
-recent-note lookup, and relations.
-"""
+"""Derived search and graph tables in the authoritative knowledge database."""
 
 from __future__ import annotations
 
@@ -10,6 +6,7 @@ import contextlib
 import json
 import sqlite3
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +39,8 @@ class KnowledgeIndex:
 
     def _read_conn(self) -> sqlite3.Connection:
         """Thread-local read connection; writes stay on _conn under _lock."""
+        if getattr(self._local, "transaction_depth", 0):
+            return self._conn
         with self._read_conns_lock:
             if self._closed:
                 raise RuntimeError("knowledge index is closed")
@@ -58,6 +57,32 @@ class KnowledgeIndex:
                 self._read_conns.add(conn)
             self._local.conn = conn
         return conn
+
+    @contextlib.contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        """Serialize a knowledge transaction, including its derived projections."""
+        with self._lock:
+            self._ensure_open_locked()
+            depth = getattr(self._local, "transaction_depth", 0)
+            savepoint = f"knowledge_{depth}"
+            self._conn.execute("BEGIN IMMEDIATE" if depth == 0 else f"SAVEPOINT {savepoint}")
+            self._local.transaction_depth = depth + 1
+            try:
+                yield self._conn
+                self._conn.execute("COMMIT" if depth == 0 else f"RELEASE {savepoint}")
+            except BaseException:
+                if depth == 0:
+                    self._conn.rollback()
+                else:
+                    self._conn.execute(f"ROLLBACK TO {savepoint}")
+                    self._conn.execute(f"RELEASE {savepoint}")
+                raise
+            finally:
+                self._local.transaction_depth = depth
+
+    def _commit(self) -> None:
+        if not getattr(self._local, "transaction_depth", 0):
+            self._conn.commit()
 
     def _detect_fts(self) -> bool:
         try:
@@ -158,7 +183,7 @@ class KnowledgeIndex:
                     "INSERT INTO notes_fts(id,title,body) VALUES(?,?,?)",
                     (note.id, note.title, note.body),
                 )
-            c.commit()
+            self._commit()
 
     def remove(self, note_id: str) -> None:
         with self._lock:
@@ -171,7 +196,7 @@ class KnowledgeIndex:
             c.execute("DELETE FROM notes WHERE id=?", (note_id,))
             if self.fts_enabled:
                 c.execute("DELETE FROM notes_fts WHERE id=?", (note_id,))
-            c.commit()
+            self._commit()
 
     def clear(self) -> None:
         with self._lock:
@@ -184,7 +209,7 @@ class KnowledgeIndex:
             c.execute("DELETE FROM notes")
             if self.fts_enabled:
                 c.execute("DELETE FROM notes_fts")
-            c.commit()
+            self._commit()
 
     def add_link(self, src_id: str, dst_id: str, kind: str = "relates") -> None:
         with self._lock:
@@ -193,7 +218,7 @@ class KnowledgeIndex:
                 "INSERT OR IGNORE INTO links(src_id,dst_id,kind) VALUES(?,?,?)",
                 (src_id, dst_id, kind),
             )
-            self._conn.commit()
+            self._commit()
 
     def get(self, note_id: str) -> dict[str, Any] | None:
         row = self._read_conn().execute("SELECT * FROM notes WHERE id=?", (note_id,)).fetchone()
@@ -344,7 +369,7 @@ class KnowledgeIndex:
                 "INSERT OR IGNORE INTO links(src_id,dst_id,kind) VALUES(?,?,?)",
                 rows,
             )
-            c.commit()
+            self._commit()
 
     def sources_for(self, note_ids: list[str]) -> list[dict[str, Any]]:
         ids = _unique(note_ids)

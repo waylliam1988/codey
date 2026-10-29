@@ -84,18 +84,17 @@ def test_restored_note_commit_is_idempotent_and_conflict_preserves_vault(tmp_pat
                              created="2026-01-01T00:00:00+00:00", updated="2026-01-01T00:00:00+00:00")
         canonical = {"knowledge_notes": {"created": [note.id], "updated": [], "proposals": [json_value(note)]}}
         store.write_note(replace(note))
-        path = store.path_for(note)
-        original = path.read_bytes()
+        original = store.read_note(note.id).to_markdown()
         tools = ResearchTools(search=object(), store=store, changes=KnowledgeChanges(root=store.root)).create_staged()
         restore_note_proposals(tools, canonical)
         monkeypatch.setattr(store, "write_note", lambda *args, **kwargs: pytest.fail("original proposal was rewritten"))
         tools.store.commit_to(store)
-        assert path.read_bytes() == original
+        assert store.read_note(note.id).to_markdown() == original
         assert tools.created_ids == [note.id]
         canonical["knowledge_notes"]["proposals"][0]["body"] = "Conflicting body"
         with pytest.raises(ResearchContinuationError, match="differs from its original proposal"):
             restore_note_proposals(tools, canonical)
-        assert path.read_bytes() == original
+        assert store.read_note(note.id).to_markdown() == original
     finally:
         store.index.close()
 

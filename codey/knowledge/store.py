@@ -1,15 +1,17 @@
-"""Markdown knowledge store with a rebuildable SQLite index."""
+"""SQLite knowledge authority with explicit Markdown interchange."""
 
 from __future__ import annotations
 
 import contextlib
 import hashlib
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from codey.knowledge.changes import KnowledgeChanges
+from codey.knowledge.documents import KnowledgeDocuments
 from codey.knowledge.index import KnowledgeIndex
 from codey.knowledge.note import LINK_KINDS, KnowledgeNote, is_safe_id, now_iso, wikilink
 from codey.storage.atomic_io import write_text_atomic
@@ -28,8 +30,9 @@ class KnowledgeStore:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root).expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True)
-        self.index = KnowledgeIndex(self.root / ".codey" / "index.db")
-        self._rebuilt_after_index_miss = False
+        self.index = KnowledgeIndex(self.root / ".codey" / "knowledge.db")
+        self.documents = KnowledgeDocuments(self.index)
+        self._import_legacy_once()
 
     def path_for(self, note: KnowledgeNote) -> Path:
         if not is_safe_id(note.id):
@@ -43,7 +46,7 @@ class KnowledgeStore:
         return path.resolve().relative_to(self.root).as_posix()
 
     def exists(self, note_id: str) -> bool:
-        return self.index.get(note_id) is not None
+        return self.documents.get(note_id) is not None
 
     def write_note(
         self,
@@ -51,26 +54,26 @@ class KnowledgeStore:
         *,
         changes: KnowledgeChanges | None = None,
     ) -> str:
+        rel = self.rel(self.path_for(note))
+        previous = self.documents.get(note.id)
+        if previous is not None:
+            from dataclasses import replace
+
+            if replace(note, updated=previous[0].updated).to_markdown() == previous[0].to_markdown():
+                note.updated = previous[0].updated
+                return rel
         note.updated = now_iso()
-        path = self.path_for(note)
-        rel = self.rel(path) if path.exists() else (Path(note.folder) / f"{note.id}.md").as_posix()
-        old_rel = self._current_path(note.id)
-        moving = old_rel is not None and old_rel != rel
-        if changes is not None:
-            changes.capture_before(rel, path)
-            if moving and old_rel:
-                changes.capture_before(old_rel, self.root / old_rel)
-        text = note.to_markdown()
-        write_text_atomic(path, text)
-        self.index.upsert(note, path=rel, content_hash=_content_hash(text))
-        self._rebuilt_after_index_miss = False
-        self._index_body_links(note)
-        if moving and old_rel:
-            self._remove_note_file(old_rel)
-        if changes is not None:
-            changes.record_after(rel, path)
-            if moving and old_rel:
-                changes.record_after(old_rel, self.root / old_rel)
+        with self.index.transaction():
+            if changes is not None:
+                changes.capture_content(rel, previous[0].to_markdown() if previous else None)
+                if previous and previous[1] != rel:
+                    changes.capture_content(previous[1], previous[0].to_markdown())
+            self.documents.write(note, rel)
+            self._index_body_links(note)
+            if changes is not None:
+                changes.record_content(rel, note.to_markdown())
+                if previous and previous[1] != rel:
+                    changes.record_content(previous[1], None)
         return rel
 
     def link(
@@ -108,90 +111,87 @@ class KnowledgeStore:
         self.index.add_link(src_id, dst_id, kind)
         return KnowledgeLinkResult(True, f"linked: {src_id} -> {dst_id} ({kind})", created=True)
 
-    def read_note(self, note_id: str) -> KnowledgeNote | None:
-        note = self._read_indexed_note(note_id)
-        if note is not None or self._rebuilt_after_index_miss:
-            return note
-        self.rebuild()
-        return self._read_indexed_note(note_id)
+    def read_note(self, note_id: str, *, revision: int | None = None) -> KnowledgeNote | None:
+        found = self.documents.get(note_id, revision)
+        return found[0] if found else None
 
     def read_notes(self, note_ids: list[str]) -> dict[str, KnowledgeNote]:
-        return {
-            note_id: note
-            for note_id, (note, _row) in self.read_notes_with_rows(note_ids).items()
-        }
+        return {note_id: note for note_id, (note, _row) in self.read_notes_with_rows(note_ids).items()}
 
     def read_notes_with_rows(
         self, note_ids: list[str]
     ) -> dict[str, tuple[KnowledgeNote, dict[str, Any]]]:
-        """Batch read notes plus their index rows in one index round-trip."""
-        seen: list[str] = []
-        for raw in note_ids:
-            text = (raw or "").strip()
-            if text and text not in seen:
-                seen.append(text)
-        if not seen:
-            return {}
-        rows = self.index.notes_by_ids(seen)
         out: dict[str, tuple[KnowledgeNote, dict[str, Any]]] = {}
-        for raw_row in rows:
-            row: object = raw_row
-            if not isinstance(row, dict):
-                continue
-            path_text = str(row.get("path") or "")
-            if not path_text:
-                continue
-            path = self.root / path_text
-            try:
-                if not path.is_file():
-                    continue
-                note = KnowledgeNote.from_markdown(path.read_text(encoding="utf-8"))
-            except (ValueError, OSError):
-                continue
-            out[str(row.get("id") or note.id)] = (note, dict(row))
-        if len(out) < len(seen) and not self._rebuilt_after_index_miss:
-            self.rebuild()
-            rows = self.index.notes_by_ids(
-                [note_id for note_id in seen if note_id not in out]
-            )
-            for raw_row in rows:
-                row_obj: object = raw_row
-                if not isinstance(row_obj, dict):
-                    continue
-                path_text = str(row_obj.get("path") or "")
-                if not path_text:
-                    continue
-                path = self.root / path_text
-                try:
-                    if not path.is_file():
-                        continue
-                    note = KnowledgeNote.from_markdown(path.read_text(encoding="utf-8"))
-                except (ValueError, OSError):
-                    continue
-                out[str(row_obj.get("id") or note.id)] = (note, dict(row_obj))
+        for note_id in dict.fromkeys(note_ids):
+            found = self.documents.get(note_id)
+            if found:
+                note, path, revision = found
+                out[note_id] = (note, {"id": note_id, "path": path, "revision": revision,
+                                       "content_hash": _content_hash(note.to_markdown())})
         return out
 
-    def iter_note_paths(self) -> Any:
+    def iter_note_paths(self) -> Iterator[Path]:
         for path in sorted(self.root.rglob("*.md")):
-            if ".codey" in path.parts:
-                continue
-            yield path
+            if ".codey" not in path.relative_to(self.root).parts:
+                yield path
 
-    def rebuild(self) -> int:
-        self.index.clear()
-        notes: list[KnowledgeNote] = []
+    def _import_legacy_once(self) -> None:
+        if self.documents.initialized():
+            return
+        notes: list[tuple[KnowledgeNote, str]] = []
+        seen: set[str] = set()
         for path in self.iter_note_paths():
             try:
-                text = path.read_text(encoding="utf-8")
-                note = KnowledgeNote.from_markdown(text)
-            except (ValueError, OSError):
+                note = KnowledgeNote.from_markdown(path.read_text(encoding="utf-8"))
+            except ValueError:
                 continue
-            self.index.upsert(note, path=self.rel(path), content_hash=_content_hash(text))
-            notes.append(note)
-        for note in notes:
-            self._index_body_links(note)
-        self._rebuilt_after_index_miss = True
+            self.path_for(note)  # Validate identity before accepting the migration.
+            if note.id in seen:
+                raise ValueError(f"duplicate legacy knowledge identity: {note.id}")
+            seen.add(note.id)
+            notes.append((note, self.rel(path)))
+        # Source files and the old index.db are left untouched for inspection.
+        with self.index.transaction():
+            self.documents.initialize(notes)
+            for note, _path in notes:
+                self._index_body_links(note)
+
+    def import_markdown(self, text: str, *, expected_revision: int | None = None) -> str:
+        note = KnowledgeNote.from_markdown(text)
+        with self.index.transaction():
+            old = self.documents.get(note.id)
+            current_revision = old[2] if old else 0
+            if expected_revision != current_revision:
+                raise ValueError(f"import revision conflict: expected {expected_revision}, current {current_revision}")
+            return self.write_note(note)
+
+    def export_note(self, note_id: str) -> Path:
+        note = self.read_note(note_id)
+        if note is None:
+            raise ValueError(f"unknown note: {note_id}")
+        path = self.path_for(note)
+        write_text_atomic(path, note.to_markdown())
+        return path
+
+    def rebuild(self) -> int:
+        with self.index.transaction():
+            notes = self.documents.all()
+            self.index.clear()
+            for note, path, _version in notes:
+                self.index.upsert(note, path=path, content_hash=_content_hash(note.to_markdown()))
+            for note, _path, _version in notes:
+                self._index_body_links(note)
         return len(notes)
+
+    def delete_note(self, note_id: str, *, purge: bool = False) -> None:
+        self.documents.remove(note_id, purge=purge)
+        if purge:
+            for path in self.iter_note_paths():
+                try:
+                    if KnowledgeNote.from_markdown(path.read_text(encoding="utf-8")).id == note_id:
+                        path.unlink()
+                except ValueError:
+                    continue
 
     def close(self) -> None:
         self.index.close()
@@ -203,23 +203,6 @@ class KnowledgeStore:
     def _current_path(self, note_id: str) -> str | None:
         row = self.index.get(note_id)
         return (row.get("path") or None) if row else None
-
-    def _read_indexed_note(self, note_id: str) -> KnowledgeNote | None:
-        row = self.index.get(note_id)
-        if not row or not row.get("path"):
-            return None
-        path = self.root / row["path"]
-        if not path.is_file():
-            return None
-        return KnowledgeNote.from_markdown(path.read_text(encoding="utf-8"))
-
-    def _remove_note_file(self, rel: str) -> None:
-        stale = (self.root / rel).resolve()
-        if stale != self.root and self.root not in stale.parents:
-            return
-        if stale.is_file():
-            with contextlib.suppress(OSError):
-                stale.unlink()
 
     def _index_body_links(self, note: KnowledgeNote) -> None:
         for target, kind in note.wikilink_edges():

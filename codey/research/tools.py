@@ -12,7 +12,7 @@ from typing import Any
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import clean_relations, normalize_concept
 from codey.knowledge.note import LINK_KINDS, NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
-from codey.knowledge.store import KnowledgeLinkResult, KnowledgeStore, content_hash_bytes
+from codey.knowledge.store import KnowledgeLinkResult, KnowledgeStore
 from codey.research.ledger import EvidencePreparation, ResearchLedger
 from codey.research.source_gateway import (
     OPEN_DEFAULT_LIMIT,
@@ -635,80 +635,23 @@ class StagedKnowledgeStore:
 
     def commit_to(self, target_store: KnowledgeStore, changes: KnowledgeChanges | None = None) -> None:
         changes_snapshot = changes.snapshot() if changes is not None else None
-
-        # Track written/modified notes and files for compensating rollback:
-        # note_id -> (new_path, orig_path_or_None, orig_bytes_or_None, orig_note_or_None)
-        tracked_notes: dict[str, tuple[Path, Path | None, bytes | None, KnowledgeNote | None]] = {}
-        link_touch_ids = set(self._staged_notes)
-        for src_id, dst_id, _ in self._staged_links:
-            link_touch_ids.update((src_id, dst_id))
-        saved_links = target_store.index.links_touching(sorted(link_touch_ids))
         try:
-            for note in self._staged_notes.values():
-                new_path = target_store.path_for(note)
-                orig_existed = target_store.exists(note.id)
-                orig_note = target_store.read_note(note.id) if orig_existed else None
-                # A restored proposal may already have reached the vault before
-                # the process stopped. Compare the full persisted content;
-                # write_note owns only the updated timestamp on first commit.
-                if (orig_note is not None
-                        and replace(orig_note, updated=note.updated).to_markdown() == note.to_markdown()):
-                    continue
-                orig_path = target_store.path_for(orig_note) if orig_note is not None else None
-                orig_bytes = orig_path.read_bytes() if (orig_path and orig_path.is_file()) else None
-                tracked_notes[note.id] = (new_path, orig_path, orig_bytes, orig_note)
-                target_store.write_note(note, changes=changes)
-
-            for src_id, dst_id, kind in self._staged_links:
-                if src_id not in tracked_notes:
-                    orig_existed = target_store.exists(src_id)
-                    orig_src_note = target_store.read_note(src_id) if orig_existed else None
-                    if orig_src_note is not None:
-                        src_path = target_store.path_for(orig_src_note)
-                        src_bytes = src_path.read_bytes() if src_path.is_file() else None
-                        tracked_notes[src_id] = (src_path, src_path, src_bytes, orig_src_note)
-                target_store.link(src_id, dst_id, kind, changes=changes)
-
-            self._staged_notes.clear()
-            self._staged_links.clear()
-        except Exception as exc:
-            # Compensating rollback: revert all notes, index entries, links, and changes
-            cleanup_errors: list[str] = []
-            for note_id, (new_path, orig_path, orig_bytes, orig_note) in reversed(list(tracked_notes.items())):
-                try:
-                    if orig_note is None:
-                        # 1. New note created during this commit attempt
-                        if new_path.is_file():
-                            new_path.unlink(missing_ok=True)
-                        target_store.index.remove(note_id)
-                    else:
-                        # 2. Existing note modified or moved during this commit attempt
-                        # If folder/type changed, delete the newly created path file
-                        if orig_path is not None and new_path != orig_path and new_path.is_file():
-                            new_path.unlink(missing_ok=True)
-                        # Byte-level exact restoration of original markdown file (no timestamp bump)
-                        if orig_path is not None and orig_bytes is not None:
-                            orig_path.parent.mkdir(parents=True, exist_ok=True)
-                            orig_path.write_bytes(orig_bytes)
-                        # Exact index & links restoration to original snapshot
-                        if orig_path is not None:
-                            rel = target_store.rel(orig_path)
-                            c_hash = content_hash_bytes(orig_bytes) if orig_bytes is not None else ""
-                            target_store.index.upsert(orig_note, path=rel, content_hash=c_hash)
-                            target_store._index_body_links(orig_note)
-                except Exception as cleanup_exc:
-                    cleanup_errors.append(f"{note_id}: {cleanup_exc}")
-
-            try:
-                target_store.index.replace_links_touching(sorted(link_touch_ids), saved_links)
-            except Exception as cleanup_exc:
-                cleanup_errors.append(f"links: {cleanup_exc}")
-
+            with target_store.index.transaction():
+                for note in self._staged_notes.values():
+                    original = target_store.read_note(note.id)
+                    if original is not None and replace(original, updated=note.updated).to_markdown() == note.to_markdown():
+                        continue
+                    target_store.write_note(note, changes=changes)
+                for src_id, dst_id, kind in self._staged_links:
+                    result = target_store.link(src_id, dst_id, kind, changes=changes)
+                    if not result.ok:
+                        raise ValueError(result.model_text)
+        except BaseException:
             if changes is not None and changes_snapshot is not None:
                 changes.restore_snapshot(changes_snapshot)
-            if cleanup_errors:
-                exc.add_note("staged knowledge rollback cleanup errors: " + "; ".join(cleanup_errors[:6]))
             raise
+        self._staged_notes.clear()
+        self._staged_links.clear()
 
 
 class StagedKnowledgeChanges:

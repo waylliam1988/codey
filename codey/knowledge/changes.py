@@ -34,6 +34,7 @@ class KnowledgeChangesSnapshot:
     last_restore_result: RestoreResult | None = None
 
 
+
 @dataclass
 class KnowledgeChanges:
     root: Path
@@ -41,6 +42,17 @@ class KnowledgeChanges:
     _after_hashes: dict[str, str] = field(default_factory=dict)
     _touched: set[str] = field(default_factory=set)
     last_restore_result: RestoreResult | None = None
+
+    def capture_content(self, rel: str, content: str | None) -> None:
+        _safe_join(self.root, rel, label="knowledge root")
+        if rel not in self._before:
+            self._validate_capacity(rel, content)
+            self._before[rel] = content
+
+    def record_content(self, rel: str, content: str | None) -> None:
+        self._touched.add(rel)
+        self._after_hashes[rel] = _content_hash(content)
+
 
     def capture_before(self, rel: str, path: Path) -> None:
         path = _safe_join(self.root, rel, label="knowledge root")
@@ -89,6 +101,8 @@ class KnowledgeChanges:
         self.last_restore_result = snapshot.last_restore_result
 
     def restore_result(self) -> RestoreResult:
+        if (self.root / ".codey" / "knowledge.db").is_file():
+            return self._restore_database()
         restored: list[str] = []
         conflicts: list[str] = []
         root = Path(self.root).expanduser().resolve()
@@ -130,6 +144,46 @@ class KnowledgeChanges:
             conflicts=conflicts,
             error=None if not conflicts else "restore conflict",
         )
+        self.last_restore_result = result
+        return result
+
+    def _restore_database(self) -> RestoreResult:
+        from codey.knowledge.note import KnowledgeNote
+        from codey.knowledge.store import KnowledgeStore
+
+        store = KnowledgeStore(self.root)
+        restored: list[str] = []
+        conflicts: list[str] = []
+        try:
+            with store.index.transaction():
+                for rel in sorted(self._touched):
+                    try:
+                        _safe_join(self.root, rel, label="knowledge root")
+                        found = store.documents.by_path(rel)
+                        current = found[0].to_markdown() if found else None
+                        original = self._before.get(rel)
+                        if _content_hash(current) == _content_hash(original):
+                            self._forget(rel)
+                            continue
+                        if self._after_hashes.get(rel) != _content_hash(current):
+                            conflicts.append(rel)
+                            continue
+                        if original is None:
+                            if found:
+                                store.delete_note(found[0].id)
+                        else:
+                            note = KnowledgeNote.from_markdown(original)
+                            store.documents.write(note, rel, reason="compensation")
+                            store._index_body_links(note)
+                        restored.append(rel)
+                    except ValueError:
+                        conflicts.append(rel)
+        finally:
+            store.close()
+        for rel in restored:
+            self._forget(rel)
+        result = RestoreResult(ok=not conflicts, restored=restored, conflicts=conflicts,
+                               error="restore conflict" if conflicts else None)
         self.last_restore_result = result
         return result
 
