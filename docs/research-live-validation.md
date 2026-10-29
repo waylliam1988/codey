@@ -54,11 +54,57 @@ Work in progress. Do not infer a live acceptance pass from deterministic tests.
   Not an acceptance pass.
 - `research-three-stage-jsonparts-20261030`: text mode produced a repetitive
   tool frame and exhausted output tokens. Not an acceptance pass.
-- `research-native-thinking-20261030`: native stream + reasoning, in progress.
+- `research-native-thinking-20261030`: native stream + reasoning, failed.
   Initial report passed the mechanical gate, but its second excerpt did not
   directly establish a single writer. The ordinary shared investigation then
   explicitly identified that evidence gap. Inspect its final persisted results
-  before treating this run as a research-quality pass.
+  before treating this run as a research-quality pass. Its subsequent request
+  failed during context compaction, not browser acquisition or SQLite commit.
+
+## Token-count correction
+
+The manual probe still used ApiProvider's generic estimated request counter,
+whereas the production Local connection admits KoboldCpp's full Jinja/tokenizer
+counter. Recounting the largest captured request produced 29,506 estimated
+tokens versus 19,341 actual tokens. At the probe's 27,268-token input limit this
+unnecessarily invoked compaction; the auxiliary model then exhausted its output
+budget while repeating historical investigation plans. The probe now uses the
+same admitted_counter/counter_for and usage configuration as Local. No production
+context limit, cancellation, unknown-request handling or model setting was changed.
+
+`research-live-wal-counted-20261030` is the first real browser research rerun with
+this correction; its Python process ended without a final task/result receipt
+after the second streamed request. A Playwright EPIPE appeared after process
+termination. No Windows Python crash event was found; the terminating cause is
+not established. This is not a successful or safely replayable model request.
+The two checked-in research_live questions
+contain research requirements, without tool schemas or prescribed call sequences.
+
+## Real browser action run
+
+`research-live-wal-action-20261030` uses native stream without reasoning and the
+Local production temperature (0.3). It progressed through real search/open/write
+actions, exposing two further defects fixed in this continuation:
+
+- Chinese challenge text headed `页面安全校验中` was admitted as an ordinary
+  opened source. The short-challenge filter now recognizes that page and related
+  browser-verification markers, in both browser and HTTP fallback. Long research
+  articles discussing verification retain the existing length-based allowance.
+- Missing `sources` feedback told the model to reopen an already opened page or
+  switch to hypothesis. It now names the omitted fields and observed URLs, and
+  explicitly forbids relabelling a sourced finding to bypass its citation.
+
+The model also spent searches on derivative pages despite the question asking
+for official sources. Strict guidance now explains refining with a site: filter
+or following original citations, and choosing one useful action rather than
+repeatedly rehearsing a complete answer. Native knowledge_write declares that
+body remains required even when evidence is supplied. These changes still need
+their fresh-process live rerun; do not attribute them to the already-running run.
+
+Probe acceptance now requires direct single-writer and concurrent-reader quotes,
+the requested alias and an explicit unknown workload condition for the controlled
+first stage. It exports final report text and the exact persisted knowledge and
+evidence versions for every completed stage, including reported failures.
 
 ## Focused verification in this continuation
 
@@ -71,6 +117,9 @@ Work in progress. Do not infer a live acceptance pass from deterministic tests.
 - Live harness now records stage settings and persisted claims with their exact
   referenced evidence versions for review. Mechanical success does not certify
   semantic support or answer completeness.
+- After the Chinese challenge and citation-feedback fixes: 186 acquisition,
+  source, knowledge acceptance and report tests plus 7 subtests passed. Full
+  production Ruff/mypy/Pyrefly/ty passed again. Existing warnings unchanged.
 
 ## Remaining work
 

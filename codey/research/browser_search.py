@@ -718,6 +718,10 @@ _FETCH_PAGE_ERROR_MARKERS = (
     "unusual traffic",
     "verify you are human",
     "just a moment",
+    "页面安全校验中",
+    "正在验证您的浏览器",
+    "人机验证",
+    "请完成安全验证",
 )
 _FETCH_CHALLENGE_TEXT_MAX_CHARS = 1500
 

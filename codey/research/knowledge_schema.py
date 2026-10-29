@@ -36,7 +36,8 @@ def parameter_schemas(tool: str) -> dict[str, Any]:
         evidence = _object({"claim": text, "source_url": text, "source": text, "excerpt": text, "quote": text,
                             "stance": text, "page": {"type": "integer", "minimum": 1},
                             "p": {"type": "integer", "minimum": 1}, "locator": text})
-        return {"type": {"type": "string", "enum": list(NOTE_TYPES)},
+        return {"body": {"type": "string", "description": "Required note text, even when evidence is supplied."},
+                "type": {"type": "string", "enum": list(NOTE_TYPES)},
                 "sources": _array(text), "tags": _array(text), "aliases": _array(text), "evidence": _array(evidence),
                 "conditions": conditions}
     if tool == "done":

@@ -22,18 +22,21 @@ from urllib.request import urlopen
 URLS = ("https://www.sqlite.org/wal.html", "https://www.sqlite.org/isolation.html")
 
 
-def stage(directory, name, upstream, model, native=False, live_web=False, question="", max_turns=12, thinking=False):
+def stage(directory, name, upstream, model, native=False, live_web=False, question="", max_turns=12, thinking=False,
+          temperature=0.3, seed=73):
     from unittest.mock import patch
 
     from codey.app import headless_runner
     from codey.providers import api_transport, local_config
     from codey.providers.api_provider import ApiProvider
     from codey.providers.local_response_codec import normalize_local_reply
+    from codey.providers.local_tokens import admitted_counter, counter_for
+    from codey.providers.local_usage import configure_usage, parser_for
     from codey.providers.model_preferences import ModelPreferences
 
     documents = [] if live_web else json.loads((directory / "sources.json").read_text(encoding="utf-8"))
     (directory / f"{name}-control.json").write_text(json.dumps({
-        "model": model, "temperature": 0.2, "seed": 73, "native_tools": native,
+        "model": model, "temperature": temperature, "seed": seed, "native_tools": native,
         "stream": native, "thinking": thinking, "live_web": live_web, "max_turns": max_turns,
         "question": question,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -89,12 +92,18 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         if provider_id != "local":
             raise ValueError("probe permits local model only")
         def configure(payload):
-            payload.update(seed=73)
+            configure_usage(payload)
+            payload.update(seed=seed)
             record({"event": "admitted_payload", "payload": payload})
 
-        return ObservedProvider(upstream + "/v1", model, timeout=180, temperature=0.2, thinking_enabled=thinking,
+        counter, window = admitted_counter(upstream + "/v1", "", "openai-completions", 32768)
+        record({"event": "connection_budget", "counter": counter, "window": window})
+        return ObservedProvider(upstream + "/v1", model, timeout=180, temperature=temperature, thinking_enabled=thinking,
                            output_tokens=5000 if thinking else 2500, context_reserve_tokens=5500, native_tools=native,
-                           stream=native,
+                           stream=native, context_window_tokens=window,
+                           request_counter=counter_for(counter, upstream + "/v1", model, "", window),
+                           usage_parser=parser_for("openai-completions"),
+                           budget_source="server_and_configuration" if counter == "koboldcpp" else "configuration",
                            text_decoder=normalize_local_reply,
                            configure_request=configure)
 
@@ -107,6 +116,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             "使用提供的 SQLite 官方文档；先读取来源，再用 knowledge_write 保存准确引文、条件和限制，"
             "必须同时保存读写并发和仅单一写者两个结论的直接证据。"
             "evidence.claim用中文概述，evidence.excerpt保持官方英文原文；报告沿用已保存的中文主张。"
+            "将WAL模式这一适用前提存入conditions，workload未实测，标为not_extracted。"
             "标签至少含 SQLite 和 写者串行化，别名含 嵌入式数据文件。"
             "不要保存只有报告摘要的笔记。最后给出简短、带来源的研究报告，明确何时不能外推。"
             "报告不超过500字，优先用done.report_sections提交各部分，由系统排版六个标题。"
@@ -153,8 +163,9 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
     faulthandler.cancel_dump_traceback_later()
     stacks.close()
     (directory / f"{name}-result.json").write_text(json.dumps(vars(result), ensure_ascii=False, indent=2), encoding="utf-8")
-    if result.exit_code:
-        raise RuntimeError(f"{name} failed: {vars(result)}")
+    events_seen = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines()]
+    final = next((row for row in reversed(events_seen) if row.get("type") == "task_done"), {})
+    (directory / f"{name}-report.txt").write_text(final.get("summary", ""), encoding="utf-8")
     from codey.knowledge.store import KnowledgeStore
 
     store = KnowledgeStore(directory / "knowledge")
@@ -174,8 +185,9 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             snapshot.append(row)
         (directory / f"{name}-knowledge.json").write_text(
             json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+        if result.exit_code:
+            raise RuntimeError(f"{name} failed: {vars(result)}")
         if name == "research":
-            events_seen = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines()]
             observed = {row.get("tool_name") for row in events_seen if row.get("type") == "tool" and row.get("ok")}
             if (not {"web_search", "knowledge_write"} <= observed
                     or not observed.intersection({"open_url", "open_result", "open_hit"})
@@ -183,7 +195,13 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
                 raise RuntimeError("live research must actually search, open a page and persist sourced claims")
             return
         if name == "first":
-            accepted = len([v for v in versions if any(r.relation == "supported_by" for r in v.value.references)]) >= 2
+            excerpts = [ref["content"].casefold() for row in snapshot for ref in row["referenced_versions"]
+                        if ref["kind"] == "evidence"]
+            accepted = (len([v for v in versions if any(r.relation == "supported_by" for r in v.value.references)]) >= 2
+                        and any("readers do not block writers" in text for text in excerpts)
+                        and any("only one writer" in text or "single writer" in text for text in excerpts)
+                        and any("嵌入式数据文件" in v.value.aliases for v in versions)
+                        and any(v.value.conditions.get("workload", {}).get("state") == "not_extracted" for v in versions))
         elif name == "recall":
             accepted = any(v.value.status == "candidate" and any(r.relation == "depends_on" for r in v.value.references)
                            for v in versions)
@@ -208,6 +226,8 @@ def main():
     parser.add_argument("--question-file", type=Path)
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument("--stage-timeout", type=int, default=900)
+    parser.add_argument("--temperature", type=float, default=0.3, help="Local production default; recorded per stage")
+    parser.add_argument("--seed", type=int, default=73, help="Fixed sampling seed for reproducible diagnostics")
     args = parser.parse_args()
     directory = args.directory.resolve()
     directory.mkdir(parents=True, exist_ok=True)
@@ -217,7 +237,8 @@ def main():
         question = args.question_file.read_text(encoding="utf-8") if args.question_file else ""
         if args.stage == "research" and (not args.live_web or not question.strip()):
             parser.error("research requires --live-web and --question-file")
-        stage(directory, args.stage, args.upstream, model, args.native, args.live_web, question, args.max_turns, args.thinking)
+        stage(directory, args.stage, args.upstream, model, args.native, args.live_web, question, args.max_turns,
+              args.thinking, args.temperature, args.seed)
         return
     documents = []
     from codey.research.extract import extract_text, extract_title
@@ -229,12 +250,13 @@ def main():
         documents.append({"url": url, "title": extract_title(html), "text": text,
                           "sha256": hashlib.sha256(text.encode()).hexdigest()})
     (directory / "sources.json").write_text(json.dumps(documents, ensure_ascii=False), encoding="utf-8")
-    (directory / "control.json").write_text(json.dumps({"model": model, "temperature": 0.2, "seed": 73,
+    (directory / "control.json").write_text(json.dumps({"model": model, "temperature": args.temperature, "seed": args.seed,
         "native_tools": args.native, "thinking": args.thinking, "source_mode": "frozen public documentation",
         "processes": ["first", "recall", "revise"]}, indent=2), encoding="utf-8")
     for name in ("first", "recall", "revise"):
         subprocess.run([sys.executable, "-X", "utf8", "-m", "tests.manual.persistent_research_local",
                         "--directory", str(directory), "--upstream", args.upstream, "--stage", name,
+                        "--temperature", str(args.temperature), "--seed", str(args.seed),
                         "--max-turns", str(args.max_turns), *(["--native"] if args.native else []),
                         *(["--thinking"] if args.thinking else [])],
                        check=True, timeout=args.stage_timeout)

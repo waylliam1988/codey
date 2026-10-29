@@ -7,9 +7,17 @@ from codey.reviews import report_sections
 
 def render_completion_guidance(policy: TaskPolicy) -> str:
     titles = [report_sections.section_title(key) for key in report_sections.REQUIRED_SECTIONS]
-    rules = "Research evidence rules: search results are leads, not evidence. "
+    rules = (
+        "Research evidence rules: select the next useful tool action and wait for its result. "
+        "Keep planning brief; do not repeatedly restate the task or draft the report before gathering evidence. "
+        "Search results are leads, not evidence. "
+    )
     if policy.allows("web.read"):
-        rules += "Use web_search, then open_result or open_url before citing a source. "
+        rules += (
+            "Use web_search, then open_result or open_url before citing a source. "
+            "Search ranking is not authority. When primary or official sources are requested, "
+            "refine the query with a relevant site: filter or follow original citations until the original is opened. "
+        )
     if policy.allows("knowledge.write"):
         rules += ("Save short exact excerpts with knowledge_write: type=fact, sources=[opened URL], "
                   "evidence=[{claim:conclusion,source_url:the same URL,excerpt:exact original text,stance:supports}]. "

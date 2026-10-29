@@ -360,9 +360,13 @@ class ResearchTools:
 
     def _provenance_problem(self, note_type: str, sources: list[str]) -> str | None:
         if not sources:
+            opened = sorted(self.sources_read)[:6]
             return (
-                f"a {note_type} must cite at least one source you actually read; "
-                "open the page first, or use type 'hypothesis' for an inference"
+                f"a {note_type} must cite at least one source you actually read. "
+                "Supply sources=[opened URL] and evidence=[{claim:the supported conclusion,"
+                "source_url:the same URL,excerpt:exact source text,stance:supports}]. "
+                + ("Already opened URLs: " + ", ".join(opened) + ". " if opened else "Open a source page first. ")
+                + "Do not change a sourced finding to hypothesis to bypass its missing citation."
             )
         unread_urls = [s for s in sources if _looks_like_url(s) and s not in self.sources_read]
         if unread_urls:
