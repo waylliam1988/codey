@@ -149,6 +149,8 @@ def test_format_repair_uses_original_loop_without_repeating_read(tmp_path, monke
         assert "Repair only the final answer" in provider.results[-1].content
     else:
         assert "Current work observations" in provider.prompts[0]
+        repair = next(text for text in provider.prompts if "Repair only the final answer" in text)
+        assert repair.index("Current work observations") < repair.index("Repair only the final answer")
 
 
 def test_undeclared_unknown_metadata_is_still_rejected():

@@ -282,7 +282,8 @@ class KernelContext:
                counters: RuntimeExecutionCounters | None = None) -> None:
         from codey.operations.kernel_driver import prepare_provider_request
 
-        if not self.native and state.leaf not in {positions.LEAF_WRITER_RUNNING, positions.LEAF_REPAIR_RUNNING}:
+        json_contract = not self.native and getattr(self.provider, "text_tool_format", "plain") == "json_schema"
+        if not self.native and not json_contract and state.leaf not in {positions.LEAF_WRITER_RUNNING, positions.LEAF_REPAIR_RUNNING}:
             prompt = kernel_prompt._text_request_prompt(prompt, snapshot)
         self.snapshots[turn] = snapshot
         self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window)
@@ -303,10 +304,11 @@ class KernelContext:
         else:
             method, args = ("send_turn", (prompt, tools)) if self.native else ("send", (prompt,))
         options: dict[str, Any] = {}
-        if not self.native and getattr(self.provider, "text_tool_format", "plain") == "json_schema":
+        if json_contract:
             from codey.providers.text_tool_schema import text_tool_schema
 
-            options = {"tool_call_json": True, "tool_call_schema": text_tool_schema(tools)}
+            options = {"tool_call_json": True, "tool_call_schema": text_tool_schema(tools),
+                       "tool_call_contract": kernel_prompt._text_request_prompt("", snapshot)}
         prepare_provider_request(self.sink, method, args, options, counters=(state.counters, counters or state.counters))
 
     def prepare_turn(self, state: Any) -> None:
@@ -321,7 +323,8 @@ class KernelContext:
         prepared = prepare_kernel_turn(self.session, user_task=str(self.transport.user_task or ""),
             context_text="\n\n".join(part for part in (self.transport.context_text, recalled) if part),
             native=self.native, task_guidance=self.request.task_guidance,
-            completion_context=self.completion_context)
+            completion_context=self.completion_context,
+            request_scoped_contract=not self.native and getattr(self.provider, "text_tool_format", "plain") == "json_schema")
         prompt = prepared.prompt
         if state.logical_turn and self.boundary_text():
             prompt += "\n\nNew user input at provider boundary:\n" + self.boundary_text()
@@ -476,9 +479,11 @@ class KernelContext:
         observations = task_working_context(self.session)
         if self.native and messages:
             messages[-1] = replace(messages[-1], user_content="\n\n".join(
-                part for part in (messages[-1].user_content, observations) if part))
+                part for part in (observations, messages[-1].user_content) if part))
         else:
-            prompt = "\n\n".join(part for part in (prompt, observations) if part)
+            # Keep the latest result after historical observations: previous
+            # findings must not displace the passage currently being inspected.
+            prompt = "\n\n".join(part for part in (observations, prompt) if part)
         snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native)
         self.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages)
 

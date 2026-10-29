@@ -18,6 +18,7 @@ class GenerationSettings:
     output_tokens: int | None
     text_tool_json: bool = False
     text_tool_schema: dict[str, Any] | None = None
+    text_tool_contract: str = ""
 
 
 class ApiCodec(Protocol):

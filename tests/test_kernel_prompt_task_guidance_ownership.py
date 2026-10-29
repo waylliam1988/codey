@@ -182,3 +182,12 @@ def test_strict_report_has_one_preferred_example_without_changing_ordinary_done(
     assert "summary is the complete user-facing response" not in description
     ordinary_description = next(s.description for s in build_turn_snapshot(ordinary).frozen_specs if s.name == "done")
     assert "summary is the complete user-facing response" in ordinary_description
+
+
+def test_request_scoped_contract_prompt_does_not_offer_ordinary_prose_or_duplicate_declarations():
+    session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
+    text = kernel_prompt.kernel_prompt_for_session(session, tool_names=("done",),
+        contract_text="FROZEN DECLARATIONS", request_scoped_contract=True)
+    assert "FROZEN DECLARATIONS" not in text
+    assert "Deliver the final answer with done" in text
+    assert "as normal text" not in text and "Answer directly" not in text

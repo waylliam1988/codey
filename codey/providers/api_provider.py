@@ -315,13 +315,16 @@ class ApiProvider:
                 control.cancel()
 
     def send(self, text: str, timeout: float | None = None, *, tool_call_json: bool = False,
-             tool_call_schema: dict[str, Any] | None = None) -> str:
+             tool_call_schema: dict[str, Any] | None = None, tool_call_contract: str = "") -> str:
         if tool_call_json and self.text_tool_format != "json_schema":
             raise ValueError("JSON tool format is not enabled for this provider")
         if tool_call_schema is not None and not tool_call_json:
             raise ValueError("tool schema requires JSON tool format")
+        if tool_call_contract and not tool_call_json:
+            raise ValueError("tool contract requires JSON tool format")
         return self._exchange([{"role": "user", "content": text}], None, timeout=timeout,
-                              text_only=True, tool_call_json=tool_call_json, tool_call_schema=tool_call_schema).text
+                              text_only=True, tool_call_json=tool_call_json, tool_call_schema=tool_call_schema,
+                              tool_call_contract=tool_call_contract).text
 
     def bind_durable_context(self, durable: Any, conversation_id: str) -> None:
         if durable is None or not conversation_id:
@@ -455,6 +458,7 @@ class ApiProvider:
                   *, timeout: float | None = None, text_only: bool = False,
                    tool_call_json: bool = False,
                    tool_call_schema: dict[str, Any] | None = None,
+                   tool_call_contract: str = "",
                    expected_window_ref: ProtocolWindowRef | None = None,
                    delivery_commit: dict[str, Any] | None = None) -> AssistantTurn:
         """One atomic lifecycle for both codecs, with no protocol-specific commit path."""
@@ -478,6 +482,8 @@ class ApiProvider:
             generation_options: dict[str, Any] = {"tool_call_json": True} if tool_call_json else {}
             if tool_call_schema is not None:
                 generation_options["tool_call_schema"] = tool_call_schema
+            if tool_call_contract:
+                generation_options["tool_call_contract"] = tool_call_contract
             body = self._generate(candidate, tools, timeout=timeout, checkpoints=checkpoints, **generation_options)
             try:
                 turn, output = self._codec.decode_exchange(body, text_only=text_only,
@@ -581,12 +587,13 @@ class ApiProvider:
 
     def _generate(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None = None,
                   *, timeout: float | None = None, checkpoints: list[dict[str, Any]] | None = None,
-                  tool_call_json: bool = False, tool_call_schema: dict[str, Any] | None = None) -> dict[str, Any]:
+                  tool_call_json: bool = False, tool_call_schema: dict[str, Any] | None = None,
+                  tool_call_contract: str = "") -> dict[str, Any]:
         from codey.providers import api_transport
 
         settings = GenerationSettings(self.model, self.stream, self.temperature, self.thinking_enabled,
                                       self.reasoning_effort, self.tool_choice, self.context_budget.output_tokens,
-                                      tool_call_json, tool_call_schema)
+                                      tool_call_json, tool_call_schema, tool_call_contract)
         deadline = time.monotonic() + (timeout if timeout is not None else self.timeout)
         connection_id, sink = self.connection_id, self.on_usage
         payload = self._admit_request(messages, tools, settings, deadline, checkpoints)
@@ -694,6 +701,15 @@ class ApiProvider:
 
         payload = self._codec.build_payload(messages, tools, settings)
         key = "messages" if self.api_protocol == "openai-completions" else "input"
+        if settings.text_tool_contract:
+            # Frozen request declarations, like native tools, belong to this
+            # payload only. Never append obsolete tool catalogs to history.
+            items = [dict(item) for item in payload[key]]
+            if items and items[0].get("role") == "system" and isinstance(items[0].get("content"), str):
+                items[0]["content"] += "\n\n" + settings.text_tool_contract
+            else:
+                items.insert(0, {"role": "system", "content": settings.text_tool_contract})
+            payload[key] = items
         payload[key] = [*payload[key], {"role": "user", "content": clock if clock is not None else clock_context()}]
         if settings.text_tool_json:
             payload["response_format"] = {"type": "json_schema", "json_schema": {

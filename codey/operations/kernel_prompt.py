@@ -70,6 +70,7 @@ def kernel_prompt_for_session(
     native: bool = False,
     task_guidance: str = "",
     coding_context: CodingContext | None = None,
+    request_scoped_contract: bool = False,
 ) -> str:
     task_text = str(user_task or getattr(session, "task_text", "") or "").strip()
     handoff = str(getattr(session, "handoff", "") or "").strip()
@@ -89,11 +90,17 @@ def kernel_prompt_for_session(
             parts.append(current)
     if task_guidance:
         parts.append(task_guidance)
-    parts.extend(_tool_contract_parts(visible_names, contract_text, native=native))
+    if not request_scoped_contract:
+        parts.extend(_tool_contract_parts(visible_names, contract_text, native=native))
     if native:
         parts.append(
             "For actions, use native tool calls, not JSON in prose. "
             + _NATIVE_READ_BATCH_RULE + " " + _NATIVE_ARGUMENTS_RULE + " " + _NATIVE_FINAL_RULE
+        )
+    elif request_scoped_contract:
+        parts.append(
+            _TEXT_ACTION_RULE + " Deliver the final answer with done using the requested answer format. "
+            r"Escape line breaks and tabs inside JSON strings as \n and \t."
         )
     else:
         parts.append(

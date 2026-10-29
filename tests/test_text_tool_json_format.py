@@ -88,6 +88,10 @@ def test_headless_task_admits_constrained_request_through_shared_kernel(tmp_path
     assert not validator.is_valid({"tool": "made_up", "args": {}})
     assert not validator.is_valid({"tool": "done", "args": []})
     assert not any("tools" in p for p in payloads)
+    assert "Tool contract (use exactly these shapes):" in payloads[0]["messages"][0]["content"]
+    assert payloads[0]["messages"][0]["role"] == "system"
+    assert all("Tool contract (use exactly these shapes):" not in str(row.get("content", ""))
+               for row in payloads[0]["messages"][1:])
 
 
 def test_frozen_schema_leaves_argument_order_and_validation_to_kernel():
@@ -122,4 +126,42 @@ def test_explicit_schema_reaches_payload_but_does_not_leak_to_next_send(monkeypa
         with pytest.raises(ValueError, match="requires JSON"):
             provider.send("bad", tool_call_schema=schema)
     finally:
+        provider.close()
+
+
+def test_request_scoped_contract_is_counted_but_never_enters_history_or_auxiliary(monkeypatch):
+    payloads = []
+    counted = []
+
+    def generate(_url, payload, _headers, **_kwargs):
+        payloads.append(payload)
+        return {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+
+    monkeypatch.setattr(api_transport, "generate", generate)
+    provider = ApiProvider("http://fixture/v1", "fixture", native_tools=False, thinking_enabled=False,
+                           text_tool_format="json_schema", system_prompt="BASE SYSTEM")
+    counter = provider.request_counter
+
+    def count(payload, **kwargs):
+        counted.append(payload)
+        return counter(payload, **kwargs)
+
+    provider.request_counter = count
+    auxiliary = provider.fork_auxiliary()
+    try:
+        provider.send("first result", tool_call_json=True, tool_call_contract="FROZEN FIRST CONTRACT")
+        provider.send("second result", tool_call_json=True, tool_call_contract="FROZEN SECOND CONTRACT")
+        provider.send("ordinary prose")
+        auxiliary.send("summarize")
+        assert "FROZEN FIRST CONTRACT" in str(payloads[0])
+        assert "FROZEN FIRST CONTRACT" not in str(payloads[1:])
+        assert "FROZEN SECOND CONTRACT" in str(payloads[1])
+        assert "FROZEN SECOND CONTRACT" not in str(payloads[2:])
+        assert payloads[1]["messages"][0]["content"] == "BASE SYSTEM\n\nFROZEN SECOND CONTRACT"
+        assert "FROZEN" not in str(provider._messages)
+        assert any("FROZEN SECOND CONTRACT" in str(payload) for payload in counted)
+        with pytest.raises(ValueError, match="requires JSON"):
+            provider.send("bad", tool_call_contract="must not send")
+    finally:
+        auxiliary.close()
         provider.close()

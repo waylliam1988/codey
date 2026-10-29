@@ -838,3 +838,38 @@ rejection atomicity and distinguish subsequent explicit successful resubmission.
 161 focused ledger/research/recovery tests plus seven subtests and all four
 static checks passed. Next production-configuration run (no clock experiment):
 `research-live-wal-source-repair-20261030`.
+
+## Latest-result focus diagnostic
+
+The source-repair run was durably cancelled and is NOT accepted. It saved a
+false SQLITE_BUSY explanation using a real but unrelated concurrency quote,
+omitted requested version/workload coverage, and repeated a counter-section
+rejection. Exact quote validation cannot establish entailment. Its artifacts,
+including the bad saved finding, are retained only in the isolated diagnostic
+store; they are not accepted research knowledge.
+
+Payload inspection disproved the suspected initial double tool contract: the
+initial writer leaf does not add another wrapper. Full contracts do recur in
+later historical user turns. No substring-based removal was introduced.
+
+The shared delivery prompt now places historical execution observations before
+the latest result; control repair likewise leaves the specific rejection last.
+Source text keeps its untrusted-source framing and receipts/authorization are
+unchanged. This avoids burying a new passage or repair instruction under several
+thousand characters of old findings. The production-configuration browser task
+`artifacts/research-live-wal-result-focus-20261030` is in progress, not accepted.
+
+That run subsequently searched after a rejected draft, but still skipped the
+requested version comparison. Follow-up used a search-only quote from a page
+returning HTTP 410 (write rejected), reused the concurrency claim for a different
+finding, and generated malformed report data. Durably cancelled; not accepted.
+
+JSON task contracts now travel as frozen per-request declarations through the
+existing prepared invocation, like the JSON tool-name schema. The complete
+contract is counted in each admitted HTTP payload but does not accumulate as
+obsolete catalogs in canonical conversation history or auxiliary summaries.
+Plain text and native tool paths retain their contracts. JSON task prompts no
+longer offer ordinary prose as an alternative to the required tool envelope.
+Tests cover exact prepared-request restoration, counting, nonmutation of prior
+history, and no contract leakage to later ordinary/auxiliary sends. This is a
+context-cost fix, not semantic validation. Fresh browser research is required.

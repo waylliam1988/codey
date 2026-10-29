@@ -102,3 +102,4 @@ def test_result_prompt_keeps_original_observation(tmp_path):
         assert "ORIGINAL_RESULT" in continuation
         assert "ORIGINAL_GOAL" in continuation
         assert "Current work observations" in continuation
+        assert continuation.index("Current work observations") < continuation.index("ORIGINAL_RESULT")

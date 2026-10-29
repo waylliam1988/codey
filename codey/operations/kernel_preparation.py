@@ -16,7 +16,8 @@ class PreparedKernelTurn:
 
 
 def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: str,
-                        task_guidance: str, native: bool, completion_context: Any = None) -> PreparedKernelTurn:
+                        task_guidance: str, native: bool, completion_context: Any = None,
+                        request_scoped_contract: bool = False) -> PreparedKernelTurn:
     snapshot = kernel_protocol.build_turn_snapshot(session, native=native)
     guidance = [task_guidance] if task_guidance else []
     if snapshot.policy.strict_research:
@@ -32,5 +33,6 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
         context_text=context_text,
         native=native, tool_names=snapshot.tool_names, task_guidance="\n\n".join(guidance),
         coding_context=prepare_coding_context(session, completion_context=completion_context),
+        request_scoped_contract=request_scoped_contract,
     )
     return PreparedKernelTurn(snapshot, prompt)

@@ -132,7 +132,9 @@ def prepare_control_delivery(context: Any, state: Any) -> None:
             return
         from codey.operations.task_guidance import task_working_context
 
-        prompt = decision["prompt"] + "\n\n" + task_working_context(context.session)
+        # Historical observations precede the specific current rejection so
+        # they cannot bury the next action in several pages of saved findings.
+        prompt = task_working_context(context.session) + "\n\n" + decision["prompt"]
         messages = None
         if context.native and ids:
             messages = [ProviderToolResult(identity, "ERROR: " + (decision["error"] or prompt)) for identity in ids]
