@@ -107,6 +107,18 @@ def test_mistyped_identity_suggestions_are_scoped_and_never_choose_a_match(tmp_p
         assert tools.knowledge_read(public[0]).ok
         missing_revision = tools.knowledge_read(public[0], revision=99)
         assert not missing_revision.ok and '"revision":1' in missing_revision.model_text
+        bad = K("candidate", "inference", "A possible connection", "model_inference",
+                references=(R(prefix + "wrong-spelling", 1, "depends_on"),))
+        commit = {"commit_id": "missing-premise", "changes": [{"expected_revision": 0, "value": bad.to_dict()}]}
+        missing_premise = tools.knowledge_commit(commit)
+        assert not missing_premise.ok and "No changes committed" in missing_premise.model_text
+        assert all(identity in missing_premise.model_text for identity in public)
+        assert "Private" not in missing_premise.model_text and "hidden" not in missing_premise.model_text
+        assert store.repository.read("candidate") is None
+        # A premise of the right type, supplied exactly, can now be committed.
+        store.repository.commit("premise", [M(K("premise", "claim", "A possible premise", "model_inference"))])
+        commit["changes"][0]["value"]["references"][0]["target"] = "premise"
+        assert tools.knowledge_commit(commit).ok
     finally:
         store.close()
 

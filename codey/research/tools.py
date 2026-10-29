@@ -206,15 +206,7 @@ class ResearchTools:
             return ResearchToolOutput(canonical_json(payload), ok=True)
         note = self.store.read_note((note_id or "").strip(), **({"revision": revision} if revision is not None else {}))
         if note is None:
-            hints: list[KnowledgeHit] = (
-                self.store.search(note_id[:16], project=self.project, session_id=self.session_id, depth=0, limit=3)
-                if len(note_id) >= 24 else [])
-            suggestion = ("\nPossible exact ids (not read or selected; verify with knowledge_read):\n" +
-                "\n".join(canonical_json({"title": hit.version.value.title, "read_request": {
-                    "tool": "knowledge_read", "args": {"id": hit.version.value.id, "revision": hit.version.revision}}})
-                    for hit in hints)) if hints else ""
-            return ResearchToolOutput("ERROR: requested knowledge identity was not found at the requested version. "
-                "Copy an exact id and revision from knowledge_search; do not guess or shorten it." + suggestion, ok=False)
+            return ResearchToolOutput(self._missing_knowledge_identity(note_id), ok=False)
         if (note.project and note.project != self.project
                 or not note.project and note.session_id and note.session_id != self.session_id):
             return ResearchToolOutput("ERROR: knowledge scope mismatch", ok=False)
@@ -223,6 +215,18 @@ class ResearchTools:
         references: list[dict[str, Any]] = self.store.note_references(note.id, revision) if hasattr(self.store, "note_references") else []
         return ResearchToolOutput(note.to_markdown() + "\n\nStructured knowledge versions (use these for knowledge_refs):\n"
                                   + canonical_json(references), ok=True)
+
+    def _missing_knowledge_identity(self, identity: str) -> str:
+        assert self.store is not None
+        hints: list[KnowledgeHit] = (
+            self.store.search(identity[:16], project=self.project, session_id=self.session_id, depth=0, limit=3)
+            if len(identity) >= 24 else [])
+        suggestion = ("\nPossible exact ids (not read or selected; verify with knowledge_read):\n" +
+            "\n".join(canonical_json({"title": hit.version.value.title, "read_request": {
+                "tool": "knowledge_read", "args": {"id": hit.version.value.id, "revision": hit.version.revision}}})
+                for hit in hints)) if hints else ""
+        return ("ERROR: requested knowledge identity was not found at the requested version. "
+                "Copy an exact id and revision from knowledge_search; do not guess or shorten it." + suggestion)
 
     def knowledge_commit(self, args: dict[str, Any]) -> ResearchToolOutput:
         """The common tool dispatcher owns this effect; the repository only commits."""
@@ -252,6 +256,14 @@ class ResearchTools:
             identity = f"tool:{self.session_id}:{commit_id}"
             receipt = self.store.repository.committed(identity, mutations)
             if receipt is None:
+                pending = {(m.value.id, m.expected_revision + 1) for m in mutations}
+                for mutation in mutations:
+                    for ref in mutation.value.references:
+                        if (ref.target, ref.revision) not in pending and self.store.repository.read(ref.target, ref.revision) is None:
+                            return ResearchToolOutput(
+                                "No changes committed. A reference target is missing. "
+                                "Read its exact version before resubmitting the complete commit.\n"
+                                + self._missing_knowledge_identity(ref.target), ok=False)
                 for mutation in mutations:
                     value = mutation.value
                     if value.kind == "source":
