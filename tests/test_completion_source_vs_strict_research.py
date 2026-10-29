@@ -228,4 +228,8 @@ def test_gate_preserves_unbound_answer_and_requests_missing_claim_instead_of_shr
     assert "Repair the reported report or reference defect" in verdict.followup
     assert "Collect the missing local evidence" not in verdict.followup
     assert missing in verdict.followup and "Saved claim wording" in verdict.followup
+    assert "investigate the first missing factual finding" in verdict.followup
+    assert "source_search" in verdict.followup and "open_hit" in verdict.followup
+    assert "Do not substitute an unrelated saved finding" in verdict.followup
+    assert "Next action: revise the unbound paragraphs" not in verdict.followup
     assert len(ledger.evidence_items) == 1  # The repair feedback cannot create evidence.

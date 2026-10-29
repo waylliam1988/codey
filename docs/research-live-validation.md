@@ -884,3 +884,16 @@ cancelled. Investigation now propagates its stopped outcome as TaskCancelled.
 An actual durable-cancellation regression exercises the production kernel and
 ensures no previous draft can be returned as successful completion. The related
 45 pipeline/follow-up/restart tests passed; all four static checks passed.
+
+`research-live-wal-scoped-contract-20261030` confirms one tool catalog per
+admitted payload instead of repeated historical catalogs, but still is NOT a
+semantic pass. It translated "Multiple transactions can be appended" as
+simultaneous appending, skipped direct checkpoint/BUSY evidence, and repeated
+rejected drafts. Durable cancellation requested; preserve this isolated store.
+
+Inspection found contradictory binding-repair guidance: after listing missing
+findings, its unconditional final instruction told the model to rewrite them
+using existing claims. Repair now prioritizes locating and archiving the missing
+fact; only the same predicate/conditions may reuse old wording. It preserves
+authorization, rejected report content, and all completion checks. Eighteen
+focused completion/repair/observation tests and all four static checks passed.

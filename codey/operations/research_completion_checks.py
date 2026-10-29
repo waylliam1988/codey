@@ -163,10 +163,20 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
             parts.append("Unbound report statements:\n" + "\n".join("- " + line for line in unbound[:4]))
             saved = list(dict.fromkeys(item.claim for item in ledger.evidence_items if item.stance == "supports"))
             parts.append("Saved claim wording available:\n" + "\n".join("- " + line[:240] for line in saved[:6]))
-            parts.append("Next action: revise the unbound paragraphs to use the saved claim wording, "
-                         "one finding per paragraph with its own citation. Keep the saved conditions and limits; "
-                         "do not add unsupported elaborations. With report_sections, summary is conclusion text only, "
-                         "without Markdown headings.")
+            policy = getattr(session, "policy", None)
+            if policy is not None and policy.allows("web.read") and policy.allows("knowledge.write"):
+                parts.append("Next action: investigate the first missing factual finding using source_search "
+                             "and open_hit on its cited source, then knowledge_write its own scoped claim and "
+                             "exact passage. Do not substitute an unrelated saved finding or repeat the rejected "
+                             "done. If the saved finding already expresses the SAME predicate and conditions, "
+                             "reuse that wording with its own citation instead. If evidence remains unavailable, "
+                             "state the specific unresolved question and search limit without claiming coverage.")
+            else:
+                parts.append("Use available saved wording only for the same predicate and conditions. "
+                             "Report any unresolved evidence requirement and authorization limit; "
+                             "do not substitute an unrelated saved finding.")
+            parts.append("Keep the saved conditions and limits; do not add unsupported elaborations. "
+                         "With report_sections, summary is conclusion text only, without Markdown headings.")
     if "research_report_sections" in failed:
         from codey.reviews.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
 
