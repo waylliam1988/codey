@@ -56,7 +56,7 @@ def note_knowledge(
         evidence_id = stable_identity("evidence", source_id, item.excerpt, str(item.page), item.locator)
         fragment = KnowledgeObject(evidence_id, "evidence", item.excerpt, "observed_result", title=item.claim,
             status="active", scope=scope, scope_id=scope_id, references=(source_ref,),
-            provenance={"page": item.page, "locator": item.locator, "note_id": note.id})
+            provenance={"page": item.page, "locator": item.locator})
         fragment_ref = add(fragment)
         relation = {"supports": "supported_by", "contradicts": "refuted_by", "limits": "limited_by"}.get(
             item.stance, "limited_by")
@@ -68,7 +68,8 @@ def note_knowledge(
                         "interpretation": "model_extraction_requires_review"},
             references=(replace(fragment_ref, relation=relation), *entities))
         # Multiple excerpts about one claim keep their individual stances.
-        previous = objects.get(claim_id)
+        persisted = repository.read(claim_id)
+        previous = objects.get(claim_id) or (persisted.value if persisted else None)
         if previous:
             claim = replace(claim, references=tuple(dict.fromkeys((*previous.references, *claim.references))),
                             status="active" if previous.status == "active" or claim.status == "active" else "candidate")

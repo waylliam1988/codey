@@ -211,6 +211,11 @@ class KernelContext:
             project_execution_record(staged, identity, result.call, result, ok=result.ok, exit_code=code)
             staged._memory_results[identity] = result
             staged.restored_effect_ids.add(identity)
+            if staged.research_acquisition_limits is not None:
+                category = "search" if result.call.name == "web_search" else "open" if result.call.name in {
+                    "open_url", "open_result", "reopen_source", "open_hit"} else ""
+                if category:
+                    staged.research_acquisition_slots[(effect.intent.turn, effect.intent.tool_index)] = category
             if ledger is not None:
                 ledger.commit_projection(staged_ledger)
                 from codey.operations.research_continuation import restore_note_proposals

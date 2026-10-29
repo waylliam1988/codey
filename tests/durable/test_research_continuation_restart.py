@@ -37,7 +37,7 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
         durable.start_task("r", state=dict(durable.task("r").state))
     line = RuntimeMutationLine(durable=durable)
     if not resume:
-        line.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=4,
+        line.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=12,
                               max_repair_rounds=0, task_kind="research")
 
     def state():
@@ -58,13 +58,17 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
             append("request", attempt=attempt)
             if attempt == 1:
                 return json.dumps({"tool": "web_search", "args": {"query": "initial research"}})
-            if attempt == 2:
-                if failure is not None:
-                    raise failure
-                return json.dumps({"tool": "knowledge_write", "args": {
-                    "type": "fact", "title": "Invalid evidence", "body": "missing sources and evidence"}})
-            round_index = 1 if attempt == 3 else 2
+            if attempt == 2 and failure is not None:
+                raise failure
+            round_index = 1 if attempt == 2 else 2
             url = f"https://example.com/source-{round_index}"
+            rows = [json.loads(row) for row in (root / "observations.jsonl").read_text(encoding="utf-8").splitlines()]
+            if not any(row.get("query") == f"followup {round_index}" for row in rows):
+                return json.dumps({"tool": "web_search", "args": {"query": f"followup {round_index}"}})
+            if not any(row.get("url") == url for row in rows):
+                return json.dumps({"tool": "open_url", "args": {"url": url}})
+            if "saved fact note id=" in prompt:
+                return json.dumps({"tool": "done", "args": {"summary": "Evidence saved."}})
             excerpt = f"Recovery evidence number {round_index} is durable."
             return json.dumps({"tool": "knowledge_write", "args": {
                 "type": "fact", "title": f"Recovery evidence {round_index}", "body": excerpt,
@@ -104,10 +108,10 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
         def committed(_result, _mutation):
             position = state()
             if ((boundary == "material" and position.writer_attempt == 1 and position.continuation_ref)
-                    or (boundary == "response" and position.writer_attempt == 3
-                        and position.leaf == "provider_response_ready")
-                    or (boundary == "receipt" and position.writer_attempt == 3
-                        and position.leaf == "tool_delivery_pending")
+                    or (boundary == "response" and position.writer_attempt == 2
+                        and position.logical_turn >= 3 and position.leaf == "provider_response_ready")
+                    or (boundary == "receipt" and position.writer_attempt == 2
+                        and position.logical_turn >= 3 and position.leaf == "tool_delivery_pending")
                     or (boundary == "second_round" and position.writer_attempt == 4
                         and position.leaf == "provider_response_ready")):
                 os._exit(74)
@@ -170,12 +174,12 @@ def test_research_restart_preserves_material_invocations_and_note_ids(tmp_path, 
     assert (tmp_path / "observations.jsonl").read_bytes() == before
     assert {str(path): path.read_bytes() for path in (tmp_path / "knowledge").rglob("*.md")} == notes
     observations = [json.loads(row) for row in before.splitlines()]
-    assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 3, 4]
+    assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4]
     assert [row["query"] for row in observations if row["event"] == "search"] == [
         "initial research", "followup 1", "followup 2"]
     assert [row["url"] for row in observations if row["event"] == "fetch"] == [
         "https://example.com/source-1", "https://example.com/source-2"]
-    assert [row["identity"] for row in observations if row["event"] == "write"] == first.final_result.notes_created
+    assert set(row["identity"] for row in observations if row["event"] == "write") == set(first.final_result.notes_created)
 
 
 def test_lost_continuation_commit_acknowledgement_never_reacquires_material(tmp_path, monkeypatch):
@@ -207,7 +211,7 @@ def test_lost_continuation_commit_acknowledgement_never_reacquires_material(tmp_
     observations = [json.loads(row) for row in (tmp_path / "observations.jsonl").read_bytes().splitlines()]
     assert [row["query"] for row in observations if row["event"] == "search"] == [
         "initial research", "followup 1", "followup 2"]
-    assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 3, 4]
+    assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4]
 
 
 def test_research_continuation_admission_is_idempotent(tmp_path, monkeypatch):
@@ -226,7 +230,7 @@ def test_research_continuation_admission_is_idempotent(tmp_path, monkeypatch):
     monkeypatch.setattr(RuntimeMutationLine, "commit_research_continuation", commit)
     result, _ = _run(tmp_path)
     assert result.followup_rounds == 2
-    assert len(commits) == 5
+    assert len(commits) == 4
 
 
 @pytest.mark.parametrize("not_sent", [True, False])
@@ -257,7 +261,7 @@ def test_failed_followup_retains_original_attempt_and_provider_diagnostic(tmp_pa
         observations = [json.loads(row) for row in (tmp_path / "observations.jsonl").read_bytes().splitlines()]
         # The failed logical turn retains its budget charge. Recovery closes
         # that bounded invocation before admitting the explicit repair.
-        assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 3, 4]
+        assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4]
         assert [row["query"] for row in observations if row["event"] == "search"] == [
             "initial research", "followup 1", "followup 2"]
     else:

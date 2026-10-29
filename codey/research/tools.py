@@ -717,11 +717,14 @@ class StagedKnowledgeStore:
             with target_store.index.transaction():
                 for note in self._staged_notes.values():
                     batch = self._staged_knowledge.get(note.id)
-                    if batch is not None:
-                        target_store.publish_note(note, batch[0], batch[1], changes=changes)
-                        continue
                     original = target_store.read_note(note.id)
-                    if original is not None and replace(original, updated=note.updated).to_markdown() == note.to_markdown():
+                    unchanged = original is not None and replace(original, updated=note.updated).to_markdown() == note.to_markdown()
+                    if batch is not None:
+                        if unchanged and target_store.repository.committed(batch[0], batch[1]) is not None:
+                            continue
+                        target_store.publish_note(note, batch[0], batch[1], changes=changes, shared_staged=True)
+                        continue
+                    if unchanged:
                         continue
                     target_store.write_note(note, changes=changes)
                 for src_id, dst_id, kind in self._staged_links:

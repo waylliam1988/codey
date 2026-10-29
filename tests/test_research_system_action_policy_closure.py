@@ -203,4 +203,5 @@ def test_synthesis_write_then_retry_keeps_single_note():
         project="", run_id="run-syn-stable", on_event=events.append, policy=policy,
     )
     assert second == first, f"同一 run 重试必须复用原笔记 ID：{first} vs {second}"
-    assert len(_knowledge_files(tools.store)) == 1
+    assert len(tools.store.documents.all()) == 1
+    assert len(tools.store.documents.history(first)) == 1

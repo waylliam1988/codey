@@ -122,6 +122,7 @@ class ResearchPipeline:
         ledger_event_sink: Callable[[EvidenceLedgerWriteResult], None] | None = None,
         research_changes_sink: Callable[..., None] | None = None,
         execute_plan: Callable[[PlanExecutor, ResearchPlan, ResearchTools], PlanExecutionResult] | None = None,
+        investigate: Callable[[ResearchPlan, ResearchTools, str], tuple[PlanExecutionResult, EvidenceFollowupResult]] | None = None,
         policy: object,
     ) -> None:
         self.context = context
@@ -133,6 +134,7 @@ class ResearchPipeline:
         self.ledger_event_sink = ledger_event_sink
         self.research_changes_sink = research_changes_sink
         self.execute_plan = execute_plan
+        self.investigate = investigate
         # 原任务授权：补研究与合成均不得超越此边界
         self.policy = policy
 
@@ -225,6 +227,12 @@ class ResearchPipeline:
             should_stop=self.context.should_stop, parent_policy=self.policy,
         )
 
+    def _investigate(self, executor: PlanExecutor, plan: ResearchPlan, tools: ResearchTools,
+                     summary: str) -> tuple[PlanExecutionResult, EvidenceFollowupResult | None]:
+        if self.investigate is not None:
+            return self.investigate(plan, tools, summary)
+        return self._execute_plan(executor, plan, tools), None
+
     def _drive_followup(
         self,
         *,
@@ -257,7 +265,7 @@ class ResearchPipeline:
 
         if best_tools is None:
             return _outcome("missing_iteration_tools")
-        if self.evidence_followup_runner is None:
+        if self.evidence_followup_runner is None and self.investigate is None:
             return _outcome("missing_evidence_followup_runner")
         current_tools = best_tools
         max_rounds = self._max_rounds()
@@ -272,7 +280,7 @@ class ResearchPipeline:
                 should_stop=self.context.should_stop,
             )
             try:
-                material = self._execute_plan(executor, plan, staged_tools)
+                material, integrated_result = self._investigate(executor, plan, staged_tools, best.summary)
             except ResearchContinuationError:
                 raise
             except cancellation.TaskCancelled:
@@ -283,10 +291,10 @@ class ResearchPipeline:
             planner_stop_reason = material.stop_reason
             attempted_sources = len(material.fresh_source_urls) if material.fresh_source_urls else max(0, (material.fresh_source_count or 0))
             total_attempted_fresh_sources += attempted_sources
-            if not material.has_new_material:
+            if not material.has_new_material and not (integrated_result and integrated_result.has_new_evidence):
                 break
             try:
-                followup_result = self._run_followup(staged_tools, plan, material, best)
+                followup_result = integrated_result or self._run_followup(staged_tools, plan, material, best)
             except ResearchContinuationError:
                 raise
             except cancellation.TaskCancelled:

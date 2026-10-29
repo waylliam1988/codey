@@ -194,6 +194,8 @@ class ExecutionDelegate:
         if executor == "project":
             return self._execute_project(call)
         if executor in {"source", "knowledge"}:
+            if not self._reserve_research_acquisition(name, turn, tool_index):
+                return ToolResult(ok=False, call=call, model_text="ERROR: research acquisition budget exhausted"), False, None
             return self._execute_research(call, turn=turn, tool_index=tool_index)
         # Third-task tools run via the frozen turn binding when present,
         # otherwise the live registry.
@@ -436,6 +438,22 @@ class ExecutionDelegate:
                 tools.search_result_urls = {hit.url for search in ledger.searches for hit in search.results}
         return tools
 
+    def _reserve_research_acquisition(self, name: str, turn: int, tool_index: int) -> bool:
+        if self.session is not None and self.session.research_acquisition_limits is not None:
+            category = "search" if name == "web_search" else "open" if name in {
+                "open_url", "open_result", "reopen_source", "open_hit"} else ""
+            if category:
+                with self.session.projection_lock:
+                    slots = self.session.research_acquisition_slots
+                    limit = self.session.research_acquisition_limits[0 if category == "search" else 1]
+                    # Rebuilt from receipts on restore, plus in-flight slots.
+                    # Failed acquisitions consume budget too.
+                    previous = {key for key, kind in slots.items() if kind == category}
+                    if (turn, tool_index) not in previous and len(previous) >= limit:
+                        return False
+                    slots[(turn, tool_index)] = category
+        return True
+
     def _execute_research(self, call: ToolCall, *, turn: int = 0,
                           tool_index: int = 0) -> tuple[ToolResult, bool, int | None]:
         name = (call.name or "").strip().lower()
@@ -512,11 +530,13 @@ class ExecutionDelegate:
                 evidence_canonical: dict[str, object] = {"evidence_items": evidence}
                 evidence_canonical["knowledge_links_created"] = tools.links_created - links_before
                 proposals: list[object] = []
+                created = [item for item in tools.created_ids if item not in created_before]
                 evidence_canonical["knowledge_notes"] = {
-                    "created": [item for item in tools.created_ids if item not in created_before],
+                    "created": created,
                     "updated": [item for item in tools.updated_ids if item not in updated_before],
                     "proposals": proposals,
                 }
+                self._staged_note_receipt(tools, created, proposals, evidence_canonical)
                 ledger = getattr(tools, "ledger", None)
                 if isinstance(ledger, ResearchLedger):
                     evidence_canonical["research_observation"] = ledger_observation(ledger, name, evidence_start=before)
@@ -533,6 +553,20 @@ class ExecutionDelegate:
         except Exception as exc:
             return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
         return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown research tool {name}"), False, None
+
+    @staticmethod
+    def _staged_note_receipt(tools: Any, created: list[str], proposals: list[object], canonical: dict[str, object]) -> None:
+        from codey.providers.response_record import json_value
+        from codey.research.tools import StagedKnowledgeStore
+
+        if isinstance(tools.store, StagedKnowledgeStore):
+            proposals.extend(json_value(tools.store._staged_notes[identity]) for identity in created)
+            canonical["knowledge_batches"] = {
+                identity: {"commit_id": batch[0], "mutations": [
+                    {"value": mutation.value.to_dict(), "expected_revision": mutation.expected_revision}
+                    for mutation in batch[1]]}
+                for identity, batch in tools.store._staged_knowledge.items() if identity in created
+            }
 
     def _lower_knowledge_sources(self, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
         import re

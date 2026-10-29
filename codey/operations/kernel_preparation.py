@@ -19,6 +19,10 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
                         task_guidance: str, native: bool, completion_context: Any = None) -> PreparedKernelTurn:
     snapshot = kernel_protocol.build_turn_snapshot(session, native=native)
     guidance = [task_guidance] if task_guidance else []
+    if snapshot.policy.strict_research:
+        from codey.research.methods import research_method_guidance
+
+        guidance.append(research_method_guidance(user_task))
     for check_id in snapshot.policy.required_checks:
         requirement = parse_tool_success_check(check_id)
         if requirement is not None:

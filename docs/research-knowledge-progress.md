@@ -58,3 +58,23 @@ generic research methods. Markdown is interchange, never a competing authority.
   objects/dependents; existing durable outputs/receipts retain their own lifecycle.
 
 Update this file in each implementation commit with results and remaining work.
+
+## Shared investigation integration
+
+- Production follow-up now proposes searches, reads and evidence writes through
+  the existing shared task kernel. PlanExecutor is retained only for explicit
+  legacy/test callers; research_flow no longer calls its direct acquisition path.
+- Immutable plan/baseline references use the existing continuation artifact;
+  changed admitted inputs fail closed. There is no research execution cursor.
+- Per-invocation query/open bounds use normal receipt projections and in-flight
+  reservations, including restart reconstruction. The operation still owns all
+  request/turn budgets and unknown-send handling.
+- Ordinary staged write receipts now include original proposals and structured
+  batches. Identical staged source/entity/evidence objects can share one initial
+  version without weakening optimistic concurrency for ordinary commits.
+- Generic, composable research method guidance is integrated into strict research.
+- Validation: 9 subprocess restart/failure tests passed (plan admission, provider
+  reply, tool delivery, DB transaction and second round; lost acknowledgement;
+  not-sent versus unknown outcome). 66 focused repository/pipeline/policy tests
+  passed. Production Ruff passed. Remaining: report/version graph, lifecycle
+  cleanup, local model validation and final static checks.

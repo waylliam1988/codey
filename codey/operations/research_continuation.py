@@ -167,6 +167,26 @@ class ResearchContinuation:
                                                 writer_attempt=attempt)
         return run_task_kernel(session, request=request)
 
+    def investigation_plan(self, round_index: int, plan: Any, tools: Any) -> None:
+        """Bind strategy data to the existing continuation before any request.
+
+        This is an immutable input reference, not another execution position.
+        Changed plans/baselines cannot silently replace an admitted invocation.
+        """
+        state = self.state()
+        index = self.index(state)
+        payload = {"schema_version": 1, "kind": "research_investigation_plan", "plan": json_value(plan),
+                   "baseline": compute_args_digest(json_value({"searches": tools.ledger.searches,
+                       "sources": tools.ledger.opened_sources, "evidence": tools.ledger.evidence_items}))}
+        reference = index["materials"].get(str(round_index))
+        if reference:
+            if self.read(reference, "research_investigation_plan") != payload:
+                raise ResearchContinuationError("investigation plan or baseline differs from its admitted input")
+            return
+        artifact = self.artifact(payload)
+        index["materials"][str(round_index)] = artifact.handle
+        self.commit(state, index, material=artifact)
+
     def material(self, round_index: int, executor: Any, plan: Any, tools: Any, *, policy: Any) -> PlanExecutionResult:
         state, before = self.state(), len(tools.ledger.searches)
         index = self.index(state)

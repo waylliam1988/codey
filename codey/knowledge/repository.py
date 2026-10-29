@@ -79,7 +79,7 @@ class KnowledgeRepository:
         ).fetchone()
         return KnowledgeVersion(value, int(row["revision"]), str(row["recorded_at"]), str(row["commit_id"]), bool(changed))
 
-    def commit(self, commit_id: str, mutations: Sequence[KnowledgeMutation]) -> dict[str, int]:
+    def commit(self, commit_id: str, mutations: Sequence[KnowledgeMutation], *, shared_staged: bool = False) -> dict[str, int]:
         if not commit_id.strip() or len(commit_id) > 512 or not mutations or len(mutations) > 128:
             raise ValueError("a bounded nonempty commit and stable commit_id are required")
         identities = [mutation.value.id for mutation in mutations]
@@ -93,7 +93,7 @@ class KnowledgeRepository:
                     raise ValueError("knowledge commit identity reused with different content")
                 result: dict[str, int] = json.loads(old_commit["result"])
                 return result
-            versions = self._check_revisions(mutations)
+            versions = self._check_revisions(mutations, shared_staged=shared_staged)
             self._check_cycles(versions)
             for mutation in mutations:
                 self._validate_references(mutation.value, versions)
@@ -102,7 +102,8 @@ class KnowledgeRepository:
             for mutation in mutations:
                 value, revision = versions[mutation.value.id]
                 result[value.id] = revision
-                self._write(conn, value, revision, stamp, commit_id)
+                if conn.execute("SELECT 1 FROM knowledge_versions WHERE id=? AND revision=?", (value.id, revision)).fetchone() is None:
+                    self._write(conn, value, revision, stamp, commit_id)
             conn.execute("INSERT INTO knowledge_commits VALUES(?,?,?,?)", (commit_id, digest, canonical_json(result), stamp))
             return result
 
@@ -121,11 +122,15 @@ class KnowledgeRepository:
         result: dict[str, int] = json.loads(row["result"])
         return result
 
-    def _check_revisions(self, mutations: Sequence[KnowledgeMutation]) -> dict[str, tuple[KnowledgeObject, int]]:
+    def _check_revisions(self, mutations: Sequence[KnowledgeMutation], *, shared_staged: bool = False) -> dict[str, tuple[KnowledgeObject, int]]:
         versions: dict[str, tuple[KnowledgeObject, int]] = {}
         for mutation in mutations:
             value = mutation.value
             old = self.read(value.id)
+            if (shared_staged and mutation.expected_revision == 0 and old and old.revision == 1
+                    and value.kind in {"source", "evidence", "entity"} and old.value == value):
+                versions[value.id] = (value, 1)
+                continue
             if (old.revision if old else 0) != mutation.expected_revision:
                 raise ValueError(f"knowledge revision conflict: {value.id}")
             if old and (old.value.kind, old.value.scope, old.value.scope_id) != (value.kind, value.scope, value.scope_id):

@@ -11,7 +11,6 @@ from codey.knowledge.research_interest import (
     candidate_to_topic_hint,
 )
 from codey.operations.context import RunFrame, RunHooks
-from codey.operations.evidence_followup import run_evidence_followup
 from codey.operations.result import ModeOutcome
 from codey.operations.task_state import TaskState, stop_flag_for
 from codey.policies.permissions import allows_context_source, profile_for_name
@@ -334,50 +333,30 @@ def run_research_pipeline(
             task_policy=getattr(frame, "entry_policy", None),
         )
 
-    followup_index = 0
-    material_index = 0
+    investigation_index = 0
 
     from codey.operations.research_continuation import ResearchContinuation
 
     continuation = ResearchContinuation(deps.runtime_mutations, deps.managed_outputs,
                                         session_id=request.session_id, run_id=frame.run_id)
 
-    def execute_plan(executor: Any, plan: Any, tools: Any) -> Any:
-        nonlocal material_index
-        material_index += 1
-        return continuation.material(material_index, executor, plan, tools, policy=frame.entry_policy)
+    def investigate(plan: Any, tools: Any, initial_summary: str) -> Any:
+        from codey.operations.research_investigation import investigate_plan
 
-    def followup(
-        *,
-        tools: Any,
-        plan: Any,
-        material: Any,
-        question: str,
-        initial_summary: str = "",
-        max_context_chars: int = 8000,
-        should_stop: Any = None,
-        parent_policy: Any = None,
-    ) -> Any:
-        nonlocal followup_index
-        followup_index += 1
-        return run_evidence_followup(
+        nonlocal investigation_index
+        investigation_index += 1
+        return investigate_plan(
+            history=continuation,
             provider=frame.provider,
             tools=tools,
             plan=plan,
-            material=material,
-            question=question,
+            question=request.task,
             initial_summary=initial_summary,
-            max_context_chars=max_context_chars,
-            should_stop=should_stop,
-            session_id=request.session_id,
-            run_id=frame.run_id,
+            should_stop=stop_flag_for(deps.state, frame.run_id).is_set,
             provider_id=frame.provider_id,
-            round_index=followup_index,
-            runtime_mutations=deps.runtime_mutations,
-            durable=getattr(deps.state, "durable", None),
-            managed_outputs=deps.managed_outputs,
+            round_index=investigation_index,
             on_event=hooks.on_event,
-            parent_policy=parent_policy if parent_policy is not None else getattr(frame, "entry_policy", None),
+            parent_policy=getattr(frame, "entry_policy", None),
         )
 
     recorder = getattr(deps.state, "record_research_changes", None)
@@ -394,12 +373,11 @@ def run_research_pipeline(
         ),
         run_iteration=iteration,
         search_factory=deps.search_factory,
-        evidence_followup_runner=followup,
+        investigate=investigate,
         evidence_ledgers=deps.evidence_ledgers,
         config=ResearchPipelineConfig(),
         ledger_event_sink=lambda result: ledger_sink(hooks, result),
         research_changes_sink=changes_sink,
-        execute_plan=execute_plan,
         policy=getattr(frame, "entry_policy", None),
     )
     return pipeline.run()

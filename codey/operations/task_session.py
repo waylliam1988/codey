@@ -57,6 +57,10 @@ class TaskSession:
     # narrowed scope flows through the SAME snapshot into prompt, schemas,
     # parsing, and execution. Empty means state-derived only.
     controller_denied: tuple[str, ...] = ()
+    # Per-invocation source bounds. Consumption is reconstructed from ordinary
+    # tool receipts, never a separate research progress ledger.
+    research_acquisition_limits: tuple[int, int] | None = None
+    research_acquisition_slots: dict[tuple[int, int], str] = field(default_factory=dict, repr=False)
     # Explicit completion requirement from the task entry; never inferred
     # from keywords or write permission. Read-only tasks keep False even
     # when the policy still grants project.write for other reasons.

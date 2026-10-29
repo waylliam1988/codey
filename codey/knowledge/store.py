@@ -128,7 +128,7 @@ class KnowledgeStore:
         return KnowledgeLinkResult(True, f"linked: {src_id} -> {dst_id} ({kind})", created=True)
 
     def publish_note(self, note: KnowledgeNote, commit_id: str, mutations: list[KnowledgeMutation],
-                     *, changes: KnowledgeChanges | None = None) -> str:
+                     *, changes: KnowledgeChanges | None = None, shared_staged: bool = False) -> str:
         snapshot = changes.snapshot() if changes is not None else None
         try:
             with self.index.transaction():
@@ -137,7 +137,7 @@ class KnowledgeStore:
                         previous = self.repository.read(mutation.value.id)
                         rel = f"_knowledge/{mutation.value.id}.json"
                         changes.capture_content(rel, canonical_json(previous.value.to_dict()) if previous else None)
-                versions: dict[str, int] = self.repository.commit(commit_id, mutations) if mutations else {}
+                versions: dict[str, int] = self.repository.commit(commit_id, mutations, shared_staged=shared_staged) if mutations else {}
                 rel = self.write_note(note, changes=changes)
                 found = self.documents.get(note.id)
                 if found:
