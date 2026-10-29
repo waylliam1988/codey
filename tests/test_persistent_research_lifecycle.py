@@ -182,6 +182,10 @@ def test_repeated_staged_note_updates_keep_prior_evidence(tmp_path):
             "sources": [url], "evidence": [{"source_url": url, "excerpt": "One writer commits.",
                 "claim": "Serialized writer", "stance": "supports"}]})
         assert output.ok and "Structured knowledge versions" in output.model_text
+        refs = next(json.loads(line)["knowledge_refs"] for line in output.model_text.splitlines()
+                    if line.startswith('{"knowledge_refs":'))
+        assert len(refs) == 1 and refs[0]["id"].startswith("claim-") and refs[0]["revision"] == 1
+        assert "in the knowledge database" in output.model_text and "logical export path" in output.model_text
         note_id = staged.created_ids[0]
         assert staged.knowledge_write({"id": note_id, "type": "fact", "title": "Concurrency", "body": "Reader scope",
             "sources": [url], "evidence": [{"source_url": url, "excerpt": "Readers can proceed.",

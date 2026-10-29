@@ -353,6 +353,11 @@ class ResearchTools:
         versions = [{"id": mutation.value.id, "revision": mutation.expected_revision + 1,
                      "kind": mutation.value.kind, "status": mutation.value.status} for mutation in mutations]
         versions.sort(key=lambda row: 0 if row["kind"] in {"claim", "inference", "question"} else 1)
+        answer_refs = [{"id": row["id"], "revision": row["revision"]} for row in versions
+                       if row["kind"] in {"claim", "inference", "question"}][:6]
+        if answer_refs:
+            model_text += ("\nAnswer reference candidates (copy only versions actually used into done.knowledge_refs):\n"
+                           + canonical_json({"knowledge_refs": answer_refs}))
         model_text += "\nStructured knowledge versions:\n" + canonical_json(versions[:24])
         model_text += "\nFor knowledge_read and done.knowledge_refs use these object ids and revisions, not note_id."
         return ResearchToolOutput(model_text, ok=True)
@@ -593,13 +598,13 @@ def _finalize_write_note(
             tools.updated_ids.append(note.id)
     elif note.id not in tools.created_ids:
         tools.created_ids.append(note.id)
-    output = f"saved {note_type} note id={note.id} at {rel}"
+    output = f"saved {note_type} note id={note.id} in the knowledge database"
     if evidence_preparation.warning:
         output += f"; WARNING: {evidence_preparation.warning}"
     if relation_warnings:
         output += "; WARNING: relations: " + "; ".join(relation_warnings)
     output += (
-        f"; note_id: {note.id}; storage_path: {rel} "
+        f"; note_id: {note.id}; storage_path: {rel} (logical export path) "
         "(do not use storage_path as note_id; pass note_id exactly to knowledge_read)"
     )
     return output

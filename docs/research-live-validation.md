@@ -584,3 +584,13 @@ to the reviewed explicit nesting-repair surface.
 
 The next live medicine task uses the production JSON mode and these citation
 repairs. Its result and a repaired WAL rerun remain pending.
+
+
+## Copyable saved-version receipts
+
+knowledge_write now distinguishes the database note identity, logical export path
+and structured object versions. Successful receipts include a bounded, copyable
+knowledge_refs fragment for actual claim/inference/question mutations; it does
+not select which versions an answer used. Focused knowledge/lifecycle/repository
+tests passed 26; Ruff, mypy, Pyrefly and ty passed. The live medicine process
+started before this change and remains unaccepted.
