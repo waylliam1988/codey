@@ -911,3 +911,20 @@ Next real medical browser run:
 `artifacts/research-live-adaptive-scoped-repair-20261030`. In progress; not
 accepted. It has opened original studies but again proposed a significant
 capecitabine-alone effect despite a nonsignificant reported comparison.
+
+The medical scoped-repair run was cancelled and remains unaccepted: it saved
+an overstated significance claim and made unverified clinical extrapolations.
+Three short-context diagnostic calls on the exact original result passage are
+retained in `artifacts/research-short-comprehension-20261030`: plain/thinking-off,
+JSON/thinking-off and plain/thinking-on all preserved the nonsignificant
+capecitabine-alone comparison. This isolates an adverse long-task/context effect;
+it does not establish that short-context outputs are always correct.
+
+A conservative support-qualifier check now rejects an affirmative significant
+effect when the quoted passage explicitly reports nonsignificance and the claim
+drops that distinction. Mixed comparisons must be split or retain the limit.
+Counterevidence stances remain valid. It does not choose a p-value threshold,
+check other statistical reasoning or establish general entailment. Whole
+evidence batches still reject atomically. Related validation: 64 focused tests
+before the final pattern expansion, then all 17 qualifier cases passed; all four
+static checks passed (554 production files for mypy).

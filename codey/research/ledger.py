@@ -297,18 +297,26 @@ class ResearchLedger:
                         f"evidence item {index} quotes only a source title or section heading, not its finding: "
                         f"{excerpt[:180]!r}. Use source_search and open_hit to read the section body, "
                         "then quote the actual result or limitation. No evidence was saved."))
+                claim = _clean(str(raw.get("claim") or fallback_claim))
+                stance = _normalize_stance(str(raw.get("stance") or "supports"))
+                if note_type != "source" and stance == "supports":
+                    from codey.research.evidence_qualifiers import support_qualifier_problem
+
+                    conflict = support_qualifier_problem(claim, excerpt)
+                    if conflict:
+                        return EvidencePreparation(error=f"evidence item {index}: {conflict}")
                 page = page if page is not None else inferred_page
                 prepared.append(EvidenceItem(
                     # Display budgets must not discard a trailing condition or
                     # negation before the claim enters long-term knowledge.
-                    claim=_clean(str(raw.get("claim") or fallback_claim)),
+                    claim=claim,
                     source_url=final_url,
                     # Keep the exact matched substring: downstream proof
                     # locators re-find this text in the opened source, so any
                     # display truncation here would break char offsets.
                     # Presentation layers apply their own bounds.
                     excerpt=excerpt,
-                    stance=_normalize_stance(str(raw.get("stance") or "supports")),
+                    stance=stance,
                     page=page,
                     locator=_locator(page),
                 ))
