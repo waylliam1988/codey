@@ -20,6 +20,14 @@ def test_long_chinese_clauses_are_not_verbatim_coverage_requirements():
     assert "有什么限制" in terms
 
 
+def test_interrogative_topics_take_priority_over_following_delivery_instructions():
+    terms = question_terms('研究 SQLite WAL：为什么读写可并发，而写者仍竞争？保存两条中文主张。'
+                           '然后使用 knowledge_write，报告须使用 done.report_sections。')
+    assert "sqlite" in terms and "wal" in terms
+    assert not set(terms) & {"为什么读写可并发", "保存两条中文主张", "knowledge_write", "report_sections"}
+    assert "lithium" in question_terms("What affects lithium supply? Save a report.")
+
+
 def test_explicit_quoted_topics_are_kept_including_long_chinese_names():
     terms = question_terms('Compare "snapshot isolation" and "serializable isolation". 研究"肿瘤种群演化与选择压力"。')
     assert "snapshot isolation" in terms and "serializable isolation" in terms

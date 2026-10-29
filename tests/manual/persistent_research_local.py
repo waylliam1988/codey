@@ -23,7 +23,7 @@ URLS = ("https://www.sqlite.org/wal.html", "https://www.sqlite.org/isolation.htm
 
 
 def stage(directory, name, upstream, model, native=False, live_web=False, question="", max_turns=12, thinking=False,
-          temperature=0.3, seed=73, diagnostic_stacks=False):
+          temperature=0.3, seed=73, diagnostic_stacks=False, reasoning_effort=None):
     from unittest.mock import patch
 
     from codey.app import headless_runner
@@ -40,6 +40,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         "stream": native, "thinking": thinking, "live_web": live_web, "max_turns": max_turns,
         "question": question,
         "diagnostic_stacks": diagnostic_stacks,
+        "reasoning_effort": reasoning_effort,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     events = directory / f"{name}-events.jsonl"
     wire = directory / f"{name}-wire.jsonl"
@@ -100,8 +101,9 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
 
         counter, window = admitted_counter(upstream + "/v1", "", "openai-completions", 32768)
         record({"event": "connection_budget", "counter": counter, "window": window})
-        return ObservedProvider(upstream + "/v1", model, timeout=180, temperature=temperature, thinking_enabled=thinking,
-                           output_tokens=5000 if thinking else 2500, context_reserve_tokens=5500, native_tools=native,
+        return ObservedProvider(upstream + "/v1", model, timeout=180, temperature=temperature,
+                           thinking_enabled=None if reasoning_effort else thinking, reasoning_effort=reasoning_effort,
+                           output_tokens=5000 if thinking or reasoning_effort else 2500, context_reserve_tokens=5500, native_tools=native,
                            stream=native, context_window_tokens=window,
                            request_counter=counter_for(counter, upstream + "/v1", model, "", window),
                            usage_parser=parser_for("openai-completions"),
@@ -220,6 +222,8 @@ def main():
     parser.add_argument("--stage", choices=("first", "recall", "revise", "research"))
     parser.add_argument("--native", action="store_true", help="Use the server's structured tool protocol")
     parser.add_argument("--thinking", action="store_true", help="Enable the model's reasoning mode")
+    parser.add_argument("--reasoning-effort", choices=("minimal", "low", "medium", "high"),
+                        help="Use the production reasoning-effort option instead of a thinking toggle")
     parser.add_argument("--diagnostic-stacks", action="store_true", help="Opt in to periodic CPython thread dumps")
     parser.add_argument("--live-web", action="store_true", help="Use production search and browser page acquisition")
     parser.add_argument("--question-file", type=Path)
@@ -228,6 +232,8 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.3, help="Local production default; recorded per stage")
     parser.add_argument("--seed", type=int, default=73, help="Fixed sampling seed for reproducible diagnostics")
     args = parser.parse_args()
+    if args.thinking and args.reasoning_effort:
+        parser.error("choose either --thinking or --reasoning-effort")
     directory = args.directory.resolve()
     directory.mkdir(parents=True, exist_ok=True)
     with urlopen(args.upstream + "/v1/models", timeout=5) as response:
@@ -237,7 +243,7 @@ def main():
         if args.stage == "research" and (not args.live_web or not question.strip()):
             parser.error("research requires --live-web and --question-file")
         stage(directory, args.stage, args.upstream, model, args.native, args.live_web, question, args.max_turns,
-              args.thinking, args.temperature, args.seed, args.diagnostic_stacks)
+              args.thinking, args.temperature, args.seed, args.diagnostic_stacks, args.reasoning_effort)
         return
     documents = []
     from codey.research.extract import extract_text, extract_title
@@ -250,7 +256,8 @@ def main():
                           "sha256": hashlib.sha256(text.encode()).hexdigest()})
     (directory / "sources.json").write_text(json.dumps(documents, ensure_ascii=False), encoding="utf-8")
     (directory / "control.json").write_text(json.dumps({"model": model, "temperature": args.temperature, "seed": args.seed,
-        "native_tools": args.native, "thinking": args.thinking, "source_mode": "frozen public documentation",
+        "native_tools": args.native, "thinking": args.thinking, "reasoning_effort": args.reasoning_effort,
+        "source_mode": "frozen public documentation",
         "processes": ["first", "recall", "revise"]}, indent=2), encoding="utf-8")
     for name in ("first", "recall", "revise"):
         subprocess.run([sys.executable, "-X", "utf8", "-m", "tests.manual.persistent_research_local",
@@ -258,6 +265,7 @@ def main():
                         "--temperature", str(args.temperature), "--seed", str(args.seed),
                         "--max-turns", str(args.max_turns), *(["--native"] if args.native else []),
                         *(["--diagnostic-stacks"] if args.diagnostic_stacks else []),
+                        *(["--reasoning-effort", args.reasoning_effort] if args.reasoning_effort else []),
                         *(["--thinking"] if args.thinking else [])],
                        check=True, timeout=args.stage_timeout)
 

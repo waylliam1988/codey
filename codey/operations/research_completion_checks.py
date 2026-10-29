@@ -123,10 +123,15 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
 
         sections = parse_sections(text)
         missing = [section_title(key) for key in REQUIRED_SECTIONS if not sections.get(key, "").strip()]
-        parts.append("Repair report formatting using the evidence already saved; this alone does not require another search. "
-                     "Each required heading must be on its own line, followed by its content. "
-                     "Missing sections: " + ", ".join(missing) + ". Required headings:\n" +
-                     "\n".join("## " + section_title(key) for key in REQUIRED_SECTIONS))
+        parts.append("Repair report formatting using the evidence already saved; this alone does not require another search.")
+        if missing:
+            parts.append("Each required heading must be on its own line, followed by its content. "
+                         "Missing sections: " + ", ".join(missing) + ". Required headings:\n" +
+                         "\n".join("## " + section_title(key) for key in REQUIRED_SECTIONS))
+        else:
+            parts.append("All required sections are present; repair the specific citation/report defect below. "
+                         'With report_sections, sources must contain numbered entries such as '
+                         '"[1] Title - https://final-url", not bare URLs. Preserve the other sections.')
         if "\\n" in text and "\n" not in text:
             parts.append("The summary contains literal backslash+n text, not line breaks. "
                          "Resend summary with actual paragraph newlines after argument decoding. "

@@ -262,6 +262,9 @@ def _required_checks_verdict(
             except Exception:
                 reason = ""
             instruction = "Collect the missing local evidence or fresh verification, then propose done again."
+            if req in {"research_report_sections", "research_report_quality", "knowledge_versions"}:
+                instruction = ("Repair the reported report or reference defect, then propose done again. "
+                               "Request additional evidence only if the reported defect requires it.")
             if requirement is not None:
                 instruction = tool_evaluations[req].feedback
             if is_output_check(declaration):

@@ -87,3 +87,41 @@ def test_rejected_fenced_action_is_resent_as_bare_json_before_execution(monkeypa
     assert result.completed, result
     assert len(calls) == 1
     assert len(prompts) == 3
+
+
+def test_reasoned_json_action_executes_through_shared_kernel_before_done(monkeypatch):
+    from codey.operations.task_session import TaskSession
+    from codey.providers.api_provider import ApiProvider
+    from codey.providers.local_response_codec import normalize_local_reply
+    from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
+    from tests.support.observed_tool_result import observed_tool_result
+
+    calls, sent = [], []
+    replies = iter([
+        '{"tool":"web_search","args":{"query":"original study"}}',
+        '{"tool":"done","args":{"summary":"Search was executed."}}',
+    ])
+
+    def reply(request, timeout=None):
+        sent.append(json.loads(request.data))
+        return Response(json.dumps({"choices": [{"finish_reason": "stop", "message": {
+            "content": next(replies), "reasoning_content": "Gather evidence before answering.",
+        }}]}).encode())
+
+    def execute(call):
+        calls.append(call)
+        return observed_tool_result(call, "Observed search result")
+
+    monkeypatch.setattr(api_transport, "open_request", reply)
+    monkeypatch.setattr("codey.operations.completion_gate.evaluate", lambda *a, **kw: SimpleNamespace(
+        complete=bool(calls), followup="Search has not executed.", proof=None, final_text=""))
+    provider = ApiProvider("http://fixture/v1", "local", native_tools=False, text_decoder=normalize_local_reply)
+    try:
+        outcome = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control", "web.read"})), max_turns=3),
+            request=KernelRunRequest(transport=KernelTransportDeps(provider=provider, user_task="Research a question."),
+                                     execution=KernelExecutionDeps(executors={"web_search": execute})))
+        assert outcome.completed, outcome
+        assert len(calls) == 1 and calls[0].args == {"query": "original study"}
+        assert len(sent) == 2
+    finally:
+        provider.close()

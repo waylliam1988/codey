@@ -54,6 +54,11 @@ def question_terms(question: str) -> tuple[str, ...]:
             break
         text = stripped
     text = re.sub(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b", " ", text)
+    interrogatives = re.findall(r"[^。.!?！？\n]*[?？]", text)
+    if interrogatives:
+        # Output/storage instructions after the actual question must not send
+        # the investigator to the web to research schema fields or formatting.
+        text = " ".join(interrogatives)
     tokens: list[str] = []
     quoted = re.findall(r"['\"]([^'\"]{2,80})['\"]", text)
     for item in quoted:
@@ -65,7 +70,9 @@ def question_terms(question: str) -> tuple[str, ...]:
         # An unsegmented Chinese clause is not an exact-match keyword. Requiring
         # its verbatim repetition penalizes ordinary paraphrases and generates
         # irrelevant web queries. Keep short names; no guessed word boundaries.
-        if re.fullmatch(r"[\u4e00-\u9fff]{9,}", item):
+        if re.fullmatch(r"[\u4e00-\u9fff]+", item) and (
+            len(item) > 8 or item.startswith(("为什么", "如何", "是否", "什么", "哪些", "能否", "怎么"))
+        ):
             continue
         _append_term(tokens, item)
         if len(tokens) >= 12:

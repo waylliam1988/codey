@@ -106,6 +106,7 @@ def test_required_report_failure_explains_literal_newlines_without_rewriting():
     assert "literal backslash+n" in verdict.followup
     assert "## 结论\n## 关键证据\n## 反证与限制" in verdict.followup
     assert "does not require another search" in verdict.followup
+    assert "Collect the missing local evidence or fresh verification" not in verdict.followup
     assert "\n" not in summary  # The gate did not silently decode the submitted data.
 
 
@@ -120,3 +121,16 @@ def test_missing_evidence_and_wrong_knowledge_id_receive_specific_repair_guidanc
     assert "not a note_id" in text
     assert "type=fact" in text and "source_search" in text
     assert "hypothesis without source excerpts" in text
+
+
+def test_complete_sections_with_bad_source_table_get_citation_not_heading_feedback():
+    from codey.completion.contract import CHECK_FAIL, CompletionCheck
+    from codey.operations.research_completion_checks import research_completion_feedback
+
+    report = "\n\n".join("## " + title + "\ncontent" for title in
+                           ("结论", "关键证据", "反证与限制", "来源质量", "搜索覆盖", "来源"))
+    feedback = research_completion_feedback(_session(TaskPolicy(grants=frozenset({"control"}))), report, None,
+        [CompletionCheck("research_report_sections", CHECK_FAIL, "report_unmapped_numeric_refs")])
+    assert "All required sections are present" in feedback
+    assert '"[1] Title - https://final-url"' in feedback
+    assert "Missing sections:" not in feedback

@@ -56,6 +56,33 @@ Work in progress. Do not infer a live acceptance pass from deterministic tests.
   overlap. A fresh three-process thinking-enabled run is now validating the fix;
   its first search has actually executed. No full live pass is claimed yet.
 
+### Bounded reasoning and report repair
+
+- `research-three-stage-reasoning-protocol-20261030` did execute search, opening,
+  source_search/open_hit and both knowledge writes. Exact concurrent-reader and
+  single-writer quotes, aliases and both condition states were saved correctly.
+  Its first final report omitted numbered source rows; on repair, unrestricted
+  thinking repeated self-checks until the 5,000-token output limit. It failed;
+  stored evidence is useful but this is not a completed three-stage result.
+- The manual probe now exposes the existing production reasoning-effort option
+  (`--reasoning-effort low`, mutually exclusive with --thinking), records it and
+  propagates it to every fresh process. No production default is changed.
+- Question-term hints prioritize explicit interrogative sentences when present,
+  rather than delivery/storage instructions after them. Long or interrogative
+  Chinese clauses are not required verbatim. Semantic evidence checks and the
+  independent persisted-condition acceptance requirements remain unchanged.
+- Formatting/reference failures now request repair of the reported defect;
+  they no longer simultaneously demand fresh research. When all sections are
+  present, feedback identifies the numbered source-row format instead of
+  displaying an empty missing-headings list. These are prompt fixes, not
+  automatic rewriting/acceptance of submitted reports.
+- Added an API -> reasoned JSON -> shared-kernel tool execution integration
+  regression. A focused 130-test set (research/proof/planner/merge/completion,
+  reasoning/codec/durable receipts/Zen) passed. Ruff and production mypy passed.
+- Active fresh probe: `research-three-stage-low-20261030` (low reasoning,
+  16 turns per stage). First stage has searched, opened and saved evidence;
+  final reports/recall/revision still need inspection.
+
 ## Continuation: explicit evidence and backend parser diagnosis
 
 - The earlier `research-live-wal-action-20261030` returned `done`, but manual
