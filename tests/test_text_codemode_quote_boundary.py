@@ -5,16 +5,15 @@ from pathlib import Path
 import pytest
 
 from codey.operations.kernel_protocol import build_turn_snapshot
-from codey.operations.task_effects import KernelRecordedProvider
-from codey.operations.task_loop import (
+from codey.policies.tool_requirement import require_tool_success
+from codey.protocols.text_turn import TextError, TextRequests, decode_text_turn
+from tests.support.kernel_runtime import (
     KernelExecutionDeps,
     KernelObservationDeps,
     KernelRunRequest,
     KernelTransportDeps,
     run_task_kernel,
 )
-from codey.policies.tool_requirement import require_tool_success
-from codey.protocols.text_turn import TextError, TextRequests, decode_text_turn
 from tests.test_required_tool_lineage import _code, _execute, _restart
 from tests.test_required_tool_lineage import runtime as runtime
 
@@ -90,7 +89,7 @@ def test_original_loop_repairs_recorded_escape_failure_then_searches_exact_quote
 
     provider = Provider()
     result = run_task_kernel(runtime.state, request=KernelRunRequest(
-        transport=KernelTransportDeps(provider=KernelRecordedProvider(provider, runtime.sink), run_id="r",
+        transport=KernelTransportDeps(provider=provider, run_id="r",
             provider_id="local", effect_scope="task", user_task="Search exact quoted text and return JSON."),
         execution=KernelExecutionDeps(project_path=runtime.project, managed_outputs=runtime.managed, session_id="s",
             durable=runtime.mutations.durable, workspace_revision_store=runtime.revisions,

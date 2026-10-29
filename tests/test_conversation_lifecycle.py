@@ -92,13 +92,26 @@ def _entry_frame(*, fresh_chat: bool, conversation, provider) -> object:
     )
 
 
-def _entry_deps() -> object:
+def _entry_deps(root) -> object:
     from types import SimpleNamespace
 
-    return SimpleNamespace(
-        runtime_mutations=None, managed_outputs=None, state=SimpleNamespace(set_provider_session=lambda *args: None),
-        workspace_revisions=None,
-    )
+    from codey.durable import DurableSession, MemoryDurableStore
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from codey.storage.managed_outputs import ManagedOutputStore
+
+    durable = DurableSession(MemoryDurableStore())
+    durable.admit_input(conversation_id="s-life", request_id="input", task_id="r-life",
+                        text="do things", provider_snapshot={})
+    durable.claim_task("r-life")
+    durable.start_task("r-life", state=dict(durable.task("r-life").state))
+    mutations = RuntimeMutationLine(durable=durable)
+    mutations.accept_operation(session_id="s-life", run_id="r-life", provider_id="local",
+                               turn_budget=1, max_repair_rounds=0, task_kind="chat")
+    outputs = ManagedOutputStore(root)
+    return SimpleNamespace(runtime_mutations=mutations, managed_outputs=outputs,
+        state=SimpleNamespace(durable=durable, managed_outputs=outputs, set_provider_session=lambda *args: None),
+        workspace_revisions=None)
+
 
 
 def _entry_hooks() -> object:
@@ -135,7 +148,7 @@ class _TextProvider:
         return '{"tool": "done", "args": {"summary": "did stuff"}}'
 
 
-def test_entry_kernel_continuing_run_keeps_budget_and_summary():
+def test_entry_kernel_continuing_run_keeps_budget_and_summary(tmp_path):
     from unittest import mock
 
     from codey.agents.handoff import ConversationSnapshot
@@ -152,13 +165,13 @@ def test_entry_kernel_continuing_run_keeps_budget_and_summary():
     with mock.patch(
         "codey.operations.kernel_transport.provider_uses_native", return_value=False,
     ):
-        run_entry_kernel(frame, _entry_work(), _entry_hooks(), _entry_deps(), task_kind="chat")
+        run_entry_kernel(frame, _entry_work(), _entry_hooks(), _entry_deps(tmp_path), task_kind="chat")
     assert provider.calls == ["send"], f"继续会话只发送任务：{provider.calls}"
     assert conv.estimated_context_tokens >= 12000, f"累计预算必须保留：{conv.estimated_context_tokens}"
     assert conv.snapshot.conversation_summary != "", "原有摘要不得被清空"
 
 
-def test_entry_kernel_fresh_chat_failure_stops_without_send():
+def test_entry_kernel_fresh_chat_failure_stops_without_send(tmp_path):
     from unittest import mock
 
     from codey.operations.task_entry import run_entry_kernel
@@ -170,7 +183,7 @@ def test_entry_kernel_fresh_chat_failure_stops_without_send():
         "codey.operations.kernel_transport.provider_uses_native", return_value=False,
     ):
         outcome = run_entry_kernel(
-            frame, _entry_work(), _entry_hooks(), _entry_deps(), task_kind="chat",
+            frame, _entry_work(), _entry_hooks(), _entry_deps(tmp_path), task_kind="chat",
         )
     assert provider.calls == ["new_chat"], f"失败后不得发送：{provider.calls}"
     assert outcome.event.get("stop_reason") == "provider_failure"

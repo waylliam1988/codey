@@ -17,9 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from codey.operations.completion_gate import evaluate
-from codey.operations.kernel_session_recovery import restore_task_session
-from codey.operations.recovery import record_entry_policy, recover_effects_for_resume
-from codey.operations.task_effects import KernelRecordedProvider
+from codey.operations.recovery import record_entry_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
@@ -32,6 +30,8 @@ from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
 from codey.providers.local_config import LocalContextBudget, LocalProviderConfig
 from codey.providers.local_connection import connect_local
+from tests.support.receipt_fixtures import inspect_receipt_facts
+from tests.support.session_projection import restore_task_session
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
 from tools.local_model_gate_attempts import record_api_generations
 
@@ -126,7 +126,7 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
 
             provider.configure_request = sampling
             result = run_task_kernel(session, request=KernelRunRequest(
-                transport=KernelTransportDeps(provider=KernelRecordedProvider(provider, sink), run_id="r",
+                transport=KernelTransportDeps(provider=provider, run_id="r",
                     effect_scope="task", provider_id="local", user_task=task, stop_flag=stop),
                 execution=KernelExecutionDeps(project_path=project, managed_outputs=managed, session_id="s",
                     durable=mutations.durable, workspace_revision_store=revisions,
@@ -143,7 +143,7 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
         wire_consistent = (schema_names == set(visible) and not {"read_files", "parallel"} & schema_names
                            if protocol == "on" else not schema_names)
         calls_before_recovery = dict(session.executed)
-        recovered = recover_effects_for_resume(deps, session_id="s", run_id="r", project=str(project), task_kind="project")
+        recovered = inspect_receipt_facts(deps, session_id="s", run_id="r", project=str(project), task_kind="project")
         fresh = TaskSession(policy=policy, project=str(project), project_changes_required=writing, verification_forbidden=True)
         frame = SimpleNamespace(run_id="r", recovered_tool_outcomes=recovered.recovered_tool_outcomes,
             settled_tool_outcomes=recovered.settled_tool_outcomes,

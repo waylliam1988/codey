@@ -14,10 +14,10 @@ from pathlib import Path
 from threading import Event
 from typing import Any
 
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import ApprovalRecord, ApprovalStatus, DurableSession, MemoryDurableStore
 from codey.durable.model import thaw_json
 from codey.operations.generation_boundary import durable_generation_boundary_callback
-from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
@@ -163,6 +163,12 @@ def observe_trace(
         return result
 
     def approval(value: Any) -> None:
+        from codey.providers.response_record import json_value
+
+        ref = sink.managed_outputs.write_json_artifact(session_id="trace-session", run_id="trace-run",
+                                                       payload=json_value(value))
+        durable.create_approval(ApprovalRecord("trace-approval", "trace-run", "trace-session",
+                                               ApprovalStatus.REQUESTED, ref.sha256, ref.handle, value.cwd))
         trace.append({"event": "approval", "call_id": value.call_id, "turn": value.turn,
                       "tool_index": value.tool_index, "command": value.command})
 
@@ -171,7 +177,7 @@ def observe_trace(
     result = None
     with suppress(ProcessInterrupted):
         result = run_task_kernel(session, request=KernelRunRequest(
-            transport=KernelTransportDeps(provider=KernelRecordedProvider(provider, sink), run_id="trace-run",
+            transport=KernelTransportDeps(provider=provider, run_id="trace-run",
                 provider_id="scripted", user_task="inspect a.py", stop_flag=stop, stagnant_turns=stagnant_turns),
             execution=KernelExecutionDeps(executors={"read_file": execute}, project_path=project, durable=durable),
             observation=KernelObservationDeps(intent_sink=sink, on_event=event, on_boundary=at_boundary,

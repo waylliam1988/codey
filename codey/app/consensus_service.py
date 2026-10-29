@@ -26,7 +26,7 @@ from codey.app import provider_services as providers
 from codey.operations.project_audit_advisor import (
     run_project_audit as run_project_audit_core,
 )
-from codey.operations.task_state import TaskState
+from codey.operations.task_state import TaskState, TaskSubmissionState
 from codey.providers.catalog import API_CONNECTIONS, PROVIDER_LABELS
 
 
@@ -97,7 +97,7 @@ def run_consensus(
 
 
 def run_project_audit(
-    ctx: TaskState,
+    ctx: TaskSubmissionState,
     *,
     parent_policy: Any,
     project: str | Path,
@@ -110,6 +110,8 @@ def run_project_audit(
     with ExitStack() as leases:
         return run_project_audit_core(
             parent_policy=parent_policy,
+            durable=ctx.durable, runtime_mutations=ctx.runtime_mutations,
+            managed_outputs=ctx.task_submission_stores.managed_outputs,
             project=project,
             selected_provider_id=selected_provider_id,
             task=task,

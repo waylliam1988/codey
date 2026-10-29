@@ -11,10 +11,10 @@ import pytest
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.checkpoint import operation_from_checkpoint
 from codey.operations.kernel_progress import KernelProgress
-from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolResult, TurnFinish
+from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.runtime.core.operation_state import RuntimeOperationState, RuntimeOperationTransitionError
@@ -28,7 +28,8 @@ from tests.durable.test_provider_response_receipts import runtime
 def _reopen(path):
     durable = DurableSession(SQLiteDurableStore(path / "runtime.sqlite"))
     durable.recover_scheduler_state()
-    durable.claim_task("r")
+    if durable.task("r").status == "pending":
+        durable.claim_task("r")
     line = RuntimeMutationLine(durable=durable)
     sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable,
         managed_outputs=ManagedOutputStore(path))
@@ -37,7 +38,7 @@ def _reopen(path):
 
 def _kernel(path: Path, *, mode: str, reopen: bool = False, crash_at: int = 0):
     from codey.operations.generation_boundary import durable_generation_boundary_callback
-    from codey.operations.task_loop import (
+    from tests.support.kernel_runtime import (
         KernelExecutionDeps,
         KernelObservationDeps,
         KernelRunRequest,
@@ -58,7 +59,7 @@ def _kernel(path: Path, *, mode: str, reopen: bool = False, crash_at: int = 0):
             calls.append("request")
             if mode == "length":
                 return AssistantTurn(finish=TurnFinish.OUTPUT_LIMIT)
-            if mode == "progress":
+            if mode in {"progress", "closing"}:
                 return AssistantTurn(tool_calls=(ProviderToolCall("read-1", "read_file", {"path": "a.py"}),))
             return AssistantTurn(tool_calls=(ProviderToolCall("bad-1", "unknown_tool", {}),))
 
@@ -70,12 +71,15 @@ def _kernel(path: Path, *, mode: str, reopen: bool = False, crash_at: int = 0):
 
         def acknowledge_tool_results(self, results, tools):
             calls.append("close")
-            return AssistantTurn()
+            return AssistantTurn(tool_calls=(ProviderToolCall("still-open", "read_file", {"path": "a.py"}),)) if mode == "closing" else AssistantTurn()
 
     if crash_at:
         import os
 
         def committed(result, mutation):
+            if (mode == "closing" and sink.counters().closing_round == 2
+                    and any(a.metadata.get("kind") == "provider_response" for a in mutation.artifacts)):
+                os._exit(73)
             if mode == "progress" and sink.counters().progress.idle == 1:
                 os._exit(73)
             if (any(a.metadata.get("kind") == "provider_response" for a in mutation.artifacts)
@@ -84,8 +88,8 @@ def _kernel(path: Path, *, mode: str, reopen: bool = False, crash_at: int = 0):
 
         durable.subscribe_commits(committed)
     try:
-        result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control", "project.read"})), max_turns=4),
-            request=KernelRunRequest(transport=KernelTransportDeps(provider=KernelRecordedProvider(Provider(), sink),
+        result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control", "project.read"})), max_turns=1 if mode == "closing" else 4),
+            request=KernelRunRequest(transport=KernelTransportDeps(provider=Provider(),
                 provider_id="local", run_id="r", stagnant_turns=2), execution=KernelExecutionDeps(
                     executors={"read_file": lambda call: ToolResult(call, "same", ok=True)}),
                 observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
@@ -108,44 +112,16 @@ def test_restart_of_second_response_keeps_original_budget_and_logical_turn(tmp_p
 
 
 def test_closing_budget_is_not_renewed_by_process_restart(tmp_path):
-    script = r'''
-import os, sys
-from pathlib import Path
-from tests.durable.test_provider_response_receipts import runtime
-from codey.operations.task_effects import KernelRecordedProvider
-from codey.operations.kernel_transport import _drain_native_budget
-from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolResult
-durable, line, outputs, sink = runtime(Path(sys.argv[1]), sqlite=True)
-class Provider:
-    def acknowledge_tool_results(self, results, tools):
-        return AssistantTurn(tool_calls=(ProviderToolCall('still-open', 'read_file', {'path':'a.py'}),))
-def committed(result, mutation):
-    if any(a.metadata.get('kind') == 'provider_response' for a in mutation.artifacts) and sink.counters().closing_round == 2:
-        os._exit(73)
-durable.subscribe_commits(committed)
-_drain_native_budget(KernelRecordedProvider(Provider(), sink), [ProviderToolResult('original', 'stopped')])
-'''
+    script = "from pathlib import Path; import sys; from tests.durable.test_operation_execution_counters import _kernel; _kernel(Path(sys.argv[1]), mode='closing', crash_at=99)"
     child = subprocess.run([sys.executable, "-c", script, str(tmp_path)], capture_output=True, text=True, timeout=30)
     assert child.returncode == 73, child.stderr
-    from codey.operations.kernel_transport import NativeBudgetExhausted, _drain_native_budget
-
-    durable, _, sink = _reopen(tmp_path)
-    calls = []
-
-    class Provider:
-        def acknowledge_tool_results(self, results, tools):
-            calls.append(results[0].call_id)
-            return AssistantTurn(tool_calls=(ProviderToolCall("still-open", "read_file", {"path": "a.py"}),))
-
-    try:
-        assert sink.counters().closing_round == 2
-        with pytest.raises(NativeBudgetExhausted):
-            _drain_native_budget(KernelRecordedProvider(Provider(), sink), [ProviderToolResult("still-open", "stopped")])
-        assert len(calls) == 2
-        assert sink.counters().closing_round == 4
-        assert len(durable.effects("r")) == 4
-    finally:
-        durable.close()
+    result, calls, counters = _kernel(tmp_path, mode="closing", reopen=True)
+    assert not result.completed and result.stop_reason == "protocol" and result.delivery == "failed", result
+    assert calls == ["close", "close"]
+    assert counters.closing_round == 4
+    again, calls, counters = _kernel(tmp_path, mode="closing", reopen=True)
+    assert again == result
+    assert calls == [] and counters.closing_round == 4
 
 
 def test_progress_snapshot_round_trip_retains_original_batch_and_stopping_decision():

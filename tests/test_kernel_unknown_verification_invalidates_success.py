@@ -11,18 +11,18 @@ import json
 
 import pytest
 
-from codey.operations.task_loop import (
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
+from codey.runtime.core.models import ToolResult
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
+from codey.workspace.revision import workspace_fingerprint
+from tests.support.kernel_runtime import (
     KernelExecutionDeps,
     KernelObservationDeps,
     KernelRunRequest,
     KernelTransportDeps,
     run_task_kernel,
 )
-from codey.operations.task_session import TaskSession
-from codey.policies.task_policy import TaskPolicy
-from codey.runtime.core.models import ToolResult
-from codey.runtime.observe.execution_evidence import ExecutionEvidence
-from codey.workspace.revision import workspace_fingerprint
 
 
 def make_session(tmp_path):

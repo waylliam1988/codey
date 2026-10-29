@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 
-from codey.operations.task_loop import KernelRunRequest, run_task_kernel
+from tests.support.kernel_runtime import KernelRunRequest, run_task_kernel
 
 
 def test_kernel_entry_uses_one_typed_request_boundary() -> None:

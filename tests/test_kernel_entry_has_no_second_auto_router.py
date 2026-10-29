@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 from codey.agents.tools import DEFAULT_TOOL_FNS
 from codey.operations.context import RunWork
-from codey.operations.task_entry import run_entry_kernel
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
+from tests.support.kernel_runtime import run_entry_kernel
 from tests.support.workspace_conversation import TextConversation
 from tests.test_chat_workspace_tools_and_answer_completion import workspace_frame
 
@@ -27,7 +27,7 @@ def test_auto_submission_at_kernel_entry_executes_first_tool(tmp_path, monkeypat
     result = run_entry_kernel(frame, RunWork([], evidence=ExecutionEvidence()),
                               SimpleNamespace(on_event=lambda _: None, on_shell_request=None),
                               SimpleNamespace(state=SimpleNamespace(set_provider_session=lambda *args: None)), task_kind="project")
-    assert result.event["stop_reason"] == "done"
+    assert result.event["stop_reason"] == "done", result.event["summary"]
     assert frame.entry_session.read_files == {"a.py"}
     assert len(provider.requests) == 2
 

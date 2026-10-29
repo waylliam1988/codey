@@ -9,7 +9,7 @@ from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runs.receipt import build_task_receipt, task_receipt_from_payload
 from codey.runtime.core.operation_reducer import (
     ACTION_CONTINUE,
-    ACTION_REDELIVER_SETTLED_BATCH,
+    ACTION_OBSERVE_BATCH_PROGRESS,
     ACTION_REPLAY_SAFE_TOOL_BATCH,
     next_runtime_action,
 )
@@ -30,7 +30,7 @@ def test_delivery_prefers_original_settlement_over_reexecution(settled, attempte
         batches=(_batch("batch", (item,), send_attempts=("send",) if attempted else ()),),
     )
     action = next_runtime_action(view)
-    expected = (ACTION_REDELIVER_SETTLED_BATCH if settled else
+    expected = (ACTION_OBSERVE_BATCH_PROGRESS if settled else
                 ACTION_CONTINUE if attempted else ACTION_REPLAY_SAFE_TOOL_BATCH)
     assert action.kind == expected
     assert action.leaf == LEAF_TOOL_DELIVERY_PENDING

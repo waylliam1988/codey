@@ -7,12 +7,12 @@ from types import SimpleNamespace
 import pytest
 
 from codey.operations.completion_gate import evaluate
-from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import declaration
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import AssistantTurn, ProviderToolCall
+from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 
 
 def test_prepared_requests_keep_history_prefix_and_count_exact_sent_payload(monkeypatch):

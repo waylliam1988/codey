@@ -189,10 +189,10 @@ class CustomToolTests(unittest.TestCase):
 
 class SecondRoundWebPromptTests(unittest.TestCase):
     def test_second_round_web_message_carries_new_contract(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
+        from tests.support.kernel_runtime import run_task_kernel
 
         submission = TaskSubmission(session_id="s", project="demo", task="research web", max_turns=3, continue_task=False, provider_id="local", strict_research=True)
         policy = build_task_policy(submission, task_kind="research", strict_research=True)
@@ -263,18 +263,17 @@ class SecondRoundWebPromptTests(unittest.TestCase):
 
 class DoneReceiptFailureTests(unittest.TestCase):
     def test_native_done_receipt_failure_is_not_complete(self) -> None:
-        from types import SimpleNamespace
-
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
+        from codey.providers.base import AssistantTurn, ProviderToolCall
+        from tests.support.kernel_runtime import run_task_kernel
 
         policy = TaskPolicy(grants=frozenset({"control"}))
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2, task_text="hi")
 
         class FakeNative:
             def send_turn(self, prompt, tools, timeout=None):
-                return SimpleNamespace(tool_calls=[SimpleNamespace(name="done", arguments={"summary": "结论\n来源\nx"}, id="d1")], text="")
+                return AssistantTurn(tool_calls=(ProviderToolCall(name="done", arguments={"summary": "结论\n来源\nx"}, id="d1"),), text="")
 
             def send_tool_results(self, messages, tools, timeout=None):
                 raise RuntimeError("delivery boom")
@@ -305,29 +304,11 @@ class DoneReceiptFailureTests(unittest.TestCase):
         self.assertIn(result.stop_reason, ("delivery_pending",))
 
 
-class CrossProviderRecoveryTests(unittest.TestCase):
-    def test_new_provider_session_rejects_old_native_call_ids(self) -> None:
-        from codey.operations.kernel_recovery import apply_recovery_first
-        from codey.operations.task_session import TaskSession
-        from codey.policies.task_policy import TaskPolicy
-        from codey.runtime.core.models import ToolCall, ToolResult
-
-        policy = TaskPolicy(grants=frozenset({"control"}))
-        session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
-        pending = [ToolResult(ok=True, call=ToolCall(name="web_search", args={"query": "hi"}, call_id="old-id-1"), model_text="old result")]
-        from codey.operations.kernel_errors import RecoveryFailed
-
-        with self.assertRaises(RecoveryFailed):
-            apply_recovery_first(
-                session,
-                True,
-                pending,
-                "base",
-                None,
-                provider_session_changed=True,
-                format_results=lambda rows, _session: "\n".join(item.model_text for item in rows),
-                native_tool_messages=lambda _rows, _session: [],
-            )
+def test_native_recovery_without_original_ids_cannot_fall_back_to_text():
+    from codey.operations.kernel_transport import _native_tool_results
+    from codey.runtime.core.models import ToolCall, ToolResult
+    with unittest.TestCase().assertRaisesRegex(ValueError, "original call id"):
+        _native_tool_results([ToolResult(ToolCall("read_file", {"path":"a.py"}), "original", ok=True)], object())
 
 
 class RequiredChecksHygieneTests(unittest.TestCase):

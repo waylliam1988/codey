@@ -1,9 +1,9 @@
 """Prepared coding context must not contradict native tool transport."""
 
-from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps, run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn
+from tests.support.kernel_runtime import KernelRunRequest, KernelTransportDeps, run_task_kernel
 
 
 def test_native_first_send_does_not_demand_json_from_read_file_context(monkeypatch):

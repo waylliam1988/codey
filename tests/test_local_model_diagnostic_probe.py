@@ -1,8 +1,7 @@
 """Unit tests for the local-model diagnostic probe analyzers.
 
-No model needed: analyzers are pure functions over JSONL rows. Saved live
-artifacts under .e2e-artifacts/ are replayed when present (skipped on CI
-where live never ran) plus synthetic rows for each verdict branch.
+No model needed: analyzers are pure functions over JSONL rows. Fixed synthetic scenarios exercise each verdict branch independently of
+mutable live-run artifacts.
 """
 
 from __future__ import annotations
@@ -45,10 +44,15 @@ def _rows(path: Path) -> list[dict]:
 
 
 def _artifact(name: str) -> list[dict]:
-    path = _ARTIFACT_DIR / f"live-probe-{name}.jsonl"
-    if not path.exists():
-        raise unittest.SkipTest(f"live artifact {path.name} absent (no live run here)")
-    return _rows(path)
+    # Fixed analyzer scenarios; these rows do not claim a live model result.
+    if name == "p4-search-sweep":
+        return [_tool("search", result="a.py:1: x"), _done("Search inspected")]
+    if name == "p5-make-shell-deny":
+        return [_tool("run", "make lint", "make is unavailable", False),
+                _tool("run", "ruff check .", "All checks passed"),
+                _tool("run", "python -m pytest", "exit 1\nAssertionError", False),
+                _done("make was unavailable; lint passed; pytest failed with AssertionError")]
+    return [_done("Finished")]
 
 
 def _tool(tool: str, command: str = "", result: str = "", ok: bool = True) -> dict:

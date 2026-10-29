@@ -118,7 +118,7 @@ class SetupContextTests(unittest.TestCase):
             root = Path(td)
             current = root / ".private"
             for index in range(20):
-                current = current / f"nested_{index:02d}"
+                current = current / f"n{index:02d}"
                 current.mkdir(parents=True)
                 (current / "requirements.txt").write_text("secret\n", encoding="utf-8")
             (root / "app").mkdir()

@@ -115,6 +115,7 @@ def _declare_protocol_window(provider):
     provider capability they model instead of relying on ``Mock.__getattr__``.
     """
     provider.new_chat = mock.Mock()
+    provider.window_ref = None
     return provider
 
 
@@ -2320,10 +2321,11 @@ class ConsensusConnectionTests(unittest.TestCase):
         selected.send.assert_called_once()
 
     def test_project_audit_borrows_sibling_tab_from_selected_provider(self) -> None:
-        state = server.AppContext()
+        state = make_app_state(self)
         selected = mock.Mock()
         selected.session.page = object()
         advisor = mock.Mock()
+        _declare_protocol_window(advisor)
         advisor.name = "StepFun"
         advisor.send.return_value = '{"tool":"done","args":{"summary":"audit report"}}'
 
@@ -4945,9 +4947,10 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("[truncated; command_sha256=", shell_event["command"])
 
     def test_run_task_reads_empty_file_without_error_or_legacy_log_event(self) -> None:
-        state = server.AppContext()
+        state = make_app_state(self)
         events = state.subscribe()
         provider = mock.Mock()
+        _declare_protocol_window(provider)
         provider.name = "DeepSeek Web"
         provider.location = "https://chat.deepseek.com/"
         provider.send.side_effect = [
@@ -5020,6 +5023,7 @@ class SessionThreadingTests(unittest.TestCase):
             )
             events = state.subscribe()
             provider = mock.Mock()
+            _declare_protocol_window(provider)
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = [
@@ -5148,6 +5152,7 @@ class SessionThreadingTests(unittest.TestCase):
             cleanup.callback(state.knowledge_store.close)
             events = state.subscribe()
             provider = mock.Mock()
+            _declare_protocol_window(provider)
             provider.name = "Local"
             provider.location = "http://localhost:1234"
             from codey.providers.token_accounting import ContextBudget
@@ -5263,6 +5268,7 @@ class SessionThreadingTests(unittest.TestCase):
 
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             provider = mock.Mock()
+            _declare_protocol_window(provider)
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = [
@@ -5357,6 +5363,7 @@ class SessionThreadingTests(unittest.TestCase):
                 )
             )
             provider = mock.Mock()
+            _declare_protocol_window(provider)
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = ["not json", "still not json", "again not json"]
@@ -5499,7 +5506,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("receipt", done)
 
     def test_plain_chat_followup_reuses_same_model_conversation(self) -> None:
-        state = server.AppContext()
+        state = make_app_state(self)
         first = mock.Mock()
         first.name = "DeepSeek Web"
         first.location = "https://chat.deepseek.com/"
@@ -5796,7 +5803,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertNotIn("secret shell output", handoff)
 
     def test_plain_chat_model_switch_uses_hidden_handoff(self) -> None:
-        state = server.AppContext()
+        state = make_app_state(self)
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
@@ -5823,7 +5830,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Add a migration plan", prompt)
 
     def test_returning_to_session_restores_its_model_chat(self) -> None:
-        state = server.AppContext()
+        state = make_app_state(self)
         first_a = mock.Mock()
         first_a.name = "DeepSeek Web"
         first_a.location = "https://chat.deepseek.com/"

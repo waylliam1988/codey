@@ -3,10 +3,10 @@ import json
 
 import pytest
 
-from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.api_provider import ApiProvider
+from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 from tests.test_responses_protocol_tool_history_and_stream_completion import response, service, wire
 
 

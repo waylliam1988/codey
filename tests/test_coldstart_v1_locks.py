@@ -35,13 +35,13 @@ def _op_state(leaf="accepted"):
     )
 
 
-def test_operation_schema_is_v1() -> None:
+def test_operation_schema_has_one_current_execution_format() -> None:
     from codey.runtime.core import operation_state as mod
 
-    assert mod.SCHEMA_VERSION == 1
+    assert mod.SCHEMA_VERSION == 5
     assert mod.KIND == "runtime_operation_state"
     payload = _op_state().to_payload()
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == mod.SCHEMA_VERSION
 
 
 def test_operation_rejects_bool_schema_version() -> None:
@@ -61,7 +61,7 @@ def test_operation_rejects_v2_payload_after_coldstart() -> None:
     from codey.runtime.core.operation_state import RuntimeOperationState
 
     payload = _op_state().to_payload()
-    # Cold start accepts only current exact v1, without migration.
+    # Decoding accepts the current format; checkpoint migration is explicit.
     for bad_version in (2, 999, "1"):
         bad_payload = dict(payload)
         bad_payload["schema_version"] = bad_version

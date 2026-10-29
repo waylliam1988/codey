@@ -208,11 +208,11 @@ def test_real_pytest_assertion_failure_blocks_with_failed_observation(tmp_path, 
 
     from codey.agents.tools import DEFAULT_TOOL_FNS
     from codey.operations.completion_gate import evaluate
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolResult
     from codey.workspace.revision import WorkspaceRevisionStore
+    from tests.support.kernel_runtime import run_task_kernel
 
     project = tmp_path / "assert-fail"
     project.mkdir(parents=True, exist_ok=True)

@@ -6,10 +6,10 @@ from typing import Any
 
 from codey.operations import kernel_prompt
 from codey.operations.kernel_contracts import KernelResult
-from codey.operations.provider_receipts import json_value
 from codey.providers.base import AssistantTurn, ProviderToolResult
+from codey.providers.response_record import json_value
 from codey.runtime.core import operation_state as positions
-from codey.runtime.core.operation_payload import RuntimeExecutionCounters
+from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationTransitionError
 
 
 def result_from_payload(payload: Any) -> KernelResult:
@@ -28,6 +28,51 @@ def result_from_payload(payload: Any) -> KernelResult:
                         proof=proof, delivery=payload["delivery"])
 
 
+def validate_decision(payload: Any) -> dict[str, Any]:
+    """Validate committed control facts before selecting any external action."""
+    if not isinstance(payload, dict):
+        raise ValueError("invalid control decision")
+    purpose = payload.get("purpose")
+    if purpose == "retry":
+        required = {"purpose", "prompt", "error", "counters"}
+        if (set(payload) not in (required, required | {"error_source", "error_type"})
+                or not all(isinstance(payload[key], str) for key in ("prompt", "error"))):
+            raise ValueError("invalid retry decision")
+        try:
+            RuntimeExecutionCounters.from_payload(payload["counters"])
+        except RuntimeOperationTransitionError as exc:
+            raise ValueError(str(exc)) from exc
+        if "error_source" in payload and (not isinstance(payload["error_source"], str)
+                or not isinstance(payload["error_type"], str)):
+            raise ValueError("invalid completion diagnostic")
+    elif purpose == "done":
+        if (set(payload) != {"purpose", "result", "workspace_revision", "workspace_fingerprint"}
+                or type(payload["workspace_revision"]) is not int or payload["workspace_revision"] < 0
+                or not isinstance(payload["workspace_fingerprint"], str)):
+            raise ValueError("invalid completion decision")
+        result = result_from_payload(payload["result"])
+        if not result.completed or result.stop_reason != "done":
+            raise ValueError("completion decision has no accepted result")
+    elif purpose == "question":
+        from codey.task.questions import question_args
+
+        if (set(payload) != {"purpose", "question", "question_id", "result"}
+                or not isinstance(payload["question_id"], str) or not payload["question_id"]
+                or not isinstance(payload["question"], dict)
+                or question_args(payload["question"]) != payload["question"]):
+            raise ValueError("invalid question decision")
+        result = result_from_payload(payload["result"])
+        if result.completed or result.stop_reason != "question":
+            raise ValueError("question decision has no waiting result")
+    elif purpose == "closing":
+        if set(payload) != {"purpose", "result"}:
+            raise ValueError("invalid closing decision")
+        result_from_payload(payload["result"])
+    else:
+        raise ValueError("unknown control decision purpose")
+    return payload
+
+
 def evaluate_completion(context: Any, state: Any) -> None:
     from codey.operations.completion_gate import evaluate
     from codey.operations.project_verification import refresh_verification_candidates
@@ -37,6 +82,7 @@ def evaluate_completion(context: Any, state: Any) -> None:
     context.session.last_done_text = plan.control.body or ""
     context.session.last_done_args = dict(plan.control_args)
     error_source = ""
+    error_type = ""
     try:
         refresh_verification_candidates(context.session)
         verdict = evaluate(context.session, context.session.last_done_text, context=context.completion_context)
@@ -44,11 +90,13 @@ def evaluate_completion(context: Any, state: Any) -> None:
             raise ValueError("completion gate returned an invalid verdict")
         complete, followup, proof = verdict.complete, verdict.followup, verdict.proof
         error_source = getattr(verdict, "error_source", "")
+        error_type = getattr(verdict, "error_type", "")
         final_text = verdict.final_text or context.session.last_done_text
     except Exception as exc:
         complete, proof, final_text = False, None, context.session.last_done_text
         followup = f"Completion check failed ({exc}); cannot complete yet. Continue the task."
         error_source = "completion_check"
+        error_type = type(exc).__name__
     if complete:
         result = KernelResult(True, final_text, context.session.turn, "done", proof=proof)
         context.advance(state, positions.LEAF_CONTROL_READY, data={"purpose": "done", "result": json_value(result),
@@ -56,7 +104,7 @@ def evaluate_completion(context: Any, state: Any) -> None:
     else:
         context.advance(state, positions.LEAF_CONTROL_READY, data={"purpose": "retry",
             "prompt": kernel_prompt._completion_followup(followup, native=context.native), "error": "",
-            "counters": state.counters.to_payload(), "error_source": error_source})
+            "counters": state.counters.to_payload(), "error_source": error_source, "error_type": error_type})
 
 
 def _ids(reply: Any) -> list[str]:
@@ -78,7 +126,7 @@ def prepare_control_delivery(context: Any, state: Any) -> None:
     purpose = decision["purpose"]
     if purpose == "retry":
         turn = received.logical_turn
-        if turn >= context.session.max_turns:
+        if turn >= context.session.max_turns and not (context.native and ids):
             context.close(state, KernelResult(False, context.session.last_done_text or "max turns reached", turn, "max_turns"))
             return
         prompt = decision["prompt"]
@@ -111,6 +159,15 @@ def prepare_control_delivery(context: Any, state: Any) -> None:
             message=decision["question"]["question"], metadata={"id": decision["question_id"], **decision["question"]}))
         text = "Question recorded; waiting for the user. No execution authorized."
     elif purpose == "done":
+        store = context.execution.workspace_revision_store
+        project = context.execution.project_path
+        if store is not None and project is not None:
+            current = store.current_state(str(project), ignored_paths=context.execution.workspace_ignored_paths)
+            if (current.revision != decision["workspace_revision"]
+                    or current.fingerprint != decision["workspace_fingerprint"]):
+                context.session.set_workspace_state(current.revision, current.fingerprint)
+                context.advance(state, positions.LEAF_COMPLETION_PENDING)
+                return
         text = "OK: done accepted: " + decision["result"]["summary"][:500]
     else:
         raise ValueError("unknown control delivery purpose")
@@ -143,10 +200,14 @@ def close_protocol(context: Any, view: Any) -> None:
     if messages:
         assert received is not None
         if state.counters.closing_round >= 4:
-            raise ValueError("native tool chain exceeded durable budget drain limit")
-        context.freeze(state, received.snapshot, turn=received.logical_turn, messages=messages,
-            acknowledge=True, counters=replace(state.counters, closing_round=state.counters.closing_round + 1))
-        return
+            result = replace(result, completed=False, stop_reason="protocol", delivery="failed",
+                summary=result.summary + "; protocol close failed after four acknowledgements")
+            context.close(state, result)
+            state = context.load_view().state
+        else:
+            context.freeze(state, received.snapshot, turn=received.logical_turn, messages=messages,
+                acknowledge=True, counters=replace(state.counters, closing_round=state.counters.closing_round + 1))
+            return
     # A text batch still requires an explicit abandonment, never a fabricated
     # provider delivery. The existing lifecycle settlement validates receipts.
     from codey.operations.generation_boundary import GenerationBoundaryRequest

@@ -16,9 +16,9 @@ from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps
 
 class TaskLoopExecuteTurnFailureIsProviderFailureTests(unittest.TestCase):
     def test_execute_turn_exception_becomes_provider_failure(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
+        from tests.support.kernel_runtime import run_task_kernel
 
         class _P:
             name = "local"
@@ -30,7 +30,7 @@ class TaskLoopExecuteTurnFailureIsProviderFailureTests(unittest.TestCase):
         policy = TaskPolicy(grants=frozenset({"project.read", "control"}))
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
         with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=False), mock.patch(
-            "codey.operations.task_loop._execute_turn", side_effect=RuntimeError("boom-settle")
+            "codey.operations.kernel_actions._execute_turn", side_effect=RuntimeError("boom-settle")
         ):
             out = run_task_kernel(
                 session,

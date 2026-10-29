@@ -162,7 +162,7 @@ class StressWorld:
         self.durable.start_task(run_id, state={"task_kind": "stress"})
         self.durable.advance_task(
             task_id=run_id,
-            phase="assistant_response_pending",
+            phase="running",
             state={"task_kind": "stress"},
         )
         self.line.accept_operation(

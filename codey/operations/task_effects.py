@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from codey.durable.model import ArtifactRecord
     from codey.durable.session import DurableSession
 
-from codey.operations.provider_session import ProviderAdapter
 from codey.providers.base import AssistantTurn
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
@@ -161,7 +159,7 @@ class KernelEffectSink:
         from codey.operations.provider_receipts import snapshot_description
 
         self._request_context = {"logical_turn": logical_turn, "snapshot": snapshot_description(snapshot),
-                                 "window": window_ref.to_payload() if window_ref is not None else None}
+                                 "window": window_ref.to_payload() if window_ref is not None else None, "effect_scope": ""}
 
     def counters(self) -> RuntimeExecutionCounters:
         from codey.durable.checkpoint import operation_from_checkpoint
@@ -176,25 +174,27 @@ class KernelEffectSink:
                                        expected=expected, observed=observed)
 
     def record_response(self, effect_id: str, reply: Any) -> None:
-        from codey.operations.provider_receipts import RESPONSE_KIND, encode_reply, write_provider_artifact
+        from codey.operations.provider_receipts import RESPONSE_KIND, write_provider_artifact
+        from codey.providers.response_record import encode_reply
 
         if self.managed_outputs is None:
             raise RuntimeEffectError("provider responses require managed output storage")
         artifact = write_provider_artifact(self.managed_outputs, session_id=self.session_id, run_id=self.run_id,
             effect_id=effect_id, kind=RESPONSE_KIND, payload=encode_reply(reply))
         self.mutations.record_provider_response(self.session_id, self.run_id, effect_id=effect_id, artifact=artifact,
-                                                messages=_reply_messages(reply))
+            messages=(("tool_call", {"response_ref": artifact.handle}),)
+                if isinstance(reply, AssistantTurn) and reply.tool_calls else ())
 
     def load_response(self, session: Any, response_ref: str, *, window_ref: Any = None) -> Any:
         from codey.operations.kernel_protocol import ReceivedProviderTurn
         from codey.operations.provider_receipts import (
             REQUEST_KIND,
             RESPONSE_KIND,
-            decode_reply,
             read_provider_artifact,
             request_artifact_for_effect,
             restore_snapshot,
         )
+        from codey.providers.response_record import decode_reply
         from codey.runtime.core.protocol_window import ProtocolWindowRef
 
         artifact = self.durable.artifact(response_ref)
@@ -209,6 +209,8 @@ class KernelEffectSink:
             session_id=self.session_id, run_id=self.run_id, effect_id=effect_id)
         if not isinstance(request, dict) or type(request.get("logical_turn")) is not int or request["logical_turn"] < 1:
             raise RuntimeEffectError("response has no original logical turn")
+        if not isinstance(request.get("effect_scope"), str):
+            raise RuntimeEffectError("response has no frozen effect scope")
         snapshot = restore_snapshot(request.get("snapshot"))
         window = ProtocolWindowRef.from_payload(request["window"]) if request.get("window") is not None else None
         if snapshot.policy != session.policy or window != window_ref:
@@ -216,11 +218,12 @@ class KernelEffectSink:
         args = request.get("args")
         prompt = args[0] if isinstance(args, list) and args and isinstance(args[0], str) else ""
         return ReceivedProviderTurn(decode_reply(response), snapshot, prompt, owner_session=session,
-                                    logical_turn=request["logical_turn"], window_ref=window)
+                                    logical_turn=request["logical_turn"], window_ref=window, effect_scope=request["effect_scope"])
 
     def pending_provider_settlement(self) -> tuple[RuntimeEffectSettlement, tuple[tuple[str, dict[str, object]], ...]] | None:
         """Derive the open boundary from durable response facts, including after restart."""
-        from codey.operations.provider_receipts import RESPONSE_KIND, decode_reply, read_provider_artifact
+        from codey.operations.provider_receipts import RESPONSE_KIND, read_provider_artifact
+        from codey.providers.response_record import decode_reply
 
         pending = [effect for effect in self.durable.effects(self.run_id)
                    if effect.category == EFFECT_CATEGORY_PROVIDER_SEND and effect.settlement is None]
@@ -264,6 +267,8 @@ class KernelEffectSink:
             replay_class=self._replay_classes.get(identity, ReplayClass.UNSAFE),
             **fields,
             exit_code=resolved_exit,
+            replay_count=1 if identity in self._old_pending else 0,
+            replayed_from_effect_id=identity if identity in self._old_pending else "",
         )
         artifacts: tuple[ArtifactRecord, ...] = ()
         managed = audit.get("managed_output") if isinstance(audit, dict) else None
@@ -279,53 +284,4 @@ class KernelEffectSink:
             artifacts=artifacts,
         )
 
-class KernelRecordedProvider(ProviderAdapter):
-    """Record provider sends and link result delivery to the preceding tool batch."""
-
-    def __init__(self, provider: Any, sink: KernelEffectSink) -> None:
-        super().__init__(provider)
-        self.sink = sink
-        self._counter_update: tuple[RuntimeExecutionCounters, RuntimeExecutionCounters] | None = None
-
-    def kernel_counters(self) -> RuntimeExecutionCounters:
-        return self._counter_update[1] if self._counter_update is not None else self.sink.counters()
-
-    def bind_kernel_counters(self, counters: RuntimeExecutionCounters) -> None:
-        self._counter_update = (self.sink.counters(), counters)
-
-    def reserve_kernel_closing_round(self) -> None:
-        from dataclasses import replace
-
-        from codey.operations.kernel_transport import NativeBudgetExhausted
-
-        counters = self.kernel_counters()
-        if counters.closing_round >= 4:
-            raise NativeBudgetExhausted("native tool chain exceeded durable budget drain limit")
-        self.bind_kernel_counters(replace(counters, closing_round=counters.closing_round + 1))
-
-    def bind_kernel_request(self, snapshot: Any, *, logical_turn: int, window_ref: Any = None) -> None:
-        self.sink.bind_request(snapshot, logical_turn=logical_turn, window_ref=window_ref)
-
-    def _send(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        # The operation driver owns freezing, admission and recording. This
-        # adapter only exposes its sink to callers assembling dependencies.
-        return super()._send(name, *args, **kwargs)
-
-
-
-def _reply_messages(reply: Any) -> tuple[tuple[str, dict[str, object]], ...]:
-    if isinstance(reply, AssistantTurn) and reply.tool_calls:
-        return (("tool_call", {"content": reply.text, "tool_calls": [
-            {"id": call.id, "type": "function", "function": {
-                "name": call.name, "arguments": json.dumps(call.arguments, ensure_ascii=False),
-            }} for call in reply.tool_calls
-        ]}),)
-    # Plain assistant text is committed by terminal task settlement. Keeping
-    # it out of the provider effect settlement gives each logical answer one
-    # durable owner and prevents a provider receipt plus completion commit
-    # from producing duplicate history entries. Tool calls are projected in
-    # the response commit, before their tool results can enter history.
-    return ()
-
-
-__all__ = ["KernelEffectSink", "KernelRecordedProvider", "admitted_durable"]
+__all__ = ["KernelEffectSink", "admitted_durable"]

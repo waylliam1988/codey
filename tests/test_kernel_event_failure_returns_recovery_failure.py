@@ -12,10 +12,10 @@ class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolResult
+        from tests.support.kernel_runtime import run_task_kernel
 
         class Provider:
             def send(self, _prompt, timeout=None):
@@ -73,8 +73,8 @@ class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
 
         from codey.app.context import AppContext
         from codey.operations.kernel_errors import RecoveryFailed
-        from codey.operations.task_entry import run_entry_kernel
         from codey.task.model import TaskSubmission
+        from tests.support.kernel_runtime import run_entry_kernel
 
         request = TaskSubmission("s", ".", "inspect", 1, False, "local", intent="project", run_id="r")
         frame = SimpleNamespace(

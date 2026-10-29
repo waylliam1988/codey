@@ -8,7 +8,7 @@ Verifies the 0.5.4 crash-recovery lifecycle:
 5. Run details recovery summary renders 'Read action was recovered', etc.
 
 Usage:
-    python -B tests/manual/safe_tool_replay_smoke.py --self-test
+    python -B tests/manual/safe_tool_replay_smoke.py --same-run-self-test
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import Mock
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -28,21 +27,15 @@ if __package__ in (None, ""):
 import contextlib
 
 from codey.agents.request import AgentRequest
-from codey.agents.tools import DEFAULT_TOOL_FNS, AgentToolFns
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations.project_adapter import run as run_agent_loop
-from codey.operations.recovery import recover_effects_for_resume
 from codey.providers.snapshot import provider_snapshot
-from codey.runs.details import load_run_details
-from codey.runs.ledger import RunLedgerStore
-from codey.runtime.core.models import ToolCall
 from codey.runtime.effects.effect_records import (
-    SETTLEMENT_STATUS_OK,
     RuntimeEffectStore,
 )
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.workspace.revision import WorkspaceRevisionStore
+from tests.support.kernel_runtime import run_agent as run_agent_loop
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 LIVE_TASK = (
@@ -63,22 +56,6 @@ class _InjectedCrash(BaseException):
     """Synthetic process crash that the agent loop should not catch."""
 
 
-
-
-class _MockResumeProvider:
-    name = "MockResumeProvider"
-
-    def __init__(self, final_summary: str = "smoke completed after replay") -> None:
-        self.final_summary = final_summary
-        self.prompts: list[str] = []
-
-    def new_chat(self, timeout=None) -> None:
-        del timeout
-
-    def send(self, text: str, timeout=None) -> str:
-        del timeout
-        self.prompts.append(text)
-        return f'{{"tool":"done","args":{{"summary":"{self.final_summary}"}}}}'
 
 
 class _ScriptedResumeProvider:
@@ -172,7 +149,7 @@ def _open_runtime(
     durable.claim_task(run_id)
     durable.start_task(run_id, state={"task_kind": "project"})
     durable.advance_task(
-        task_id=run_id, phase="assistant_response_pending", state={"task_kind": "project"},
+        task_id=run_id, phase="running", state={"task_kind": "project"},
     )
     return (
         durable,
@@ -180,47 +157,6 @@ def _open_runtime(
         ToolResultDeliveryStore(durable=durable),
         RuntimeMutationLine(durable=durable),
     )
-
-
-def _record_pending_tool_batch(
-    mutations: RuntimeMutationLine,
-    *,
-    session_id: str,
-    run_id: str,
-    project_dir: Path,
-    calls: tuple[ToolCall, ...],
-) -> tuple[str, ...]:
-    """生产入口：经 KernelEffectSink 提交待恢复的本轮意图（含交付 envelope）。"""
-    from codey.operations.task_effects import KernelEffectSink
-    from codey.operations.task_session import turn_effect_id
-
-    sink = KernelEffectSink(
-        mutations, session_id=session_id, run_id=run_id,
-        provider_id="smoke", durable=mutations.durable,
-    )
-    items = [
-        (turn_effect_id(run_id, 1, tool_index), call, tool_index)
-        for tool_index, call in enumerate(calls)
-    ]
-    sink.begin_turn(items, turn=1)
-    return tuple(effect_id for effect_id, _call, _index in items)
-
-
-def _record_pending_read_batch(
-    mutations: RuntimeMutationLine,
-    *,
-    session_id: str,
-    run_id: str,
-    project_dir: Path,
-) -> str:
-    call_read = ToolCall(name="read_file", args={"path": "config.py"})
-    return _record_pending_tool_batch(
-        mutations,
-        session_id=session_id,
-        run_id=run_id,
-        project_dir=project_dir,
-        calls=(call_read,),
-    )[0]
 
 
 def _final_content_ok(project_dir: Path) -> bool:
@@ -235,173 +171,6 @@ def _tool_names(events: list[Any]) -> tuple[str, ...]:
         if getattr(event, "kind", "") == "tool" and call is not None:
             names.append(str(getattr(call, "name", "")))
     return tuple(names)
-
-
-def run_self_test() -> bool:
-    print("[safe_tool_replay_smoke] starting deterministic self-test...")
-
-    with tempfile.TemporaryDirectory(prefix="codey_replay_smoke_") as temp_dir:
-        root = Path(temp_dir)
-        state_home = root / ".codey"
-        state_home.mkdir(parents=True, exist_ok=True)
-        project_dir = root / "project"
-        project_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create dummy project files
-        (project_dir / "target.py").write_text("print('hello codey replay')", encoding="utf-8")
-        (project_dir / "helper.py").write_text("def helper_fn(): pass", encoding="utf-8")
-
-        session_id = "smoke_replay_session"
-        run_id = "smoke_replay_run"
-
-        durable, effects_store, delivery_store, mutations = _open_runtime(
-            state_home,
-            session_id=session_id,
-            run_id=run_id,
-            provider_id="MockResumeProvider",
-            task="finish project task after crash",
-        )
-        mutations.accept_operation(
-            session_id=session_id,
-            run_id=run_id,
-            project=str(project_dir),
-            provider_id="MockResumeProvider",
-            turn_budget=10,
-            max_repair_rounds=1,
-            task_kind="project",
-        )
-        mutations.mark_writer_running(
-            session_id,
-            run_id,
-            provider_id="MockResumeProvider",
-        )
-
-
-        # 1. Simulate a crashed run that recorded intents before exiting:
-        # - Intent 1: Safe read tool call (should be replayed)
-        # - Intent 2: Safe search tool call (should be replayed)
-        eff_read, eff_search = _record_pending_tool_batch(
-            mutations,
-            session_id=session_id,
-            run_id=run_id,
-            project_dir=project_dir,
-            calls=(
-                ToolCall(name="read_file", args={"path": "target.py", "offset": 1}),
-                ToolCall(name="grep", args={"path": ".", "query": "helper_fn"}),
-            ),
-        )
-
-        # Verify initial pending state
-        pending_before = effects_store.pending_effects(session_id, run_id)
-        assert len(pending_before) == 2, f"expected 2 pending effects, got {len(pending_before)}"
-        print("[safe_tool_replay_smoke] successfully recorded 2 pending safe tool intents.")
-
-        # 2. Trigger resume recovery.
-        deps = Mock()
-        deps.runtime_effects = effects_store
-        deps.tool_result_delivery = delivery_store
-        deps.runtime_mutations = mutations
-        deps.state = Mock()
-        deps.state.durable = durable
-        deps.state.runtime_effects = effects_store
-        deps.state.tool_result_delivery = delivery_store
-        deps.state.runtime_mutations = mutations
-
-        recovery = recover_effects_for_resume(
-            deps,
-            session_id=session_id,
-            run_id=run_id,
-            project=str(project_dir),
-            task_kind="project",
-        )
-        assert recovery.ok, "expected recover_effects_for_resume to succeed"
-        recovered_outcomes = recovery.recovered_tool_outcomes
-        assert len(recovered_outcomes) == 2, f"expected 2 recovered outcomes, got {len(recovered_outcomes)}"
-        print(f"[safe_tool_replay_smoke] recover_effects_for_resume produced {len(recovered_outcomes)} recovered outcomes.")
-
-        # Check outcomes contents
-        read_outcome = next(r for r in recovered_outcomes if r.call.name == "read")
-        assert read_outcome.outcome.ok, "read outcome should be ok"
-        assert "hello codey replay" in read_outcome.outcome.model_text
-
-        search_outcome = next(r for r in recovered_outcomes if r.call.name == "search")
-        assert search_outcome.outcome.ok, "search outcome should be ok"
-        assert "helper.py" in search_outcome.outcome.model_text
-
-        # 3. Check settlement records on disk
-        loaded_after = effects_store.load_effects(session_id, run_id)
-        assert len(effects_store.pending_effects(session_id, run_id)) == 0, "all effects should be settled"
-
-        proj_read = next(p for p in loaded_after if p.intent.effect_id == eff_read)
-        assert proj_read.settlement is not None and proj_read.settlement.status == SETTLEMENT_STATUS_OK
-        assert proj_read.settlement.replay_count == 1
-        assert proj_read.settlement.replayed_from_effect_id == eff_read
-
-        proj_search = next(p for p in loaded_after if p.intent.effect_id == eff_search)
-        assert proj_search.settlement is not None and proj_search.settlement.status == SETTLEMENT_STATUS_OK
-        assert proj_search.settlement.replay_count == 1
-        assert proj_search.settlement.replayed_from_effect_id == eff_search
-
-        # 4. Check RecoverySummary
-        summary = effects_store.recovery_summary(session_id, run_id)
-        assert summary.replayed_reads == 1
-        assert summary.replayed_lookups == 1
-        assert summary.interrupted_writes == 0
-        assert "Read action was recovered" in summary.explanation_lines
-        assert "Lookup action was recovered" in summary.explanation_lines
-
-        # 5. Agent loop execution with recovered outcomes
-        provider = _MockResumeProvider()
-        agent_req = AgentRequest(
-            provider=provider,
-            project=project_dir,
-            workspace_revision_store=WorkspaceRevisionStore(state_home),
-            task="finish project task after crash",
-            provider_id=provider.name,
-            session_id=session_id,
-            run_id=run_id,
-            runtime_mutations=mutations,
-            durable=durable,
-            recovered_tool_outcomes=recovered_outcomes,
-            recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
-        )
-
-        loop_result = run_agent_loop(agent_req)
-        assert loop_result.stop_reason == "done"
-        assert loop_result.turns == 2
-        assert len(provider.prompts) == 1
-        assert "hello codey replay" in provider.prompts[0]
-        assert "helper.py" in provider.prompts[0]
-        print("[safe_tool_replay_smoke] agent loop resumed smoothly starting at turn 2.")
-
-        # 6. Run details projection
-        ledgers = RunLedgerStore(state_home)
-        ledger_writer = ledgers.open(
-            run_id=run_id,
-            session_id=session_id,
-            project=str(project_dir),
-            task="finish project task after crash",
-            provider="MockResumeProvider",
-            mode="project",
-        )
-        ledger_writer.finish(summary="smoke completed after replay", stop_reason="done")
-
-
-
-        details = load_run_details(
-            run_ledgers=ledgers,
-            run_traces=None,
-            session_id=session_id,
-            run_id=run_id,
-            runtime_operations=None,
-            runtime_effects=effects_store,
-        )
-        recovery_rows = [r for r in details.rows if r.label == "Recovery"]
-        assert len(recovery_rows) >= 2, f"expected recovery rows in details, got {recovery_rows}"
-        print(f"[safe_tool_replay_smoke] details projection contains {len(recovery_rows)} recovery row(s).")
-
-    print("[safe_tool_replay_smoke] all 0.5.4 checks passed successfully.")
-    return True
 
 
 def run_same_run_self_test() -> bool:
@@ -440,51 +209,43 @@ def run_same_run_self_test() -> bool:
             run_id,
             provider_id=provider.name,
         )
-        effect_id = _record_pending_read_batch(
-            mutations,
-            session_id=session_id,
-            run_id=run_id,
-            project_dir=project_dir,
-        )
+        from codey.durable.checkpoint import operation_from_checkpoint
+        from codey.storage.managed_outputs import ManagedOutputStore
 
-        deps = Mock()
-        deps.runtime_effects = effects_store
-        deps.tool_result_delivery = delivery_store
-        deps.runtime_mutations = mutations
-        deps.state = Mock()
-        deps.state.durable = durable
-        deps.state.runtime_effects = effects_store
-        deps.state.tool_result_delivery = delivery_store
-        deps.state.runtime_mutations = mutations
-        recovery = recover_effects_for_resume(
-            deps,
-            session_id=session_id,
-            run_id=run_id,
-            project=str(project_dir),
-            task_kind="project",
-        )
-        assert recovery.ok, "expected resume recovery to succeed"
-        recovered_outcomes = recovery.recovered_tool_outcomes
-        assert len(recovered_outcomes) == 1, "expected one recovered read outcome"
+        outputs = ManagedOutputStore(state_home)
+        armed = [True]
+        def crash_after_intent(*_args):
+            position = operation_from_checkpoint(durable.task(run_id), session_id)
+            if armed[0] and position.leaf == "tool_effect_pending":
+                armed[0] = False
+                raise _InjectedCrash("committed original read intent")
+        durable.subscribe_commits(crash_after_intent)
 
-        result = run_agent_loop(
-            AgentRequest(
-                provider=provider,
-                project=project_dir,
+        class InitialProvider:
+            name = provider.name
+            def send(self, _prompt, timeout=None):
+                return '{"tool":"read_file","args":{"path":"config.py"}}'
+
+        def request(active_provider):
+            return AgentRequest(
+                provider=active_provider, project=project_dir,
                 workspace_revision_store=WorkspaceRevisionStore(state_home),
-                task=SAME_RUN_TASK,
-                max_turns=8,
-                fresh_chat=False,
-                provider_id=provider.name,
-                on_event=lambda event: events.append(event),
-                session_id=session_id,
-                run_id=run_id,
-                runtime_mutations=mutations,
+                managed_outputs=outputs, task=SAME_RUN_TASK, max_turns=8,
+                fresh_chat=False, provider_id=provider.name, on_event=events.append,
+                session_id=session_id, run_id=run_id, runtime_mutations=mutations,
                 durable=durable,
-                recovered_tool_outcomes=recovered_outcomes,
-                recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
             )
-        )
+        try:
+            run_agent_loop(request(InitialProvider()))
+        except _InjectedCrash:
+            pass
+        else:
+            raise AssertionError("original read intent fault was not reached")
+        pending_reads = [row for row in effects_store.pending_effects(session_id, run_id)
+                         if row.intent.effect_category == "tool_call"]
+        assert len(pending_reads) == 1
+        effect_id = pending_reads[0].intent.effect_id
+        result = run_agent_loop(request(provider))
 
         loaded = effects_store.load_effects(session_id, run_id)
         projection = next(proj for proj in loaded if proj.intent.effect_id == effect_id)
@@ -498,25 +259,10 @@ def run_same_run_self_test() -> bool:
         assert result.checks_passed, "expected py_compile to pass after resume"
         tools = _tool_names(events)
         assert "edit" in tools and "run" in tools, f"expected edit and run after resume, got {tools}"
+        durable.close()
 
     print("[safe_tool_replay_smoke] same-run resume self-test passed.")
     return True
-
-
-def _crashing_tool_fns() -> AgentToolFns:
-    def crash_info_tool(*_args: Any, **_kwargs: Any) -> Any:
-        raise _InjectedCrash("synthetic crash after safe tool intent")
-
-    return AgentToolFns(
-        read_file=crash_info_tool,
-        list_directory=DEFAULT_TOOL_FNS.list_directory,
-        search_files=DEFAULT_TOOL_FNS.search_files,
-        find_references=DEFAULT_TOOL_FNS.find_references,
-        write_file=DEFAULT_TOOL_FNS.write_file,
-        edit_file=DEFAULT_TOOL_FNS.edit_file,
-        run_command=DEFAULT_TOOL_FNS.run_command,
-        run_command_with_context=DEFAULT_TOOL_FNS.run_command_with_context,
-    )
 
 
 def _run_live_resume_case(
@@ -556,6 +302,18 @@ def _run_live_resume_case(
             provider_id=provider_id,
         )
 
+        from codey.durable.checkpoint import operation_from_checkpoint
+        from codey.storage.managed_outputs import ManagedOutputStore
+
+        outputs = ManagedOutputStore(state_home)
+        armed = [True]
+        def crash_after_intent(*_args):
+            position = operation_from_checkpoint(durable.task(run_id), session_id)
+            if armed[0] and position.leaf == "tool_effect_pending":
+                armed[0] = False
+                raise _InjectedCrash("original tool intent committed")
+        durable.subscribe_commits(crash_after_intent)
+
         stage1_events = []
         crashed = False
         try:
@@ -563,18 +321,12 @@ def _run_live_resume_case(
                 provider=provider,
                 project=project_dir,
                 workspace_revision_store=WorkspaceRevisionStore(state_home),
-                task=(
-                    "For this Codey smoke, first respond with exactly one local JSON "
-                    'tool call: {"tool":"read_file","args":{"path":"config.py"}}. '
-                    "After the tool result is returned, continue the task: change "
-                    "FEATURE_FLAG from False to True in config.py, run python -m "
-                    "py_compile config.py, and finish."
-                ),
+                managed_outputs=outputs,
+                task=LIVE_TASK,
                 max_turns=max_turns,
                 fresh_chat=True,
                 provider_id=provider_id,
                 on_event=lambda event: stage1_events.append(event),
-                tool_fns=_crashing_tool_fns(),
                 session_id=session_id,
                 run_id=run_id,
                 runtime_mutations=mutations,
@@ -595,39 +347,16 @@ def _run_live_resume_case(
                 "stage1_event_count": len(stage1_events),
             }
 
-        recover_deps = Mock()
-        recover_deps.runtime_effects = effects_store
-        recover_deps.tool_result_delivery = delivery_store
-        recover_deps.runtime_mutations = mutations
-        recover_deps.state = Mock()
-        recover_deps.state.durable = durable
-        recover_deps.state.runtime_effects = effects_store
-        recover_deps.state.tool_result_delivery = delivery_store
-        recover_deps.state.runtime_mutations = mutations
-        recovery = recover_effects_for_resume(
-            recover_deps,
-            session_id=session_id,
-            run_id=run_id,
-            project=str(project_dir),
-            task_kind="project",
-        )
-        recovered_outcomes = recovery.recovered_tool_outcomes
         prompt_index = len(provider.prompts)
-        if not recovery.ok or not recovered_outcomes:
-            return {
-                "ok": False,
-                "provider": provider_id,
-                "seconds": round(time.time() - started_at, 3),
-                "stage": "recovery",
-                "recover_ok": recovery.ok,
-                "recovered_outcomes": len(recovered_outcomes),
-            }
+        original_effect_ids = {item.intent.effect_id for item in pending
+                               if item.intent.effect_category == "tool_call"}
 
         stage2_events = []
         result = run_agent_loop(AgentRequest(
             provider=provider,
             project=project_dir,
             workspace_revision_store=WorkspaceRevisionStore(state_home),
+            managed_outputs=outputs,
             task=LIVE_TASK,
             max_turns=max_turns,
             fresh_chat=False,
@@ -637,8 +366,6 @@ def _run_live_resume_case(
             run_id=run_id,
             runtime_mutations=mutations,
             durable=durable,
-            recovered_tool_outcomes=recovered_outcomes,
-            recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
         ))
         resume_prompt = provider.prompts[prompt_index] if len(provider.prompts) > prompt_index else ""
         summary = effects_store.recovery_summary(session_id, run_id)
@@ -651,7 +378,8 @@ def _run_live_resume_case(
             "stop_reason": result.stop_reason,
             "turns": result.turns,
             "provider_sends": len(provider.prompts),
-            "recovered_outcomes": len(recovered_outcomes),
+            "recovered_outcomes": sum(row.intent.effect_id in original_effect_ids and row.settlement is not None
+                                      for row in effects_store.load_effects(session_id, run_id)),
             "replayed_reads": summary.replayed_reads,
             "replayed_lookups": summary.replayed_lookups,
             "interrupted_writes": summary.interrupted_writes,
@@ -704,7 +432,6 @@ def run_live_resume_smoke(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Safe tool replay smoke test.")
-    parser.add_argument("--self-test", action="store_true", help="Run deterministic offline self-test")
     parser.add_argument("--same-run-self-test", action="store_true", help="Run same-run task entry resume self-test")
     parser.add_argument("--provider", default="", help="Live provider id for resume smoke")
     parser.add_argument("--port", type=int, default=9222)
@@ -713,9 +440,6 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    if args.self_test:
-        success = run_self_test()
-        sys.exit(0 if success else 1)
     if args.same_run_self_test:
         success = run_same_run_self_test()
         sys.exit(0 if success else 1)

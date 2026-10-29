@@ -128,21 +128,23 @@ class SnapshotStore:
     """
 
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME, *, task_id: str = "") -> None:
-        self.state_home = Path(state_home)
+        self.state_home: Path = Path(state_home)
         self.task_id = task_id
 
     def _project_dir(self, root: str | Path) -> Path:
         return (
             self.state_home
             / "projects"
-            / project_key(root)
-            / SNAPSHOT_DIR_NAME
+            / str(project_key(root))
+            / str(SNAPSHOT_DIR_NAME)
         )
 
     def dir_for(self, root: str | Path) -> Path:
+        from codey.storage.atomic_io import filesystem_path
+
         snapshot_dir = self._project_dir(root)
-        return (snapshot_dir / "tasks" / hashlib.sha256(self.task_id.encode()).hexdigest()
-                if self.task_id else snapshot_dir)
+        return filesystem_path(snapshot_dir / "tasks" / hashlib.sha256(self.task_id.encode()).hexdigest()
+                               if self.task_id else snapshot_dir)
 
     def path_for(self, root: str | Path) -> Path:
         return self.dir_for(root) / "manifest.json"

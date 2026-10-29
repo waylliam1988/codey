@@ -30,9 +30,9 @@ def _row(turn: object, index: int, name: str = "edit"):
 
 class EntryRecoveryFailClosedTests(unittest.TestCase):
     def test_delivered_construction_failure_is_not_empty_map(self) -> None:
-        from codey.operations import kernel_session_recovery as te
         from codey.operations.kernel_recovery import RecoveryFailed
         from codey.operations.task_session import TaskSession
+        from tests.support import session_projection as te
 
         session = TaskSession(policy=_policy(), task_kind="project", project="p", max_turns=4)
         frame = SimpleNamespace(
@@ -40,15 +40,15 @@ class EntryRecoveryFailClosedTests(unittest.TestCase):
             recovered_tool_outcomes=(_row(1, 0),),
         )
         with mock.patch(
-            "codey.operations.kernel_session_recovery.delivered_from_frame",
+            "tests.support.session_projection.delivered_from_frame",
             side_effect=RuntimeError("boom"),
         ), self.assertRaisesRegex(RecoveryFailed, "boom"):
             te.restore_task_session(frame, session)
 
     def test_malformed_row_does_not_reexecute_unsafe_tool(self) -> None:
-        from codey.operations import kernel_session_recovery as te
         from codey.operations.kernel_recovery import RecoveryFailed
         from codey.operations.task_session import TaskSession
+        from tests.support import session_projection as te
 
         session = TaskSession(policy=_policy(), task_kind="project", project="p", max_turns=4)
         bad = SimpleNamespace(call=None, outcome=None, turn="bad", tool_index="bad")
@@ -59,9 +59,9 @@ class EntryRecoveryFailClosedTests(unittest.TestCase):
             te.restore_task_session(frame, session)
 
     def test_recovery_builder_failure_raises_recovery_failed(self) -> None:
-        from codey.operations import kernel_session_recovery as te
         from codey.operations.kernel_errors import RecoveryFailed
         from codey.operations.task_session import TaskSession
+        from tests.support import session_projection as te
 
         session = TaskSession(policy=_policy(), task_kind="project", project="p", max_turns=4)
         frame = SimpleNamespace(

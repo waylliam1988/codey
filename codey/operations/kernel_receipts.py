@@ -38,6 +38,8 @@ def result_receipt_fields(result: ToolResult, *, store: Any,
 
     identity = _kernel_workspace_identity_of(result)
     payload = json.dumps({
+        "schema_version": 2,
+        "call_name": result.call.name,
         "ok": result.ok,
         "args": result.call.args,
         "model_text": result.model_text,
@@ -92,9 +94,10 @@ def restore_result_receipt(projection: Any, *, store: Any,
         raise ValueError("tool result receipt digest mismatch")
     data = json.loads(payload)
     if not isinstance(data, dict) or set(data) != {
-        "ok", "args", "model_text", "canonical", "presentation", "audit", "truncated", "workspace_identity",
+        "schema_version", "call_name", "ok", "args", "model_text", "canonical", "presentation", "audit", "truncated", "workspace_identity",
     }:
         raise ValueError("invalid tool result receipt fields")
+    _validate_call_name(data, intent.tool_name)
     if type(data["ok"]) is not bool or data["ok"] != (settlement.status == "ok"):
         raise ValueError("tool result status differs from settlement")
     if not isinstance(data["args"], dict) or compute_args_digest(data["args"]) != intent.args_digest:
@@ -118,7 +121,7 @@ def restore_result_receipt(projection: Any, *, store: Any,
         if artifact.get("sha256") != metadata.get("sha256"):
             raise ValueError("tool output artifact differs from receipt")
     result = ToolResult(
-        ok=data["ok"], call=ToolCall(intent.tool_name, data["args"], call_id=intent.call_id),
+        ok=data["ok"], call=ToolCall(data["call_name"], data["args"], call_id=intent.call_id),
         model_text=text, canonical=data["canonical"], presentation=data["presentation"],
         audit=data["audit"], truncated=data["truncated"],
     )
@@ -135,3 +138,11 @@ def restore_result_receipt(projection: Any, *, store: Any,
         if identity is not None:
             result = attach_trusted_workspace(result, _trusted_workspace_proof(identity, "persisted_revision_store"))
     return result
+
+
+def _validate_call_name(data: dict[str, Any], tool_name: str) -> None:
+    from codey.operations.task_effects import _runtime_name
+    if (type(data["schema_version"]) is not int or data["schema_version"] != 2
+            or not isinstance(data["call_name"], str) or not data["call_name"]
+            or _runtime_name(data["call_name"]) != tool_name):
+        raise ValueError("tool result original call name differs from intent")

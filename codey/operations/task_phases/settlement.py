@@ -485,7 +485,7 @@ def _finish_mode_outcome(
         run_id=frame.run_id,
     )
     cancelled = _seal_cancel_before_runtime(deps, frame.run_id, event)
-    if cancelled:
+    if cancelled or event.get("stop_reason") not in {"done", "approval", "question"}:
         _finish_failed_operation(deps, work, event)
     else:
         finish_run_operation(deps, work, event)

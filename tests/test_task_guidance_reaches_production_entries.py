@@ -22,7 +22,7 @@ class CaptureProvider:
 @pytest.mark.parametrize("strict", [False, True])
 def test_project_adapter_supplies_guidance_only_when_policy_requires_it(tmp_path, strict):
     from codey.agents.request import AgentRequest
-    from codey.operations.project_adapter import run
+    from tests.support.kernel_runtime import run_agent as run
 
     provider = CaptureProvider()
     run(AgentRequest(provider=provider, project=tmp_path, task="inspect", max_turns=1,
@@ -60,8 +60,8 @@ def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, stri
 
 
 def test_research_iteration_supplies_guidance_through_actual_shared_kernel():
-    from codey.operations.research_iteration import run_research_iteration
     from codey.research.ledger import ResearchLedger
+    from tests.support.kernel_runtime import run_research_iteration
 
     provider = CaptureProvider()
     tools = SimpleNamespace(ledger=ResearchLedger(), created_ids=[], updated_ids=[],

@@ -229,7 +229,7 @@ def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
             head = entry.entry_id
         mutation = DurableMutation(
             session_id, revision, task=next_task, entries=tuple(appended),
-            effects=tuple(intents), settlements=tuple(settlements), artifacts=artifacts,
+            effects=tuple(intents), settlements=tuple(settlements), artifacts=_unregistered_artifacts(durable, artifacts),
         )
         if generation_boundary is not None:
             selected, mutation = durable.merge_generation_boundary(
@@ -255,3 +255,19 @@ def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
         except CommitConflict:
             if attempt == 2:
                 raise
+
+
+def _unregistered_artifacts(durable: Any, artifacts: tuple[ArtifactRecord, ...]) -> tuple[ArtifactRecord, ...]:
+    """Reuse immutable content references inside the same transaction read line."""
+    from codey.durable.errors import CommitConflict
+
+    added = []
+    for artifact in artifacts:
+        try:
+            existing = durable.artifact(artifact.handle)
+        except KeyError:
+            added.append(artifact)
+            continue
+        if replace(artifact, created_at=existing.created_at) != existing:
+            raise CommitConflict("artifact handle has conflicting content or ownership")
+    return tuple(added)

@@ -4,10 +4,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from codey.operations.completion_gate import evaluate
-from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+from codey.operations.task_effects import KernelEffectSink
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.provider_actions import ProviderActions
 from tests.test_session_log_receipt_recovery_preserves_facts import (
     _dirs,
     _gate_context,
@@ -64,7 +65,7 @@ def test_successful_send_closes_delivery_but_keeps_all_facts(tmp_path):
     )
     sends = []
     provider = SimpleNamespace(send=lambda text: sends.append(text) or "ack")
-    assert KernelRecordedProvider(provider, sink).send("original results") == "ack"
+    assert ProviderActions(provider, sink).send("original results") == "ack"
     second, recovery2, _, _, _ = _recover_formal(project, state, logdir, "s", "r")
     assert recovery2.recovered_tool_outcomes == ()
     assert second.edited_files == first.edited_files
@@ -90,7 +91,7 @@ def test_project_adapter_restores_delivered_facts_without_resending(tmp_path):
             recovered_batch_id=recovery.recovered_tool_result_batch_id, managed_outputs=ManagedOutputStore(state),
             durable=durable,
     )
-    KernelRecordedProvider(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
+    ProviderActions(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
     _, after, _, _, _ = _recover_formal(project, state, logdir, "s", "r")
     sends = []
     provider = SimpleNamespace(send=lambda text: sends.append(text) or json.dumps({"tool": "done", "args": {"summary": "done"}}))
@@ -196,7 +197,7 @@ def test_provider_change_after_acknowledged_delivery_can_resume(tmp_path):
     sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local",
                             recovered_batch_id=recovery.recovered_tool_result_batch_id,
                                 managed_outputs=ManagedOutputStore(state), durable=durable)
-    KernelRecordedProvider(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
+    ProviderActions(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
     deps = SimpleNamespace(runtime_mutations=mutations, managed_outputs=ManagedOutputStore(state),
                            state=SimpleNamespace(durable=durable))
     frame = SimpleNamespace(request=SimpleNamespace(session_id="s"), run_id="r", provider_id="web",

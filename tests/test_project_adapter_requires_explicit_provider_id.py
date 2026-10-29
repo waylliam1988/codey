@@ -54,7 +54,7 @@ class ProjectAdapterRequiresExplicitProviderIdTests(unittest.TestCase):
 
     def test_explicit_provider_id_completes(self) -> None:
         from codey.agents.request import AgentRequest
-        from codey.operations.project_adapter import run as project_run
+        from tests.support.kernel_runtime import run_agent as project_run
 
         class _P:
             name = "mock_provider"

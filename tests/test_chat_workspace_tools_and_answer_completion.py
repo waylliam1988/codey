@@ -12,13 +12,13 @@ import pytest
 from codey.agents.handoff import ConversationContext
 from codey.app.context import AppContext
 from codey.operations.context import RunFrame, RunWork
-from codey.operations.task_entry import run_entry_kernel
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes
 from tests.support.kernel_protocol_test_helpers import normalize_turn
+from tests.support.kernel_runtime import run_entry_kernel
 
 
 def _state_home(tmp_path):
@@ -49,6 +49,7 @@ class NativeConversation:
 
     def acknowledge_tool_results(self, results, tools):
         self.results.extend(results)
+        return AssistantTurn()
 
 
 def workspace_frame(root, provider, *, intent="chat", task="Hello", **requirements):
@@ -286,7 +287,10 @@ def test_chat_and_auto_dispatch_enter_shared_workspace_kernel(tmp_path, intent):
         admit_frame(frame, state)
         deps = TaskRunDeps(state=state, agent_run=lambda **_: None, collect_changes=collect_changes,
                            run_review=lambda **_: None, capture_provider_failure=lambda *_, **__: None,
-                           workspace_revisions=state.workspace_revisions)
+                           workspace_revisions=state.workspace_revisions, runtime_mutations=state.runtime_mutations,
+                           managed_outputs=state.managed_outputs)
+        state.runtime_mutations.accept_operation(session_id=frame.request.session_id, run_id=frame.run_id,
+            provider_id=frame.provider_id, turn_budget=frame.request.max_turns, max_repair_rounds=1)
         hooks = SimpleNamespace(on_event=lambda _: None, on_shell_request=lambda _: None)
         outcome = dispatch_run_mode(deps, project_completion_deps(deps), review_flow_deps(deps),
                                     RunWork([], ExecutionEvidence()), frame, hooks, "chat", ProjectConfigLoadResult())

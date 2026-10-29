@@ -1,5 +1,4 @@
 """Concurrent acquisition must survive the real receipt/recovery boundary."""
-from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 from types import SimpleNamespace
 
@@ -7,14 +6,14 @@ import pytest
 
 from codey.operations.kernel_execution import _begin_pending_intents, execute_turn
 from codey.operations.kernel_protocol import build_turn_snapshot
-from codey.operations.kernel_session_recovery import restore_task_session
-from codey.operations.recovery import recover_effects_for_resume
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.tools import ResearchToolOutput
 from codey.runtime.core.models import ToolCall, ToolResult
+from tests.support.receipt_fixtures import inspect_receipt_facts
+from tests.support.session_projection import restore_task_session
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
 
 
@@ -47,21 +46,39 @@ def test_reverse_completion_survives_receipt_restart(tmp_path, pdf):
 
     tools = Tools()
 
-    def run(index):
-        call = ToolCall("open_url", {"url": a if pdf or index == 0 else b,
-                                     "pages": str(index + 1) if pdf else ""}, call_id=f"native-{index}")
-        return execute_turn(session, [call], run_id="r", turn=1, tool_index_base=index,
-                            effect_scope=f"parallel-{index}", research_tools=tools,
-                            managed_outputs=managed, session_id="s", intent_sink=sink)[0]
+    # Concurrent children belong to one CodeMode parent and delivery batch.
+    # Two unrelated top-level batches cannot own the same execution position.
+    from threading import Thread
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        first = pool.submit(run, 0)
-        try:
-            assert first_acquired.wait(15)
-            assert pool.submit(run, 1).result(timeout=15).ok
-        finally:
-            release_first.set()
-        assert first.result(timeout=15).ok
+    from codey.codemode.kernel import build_execute_turn_executor
+
+    session.policy = TaskPolicy(grants=frozenset({"control", "web.read", "project.read"}))
+    snapshot = build_turn_snapshot(session)
+    parent = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="r", effect_scope="parallel",
+        turn=1, project_path=project, research_tools=tools, managed_outputs=managed, session_id="s",
+        intent_sink=sink, durable=deps.state.durable)
+    calls = [{"url": a if pdf or index == 0 else b, "pages": str(index + 1) if pdf else ""} for index in range(2)]
+    call = ToolCall("codemode", {"code": "return await Promise.all(inputs.calls.map(args => tools.open_url(args)));",
+                                 "inputs": {"calls": calls}}, call_id="parent")
+    def release():
+        assert first_acquired.wait(15)
+        # The second acquisition is committed before the first is released.
+        import time
+        deadline = time.monotonic() + 15
+        while not any(e.intent.get("tool_index") == 1 and e.settlement is not None for e in deps.state.durable.effects("r")):
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        release_first.set()
+    releaser = Thread(target=release)
+    releaser.start()
+    try:
+        result = execute_turn(session, [call], executors={"codemode": parent}, run_id="r", turn=1,
+            effect_scope="parallel", managed_outputs=managed, session_id="s", intent_sink=sink,
+            snapshot=snapshot, project_path=project, durable=deps.state.durable)[0]
+        assert result.ok, result
+    finally:
+        release_first.set()
+        releaser.join(20)
     if pdf:
         assert ledger.pages_read_for_url(a) == {1, 2}
         assert ledger.source_pages_for_url(a) == {1: "page 1", 2: "page 2"}
@@ -81,9 +98,9 @@ def test_reverse_completion_survives_receipt_restart(tmp_path, pdf):
     deps.runtime_mutations = RuntimeMutationLine(durable=durable)
     deps.tool_result_delivery = ToolResultDeliveryStore(durable=durable)
     try:
-        recovered = recover_effects_for_resume(deps, session_id="s", run_id="r", project="", task_kind="research")
+        recovered = inspect_receipt_facts(deps, session_id="s", run_id="r", project="", task_kind="research")
         assert recovered.ok
-        restored, restored_ledger = TaskSession(policy=policy), ResearchLedger()
+        restored, restored_ledger = TaskSession(policy=session.policy), ResearchLedger()
         frame = SimpleNamespace(run_id="r", recovered_tool_outcomes=(),
                                 settled_tool_outcomes=recovered.settled_tool_outcomes)
         restore_task_session(frame, restored, research_ledger=restored_ledger)

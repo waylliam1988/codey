@@ -13,7 +13,7 @@ def open_runtime(
     run_id: str,
     task_kind: str = "project",
     provider_id: str = "local",
-    phase: str = "assistant_response_pending",
+    phase: str = "running",
 ) -> tuple[DurableSession, RuntimeMutationLine]:
     durable = DurableSession(SQLiteDurableStore(root / "durable.sqlite3"))
     durable.admit_input(
@@ -25,8 +25,7 @@ def open_runtime(
         task_state={"task_kind": task_kind},
     )
     durable.start_task(run_id, state={"task_kind": task_kind})
-    if phase != "provider_prepared":
-        durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={"task_kind": task_kind})
+    if phase != "running":
         durable.advance_task(task_id=run_id, phase=phase, state={"task_kind": task_kind})
     return durable, RuntimeMutationLine(durable=durable)
 

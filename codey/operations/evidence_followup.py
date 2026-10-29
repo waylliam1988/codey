@@ -59,7 +59,6 @@ def run_evidence_followup(
     if not fresh_urls:
         return EvidenceFollowupResult(ok=True, stop_reason="no_fresh_urls")
 
-    controller = EvidenceFollowupController(tools, fresh_urls)
     prior_evidence = len(getattr(tools.ledger, "evidence_items", ()) or ())
     prior_notes = set(getattr(tools, "created_ids", ()) or ())
     prompt = build_evidence_followup_prompt(
@@ -75,10 +74,19 @@ def run_evidence_followup(
 
         def write(call: ToolCall) -> ToolResult:
             nonlocal last_error
+            from codey.research.tools import clone_research_tools
+
+            staged = clone_research_tools(tools)
+            staged.ledger = tools.ledger.clone()
+            controller = EvidenceFollowupController(staged, fresh_urls)
+            before = len(tools.ledger.evidence_items)
             result = controller.execute_tool_call(call.name, dict(call.args or {}))
             if not result.ok:
                 last_error = clip(result.model_text, 200)
-            return ToolResult(call=call, model_text=result.model_text, ok=result.ok)
+            from codey.research.ledger_receipts import ledger_observation
+
+            canonical = {"research_observation": ledger_observation(staged.ledger, call.name, evidence_start=before)} if result.ok else {}
+            return ToolResult(call=call, model_text=result.model_text, ok=result.ok, canonical=canonical)
 
         session = TaskSession(
             policy=_subset_followup_policy(parent_policy),
@@ -87,16 +95,16 @@ def run_evidence_followup(
         active_provider = provider
         sink = None
         if runtime_mutations is not None and session_id and run_id:
-            from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+            from codey.operations.task_effects import KernelEffectSink
 
-            runtime_mutations.mark_writer_running(session_id, run_id, provider_id=provider_id)
+            runtime_mutations.mark_writer_running(session_id, run_id, provider_id=provider_id,
+                                                  writer_attempt=2 + (round_index - 1) * 2 + attempt - 1)
             sink = KernelEffectSink(
                 runtime_mutations, session_id=session_id, run_id=run_id,
                 provider_id=provider_id, phase="research",
                 durable=durable,
                 managed_outputs=managed_outputs,
             )
-            active_provider = KernelRecordedProvider(provider, sink)
         outcome = run_task_kernel(
             session,
             request=KernelRunRequest(
@@ -107,7 +115,7 @@ def run_evidence_followup(
                     provider_id=provider_id,
                     user_task=prompt,
                 ),
-                execution=KernelExecutionDeps(executors={"knowledge_write": write}),
+                execution=KernelExecutionDeps(executors={"knowledge_write": write}, research_tools=tools),
                 observation=KernelObservationDeps(
                     intent_sink=sink,
                     on_boundary=durable_generation_boundary_callback(

@@ -43,7 +43,7 @@ def _readonly_session(tmp_path):
 
 
 def test_kernel_readonly_run_completes_with_real_tool_loop(tmp_path):
-    from codey.operations.task_loop import run_task_kernel
+    from tests.support.kernel_runtime import run_task_kernel
 
     session = _readonly_session(tmp_path)
     provider = _DoneThenCloseProvider()
@@ -68,9 +68,9 @@ def test_kernel_readonly_run_completes_with_real_tool_loop(tmp_path):
 
 def test_gate_view_from_kernel_session_passes_oracle(tmp_path):
     from codey.operations.completion_gate import evaluate
-    from codey.operations.task_loop import run_task_kernel
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
     from tests.stress.oracle import InvariantChecker, completion_view_from_gate
+    from tests.support.kernel_runtime import run_task_kernel
 
     session = _readonly_session(tmp_path)
     provider = _DoneThenCloseProvider()

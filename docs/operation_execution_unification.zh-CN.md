@@ -60,7 +60,7 @@ effect、delivery、submission/approval 和输出存储分别拥有各自事实�
 从 trace 猜恢复状态、回执缺失后重执行、快照不匹配后换用最新实现，或生产 durable 缺失后转入内存执行。
 
 附件中的 pytest 失败按现行契约逐项分类并回测相关文件；不恢复已删除的生产接口来迁就旧测试。
-分阶段运行相关测试，最终执行完整回归。六阶段完成还需要本地 Gemma 原生/文本冒烟、
+分阶段运行定向和重点 pytest；全量回归交给 GitHub CI。六阶段完成还需要本地 Gemma 原生/文本冒烟、
 真实重启恢复及与 pi/DeepSeek 的等价场景比较，当前阶段未声称这些已完成。
 
 ## 阶段二进展：回复事实与停止完整性
@@ -222,4 +222,47 @@ final boundary 在同一事务完成 generation 结算、输入放置和 Kernel 
 
 本阶段相关测试 83 项通过（另一个旧关闭辅助函数测试待迁移），生产 mypy
 538 文件、Ruff 通过。最后阶段继续删除失去职责的 wrapper/发送辅助函数，
-迁移旧测试接线、核验回复与历史引用、执行完整回归和 Gemma 实机。
+迁移旧测试接线、核验回复与历史引用、执行重点回归和 Gemma 实机；全量留给 GitHub CI。
+
+
+## 阶段六进展：删除旧执行接线与重点验收
+
+生产入口已经删除 recovered DTO、独立恢复 pre-pass、内存 pending 槽以及
+KernelRecordedProvider 和隐含 provider 发送辅助函数。恢复测试改为先经真实 driver
+提交原请求/回复/intent/receipt，再中断并从同一 SQLite 和同一 driver 继续。
+只读 receipt 检查器留在 tests/support，不执行恢复，也不再被生产路径调用。
+手工安全重放探针同样改为原 intent 提交后中断，不向 AgentRequest 注入恢复结果。
+
+定向回归发现并修复：冷启动原生历史重复交付、成功审批回执 error=None 的错误拒绝、
+knowledge_write 证据被两次投影、首次和续跑请求遗漏工作观察、已接纳安全重放的审计计数、
+以及 Windows 深路径下原子输出/工作区快照/安装升级编译失败。
+变更采集失败保留原始失败观察并交给完成 gate 产生 blocked proof，避免把观察到的编辑
+当成净空 diff。测试资源一律显式提供 durable 和 managed outputs，没有生产内存降级。
+
+本轮分组结果（有交叠，不能相加当作独立用例总数）：
+
+- durable 定向组 645 通过、3 失败、5 跳过；三个旧断言迁移后均已在重点组复验通过。
+- 入口/工具结果/审批恢复组 66 通过。
+- 生命周期等重点组 169 通过、2 失败；两项检查器断言纠正后已复验通过。
+- 原故障相关组 30 通过，覆盖变更采集、恢复与真实 wheel 安装升级。
+- 最后重点组 94 通过，覆盖故障边界、审批 HTTP 续跑与完成证明。
+- 最后核心组 129 通过、44 subtests，覆盖 reducer、快照、取消、完成证明、审批与入口。
+- research 现有定向组 39 通过；这不代表外层多 invocation 的进程恢复已经验收。
+- Ruff 通过；mypy 538 文件通过；Pyrefly 0 errors（34 suppressed，77 warnings）；ty 通过。
+
+Gemma4 12B / KoboldCpp 的原生协议 smoke 4/4 通过，证据位于
+`artifacts/operation-native-20261029-final2`：聊天、读取、真正跨进程恢复、shell 批准续跑。
+重启用例在 edit 回执提交后退出（exit 75），由不同 PID 恢复，edit_executions=1，
+原结果与原 call id 保留，验证命令通过。审批用例在原 run 继续，shell_results=1。
+这些是选定的 smoke，不是完整发布矩阵。
+
+文本协议 smoke 的聊天和读取通过；重启用例未进入注入故障点。原始回包连续四次为
+Gemma 的 `<|tool_call>` 格式，违反 JSON 契约，系统按协议错误停止。
+证据位于 `artifacts/operation-json-20261029-final2`。没有放宽解析、增加 fallback，
+也没有把该项标为恢复成功。
+
+尚不能声称全部六阶段已验收：research 外层 pipeline 在 followup invocation 中退出后，
+启动仍试图从 main invocation 进入，而当前 operation 身份会严格拒绝回退。
+需要保存并引用外层 continuation，让已提交的搜索材料、原 invocation 和暂存知识回执
+可恢复；不能重跑 PlanExecutor、重分配 effect 或恢复旧 loop 来绕过。
+pi/DeepSeek 的等价故障比较也尚未进行，不将缺少数据写成比较结论。

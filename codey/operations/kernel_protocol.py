@@ -57,6 +57,7 @@ class ReceivedProviderTurn:
     owner_session: TaskSession
     logical_turn: int = 1
     window_ref: Any = None
+    effect_scope: str = ""
 
 
 def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:

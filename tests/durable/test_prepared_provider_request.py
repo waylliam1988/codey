@@ -14,7 +14,7 @@ from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.errors import CommitConflict
 from codey.operations.kernel_driver import drive_provider_request, load_prepared_request, prepare_provider_request
 from codey.operations.kernel_errors import RecoveryFailed
-from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
@@ -31,6 +31,7 @@ from codey.runtime.write.drive import peek_next_action
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from tests.durable.test_provider_response_receipts import runtime
+from tests.support.provider_actions import ProviderActions
 
 
 @pytest.mark.parametrize("boundary", ["initial_frozen", "followup_frozen", "previous_settled", "intent_admitted", "response_saved"])
@@ -41,7 +42,7 @@ from pathlib import Path
 from tests.durable.test_provider_response_receipts import runtime
 from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
-from codey.operations.task_effects import KernelRecordedProvider
+from tests.support.provider_actions import ProviderActions
 from codey.policies.task_policy import TaskPolicy
 root, boundary = Path(sys.argv[1]), sys.argv[2]
 durable, line, outputs, sink = runtime(root, sqlite=True)
@@ -52,7 +53,7 @@ class Provider:
         with (root / 'calls').open('a', encoding='utf-8') as stream:
             stream.write(prompt + '\n')
         return 'original response'
-recorded = KernelRecordedProvider(Provider(), sink)
+recorded = ProviderActions(Provider(), sink)
 if boundary in {'followup_frozen', 'previous_settled'}:
     recorded.send('first generation')
     sink.bind_request(build_turn_snapshot(session, native=False), logical_turn=2)
@@ -80,14 +81,13 @@ raise AssertionError('fault point did not exit')
     sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable,
         managed_outputs=ManagedOutputStore(tmp_path))
     provider = Mock(send=Mock(return_value="original response"), window_ref=None)
-    recorded = KernelRecordedProvider(provider, sink)
     session = TaskSession(TaskPolicy(frozenset({"control"})), max_turns=4)
     try:
         action = peek_next_action(durable, session_id="s", run_id="r")
         if boundary == "intent_admitted":
             assert action.kind == ACTION_SETTLE_PROVIDER_UNKNOWN
             with pytest.raises(RecoveryFailed, match="settle_provider_unknown"):
-                recorded.resume_kernel_response(session)
+                drive_provider_request(sink, provider, "")
             provider.send.assert_not_called()
             assert len(durable.effects("r")) == 1
             return
@@ -100,8 +100,10 @@ raise AssertionError('fault point did not exit')
             assert not any(effect.effect_id == intent.effect_id for effect in durable.effects("r"))
         else:
             assert action.kind == ACTION_INTERPRET_PROVIDER_RESPONSE
+        if boundary != "response_saved":
+            drive_provider_request(sink, provider, action.request_ref)
         for _ in range(2):
-            received = recorded.resume_kernel_response(session)
+            received = sink.load_response(session, operation_from_checkpoint(durable.task("r"), "s").response_ref)
             assert received.reply == "original response"
             assert received.prompt == "frozen original request"
             assert received.logical_turn == (2 if boundary in {"followup_frozen", "previous_settled"} else 1)
@@ -145,7 +147,7 @@ def test_driver_restores_exact_declarations_results_and_window(tmp_path, method)
 def test_lost_commit_acknowledgement_does_not_allocate_or_execute_again(tmp_path, monkeypatch, lost_at):
     durable, _, _, sink = runtime(tmp_path)
     provider = Mock(send=Mock(return_value="received"))
-    recorded = KernelRecordedProvider(provider, sink)
+    recorded = ProviderActions(provider, sink)
     if lost_at == "previous_boundary":
         recorded.send("first")
     commit = durable.store.commit
@@ -198,7 +200,7 @@ def test_cancellation_after_freezing_prevents_intent_admission(tmp_path):
 
 def test_internal_previous_generation_boundary_does_not_place_user_input(tmp_path):
     durable, _, _, sink = runtime(tmp_path)
-    provider = KernelRecordedProvider(Mock(send=Mock(return_value="received")), sink)
+    provider = ProviderActions(Mock(send=Mock(return_value="received")), sink)
     try:
         provider.send("first")
         queued = durable.admit_input(conversation_id="s", request_id="steer", task_id="steer",
@@ -214,7 +216,7 @@ def test_internal_previous_generation_boundary_does_not_place_user_input(tmp_pat
 def test_schema_three_migration_preserves_budgets_and_position(tmp_path):
     durable, _, _, sink = runtime(tmp_path)
     try:
-        KernelRecordedProvider(Mock(send=Mock(return_value="original")), sink).send("original")
+        ProviderActions(Mock(send=Mock(return_value="original")), sink).send("original")
         task = durable.task("r")
         original = operation_from_checkpoint(task, "s")
         payload = {**original.to_payload(), "schema_version": 3}
@@ -253,7 +255,7 @@ def test_original_effect_codec_retains_its_version_and_new_reference_has_one_own
         replace(current, effect_category="tool_call")
 
 
-def test_version_one_request_artifact_is_decoded_without_a_new_request(tmp_path):
+def test_request_without_frozen_scope_is_rejected_without_a_new_request(tmp_path):
     from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.provider_receipts import snapshot_description
 
@@ -271,8 +273,8 @@ def test_version_one_request_artifact_is_decoded_without_a_new_request(tmp_path)
             provider_id="local", turn=1, args_digest="legacy-digest", schema_version=1), artifacts=(artifact,))
         sink.record_response("legacy", "saved response")
         for _ in range(2):
-            restored = KernelRecordedProvider(provider, sink).resume_kernel_response(session)
-            assert restored.reply == "saved response" and restored.prompt == "original"
+            with pytest.raises(RuntimeEffectError, match="no frozen effect scope"):
+                sink.load_response(session, operation_from_checkpoint(durable.task("r"), "s").response_ref)
         provider.send.assert_not_called()
         assert len(durable.effects("r")) == 1
         assert durable.effect("legacy").intent["schema_version"] == 1

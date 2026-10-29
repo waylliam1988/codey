@@ -30,7 +30,6 @@ if __package__ in (None, ""):
 from codey.app import provider_services, sibling_probe
 from codey.app import server as codey_server
 from codey.app import task_submit as task_submit
-from codey.operations.project_audit_advisor import run_project_audit_advisor
 from codey.policies.limits import REVIEW_TIMEOUT
 from codey.providers import controls as provider_controls
 from codey.providers.registry import (
@@ -39,6 +38,7 @@ from codey.providers.registry import (
 )
 from codey.reviews.core import parse_review_with_repair, render_review_prompt
 from codey.workspace.changes import collect_changes, is_git_repository
+from tests.support.kernel_runtime import run_project_audit_advisor
 
 WRITER_ID = "deepseek"
 ADVISOR_IDS = ("glm", "stepfun", "qwen")

@@ -116,8 +116,6 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
         from types import SimpleNamespace as NS
 
         from codey.operations.kernel_recovery_result import build_recovered_result, spec_from_frame_row
-        from codey.operations.kernel_session_recovery import restore_task_session
-        from codey.operations.recovery import delivered_from_frame
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -128,6 +126,8 @@ class KernelRecoveryResultProtocolTests(unittest.TestCase):
         from tests.recovery_test_helpers import (
             trusted_workspace_pair as _trusted_workspace_from_result,
         )
+        from tests.support.receipt_fixtures import delivered_from_frame
+        from tests.support.session_projection import restore_task_session
 
         forged = {"workspace_revision": 999, "workspace_fingerprint": FORGED_FP}
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")

@@ -488,7 +488,7 @@ def test_approval_claim_failure_leaves_authorization_and_effect_untouched(
 def test_claimed_shell_without_operation_is_preserved_for_diagnosis(tmp_path: Path) -> None:
     from types import SimpleNamespace
 
-    from codey.operations.recovery import recover_effects_for_resume
+    from tests.support.receipt_fixtures import inspect_receipt_facts
 
     path = tmp_path / "durable.sqlite3"
     session = DurableSession(SQLiteDurableStore(path))
@@ -516,7 +516,7 @@ def test_claimed_shell_without_operation_is_preserved_for_diagnosis(tmp_path: Pa
     session.close()
 
     reopened = DurableSession(SQLiteDurableStore(path))
-    result = recover_effects_for_resume(
+    result = inspect_receipt_facts(
         SimpleNamespace(
             state=SimpleNamespace(durable=reopened), runtime_mutations=None,
             runtime_effects=None, tool_result_delivery=None,

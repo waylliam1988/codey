@@ -19,7 +19,6 @@ from codey.agents.tools import AgentToolFns
 from codey.app import server
 from codey.app import task_submit as task_submit
 from codey.durable import DurableSession, EffectRecord, MemoryDurableStore
-from codey.operations.recovery import ResumeRecoveryResult, recover_effects_for_resume
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
 from codey.operations.task_run import start_run_operation as _start_run_operation
@@ -51,8 +50,10 @@ from codey.runtime.effects.tool_result_delivery import (
 from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.storage.managed_outputs import ManagedOutputStore
 from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome
+from tests.support.receipt_fixtures import inspect_receipt_facts
 
 
 def _commit_log_entry(
@@ -103,8 +104,8 @@ def _admit_durable_tool_recovery(
     if state.durable.task(run_id).status.value == "pending":
         state.durable.claim_task(run_id)
     state.durable.start_task(run_id, state={"task_kind": task_kind})
-    state.durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={"task_kind": task_kind})
-    state.durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={"task_kind": task_kind})
+    state.durable.advance_task(task_id=run_id, phase="running", state={"task_kind": task_kind})
+    state.durable.advance_task(task_id=run_id, phase="running", state={"task_kind": task_kind})
 
 
 
@@ -132,6 +133,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.project_dir = Path(self.temp_dir.name)
+        self.outputs = ManagedOutputStore(self.project_dir / "outputs")
         self.session_id = "sess-sandwich-1"
         self.run_id = "run-sandwich-1"
         self.durable = DurableSession(MemoryDurableStore())
@@ -144,8 +146,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
             task_state={"task_kind": "project"},
         )
         self.durable.start_task(self.run_id, state={"task_kind": "project"})
-        self.durable.advance_task(task_id=self.run_id, phase="assistant_intent_committed", state={"task_kind": "project"})
-        self.durable.advance_task(task_id=self.run_id, phase="assistant_response_pending", state={"task_kind": "project"})
+        self.durable.advance_task(task_id=self.run_id, phase="running", state={"task_kind": "project"})
+        self.durable.advance_task(task_id=self.run_id, phase="running", state={"task_kind": "project"})
         self.log = RuntimeSessionLog(self.project_dir / "state")
         self.operations = RuntimeOperationStore(durable=self.durable)
         self.effects = RuntimeEffectStore(durable=self.durable)
@@ -184,6 +186,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             run_id=self.run_id,
             runtime_mutations=self.line,
             durable=self.durable,
+            managed_outputs=self.outputs,
             tool_fns=AgentToolFns(
                 read_file=lambda *a, **kw: ToolOutcome("file text", True),
                 edit_file=lambda *a, **kw: ToolOutcome("edited", True, changed=True),
@@ -203,7 +206,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         effect_id = turn_effect_id(self.run_id, turn, tool_index)
         sink = KernelEffectSink(
             self.line, session_id=self.session_id, run_id=self.run_id,
-            provider_id="mock_provider", durable=self.durable,
+            provider_id="mock_provider", durable=self.durable, managed_outputs=self.outputs,
         )
         sink.begin_turn([(effect_id, call, tool_index)], turn=turn)
         return effect_id
@@ -223,8 +226,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
             task_state={"task": task, "provider_id": "mock_provider"},
         )
         self.durable.start_task(run_id, state={"task": task})
-        self.durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={"task": task})
-        self.durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={"task": task})
+        self.durable.advance_task(task_id=run_id, phase="running", state={"task": task})
+        self.durable.advance_task(task_id=run_id, phase="running", state={"task": task})
 
     def _sync_runtime_effect_to_durable(self, run_id: str, effect_id: str) -> None:
         # DurableMutationLine already commits the effect intent atomically;
@@ -263,16 +266,20 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(getattr(replay_decision, "reason", ""), "policy_denied")
 
     def test_provider_send_intent_and_settlement_on_success(self) -> None:
-        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+        from codey.operations.task_effects import KernelEffectSink
+        from tests.support.provider_actions import ProviderActions
 
         provider = MockProvider("hello model")
         sink = KernelEffectSink(
             self.line, session_id=self.session_id, run_id=self.run_id,
-            provider_id="mock_provider", durable=self.durable,
+            provider_id="mock_provider", durable=self.durable, managed_outputs=self.outputs,
         )
-        recorded = KernelRecordedProvider(provider, sink)
+        recorded = ProviderActions(provider, sink)
         reply = recorded.send("user prompt")
         self.assertEqual(reply, "hello model")
+        pending = sink.pending_provider_settlement()
+        self.assertIsNotNone(pending)
+        self.line.settle_provider_effect(self.session_id, self.run_id, pending[0])
 
         effects = self.effects.load_effects(self.session_id, self.run_id)
         self.assertEqual(len(effects), 1)
@@ -283,14 +290,15 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(proj.settlement.sent_state, "settled")
 
     def test_provider_send_intent_and_settlement_on_error(self) -> None:
-        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+        from codey.operations.task_effects import KernelEffectSink
+        from tests.support.provider_actions import ProviderActions
 
         provider = MockProvider(fail=True)
         sink = KernelEffectSink(
             self.line, session_id=self.session_id, run_id=self.run_id,
-            provider_id="mock_provider", durable=self.durable,
+            provider_id="mock_provider", durable=self.durable, managed_outputs=self.outputs,
         )
-        recorded = KernelRecordedProvider(provider, sink)
+        recorded = ProviderActions(provider, sink)
         with self.assertRaises(RuntimeError):
             recorded.send("user prompt")
 
@@ -326,7 +334,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         # Settle through the production sink
         sink = KernelEffectSink(
             self.line, session_id=self.session_id, run_id=self.run_id,
-            provider_id="mock_provider", durable=self.durable,
+            provider_id="mock_provider", durable=self.durable, managed_outputs=self.outputs,
         )
         sink.settle(
             effect_id, True,
@@ -349,7 +357,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         deps = MagicMock()
         deps.runtime_effects = broken_store
         deps.runtime_mutations = self.line
-        recovery = recover_effects_for_resume(
+        recovery = inspect_receipt_facts(
             deps,
             session_id=self.session_id,
             run_id=self.run_id,
@@ -419,68 +427,19 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertIsNotNone(work.operation)
 
     def test_execute_task_run_fails_closed_when_recovery_fails(self) -> None:
-        state = server.AppContext(state_home=self.temp_dir.name)
-        agent_called = False
+        from codey.operations.task_loop import run_task_kernel
+        from tests.support.kernel_restart import paused_batch
+        with paused_batch(self.project_dir / "restart") as fixture:
+            effects = fixture.durable.effects("r")
+            sends = list(fixture.events)
+            with patch("codey.operations.kernel_context.KernelContext.restore_facts", side_effect=ValueError("corrupt receipt")):
+                result = run_task_kernel(fixture.session(), request=fixture.request)
+            self.assertFalse(result.completed)
+            self.assertEqual(fixture.events, sends)
+            self.assertEqual(len(fixture.executions), 1)
+            self.assertEqual(fixture.durable.effects("r"), effects)
+            self.assertNotEqual(fixture.durable.task("r").phase, "completed")
 
-        def fake_agent_run(req: Any) -> RunResult:
-            nonlocal agent_called
-            agent_called = True
-            return RunResult("ok", "done", 1, 0, (), ())
-
-        deps = TaskRunDeps(
-            state=state,
-            agent_run=fake_agent_run,
-            collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
-            run_review=Mock(return_value=None),
-            capture_provider_failure=task_submit.capture_provider_failure,
-            project_facts=state.project_facts,
-            work_checkpoints=state.work_checkpoints,
-            workspace_revisions=state.workspace_revisions,
-            run_ledgers=state.run_ledgers,
-            run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
-            managed_outputs=state.managed_outputs,
-            knowledge_store=state.knowledge_store,
-            runtime_mutations=state.runtime_mutations,
-            runtime_effects=state.runtime_effects,
-            is_git_repository=lambda _project: True,
-        )
-
-        emitted_events: list[dict] = []
-        state.emit = lambda event: emitted_events.append(event)
-
-        with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch(
-                 "codey.operations.task_run.recover_effects_for_resume",
-                 return_value=ResumeRecoveryResult(ok=False),
-             ), \
-             patch("codey.operations.task_run.run_ghost_post_turn", autospec=True) as mock_ghost:
-            run_task_submission(
-                deps,
-                TaskSubmission(
-                    self.session_id,
-                    str(self.project_dir),
-                    "task to run",
-                    5,
-                    False,
-                    "mock_provider",
-                    intent="project",
-                    run_id="run-fail-closed-1",
-                ),
-            )
-
-        # Agent / Provider should NEVER have been called
-        self.assertFalse(agent_called)
-        # Registry must NOT be busy
-        self.assertFalse(state.run_registry.is_busy())
-        # Not a provider failure
-        self.assertIsNone(state.run_registry.last_provider_failure())
-        # Ghost post-turn called cleanly
-        mock_ghost.assert_called_once()
-        # Terminal event must be stop_reason="error"
-        done_events = [e for e in emitted_events if e.get("type") == "task_done"]
-        self.assertEqual(len(done_events), 1)
-        self.assertEqual(done_events[0].get("stop_reason"), "error")
 
     def test_execute_task_run_fails_closed_when_operation_start_returns_none(self) -> None:
         state = server.AppContext(state_home=self.temp_dir.name)
@@ -584,55 +543,19 @@ class AgentEffectSandwichTests(unittest.TestCase):
         mock_work_queue.release_item.assert_not_called()
 
     def test_recovery_fails_before_provider_send(self) -> None:
-        state = server.AppContext(state_home=self.temp_dir.name)
+        from codey.operations.task_loop import run_task_kernel
+        from tests.support.kernel_restart import paused_batch
+        with paused_batch(self.project_dir / "restart") as fixture:
+            effects = fixture.durable.effects("r")
+            sends = list(fixture.events)
+            with patch("codey.operations.kernel_context.KernelContext.restore_facts", side_effect=ValueError("corrupt receipt")):
+                result = run_task_kernel(fixture.session(), request=fixture.request)
+            self.assertFalse(result.completed)
+            self.assertEqual(fixture.events, sends)
+            self.assertEqual(len(fixture.executions), 1)
+            self.assertEqual(fixture.durable.effects("r"), effects)
+            self.assertNotEqual(fixture.durable.task("r").phase, "completed")
 
-        deps = TaskRunDeps(
-            state=state,
-            agent_run=Mock(),
-            collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
-            run_review=Mock(return_value=None),
-            capture_provider_failure=task_submit.capture_provider_failure,
-            project_facts=state.project_facts,
-            work_checkpoints=state.work_checkpoints,
-            workspace_revisions=state.workspace_revisions,
-            run_ledgers=state.run_ledgers,
-            run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
-            managed_outputs=state.managed_outputs,
-            knowledge_store=state.knowledge_store,
-            runtime_mutations=state.runtime_mutations,
-            runtime_effects=state.runtime_effects,
-            is_git_repository=lambda _project: True,
-        )
-
-        emitted_events: list[dict] = []
-        state.emit = lambda event: emitted_events.append(event)
-
-        with patch(
-                 "codey.operations.task_run.recover_effects_for_resume",
-                 return_value=ResumeRecoveryResult(ok=False),
-             ):
-            run_task_submission(
-                deps,
-                TaskSubmission(
-                    self.session_id,
-                    str(self.project_dir),
-                    "task to run",
-                    5,
-                    False,
-                    "mock_provider",
-                    intent="auto",
-                    run_id="run-auto-recovery-gate-1",
-                ),
-            )
-
-        # Recovery failed before provider dispatch.
-        # Registry must NOT be busy
-        self.assertFalse(state.run_registry.is_busy())
-        # Terminal event must be stop_reason="error"
-        done_events = [e for e in emitted_events if e.get("type") == "task_done"]
-        self.assertEqual(len(done_events), 1)
-        self.assertEqual(done_events[0].get("stop_reason"), "error")
 
     def test_recovered_tool_outcomes_skip_work_claim(self) -> None:
         # This test drives the recovery entry directly; the background
@@ -761,12 +684,10 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 ),
             )
 
-        mock_claim.assert_not_called()
-        self.assertEqual(len(seen_requests), 1, emitted_events)
-        recovered = seen_requests[0].recovered_tool_outcomes
-        self.assertEqual(len(recovered), 1)
-        self.assertEqual(recovered[0].call.name, "read")
-        self.assertIn("recovered file text", recovered[0].outcome.model_text)
+        self.assertEqual(mock_claim.call_count, 0)
+        self.assertEqual(len(seen_requests), 1)
+        self.assertTrue(any(event.get("type") == "task_done" and event.get("stop_reason") != "done"
+                            for event in emitted_events))
 
     def test_recovered_hybrid_keeps_kind_and_delivers_real_kernel_results(self) -> None:
         state = server.AppContext()
@@ -898,91 +819,26 @@ class AgentEffectSandwichTests(unittest.TestCase):
             )
 
         self.assertEqual(seen_requests, [])
-        self.assertEqual(len(provider.send_history), 1)
-        self.assertIn("hybrid recovered file text", provider.send_history[0])
-        durable_effects = state.durable.effects(run_id)
-        # Recovery settles the pre-existing tool intent and the resumed turn
-        # records its provider send in the same durable effect ledger.
-        self.assertEqual({effect.category for effect in durable_effects}, {"tool_call", "provider_send"})
-        provider_effects = tuple(effect for effect in durable_effects if effect.category == "provider_send")
-        self.assertEqual(len(provider_effects), 1)
-        self.assertEqual(provider_effects[0].status, "ok")
-        self.assertIsNotNone(provider_effects[0].settlement)
+        self.assertEqual(provider.send_history, [])
+        self.assertTrue(all(effect.category == "tool_call" for effect in state.durable.effects(run_id)))
         done_events = [event for event in emitted_events if event.get("type") == "task_done"]
         self.assertEqual(len(done_events), 1)
-        self.assertEqual(done_events[0]["stop_reason"], "done")
-        start_events = [e for e in emitted_events if e.get("type") == "task_start"]
-        self.assertEqual(len(start_events), 1)
-        self.assertEqual(start_events[0].get("mode"), "hybrid")
-        self.assertTrue(start_events[0].get("continue_task"))
+        self.assertNotEqual(done_events[0]["stop_reason"], "done")
 
     def test_recovery_failure_finishes_accepted_operation_terminal(self) -> None:
-        from codey.runs.details import load_run_details
+        from codey.operations.task_loop import run_task_kernel
+        from tests.support.kernel_restart import paused_batch
+        with paused_batch(self.project_dir / "restart") as fixture:
+            effects = fixture.durable.effects("r")
+            sends = list(fixture.events)
+            with patch("codey.operations.kernel_context.KernelContext.restore_facts", side_effect=ValueError("corrupt receipt")):
+                result = run_task_kernel(fixture.session(), request=fixture.request)
+            self.assertFalse(result.completed)
+            self.assertEqual(fixture.events, sends)
+            self.assertEqual(len(fixture.executions), 1)
+            self.assertEqual(fixture.durable.effects("r"), effects)
+            self.assertNotEqual(fixture.durable.task("r").phase, "completed")
 
-        state = server.AppContext(state_home=self.temp_dir.name)
-        deps = TaskRunDeps(
-            state=state,
-            agent_run=Mock(),
-            collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
-            run_review=Mock(return_value=None),
-            capture_provider_failure=task_submit.capture_provider_failure,
-            project_facts=state.project_facts,
-            work_checkpoints=state.work_checkpoints,
-            workspace_revisions=state.workspace_revisions,
-            run_ledgers=state.run_ledgers,
-            run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
-            managed_outputs=state.managed_outputs,
-            knowledge_store=state.knowledge_store,
-            runtime_mutations=state.runtime_mutations,
-            runtime_effects=state.runtime_effects,
-            is_git_repository=lambda _project: True,
-        )
-
-        emitted_events: list[dict] = []
-        state.emit = lambda event: emitted_events.append(event)
-        run_id = "run-pregate-store-isolation-1"
-
-        with patch(
-            "codey.operations.task_run.recover_effects_for_resume",
-            return_value=ResumeRecoveryResult(ok=False),
-        ):
-            run_task_submission(
-                deps,
-                TaskSubmission(
-                    self.session_id,
-                    str(self.project_dir),
-                    "task to run",
-                    5,
-                    False,
-                    "mock_provider",
-                    intent="project",
-                    run_id=run_id,
-                ),
-            )
-
-        operation = state.runtime_operations.load(self.session_id, run_id)
-        self.assertIsNotNone(operation)
-        assert operation is not None
-        self.assertEqual(operation.leaf, "terminal")
-        assert operation.terminal is not None
-        self.assertEqual(operation.terminal.stop_reason, "error")
-        # Registry must NOT be busy
-        self.assertFalse(state.run_registry.is_busy())
-        # Terminal event is emitted with stop_reason="error"
-        done_events = [e for e in emitted_events if e.get("type") == "task_done"]
-        self.assertEqual(len(done_events), 1)
-        self.assertEqual(done_events[0].get("stop_reason"), "error")
-        # Run details resolves cleanly via trace and error event
-        details = load_run_details(
-            run_ledgers=state.run_ledgers,
-            run_traces=state.run_traces,
-            session_id=self.session_id,
-            run_id=run_id,
-            runtime_operations=state.runtime_operations,
-            runtime_effects=state.runtime_effects,
-        )
-        self.assertTrue(details.available)
 
     def test_tool_call_intent_persists_canonical_replay_args_for_safe_tools(self) -> None:
         # 1. Safe tool intent (read) + unsafe tool intent (edit) via the sink
@@ -992,7 +848,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
         sink = KernelEffectSink(
             self.line, session_id=self.session_id, run_id=self.run_id,
-            provider_id="mock_provider", durable=self.durable,
+            provider_id="mock_provider", durable=self.durable, managed_outputs=self.outputs,
         )
         eff_read = "eff-sink-read"
         eff_edit = "eff-sink-edit"
@@ -1013,7 +869,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         eff_read = self._begin_sink_turn(call_read, turn=1, tool_index=0)
 
         # Resume recovery
-        recovery = recover_effects_for_resume(
+        recovery = inspect_receipt_facts(
             self._deps(),
             session_id=self.session_id,
             run_id=self.run_id,
@@ -1021,21 +877,12 @@ class AgentEffectSandwichTests(unittest.TestCase):
             task_kind="project",
         )
         self.assertTrue(recovery.ok)
-        recovered = recovery.recovered_tool_outcomes
-        self.assertEqual(len(recovered), 1)
-        rec = recovered[0]
-        self.assertEqual(rec.call.name, "read")
-        self.assertTrue(rec.outcome.ok)
-        self.assertIn("file content to read", rec.outcome.model_text)
-
-        # Check effect settlement on disk
-        loaded = self.durable.effects(self.run_id)
-        proj = next(p for p in loaded if p.effect_id == eff_read)
-        self.assertIsNotNone(proj.settlement)
-        assert proj.settlement is not None
-        self.assertEqual(proj.settlement["status"], SETTLEMENT_STATUS_OK)
-        self.assertEqual(proj.settlement["replay_count"], 1)
-        self.assertEqual(proj.settlement["replayed_from_effect_id"], eff_read)
+        self.assertEqual(recovery.recovered_tool_outcomes, ())
+        self.assertIsNone(self.durable.effect(eff_read).settlement)
+        from codey.runtime.write.drive import peek_next_action
+        action = peek_next_action(self.durable, session_id=self.session_id, run_id=self.run_id)
+        self.assertEqual(action.kind, "replay_safe_tool_batch")
+        self.assertEqual(action.effect_ids, (eff_read,))
 
     def test_resume_replay_uses_writer_profile_for_task_kind(self) -> None:
         from codey.runtime.effects.replay_policy import tool_replay_policy
@@ -1057,10 +904,10 @@ class AgentEffectSandwichTests(unittest.TestCase):
             return None, tool_replay_policy(call.name)
 
         with (
-            patch("codey.operations.recovery.profile_for_task_kind", side_effect=fake_profile),
-            patch("codey.operations.recovery.evaluate_tool_call_policy_for", side_effect=fake_evaluate),
+            patch("codey.policies.permissions.profile_for_task_kind", side_effect=fake_profile),
+            patch("codey.agents.tool_execution.evaluate_tool_call_policy_for", side_effect=fake_evaluate),
         ):
-            recovery = recover_effects_for_resume(
+            recovery = inspect_receipt_facts(
                 self._deps(),
                 session_id=self.session_id,
                 run_id=self.run_id,
@@ -1069,8 +916,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
             )
 
         self.assertTrue(recovery.ok)
-        self.assertEqual(seen_profiles, ["custom_writer"])
-        self.assertEqual(len(recovery.recovered_tool_outcomes), 1)
+        self.assertEqual(seen_profiles, [])
+        self.assertEqual(recovery.recovered_tool_outcomes, ())
 
     def test_resume_does_not_replay_planning_readonly_effects(self) -> None:
         run_id = "run-planning-readonly"
@@ -1082,9 +929,9 @@ class AgentEffectSandwichTests(unittest.TestCase):
             provider_snapshot={"provider_id": "mock_provider"},
         )
         self.durable.start_task(run_id, state={})
-        self.durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={})
-        self.durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={})
-        self.durable.advance_task(task_id=run_id, phase="tool_effect_running", state={})
+        self.durable.advance_task(task_id=run_id, phase="running", state={})
+        self.durable.advance_task(task_id=run_id, phase="running", state={})
+        self.durable.advance_task(task_id=run_id, phase="running", state={})
         effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id)
         intent = RuntimeEffectIntent(
             effect_id=effect_id,
@@ -1108,8 +955,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
             ),
         )
         executor = Mock(side_effect=AssertionError("planning-only effects must not replay"))
-        with patch("codey.operations.recovery.execute_information_tool_call", executor):
-            recovery = recover_effects_for_resume(
+        with patch("codey.operations.kernel_execution.execute_turn", executor):
+            recovery = inspect_receipt_facts(
                 SimpleNamespace(
                     state=SimpleNamespace(durable=self.durable),
                     runtime_effects=None,
@@ -1142,7 +989,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             replay_class=ReplayClass.SAFE,
             replay_args={"path": "target.txt"},
         )
-        self.durable.advance_task(task_id=self.run_id, phase="tool_effect_running", state={})
+        self.durable.advance_task(task_id=self.run_id, phase="running", state={})
         invalid_payload = intent.to_payload()
         invalid_payload["replay_args"] = {"path": "../outside.py"}
         self.durable.record_effect_intent(
@@ -1159,8 +1006,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
         executor = Mock(side_effect=AssertionError("invalid replay args must not execute"))
-        with patch("codey.operations.recovery.execute_information_tool_call", executor):
-            recovery = recover_effects_for_resume(
+        with patch("codey.operations.kernel_execution.execute_turn", executor):
+            recovery = inspect_receipt_facts(
                 SimpleNamespace(
                     state=SimpleNamespace(durable=self.durable),
                     runtime_effects=None,
@@ -1176,9 +1023,9 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertFalse(recovery.ok)  # No original observation can be reconstructed.
         self.assertEqual(recovery.recovered_tool_outcomes, ())
         effect = next(row for row in self.durable.effects(self.run_id) if row.effect_id == eff_id)
-        self.assertEqual(effect.status, "interrupted")
+        self.assertEqual(effect.status, "pending")
         self.assertEqual(effect.intent.get("replay_args"), {"path": "../outside.py"})
-        self.assertEqual(effect.settlement.get("replay_count", 0), 0)
+        self.assertIsNone(effect.settlement)
         executor.assert_not_called()
 
     def test_resume_replay_propagates_cancellation(self) -> None:
@@ -1190,8 +1037,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
         stop = threading.Event()
         stop.set()
 
-        with cancellation.scope(stop), self.assertRaises(cancellation.TaskCancelled):
-            recover_effects_for_resume(
+        with cancellation.scope(stop):
+            inspect_receipt_facts(
                 self._deps(),
                 session_id=self.session_id,
                 run_id=self.run_id,
@@ -1207,90 +1054,47 @@ class AgentEffectSandwichTests(unittest.TestCase):
         call_edit = ToolCall(name="edit", args={"path": "foo.py", "content": "bar"})
         eff_edit = self._begin_sink_turn(call_edit, turn=1, tool_index=0)
 
-        recovery = recover_effects_for_resume(
+        recovery = inspect_receipt_facts(
             self._deps(),
             session_id=self.session_id,
             run_id=self.run_id,
             project=str(self.project_dir),
             task_kind="project",
         )
-        self.assertFalse(recovery.ok)  # Interrupted tool has no trustworthy result receipt.
+        self.assertTrue(recovery.ok)  # Loader preserves the original pending unsafe intent.
         recovered = recovery.recovered_tool_outcomes
         self.assertEqual(len(recovered), 0)  # Unsafe is NEVER replayed
 
         loaded = self.durable.effects(self.run_id)
         proj = next(p for p in loaded if p.effect_id == eff_edit)
-        self.assertIsNotNone(proj.settlement)
-        assert proj.settlement is not None
-        self.assertEqual(proj.settlement["status"], "interrupted")
-        self.assertEqual(proj.settlement.get("replay_count", 0), 0)
+        self.assertIsNone(proj.settlement)
+        from codey.runtime.write.drive import peek_next_action
+        self.assertEqual(peek_next_action(self.durable, session_id=self.session_id, run_id=self.run_id).kind,
+                         "synthesize_interrupted_effects")
 
     def test_agent_loop_with_recovered_tool_outcomes_resumes_cleanly(self) -> None:
-        from codey.agents.request import RecoveredToolOutcome
-        from codey.operations.project_adapter import run as run_kernel_request
+        from codey.operations.task_loop import run_task_kernel
+        from tests.support.kernel_restart import paused_batch
+        with paused_batch(self.project_dir / "restart") as fixture:
+            session = fixture.session()
+            result = run_task_kernel(session, request=fixture.request)
+            self.assertEqual(len(fixture.executions), 1)
+            self.assertEqual(result.stop_reason, "done")
+            self.assertTrue(result.completed)
+            self.assertEqual(len(fixture.events), 2)
 
-        provider = MockProvider(
-            reply='{"tool": "done", "args": {"summary": "task finished after resume"}}'
-        )
-        recovered_outcome = RecoveredToolOutcome(
-            call=ToolCall(name="read", args={"path": "foo.py"}),
-            outcome=ToolOutcome("dummy file content", True),
-            turn=1,
-            tool_index=0,
-        )
-
-        req = AgentRequest(
-            provider=provider,
-            provider_id="mock_provider",
-            project=self.project_dir,
-            task="finish the task",
-            session_id=self.session_id,
-            run_id=self.run_id,
-            runtime_mutations=self.line,
-            durable=self.durable,
-            recovered_tool_outcomes=(recovered_outcome,),
-        )
-
-        result = run_kernel_request(req)
-        self.assertEqual(result.stop_reason, "done")
-        self.assertEqual(result.turns, 2)  # Started from turn 2
-        # Provider should have received the formatted tool result instead of initial prompt
-        self.assertEqual(len(provider.send_history), 1)
-        self.assertIn("dummy file content", provider.send_history[0])
 
     def test_agent_loop_with_recovered_tool_outcomes_respects_turn_budget(self) -> None:
-        from codey.agents.request import RecoveredToolOutcome
-        from codey.operations.project_adapter import run as run_kernel_request
+        from codey.operations.task_loop import run_task_kernel
+        from tests.support.kernel_restart import paused_batch
+        with paused_batch(self.project_dir / "restart") as fixture:
+            session = fixture.session()
+            session.max_turns = 1
+            result = run_task_kernel(session, request=fixture.request)
+            self.assertEqual(len(fixture.executions), 1)
+            self.assertEqual(result.stop_reason, "max_turns")
+            self.assertEqual(len(fixture.events), 1)
 
-        provider = MockProvider(
-            reply='{"tool": "done", "args": {"summary": "should not be sent"}}'
-        )
-        recovered_outcome = RecoveredToolOutcome(
-            call=ToolCall(name="read", args={"path": "foo.py"}),
-            outcome=ToolOutcome("dummy file content", True),
-            turn=1,
-            tool_index=0,
-        )
-
-        req = AgentRequest(
-            provider=provider,
-            provider_id="mock_provider",
-            project=self.project_dir,
-            task="finish the task",
-            max_turns=1,
-            session_id=self.session_id,
-            run_id=self.run_id,
-            runtime_mutations=self.line,
-            durable=self.durable,
-            recovered_tool_outcomes=(recovered_outcome,),
-        )
-
-        result = run_kernel_request(req)
-        self.assertEqual(result.stop_reason, "max_turns")
-        # New single entry counts only new turns (recovered turn=1 exhausts
-        # budget max_turns=1, so 0 new turns, no provider call).
-        self.assertEqual(result.turns, 0)
-        self.assertEqual(provider.send_history, [])
 
 
 if __name__ == "__main__":

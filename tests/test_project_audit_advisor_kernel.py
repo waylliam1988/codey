@@ -22,8 +22,8 @@ def _audit_policy():
 def test_audit_parent_without_project_read_never_scans_or_sends(tmp_path):
     from unittest.mock import patch
 
-    from codey.operations.project_audit_advisor import run_project_audit_advisor
     from codey.policies.task_policy import TaskPolicy
+    from tests.support.kernel_runtime import run_project_audit_advisor
 
     provider = _AuditProvider([])
     with patch("codey.operations.project_audit_advisor.visible_entries") as scan:
@@ -34,7 +34,8 @@ def test_audit_parent_without_project_read_never_scans_or_sends(tmp_path):
 
 
 def test_audit_send_respects_remaining_time_budget(tmp_path):
-    from codey.operations.project_audit_advisor import PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT, run_project_audit_advisor
+    from codey.operations.project_audit_advisor import PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT
+    from tests.support.kernel_runtime import run_project_audit_advisor
 
     deadlines = []
 
@@ -71,7 +72,7 @@ def _done_call(summary: str) -> str:
 def test_audit_advisor_reads_and_returns_done_via_shared_kernel():
     from unittest import mock
 
-    from codey.operations.project_audit_advisor import run_project_audit_advisor
+    from tests.support.kernel_runtime import run_project_audit_advisor
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         proj = Path(td)
@@ -91,8 +92,8 @@ def test_advisor_drives_single_shared_kernel_with_readonly_policy():
     """结构锁定：顾问必须调用统一 run_task_kernel，不得自建解析/执行循环。"""
     from unittest import mock
 
-    from codey.operations import project_audit_advisor
     from codey.operations.task_loop import KernelResult
+    from tests.support.kernel_runtime import run_project_audit_advisor
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         proj = Path(td)
@@ -102,7 +103,7 @@ def test_advisor_drives_single_shared_kernel_with_readonly_policy():
             "codey.operations.project_audit_advisor.run_task_kernel",
             return_value=KernelResult(True, "kernel advice", 2, "done"),
         ) as kernel:
-            report = project_audit_advisor.run_project_audit_advisor(provider, proj, "audit", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"})))
+            report = run_project_audit_advisor(provider, proj, "audit", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"})))
         assert report == "kernel advice"
         assert kernel.call_count == 1
         session = kernel.call_args.args[0] if kernel.call_args.args else kernel.call_args.kwargs["session"]
@@ -120,7 +121,7 @@ def test_advisor_drives_single_shared_kernel_with_readonly_policy():
 def test_audit_advisor_denies_write_without_side_effects():
     from unittest import mock
 
-    from codey.operations.project_audit_advisor import run_project_audit_advisor
+    from tests.support.kernel_runtime import run_project_audit_advisor
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         proj = Path(td)

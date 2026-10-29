@@ -13,18 +13,19 @@ from __future__ import annotations
 from pathlib import Path
 from unittest import mock
 
-from codey.operations.task_loop import (
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
+from codey.providers.base import AssistantTurn, ProviderToolCall
+from codey.providers.error_classification import ContextOverflowError
+from codey.runtime.core.models import ToolResult
+from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.kernel_runtime import (
     KernelExecutionDeps,
     KernelObservationDeps,
     KernelRunRequest,
     KernelTransportDeps,
     run_task_kernel,
 )
-from codey.operations.task_session import TaskSession
-from codey.policies.task_policy import TaskPolicy
-from codey.providers.base import AssistantTurn, ProviderToolCall
-from codey.providers.error_classification import ContextOverflowError
-from codey.runtime.core.models import ToolResult
 
 
 class FakeStructuredProvider:
@@ -109,7 +110,7 @@ def test_native_overflow_is_provider_failure_without_retry(tmp_path: Path) -> No
 
 def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> None:
     """Overflow fails closed on the ledger: single NOT_SENT attempt, no retry."""
-    from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+    from codey.operations.task_effects import KernelEffectSink
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
@@ -145,17 +146,17 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
     durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                         text="read", provider_snapshot={"provider_id": "local"})
     durable.start_task(run_id, state={})
-    durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={})
-    durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={})
+    durable.advance_task(task_id=run_id, phase="running", state={})
+    durable.advance_task(task_id=run_id, phase="running", state={})
     line = RuntimeMutationLine(durable=durable)
     line.accept_operation(
         session_id=session_id, run_id=run_id, project=str(tmp_path),
         provider_id="local", turn_budget=10, max_repair_rounds=1, task_kind="project",
     )
     line.mark_writer_running(session_id, run_id, provider_id="local")
-    sink = KernelEffectSink(line, session_id=session_id, run_id=run_id, provider_id="local", durable=durable)
+    sink = KernelEffectSink(line, session_id=session_id, run_id=run_id, provider_id="local", durable=durable, managed_outputs=ManagedOutputStore(Path(tmp_path)))
     provider = StrictOverflowProvider()
-    recorded = KernelRecordedProvider(provider, sink)
+    recorded = provider
     session = TaskSession(policy=_policy(), task_kind="project", project=str(tmp_path), max_turns=3)
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(

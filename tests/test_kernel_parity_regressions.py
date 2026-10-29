@@ -151,9 +151,9 @@ def test_unrelated_successful_check_cannot_satisfy_selected_candidate():
 
 @pytest.mark.parametrize("kind", ["project", "research"])
 def test_repeated_cycle_has_bounded_stop_and_distinct_information_does_not(monkeypatch, kind):
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.models import ToolResult
+    from tests.support.kernel_runtime import run_task_kernel
 
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     tool = "read_file" if kind == "project" else "knowledge_read"
@@ -215,10 +215,10 @@ def test_synthesis_persists_bounded_open_questions(tmp_path):
 def test_cancellation_between_tools_settles_remaining_slots_without_executing(monkeypatch, tmp_path):
     import threading
 
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.models import ToolResult
     from codey.workspace.revision import WorkspaceRevisionStore
+    from tests.support.kernel_runtime import run_task_kernel
 
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     project = tmp_path / "project"
@@ -289,13 +289,12 @@ def test_run_result_never_reports_an_earlier_green_after_a_later_edit():
     assert not session_checks_passed(session)
 
 
-@pytest.mark.parametrize("wrappers", ["conversation", "recorded", "both"])
+@pytest.mark.parametrize("wrappers", ["direct", "conversation"])
 def test_explicit_provider_normalizer_survives_production_wrappers(wrappers, tmp_path):
-    from codey.operations.kernel_transport import call_provider_send
     from codey.operations.provider_session import ConversationProvider
-    from codey.operations.task_effects import KernelRecordedProvider
     from codey.providers.local_response_codec import normalize_local_reply
     from tests.durable.test_provider_response_receipts import runtime
+    from tests.support.provider_actions import ProviderActions
 
     normalized = []
     durable, _, _, sink = runtime(tmp_path)
@@ -306,12 +305,10 @@ def test_explicit_provider_normalizer_survives_production_wrappers(wrappers, tmp
 
     provider = SimpleNamespace(send=lambda _p: '<|tool_call>call:tool:read_file{path:"a.py"}<tool_call|>',
                                normalize_reply=normalize)
-    if wrappers in {"recorded", "both"}:
-        provider = KernelRecordedProvider(provider, sink)
-    if wrappers in {"conversation", "both"}:
+    if wrappers == "conversation":
         provider = ConversationProvider(provider, SimpleNamespace(record_exchange=lambda *_a: None))
     try:
-        reply = call_provider_send(provider, "read")
+        reply = ProviderActions(provider, sink).send("read")
     finally:
         durable.close()
     assert isinstance(reply, AssistantTurn)
@@ -320,35 +317,57 @@ def test_explicit_provider_normalizer_survives_production_wrappers(wrappers, tmp
 
 
 def test_native_protocol_repair_answers_duplicate_id_once():
-    from codey.operations.kernel_transport import repair_native_dangling
+    from codey.operations.task_loop import KernelObservationDeps, KernelRunRequest, KernelTransportDeps
+    from codey.operations.task_session import TaskSession
+    from tests.support.kernel_runtime import run_task_kernel
 
     receipts = []
-    reply = AssistantTurn(text="", tool_calls=tuple(ProviderToolCall(
+    duplicate = AssistantTurn(tool_calls=tuple(ProviderToolCall(
         id="c1", name="read_file", arguments={"path": path}) for path in ("a.py", "b.py")))
-    provider = SimpleNamespace(send_tool_results=lambda messages, _tools: receipts.extend(messages))
-    repair_native_dangling(provider, reply, True, [], "duplicate id")
-    assert [row.call_id for row in receipts] == ["c1"]
+
+    class Provider:
+        native_tools = True
+        def send_turn(self, prompt, tools):
+            return duplicate
+        def send_tool_results(self, messages, tools):
+            receipts.extend(messages)
+            return AssistantTurn(tool_calls=(ProviderToolCall("done", "done", {"summary": "finished"}),))
+        def acknowledge_tool_results(self, messages, tools):
+            receipts.extend(messages)
+            return AssistantTurn()
+
+    result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control", "project.read"}))),
+        request=KernelRunRequest(transport=KernelTransportDeps(provider=Provider()),
+            observation=KernelObservationDeps()))
+    assert result.completed, result
+    assert [row.call_id for row in receipts] == ["c1", "done"]
 
 
 def test_native_cancellation_closes_followon_ids_without_executing():
     import threading
 
-    from codey.operations.task_loop import _cancel_after_send
+    from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+    from codey.operations.task_session import TaskSession
+    from tests.support.kernel_runtime import run_task_kernel
 
     stop = threading.Event()
-    stop.set()
     receipts = []
-
-    def send_results(messages, _tools):
+    def send_results(messages, tools):
         receipts.extend(messages)
-        return (AssistantTurn(text="", tool_calls=(ProviderToolCall(id="c2", name="edit", arguments={}),))
-                if len(receipts) == 1 else AssistantTurn(text="closed", tool_calls=()))
-
-    reply = AssistantTurn(text="", tool_calls=(ProviderToolCall(id="c1", name="edit", arguments={}),))
-    result = _cancel_after_send(stop, SimpleNamespace(acknowledge_tool_results=send_results), reply, True, 1,
-                               propagate=False)
+        return (AssistantTurn(tool_calls=(ProviderToolCall("c2", "edit", {}),))
+                if len(receipts) == 1 else AssistantTurn())
+    def first(prompt, tools):
+        stop.set()
+        return AssistantTurn(tool_calls=(ProviderToolCall("c1", "edit", {}),))
+    provider = SimpleNamespace(native_tools=True, send_turn=first, send_tool_results=send_results,
+        acknowledge_tool_results=send_results)
+    executed = []
+    result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control", "project.write"}))),
+        request=KernelRunRequest(transport=KernelTransportDeps(provider=provider, stop_flag=stop),
+            execution=KernelExecutionDeps(executors={"edit": lambda call: executed.append(call)})))
     assert result.stop_reason == "stopped"
     assert [row.call_id for row in receipts] == ["c1", "c2"]
+    assert executed == []
 
 
 def test_verification_refresh_drops_a_candidate_removed_by_a_later_edit():

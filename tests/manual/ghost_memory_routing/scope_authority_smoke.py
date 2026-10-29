@@ -17,10 +17,10 @@ from experiment_paths import DATA_ROOT, REPO
 sys.path.insert(0, str(REPO))
 
 from codey.agents.request import AgentRequest  # noqa: E402
-from codey.operations.project_adapter import run  # noqa: E402
 from codey.policies.task_policy import TaskPolicy  # noqa: E402
 from codey.providers.api_provider import ApiProvider  # noqa: E402
 from codey.providers.api_request_policy import LocalRequestPolicy  # noqa: E402
+from tests.support.kernel_runtime import run_agent as run  # noqa: E402
 
 MODEL = "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M"
 

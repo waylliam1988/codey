@@ -1,93 +1,48 @@
-"""Approval receipts settle the original unsafe call without executing it again."""
-
-from types import SimpleNamespace
-
+"""The sole driver reconciles original approval receipts after SQLite restart."""
 import pytest
 
-from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations.recovery import recover_effects_for_resume
-from codey.operations.task_effects import KernelEffectSink
-from codey.runtime.core.models import ToolCall
-from codey.runtime.effects.effect_records import RuntimeEffectStore
-from codey.runtime.write.mutation_line import RuntimeMutationLine
-
-
-def _pending_shell(tmp_path):
-    durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
-    durable.admit_input(conversation_id="s", request_id="request", task_id="r", text="shell",
-                        provider_snapshot={"provider_id": "local"})
-    durable.start_task("r", state={})
-    durable.advance_task(task_id="r", phase="assistant_response_pending", state={})
-    line = RuntimeMutationLine(durable=durable)
-    line.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=6,
-                          max_repair_rounds=1, task_kind="chat")
-    line.mark_writer_running("s", "r", provider_id="local")
-    sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable)
-    call = ToolCall("shell", {"command": "echo result", "path": "."}, call_id="original-call")
-    sink.begin_turn([("original-effect", call, 0)], turn=1)
-    durable.advance_task(task_id="r", phase="tool_effect_running", state={
-        "resume_input": {"kind": "resolve_shell_approval", "approval_id": "approval"},
-    })
-    return durable
-
-
-def _deps(durable, payload):
-    return SimpleNamespace(
-        state=SimpleNamespace(durable=durable, resolve_shell_approval=lambda _approval: payload),
-        runtime_mutations=RuntimeMutationLine(durable=durable),
-        runtime_effects=RuntimeEffectStore(durable=durable), managed_outputs=None,
-    )
+from codey.operations.task_loop import run_task_kernel
+from tests.support.kernel_restart import approved_shell
 
 
 @pytest.mark.parametrize("ok,exit_code,status", [(True, 0, "exit"), (False, 7, "exit"), (False, None, "denied")])
-def test_receipt_recovery_survives_restart_and_is_idempotent(tmp_path, monkeypatch, ok, exit_code, status):
-    durable = _pending_shell(tmp_path)
-    durable.close()
-    payload = {"call_id": "original-call", "command": "echo result", "cwd": ".",
-               "ok": ok, "exit_code": exit_code, "model_text": "result" if ok else "failed",
-               "error_code": status, "truncated": False}
-
-    def forbidden(*_args, **_kwargs):
-        raise AssertionError("approval recovery must never execute a tool")
-
-    monkeypatch.setattr("codey.operations.recovery.execute_information_tool_call", forbidden)
-    for _ in range(2):
-        durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
-        try:
-            before_entries = durable.entries("s")
-            recovered = recover_effects_for_resume(
-                _deps(durable, payload), session_id="s", run_id="r", project="", task_kind="chat",
-            )
-            assert recovered.ok
-            assert recovered.recovered_tool_outcomes == ()
-            assert len(recovered.settled_tool_outcomes) == 1
-            row = recovered.settled_tool_outcomes[0]
-            assert row.call.call_id == "original-call"
-            assert row.outcome.ok is ok
-            assert row.outcome.exit_code == exit_code
-            receipt = durable.effect("original-effect").settlement
-            assert receipt.get("replay_count", 0) == 0
-            assert receipt["status"] == ("ok" if ok else "error")
-            assert durable.task("r").phase == "tool_outcome_ready"
-            assert durable.entries("s") == before_entries
-        finally:
-            durable.close()
+def test_receipt_recovery_survives_restart_and_is_idempotent(tmp_path, ok, exit_code, status):
+    receipt = {"ok": ok, "exit_code": exit_code, "status": status,
+               "output": "result" if ok else "failed", "truncated": False}
+    with approved_shell(tmp_path, receipt) as runtime:
+        result = run_task_kernel(runtime.session(), request=runtime.request)
+        assert result.completed, result
+        tool = next(effect for effect in runtime.durable.effects("r") if effect.category == "tool_call")
+        assert tool.intent["call_id"] == "original-shell"
+        assert tool.settlement["status"] == ("ok" if ok else "error")
+        assert tool.settlement.get("exit_code") == exit_code
+        assert tool.settlement.get("replay_count", 0) == 0
+        delivered = [row for kind, rows in runtime.events if kind == "results" for row in rows]
+        assert len(delivered) == 1 and delivered[0].call_id == "original-shell"
+        assert receipt["output"] in delivered[0].content
+        before = (runtime.durable.task_facts("r"), list(runtime.events))
+        assert run_task_kernel(runtime.session(), request=runtime.request) == result
+        assert (runtime.durable.task_facts("r"), runtime.events) == before
 
 
-@pytest.mark.parametrize("corruption", ["missing", "call_id", "command"])
-def test_unverified_or_mismatched_approval_never_settles_original_call(tmp_path, corruption):
-    durable = _pending_shell(tmp_path)
-    payload = {"call_id": "original-call", "command": "echo result", "cwd": ".",
-               "ok": True, "exit_code": 0, "model_text": "result", "error_code": "exit", "truncated": False}
-    if corruption == "missing":
-        payload = None
-    else:
-        payload[corruption] = "different"
-    try:
-        with pytest.raises(ValueError, match="shell approval"):
-            recover_effects_for_resume(
-                _deps(durable, payload), session_id="s", run_id="r", project="", task_kind="chat",
-            )
-        assert durable.effect("original-effect").settlement is None
-    finally:
-        durable.close()
+@pytest.mark.parametrize("corruption", ["call_id", "tool_args"])
+def test_mismatched_approval_never_settles_original_call_as_success(tmp_path, corruption):
+    def corrupt(command):
+        command[corruption] = "another-call" if corruption == "call_id" else {"command": "echo changed", "path": "."}
+    with approved_shell(tmp_path, {"ok": True}, command_change=corrupt) as runtime:
+        result = run_task_kernel(runtime.session(), request=runtime.request)
+        assert result.stop_reason == "recovery_failure", result
+        tool = next(effect for effect in runtime.durable.effects("r") if effect.category == "tool_call")
+        assert tool.settlement is None or tool.settlement["status"] != "ok"
+        assert not any(kind == "results" for kind, _ in runtime.events)
+
+
+def test_missing_approval_receipt_preserves_original_pending_effect(tmp_path):
+    with approved_shell(tmp_path, {"ok": True, "exit_code": 0, "status": "exit", "output": "hi"}) as runtime:
+        record = runtime.durable.approval("approval")
+        runtime.outputs._handle_path("s", "r", record.settlement["result_ref"], ".json").unlink()
+        result = run_task_kernel(runtime.session(), request=runtime.request)
+        assert not result.completed
+        tool = next(effect for effect in runtime.durable.effects("r") if effect.category == "tool_call")
+        assert tool.settlement is None
+        assert not any(kind == "results" for kind, _ in runtime.events)

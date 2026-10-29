@@ -3506,10 +3506,10 @@
   "loop/native-budget": {
     "status": "INTENTIONAL_CHANGE",
     "category": "native-receipt-closure",
-    "reason": "Done and final-budget native calls now receive closing receipts; old dangling ids are not reproduced.",
+    "reason": "The final-budget tool receipt answers its original call through acknowledge_tool_results. ApiProvider closes that receipt locally without another generation, so no follow-up call id is fabricated by the probe.",
     "tests": [
+      "tests/test_native_tool_choice_matches_task_lifecycle.py",
       "tests/test_native_delivery.py",
-      "tests/test_kernel_parity_regressions.py",
       "tests/test_kernel_legacy_parity.py"
     ],
     "changelog": "CHANGELOG.md",
@@ -3548,41 +3548,40 @@
       "snapshot": null
     },
     "after": {
+      "result": {
+        "stop_reason": "max_turns",
+        "turns": 1,
+        "checks_passed": false,
+        "checks_ran": false,
+        "changed": false
+      },
       "error": "",
+      "operations": [
+        {
+          "tool": "list_directory",
+          "args": [
+            "."
+          ],
+          "kwargs": {}
+        },
+        {
+          "tool": "read_file",
+          "args": [
+            "a.py"
+          ],
+          "kwargs": {}
+        }
+      ],
       "files": {
         "a.py": "x = 1\n",
         "b.py": "y = 2\n"
       },
       "fresh": 1,
       "handoff_visible": true,
-      "operations": [
-        {
-          "args": [
-            "."
-          ],
-          "kwargs": {},
-          "tool": "list_directory"
-        },
-        {
-          "args": [
-            "a.py"
-          ],
-          "kwargs": {},
-          "tool": "read_file"
-        }
-      ],
+      "snapshot": null,
       "receipt_ids": [
-        "call-1",
-        "call-2"
-      ],
-      "result": {
-        "changed": false,
-        "checks_passed": false,
-        "checks_ran": false,
-        "stop_reason": "max_turns",
-        "turns": 1
-      },
-      "snapshot": null
+        "call-1"
+      ]
     }
   },
   "protocol/coding/coding_writer/json/read_files/paths-numeric-text": {
@@ -5750,8 +5749,16 @@
       "tests/test_kernel_parity_regressions.py"
     ],
     "changelog": "CHANGELOG.md",
-    "before": {"accepted": false, "calls": [], "done": null},
-    "after": {"accepted": true, "calls": [], "done": "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"}
+    "before": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"
+    }
   },
   "protocol/coding/planning_readonly/json/envelope/done-nested": {
     "status": "INTENTIONAL_ANSWER_CONTENT",
@@ -5763,8 +5770,16 @@
       "tests/test_kernel_parity_regressions.py"
     ],
     "changelog": "CHANGELOG.md",
-    "before": {"accepted": false, "calls": [], "done": null},
-    "after": {"accepted": true, "calls": [], "done": "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"}
+    "before": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.py\"}}"
+    }
   },
   "protocol/research/research/json/envelope/done-nested": {
     "status": "INTENTIONAL_ANSWER_CONTENT",
@@ -5776,7 +5791,15 @@
       "tests/test_kernel_parity_regressions.py"
     ],
     "changelog": "CHANGELOG.md",
-    "before": {"accepted": false, "calls": [], "done": null},
-    "after": {"accepted": true, "calls": [], "done": "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium\"}}"}
+    "before": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [],
+      "done": "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium\"}}"
+    }
   }
 }

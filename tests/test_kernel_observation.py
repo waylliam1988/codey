@@ -2,9 +2,9 @@
 
 from types import SimpleNamespace
 
-from codey.operations.task_loop import KernelObservationDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from tests.support.kernel_runtime import KernelObservationDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 
 
 def test_cooperative_provider_cancellation_is_a_stopped_task():

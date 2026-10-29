@@ -271,7 +271,7 @@ def _point_primitive_replace(world: Any, *, before_rename: bool) -> dict:
     return {
         "point": "primitive-replace-pre-rename" if before_rename else "primitive-replace-post-rename",
         "target": str(target),
-        "tmp_glob": ".target.json.*.tmp",
+        "tmp_glob": ".*.tmp",
         "want_content": '{"v":1}' if before_rename else '{"v":2}',
     }
 

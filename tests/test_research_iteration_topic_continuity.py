@@ -109,7 +109,7 @@ def test_continuity_appears_in_prompt_via_new_entry() -> None:
     import tempfile
     from types import SimpleNamespace
 
-    from codey.operations.research_iteration import run_research_iteration
+    from tests.support.kernel_runtime import run_research_iteration
 
     class _CaptureProvider:
         def __init__(self, replies: list[str]) -> None:

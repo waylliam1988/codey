@@ -373,6 +373,41 @@ class ApiProvider:
         return self._exchange(self._codec.encode_results(results), tools, timeout=timeout,
                               expected_window_ref=window_ref, delivery_commit=delivery_commit)
 
+    def _prepare_exchange(self, pending: list[dict[str, Any]],
+                          tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
+        """Replace restored receipt projections when delivering their original result.
+
+        A durable receipt can already appear in a cold protocol view before its
+        delivery effect is admitted. Enrich that same projection with the
+        controller's result context; appending it would answer the call twice.
+        Live transport results have no durable source ID and remain subject to
+        the codec's ordinary duplicate-ID rejection.
+        """
+        def result_id(item: dict[str, Any]) -> object:
+            if item.get("role") == "tool":
+                return item.get("tool_call_id")
+            if item.get("type") == "function_call_output":
+                return item.get("call_id")
+            return None
+
+        history = list(self._messages)
+        unanswered = set(self._codec.pending_calls(history))
+        additions = []
+        seen = set()
+        for item in pending:
+            identity = result_id(item)
+            matches = [index for index, original in enumerate(history)
+                       if identity and result_id(original) == identity]
+            if (identity and identity not in unanswered and identity not in seen and len(matches) == 1
+                    and matches[0] < len(self._durable_source_entry_ids)
+                    and self._durable_source_entry_ids[matches[0]] is not None):
+                history[matches[0]] = item
+            else:
+                additions.append(item)
+            if identity:
+                seen.add(identity)
+        return self._codec.prepare(history, additions, system=self.system_prompt, tools=tools)
+
     def _exchange(self, pending: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
                   *, timeout: float | None = None, text_only: bool = False,
                    expected_window_ref: ProtocolWindowRef | None = None,
@@ -393,8 +428,7 @@ class ApiProvider:
                     raise ValueError("protocol window reference mismatch")
                 generation = self._inflight_generation = self._generation
                 base_revision = self._history_revision
-                candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt,
-                                                 tools=tools)
+                candidate = self._prepare_exchange(pending, tools)
             checkpoints: list[dict[str, Any]] = []
             body = self._generate(candidate, tools, timeout=timeout, checkpoints=checkpoints)
             try:
@@ -465,7 +499,7 @@ class ApiProvider:
             if generation != self._generation:
                 raise api_transport.GenerationUnknownError("generation cancelled; late response discarded")
             if base_revision != self._history_revision:
-                candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt, tools=tools)
+                candidate = self._prepare_exchange(pending, tools)
                 checkpoints = []
             if self._window_ref is not None:
                 self.context_ledger.commit_exchange(
@@ -910,8 +944,7 @@ class ApiProvider:
                 if any(tool not in self._declared_tools for tool in declared_tools):
                     raise ValueError("terminal tools must belong to the previously declared set")
                 pending = self._codec.encode_results(results)
-                candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt,
-                                                 tools=declared_tools)
+                candidate = self._prepare_exchange(pending, declared_tools)
                 if self._window_ref is not None:
                     self.context_ledger.commit_exchange(
                         self._window_ref,
@@ -942,8 +975,7 @@ class ApiProvider:
                 if any(tool not in self._declared_tools for tool in declared_tools):
                     raise ValueError("terminal tools must belong to the previously declared set")
                 pending = self._codec.encode_results(results)
-                candidate = self._codec.prepare(self._messages, pending, system=self.system_prompt,
-                                                 tools=declared_tools)
+                candidate = self._prepare_exchange(pending, declared_tools)
                 self.context_ledger.commit_exchange(
                     window_ref,
                     candidate,

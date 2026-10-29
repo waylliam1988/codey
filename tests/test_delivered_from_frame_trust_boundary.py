@@ -61,8 +61,8 @@ def _frame_with(*rows, run_id: str = "r-trust-boundary"):
 
 class DeliveredFromFrameTrustBoundaryTests(unittest.TestCase):
     def test_forged_audit_does_not_become_trusted(self) -> None:
-        from codey.operations.recovery import delivered_from_frame
         from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
+        from tests.support.receipt_fixtures import delivered_from_frame
 
         row = _safe_row(audit={"workspace_revision": FORGED_REV, "workspace_fingerprint": FORGED_FP})
         delivered = delivered_from_frame(_frame_with(row), effect_scope="task")
@@ -80,9 +80,9 @@ class DeliveredFromFrameTrustBoundaryTests(unittest.TestCase):
         )
 
     def test_frame_payload_never_restores_trusted(self) -> None:
-        from codey.operations.recovery import delivered_from_frame
         from codey.workspace.revision import WorkspaceIdentity
         from tests.recovery_test_helpers import trusted_workspace_pair as _trusted_workspace_from_result
+        from tests.support.receipt_fixtures import delivered_from_frame
 
         legit = WorkspaceIdentity.trusted_pair(2, LEGIT_FP)
         self.assertTrue(legit.trusted)
@@ -97,7 +97,7 @@ class DeliveredFromFrameTrustBoundaryTests(unittest.TestCase):
 
     def test_unsafe_frame_row_fails_closed(self) -> None:
         from codey.operations.kernel_errors import RecoveryFailed
-        from codey.operations.recovery import delivered_from_frame
+        from tests.support.receipt_fixtures import delivered_from_frame
 
         row = _edit_row(audit={"changed": True})
         with self.assertRaises(RecoveryFailed):
@@ -105,8 +105,6 @@ class DeliveredFromFrameTrustBoundaryTests(unittest.TestCase):
 
     def test_all_recovery_entries_share_trust_rule(self) -> None:
         """Every recovery entry must refuse forged audit without kernel provenance."""
-        from codey.operations.kernel_session_recovery import restore_task_session
-        from codey.operations.recovery import delivered_from_frame
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall
@@ -116,6 +114,8 @@ class DeliveredFromFrameTrustBoundaryTests(unittest.TestCase):
         from tests.recovery_test_helpers import (
             trusted_workspace_pair as _trusted_workspace_from_result,
         )
+        from tests.support.receipt_fixtures import delivered_from_frame
+        from tests.support.session_projection import restore_task_session
 
         forged_audit = {"workspace_revision": FORGED_REV, "workspace_fingerprint": FORGED_FP}
         row = _safe_row(audit=forged_audit)

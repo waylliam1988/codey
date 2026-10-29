@@ -69,7 +69,8 @@ def _request_entry_offenders(tree: ast.Module) -> list[int]:
                 forwarded.add(id(node))
     return [node.lineno for node in ast.walk(tree)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-            and node.func.id in {"run", "run_agent"} and id(node) not in forwarded]
+            and node.func.id in {"run", "run_agent"} and id(node) not in forwarded
+            and node.func.id not in {item.name for item in tree.body if isinstance(item, ast.FunctionDef)}]
 
 
 def test_manual_scripts_construct_or_forward_agent_request() -> None:

@@ -104,7 +104,7 @@ class RuntimeMutationLine:
             work_ref = artifact.handle if artifact is not None else None
             proposed = advance_execution(expected, leaf, logical_turn=logical_turn,
                                          work_ref=work_ref, counters=counters)
-            if current == proposed:
+            if replace(current, updated_at=proposed.updated_at) == proposed:
                 return ()
             if current != expected:
                 raise RuntimeEffectError("execution action has a stale operation identity")

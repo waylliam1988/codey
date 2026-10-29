@@ -8,15 +8,17 @@ here from the old controller, without adding another executor or ledger.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 from codey.durable.checkpoint import operation_from_checkpoint
 from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelResult, KernelRunRequest
 from codey.operations.kernel_errors import RecoveryFailed
-from codey.operations.provider_receipts import REQUEST_KIND, json_value, read_provider_artifact, write_provider_artifact
+from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact, write_provider_artifact
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
+from codey.providers.response_record import json_value
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.runtime.core.operation_reducer import (
     ACTION_COMMIT_GENERATION_BOUNDARY,
@@ -36,6 +38,7 @@ from codey.runtime.effects.effect_records import (
     prepare_intent,
 )
 from codey.runtime.effects.replay_policy import ReplayClass
+from codey.runtime.log.session_view import driver_for_state
 from codey.runtime.write.drive import peek_next_action
 
 _METHODS = frozenset({"send", "send_turn", "send_tool_results", "acknowledge_tool_results",
@@ -59,7 +62,7 @@ def prepare_provider_request(
     intent = prepare_intent(sink.session_id, sink.run_id, RuntimeEffectIntent(
         effect_id=new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, sink.run_id),
         effect_category=EFFECT_CATEGORY_PROVIDER_SEND, session_id=sink.session_id, run_id=sink.run_id,
-        phase=sink.phase, provider_id=sink.provider_id, turn=turn,
+        phase=driver_for_state(state), provider_id=sink.provider_id, turn=turn,
         display_ref="closing_acknowledgement" if sink._request_context.get("delivery_purpose") == "closing"
             and method.startswith("acknowledge_tool_results") else method,
         args_digest=compute_args_digest(json.dumps(transport, ensure_ascii=False, sort_keys=True)),
@@ -76,6 +79,8 @@ def prepare_provider_request(
 
 
 def _tools(value: object) -> list[ProviderToolDefinition]:
+    from codey.toolchain.tool_spec import _freeze_schema_value
+
     if not isinstance(value, list):
         raise RuntimeEffectError("frozen provider declarations are not a list")
     tools = []
@@ -84,7 +89,8 @@ def _tools(value: object) -> list[ProviderToolDefinition]:
                 or not isinstance(row["name"], str) or not isinstance(row["description"], str)
                 or not isinstance(row["parameters"], dict)):
             raise RuntimeEffectError("frozen provider declaration is invalid")
-        tools.append(ProviderToolDefinition(row["name"], row["description"], row["parameters"]))
+        tools.append(ProviderToolDefinition(row["name"], row["description"],
+            cast(Mapping[str, object], _freeze_schema_value(row["parameters"]))))
     return tools
 
 
@@ -184,7 +190,16 @@ def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> Any:
 def _execute_provider(sink: Any, provider: Any, intent: RuntimeEffectIntent,
                       method: str, args: list[Any], kwargs: dict[str, Any]) -> Any:
     try:
+        gate_prompt = getattr(provider, "set_attempt_gate_prompt", None)
+        if callable(gate_prompt):
+            gate_prompt(args[0] if method in {"send", "send_turn"} and args else "")
+        result_refs = getattr(provider, "set_result_refs", None)
+        if callable(result_refs):
+            result_refs(tuple(effect.effect_id for effect in sink.durable.effects(sink.run_id)
+                              if effect.category == "tool_call" and effect.settlement is not None))
         reply = getattr(provider, method)(*args, **kwargs)
+        from codey.operations.provider_session import normalize_provider_reply
+        reply = normalize_provider_reply(provider, reply)
     except Exception as exc:
         from codey.providers.error_classification import ContextOverflowError, RequestPrepError
 
@@ -213,11 +228,15 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
         context = KernelContext(session, request)
     except Exception as exc:
         return KernelResult(False, f"controller configuration error: {exc}", 0, "controller_failure")
+    last_decision: dict[str, Any] = {}
+    last_action = ""
     try:
         while True:
             view = context.load_view()
             state = view.state
+            last_decision = context.decision(state) if state.work_ref else {}
             action = rules.next_runtime_action(view, context.decision_inputs(view))
+            last_action = action.kind
             if action.kind == rules.ACTION_RETURN_KERNEL_RESULT:
                 decision = context.decision(state)
                 result = kernel_control.result_from_payload(decision["result"])
@@ -235,14 +254,15 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
     except RecoveryFailed as exc:
         return KernelResult(False, f"recovery failed: {exc}", session.turn, "recovery_failure")
     except Exception as exc:
-        failed = context.load_view().state
-        if failed.work_ref:
-            decision = context.decision(failed)
-            if decision.get("purpose") in {"done", "question"}:
-                original = kernel_control.result_from_payload(decision["result"])
-                return KernelResult(False, f"protocol delivery failed [{type(exc).__name__}]: {exc}",
-                    original.turns, "delivery_pending", proof=original.proof,
-                    delivery="unknown" if getattr(exc, "provider_failure_kind", "") == "submission_uncertain" else "failed")
+        # Reporting a failed commit must not read the failed store again or
+        # mask its error. This is diagnostic data, never an execution fallback.
+        if last_decision.get("purpose") in {"done", "question"}:
+            original = kernel_control.result_from_payload(last_decision["result"])
+            return KernelResult(False, f"protocol delivery failed [{type(exc).__name__}]: {exc}",
+                original.turns, "delivery_pending", proof=original.proof,
+                delivery="unknown" if getattr(exc, "provider_failure_kind", "") == "submission_uncertain" else "failed")
+        if last_action in {rules.ACTION_PREPARE_TURN, rules.ACTION_REDELIVER_SETTLED_BATCH}:
+            return KernelResult(False, f"controller failed [{type(exc).__name__}]: {exc}", session.turn, "controller_failure")
         return _provider_failure(exc, session.turn, propagate=request.observation.propagate_provider_failure)
 
 
@@ -264,7 +284,7 @@ def _execute_kernel_action(context: KernelContext, view: Any, action: Any) -> Ke
         if action.kind == rules.ACTION_SUBMIT_PROVIDER_REQUEST or action.reason == "before_provider_request":
             reply = drive_provider_request(context.sink, context.provider, state.request_ref)
             current = context.load_view().state
-            received = context.sink.load_response(context.session, current.response_ref, window_ref=context.window)
+            received = context.response(current)
             snapshot = context.snapshots.get(received.logical_turn, received.snapshot)
             context.responses[current.response_ref] = replace(received, reply=reply, snapshot=snapshot)
         else:

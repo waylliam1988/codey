@@ -16,8 +16,12 @@ def resolve_shell_approval(durable: Any, outputs: Any, approval_id: str) -> dict
     command = read_approval_command(outputs, record)
     result = outputs.read_json_artifact({"session_id": record.conversation_id, "run_id": record.task_id,
         "handle": result_ref, "sha256": result_digest, "schema_version": 1})
-    if not isinstance(result, dict):
-        raise ValueError("approval result is not an object")
+    if (not isinstance(result, dict) or type(result.get("ok")) is not bool
+            or type(result.get("truncated", False)) is not bool
+            or (result.get("exit_code") is not None and type(result["exit_code"]) is not int)
+            or any(not isinstance(result.get(key, ""), str) for key in ("output", "status"))
+            or (result.get("error") is not None and not isinstance(result["error"], str))):
+        raise ValueError("approval result has invalid receipt fields")
     return {"call_id": str(command.get("call_id") or ""),
         "tool_name": str(command.get("tool_name") or "shell"), "tool_args": command.get("tool_args"),
         "command": str(command.get("command") or ""), "cwd": str(command.get("cwd") or "."),

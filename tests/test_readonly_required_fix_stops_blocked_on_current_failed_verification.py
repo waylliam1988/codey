@@ -4,9 +4,10 @@ from threading import Event
 
 import pytest
 
+from codey.operations.kernel_contracts import KernelResult
+from codey.operations.kernel_control import no_progress_result
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_progress import KernelProgress
-from codey.operations.task_loop import _stop_no_progress
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -49,8 +50,8 @@ def stopped_session(tmp_path, *, task=TASK, writable=False, passing=False, stale
     flag = Event()
     if cancelled:
         flag.set()
-    stopped = _stop_no_progress(progress, [repeated], session, None, None, 7,
-                               propagate=False, stop_flag=flag)
+    assert progress.observe([repeated], session)
+    stopped = KernelResult(False, "stopped", 7, "stopped") if flag.is_set() else no_progress_result(session, 7)
     return stopped, session, project
 
 

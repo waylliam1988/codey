@@ -1,30 +1,22 @@
-"""Fresh-window recovery delivers results without discarding the original task contract."""
-
+"""The same committed result produces the same continuation after restart."""
 import pytest
 
-from codey.operations.kernel_recovery import apply_recovery_first
+from codey.operations.task_loop import run_task_kernel
+from tests.support.kernel_restart import paused_batch
 
 
-@pytest.mark.parametrize("native,changed", [(False, False), (False, True)])
-def test_recovered_results_keep_original_goal_and_allowed_contract(native, changed):
-    prompt = "ORIGINAL_GOAL: verify checkpoint.py\nALLOWED_CONTRACT: read_file, run, done"
-    restored, messages = apply_recovery_first(
-        object(), native, [object()], prompt, None, provider_session_changed=changed,
-        format_results=lambda *args: "ORIGINAL_RESULT: created checkpoint.py",
-        native_tool_messages=lambda *args: [],
-    )
-    assert prompt in restored
-    assert "ORIGINAL_RESULT" in restored
-    assert messages is None
-
-
-def test_native_recovery_rejects_results_without_their_original_window():
-    from codey.operations.kernel_errors import RecoveryFailed
-
-    with pytest.raises(RecoveryFailed, match="no protocol tool results"):
-        apply_recovery_first(
-            object(), True, [object()], "ORIGINAL_GOAL", None,
-            provider_session_changed=True,
-            format_results=lambda *_: "text fallback",
-            native_tool_messages=lambda *_: [],
-        )
+@pytest.mark.parametrize("native", [False, True])
+def test_recovery_keeps_original_goal_contract_results_and_request_sequence(tmp_path, native):
+    traces = []
+    for paused in (False, True):
+        root = tmp_path / str(paused)
+        root.mkdir()
+        with paused_batch(root, native=native, pause=paused) as f:
+            result = run_task_kernel(f.session(), request=f.request)
+            assert result.completed, result
+            assert len(f.executions) == 1
+            assert "ORIGINAL_GOAL" in f.events[0][1]
+            assert "ALLOWED_CONTRACT" in f.events[0][1]
+            assert "ORIGINAL_RESULT" in str(f.events[1])
+            traces.append(f.events)
+    assert traces[0] == traces[1]

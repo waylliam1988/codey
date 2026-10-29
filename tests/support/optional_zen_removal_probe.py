@@ -32,7 +32,6 @@ def probe(root):
     from codey.app.api import api_models_response, provider_catalog_response
     from codey.app.cli import main as cli_main
     from codey.app.context import AppContext
-    from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.providers import local_config
@@ -42,6 +41,7 @@ def probe(root):
     from codey.runs.ledger import RunLedgerStore
     from codey.runs.trace import RunTraceStore
     from codey.storage.ui_state_store import UiStateStore
+    from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
     from tests.support.model_preferences import enable_models
     from tools.local_model_gate_attempts import GateTarget
     from tools.local_model_release_gate import _metadata

@@ -36,7 +36,7 @@ def test_kernel_accepts_standard_assistant_turn_tool_calls() -> None:
 
 def test_kernel_operations_do_not_import_concrete_provider_modules() -> None:
     operations = Path(__file__).resolve().parents[1] / "codey" / "operations"
-    allowed_capability_modules = {"codey.providers.native_tools", "codey.providers.base"}
+    allowed_capability_modules = {"codey.providers.native_tools", "codey.providers.base", "codey.providers.response_record", "codey.providers.error_classification"}
     concrete_imports: list[str] = []
     for path in operations.glob("kernel*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

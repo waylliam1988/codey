@@ -11,9 +11,10 @@ import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations.completion_gate import evaluate
-from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+from codey.operations.task_effects import KernelEffectSink
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.provider_actions import ProviderActions
 from tests.test_session_log_receipt_recovery_preserves_facts import (
     _dirs,
     _gate_context,
@@ -39,7 +40,7 @@ def test_recovery_preserves_facts_and_never_reexecutes(tmp_path, exits, trace):
             try:
                 sink = KernelEffectSink(
                     RuntimeMutationLine(durable=durable),
-                    session_id="s", run_id="r", provider_id="web",
+                    session_id="s", run_id="r", provider_id="local",
                     recovered_batch_id=recovery.recovered_tool_result_batch_id,
                     managed_outputs=ManagedOutputStore(state), durable=durable,
                 )
@@ -49,15 +50,15 @@ def test_recovery_preserves_facts_and_never_reexecutes(tmp_path, exits, trace):
                         raise RuntimeError("provider send failed")
                     return "ack"
 
-                provider = KernelRecordedProvider(SimpleNamespace(send=send), sink)
+                provider = ProviderActions(SimpleNamespace(send=send), sink)
                 if action == "failure":
                     with pytest.raises(RuntimeError, match="provider send failed"):
                         provider.send("original results")
                     # The provider receipt is ``maybe_sent``.  Recovery seals
                     # the unknown task instead of redelivering its batch.
-                    from codey.operations.recovery import recover_effects_for_resume
+                    from tests.support.receipt_fixtures import inspect_receipt_facts
 
-                    result = recover_effects_for_resume(
+                    result = inspect_receipt_facts(
                         SimpleNamespace(
                             state=SimpleNamespace(durable=durable),
                             runtime_mutations=RuntimeMutationLine(durable=durable),
@@ -67,12 +68,20 @@ def test_recovery_preserves_facts_and_never_reexecutes(tmp_path, exits, trace):
                         session_id="s", run_id="r", project=str(project), task_kind="project",
                     )
                     assert result.ok is False
-                    assert durable.task("r").phase == "failed"
+                    assert durable.task("r").phase == "running"
+                    assert any(effect.settlement.get("sent_state") == "maybe_sent"
+                               for effect in durable.effects("r") if effect.settlement is not None)
                     durable.close()
                     assert counts == {"edit": 1, "run": len(exits)}
                     return
                 else:
                     assert provider.send("original results") == "ack"
+                    from codey.operations.generation_boundary import (
+                        GenerationBoundaryRequest,
+                        durable_generation_boundary_callback,
+                    )
+                    durable_generation_boundary_callback(durable=durable, session_id="s", task_id="r", sink=sink)(
+                        GenerationBoundaryRequest("settle"))
             finally:
                 durable.close()
             # After an attempted send, ambiguity forbids automatic redelivery.

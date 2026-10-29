@@ -1,10 +1,10 @@
 """Durable delivery must preserve the observation, not just its preview."""
 
-from codey.operations.recovery import rebuild_settled_tool_result
 from codey.operations.task_effects import KernelEffectSink
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.receipt_fixtures import rebuild_settled_tool_result
 from tests.test_settled_delivery_recovery import _accept_and_mark, _new_log
 
 

@@ -6,8 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.operations.generation_boundary import GenerationBoundaryRequest, GenerationBoundaryResult
-from codey.operations.kernel_protocol import ReceivedProviderTurn
-from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.core.models import ToolCall
 from codey.workspace.context_admission import GhostContextSource
 
 
@@ -39,13 +38,7 @@ class KernelTransportDeps:
     attempt_admit_hints: Callable[[], bool] | None = None
     stop_flag: Any = None
     stagnant_turns: int | None = None
-    delivered: Mapping[str, ToolResult] | None = None
-    start_turn: int | None = None
-    initial_results: list[ToolResult] | None = None
-    provider_session_changed: bool = False
-    initial_turn: ReceivedProviderTurn | None = None
     window_ref: Any = None
-    replayed_result_ids: frozenset[str] = frozenset()
 
 @dataclass(frozen=True)
 class KernelExecutionDeps:

@@ -181,7 +181,7 @@ def test_zen_wrapper_restores_approved_call_before_native_continuation(
         reconcile = DurableTaskScheduler._reconcile
         source, first = inspect.getsourcelines(reconcile)
         snapshot_line = first + next(i for i, line in enumerate(source)
-                                     if line.strip() == 'if current.state.get("cancel_requested"):')
+                                     if line.strip().startswith('if current.state.get("cancel_requested")'))
         settle = DurableSession.settle_approval
 
         def settle_and_signal(self, *args, **kwargs):

@@ -5,17 +5,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.operations.task_loop import (
-    KernelExecutionDeps,
-    KernelObservationDeps,
-    KernelRunRequest,
-    KernelTransportDeps,
-    run_task_kernel,
-)
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolResult
 from tests.support.kernel_protocol_test_helpers import normalize_turn
+from tests.support.kernel_runtime import (
+    KernelExecutionDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 
 POLICY = TaskPolicy(grants=frozenset({"control", "project.write"}))
 CONTENT = "import unittest\n\nclass TestExample(unittest.TestCase):\n\tpass\n"
@@ -107,33 +106,37 @@ def test_shared_kernel_repairs_json_without_executing_malformed_reply(tmp_path):
     assert len(prompts) == 2
 
 
-def test_text_provider_receives_durable_boundary_input_before_next_generation() -> None:
-    prompts: list[str] = []
-    boundaries: list[str] = []
+def test_text_provider_receives_durable_boundary_input_before_next_generation(tmp_path) -> None:
+    from dataclasses import replace
 
-    def send(prompt: str) -> str:
+    from codey.durable.model import SubmissionPlacement
+    from codey.operations.generation_boundary import durable_generation_boundary_callback
+    from tests.durable.test_operation_control_actions import request_for
+    from tests.durable.test_provider_response_receipts import runtime
+
+    durable, _, _, sink = runtime(tmp_path)
+    prompts, boundaries = [], []
+    def send(prompt):
         prompts.append(prompt)
         if len(prompts) == 1:
-            return json.dumps({"tool": "read_file", "args": {"path": "README.md"}})
+            return '{"tool":"read_file","args":{"path":"README.md"}}'
         assert "change direction now" in prompt
         return '{"tool":"done","args":{"summary":"finished"}}'
-
     def read_file(call):
+        durable.admit_input(conversation_id="s", request_id="steer", task_id="steer", text="change direction now",
+            provider_snapshot={}, placement=SubmissionPlacement.QUEUED, mode="steer")
         return ToolResult(ok=True, call=call, model_text="read")
-
-    result = run_task_kernel(
-        TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})), max_turns=3),
-        request=KernelRunRequest(
-            transport=KernelTransportDeps(provider=SimpleNamespace(send=send), run_id="boundary"),
-            execution=KernelExecutionDeps(executors={"read_file": read_file}),
-            observation=KernelObservationDeps(
-                on_boundary=lambda boundary: boundaries.append(boundary) or (
-                    "change direction now" if boundary == "post_tools" else None
-                ),
-            ),
-        ),
-    )
-
-    assert result.stop_reason == "done"
-    assert boundaries == ["post_tools", "final"]
-    assert len(prompts) == 2
+    boundary = durable_generation_boundary_callback(durable=durable, session_id="s", task_id="r", sink=sink)
+    def commit(request):
+        boundaries.append(request.kind)
+        return boundary(request)
+    request = request_for(durable, sink, SimpleNamespace(send=send), executors={"read_file": read_file})
+    request = replace(request, observation=replace(request.observation, on_boundary=commit))
+    try:
+        result = run_task_kernel(TaskSession(policy=TaskPolicy(frozenset({"control", "project.read"})), max_turns=3), request=request)
+        assert result.completed, result
+        assert boundaries == ["post_tools", "final"]
+        assert len(prompts) == 2
+        assert durable.task("steer").state["consumed_by_task_id"] == "r"
+    finally:
+        durable.close()

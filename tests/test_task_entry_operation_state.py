@@ -314,7 +314,8 @@ class CleanRunTerminalTests(unittest.TestCase):
             original_request = TaskSubmission(SESSION, str(project), "Change the module and verify", 6,
                                                False, "deepseek", intent="project")
             record_entry_policy(crashed_state.runtime_mutations, session_id=SESSION, run_id=run_id,
-                                policy=build_task_policy_for_entry(original_request, "project"))
+                                policy=build_task_policy_for_entry(original_request, "project"),
+                                durable=crashed_state.durable)
             crashed_state.runtime_mutations.mark_writer_running(
                 SESSION,
                 run_id,

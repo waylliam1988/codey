@@ -7,12 +7,14 @@ from pathlib import Path
 from typing import Any
 
 from codey.control.protocol import ControlError
+from codey.storage.atomic_io import filesystem_path
 
 DESCRIPTOR = "codey/runtime.json"
 
 
 def package_files(root: Path) -> list[str]:
     """One inventory policy for source publication, wheels and runtime checks."""
+    root = filesystem_path(root)
     files: list[str] = []
     package = root / "codey"
     if package.is_symlink():

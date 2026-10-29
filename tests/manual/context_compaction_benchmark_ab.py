@@ -127,8 +127,8 @@ def install_network_boundary(endpoint, failures=None, timings=None):
 
 def real_task(provider, project):
     from codey.agents.request import AgentRequest
-    from codey.operations.project_adapter import run
     from codey.workspace.revision import WorkspaceRevisionStore
+    from tests.support.kernel_runtime import run_agent as run
     events = []
     result = run(AgentRequest(provider=provider, project=project,
         task='Change only RATE in app.py from 5 to 7, then verify with python -m pytest -q. Do not change tests.',

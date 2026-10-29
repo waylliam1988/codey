@@ -10,20 +10,23 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from codey.storage.managed_outputs import ManagedOutputStore
+
 
 class ProviderNotSentSettlementTests(unittest.TestCase):
     def test_prep_overflow_and_known_transport_refusal_settle_not_sent(self) -> None:
-        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+        from codey.operations.task_effects import KernelEffectSink
         from codey.providers import error_classification as errors
         from codey.providers.api_transport import GenerationNotSentError
         from codey.runtime.effects.effect_records import SENT_STATE_NOT_SENT, RuntimeEffectStore
         from tests.durable_runtime import accept_writer, open_runtime
+        from tests.support.provider_actions import ProviderActions
 
         with tempfile.TemporaryDirectory() as td:
             durable, line = open_runtime(Path(td) / "state", session_id="s1", run_id="r1")
             accept_writer(durable, line, session_id="s1", run_id="r1", project=str(td))
             for exc in (errors.RequestPrepError("prep boom"), errors.ContextOverflowError("full"), GenerationNotSentError("connection refused")):
-                sink = KernelEffectSink(line, session_id="s1", run_id="r1", provider_id="local", durable=durable)
+                sink = KernelEffectSink(line, session_id="s1", run_id="r1", provider_id="local", durable=durable, managed_outputs=ManagedOutputStore(Path(td)))
 
                 class BoomProvider:
                     def __init__(self, failure: Exception) -> None:
@@ -34,7 +37,7 @@ class ProviderNotSentSettlementTests(unittest.TestCase):
 
                 BoomProvider.__name__ = f"BoomProvider_{type(exc).__name__}"
 
-                recorded = KernelRecordedProvider(BoomProvider(exc), sink)
+                recorded = ProviderActions(BoomProvider(exc), sink)
                 with self.assertRaises((errors.RequestPrepError, errors.ContextOverflowError, GenerationNotSentError)):
                     recorded.send("hello")
                 store = RuntimeEffectStore(durable=durable)
@@ -49,20 +52,21 @@ class ProviderNotSentSettlementTests(unittest.TestCase):
                 )
 
     def test_generic_failure_settles_maybe_sent(self) -> None:
-        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+        from codey.operations.task_effects import KernelEffectSink
         from codey.runtime.effects.effect_records import SENT_STATE_MAYBE_SENT, RuntimeEffectStore
         from tests.durable_runtime import accept_writer, open_runtime
+        from tests.support.provider_actions import ProviderActions
 
         with tempfile.TemporaryDirectory() as td:
             durable, line = open_runtime(Path(td) / "state", session_id="s2", run_id="r2")
             accept_writer(durable, line, session_id="s2", run_id="r2", project=str(td))
-            sink = KernelEffectSink(line, session_id="s2", run_id="r2", provider_id="local", durable=durable)
+            sink = KernelEffectSink(line, session_id="s2", run_id="r2", provider_id="local", durable=durable, managed_outputs=ManagedOutputStore(Path(td)))
 
             class BoomProvider:
                 def send(self, prompt, timeout=None):
                     raise RuntimeError("net down")
 
-            recorded = KernelRecordedProvider(BoomProvider(), sink)
+            recorded = ProviderActions(BoomProvider(), sink)
             with self.assertRaises(RuntimeError):
                 recorded.send("hello")
             store = RuntimeEffectStore(durable=durable)

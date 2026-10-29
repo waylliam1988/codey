@@ -63,13 +63,13 @@ def test_production_recovery_restores_version_proof_only_for_same_workspace(tmp_
 
     from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.kernel_provenance import _with_trusted_workspace_state
-    from codey.operations.recovery import delivered_from_frame, recover_effects_for_resume
     from codey.operations.task_effects import KernelEffectSink
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.workspace.revision import WorkspaceRevisionStore
+    from tests.support.receipt_fixtures import delivered_from_frame, inspect_receipt_facts
 
     project = tmp_path / "project"
     project.mkdir()
@@ -85,8 +85,8 @@ def test_production_recovery_restores_version_proof_only_for_same_workspace(tmp_
     )
     durable.claim_task("r")
     durable.start_task("r", state={"task_kind": "project"})
-    durable.advance_task(task_id="r", phase="assistant_intent_committed", state={"task_kind": "project"})
-    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "project"})
+    durable.advance_task(task_id="r", phase="running", state={"task_kind": "project"})
+    durable.advance_task(task_id="r", phase="running", state={"task_kind": "project"})
     mutations = RuntimeMutationLine(durable=durable)
     mutations.accept_operation(
         session_id="s", run_id="r", project=str(project),
@@ -102,7 +102,7 @@ def test_production_recovery_restores_version_proof_only_for_same_workspace(tmp_
     sink.settle("run-effect", True, result=result, exit_code=0)
     if changed:
         file.write_text("changed after verification\n")
-    recovery = recover_effects_for_resume(SimpleNamespace(
+    recovery = inspect_receipt_facts(SimpleNamespace(
         state=SimpleNamespace(durable=durable),
         runtime_mutations=RuntimeMutationLine(durable=durable),
         runtime_effects=RuntimeEffectStore(durable=durable),

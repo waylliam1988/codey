@@ -16,7 +16,7 @@ def test_native_edit_schema_matches_canonical_kernel_replacements() -> None:
     )
     parameters = edit["parameters"]
     properties = parameters["properties"]
-    assert set(properties) == {"path", "content", "replacements"}
+    assert set(properties) == {"path", "content", "replacements", "base_result_ref"}
     replacement = properties["replacements"]["items"]
     assert replacement["properties"] == {
         "old_string": {"type": "string"},

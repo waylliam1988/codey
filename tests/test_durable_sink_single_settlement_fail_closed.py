@@ -27,8 +27,8 @@ class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
         durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                             text="read", provider_snapshot={"provider_id": "local"})
         durable.start_task(run_id, state={})
-        durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={})
-        durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={})
+        durable.advance_task(task_id=run_id, phase="running", state={})
+        durable.advance_task(task_id=run_id, phase="running", state={})
         line = RuntimeMutationLine(durable=durable)
         line.accept_operation(
             session_id=session_id, run_id=run_id, project=str(tmp),
@@ -76,8 +76,8 @@ class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
             durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                                 text="read", provider_snapshot={"provider_id": "local"})
             durable.start_task(run_id, state={})
-            durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={})
-            durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={})
+            durable.advance_task(task_id=run_id, phase="running", state={})
+            durable.advance_task(task_id=run_id, phase="running", state={})
             line = RuntimeMutationLine(durable=durable)
             line.accept_operation(
                 session_id=session_id, run_id=run_id, project=str(tmp),

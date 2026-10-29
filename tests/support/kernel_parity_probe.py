@@ -168,7 +168,9 @@ class ScriptedProvider:
         return self.send_turn("native results", tools)
 
     def acknowledge_tool_results(self, results, declared_tools, timeout=None):
-        return self.send_tool_results(results, [])
+        self.receipts.extend(row.call_id for row in results)
+        from codey.providers.base import AssistantTurn
+        return AssistantTurn(text="closed")
 
 
 def coding_loop(case, legacy):
@@ -183,7 +185,7 @@ def coding_loop(case, legacy):
     if legacy:
         from codey.agents.runner import run
     else:
-        from codey.operations.project_adapter import run
+        from tests.support.kernel_runtime import run_agent as run
     operations = []
     defaults = AgentToolFns()
 
@@ -307,14 +309,28 @@ def research_loop(case, legacy):
                     result = runner.result
                     tools = runner.tools
                 else:
+                    from codey.durable import DurableSession, MemoryDurableStore
                     from codey.operations.research_iteration import run_research_iteration
-
-                    iteration = run_research_iteration(SimpleNamespace(state=state, knowledge_store=store), provider=provider,
+                    from codey.runtime.write.mutation_line import RuntimeMutationLine
+                    from codey.storage.managed_outputs import ManagedOutputStore
+                    durable = DurableSession(MemoryDurableStore())
+                    run_id = "parity-" + hashlib.sha256(case["id"].encode()).hexdigest()[:12]
+                    durable.admit_input(conversation_id="s", request_id=run_id, task_id=run_id,
+                        text="How is helium obtained?", provider_snapshot={})
+                    durable.claim_task(run_id)
+                    durable.start_task(run_id, state=dict(durable.task(run_id).state))
+                    mutations = RuntimeMutationLine(durable=durable)
+                    mutations.accept_operation(session_id="s", run_id=run_id, provider_id="local",
+                        turn_budget=case.get("max_turns", 6), max_repair_rounds=1, task_kind="research")
+                    state.durable = durable
+                    iteration = run_research_iteration(SimpleNamespace(state=state, knowledge_store=store,
+                        runtime_mutations=mutations, managed_outputs=ManagedOutputStore(Path(td))), provider=provider,
                         session_id="s", project="", task="How is helium obtained?", max_turns=case.get("max_turns", 6),
-                        on_event=lambda _e: None, stop_flag=flag, provider_id="local", run_id=case["id"], chat_handoff="",
+                        on_event=lambda _e: None, stop_flag=flag, provider_id="local", run_id=run_id, chat_handoff="",
                         trace_recorder=None, search=Search())
                     result = iteration.result
                     tools = iteration.tools
+                    durable.close()
             # Exclude generated ids and timestamps, retain note contents and
             # source/evidence facts. A note disappearing is never normalized away.
             notes = [store.read_note(key) for key in tools.created_ids]

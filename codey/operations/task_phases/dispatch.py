@@ -44,7 +44,7 @@ from codey.operations.research_flow import (
 )
 from codey.operations.result import ModeOutcome
 from codey.operations.review_flow import ReviewFlowDeps, run_review_mode
-from codey.operations.task_entry import build_task_policy_for_entry, run_entry_kernel, run_task_mode
+from codey.operations.task_entry import build_task_policy_for_entry, run_task_mode
 from codey.operations.task_state import TaskState
 from codey.providers.capabilities import rank_providers
 from codey.research.search_factory import default_research_search_provider
@@ -67,9 +67,6 @@ def connect_and_build_frame(
     trace_sink: FailOpenPromptTrace,
     hooks: RunHooks,
     project_config_result: ProjectConfigLoadResult,
-    recovered_tool_outcomes: tuple[Any, ...] = (),
-    recovered_tool_result_batch_id: str = "",
-    settled_tool_outcomes: tuple[Any, ...] = (),
 ) -> tuple[RunFrame, Any, str]:
     """Run provider preflight and build the RunFrame; returns (frame, provider, provider_id)."""
     supervisor = state.providers.supervisor
@@ -144,9 +141,6 @@ def connect_and_build_frame(
         preflight_tried=preflight.tried,
         preflight_switches=preflight.switches,
         trace=trace,
-        recovered_tool_outcomes=recovered_tool_outcomes,
-        recovered_tool_result_batch_id=recovered_tool_result_batch_id,
-        settled_tool_outcomes=settled_tool_outcomes,
     )
     return frame, provider, provider_id
 
@@ -245,7 +239,7 @@ def dispatch_run_mode(
         source_run_id = previous or frame.run_id
         durable_session = getattr(getattr(deps, "state", None), "durable", None)
         durable = durable_task_for(durable_session, source_run_id)
-        recovering = bool(previous or frame.recovered_tool_outcomes or frame.settled_tool_outcomes)
+        recovering = durable is not None and bool(durable.task(source_run_id).state.get("task_policy"))
         if previous or recovering:
             frame.entry_policy = policy_from_durable_task(durable, task_id=source_run_id)
         else:
@@ -258,8 +252,6 @@ def dispatch_run_mode(
     # review stay as workflow strategies. Auto's first answer is gated;
     # tool continuations enter the same kernel with the original policy.
     _early = (task_kind or "").strip().lower()
-    if _early != "project" and (frame.recovered_tool_outcomes or frame.settled_tool_outcomes):
-        return run_entry_kernel(frame, work, hooks, deps, task_kind=task_kind, config_result=config_result)
     if _early == "hybrid":
         return run_task_mode(
             frame, work, hooks, deps,

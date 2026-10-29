@@ -3,7 +3,6 @@ from types import SimpleNamespace
 
 from codey.durable import DurableSession, EffectRecord, MemoryDurableStore
 from codey.durable.model import thaw_json
-from codey.operations.recovery import recover_effects_for_resume
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
@@ -13,6 +12,7 @@ from codey.runtime.effects.effect_records import (
 )
 from codey.runtime.effects.replay_policy import ReplayClass
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from tests.support.receipt_fixtures import inspect_receipt_facts
 
 
 def test_missing_operation_preserves_unconfirmed_provider_facts() -> None:
@@ -43,7 +43,7 @@ def test_missing_operation_preserves_unconfirmed_provider_facts() -> None:
         ),
     )
 
-    result = recover_effects_for_resume(
+    result = inspect_receipt_facts(
         SimpleNamespace(
             state=SimpleNamespace(durable=durable),
             runtime_mutations=None,
@@ -107,7 +107,7 @@ def test_missing_operation_does_not_hide_an_already_unknown_provider_outcome() -
         ),
     )
 
-    result = recover_effects_for_resume(
+    result = inspect_receipt_facts(
         SimpleNamespace(
             state=SimpleNamespace(durable=durable),
             runtime_mutations=None,
@@ -146,7 +146,7 @@ def test_missing_operation_does_not_synthesize_an_unsafe_tool_outcome(tmp_path: 
         ),
     )
 
-    result = recover_effects_for_resume(
+    result = inspect_receipt_facts(
         SimpleNamespace(
             state=SimpleNamespace(durable=durable),
             runtime_mutations=None,
@@ -187,7 +187,7 @@ def test_task_policy_is_recovered_from_checkpoint_and_cannot_be_replaced() -> No
 def test_production_recovery_requires_an_admitted_durable_task(tmp_path: Path) -> None:
     durable = DurableSession(MemoryDurableStore())
     mutations = RuntimeMutationLine(durable=durable)
-    result = recover_effects_for_resume(
+    result = inspect_receipt_facts(
         SimpleNamespace(
             state=SimpleNamespace(durable=durable),
             runtime_mutations=mutations,
@@ -216,7 +216,7 @@ def test_recovery_never_uses_runtime_projection_as_authority(tmp_path: Path) -> 
     )
     mutations.mark_writer_running("conversation-1", "task-1", provider_id="local")
 
-    result = recover_effects_for_resume(
+    result = inspect_receipt_facts(
         SimpleNamespace(
             state=SimpleNamespace(durable=durable),
             runtime_mutations=mutations,
@@ -250,7 +250,7 @@ def test_pending_durable_tool_intent_cannot_be_overruled_by_idle_runtime_log(tmp
             ).to_payload(),
         ),
     )
-    result = recover_effects_for_resume(
+    result = inspect_receipt_facts(
         SimpleNamespace(
             state=SimpleNamespace(durable=durable),
             runtime_mutations=None,
@@ -291,7 +291,7 @@ def test_safe_tool_requires_operation_and_delivery_facts_before_replay(tmp_path:
         ),
     )
 
-    result = recover_effects_for_resume(
+    result = inspect_receipt_facts(
         SimpleNamespace(
             state=SimpleNamespace(durable=durable),
             runtime_mutations=None,
@@ -344,7 +344,7 @@ def test_safe_tool_recovery_blocks_an_intent_unbound_to_the_operation(tmp_path: 
     )
     mutations.mark_writer_running("conversation-1", "task-1", provider_id="local")
 
-    result = recover_effects_for_resume(
+    result = inspect_receipt_facts(
         SimpleNamespace(
             state=SimpleNamespace(durable=durable),
             runtime_mutations=None,
@@ -413,19 +413,20 @@ def test_safe_tool_recovery_reuses_existing_runtime_intent_and_batch(tmp_path: P
         managed_outputs=None,
     )
 
-    result = recover_effects_for_resume(
+    result = inspect_receipt_facts(
         deps, session_id="conversation-1", run_id="task-1",
         project=str(project), task_kind="project",
     )
 
     assert result.ok is True
     assert result.recovered_tool_result_batch_id == "batch-existing"
-    assert len(result.recovered_tool_outcomes) == 1
+    assert result.recovered_tool_outcomes == ()
     projections = RuntimeEffectStore(durable=durable).load_effects("conversation-1", "task-1")
     assert [item.intent.effect_id for item in projections] == ["effect-1"]
-    assert projections[0].settlement is not None
-    assert projections[0].settlement.replay_count == 1
-    assert projections[0].settlement.replayed_from_effect_id == "effect-1"
+    assert projections[0].settlement is None
+    from codey.runtime.write.drive import peek_next_action
+    action = peek_next_action(durable, session_id="conversation-1", run_id="task-1")
+    assert action.kind == "replay_safe_tool_batch" and action.delivery_batch_id == "batch-existing"
 
 
 def test_mixed_unknown_effects_preserve_the_unsettled_member_without_replay(
@@ -475,7 +476,7 @@ def test_mixed_unknown_effects_preserve_the_unsettled_member_without_replay(
     )
     durable.settle_unknown_effect("task-1", "effect-unsafe")
 
-    result = recover_effects_for_resume(
+    result = inspect_receipt_facts(
         SimpleNamespace(
             state=SimpleNamespace(durable=durable),
             runtime_mutations=None,

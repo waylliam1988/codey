@@ -6,17 +6,17 @@ from threading import Event
 
 import pytest
 
-from codey.operations.task_loop import (
-    KernelExecutionDeps,
-    KernelRunRequest,
-    KernelTransportDeps,
-    run_task_kernel,
-)
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import api_transport
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
+from tests.support.kernel_runtime import (
+    KernelExecutionDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 
 
 class _Response:
@@ -104,11 +104,11 @@ def test_gate_records_the_actual_auto_request(monkeypatch, tmp_path):
     target = GateTarget("http://model.test/v1", "test", 32768, 8192, 12000)
     provider = RecordingProvider(target, tmp_path)
     provider.send_turn("finish", TOOLS)
-    rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text().splitlines()]
+    rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
     assert rows[0]["payload"] == wire[0]
     assert rows[0]["payload"]["tool_choice"] == "auto"
     provider.acknowledge_tool_results([ProviderToolResult('c1', 'OK: done accepted')], TOOLS)
-    rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text().splitlines()]
+    rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
     requests = [row["payload"] for row in rows if row["type"] == "request"]
     assert requests == wire
     assert len(requests) == 1
@@ -172,7 +172,7 @@ def test_explicit_required_selection_still_uses_native_done(monkeypatch):
     assert len(seen) == 1
     assert seen[0]["tool_choice"] == "required"
     assert any("Use the provided native tool schemas" in item.get("content", "") for item in seen[0]["messages"])
-    assert any("wait for its result" in item.get("content", "") for item in seen[0]["messages"])
+    assert any("native tool calls" in item.get("content", "") for item in seen[0]["messages"])
     assert provider.context_ledger.view[-1]["tool_call_id"] == "c1"
     provider._codec.validate_view(provider.context_ledger.view)
 
@@ -234,8 +234,9 @@ def test_rejected_reply_at_last_turn_still_closes_the_followup_id(monkeypatch, t
             return _Response(_call(first_tool, args, "early"))
         if len(seen) == 2:
             assert payload["tool_choice"] == "auto"  # Rejected done remains active.
-            assert payload["messages"][-1]["tool_call_id"] == "early"
-            assert payload["messages"][-1]["content"].startswith("ERROR:")
+            receipts = [item for item in payload["messages"] if item.get("role") == "tool"]
+            assert receipts[-1]["tool_call_id"] == "early"
+            assert receipts[-1]["content"].startswith("ERROR:")
             return _Response(_call("edit", {"path": "a.py", "content": "x = 2\n"}, "late-edit"))
         raise AssertionError("terminal closure must not submit another request")
 

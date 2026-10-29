@@ -15,20 +15,20 @@ def _run(root: Path, boundary: str = "", resume: bool = False):
     from codey.durable import DurableSession, SQLiteDurableStore
     from codey.durable.checkpoint import operation_from_checkpoint
     from codey.operations.generation_boundary import durable_generation_boundary_callback
-    from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
-    from codey.operations.task_loop import (
-        KernelExecutionDeps,
-        KernelObservationDeps,
-        KernelRunRequest,
-        KernelTransportDeps,
-        run_task_kernel,
-    )
+    from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.runtime.core.models import ToolResult
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
+    from tests.support.kernel_runtime import (
+        KernelExecutionDeps,
+        KernelObservationDeps,
+        KernelRunRequest,
+        KernelTransportDeps,
+        run_task_kernel,
+    )
 
     durable = DurableSession(SQLiteDurableStore(root / "state.sqlite"))
     if resume:
@@ -83,7 +83,7 @@ def _run(root: Path, boundary: str = "", resume: bool = False):
     try:
         result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control", "project.read"})), max_turns=4),
             request=KernelRunRequest(transport=KernelTransportDeps(
-                provider=KernelRecordedProvider(Provider(), sink), run_id="r", provider_id="local"),
+                provider=Provider(), run_id="r", provider_id="local"),
                 execution=KernelExecutionDeps(executors={"read_file": execute}),
                 observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
                     durable=durable, session_id="s", task_id="r", sink=sink))))

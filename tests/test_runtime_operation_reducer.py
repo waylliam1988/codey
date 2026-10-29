@@ -188,11 +188,11 @@ class RuntimeOperationReducerTests(unittest.TestCase):
     def test_non_pending_leaves_continue_or_terminal(self) -> None:
         expected = {
             LEAF_ACCEPTED: ACTION_CONTINUE,
-            LEAF_WRITER_RUNNING: ACTION_CONTINUE,
+            LEAF_WRITER_RUNNING: "prepare_turn",
             LEAF_WRITER_SETTLED: ACTION_CONTINUE,
             LEAF_COMPLETION_PROOF_RECORDED: ACTION_CONTINUE,
             LEAF_REPAIR_CONTEXT_ADMITTED: ACTION_CONTINUE,
-            LEAF_REPAIR_RUNNING: ACTION_CONTINUE,
+            LEAF_REPAIR_RUNNING: "prepare_turn",
             LEAF_REPAIR_SETTLED: ACTION_CONTINUE,
             LEAF_TERMINAL: ACTION_TERMINAL,
         }

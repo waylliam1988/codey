@@ -1,12 +1,4 @@
-"""provider.name fallback is allowed only without durable mutations.
-
-Contract: durable paths require an explicit provider_id; the legacy
-provider.name fallback survives only for non-durable (no runtime_mutations)
-compat runs where nothing is persisted.
-
-Lock: empty provider_id + mutations raises explicit provider_id error;
-empty provider_id without mutations completes via fallback.
-"""
+"""Missing durable resources or provider identity always fail closed."""
 from __future__ import annotations
 
 import tempfile
@@ -52,22 +44,22 @@ class ProviderIdFallbackOnlyWithoutMutationsTests(unittest.TestCase):
                 )
             self.assertIn("provider_id", str(cm.exception))
 
-    def test_empty_provider_id_without_mutations_completes_via_fallback(self) -> None:
+    def test_empty_provider_id_without_mutations_is_rejected(self) -> None:
         from codey.agents.request import AgentRequest
         from codey.operations.project_adapter import run as project_run
 
-        with tempfile.TemporaryDirectory() as td:
-            result = project_run(
-                AgentRequest(
-                    provider=_P(),  # type: ignore[arg-type]
-                    provider_id="",
-                    project=Path(td) / "proj",
-                    task="hi",
-                    session_id="s1",
-                    run_id="r1",
-                )
+        with tempfile.TemporaryDirectory() as td, self.assertRaises(ValueError):
+            project_run(
+            AgentRequest(
+                provider=_P(),  # type: ignore[arg-type]
+                provider_id="",
+                project=Path(td) / "proj",
+                task="hi",
+                session_id="s1",
+                run_id="r1",
             )
-            self.assertEqual(result.stop_reason, "done")
+            )
+
 
 
 if __name__ == "__main__":

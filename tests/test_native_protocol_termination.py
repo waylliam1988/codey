@@ -8,15 +8,15 @@ from __future__ import annotations
 
 from unittest import mock
 
-from codey.operations.task_loop import (
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
+from codey.providers.base import AssistantTurn, ProviderToolCall
+from tests.support.kernel_runtime import (
     KernelExecutionDeps,
     KernelRunRequest,
     KernelTransportDeps,
     run_task_kernel,
 )
-from codey.operations.task_session import TaskSession
-from codey.policies.task_policy import TaskPolicy
-from codey.providers.base import AssistantTurn, ProviderToolCall
 
 
 class _ThresholdProvider:

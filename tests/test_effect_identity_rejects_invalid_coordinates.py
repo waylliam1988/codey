@@ -3,10 +3,10 @@
 import pytest
 
 from codey.operations.kernel_execution import execute_turn
-from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps, run_task_kernel
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall
+from tests.support.kernel_runtime import KernelTransportDeps
 
 
 @pytest.mark.parametrize("value", ["invalid", "1", 1.0, True, False, None, -1])
@@ -38,14 +38,6 @@ def test_invalid_resume_turn_is_rejected_before_any_provider_send(value):
         def send(self, *args, **kwargs):
             pytest.fail("invalid resume identity must not reach the provider")
 
-    session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
-    result = run_task_kernel(
-        session,
-        request=KernelRunRequest(
-            transport=KernelTransportDeps(provider=Provider(), start_turn=value),
-        ),
-    )
-    assert result.completed is False
-    assert result.stop_reason == "controller_failure"
-    assert "nonnegative integer" in result.summary
-    assert session.executed == {}
+    # Resume coordinates come exclusively from the operation checkpoint.
+    with pytest.raises(TypeError, match="start_turn"):
+        KernelTransportDeps(provider=Provider(), start_turn=value)

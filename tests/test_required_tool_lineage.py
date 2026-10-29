@@ -57,9 +57,9 @@ def runtime(tmp_path, request):
 
 
 def _execute(runtime, items, native, *, start=1, stop=None, on_event=None):
-    from codey.operations.task_effects import KernelRecordedProvider
+    from tests.support.provider_actions import ProviderActions
 
-    delivery = KernelRecordedProvider(SimpleNamespace(send=lambda _: "observed"), runtime.sink)
+    delivery = ProviderActions(SimpleNamespace(send=lambda _: "observed"), runtime.sink)
     results = []
     for turn, item in enumerate(items, start):
         snapshot = build_turn_snapshot(runtime.state, native=native)
@@ -84,11 +84,12 @@ def _execute(runtime, items, native, *, start=1, stop=None, on_event=None):
 
 def _restart(runtime, *, expected_ok=True):
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.operations.kernel_session_recovery import restore_task_session
-    from codey.operations.recovery import policy_from_durable_task, recover_effects_for_resume
+    from codey.operations.recovery import policy_from_durable_task
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from tests.support.receipt_fixtures import inspect_receipt_facts
+    from tests.support.session_projection import restore_task_session
 
     runtime.mutations.durable.close()
     durable = DurableSession(SQLiteDurableStore(runtime.storage / "durable.sqlite3"))
@@ -98,7 +99,7 @@ def _restart(runtime, *, expected_ok=True):
         managed_outputs=runtime.managed, workspace_revisions=runtime.revisions)
     policy = policy_from_durable_task(durable, task_id="r")
     assert policy == runtime.state.policy
-    recovered = recover_effects_for_resume(deps, session_id="s", run_id="r", project=str(runtime.project),
+    recovered = inspect_receipt_facts(deps, session_id="s", run_id="r", project=str(runtime.project),
                                            task_kind="project")
     assert recovered.ok is expected_ok, recovered
     fresh = TaskSession(policy=policy, project=str(runtime.project), verification_forbidden=True)

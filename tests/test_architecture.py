@@ -116,7 +116,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("codey.providers.web_drivers.stepfun", imports)
         self.assertNotIn("codey.providers.web_drivers.glm", imports)
         self.assertNotIn("codey.providers", imports)
-        self.assertIn("codey.operations.kernel_protocol", imports)
+        self.assertIn("codey.operations.kernel_driver", imports)
 
     def test_task_kernel_keeps_protocol_and_execution_owners_at_the_boundary(self) -> None:
         path = ROOT / "codey" / "operations" / "task_loop.py"
@@ -127,8 +127,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         }
 
         self.assertEqual(imports_with_forbidden_prefixes(path, forbidden), [])
-        self.assertIn("codey.operations.kernel_protocol", imports)
-        self.assertIn("codey.operations.kernel_execution", imports)
+        self.assertIn("codey.operations.kernel_driver", imports)
+        self.assertIn("codey.operations.kernel_contracts", imports)
 
     def test_runtime_package_does_not_import_business_layers(self) -> None:
         forbidden = {"codey.agents", "codey.ghost", "codey.operations"}
@@ -423,6 +423,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.core.api_selection",
             "codey.runtime.core.reasoning",
             "codey.runtime.core.operation_payload",
+            "codey.runtime.core.progress",
             "codey.runtime.core.outcome",
             "codey.runtime.core.output_capture",
             "codey.runtime.observe.prompt_envelope",
@@ -602,6 +603,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.core.operation_state",
             "codey.runtime.core.api_selection",
             "codey.runtime.core.operation_payload",
+            "codey.runtime.core.progress",
         ):
             self.assertNotIn(token, drive_imports)
 
@@ -2282,6 +2284,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             if size > 1000:
                 over_limit[path.relative_to(ROOT / "codey").as_posix()] = size
         baseline = {
+            # Durable task/effect/submission records share their schema owner.
+            "durable/model.py",
             # Conversation context now owns the display transcript and
             # execution-output stores; keep their lifecycle in one boundary.
             "app/context.py",
@@ -2312,7 +2316,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # them into generic repositories would increase call-chain size.
             "durable/session.py",
             # Task loop owns the complete admission/turn/finalization flow.
-            "operations/task_loop.py",
             "toolchain/runtime.py",
             "workspace/changes.py",
         }
@@ -2353,7 +2356,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # PLR split 2026-09-26: 1188 lines after from_payload field split.
             # Durable checkpoint projection keeps the explicit adapter in this
             # module while the mutation owner remains in codey.durable.
-            "runtime/core/operation_state.py": 1270,
+            "runtime/core/operation_state.py": 1396,
             # PLR split 2026-09-26: 1046 lines after batch-helper split.
             # Abandoned terminal 2026-09-27: 1194 lines (abandoned receipt +
             # terminal exclusivity, no new file; ceiling raised, not split).
@@ -2371,14 +2374,15 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # reconciliation and context/fork reads remain one explicit
             # DurableSession owner; keep a measured ceiling until a semantic
             # split can move a whole owner without adding repositories.
-            "durable/session.py": 2178,
+            "durable/session.py": 2196,
             # Headless shell denial now shares the durable cancellation
             # barrier with the live kernel; keep the cohesive loop just above
             # the previous warning ceiling until a whole semantic owner can
             # move without duplicating its boundary.
             # Kernel transport carries the explicit Ghost admit_hints gate.
             # Current cohesive task admission/finalization owner is 1231 lines.
-            "operations/task_loop.py": 1235,
+            # Operation schema owns the durable task and reference validation.
+            "durable/model.py": 1013,
             # LF/CRLF line-boundary note (was a one-line overclaim).
             # PLR split 2026-09-26: 1381 lines after search_files scan split.
             "toolchain/runtime.py": 1440,

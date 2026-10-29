@@ -10,18 +10,12 @@ from __future__ import annotations
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from codey.operations import kernel_transport
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
-from codey.operations.kernel_recovery import apply_recovery_first
-from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
-from codey.operations.task_loop import (
-    KernelExecutionDeps,
-    KernelObservationDeps,
-    KernelRunRequest,
-    KernelTransportDeps,
-    run_task_kernel,
-)
+from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import api_transport
@@ -31,6 +25,14 @@ from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.kernel_runtime import (
+    KernelExecutionDeps,
+    KernelObservationDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 
 
 class FakeStructuredProvider:
@@ -82,8 +84,8 @@ def _effect_harness(tmp_path: Path, session_id: str, run_id: str):
     durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                         text="native", provider_snapshot={"provider_id": "local"})
     durable.start_task(run_id, state={})
-    durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={})
-    durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={})
+    durable.advance_task(task_id=run_id, phase="running", state={})
+    durable.advance_task(task_id=run_id, phase="running", state={})
     line = RuntimeMutationLine(durable=durable)
     line.accept_operation(
         session_id=session_id,
@@ -95,7 +97,7 @@ def _effect_harness(tmp_path: Path, session_id: str, run_id: str):
         task_kind="project",
     )
     line.mark_writer_running(session_id, run_id, provider_id="local")
-    sink = KernelEffectSink(line, session_id=session_id, run_id=run_id, provider_id="local", durable=durable)
+    sink = KernelEffectSink(line, session_id=session_id, run_id=run_id, provider_id="local", durable=durable, managed_outputs=ManagedOutputStore(Path(tmp_path)))
     return durable, line, sink
 
 
@@ -113,7 +115,7 @@ def test_native_delivery_records_effect_and_batch(tmp_path: Path) -> None:
     assert tools_from_specs(snapshot.frozen_specs)
     names = {t.name for t in tools_from_specs(snapshot.frozen_specs)}
     assert {"read_file", "done"} <= names
-    recorded = KernelRecordedProvider(provider, sink)
+    recorded = provider
     with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
         result = run_task_kernel(
             session,
@@ -305,7 +307,7 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
 
     provider = StrictOverflowProvider()
     log, _line, sink = _effect_harness(tmp_path, "sess-native-1", "run-native-1")
-    recorded = KernelRecordedProvider(provider, sink)
+    recorded = provider
     session = TaskSession(
         policy=_native_policy(), task_kind="project", project=str(tmp_path), max_turns=3,
     )
@@ -349,53 +351,46 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
 
 def test_recovered_native_delivery_marks_delivered(tmp_path: Path) -> None:
     """Recovered results are delivered natively before new model calls."""
-    from codey.operations import kernel_prompt as _prompt
+    from codey.durable.checkpoint import operation_from_checkpoint
+    from codey.operations.generation_boundary import durable_generation_boundary_callback
+
+    class Crash(BaseException):
+        pass
 
     (tmp_path / "app.py").write_text("hello\n", encoding="utf-8")
-    session = _native_session(tmp_path)
-    pending = [
-        ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "app.py"}, call_id="c1"), model_text="hello"),
-    ]
-    messages = kernel_transport._native_tool_results(pending, session)
-    assert len(messages) == 1 and messages[0].call_id == "c1"
-    prompt, recovered = apply_recovery_first(
-        session,
-        True,
-        pending,
-        "BASE",
-        None,
-        provider_session_changed=False,
-        format_results=_prompt._format_results,
-        native_tool_messages=kernel_transport._native_tool_results,
-    )
-    assert recovered == messages
-    provider = FakeStructuredProvider([
-        AssistantTurn(text="", tool_calls=(ProviderToolCall(id="d", name="done", arguments={"summary": "ok"}),)),
-        AssistantTurn(text="ack"),
-    ])
-    session2 = _native_session(tmp_path)
-    with mock.patch("codey.operations.kernel_transport.provider_uses_native", return_value=True):
-        result = run_task_kernel(
-            session2,
-            request=KernelRunRequest(
-                transport=KernelTransportDeps(
-                    provider=provider,
-                    run_id="r-recovered-1",
-                    effect_scope="task",
-                    provider_id="local",
-                    user_task="read app",
-                    context_text="",
-                    initial_results=pending,
-                ),
-                execution=KernelExecutionDeps(
-                    executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
-                    project_path=tmp_path,
-                ),
-            ),
-        )
-    assert result.stop_reason == "done"
-    assert provider.tool_results_seen
-    assert provider.tool_results_seen[0][0].call_id == "c1"
+    durable, line, sink = _effect_harness(tmp_path, "s", "r")
+    first = FakeStructuredProvider([AssistantTurn(tool_calls=(ProviderToolCall("c1", "read_file", {"path": "app.py"}),))])
+
+    def request(provider):
+        return KernelRunRequest(transport=KernelTransportDeps(provider=provider, provider_id="local", run_id="r"),
+            execution=KernelExecutionDeps(project_path=tmp_path, executors={"read_file": lambda call: ToolResult(call, "hello", ok=True)}),
+            observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
+                durable=durable, session_id="s", task_id="r", sink=sink)))
+
+    def committed(*_args):
+        if operation_from_checkpoint(durable.task("r"), "s").leaf == "tool_delivery_pending":
+            raise Crash()
+
+    unsubscribe = durable.subscribe_commits(committed)
+    try:
+        with pytest.raises(Crash):
+            run_task_kernel(_native_session(tmp_path), request=request(first))
+        unsubscribe()
+        provider = FakeStructuredProvider([
+            AssistantTurn(tool_calls=(ProviderToolCall("d", "done", {"summary": "ok"}),)), AssistantTurn(text="ack")])
+        resumed = request(provider)
+        from dataclasses import replace
+        resumed = replace(resumed, execution=replace(resumed.execution,
+            executors={"read_file": lambda call: pytest.fail("settled tool re-executed")}))
+        result = run_task_kernel(_native_session(tmp_path), request=resumed)
+        assert result.completed, result
+        assert not provider.sent_prompts
+        assert provider.tool_results_seen[0][0].call_id == "c1"
+        assert "hello" in provider.tool_results_seen[0][0].content
+    finally:
+        unsubscribe()
+        durable.close()
+
 
 def test_native_success_leaves_no_pending_context_rows(tmp_path: Path) -> None:
     """Successful native delivery leaves no pending chain: done closes cleanly."""
@@ -657,8 +652,8 @@ def _delivery_harness(tmp_path: Path):
     durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                         text="delivery", provider_snapshot={"provider_id": "local"})
     durable.start_task(run_id, state={})
-    durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={})
-    durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={})
+    durable.advance_task(task_id=run_id, phase="running", state={})
+    durable.advance_task(task_id=run_id, phase="running", state={})
     line = RuntimeMutationLine(durable=durable)
     line.accept_operation(
         session_id=session_id, run_id=run_id, project=str(tmp_path),
@@ -695,8 +690,8 @@ def _proof_harness(tmp_path: Path, tag: str):
     durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                         text="proof", provider_snapshot={"provider_id": "local"})
     durable.start_task(run_id, state={})
-    durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={})
-    durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={})
+    durable.advance_task(task_id=run_id, phase="running", state={})
+    durable.advance_task(task_id=run_id, phase="running", state={})
     line = RuntimeMutationLine(durable=durable)
     line.accept_operation(
         session_id=session_id, run_id=run_id, project=str(tmp_path),

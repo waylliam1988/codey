@@ -91,7 +91,7 @@ class ProviderAdapter:
             "acknowledge_tool_results",
             # Window-bound native delivery must use the same durable provider
             # effect path as ordinary sends.  Leaving these as raw delegated
-            # methods bypasses KernelRecordedProvider and leaves the runtime
+            # methods bypasses the adapter's normalization and leaves the runtime
             # operation in tool_delivery_pending after recovery.
             "send_tool_results_bound",
             "acknowledge_tool_results_bound",

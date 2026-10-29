@@ -21,7 +21,7 @@ from codey.agents.request import AgentRequest  # noqa: E402
 from codey.app.context import AppContext  # noqa: E402
 from codey.operations.ghost_context import ghost_control_enabled  # noqa: E402
 from codey.operations.project_adapter import _project_context, _project_ghost_sources  # noqa: E402
-from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider  # noqa: E402
+from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import (  # noqa: E402
     KernelExecutionDeps,
     KernelRunRequest,
@@ -38,6 +38,7 @@ from codey.runtime.effects.effect_records import RuntimeEffectStore  # noqa: E40
 from codey.utils.refs import digest_text  # noqa: E402
 from codey.workspace.context_admission import GhostAdmissionResult, admit_ghost_context, request_scope  # noqa: E402
 from codey.workspace.context_epoch import ContextEpoch, context_epoch_id  # noqa: E402
+from tests.support.provider_actions import ProviderActions  # noqa: E402
 
 PLACEMENTS = ("kernel", "preparation", "attempt")
 DECLARED_PLACEMENT = "attempt_declared_json"
@@ -279,14 +280,14 @@ def probe(directory, project, *, protocol, placement, case, durable_effects=Fals
                     task_state={"task_kind": "project"},
                 )
                 durable.start_task(run_id, state={"task_kind": "project"})
-                durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={"task_kind": "project"})
-                durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={"task_kind": "project"})
+                durable.advance_task(task_id=run_id, phase="running", state={"task_kind": "project"})
+                durable.advance_task(task_id=run_id, phase="running", state={"task_kind": "project"})
                 state.runtime_mutations.accept_operation(
                     session_id=session_id, run_id=run_id, project=str(project), provider_id="local",
                     turn_budget=1, max_repair_rounds=1, task_kind="project",
                 )
                 state.runtime_mutations.mark_writer_running(session_id, run_id, provider_id="local")
-                runtime_provider = KernelRecordedProvider(provider, KernelEffectSink(
+                runtime_provider = ProviderActions(provider, KernelEffectSink(
                     state.runtime_mutations, session_id=session_id, run_id=run_id, provider_id="local", durable=durable,
                 ))
             with ExitStack() as stack:

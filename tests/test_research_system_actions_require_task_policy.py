@@ -106,8 +106,8 @@ def test_webread_without_knowledge_write_reads_but_saves_no_note() -> None:
 
 
 def test_evidence_followup_policy_is_subset_of_parent() -> None:
-    from codey.operations.evidence_followup import run_evidence_followup
     from codey.research.plan_executor import PlanExecutionResult
+    from tests.support.kernel_runtime import run_evidence_followup
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)

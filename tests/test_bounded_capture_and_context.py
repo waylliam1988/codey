@@ -17,6 +17,7 @@ from unittest import mock
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
 from codey.runtime.core import cancellation
 from codey.runtime.core.output_capture import BoundedByteCapture
+from codey.storage.managed_outputs import ManagedOutputStore
 
 
 def _pid_alive(pid: int) -> bool:
@@ -612,10 +613,11 @@ class LocalPrepareRequestTests(unittest.TestCase):
         import tempfile
 
         from codey.durable import DurableSession, MemoryDurableStore
-        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+        from codey.operations.task_effects import KernelEffectSink
         from codey.providers import error_classification as errors
         from codey.runtime.effects.effect_records import SENT_STATE_NOT_SENT, RuntimeEffectStore
         from codey.runtime.write.mutation_line import RuntimeMutationLine
+        from tests.support.provider_actions import ProviderActions
 
         exc = errors.RequestPrepError("local context compaction failed: boom")
         # A prep failure is not a context overflow: no rollover retry.
@@ -631,13 +633,13 @@ class LocalPrepareRequestTests(unittest.TestCase):
                 provider_id="local", turn_budget=5, max_repair_rounds=1, task_kind="project",
             )
             line.mark_writer_running("s", "r", provider_id="local")
-            sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable)
+            sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable, managed_outputs=ManagedOutputStore(Path(td)))
 
             class BoomProvider:
                 def send(self, prompt, timeout=None):
                     raise exc
 
-            recorded = KernelRecordedProvider(BoomProvider(), sink)
+            recorded = ProviderActions(BoomProvider(), sink)
             with self.assertRaises(errors.RequestPrepError):
                 recorded.send("hello")
             store = RuntimeEffectStore(durable=durable)

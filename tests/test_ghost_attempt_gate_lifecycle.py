@@ -8,13 +8,6 @@ from typing import Any
 
 import pytest
 
-from codey.operations.kernel_transport import repair_native_dangling
-from codey.operations.task_loop import (
-    KernelExecutionDeps,
-    KernelRunRequest,
-    KernelTransportDeps,
-    run_task_kernel,
-)
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import api_transport
@@ -23,6 +16,12 @@ from codey.providers.base import ProviderToolCall, ProviderToolDefinition, Provi
 from codey.providers.error_classification import RequestPrepError
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.workspace.context_admission import request_scope, sources_from_values
+from tests.support.kernel_runtime import (
+    KernelExecutionDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 
 PROTOCOLS = ("openai-completions", "openai-responses")
 READ = ProviderToolDefinition("read", "Read a file", {"type": "object"})
@@ -108,7 +107,7 @@ def test_native_error_receipt_uses_the_same_gate(monkeypatch: pytest.MonkeyPatch
         first = provider.send_turn("read", [READ])
         assert first.tool_calls == (call,)
         with pytest.raises(RequestPrepError, match="receipt revoked"):
-            repair_native_dangling(provider, first, True, [READ], "invalid native request")
+            provider.send_tool_results([ProviderToolResult(call.id, "ERROR: invalid native request")], [READ])
         assert gate_calls == 2
         assert len(physical_payloads) == 1
     finally:

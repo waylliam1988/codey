@@ -67,13 +67,13 @@ def test_issue2_default_hybrid_uses_unified_session():
 
 
 def test_issue2_unified_interleaves_web_and_project(tmp_path):
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.research.tools import ResearchTools
     from codey.runtime.core.models import ToolResult
     from codey.task.model import TaskSubmission
     from codey.workspace.revision import WorkspaceRevisionStore
+    from tests.support.kernel_runtime import run_task_kernel
 
     project = tmp_path / "project"
     project.mkdir()
@@ -256,11 +256,11 @@ def test_issue5_strict_initial_snapshot_hides_unavailable_tools():
 
 def test_issue6_native_prompt_and_done_closure(monkeypatch):
     from codey.env_names import NATIVE_TOOLS_ENV
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.task.model import TaskSubmission
+    from tests.support.kernel_runtime import run_task_kernel
     monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
     sub = TaskSubmission("s", None, "q", 2, False, "local")
     policy = build_task_policy(sub, task_kind="research")

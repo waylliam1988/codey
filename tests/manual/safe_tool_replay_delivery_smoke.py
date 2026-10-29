@@ -2,7 +2,7 @@
 
 Verifies multi-safe-tool-per-turn crash-recovery and prompt delivery receipt flow:
 1. --self-test: Injects crash between settled tool #1 and pending tool #2 in same turn,
-   resumes via recover_effects_for_resume, delivers batch prompt, settles to provider ok.
+   resumes via inspect_receipt_facts, delivers batch prompt, settles to provider ok.
 2. --same-run-self-test: Executes successive safe tool turns, verifying continuous receipts.
 """
 
@@ -14,8 +14,6 @@ import tempfile
 from pathlib import Path
 
 from codey.agents.request import AgentRequest
-from codey.operations.project_adapter import run as run_agent_loop
-from codey.operations.recovery import recover_effects_for_resume
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     SETTLEMENT_STATUS_OK,
@@ -34,6 +32,8 @@ from codey.runtime.effects.tool_result_delivery import (
 )
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from tests.support.kernel_runtime import run_agent as run_agent_loop
+from tests.support.receipt_fixtures import inspect_receipt_facts
 
 
 class ScriptedProvider:
@@ -165,7 +165,7 @@ def run_self_test() -> int:
             tool_result_delivery = delivery
             runtime_mutations = mutations
 
-        recovery = recover_effects_for_resume(
+        recovery = inspect_receipt_facts(
             RecoveryDeps(),
             session_id=session_id,
             run_id=run_id,
@@ -205,7 +205,7 @@ def run_self_test() -> int:
         print("[SMOKE] Delivered batch receipt verified.")
 
         # 4. Subsequent recovery is idempotent (no duplicate re-replay)
-        recovery2 = recover_effects_for_resume(
+        recovery2 = inspect_receipt_facts(
             RecoveryDeps(),
             session_id=session_id,
             run_id=run_id,

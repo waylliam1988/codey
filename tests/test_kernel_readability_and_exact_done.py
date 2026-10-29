@@ -10,10 +10,14 @@ from codey.operations import completion_gate, task_loop
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
 
 
 def test_kernel_has_one_loop_without_complexity_exemptions():
-    source = inspect.getsource(task_loop.run_task_kernel)
+    from codey.operations.kernel_driver import drive_kernel
+    entry = inspect.getsource(task_loop.run_task_kernel)
+    assert "return drive_kernel(session, request)" in entry
+    source = inspect.getsource(drive_kernel)
     assert "noqa" not in source
     assert sum(isinstance(node, (ast.For, ast.While)) for node in ast.walk(ast.parse(source))) == 1
 
@@ -25,7 +29,7 @@ def test_kernel_requires_exact_true_from_completion_gate(monkeypatch, value):
     ))
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=1)
     provider = SimpleNamespace(send=lambda prompt: '{"tool":"done","args":{"summary":"finished"}}')
-    result = task_loop.run_task_kernel(
+    result = run_test_kernel(
                  session,
                  request=KernelRunRequest(
                      transport=KernelTransportDeps(
@@ -53,7 +57,7 @@ def test_kernel_does_not_render_discarded_initial_prompt_after_each_result(monke
     replies = iter(['{"tool":"read_file","args":{"path":"a.py"}}',
                     '{"tool":"done","args":{"summary":"finished"}}'])
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})), max_turns=2)
-    result = task_loop.run_task_kernel(
+    result = run_test_kernel(
                  session,
                  request=KernelRunRequest(
                      transport=KernelTransportDeps(

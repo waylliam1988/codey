@@ -115,7 +115,7 @@ class RuntimeDriveTests(unittest.TestCase):
         self._mark_writer_running()
         self.durable.advance_task(
             task_id=self.run_id,
-            phase="assistant_response_pending",
+            phase="running",
             state={},
         )
         effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)

@@ -11,8 +11,8 @@ from codey.agents.shell_approval import ShellApprovalRequest
 from codey.agents.tools import AgentToolFns
 from codey.app.context import AppContext
 from codey.app.shell_approval_state import restore_pending_shell_approvals
+from codey.operations.kernel_actions import _approval_stop
 from codey.operations.task_execution import ExecutionDelegate
-from codey.operations.task_loop import _approval_stop
 from codey.operations.task_session import TaskSession
 from codey.policies.command_line import ShellSpec, resolve_shell
 from codey.policies.shell_analysis import analyze_shell

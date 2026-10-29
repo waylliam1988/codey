@@ -1,4 +1,4 @@
-"""Restore shared task facts and pending delivery from durable outcomes."""
+"""Test-only projection of recorded frame fixtures; execution reads durable receipts."""
 from __future__ import annotations
 
 from typing import Any
@@ -12,8 +12,8 @@ from codey.operations.kernel_recovery_result import (
     frame_outcome_ok,
     spec_for_recovered_row,
 )
-from codey.operations.recovery import delivered_from_frame
 from codey.operations.task_session import turn_effect_id
+from tests.support.receipt_fixtures import delivered_from_frame
 
 
 def _validate_recovered_rows(raw_rows: list[Any]) -> None:
@@ -122,7 +122,7 @@ def restore_task_session(frame: Any, session: Any, *, effect_scope: str = "task"
     pending_batch = bool(getattr(frame, "recovered_tool_result_batch_id", "") or "")
     nested = {child_id for row in fact_rows if row.call.name == "codemode"
               for child_id in row.outcome.canonical.get("child_effect_ids", ())}
-    delivery_rows = [row for row in fact_rows if row.effect_id not in nested]
+    delivery_rows = [row for row in fact_rows if getattr(row, "effect_id", "") not in nested]
     if pending_batch:
         for row in delivery_rows:
             identity = _delivery_identity(frame, effect_scope, row)

@@ -23,6 +23,7 @@ from codey.control.protocol import ControlError, fingerprint
 from codey.launcher.runtime import dependencies, runtime_files
 from codey.launcher.startup import startup_stage
 from codey.launcher.validation_cache import cached_checks, save_checks, validation_key
+from codey.storage.atomic_io import filesystem_path
 from codey.storage.file_lock import acquire_lease
 from codey.storage.local_store import read_json_strict, write_json_atomic
 
@@ -37,13 +38,14 @@ def runtime_digest(root: Path) -> str:
     rows = []
     total = 0
     for path in runtime_files(root):
+        path = filesystem_path(path)
         if path.is_symlink():
             raise ControlError("INVALID_ARGUMENT", "Runtime snapshot cannot contain symbolic links")
         size = path.stat().st_size
         total += size
         if size > 32 * 1024 * 1024 or total > 128 * 1024 * 1024:
             raise ControlError("INVALID_ARGUMENT", "Runtime snapshot exceeds size limits")
-        rows.append([path.relative_to(root).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest()])
+        rows.append([path.relative_to(filesystem_path(root)).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest()])
     return fingerprint(rows)
 
 
@@ -56,7 +58,7 @@ def snapshot(home: Path, source: Path, *, identity_suffix: str = "") -> dict[str
     if not target.exists():
         target.mkdir(parents=True)
         for path in runtime_files(source):
-            destination = target / path.relative_to(source)
+            destination = filesystem_path(target / path.relative_to(source))
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, destination)
     if runtime_digest(target) != digest or runtime_digest(source) != digest:
@@ -131,7 +133,15 @@ def _verification(directory: Path, manifest: dict[str, Any], commands: list[list
 
 
 def _static_commands() -> list[list[str]]:
-    return [[sys.executable, "-m", "compileall", "-q", "codey"], [sys.executable, "-m", "codey", "--help"]]
+    # compileall's temporary .pyc names can exceed MAX_PATH in an installed
+    # release snapshot. Resolve the candidate root in the child process and
+    # keep its extended filesystem namespace through compilation.
+    compile_candidate = (
+        "import compileall,sys; from pathlib import Path; "
+        "from codey.storage.atomic_io import filesystem_path; "
+        "sys.exit(not compileall.compile_dir(str(filesystem_path(Path('codey').resolve())), quiet=1))"
+    )
+    return [[sys.executable, "-c", compile_candidate], [sys.executable, "-m", "codey", "--help"]]
 
 
 def _static_verification(home: Path, directory: Path, manifest: dict[str, Any]) -> None:
@@ -197,7 +207,7 @@ def prepare(service: Any, args: dict[str, Any]) -> dict[str, Any]:
         try:
             validation_source.mkdir(parents=True)
             for original in runtime_files(Path(manifest["source"])):
-                destination = validation_source / original.relative_to(manifest["source"])
+                destination = filesystem_path(validation_source / original.relative_to(manifest["source"]))
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(original, destination)
             _static_verification(home, directory, manifest)

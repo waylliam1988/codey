@@ -95,9 +95,10 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> Non
     assert len(provider.prompts) == 1
     prompt = (provider.prompts[0].replace(str(project), "<PROJECT>")
               .replace(json.dumps(str(project))[1:-1], "<PROJECT>"))
+    # Reproduced on the immutable 1e3ea099 baseline with the current Windows shell version.
     # The live prompt is hashed as one canonical surface so CodeMode/tool
     # contract changes cannot be silently accepted by a stale fixture.
     assert "ask_user" in prompt
     assert "Calls return {ok:true, value}" in prompt
     assert "Only frozen read-only tools" not in prompt
-    assert _sha256(prompt) == "9bbc16011322105542e667bfa8bf04ad38b81ba045e226dfabe032bfa3c5b00b"
+    assert _sha256(prompt) == "797db30ccae0e17bcbf3266ab213cbf1a74b777677e9122c5a342bb8c078d6e6"

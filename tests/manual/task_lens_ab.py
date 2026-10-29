@@ -33,7 +33,6 @@ import contextlib
 
 from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
-from codey.operations.project_adapter import run as run_agent
 from codey.providers import controls as provider_controls
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.toolchain.runtime import ToolOutcome, list_directory
@@ -60,6 +59,7 @@ from tests.manual.project_task_context import (
     render_production_project_map,
 )
 from tests.manual.zoom_project_map_ab import ProbeCase, build_deep_fixture
+from tests.support.kernel_runtime import run_agent as run_agent
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-task-lens-ab.json"
 ARMS = ("current", "lens")

@@ -27,7 +27,7 @@ class MixedCallIdBatchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             t._native_tool_results(mixed, session)
 
-    def test_all_idless_returns_empty_for_text_fallback(self) -> None:
+    def test_all_idless_is_rejected_without_text_fallback(self) -> None:
         from codey.operations import kernel_transport as t
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
@@ -38,18 +38,19 @@ class MixedCallIdBatchTests(unittest.TestCase):
         idless = [
             ToolResult(ok=True, call=ToolCall(name="read_file", args={"path": "a.py"}, call_id=""), model_text="a"),
         ]
-        self.assertEqual(t._native_tool_results(idless, session), [])
+        with self.assertRaisesRegex(ValueError, "original call id"):
+            t._native_tool_results(idless, session)
 
     def test_kernel_stops_protocol_and_preserves_receipts_on_mixed_batch(self) -> None:
         import tempfile
         from pathlib import Path
         from unittest import mock
 
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.providers.base import AssistantTurn, ProviderToolCall
         from codey.runtime.core.models import ToolResult
+        from tests.support.kernel_runtime import run_task_kernel
 
         class _SingleReadProvider:
             name = "local"
@@ -121,7 +122,7 @@ class MixedCallIdBatchTests(unittest.TestCase):
                     ),
                 )
             self.assertFalse(result.completed)
-            self.assertEqual(result.stop_reason, "protocol")
+            self.assertEqual(result.stop_reason, "recovery_failure")
             self.assertIn("mixed", result.summary.lower())
             # Executed receipts are kept even though the native chain stops.
             self.assertTrue(session.executed, "tool receipts must be preserved")

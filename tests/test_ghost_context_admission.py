@@ -7,7 +7,6 @@ import pytest
 
 from codey.agents.request import AgentRequest
 from codey.operations.project_adapter import _project_context, _project_ghost_sources
-from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.workspace.context_admission import (
@@ -16,6 +15,7 @@ from codey.workspace.context_admission import (
     admit_ghost_context,
     request_scope,
 )
+from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 
 
 def _source(text: str = "Prefer Chinese answers.", **kwargs) -> GhostContextSource:
@@ -112,7 +112,7 @@ def test_real_kernel_send_is_blocked_before_provider_when_ghost_is_not_admitted(
         ),
     )
 
-    assert outcome.stop_reason == "provider_failure"
+    assert outcome.stop_reason == "controller_failure"
     assert sent == []
 
 
@@ -166,7 +166,7 @@ def test_real_kernel_send_respects_admit_hints_control_before_provider() -> None
         ),
     )
 
-    assert outcome.stop_reason == "provider_failure"
+    assert outcome.stop_reason == "controller_failure"
     assert sent == []
 
 

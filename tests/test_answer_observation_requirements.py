@@ -137,15 +137,14 @@ def test_invalid_answer_binding_is_rejected_at_declaration(kwargs):
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("mistake", ["first_characters", "extra_quotes", "missing_content_quotes", "markdown_fence"])
 def test_wrong_answer_is_repaired_by_original_task_loop_without_repeating_tools(runtime, native, mistake):
-    from codey.operations.task_effects import KernelRecordedProvider
-    from codey.operations.task_loop import (
+    from codey.providers.base import AssistantTurn, ProviderToolCall
+    from tests.support.kernel_runtime import (
         KernelExecutionDeps,
         KernelObservationDeps,
         KernelRunRequest,
         KernelTransportDeps,
         run_task_kernel,
     )
-    from codey.providers.base import AssistantTurn, ProviderToolCall
 
     first = '"AMBER-471"' if mistake == "missing_content_quotes" else "AMBER-471"
     (runtime.project / "a.txt").write_text(first + "\n", encoding="utf-8")
@@ -205,7 +204,7 @@ def test_wrong_answer_is_repaired_by_original_task_loop_without_repeating_tools(
 
     provider = Provider()
     result = run_task_kernel(runtime.state, request=KernelRunRequest(
-        transport=KernelTransportDeps(provider=KernelRecordedProvider(provider, runtime.sink), run_id="r",
+        transport=KernelTransportDeps(provider=provider, run_id="r",
             provider_id="local", effect_scope="task", user_task="Read both files and report their first lines."),
         execution=KernelExecutionDeps(project_path=runtime.project, managed_outputs=runtime.managed, session_id="s",
             durable=runtime.mutations.durable, workspace_revision_store=runtime.revisions,

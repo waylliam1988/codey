@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
+from codey.storage.managed_outputs import ManagedOutputStore
 
 
 def _cutover_parent_policy():
@@ -31,11 +33,17 @@ def test_opt_in_task_kind_reaches_shared_kernel(project: str | None, expected: s
     assert kind == expected
     # Hybrid still hits the single session without legacy two-phase.
     hybrid_outcome = ModeOutcome({"type": "task_done", "mode": "hybrid"})
+    from codey.durable import DurableSession, MemoryDurableStore
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    durable = DurableSession(MemoryDurableStore())
+    durable.admit_input(conversation_id="s", request_id="r", task_id="r", text="task", provider_snapshot={})
+    mutations = RuntimeMutationLine(durable=durable)
+    mutations.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=2, max_repair_rounds=0)
     with patch("codey.operations.task_phases.dispatch.run_task_mode", return_value=hybrid_outcome) as single:
         actual = dispatch_run_mode(
-            SimpleNamespace(state=SimpleNamespace(), knowledge_store=None, evidence_ledgers=None,
+            SimpleNamespace(state=SimpleNamespace(durable=durable), knowledge_store=None, evidence_ledgers=None,
                             search_factory=None, run_research_advisors=None, managed_outputs=None,
-                            runtime_mutations=None),
+                            runtime_mutations=mutations),
             SimpleNamespace(), SimpleNamespace(),
             SimpleNamespace(claimed_work_item=None), SimpleNamespace(request=request, project_text=project or "", run_id="r", recovered_tool_outcomes=(), settled_tool_outcomes=()),
             SimpleNamespace(), "hybrid",
@@ -106,9 +114,9 @@ def test_task_entry_research_builds_default_search_provider(tmp_path) -> None:
 
 def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     from codey.app.context import AppContext
-    from codey.operations.task_entry import run_entry_kernel
     from codey.operations.task_loop import KernelResult
     from codey.task.model import TaskSubmission
+    from tests.support.kernel_runtime import run_entry_kernel
 
     request = TaskSubmission("s", str(tmp_path), "inspect", 1, False, "deepseek",
                              intent="project", run_id="r")
@@ -122,28 +130,22 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     )
     events: list[object] = []
     hooks = SimpleNamespace(on_event=events.append, on_shell_request=events.append)
-    mutations = SimpleNamespace(
-        mark_writer_running=lambda *_args, **_kwargs: None,
-        set_task_policy=lambda *_args, **_kwargs: None,
-    )
     state = AppContext(tmp_path / ".codey")
     from tests.support.workspace_conversation import admit_entry_frame
 
     admit_entry_frame(frame, state)
     managed = state.managed_outputs
     deps = SimpleNamespace(
-        knowledge_store=None, search_factory=None, runtime_mutations=mutations,
+        knowledge_store=None, search_factory=None, runtime_mutations=state.runtime_mutations,
         managed_outputs=managed, state=state,
     )
     with (patch("codey.operations.task_loop.run_task_kernel",
                 return_value=KernelResult(True, "done", 1, "done")) as kernel,
-          patch("codey.operations.task_effects.KernelEffectSink") as sink_type,
-          patch("codey.operations.task_effects.KernelRecordedProvider") as recorded):
+          patch("codey.operations.task_effects.KernelEffectSink") as sink_type):
         result = run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),
                                   hooks, deps)
     assert result.event["stop_reason"] == "done"
     sink_type.assert_called_once()
-    recorded.assert_called_once()
     request = kernel.call_args.kwargs["request"]
     assert request.observation.intent_sink is sink_type.return_value
     assert request.observation.on_event is hooks.on_event
@@ -154,9 +156,9 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
 
 def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
     from codey.app.context import AppContext
-    from codey.operations.task_entry import run_entry_kernel
     from codey.operations.task_loop import KernelResult
     from codey.task.model import TaskSubmission
+    from tests.support.kernel_runtime import run_entry_kernel
 
     project = tmp_path / "new-project"
     request = TaskSubmission("s", str(project), "create app", 1, False, "local",
@@ -185,9 +187,9 @@ def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
 
 
 def test_unified_kernel_passes_authoritative_research_ledger_to_gate() -> None:
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from tests.support.kernel_runtime import run_task_kernel
 
     session = TaskSession(
         policy=TaskPolicy(grants=frozenset({"control", "web.read"}), strict_research=True),
@@ -268,11 +270,11 @@ def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
 def test_web_research_shows_result_and_source_ids_to_model(tmp_path) -> None:
     from codey.knowledge.changes import KnowledgeChanges
     from codey.knowledge.store import KnowledgeStore
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.research.tools import ResearchTools
     from codey.task.model import TaskSubmission
+    from tests.support.kernel_runtime import run_task_kernel
 
     url = "https://example.com/evidence"
 
@@ -380,7 +382,6 @@ def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
 
 def test_default_project_writer_uses_shared_turn_kernel(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.app import task_submit
 
     (tmp_path / "file.txt").write_text("hello", encoding="utf-8")
     replies = iter([
@@ -404,7 +405,9 @@ def test_default_project_writer_uses_shared_turn_kernel(tmp_path) -> None:
         from codey.operations.task_loop import KernelResult
 
         kernel.return_value = KernelResult(True, "read the file", 2, "done")
-        result = task_submit.agent_run(AgentRequest(
+        from tests.support.kernel_runtime import run_agent
+
+        result = run_agent(AgentRequest(
             provider=WebProvider(), project=tmp_path, task="read file.txt", max_turns=3,
         ))
     assert result.stop_reason == "done"
@@ -413,7 +416,7 @@ def test_default_project_writer_uses_shared_turn_kernel(tmp_path) -> None:
 
 def test_project_writer_can_search_and_read_in_one_model_loop(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.project_adapter import run
+    from tests.support.kernel_runtime import run_agent as run
 
     (tmp_path / "file.txt").write_text("local content", encoding="utf-8")
     replies = iter([
@@ -453,7 +456,7 @@ def test_project_writer_can_search_and_read_in_one_model_loop(tmp_path) -> None:
 
 def test_project_writer_keeps_bounded_project_context_in_first_prompt(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.project_adapter import run
+    from tests.support.kernel_runtime import run_agent as run
 
     (tmp_path / "AGENTS.md").write_text("Follow the local migration rule.", encoding="utf-8")
     prompts: list[str] = []
@@ -483,7 +486,7 @@ def test_project_writer_keeps_bounded_project_context_in_first_prompt(tmp_path) 
 def test_project_writer_prompts_with_selected_verification_candidates(tmp_path) -> None:
     from codey.agents.request import AgentRequest
     from codey.completion.verification_policy import VerificationCandidate
-    from codey.operations.project_adapter import run
+    from tests.support.kernel_runtime import run_agent as run
 
     prompts: list[str] = []
 
@@ -504,7 +507,7 @@ def test_project_writer_prompts_with_selected_verification_candidates(tmp_path) 
 
 def test_planning_adapter_exposes_only_read_capabilities(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.project_adapter import run
+    from tests.support.kernel_runtime import run_agent as run
 
     prompts: list[str] = []
 
@@ -527,7 +530,7 @@ def test_planning_adapter_exposes_only_read_capabilities(tmp_path) -> None:
 
 def test_web_chat_refresh_failure_stops_before_sending_to_existing_tab(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.project_adapter import run
+    from tests.support.kernel_runtime import run_agent as run
 
     class Provider:
         name = "deepseek"
@@ -550,7 +553,7 @@ def test_web_chat_refresh_failure_stops_before_sending_to_existing_tab(tmp_path)
 def test_shared_writer_updates_conversation_window_usage(tmp_path) -> None:
     from codey.agents.handoff import ConversationContext
     from codey.agents.request import AgentRequest
-    from codey.operations.project_adapter import run
+    from tests.support.kernel_runtime import run_agent as run
 
     class Provider:
         name = "deepseek"
@@ -573,7 +576,7 @@ def test_shared_writer_updates_conversation_window_usage(tmp_path) -> None:
 
 def test_writer_stops_after_configured_invalid_turn_limit(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.project_adapter import run
+    from tests.support.kernel_runtime import run_agent as run
 
     calls: list[str] = []
 
@@ -595,7 +598,7 @@ def test_writer_stops_after_configured_invalid_turn_limit(tmp_path) -> None:
 
 def test_writer_can_create_a_user_selected_new_project(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.project_adapter import run
+    from tests.support.kernel_runtime import run_agent as run
 
     project = tmp_path / "new-project"
 
@@ -657,9 +660,9 @@ def test_noop_edit_does_not_create_false_freshness(tmp_path) -> None:
 
 
 def test_default_research_iteration_uses_shared_turn_kernel() -> None:
-    from codey.operations.research_iteration import run_research_iteration
     from codey.operations.task_loop import KernelResult
     from codey.research.ledger import ResearchLedger
+    from tests.support.kernel_runtime import run_research_iteration
 
     tools = SimpleNamespace(
         ledger=ResearchLedger(), created_ids=[], updated_ids=[],
@@ -707,7 +710,7 @@ def test_research_done_builds_proof_record_from_current_ledger() -> None:
 @pytest.mark.usefixtures("public_source_dns")
 def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> None:
     from codey.knowledge.store import KnowledgeStore
-    from codey.operations.research_iteration import run_research_iteration
+    from tests.support.kernel_runtime import run_research_iteration
 
     url = "https://example.com/pipeline"
     answer = (
@@ -770,7 +773,7 @@ def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> 
 
 def test_project_shell_requests_approval_in_shared_kernel(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.project_adapter import run
+    from tests.support.kernel_runtime import run_agent as run
 
     approvals: list[object] = []
 
@@ -793,10 +796,10 @@ def test_project_shell_requests_approval_in_shared_kernel(tmp_path) -> None:
 
 
 def test_shell_approval_records_turn_intent_before_notifying_user(tmp_path) -> None:
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.task.model import TaskSubmission
+    from tests.support.kernel_runtime import run_task_kernel
 
     policy = build_task_policy(TaskSubmission("s", str(tmp_path), "shell", 1, False, "deepseek"))
     session = TaskSession(policy=policy, task_kind="project", project=str(tmp_path), max_turns=1)
@@ -847,10 +850,10 @@ def test_research_write_requires_project_writer_lease() -> None:
 
 
 def test_kernel_records_intent_before_project_tool_execution(tmp_path) -> None:
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.task.model import TaskSubmission
+    from tests.support.kernel_runtime import run_task_kernel
 
     policy = build_task_policy(TaskSubmission("s", str(tmp_path), "read", 2, False, "local"),
                                task_kind="project")
@@ -913,26 +916,26 @@ def test_failed_intent_commit_prevents_tool_execution(tmp_path) -> None:
 
 def test_production_kernel_persists_tool_and_delivery_receipts(tmp_path) -> None:
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
-    from codey.operations.task_loop import run_task_kernel
+    from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.task.model import TaskSubmission
+    from tests.support.kernel_runtime import run_task_kernel
 
     durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
     durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="read",
                         provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
     durable.start_task("r", state={"task_kind": "project"})
-    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "project"})
+    durable.advance_task(task_id="r", phase="running", state={"task_kind": "project"})
     line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="s", run_id="r", project=str(tmp_path),
                           provider_id="deepseek", turn_budget=3, max_repair_rounds=0,
                           task_kind="project")
     line.mark_writer_running("s", "r", provider_id="deepseek")
-    sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="deepseek", durable=durable)
+    sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="deepseek", durable=durable, managed_outputs=ManagedOutputStore(Path(tmp_path)))
     replies = iter([
         '{"tool":"read_file","args":{"path":"file.txt"}}',
         '{"tool":"done","args":{"summary":"read file"}}',
@@ -952,7 +955,7 @@ def test_production_kernel_persists_tool_and_delivery_receipts(tmp_path) -> None
         session,
         request=KernelRunRequest(
             transport=KernelTransportDeps(
-                provider=KernelRecordedProvider(Provider(), sink),
+                provider=Provider(),
                 run_id="r",
             ),
             execution=KernelExecutionDeps(
@@ -984,12 +987,12 @@ def test_shared_effect_replay_class_matches_tool_contract(tmp_path) -> None:
     durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="research",
                         provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
     durable.start_task("r", state={"task_kind": "research"})
-    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "research"})
+    durable.advance_task(task_id="r", phase="running", state={"task_kind": "research"})
     line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="s", run_id="r", project="", provider_id="deepseek",
                           turn_budget=2, max_repair_rounds=0, task_kind="research")
     line.mark_writer_running("s", "r", provider_id="deepseek")
-    sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="deepseek", durable=durable)
+    sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="deepseek", durable=durable, managed_outputs=ManagedOutputStore(Path(tmp_path)))
     calls = [ToolCall("web_search", {"query": "q"}),
              ToolCall("open_url", {"url": "https://example.com"}),
              ToolCall("knowledge_write", {"title": "note"})]
@@ -1005,18 +1008,19 @@ def test_shared_effect_replay_class_matches_tool_contract(tmp_path) -> None:
 def test_same_run_research_and_writer_effect_slots_do_not_collide(tmp_path) -> None:
     from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.kernel_execution import execute_turn
-    from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+    from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from tests.support.provider_actions import ProviderActions
 
     durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
     durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="hybrid",
                         provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
     durable.start_task("r", state={"task_kind": "hybrid"})
-    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "hybrid"})
+    durable.advance_task(task_id="r", phase="running", state={"task_kind": "hybrid"})
     line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="s", run_id="r", project=str(tmp_path),
                           provider_id="deepseek", turn_budget=2, max_repair_rounds=0,
@@ -1030,13 +1034,13 @@ def test_same_run_research_and_writer_effect_slots_do_not_collide(tmp_path) -> N
         (research, "research:1", "web_search", {"query": "q"}),
         (writer, "writer", "read_file", {"path": "a.txt"}),
     ):
-        sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="deepseek", durable=durable)
+        sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="deepseek", durable=durable, managed_outputs=ManagedOutputStore(Path(tmp_path)))
         execute_turn(
             session, [ToolCall(name, args)],
             executors={name: lambda _call, current=name: calls.append(current) or "ok"},
             run_id="r", effect_scope=scope, turn=1, intent_sink=sink,
         )
-        KernelRecordedProvider(SimpleNamespace(send=lambda *_args, **_kwargs: "ok"), sink).send("continue")
+        ProviderActions(SimpleNamespace(send=lambda *_args, **_kwargs: "ok"), sink).send("continue")
     assert calls == ["web_search", "read_file"]
     effects = [row for row in RuntimeEffectStore(durable=durable).load_effects("s", "r")
                if row.intent.effect_category == "tool_call"]
@@ -1047,15 +1051,15 @@ def test_same_run_research_and_writer_effect_slots_do_not_collide(tmp_path) -> N
 def test_default_writer_records_effects_in_existing_runtime(tmp_path) -> None:
     from codey.agents.request import AgentRequest
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.operations.project_adapter import run
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from tests.support.kernel_runtime import run_agent as run
 
     durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
     durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="read",
                         provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
     durable.start_task("r", state={"task_kind": "project"})
-    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "project"})
+    durable.advance_task(task_id="r", phase="running", state={"task_kind": "project"})
     line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="s", run_id="r", project=str(tmp_path),
                           provider_id="deepseek", turn_budget=3, max_repair_rounds=0,
@@ -1085,50 +1089,29 @@ def test_default_writer_records_effects_in_existing_runtime(tmp_path) -> None:
 
 
 def test_writer_recovery_delivers_previous_tool_result_without_rerunning(tmp_path) -> None:
-    from codey.agents.request import AgentRequest, RecoveredToolOutcome
-    from codey.operations.project_adapter import run
-    from codey.runtime.core.models import ToolCall
-    from codey.toolchain.runtime import ToolOutcome
+    from codey.operations.task_loop import run_task_kernel
+    from tests.support.kernel_restart import paused_batch
+    from tests.test_tool_result_delivery import restart_request
 
-    seen: list[str] = []
-    replies = iter([
-        '{"tool":"done","args":{"summary":"used recovered result"}}',
-    ])
-
-    class Provider:
-        name = "deepseek"
-
-        def send(self, prompt, timeout=None):
-            seen.append(str(prompt))
-            return next(replies)
-
-    with patch("codey.operations.task_execution.ExecutionDelegate._execute_project") as executed:
-        result = run(AgentRequest(
-            provider=Provider(), project=tmp_path, task="read", max_turns=3,
-            fresh_chat=False, run_id="r", provider_id="deepseek",
-            recovered_tool_outcomes=(RecoveredToolOutcome(
-                call=ToolCall("read_file", {"path": "missing.txt"}),
-                outcome=ToolOutcome("previous content", True), turn=1, tool_index=0,
-            ),), on_event=lambda _event: None,
-        ))
-    assert result.stop_reason == "done"
-    executed.assert_not_called()
-    # Recovery-first: the original batch is delivered before any new model call.
-    assert seen and "previous content" in seen[0]
+    with paused_batch(tmp_path) as runtime:
+        result = run_task_kernel(runtime.session(), request=restart_request(runtime))
+        assert result.completed
+        assert len(runtime.executions) == 1
+        assert "ORIGINAL_RESULT" in runtime.events[-1][1]
 
 
 def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) -> None:
     from codey.durable import DurableSession, SQLiteDurableStore
     from codey.knowledge.store import KnowledgeStore
-    from codey.operations.research_iteration import run_research_iteration
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from tests.support.kernel_runtime import run_research_iteration
 
     durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
     durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="q",
                         provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
     durable.start_task("r", state={"task_kind": "research"})
-    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "research"})
+    durable.advance_task(task_id="r", phase="running", state={"task_kind": "research"})
     line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="s", run_id="r", project="", provider_id="deepseek",
                           turn_budget=2, max_repair_rounds=0, task_kind="research")
@@ -1155,7 +1138,7 @@ def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) ->
                     control_enabled=lambda _name, **_kwargs: True,
                 ),
             ),
-            knowledge_store=store, runtime_mutations=line,
+            knowledge_store=store, runtime_mutations=line, managed_outputs=ManagedOutputStore(tmp_path / "outputs"),
         ),
         provider=Provider(), session_id="s", project="", task="q", max_turns=1,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
@@ -1169,30 +1152,25 @@ def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) ->
     durable.close()
 
 
-def test_research_evidence_followup_uses_shared_kernel_with_fresh_url_guard() -> None:
-    from codey.operations.evidence_followup import run_evidence_followup
+def test_research_evidence_followup_uses_shared_kernel_with_fresh_url_guard(tmp_path) -> None:
+    from codey.knowledge.changes import KnowledgeChanges
+    from codey.knowledge.store import KnowledgeStore
     from codey.research.plan_executor import PlanExecutionResult
+    from codey.research.tools import ResearchTools
+    from tests.support.kernel_runtime import run_evidence_followup
 
     url = "https://example.com/fresh"
-    tools = SimpleNamespace(
-        ledger=SimpleNamespace(evidence_items=[]), created_ids=[],
-    )
-    writes: list[dict] = []
-
-    def knowledge_write(args):
-        writes.append(args)
-        tools.ledger.evidence_items.append(SimpleNamespace(source_url=url, excerpt="fact"))
-        tools.created_ids.append("n1")
-        return "saved note id=n1"
-
-    tools.knowledge_write = knowledge_write
+    store = KnowledgeStore(tmp_path / "knowledge")
+    tools = ResearchTools(search=None, store=store, changes=KnowledgeChanges(root=store.root))
+    tools.sources_read.add(url)
+    tools.ledger.record_open(url, url, "Fresh source", "Freshly retrieved material supports the claim.")
     replies = iter([
         '{"tool":"knowledge_write","args":{"type":"fact","title":"x","body":"x",'
         '"sources":["https://example.com/other"],"evidence":[{"source_url":"https://example.com/other",'
         '"excerpt":"x","claim":"x","stance":"supports"}]}}',
         '{"tool":"knowledge_write","args":{"type":"fact","title":"x","body":"x",'
         '"sources":["https://example.com/fresh"],"evidence":[{"source_url":"https://example.com/fresh",'
-        '"excerpt":"fact","claim":"x","stance":"supports"}]}}',
+        '"excerpt":"Freshly retrieved material supports the claim.","claim":"x","stance":"supports"}]}}',
     ])
 
     class Provider:
@@ -1202,13 +1180,15 @@ def test_research_evidence_followup_uses_shared_kernel_with_fresh_url_guard() ->
     result = run_evidence_followup(
         provider=Provider(), tools=tools,
         plan=SimpleNamespace(plan_ref="p1"),
-        material=PlanExecutionResult(fresh_source_urls=(url,), previews=("fact",)),
+        material=PlanExecutionResult(fresh_source_urls=(url,), previews=("Freshly retrieved material supports the claim.",)),
         question="x", run_id="r", session_id="s", round_index=1,
         parent_policy=_cutover_parent_policy(),
     )
     assert result.has_new_evidence
-    assert len(writes) == 1
-    assert writes[0]["sources"] == [url]
+    assert len(tools.ledger.evidence_items) == 1
+    assert tools.ledger.evidence_items[0].source_url == url
+    assert len(tools.created_ids) == 1
+    store.close()
 
 
 def test_unified_edit_keeps_existing_file_guard_and_read_before_edit(tmp_path) -> None:
@@ -1245,7 +1225,7 @@ def test_unified_edit_keeps_existing_file_guard_and_read_before_edit(tmp_path) -
 
 def test_unified_writer_notifies_change_tracker_around_edit(tmp_path) -> None:
     from codey.agents.request import AgentRequest
-    from codey.operations.project_adapter import run
+    from tests.support.kernel_runtime import run_agent as run
 
     class Tracker:
         def __init__(self):
@@ -1280,17 +1260,17 @@ def test_native_writer_uses_same_durable_delivery_chain(tmp_path, monkeypatch) -
     from codey.agents.request import AgentRequest
     from codey.durable import DurableSession, SQLiteDurableStore
     from codey.env_names import NATIVE_TOOLS_ENV
-    from codey.operations.project_adapter import run
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from tests.support.kernel_runtime import run_agent as run
 
     monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
     durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
     durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="read app.py",
                         provider_snapshot={"provider_id": "local", "model_id": "test"})
     durable.start_task("r", state={"task_kind": "project"})
-    durable.advance_task(task_id="r", phase="assistant_response_pending", state={"task_kind": "project"})
+    durable.advance_task(task_id="r", phase="running", state={"task_kind": "project"})
     line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="s", run_id="r", project=str(tmp_path),
                           provider_id="local", turn_budget=3, max_repair_rounds=0,
@@ -1330,11 +1310,11 @@ def test_native_writer_uses_same_durable_delivery_chain(tmp_path, monkeypatch) -
 
 def test_native_final_turn_answers_tool_call_before_budget_stop(tmp_path, monkeypatch) -> None:
     from codey.env_names import NATIVE_TOOLS_ENV
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.task.model import TaskSubmission
+    from tests.support.kernel_runtime import run_task_kernel
 
     monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
     (tmp_path / "a.txt").write_text("content", encoding="utf-8")
@@ -1375,11 +1355,11 @@ def test_native_final_turn_answers_tool_call_before_budget_stop(tmp_path, monkey
 
 def test_native_budget_stop_rejects_following_dangling_tool_call(tmp_path, monkeypatch) -> None:
     from codey.env_names import NATIVE_TOOLS_ENV
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.task.model import TaskSubmission
+    from tests.support.kernel_runtime import run_task_kernel
 
     monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
     (tmp_path / "a.txt").write_text("content", encoding="utf-8")
@@ -1420,14 +1400,14 @@ def test_native_budget_stop_rejects_following_dangling_tool_call(tmp_path, monke
     )
     assert len(messages) == 2
     assert messages[1][0].call_id == "call-2"
-    assert "budget" in messages[1][0].content
+    assert "max turns" in messages[1][0].content
 
 
 def test_unified_writer_keeps_managed_output_receipt_in_event(tmp_path) -> None:
     from codey.agents.request import AgentRequest
     from codey.agents.tools import AgentToolFns
-    from codey.operations.project_adapter import run
     from codey.toolchain.runtime import ToolOutcome
+    from tests.support.kernel_runtime import run_agent as run
 
     replies = iter([
         '{"tool":"run","args":{"path":".","command":"python -m pytest"}}',
@@ -1440,23 +1420,28 @@ def test_unified_writer_keeps_managed_output_receipt_in_event(tmp_path) -> None:
         def send(self, _prompt, timeout=None):
             return next(replies)
 
+    outputs = ManagedOutputStore(tmp_path / "outputs")
+    managed = outputs.write_tool_output(session_id="s", run_id="r", tool_id="verification",
+        permission_profile="coding_writer", tool_name="run", display_ref=".", text="test output")
+    assert managed is not None
+
     def command(*_args):
         return ToolOutcome(
             "test output", True, exit_code=0, truncated=True,
             audit={"managed_output": {
-                "handle": "out_test", "original_bytes": 100,
-                "stored_bytes": 100, "sha256": "a" * 64,
+                "handle": managed.handle, "original_bytes": managed.original_bytes,
+                "stored_bytes": managed.stored_bytes, "sha256": managed.sha256,
             }},
         )
 
     events: list[object] = []
     run(AgentRequest(
         provider=Provider(), project=tmp_path, task="run tests", max_turns=2,
-        fresh_chat=False, on_event=events.append,
+        fresh_chat=False, on_event=events.append, managed_outputs=outputs, session_id="s", run_id="r",
         tool_fns=AgentToolFns(run_command_with_context=command),
     ))
     finished = next(event for event in events if getattr(event, "kind", "") == "tool")
-    assert finished.outcome.managed_output()["handle"] == "out_test"
+    assert finished.outcome.managed_output()["handle"] == managed.handle
 
 
 @pytest.mark.usefixtures("public_source_dns")

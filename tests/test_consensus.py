@@ -62,6 +62,18 @@ class TraceRecorder:
 
 
 class ConsensusTests(unittest.TestCase):
+    def setUp(self):
+        from codey.durable import DurableSession, MemoryDurableStore
+        from codey.runtime.write.mutation_line import RuntimeMutationLine
+        from codey.storage.managed_outputs import ManagedOutputStore
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        durable = DurableSession(MemoryDurableStore())
+        self.addCleanup(durable.close)
+        self.audit_runtime = dict(durable=durable, runtime_mutations=RuntimeMutationLine(durable=durable),
+                                  managed_outputs=ManagedOutputStore(Path(temporary.name)))
+
     def test_read_only_kernel_contract_does_not_offer_writer_tools(self) -> None:
         # 统一内核的只读契约取代旧顾问 codec：同一快照 gate read-only 工具。
         from types import SimpleNamespace
@@ -188,7 +200,7 @@ class ConsensusTests(unittest.TestCase):
                 advisor,
                 td,
                 "Review this project for bugs",
-                max_turns=1, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                max_turns=1, **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "")
@@ -333,7 +345,7 @@ class ConsensusTests(unittest.TestCase):
                 provider,
                 td,
                 "Review this project for bugs",
-                trace_recorder=trace, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                trace_recorder=trace, **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertIn("audit report", report)
@@ -370,7 +382,7 @@ class ConsensusTests(unittest.TestCase):
                 provider_labels={"qwen": "Qwen", "glm": "GLM"},
                 availability=lambda: {"qwen": True, "glm": True},
                 connect_existing=lambda provider_id: providers[provider_id],
-                trace_recorder=trace, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                trace_recorder=trace, **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
             trace.finish(status="done")
             payload = json.loads(
@@ -486,7 +498,7 @@ class ConsensusTests(unittest.TestCase):
             report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertIn("no concrete bug", report)
@@ -513,7 +525,7 @@ class ConsensusTests(unittest.TestCase):
             report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertIn("one caller", report)
@@ -540,7 +552,7 @@ class ConsensusTests(unittest.TestCase):
             project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertIn("[result: find_references]", advisor.sent[1])
@@ -561,7 +573,7 @@ class ConsensusTests(unittest.TestCase):
             report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
             content = path.read_text(encoding="utf-8")
 
@@ -584,7 +596,7 @@ class ConsensusTests(unittest.TestCase):
             report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "no secrets read")
@@ -607,7 +619,7 @@ class ConsensusTests(unittest.TestCase):
             report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "env file was not read")
@@ -631,7 +643,7 @@ class ConsensusTests(unittest.TestCase):
             report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "secret references were not shared")
@@ -654,7 +666,7 @@ class ConsensusTests(unittest.TestCase):
                 report = project_audit_advisor.run_project_audit_advisor(
                     advisor,
                     td,
-                    "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                    "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
                 )
 
         self.assertEqual(report, "audit search stayed bounded")
@@ -676,7 +688,7 @@ class ConsensusTests(unittest.TestCase):
             report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 root,
-                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "audit searched root")
@@ -697,7 +709,7 @@ class ConsensusTests(unittest.TestCase):
             report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "large source stayed bounded")
@@ -719,7 +731,7 @@ class ConsensusTests(unittest.TestCase):
                 report = project_audit_advisor.run_project_audit_advisor(
                     advisor,
                     td,
-                    "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                    "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
                 )
 
         self.assertEqual(report, "audit references stayed bounded")
@@ -742,7 +754,7 @@ class ConsensusTests(unittest.TestCase):
             report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "excluded directory was not read")
@@ -768,7 +780,7 @@ class ConsensusTests(unittest.TestCase):
             report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "symlink was not read")
@@ -789,7 +801,7 @@ class ConsensusTests(unittest.TestCase):
             report = project_audit_advisor.run_project_audit_advisor(
                 advisor,
                 td,
-                "Review this project for bugs", parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                "Review this project for bugs", **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "secret search produced no result")
@@ -807,7 +819,7 @@ class ConsensusTests(unittest.TestCase):
                 advisor,
                 td,
                 "Review this project for bugs",
-                max_turns=1, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                max_turns=1, **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual(report, "")
@@ -826,7 +838,7 @@ class ConsensusTests(unittest.TestCase):
                 provider_ids=("deepseek", "qwen", "glm"),
                 provider_labels={"qwen": "Qwen", "glm": "GLM"},
                 availability=lambda: {"qwen": True, "glm": True},
-                connect_existing=lambda provider_id: providers[provider_id], parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                connect_existing=lambda provider_id: providers[provider_id], **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual([report.text for report in reports], ["qwen report", "glm report"])
@@ -847,7 +859,7 @@ class ConsensusTests(unittest.TestCase):
                 provider_ids=("deepseek", "qwen", "glm"),
                 provider_labels={"qwen": "Qwen", "glm": "GLM"},
                 availability=lambda: {"qwen": True, "glm": True},
-                connect_existing=lambda provider_id: providers[provider_id], parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
+                connect_existing=lambda provider_id: providers[provider_id], **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
         self.assertEqual([report.text for report in reports], ["glm report"])

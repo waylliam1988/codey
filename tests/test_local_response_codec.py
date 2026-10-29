@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.operations.kernel_transport import call_provider_send
+from codey.operations.provider_session import normalize_provider_reply
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import AssistantTurn
 from codey.providers.local_response_codec import (
@@ -92,7 +92,7 @@ def test_kernel_transport_uses_provider_normalize_hook() -> None:
         normalize_reply=normalize_local_reply,
     )
 
-    reply = call_provider_send(provider, "read app.py")
+    reply = normalize_provider_reply(provider, provider.send("read app.py"))
 
     assert isinstance(reply, AssistantTurn)
     assert reply.tool_calls[0].arguments == {"path": "app.py"}
@@ -102,7 +102,7 @@ def test_kernel_transport_ignores_implicit_dynamic_normalize_attribute() -> None
     provider = mock.Mock()
     provider.send.return_value = "plain reply"
 
-    assert call_provider_send(provider, "continue") == "plain reply"
+    assert normalize_provider_reply(provider, provider.send("continue")) == "plain reply"
 
 
 def test_local_codec_output_still_uses_kernel_toolspec_and_policy_validation() -> None:

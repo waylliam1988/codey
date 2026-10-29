@@ -4,9 +4,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from codey.operations.project_audit_advisor import run_project_audit_advisor
 from codey.operations.provider_session import DeadlineProvider
 from codey.policies.task_policy import TaskPolicy
+from tests.support.kernel_runtime import run_project_audit_advisor
 
 
 def test_real_advisor_send_never_rounds_above_total_budget(tmp_path):

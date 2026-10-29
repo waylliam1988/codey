@@ -80,12 +80,6 @@ def _run_one_writer_attempt(
     if workspace_revision_store is None:
         raise RuntimeError("coding writer requires WorkspaceRevisionStore")
     ctx.writer_attempt_index += 1
-    recovered_outcomes = ctx.frame.recovered_tool_outcomes
-    ctx.frame.recovered_tool_outcomes = ()
-    settled_outcomes = ctx.frame.settled_tool_outcomes
-    ctx.frame.settled_tool_outcomes = ()
-    recovered_batch_id = ctx.frame.recovered_tool_result_batch_id
-    ctx.frame.recovered_tool_result_batch_id = ""
     try:
         writer_experiences = _ghost_experiences(
             ctx.state,
@@ -156,9 +150,6 @@ def _run_one_writer_attempt(
         workspace_revision_store=workspace_revision_store,
         workspace_ignored_paths=ctx.configured_ignored_paths,
         managed_outputs=ctx.deps.persistence.managed_outputs,
-        recovered_tool_outcomes=recovered_outcomes,
-        settled_tool_outcomes=settled_outcomes,
-        recovered_tool_result_batch_id=recovered_batch_id,
         requested_capabilities=ctx.request.requested_capabilities,
         strict_research=bool(getattr(ctx.request, "strict_research", False) is True),
         task_policy=getattr(ctx.frame, "entry_policy", None),
@@ -421,9 +412,10 @@ def _run_writer_phase(ctx: ProjectRun) -> None:
     ctx.task_changes = ctx.deps.verification.collect_changes(ctx.project, ctx.tracker)
     collected_changed = change_state(ctx.task_changes)
     ctx.task_changes_dirty = collected_changed is None
-    if collected_changed is None:
-        raise RuntimeError("task change projection is unavailable")
-    ctx.task_changed = collected_changed
+    # Observed edits remain evidence when the net diff cannot be measured.
+    # Keep the failed measurement intact for the completion gate; it must
+    # produce a blocked proof rather than an execution error or a clean diff.
+    ctx.task_changed = collected_changed if collected_changed is not None else bool(ctx.work.evidence.changed_files)
     if ctx.result.stop_reason == "done":
         ctx.hooks.update_checkpoint(
             lambda store, item: store.set_status(item, "ready_for_review")

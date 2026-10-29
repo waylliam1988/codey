@@ -21,11 +21,11 @@ def test_native_loop_uses_real_snapshot_with_read_and_done(tmp_path: Path) -> No
 
     from codey.env_names import NATIVE_TOOLS_ENV  # noqa: F401  (kept for parity, not needed)
     from codey.operations.kernel_protocol import build_turn_snapshot
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.runtime.core.models import ToolResult
+    from tests.support.kernel_runtime import run_task_kernel
 
     (tmp_path / "app.py").write_text("hello\n", encoding="utf-8")
 

@@ -6,10 +6,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
-from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps
-
 LONG_CALL_ID = "shell-call-" + "x" * 100
 
 
@@ -39,7 +35,7 @@ def test_approval_stop_carries_exact_call_id_turn_and_index():
     import tempfile
     from pathlib import Path
 
-    from codey.operations.task_loop import _approval_stop
+    from codey.operations.kernel_actions import _approval_stop
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall
 
@@ -89,96 +85,17 @@ def test_approval_pending_persists_full_native_identity():
     assert pending["session_id"] == "s1"
 
 
-def test_approved_shell_result_answers_original_call_id_natively():
-    from unittest import mock
-
-    from codey.agents.shell_approval import (
-        ShellApprovalRequest,
-        build_shell_approval_pending,
-        shell_command_payload,
-    )
-    from codey.app import shell_service
+def test_approved_shell_result_answers_original_call_id_natively(tmp_path):
     from codey.operations.task_loop import run_task_kernel
-    from codey.operations.task_session import TaskSession
-    from codey.policies.task_policy import TaskPolicy
-    from codey.providers.base import AssistantTurn, ProviderToolCall
+    from tests.support.kernel_restart import approved_shell
 
-    req = ShellApprovalRequest(
-        cwd=".", command="echo hi", call_id="shell-native-9",
-        provider_id="local", turn=2, tool_index=0,
-    )
-    pending = build_shell_approval_pending(
-        approval=req, approval_id="shell_test456", session_id="s-shell", run_id="r-prev",
-        project=".", max_turns=4, provider_label="local", attached_project=".", intent="project",
-        command_fields=dict(shell_command_payload("echo hi")),
-        risk_label="generic", risk_title="t", risk_detail="d",
-        post_approval_instructions="",
-    )
-    approved = {"ok": True, "status": "exit", "output": "hi\n", "exit_code": 0, "truncated": False}
-    row = shell_service.shell_result_row(pending, approved, approved=True)
-    assert row.call.call_id == "shell-native-9", "必须回答原 native 调用"
-    assert row.redelivered is True
-    assert row.turn == 0 and row.tool_index == 0
-
-    # 同一 native 会话继续：首条发送即回答原 shell 调用，不执行新工具
-
-    from codey.operations.recovery import delivered_from_frame
-
-    frame = SimpleNamespace(
-        recovered_tool_outcomes=(row,), run_id="r-next",
-    )
-    delivered = delivered_from_frame(frame, effect_scope="task")
-    assert len(delivered) == 1
-    initial = list(delivered.values())
-    assert initial[0].call.call_id == "shell-native-9"
-
-    executed: list[str] = []
-
-    class P:
-        def __init__(self) -> None:
-            self.answers = 0
-
-        def send_turn(self, prompt, tools):
-            raise AssertionError("native continuation must answer the shell call first")
-
-        def send_tool_results(self, messages, tools):
-            self.answers += 1
-            if self.answers == 1:
-                ids = [m.call_id for m in messages]
-                assert ids == ["shell-native-9"], f"首发必须回答原调用：{ids}"
-                executed.append("answered")
-                return AssistantTurn(
-                    text="",
-                    tool_calls=(ProviderToolCall(id="done-1", name="done", arguments={"summary": "continued"}),),
-                )
-            return AssistantTurn(text="ack")
-
-        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
-            return self.send_tool_results(results, [])
-
-    session = TaskSession(
-        policy=TaskPolicy(grants=frozenset({"control", "project.read"})),
-        task_kind="project", project=".", max_turns=3,
-    )
-    with mock.patch(
-        "codey.operations.kernel_transport.provider_uses_native", return_value=True,
-    ):
-        out = run_task_kernel(
-            session,
-            request=KernelRunRequest(
-                transport=KernelTransportDeps(
-                    provider=P(),
-                    run_id="r-next",
-                    effect_scope="task",
-                    provider_id="local",
-                    user_task="continue",
-                    delivered=delivered,
-                    initial_results=initial,
-                ),
-            ),
-        )
-    assert executed == ["answered"]
-    assert out.stop_reason == "done"
+    receipt = {"ok": True, "status": "exit", "output": "hi", "exit_code": 0, "truncated": False}
+    with approved_shell(tmp_path, receipt, call_id=LONG_CALL_ID) as runtime:
+        result = run_task_kernel(runtime.session(), request=runtime.request)
+        assert result.completed, result
+        sent = [row for kind, rows in runtime.events if kind == "results" for row in rows]
+        assert len(sent) == 1 and sent[0].call_id == LONG_CALL_ID
+        assert "hi" in sent[0].content
 
 
 def test_denied_shell_result_answers_original_call_id():
@@ -303,12 +220,12 @@ def test_session_projection_never_shortens_native_call_id():
             durable.close()
 
 
-def test_malformed_shell_result_is_rejected_instead_of_coercing_success():
+def test_malformed_shell_result_is_rejected_instead_of_coercing_success(tmp_path):
     import pytest
 
-    from codey.operations.kernel_errors import RecoveryFailed
-    from codey.operations.task_run import _shell_redelivery_rows
+    from codey.operations.shell_approval_receipt import resolve_shell_approval
+    from tests.support.kernel_restart import approved_shell
 
-    with pytest.raises(RecoveryFailed):
-        _shell_redelivery_rows(({"call_id":"original", "command":"echo hi", "cwd":".",
-                                  "model_text":"failed", "ok":"false", "exit_code":0},))
+    receipt = {"ok": "false", "status": "exit", "output": "failed", "exit_code": 0}
+    with approved_shell(tmp_path, receipt) as runtime, pytest.raises(ValueError, match="receipt fields"):
+        resolve_shell_approval(runtime.durable, runtime.outputs, "approval")

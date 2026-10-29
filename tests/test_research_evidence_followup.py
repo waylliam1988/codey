@@ -5,7 +5,6 @@ from pathlib import Path
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.evidence_followup import run_evidence_followup
 from codey.research.evidence_rules import (
     EvidenceFollowupController,
     build_evidence_followup_prompt,
@@ -14,6 +13,7 @@ from codey.research.evidence_rules import (
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.query_planner import QueryCandidate, ResearchPlan
 from codey.research.tools import ResearchTools
+from tests.support.kernel_runtime import run_evidence_followup
 
 
 def _allow_parent():

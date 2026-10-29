@@ -3,12 +3,12 @@ import io
 import json
 import urllib.error
 
-from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import api_transport
 from codey.providers.api_provider import ApiProvider
 from codey.providers.zen.connection import ZenProvider
+from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 
 
 def test_observed_403_never_replays_or_changes_readonly_authority(tmp_path, monkeypatch):

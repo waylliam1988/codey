@@ -731,7 +731,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("[more text available", opened)
         self.assertIn("Locator preview only", found)
         self.assertIn("offset ", found)
-        self.assertIn("Use open_hit from the next allowed-actions block", found)
+        self.assertIn("Locator preview only; this is not an opened source observation.", found)
         self.assertEqual(evidence_before_write, 0)
         self.assertIn("saved fact note", saved)
         self.assertEqual(evidence_count, 1)
@@ -760,7 +760,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("Locator preview only", found)
         self.assertIn("稳定端点", found)
-        self.assertIn("Use open_hit from the next allowed-actions block", found)
+        self.assertIn("Locator preview only; this is not an opened source observation.", found)
 
     def test_source_search_pdf_locator_does_not_satisfy_page_evidence_until_page_opened(self) -> None:
         url = "https://example.com/method.pdf"
@@ -845,7 +845,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("pages 1-5 / 10", opened)
         self.assertIn("p.9", located)
-        self.assertIn("Use open_hit from the next allowed-actions block", located)
+        self.assertIn("Locator preview only; this is not an opened source observation.", located)
         self.assertEqual(pages_after_search, [1, 2, 3, 4, 5])
         self.assertEqual(evidence_after_search, 0)
         self.assertTrue(rejected.startswith("ERROR: evidence cites unread PDF page p.9"))
@@ -2734,7 +2734,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store.close()
 
         self.assertGreaterEqual(len(provider.sent), 2)
-        self.assertIn("valid tool call", provider.sent[3])
+        self.assertIn("Resend the intended call", provider.sent[3])
         self.assertIn("source_search missing required arg 'query'", provider.sent[3])
         self.assertNotIn("Codey", provider.sent[3])
 
@@ -2796,7 +2796,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertEqual(search.queries, ["helium"])
         self.assertEqual(search.fetch_urls, ["https://example.com/helium"])
-        self.assertIn("Available result IDs", provider.sent[1])
+        self.assertIn("Search result references:", provider.sent[1])
         self.assertIn("r1", provider.sent[1])
 
     def test_research_iteration_demotes_failed_priority_connector_result(self) -> None:

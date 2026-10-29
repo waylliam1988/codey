@@ -81,8 +81,8 @@ def main():
 
     from codey.agents.request import AgentRequest
     from codey.app import headless_runner
-    from codey.operations.project_adapter import run
     from tests.manual.agent_stability_codey_worker import ControlledContext, sampling_provider
+    from tests.support.kernel_runtime import run_agent as run
     attempts = 0
 
     def writer(request: AgentRequest):

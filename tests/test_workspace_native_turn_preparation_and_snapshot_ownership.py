@@ -1,4 +1,5 @@
 """Workspace first turns prepare once and retain frozen tools and session ownership."""
+
 import hashlib
 from dataclasses import replace
 from types import SimpleNamespace
@@ -6,10 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 from codey.app.context import AppContext
-from codey.operations import project_prompt_context, task_loop
+from codey.operations import kernel_actions, project_prompt_context, task_loop
 from codey.operations.context import RunWork
 from codey.operations.kernel_protocol import ReceivedProviderTurn, build_turn_snapshot
-from codey.operations.task_entry import run_entry_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
@@ -17,6 +17,7 @@ from codey.runtime.core.models import ToolResult
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.toolchain import tool_spec
 from codey.workspace.changes import collect_changes
+from tests.support.kernel_runtime import run_entry_kernel
 from tests.support.workspace_conversation import admit_entry_frame
 from tests.test_chat_workspace_tools_and_answer_completion import NativeConversation, workspace_frame
 
@@ -57,7 +58,7 @@ def test_workspace_turn_prepares_once_and_executes_original_snapshot(tmp_path, m
     admit_entry_frame(frame, state)
     refreshes, executions = [], []
     real_refresh = project_prompt_context.refresh_verification_candidates
-    real_execute = task_loop._call_execute_turn
+    real_execute = kernel_actions._call_execute_turn
 
     def refresh(session):
         refreshes.append(session)
@@ -69,7 +70,7 @@ def test_workspace_turn_prepares_once_and_executes_original_snapshot(tmp_path, m
         return real_execute(*args, **kwargs)
 
     monkeypatch.setattr(project_prompt_context, "refresh_verification_candidates", refresh)
-    monkeypatch.setattr(task_loop, "_call_execute_turn", execute)
+    monkeypatch.setattr(kernel_actions, "_call_execute_turn", execute)
     runtime = SimpleNamespace(state=state, workspace_revisions=state.workspace_revisions, collect_changes=collect_changes)
     try:
         result = run_entry_kernel(frame, RunWork([], ExecutionEvidence()),
@@ -95,10 +96,7 @@ def test_initial_turn_from_another_session_is_rejected_even_with_equal_policy(tm
     first = AssistantTurn(tool_calls=(ProviderToolCall("read-1", "read_file", {"path": "private.txt"}),))
     initial = ReceivedProviderTurn(first, build_turn_snapshot(original, native=True), "Read the original project", owner_session=original)
     provider = NativeConversation(first)
-    result = task_loop.run_task_kernel(other, request=task_loop.KernelRunRequest(
-        transport=task_loop.KernelTransportDeps(provider=provider, initial_turn=initial),
-        execution=task_loop.KernelExecutionDeps(project_path=tmp_path),
-    ))
-    assert result.stop_reason == "controller_failure"
+    with pytest.raises(TypeError, match="initial_turn"):
+        task_loop.KernelTransportDeps(provider=provider, initial_turn=initial)
     assert not other.read_files
     assert not provider.results and not provider.requests

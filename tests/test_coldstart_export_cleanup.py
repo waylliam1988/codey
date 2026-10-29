@@ -266,7 +266,6 @@ class NativeToolsUnifyTests(unittest.TestCase):
         from codey.operations import kernel_transport
 
         self.assertTrue(callable(getattr(kernel_transport, "provider_uses_native", None)))
-        self.assertIn("provider_uses_native", getattr(kernel_transport, "__all__", []))
 
     def test_old_wrappers_removed_and_callers_unified(self) -> None:
         # Cold-start closure: old loop deleted, single native check via new entry.

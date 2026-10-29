@@ -1,25 +1,35 @@
 """Transport delivery cannot erase an already established completion proof."""
-from types import SimpleNamespace
 
-from codey.operations import task_loop
 from codey.providers.base import AssistantTurn, ProviderToolCall
-from codey.runtime.core.models import Control, ToolPlan
 
 
 def test_unknown_done_delivery_retains_proof_and_separate_delivery_status(monkeypatch):
-    proof = object()
-    monkeypatch.setattr("codey.operations.project_verification.refresh_verification_candidates", lambda session: None)
-    monkeypatch.setattr("codey.operations.completion_gate.evaluate", lambda *args, **kwargs: SimpleNamespace(complete=True, final_text="done", proof=proof))
-    session = SimpleNamespace(turn=1)
+    from codey.operations import completion_gate
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
     from codey.providers.api_transport import GenerationUnknownError
+    from tests.support.kernel_runtime import KernelRunRequest, KernelTransportDeps, run_task_kernel
+
+    proofs = []
+    original = completion_gate.evaluate
+    def evaluate(*args, **kwargs):
+        verdict = original(*args, **kwargs)
+        proofs.append(verdict.proof)
+        return verdict
+    monkeypatch.setattr(completion_gate, "evaluate", evaluate)
 
     class Provider:
+        native_tools = True
+        def send_turn(self, prompt, tools):
+            return AssistantTurn(tool_calls=(ProviderToolCall("done1", "done", {"summary": "done"}),))
         def acknowledge_tool_results(self, *args, **kwargs):
             raise GenerationUnknownError("receipt disconnected")
+        def send_tool_results(self, *args, **kwargs):
+            raise AssertionError("completion must acknowledge its original call")
 
-    plan = ToolPlan(calls=[], control=Control("done", "done"))
-    result = task_loop._handle_done_reply(session, plan, Provider(), AssistantTurn(tool_calls=(ProviderToolCall("done1", "done", {}),)), True, [])
-    assert result.proof is proof
+    result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control"}))),
+                            request=KernelRunRequest(transport=KernelTransportDeps(provider=Provider())))
+    assert len(proofs) == 1 and result.proof == proofs[0]
     assert result.delivery == "unknown"
     assert result.completed is False
     assert result.stop_reason == "delivery_pending"

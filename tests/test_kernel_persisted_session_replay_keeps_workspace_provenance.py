@@ -52,8 +52,8 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
         task_state={"task_kind": "project"},
     )
     durable.start_task(run_id, state={"task_kind": "project"})
-    durable.advance_task(task_id=run_id, phase="assistant_intent_committed", state={"task_kind": "project"})
-    durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={"task_kind": "project"})
+    durable.advance_task(task_id=run_id, phase="running", state={"task_kind": "project"})
+    durable.advance_task(task_id=run_id, phase="running", state={"task_kind": "project"})
     mutations = RuntimeMutationLine(durable=durable)
     managed = ManagedOutputStore(state)
     rev_store = WorkspaceRevisionStore(state)
@@ -87,13 +87,13 @@ def _new_session(project: Path):
 
 def _recover_formal(project, state, logdir, session_id, run_id):
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.operations.kernel_session_recovery import restore_task_session
-    from codey.operations.recovery import recover_effects_for_resume
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.workspace.revision import WorkspaceRevisionStore
+    from tests.support.receipt_fixtures import inspect_receipt_facts
+    from tests.support.session_projection import restore_task_session
 
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     mutations = RuntimeMutationLine(durable=durable)
@@ -105,7 +105,7 @@ def _recover_formal(project, state, logdir, session_id, run_id):
         managed_outputs=ManagedOutputStore(state),
         workspace_revisions=WorkspaceRevisionStore(state),
     )
-    recovery = recover_effects_for_resume(
+    recovery = inspect_receipt_facts(
         deps, session_id=session_id, run_id=run_id, project=str(project), task_kind="project",
     )
     assert recovery.ok is True

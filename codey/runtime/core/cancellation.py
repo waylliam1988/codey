@@ -268,7 +268,7 @@ class _LinkedEvent(threading.Event):
         return super().is_set() or any(parent.is_set() for parent in self._parents)
 
     def wait(self, timeout: float | None = None) -> bool:
-        end = None if timeout is None else time.monotonic() + timeout
+        end = None if timeout is None else time.monotonic() + _safe_timeout(timeout)
         while not self.is_set():
             remaining = POLL_INTERVAL if end is None else min(POLL_INTERVAL, end - time.monotonic())
             if remaining <= 0:

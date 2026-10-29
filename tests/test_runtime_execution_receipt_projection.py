@@ -1,5 +1,4 @@
 """Runtime work observations project exact receipts independently of narrative history."""
-from types import SimpleNamespace
 
 import pytest
 
@@ -61,20 +60,24 @@ def test_invalid_result_metadata_cannot_authorize_omitting_an_observed_body(fram
     assert result_metadata_from_text(frame) is None
 
 
-def test_work_state_is_updated_before_each_actual_kernel_send(monkeypatch):
-    from codey.operations.task_loop import _ProviderTurnState, _receive_turn_plan
+def test_work_state_is_updated_before_each_actual_kernel_send():
+    from dataclasses import replace
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
 
-    provider = SimpleNamespace()
-    captured = []
-    session = TaskSession(policy=None, task_text="latest intent")
-    def send(*args, **kwargs):
-        captured.append(kwargs["observations"])
-        raise RuntimeError("offline")
-    monkeypatch.setattr("codey.operations.kernel_transport.send_kernel_reply", send)
-    _receive_turn_plan(session, provider, _ProviderTurnState(prompt="next"), SimpleNamespace(), [], native=False,
-                       provider_id="local", turn=1, stop_flag=lambda: False, on_event=None, stagnant_turns=None,
-                       propagate_provider_failure=False, trace_recorder=None, context_scope="request")
-    assert captured and "latest intent" in captured[0]
+    from codey.operations.task_loop import run_task_kernel
+    from tests.support.kernel_restart import paused_batch
+
+    with TemporaryDirectory() as directory, paused_batch(Path(directory), pause=False) as runtime:
+        session = runtime.session()
+        request = replace(runtime.request, transport=replace(runtime.request.transport, user_task="latest intent"))
+        session.task_text = "latest intent"
+        result = run_task_kernel(session, request=request)
+        assert result.completed, result
+        prompts = [body for kind, body in runtime.events if kind == "send"]
+        assert len(prompts) == 2
+        assert all("Current work observations" in prompt and "latest intent" in prompt for prompt in prompts)
+        assert "ORIGINAL_RESULT" in prompts[-1]
 
 
 def test_a_denied_or_unknown_command_is_not_reported_as_completed():

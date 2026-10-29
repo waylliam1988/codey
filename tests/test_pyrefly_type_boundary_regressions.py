@@ -40,7 +40,7 @@ def test_execution_delegate_fails_closed_when_project_tools_are_missing(
 ) -> None:
     from codey.agents import tools
 
-    monkeypatch.setattr(tools, "DEFAULT_TOOL_FNS", None)
+    monkeypatch.setattr(tools, "build_project_tool_fns", lambda **kwargs: None)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.read", "project.verify", "project.write"})))
     delegate = ExecutionDelegate(session=session, project_path=tmp_path, tool_fns=None)
     assert delegate.tool_fns is None

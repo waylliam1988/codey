@@ -24,7 +24,6 @@ from codey.app.sibling_probe import bind_provider_handlers
 from codey.ghost.work_queue_model import GhostWorkItem
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.ghost_post_turn import release_work_item, run_ghost_post_turn
-from codey.operations.recovery import recover_effects_for_resume
 from codey.operations.task_phases import (
     build_hooks,
     build_run_work,
@@ -231,9 +230,6 @@ class _RunSetup:
 @dataclass
 class _PhaseWork:
     work: RunWork
-    recovered_tool_outcomes: tuple[Any, ...] = ()
-    recovered_tool_result_batch_id: str = ""
-    settled_tool_outcomes: tuple[Any, ...] = ()
 
 
 def _finish_trace_event(
@@ -507,127 +503,23 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
             deps, setup, "ERROR: Runtime operation state unavailable.", current_work=empty_work
         )
 
-    recovery_run_id = source_run_id
-    recovery = recover_effects_for_resume(
-        deps,
-        session_id=setup.session_id,
-        run_id=recovery_run_id,
-        project=setup.project or "",
-        task_kind=setup.task_kind,
-        ignored_paths=tuple(setup.project_config_result.config.ignored_paths),
-    )
-    if not recovery.ok:
-        return None, _fail_early_run(
-            deps, setup,
-            "ERROR: Runtime recovery failed to settle unconfirmed effects.",
-            current_work=work,
-        )
-    if recovery.recovered_tool_outcomes or recovery.settled_tool_outcomes or getattr(work.operation, "task_policy", {}):
+    # Policy is persisted at entry. Its presence identifies an already-admitted
+    # invocation; only the operation driver decides pending execution/recovery.
+    if work.operation is not None and work.operation.task_policy:
         if not setup.continue_task:
             setup.request = replace(setup.request, continue_task=True)
             setup.continue_task = True
         setup.recovered_resume = True
-    shell_payloads: Any = getattr(setup.request, "initial_shell_results", ())
     resolved_input = setup.request.resolved_input()
     if isinstance(resolved_input, ResolveShellApproval):
         resolver = getattr(setup.state, "resolve_shell_approval", None)
         payload = resolver(resolved_input.approval_id) if callable(resolver) else None
-        if payload is None:
+        if payload is None or payload.get("source_run_id") != setup.run_id:
             return None, _fail_early_run(
-                deps, setup,
-                "ERROR: durable shell approval result is unavailable or uncertain.",
+                deps, setup, "ERROR: durable shell approval continuation does not match this task.",
                 current_work=work,
             )
-        # Typed approval input contains only an id. Reconstruct the text
-        # continuation from the verified durable result, including after a
-        # restart; the legacy scheduling string is not authoritative.
-        from codey.app.shell_service import build_shell_approval_continuation
-
-        continuation = build_shell_approval_continuation(
-            command=str(payload.get("command") or ""),
-            result={"output": payload.get("model_text"), "exit_code": payload.get("exit_code"),
-                    "status": payload.get("error_code"), "truncated": payload.get("truncated")},
-        )
-        setup.request = replace(setup.request, task=continuation)
-        setup.task = continuation
-        # Only native calls become recovered tool rows.
-        shell_payloads = ((payload,) if isinstance(payload, dict) and payload.get("call_id") else ())
-        source_run_id = str(payload.get("source_run_id") or "") if isinstance(payload, dict) else ""
-        if source_run_id and not setup.request.previous_run_id:
-            setup.request = replace(setup.request, previous_run_id=source_run_id)
-    shell_rows = _shell_redelivery_rows(shell_payloads)
-    if shell_rows:
-        # 审批 continuation：已裁决 shell 结果作为 turn-0 初始行，首发回答
-        # 原 native 调用（同会话 native 优先，异会话文本兜底）。
-        if not setup.continue_task:
-            setup.request = replace(setup.request, continue_task=True)
-            setup.continue_task = True
-        setup.recovered_resume = True
-    return _PhaseWork(
-        work=work,
-        # The approval result is committed into the durable conversation
-        # before this continuation is admitted.  It therefore restores task
-        # facts but is already present in the provider's replay context; only
-        # crash-recovered task effects remain pending provider delivery.
-        recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes),
-        # Delivery batches belong to the run whose ledger owns the intent.
-        # A resumed run receives the recovered rows, then creates its own
-        # delivery intent; carrying the source id into its sink is invalid.
-        recovered_tool_result_batch_id=(
-            recovery.recovered_tool_result_batch_id
-            if recovery_run_id == setup.run_id else ""
-        ),
-        settled_tool_outcomes=tuple(recovery.settled_tool_outcomes) + tuple(
-            row for row in shell_rows
-            if row.call.call_id not in {item.call.call_id for item in recovery.settled_tool_outcomes}
-        ),
-    ), None
-
-
-def _shell_redelivery_rows(payloads: Any) -> tuple[Any, ...]:
-    """Rebuild shell decisions without coercing outcomes or changing identities."""
-    from codey.agents.request import RecoveredToolOutcome
-    from codey.agents.shell_approval import MAX_DEFERRED_TOOL_CALLS, valid_shell_call_id
-    from codey.operations.kernel_errors import RecoveryFailed
-    from codey.runtime.core.models import ToolCall
-    from codey.runtime.core.protocol_window import ProtocolWindowRef
-    from codey.toolchain.runtime import ToolOutcome
-
-    if not isinstance(payloads, (tuple, list)) or len(payloads) > MAX_DEFERRED_TOOL_CALLS:
-        raise RecoveryFailed("shell results must be a bounded sequence")
-    rows = []
-    seen_ids: set[str] = set()
-    for index, item in enumerate(payloads):
-        if not isinstance(item, dict) or not valid_shell_call_id(item.get("call_id")):
-            raise RecoveryFailed("shell result must carry its original call id")
-        call_id = item["call_id"]
-        if call_id in seen_ids:
-            raise RecoveryFailed("duplicate shell result call id")
-        seen_ids.add(call_id)
-        if any(not isinstance(item.get(key, ""), str)
-               for key in ("command", "cwd", "model_text", "error_code")):
-            raise RecoveryFailed("shell result text fields must be strings")
-        ok, truncated, exit_code = item.get("ok"), item.get("truncated", False), item.get("exit_code")
-        if type(ok) is not bool or type(truncated) is not bool:
-            raise RecoveryFailed("shell result ok and truncated must be booleans")
-        if exit_code is not None and type(exit_code) is not int:
-            raise RecoveryFailed("shell result exit_code must be an integer")
-        outcome = ToolOutcome(
-            item.get("model_text", ""), ok,
-            audit={"exit_code": exit_code} if exit_code is not None else {},
-            error_code=item.get("error_code", "") or ("" if ok else "shell_error"),
-            exit_code=exit_code, truncated=truncated,
-        )
-        rows.append(RecoveredToolOutcome(
-            call=ToolCall(name=str(item.get("tool_name") or "shell"),
-                          args=(dict(item["tool_args"]) if isinstance(item.get("tool_args"), dict)
-                                else {"command": item.get("command", ""), "path": item.get("cwd", ".")}),
-                          call_id=call_id),
-            outcome=outcome, turn=0, tool_index=index, effect_id="", redelivered=True,
-            window_ref=(ProtocolWindowRef.from_payload(item["window_ref"])
-                        if isinstance(item.get("window_ref"), dict) else None),
-        ))
-    return tuple(rows)
+    return _PhaseWork(work=work), None
 
 
 def _route_ghost_work(
@@ -640,7 +532,7 @@ def _route_ghost_work(
     Post-turn ghost work still runs inside the settlement helpers, so the
     ghost lifecycle bookends the run instead of hiding mid-orchestrator."""
     state = setup.state
-    if not workload.recovered_tool_outcomes and not workload.settled_tool_outcomes:
+    if not setup.recovered_resume:
         try:
             claimed = claim_or_route_ghost_work(
                 setup.ghost_deps, setup.request,
@@ -754,9 +646,6 @@ def _connect_provider_frame(
         trace_sink=setup.trace_sink,
         hooks=hooks,
         project_config_result=setup.project_config_result,
-        recovered_tool_outcomes=workload.recovered_tool_outcomes,
-        recovered_tool_result_batch_id=workload.recovered_tool_result_batch_id,
-        settled_tool_outcomes=workload.settled_tool_outcomes,
     )
     return frame, provider, provider_id, frame.conversation
 

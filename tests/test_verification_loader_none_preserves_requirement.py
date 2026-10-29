@@ -90,8 +90,8 @@ def test_loader_none_blocks_real_kernel_compileall(tmp_path, monkeypatch):
     """Real kernel: pytest required, loader None, compileall pass, done -> blocked."""
     import json
 
-    from codey.operations.task_loop import run_task_kernel
     from codey.workspace.revision import workspace_fingerprint
+    from tests.support.kernel_runtime import run_task_kernel
 
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")

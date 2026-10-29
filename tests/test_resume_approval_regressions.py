@@ -34,14 +34,14 @@ def _durable_requested_approval(
         )
         state.durable.start_task(source_run_id, state={})
         state.durable.advance_task(
-            task_id=source_run_id, phase="assistant_response_pending", state={}
+            task_id=source_run_id, phase="running", state={}
         )
     else:
         current = state.durable.task(source_run_id)
         if current.phase in {"accepted", "dispatching"}:
             state.durable.start_task(source_run_id, state={})
             state.durable.advance_task(
-                task_id=source_run_id, phase="assistant_response_pending", state={}
+                task_id=source_run_id, phase="running", state={}
             )
     assert state.managed_outputs is not None
     from codey.agents.shell_approval import ShellApprovalRequest
@@ -124,7 +124,7 @@ def test_cold_start_rebuild_restores_source_run_api_selection(tmp_path) -> None:
         "openai-responses",
         True,
     )
-    state = AppContext(tmp_path)
+    state = AppContext(tmp_path, start_scheduler=False)
     try:
         source = state.reserve_run(
             session_id="session",
@@ -169,7 +169,7 @@ def test_cold_start_rebuild_restores_source_run_api_selection(tmp_path) -> None:
     finally:
         state.close()
 
-    restarted = AppContext(tmp_path)
+    restarted = AppContext(tmp_path, start_scheduler=False)
     try:
         pending = restarted.claim_pending_shell_approval("approval-cold-start")
         assert pending is not None
@@ -258,17 +258,10 @@ def test_structured_resume_recovery_reads_the_declared_source_run(monkeypatch) -
         lambda *_args, **_kwargs: (work, None),
     )
 
-    def recover(_deps, **kwargs):
-        seen.update(kwargs)
-        return SimpleNamespace(
-            ok=True,
-            recovered_tool_outcomes=(),
-            settled_tool_outcomes=(),
-            recovered_tool_result_batch_id="",
-        )
-
-    monkeypatch.setattr(task_run, "recover_effects_for_resume", recover)
-    durable = SimpleNamespace(task=lambda _run_id: SimpleNamespace(state={"task_kind": "chat"}))
+    def load_source(identity):
+        seen["run_id"] = identity
+        return SimpleNamespace(state={"task_kind": "chat"})
+    durable = SimpleNamespace(task=load_source)
     setup = SimpleNamespace(
         request=request,
         state=SimpleNamespace(durable=durable),
@@ -300,13 +293,6 @@ def test_source_delivery_batch_is_not_reused_by_new_resume_run(monkeypatch) -> N
     )
     work = SimpleNamespace(operation=None)
     monkeypatch.setattr(task_run, "build_run_work", lambda *_args, **_kwargs: (work, None))
-    monkeypatch.setattr(
-        task_run, "recover_effects_for_resume",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            ok=True, recovered_tool_outcomes=(), settled_tool_outcomes=(),
-            recovered_tool_result_batch_id="deliv-source-1",
-        ),
-    )
     durable = SimpleNamespace(task=lambda _run_id: SimpleNamespace(state={"task_kind": "chat"}))
     setup = SimpleNamespace(
         request=request, state=SimpleNamespace(durable=durable), session_id="session", run_id="new-run",
@@ -316,7 +302,7 @@ def test_source_delivery_batch_is_not_reused_by_new_resume_run(monkeypatch) -> N
     )
     workload, failure = task_run._build_workload(SimpleNamespace(), setup)
     assert failure is None and workload is not None
-    assert workload.recovered_tool_result_batch_id == ""
+    assert not hasattr(workload, "recovered_tool_result_batch_id")
 
 
 def test_stop_persists_abandoned_so_old_approval_cannot_resume(tmp_path) -> None:

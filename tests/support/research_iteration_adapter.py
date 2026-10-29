@@ -15,7 +15,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from codey.operations.research_iteration import run_research_iteration
+from tests.support.kernel_runtime import run_research_iteration
 
 
 def render_research_repair_prompt(codec: Any, plan: Any, state: Any | None = None) -> str:

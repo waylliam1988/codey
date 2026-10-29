@@ -11,23 +11,26 @@ import pytest
 from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
 from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.errors import CommitConflict
-from codey.operations.provider_receipts import RESPONSE_KIND, decode_reply, encode_reply, read_provider_artifact
-from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+from codey.operations.provider_receipts import RESPONSE_KIND, read_provider_artifact
+from codey.operations.task_effects import KernelEffectSink
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
+from codey.providers.response_record import decode_reply, encode_reply
 from codey.runtime.core.operation_reducer import ACTION_INTERPRET_PROVIDER_RESPONSE, ACTION_SETTLE_PROVIDER_UNKNOWN
 from codey.runtime.core.operation_state import RuntimeOperationTransitionError
 from codey.runtime.write.drive import peek_next_action
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.provider_actions import ProviderActions
 
 
-def runtime(tmp_path, *, sqlite=False):
+def runtime(tmp_path, *, sqlite=False, task_kind="chat"):
     durable = DurableSession(SQLiteDurableStore(tmp_path / "runtime.sqlite") if sqlite else MemoryDurableStore())
     durable.admit_input(conversation_id="s", request_id="input", task_id="r", text="inspect", provider_snapshot={})
     durable.claim_task("r")
     durable.start_task("r", state=dict(durable.task("r").state))
     mutations = RuntimeMutationLine(durable=durable)
-    mutations.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=4, max_repair_rounds=1)
+    mutations.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=4, max_repair_rounds=1,
+                               task_kind=task_kind)
     mutations.mark_writer_running("s", "r", provider_id="local")
     outputs = ManagedOutputStore(tmp_path)
     sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local", durable=durable,
@@ -49,7 +52,7 @@ def test_receiving_response_does_not_place_history_or_settle_generation(tmp_path
     provider.send.return_value = '{"tool":"read_file","args":{"path":"a.py"}}'
     before = durable.entries("s")
     try:
-        original = KernelRecordedProvider(provider, sink).send("inspect")
+        original = ProviderActions(provider, sink).send("inspect")
         effect = durable.effects("r")[0]
         assert effect.settlement is None
         assert durable.entries("s") == before
@@ -76,7 +79,7 @@ def test_scheduler_stop_preserves_received_response_and_its_open_generation(tmp_
     durable, mutations, outputs, sink = runtime(tmp_path)
     provider = Mock(send=Mock(return_value="received before controller stopped"))
     try:
-        reply = KernelRecordedProvider(provider, sink).send("inspect")
+        reply = ProviderActions(provider, sink).send("inspect")
         before = operation_from_checkpoint(durable.task("r"), "s")
         effects = durable.effects("r")
         if stop == "failure":
@@ -110,7 +113,7 @@ def test_result_commit_conflict_retries_persistence_without_resending(tmp_path, 
     monkeypatch.setattr(durable.store, "commit", conflict)
     provider = Mock(send=Mock(return_value="received"))
     try:
-        assert KernelRecordedProvider(provider, sink).send("inspect") == "received"
+        assert ProviderActions(provider, sink).send("inspect") == "received"
         assert failed and provider.send.call_count == 1
         assert sink.pending_provider_settlement() is not None
     finally:
@@ -134,7 +137,7 @@ def test_committed_response_retry_does_not_repeat_provider_or_native_history(tmp
 
     monkeypatch.setattr(durable.store, "commit", lost_result)
     try:
-        assert KernelRecordedProvider(provider, sink).send("inspect") == reply
+        assert ProviderActions(provider, sink).send("inspect") == reply
         assert interrupted and provider.send.call_count == 1
         assert len(durable.effects("r")) == 1
         assert [entry.kind for entry in durable.entries("s")] == ["user_message", "tool_call"]
@@ -146,23 +149,32 @@ def test_committed_response_retry_does_not_repeat_provider_or_native_history(tmp
 def test_recovery_of_admitted_provider_without_response_records_unknown_without_resending(tmp_path):
     from types import SimpleNamespace
 
-    from codey.operations.recovery import recover_effects_for_resume
     from codey.runtime.effects.effect_records import RuntimeEffectIntent
+    from tests.support.receipt_fixtures import inspect_receipt_facts
 
-    durable, line, _, _ = runtime(tmp_path)
+    durable, line, _, sink = runtime(tmp_path)
     line.begin_provider_effect("s", "r", RuntimeEffectIntent(
         "original", "provider_send", "s", "r", provider_id="local", turn=1, args_digest="request-digest",
     ))
     try:
-        result = recover_effects_for_resume(
+        result = inspect_receipt_facts(
             SimpleNamespace(state=SimpleNamespace(durable=durable), runtime_mutations=line,
                             runtime_effects=None, tool_result_delivery=None),
             session_id="s", run_id="r", project="", task_kind="chat",
         )
-        assert not result.ok
+        assert result.ok
+        assert durable.effect("original").settlement is None
+        from codey.operations.task_loop import run_task_kernel
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
+        from tests.durable.test_operation_control_actions import request_for
+
+        failure = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control"}))),
+            request=request_for(durable, sink, Mock()))
+        assert failure.stop_reason == "recovery_failure"
         assert len(durable.effects("r")) == 1
         assert durable.effect("original").settlement["sent_state"] == "maybe_sent"
-        assert durable.task("r").phase == "failed"
+        assert durable.task("r").phase == "running"
     finally:
         durable.close()
 
@@ -171,7 +183,7 @@ def test_corrupt_received_body_blocks_without_reexecuting_provider(tmp_path):
     durable, _, _, sink = runtime(tmp_path)
     provider = Mock(send=Mock(return_value="received"))
     try:
-        KernelRecordedProvider(provider, sink).send("inspect")
+        ProviderActions(provider, sink).send("inspect")
         artifact = next(a for a in durable.artifacts_for_task("r") if a.metadata["kind"] == RESPONSE_KIND)
         Path(artifact.storage_path).write_text("corrupt", encoding="utf-8")
         with pytest.raises(ValueError, match="digest"):
@@ -187,7 +199,7 @@ def test_hard_process_exit_distinguishes_received_response_from_unknown_submissi
 import os, sys
 from pathlib import Path
 from tests.durable.test_provider_response_receipts import runtime
-from codey.operations.task_effects import KernelRecordedProvider
+from tests.support.provider_actions import ProviderActions
 root = Path(sys.argv[1])
 received = sys.argv[2] == 'True'
 durable, mutations, outputs, sink = runtime(root, sqlite=True)
@@ -201,7 +213,7 @@ def committed(result, mutation):
     if any(a.metadata.get('kind') == 'provider_response' for a in mutation.artifacts):
         os._exit(73)
 durable.subscribe_commits(committed)
-KernelRecordedProvider(Provider(), sink).send('inspect')
+ProviderActions(Provider(), sink).send('inspect')
 raise AssertionError('fault did not exit')
 '''
     child = subprocess.run([sys.executable, "-c", script, str(tmp_path), str(received)],
@@ -228,7 +240,7 @@ def test_restart_executes_saved_response_before_any_new_provider_request(tmp_pat
 import os, sys
 from pathlib import Path
 from tests.durable.test_provider_response_receipts import runtime
-from codey.operations.task_effects import KernelRecordedProvider
+from tests.support.provider_actions import ProviderActions
 from codey.operations.task_session import TaskSession
 from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
@@ -244,22 +256,22 @@ def committed(result, mutation):
     if any(a.metadata.get('kind') == 'provider_response' for a in mutation.artifacts):
         os._exit(73)
 durable.subscribe_commits(committed)
-KernelRecordedProvider(Provider(), sink).send('inspect')
+ProviderActions(Provider(), sink).send('inspect')
 '''
     child = subprocess.run([sys.executable, "-c", script, str(tmp_path), str(native)], capture_output=True,
                            text=True, timeout=30)
     assert child.returncode == 73, child.stderr
     from codey.operations.generation_boundary import durable_generation_boundary_callback
-    from codey.operations.task_loop import (
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.runtime.core.models import ToolResult
+    from tests.support.kernel_runtime import (
         KernelExecutionDeps,
         KernelObservationDeps,
         KernelRunRequest,
         KernelTransportDeps,
         run_task_kernel,
     )
-    from codey.operations.task_session import TaskSession
-    from codey.policies.task_policy import TaskPolicy
-    from codey.runtime.core.models import ToolResult
 
     durable = DurableSession(SQLiteDurableStore(tmp_path / "runtime.sqlite"))
     durable.recover_scheduler_state()
@@ -295,7 +307,7 @@ KernelRecordedProvider(Provider(), sink).send('inspect')
 
     try:
         result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control", "project.read"})), max_turns=4),
-            request=KernelRunRequest(transport=KernelTransportDeps(provider=KernelRecordedProvider(Provider(), sink),
+            request=KernelRunRequest(transport=KernelTransportDeps(provider=Provider(),
                 provider_id="local", run_id="r"), execution=KernelExecutionDeps(executors={"read_file": read}),
                 observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
                     durable=durable, session_id="s", task_id="r", sink=sink))))
@@ -303,5 +315,43 @@ KernelRecordedProvider(Provider(), sink).send('inspect')
         assert order == (["execute", "request", "acknowledge"] if native else ["execute", "request"])
         assert len([effect for effect in durable.effects("r") if effect.category == "tool_call"]) == 1
         assert all(effect.settlement is not None for effect in durable.effects("r"))
+    finally:
+        durable.close()
+
+
+@pytest.mark.parametrize("sqlite", [False, True])
+def test_history_projects_the_single_response_body_and_corruption_never_replays(tmp_path, sqlite):
+    from codey.operations.generation_boundary import durable_generation_boundary_callback
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.task_loop import KernelObservationDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+
+    durable, _, _, sink = runtime(tmp_path, sqlite=sqlite)
+    session = TaskSession(TaskPolicy(frozenset({"project.read", "control"})), max_turns=4)
+    sink.bind_request(build_turn_snapshot(session, native=True), logical_turn=1)
+    reply = AssistantTurn(text="original body", tool_calls=(ProviderToolCall("one", "read_file", {"path": "a.py"}),))
+    provider = Mock(send=Mock(return_value=reply))
+    try:
+        ProviderActions(provider, sink).send("inspect")
+        state = operation_from_checkpoint(durable.task("r"), "s")
+        stored = [entry for entry in durable.store.entries("s") if entry.kind == "tool_call"]
+        assert len(stored) == 1 and dict(stored[0].payload) == {"response_ref": state.response_ref}
+        projected = [entry for entry in durable.entries("s") if entry.kind == "tool_call"][0]
+        assert projected.payload["content"] == reply.text
+        assert projected.payload["tool_calls"][0]["id"] == "one"
+        assert durable.context("s")[-1].payload["tool_calls"][0]["id"] == "one"
+        artifact = durable.artifact(state.response_ref)
+        Path(artifact.storage_path).write_text("corrupted", encoding="utf-8")
+        with pytest.raises(ValueError, match="digest"):
+            durable.history_page("s")
+        provider.reset_mock()
+        result = run_task_kernel(session, request=KernelRunRequest(
+            transport=KernelTransportDeps(provider=provider, provider_id="local", run_id="r"),
+            observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
+                durable=durable, session_id="s", task_id="r", sink=sink))))
+        assert not result.completed and "digest" in result.summary
+        assert provider.send.call_count == provider.send_turn.call_count == provider.send_tool_results.call_count == 0
+        assert len(durable.effects("r")) == 1
     finally:
         durable.close()

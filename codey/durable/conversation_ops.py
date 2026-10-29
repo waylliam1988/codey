@@ -29,7 +29,31 @@ from codey.durable.task_projection import task_lifecycle
 
 
 def entries(session: Any, conversation_id: str) -> tuple[EntryDraft, ...]:
-    return tuple(session.store.entries(conversation_id))
+    return _resolve_response_entries(session, tuple(session.store.entries(conversation_id)))
+
+
+def _resolve_response_entries(session: Any, path: tuple[EntryDraft, ...]) -> tuple[EntryDraft, ...]:
+    from codey.durable.provider_response import read_response_artifact, tool_call_message
+
+    resolved = []
+    for entry in path:
+        reference = entry.payload.get("response_ref") if entry.kind == "tool_call" else None
+        if reference is None:
+            resolved.append(entry)
+            continue
+        if not isinstance(reference, str) or not reference or set(entry.payload) != {"response_ref"}:
+            raise ValueError("invalid provider history reference")
+        artifact = session.artifact(reference)
+        if (artifact.owner_task_id != entry.by_task_id or not artifact.owner_effect_id
+                or artifact.metadata.get("kind") != "provider_response"):
+            raise ValueError("provider history reference ownership mismatch")
+        envelope = read_response_artifact(artifact)
+        if (not isinstance(envelope, dict) or envelope.get("schema_version") != 1
+                or envelope.get("kind") != "provider_response"
+                or envelope.get("effect_id") != artifact.owner_effect_id):
+            raise ValueError("invalid provider history response")
+        resolved.append(replace(entry, payload=tool_call_message(envelope.get("payload"))))
+    return tuple(resolved)
 
 
 def conversation_tree(session: Any, conversation_id: str) -> dict[str, object]:
@@ -320,10 +344,10 @@ def context(session: Any, conversation_id: str, *, leaf_id: str | None = None) -
     leaf = leaf_id
     if leaf is None:
         leaf, _revision = session.store.head(conversation_id)
-    return _apply_head_cut(context_path(
+    return _resolve_response_entries(session, _apply_head_cut(context_path(
         conversation_id, leaf,
         entries=session.store.entries, parent=session.store.conversation_parent,
-    ))
+    )))
 
 
 def context_at(
@@ -345,12 +369,12 @@ def context_at(
         leaf = local[-1].entry_id if local else session.store.conversation_parent(conversation_id)[1]
     else:
         leaf = leaf_id
-    return _apply_head_cut(context_path(
+    return _resolve_response_entries(session, _apply_head_cut(context_path(
         conversation_id,
         leaf,
         entries=visible,
         parent=session.store.conversation_parent,
-    ))
+    )))
 
 
 def _apply_head_cut(path: tuple[EntryDraft, ...]) -> tuple[EntryDraft, ...]:

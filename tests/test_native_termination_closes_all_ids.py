@@ -1,21 +1,20 @@
 """原生协议所有终止路径必须先回答当前 call id 再结束。"""
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps
+from codey.providers.base import AssistantTurn, ProviderToolCall
 
 
 def _native_reply(*ids: str):
-    return SimpleNamespace(tool_calls=tuple(SimpleNamespace(id=i, name="read_file", arguments={"path": "a.py"}) for i in ids))
+    return AssistantTurn(tool_calls=tuple(ProviderToolCall(id=i, name="read_file", arguments={"path": "a.py"}) for i in ids))
 
 
 def test_protocol_threshold_closes_current_call_id() -> None:
     from unittest import mock
 
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from tests.support.kernel_runtime import run_task_kernel
 
     policy = TaskPolicy(grants=frozenset({"control", "project.read"}))
     sess = TaskSession(policy=policy, task_kind="project", project="", max_turns=4, task_text="t")
@@ -23,12 +22,12 @@ def test_protocol_threshold_closes_current_call_id() -> None:
 
     class P:
         def send_turn(self, prompt, tools):
-            return SimpleNamespace(tool_calls=(
-                SimpleNamespace(id="invalid-last-id", name="unknown_tool_xyz", arguments={}),
+            return AssistantTurn(tool_calls=(
+                ProviderToolCall(id="invalid-last-id", name="unknown_tool_xyz", arguments={}),
             ))
         def send_tool_results(self, messages, tools):
             closed.extend(m.call_id for m in messages)
-            return SimpleNamespace(tool_calls=())
+            return AssistantTurn(tool_calls=())
 
         def acknowledge_tool_results(self, results, declared_tools, timeout=None):
             return self.send_tool_results(results, [])
@@ -52,7 +51,7 @@ def test_protocol_threshold_closes_current_call_id() -> None:
 
 
 def test_shell_approval_carries_native_call_id() -> None:
-    from codey.operations.task_loop import _approval_stop
+    from codey.operations.kernel_actions import _approval_stop
     from codey.runtime.core.models import ToolCall
 
     seen: list[object] = []

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import time
-from types import SimpleNamespace
 
 import pytest
 
@@ -14,7 +13,7 @@ from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.runtime.core.models import ToolCall
-from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _new_session, _open_runtime, _tracker_state
+from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _new_session, _open_runtime
 
 
 def fixture(tmp_path):
@@ -152,28 +151,30 @@ def test_parallel_result_delivery_and_child_identity_are_deterministic():
 @pytest.mark.parametrize("tamper", [False, True, "runtime"])
 def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(tmp_path, monkeypatch, read_path, tamper):
     from codey.codemode.runtime import NodeWorkerRuntime
-    from codey.operations import kernel_execution
-    from codey.operations.kernel_session_recovery import restore_task_session
-    from codey.operations.recovery import recover_effects_for_resume
+    from codey.operations.generation_boundary import durable_generation_boundary_callback
+    from codey.operations.task_effects import KernelEffectSink
+    from codey.providers.base import AssistantTurn, ProviderToolCall
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from tests.support.kernel_runtime import (
+        KernelExecutionDeps,
+        KernelObservationDeps,
+        KernelRunRequest,
+        KernelTransportDeps,
+        run_task_kernel,
+    )
 
     class Crash(BaseException):
         pass
 
     project, state, logdir, m, managed, revs, sink, session = fixture(tmp_path)
-    call = ToolCall(
-        "codemode",
-        {
-            "code": """
+    call = ToolCall("codemode", {"code": """
         const n = (await load('count')) ?? 0;
         await store('count', n+1);
         const r = await tools.read_file({path:inputs.path});
         return {n,r,text:inputs.text,now:Date.now(),rand:Math.random()};
-    """, "inputs": {"path": read_path, "text": "'quoted'\n\"text\"\u2028\n"}
-        },
-        call_id="parent",
-    )
+    """, "inputs": {"path": read_path, "text": "quoted data"}}, call_id="parent")
     if tamper is True:
-        (project / "a.py").write_text("needle" * 3000)
+        (project / "a.py").write_text("needle" * 3000, encoding="utf-8")
     original_values = []
     original = NodeWorkerRuntime.execute
 
@@ -181,82 +182,69 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(tmp_
         result = original(self, *args, **kwargs)
         assert result.ok
         original_values.append(result.value)
-        raise Crash()  # child committed, parent has no receipt
+        raise Crash()
+
+    class Provider:
+        native_tools = True
+
+        def send_turn(self, *args):
+            return AssistantTurn(tool_calls=(ProviderToolCall(call.call_id, call.name, call.args),))
+
+        def send_tool_results(self, *args):
+            return AssistantTurn(tool_calls=(ProviderToolCall("done", "done", {"summary": "finished"}),))
+
+        def acknowledge_tool_results(self, *args):
+            return AssistantTurn()
+
+    def request(active_sink):
+        return KernelRunRequest(transport=KernelTransportDeps(provider=Provider(), provider_id="local", run_id="r", effect_scope="outer"),
+            execution=KernelExecutionDeps(project_path=project, managed_outputs=managed, session_id="s",
+                workspace_revision_store=revs, durable=active_sink.durable),
+            observation=KernelObservationDeps(intent_sink=active_sink, on_boundary=durable_generation_boundary_callback(
+                durable=active_sink.durable, session_id="s", task_id="r", sink=active_sink)))
 
     monkeypatch.setattr(NodeWorkerRuntime, "execute", interrupted)
-    parent = builder(project, m, managed, revs, sink, session)
     with pytest.raises(Crash):
-        execute_turn(
-            session,
-            [call],
-            executors={"codemode": parent},
-            run_id="r",
-            effect_scope="outer",
-            turn=0,
-            snapshot=build_turn_snapshot(session),
-            intent_sink=sink,
-            project_path=project,
-            managed_outputs=managed,
-            workspace_revision_store=revs,
-            durable=m.durable,
-        )
+        run_task_kernel(session, request=request(sink))
     m.durable.close()
     if tamper is True:
         artifact = max((p for p in managed.root.rglob("*") if p.is_file()), key=lambda p: p.stat().st_size)
-        artifact.write_text("corrupt original receipt")
-
+        artifact.write_text("corrupt original receipt", encoding="utf-8")
     monkeypatch.setattr(NodeWorkerRuntime, "execute", original)
     if tamper == "runtime":
         monkeypatch.setattr(NodeWorkerRuntime, "contract_digest", lambda _: "changed-worker")
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
-    from codey.runtime.effects.effect_records import RuntimeEffectStore
-    from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-    from codey.runtime.write.mutation_line import RuntimeMutationLine
-
-    deps = SimpleNamespace(
-        state=_tracker_state(durable, state),
-        runtime_mutations=RuntimeMutationLine(durable=durable),
-        runtime_effects=RuntimeEffectStore(durable=durable),
-        tool_result_delivery=ToolResultDeliveryStore(durable=durable),
-        managed_outputs=managed,
-        workspace_revisions=revs,
-    )
+    durable.recover_scheduler_state()
+    if durable.task("r").status == "pending":
+        durable.claim_task("r")
+    line = RuntimeMutationLine(durable=durable)
+    resumed_sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable, managed_outputs=managed)
+    fresh = _new_session(project)
+    from codey.operations import kernel_execution
+    invoke = kernel_execution._run_via_delegate_or_fn
 
     def no_dispatch(*args, **kwargs):
         if args[4] == "read_file":
             pytest.fail("re-executed committed child")
         return invoke(*args, **kwargs)
 
-    invoke = kernel_execution._run_via_delegate_or_fn
     monkeypatch.setattr(kernel_execution, "_run_via_delegate_or_fn", no_dispatch)
     try:
-        recovery = recover_effects_for_resume(
-            deps, session_id="s", run_id="r", project=str(project), task_kind="project"
-        )
+        result = run_task_kernel(fresh, request=request(resumed_sink))
+        parents = [effect for effect in durable.effects("r") if effect.intent.get("tool_name") == "codemode"]
         if tamper:
-            assert not recovery.ok
+            assert not result.completed or parents[0].status == "error"
+            assert durable.task("r").state["codemode_state"]["count"] == 1
             return
-        assert recovery.ok
-        assert all(e.settlement is not None for e in durable.effects("r"))
-        fresh = _new_session(project)
-        frame = SimpleNamespace(
-            run_id="r",
-            recovered_tool_outcomes=recovery.recovered_tool_outcomes,
-            settled_tool_outcomes=recovery.settled_tool_outcomes,
-            recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
-        )
-        _, _, _, initial = restore_task_session(frame, fresh)
-        assert len(initial) == 1
-        assert initial[0].call.name == "codemode"
-        assert len(initial[0].canonical["child_effect_ids"]) == 1
-        assert len(fresh.executed) == 2
-        assert initial[0].canonical["value"] == original_values[0]
-        assert initial[0].canonical["value"]["text"] == call.args["inputs"]["text"]
+        assert result.completed, result
+        restored = fresh._memory_results[parents[0].effect_id]
+        assert restored.canonical["value"] == original_values[0]
+        assert len(restored.canonical["child_effect_ids"]) == 1
         assert durable.task("r").state["codemode_state"]["count"] == 1
-        assert len(deps.tool_result_delivery.load_batches("s", "r")) == 1
-        assert all(
-            e.intent.get("parent_effect_id") for e in durable.effects("r") if e.intent["tool_name"] != "codemode"
-        )
+        assert all(effect.settlement is not None for effect in durable.effects("r"))
+        # Running the same settled invocation again cannot re-enter the VM.
+        monkeypatch.setattr(NodeWorkerRuntime, "execute", lambda *a, **k: pytest.fail("restarted settled VM"))
+        assert run_task_kernel(_new_session(project), request=request(resumed_sink)) == result
     finally:
         durable.close()
 
@@ -264,15 +252,14 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(tmp_
 @pytest.mark.parametrize("ending", ["no_progress", "budget_drain"])
 def test_terminal_native_receipt_drain_settles_received_generation_before_writer(tmp_path, monkeypatch, ending):
     from codey.operations.generation_boundary import durable_generation_boundary_callback
-    from codey.operations.task_effects import KernelRecordedProvider
-    from codey.operations.task_loop import (
+    from codey.providers.base import AssistantTurn, ProviderToolCall
+    from tests.support.kernel_runtime import (
         KernelExecutionDeps,
         KernelObservationDeps,
         KernelRunRequest,
         KernelTransportDeps,
         run_task_kernel,
     )
-    from codey.providers.base import AssistantTurn, ProviderToolCall
 
     project, state, logdir, m, managed, revs, sink, session = fixture(tmp_path)
     session.max_turns = 4 if ending == "no_progress" else 1
@@ -299,7 +286,7 @@ def test_terminal_native_receipt_drain_settles_received_generation_before_writer
 
     request = KernelRunRequest(
         transport=KernelTransportDeps(
-            provider=KernelRecordedProvider(Provider(), sink),
+            provider=Provider(),
             provider_id="local",
             run_id="r",
             effect_scope="task",

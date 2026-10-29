@@ -26,7 +26,6 @@ if str(ROOT) not in sys.path:
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.research_iteration import run_research_iteration
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
 from codey.research.report_quality import review_report_quality
@@ -36,6 +35,7 @@ from codey.research.source_search import bounded_limit, render_results, search_p
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import Control, ToolPlan
+from tests.support.kernel_runtime import run_research_iteration
 from tests.support.research_iteration_adapter import ResearchIteration
 from tests.support.research_protocol import MAX_CALLS_PER_TURN as _MAX_CALLS_PER_TURN
 from tests.support.research_protocol import JsonToolCodec

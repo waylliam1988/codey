@@ -8,13 +8,13 @@ import pytest
 
 from codey.app.context import AppContext
 from codey.operations.context import RunWork
-from codey.operations.task_entry import run_entry_kernel
 from codey.policies.task_policy import TaskPolicy
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.ledger_projection import load_run_projection
 from codey.runs.receipt import task_receipt_from_payload
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.workspace.changes import collect_changes
+from tests.support.kernel_runtime import run_entry_kernel
 from tests.support.workspace_conversation import TextConversation, admit_entry_frame, isolated_short_state_home
 from tests.test_chat_workspace_tools_and_answer_completion import workspace_frame
 

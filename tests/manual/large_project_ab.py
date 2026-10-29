@@ -31,11 +31,11 @@ import contextlib
 
 from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
-from codey.operations.project_adapter import run
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider
 from codey.toolchain.runtime import ToolOutcome
 from tests.manual.project_task_context import render_production_project_map
+from tests.support.kernel_runtime import run_agent as run
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-large-project-ab.json"
 

@@ -182,6 +182,29 @@ def _external_outcome_unknown(effect: RuntimeEffectProjection) -> bool:
 
 
 def next_runtime_action(view: SessionView, inputs: RuntimeDecisionInputs = _NO_DECISION_INPUTS) -> RuntimeAction:
+    guarded = _operation_guard_action(view, inputs)
+    if guarded is not None:
+        return guarded
+    state = view.state
+    assert state is not None
+    pending = pending_for(view)
+    unsettled = tuple(effect for effect in view.effects if effect.settlement is None)
+    handlers = {
+        LEAF_PROVIDER_REQUEST_READY: lambda: _prepared_request_action(state, unsettled),
+        LEAF_PROVIDER_EFFECT_PENDING: lambda: _provider_pending_action(state, view.effects, pending),
+        LEAF_PROVIDER_RESPONSE_READY: lambda: _response_ready_action(view),
+        LEAF_TOOL_EFFECT_PENDING: lambda: (_approval_action(state, inputs, unsettled) if inputs.approval_ref
+            else _tool_pending_action(state, view.effects, view.batches, pending)),
+        LEAF_TOOL_DELIVERY_PENDING: lambda: _tool_delivery_action(state, view.effects, view.batches, pending, unsettled),
+    }
+    handler = handlers.get(state.leaf)
+    if handler is not None:
+        return handler()
+    execution = _execution_position_action(view, inputs)
+    return execution if execution is not None else _lifecycle_action(view)
+
+
+def _operation_guard_action(view: SessionView, inputs: RuntimeDecisionInputs) -> RuntimeAction | None:
     state = view.state
     if state is None:
         return RuntimeAction(ACTION_FAIL_INVARIANT, reason="missing_operation_state")
@@ -190,8 +213,6 @@ def next_runtime_action(view: SessionView, inputs: RuntimeDecisionInputs = _NO_D
     if not _progress_reference_valid(view):
         return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="progress_batch_missing_or_incomplete")
     effects = view.effects
-    delivery_batches = view.batches
-    pending = pending_for(view)
     unsettled = tuple(effect for effect in effects if effect.settlement is None)
     unknown = tuple(effect for effect in effects if _external_outcome_unknown(effect))
     if unknown:
@@ -208,18 +229,27 @@ def next_runtime_action(view: SessionView, inputs: RuntimeDecisionInputs = _NO_D
             return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="terminal_retains_pending_effects")
         return RuntimeAction(ACTION_TERMINAL, leaf=state.leaf)
 
-    if state.leaf == LEAF_PROVIDER_REQUEST_READY:
-        return _prepared_request_action(state, unsettled)
+    return None
 
-    if state.leaf == LEAF_PROVIDER_EFFECT_PENDING:
-        return _provider_pending_action(state, effects, pending)
 
-    if state.leaf == LEAF_PROVIDER_RESPONSE_READY:
-        if len(pending.effect_ids) != 1 or not state.response_ref:
-            return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="missing_provider_response_fact")
-        return RuntimeAction(ACTION_INTERPRET_PROVIDER_RESPONSE, leaf=state.leaf,
-                             effect_id=pending.effect_ids[0], response_ref=state.response_ref, driver=state.driver)
+def _response_ready_action(view: SessionView) -> RuntimeAction:
+    state = view.state
+    assert state is not None
+    providers = tuple(effect for effect in view.effects
+                      if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND
+                      and effect.intent.turn == state.turn)
+    if (len(providers) != 1 or not state.response_ref
+            or (providers[0].settlement is not None
+                and providers[0].settlement.sent_state != "settled")):
+        return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="missing_provider_response_fact")
+    return RuntimeAction(ACTION_INTERPRET_PROVIDER_RESPONSE, leaf=state.leaf,
+                         effect_id=providers[0].intent.effect_id, response_ref=state.response_ref, driver=state.driver)
 
+
+
+def _execution_position_action(view: SessionView, inputs: RuntimeDecisionInputs) -> RuntimeAction | None:
+    state = view.state
+    assert state is not None
     if state.leaf == LEAF_KERNEL_SETTLED and inputs.question_answered:
         return RuntimeAction(ACTION_RESUME_QUESTION, leaf=state.leaf, work_ref=state.work_ref)
 
@@ -236,14 +266,13 @@ def next_runtime_action(view: SessionView, inputs: RuntimeDecisionInputs = _NO_D
         return RuntimeAction(execution_actions[state.leaf], leaf=state.leaf, response_ref=state.response_ref,
                              work_ref=state.work_ref, driver=state.driver)
 
-    if state.leaf == LEAF_TOOL_EFFECT_PENDING:
-        if inputs.approval_ref:
-            return _approval_action(state, inputs, unsettled)
-        return _tool_pending_action(state, effects, delivery_batches, pending)
+    return None
 
-    if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
-        return _tool_delivery_action(state, effects, delivery_batches, pending, unsettled)
 
+def _lifecycle_action(view: SessionView) -> RuntimeAction:
+    state = view.state
+    assert state is not None
+    unsettled = tuple(effect for effect in view.effects if effect.settlement is None)
     if state.leaf in {
         LEAF_ACCEPTED,
         LEAF_WRITER_RUNNING,

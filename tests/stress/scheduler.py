@@ -680,12 +680,12 @@ def _exec_completion_produce(scheduler: SoakScheduler, world: Any, ctx: SoakCont
 
     from codey.agents.tools import DEFAULT_TOOL_FNS
     from codey.operations.completion_gate import evaluate
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolResult
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
     from codey.workspace.revision import WorkspaceRevisionStore, workspace_fingerprint
+    from tests.support.kernel_runtime import run_task_kernel
 
     seq = step.get("seq", 0)
     if type(seq) is not int or seq <= 0:

@@ -23,10 +23,10 @@ from typing import Any
 MAX_ATOMIC_JSON_BYTES = 8 * 1024 * 1024
 
 
-def _staging_directory(directory: Path) -> Path:
+def filesystem_path(path: Path) -> Path:
     if os.name != "nt":
-        return directory
-    absolute = str(directory.resolve())
+        return path
+    absolute = str(path.absolute())
     if absolute.startswith("\\\\?\\"):
         return Path(absolute)
     # A manifest can fit under MAX_PATH while its unique staging file cannot.
@@ -53,10 +53,10 @@ def write_bytes_atomic(
 ) -> None:
     """Replace ``path`` with ``data`` atomically."""
 
-    target = Path(path)
+    target = filesystem_path(Path(path))
     directory = target.parent if str(target.parent) else Path(".")
     directory.mkdir(parents=True, exist_ok=True)
-    tmp = _staging_directory(directory) / f".{uuid.uuid4().hex}.tmp"
+    tmp = directory / f".{uuid.uuid4().hex}.tmp"
     initial_identity = _target_identity(target)
     existing_mode = _existing_mode(target)
     creation_mode = (

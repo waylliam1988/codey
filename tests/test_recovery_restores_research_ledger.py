@@ -6,8 +6,7 @@ import pytest
 
 from codey.operations.context import RunWork
 from codey.operations.kernel_execution import execute_turn
-from codey.operations.recovery import record_entry_policy, recover_effects_for_resume
-from codey.operations.task_effects import KernelRecordedProvider
+from codey.operations.recovery import record_entry_policy
 from codey.operations.task_entry import run_entry_kernel
 from codey.operations.task_session import TaskSession
 from codey.research.ledger import ResearchLedger
@@ -15,6 +14,8 @@ from codey.research.tools import ResearchToolOutput
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from tests.stress.test_completion_truthful_oracle_real_run import _real_research_gate
+from tests.support.provider_actions import ProviderActions
+from tests.support.receipt_fixtures import inspect_receipt_facts
 from tests.support.workspace_conversation import TextConversation
 from tests.test_chat_workspace_tools_and_answer_completion import workspace_frame
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
@@ -28,7 +29,7 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
     _, mutations, managed, _, deps, sink = _open_runtime(
         logdir, state, "s", "r", project, task_kind="research"
     )
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=original.policy)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=original.policy, durable=sink.durable)
     live = TaskSession(policy=original.policy, task_kind="research", project="", max_turns=8)
     ledger = ResearchLedger()
     url = next(iter(expected_ledger.final_url_set()))
@@ -63,8 +64,12 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
                               session_id="s", intent_sink=sink)[0]
         assert result.ok is True, result.model_text
         if turn < 3 or acknowledged:
-            KernelRecordedProvider(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
-    recovered = recover_effects_for_resume(deps, session_id="s", run_id="r", project="", task_kind="research")
+            from codey.operations.kernel_protocol import build_turn_snapshot
+
+            sink.bind_request(build_turn_snapshot(live), logical_turn=turn)
+            sink._request_context["effect_scope"] = "task"
+            ProviderActions(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
+    recovered = inspect_receipt_facts(deps, session_id="s", run_id="r", project="", task_kind="research")
     assert recovered.ok
     assert bool(recovered.recovered_tool_outcomes) is False
     assert bool(recovered.settled_tool_outcomes) is True
@@ -97,9 +102,9 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
 def test_failed_ledger_projection_does_not_commit_partial_task_facts():
     from codey.agents.request import RecoveredToolOutcome
     from codey.operations.kernel_errors import RecoveryFailed
-    from codey.operations.kernel_session_recovery import restore_task_session
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.runtime import ToolOutcome
+    from tests.support.session_projection import restore_task_session
 
     policy = TaskPolicy(frozenset({"control", "web.read"}))
     session = TaskSession(policy=policy)

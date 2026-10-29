@@ -198,10 +198,10 @@ class ToolContractTests(unittest.TestCase):
 
 class LoopPromptTests(unittest.TestCase):
     def test_prompt_carries_task_text_handoff_and_contract(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
+        from tests.support.kernel_runtime import run_task_kernel
 
         policy = build_task_policy(
             TaskSubmission("s", "E:/tmp", "修复登录 bug", 8, False, "local",
@@ -248,11 +248,11 @@ class LoopPromptTests(unittest.TestCase):
         self.assertFalse(used)
 
     def test_native_done_rejection_answers_call_id_first(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.providers.base import AssistantTurn, ProviderToolCall
         from codey.task.model import TaskSubmission
+        from tests.support.kernel_runtime import run_task_kernel
 
         policy = build_task_policy(
             TaskSubmission("s", None, "research q", 8, False, "local"),

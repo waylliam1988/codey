@@ -58,9 +58,9 @@ def test_native_loop_read_then_done(monkeypatch, tmp_path: Path) -> None:
         AssistantTurn(text="", tool_calls=()),
     ])
     from codey.operations.kernel_protocol import build_turn_snapshot
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from tests.support.kernel_runtime import run_task_kernel
 
     policy = TaskPolicy(grants=frozenset({"project.read", "control"}))
     session = TaskSession(policy=policy, task_kind="project", project=str(tmp_path), max_turns=5)

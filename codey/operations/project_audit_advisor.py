@@ -129,6 +129,9 @@ def run_project_audit_advisor(
     task: str,
     *,
     parent_policy: TaskPolicy,
+    durable: Any,
+    runtime_mutations: Any,
+    managed_outputs: Any,
     context: str = "",
     max_turns: int = PROJECT_AUDIT_MAX_TURNS,
     trace_recorder: object | None = None,
@@ -168,6 +171,20 @@ def run_project_audit_advisor(
     )
     bounded_provider = DeadlineProvider(provider, timeout=PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT)
     run_id = f"audit-{uuid4().hex}"
+    from codey.operations.generation_boundary import durable_generation_boundary_callback
+    from codey.operations.task_effects import KernelEffectSink
+
+    if durable is None or runtime_mutations is None or managed_outputs is None:
+        raise ValueError("project audit requires durable operation resources")
+    durable.admit_input(conversation_id=run_id, request_id=run_id, task_id=run_id, text=task,
+                        provider_snapshot={"provider_id": advisor_id or "audit"})
+    durable.claim_task(run_id)
+    durable.start_task(run_id, state=dict(durable.task(run_id).state))
+    runtime_mutations.accept_operation(session_id=run_id, run_id=run_id, provider_id=advisor_id or "audit",
+        project=str(project_path), task_kind="readonly", turn_budget=session.max_turns, max_repair_rounds=0)
+    runtime_mutations.mark_writer_running(run_id, run_id, provider_id=advisor_id or "audit")
+    sink = KernelEffectSink(runtime_mutations, session_id=run_id, run_id=run_id, provider_id=advisor_id or "audit",
+                            durable=durable, managed_outputs=managed_outputs)
     stop = threading.Event()
     timer = threading.Timer(
         max(0.1, min(bounded_provider.timeout, bounded_provider.deadline - time.monotonic())), stop.set,
@@ -183,14 +200,19 @@ def run_project_audit_advisor(
                         provider=bounded_provider,
                         run_id=run_id,
                         effect_scope="audit",
+                        provider_id=advisor_id or "audit",
                         user_task=prompt,
                         stop_flag=stop,
                     ),
                     execution=KernelExecutionDeps(
                         executors=cast(Mapping[str, Callable[[Any], Any]], _audit_kernel_executors(project_path)),
                         project_path=project_path,
+                        session_id=run_id, durable=durable, managed_outputs=managed_outputs,
                     ),
                     observation=KernelObservationDeps(
+                        intent_sink=sink,
+                        on_boundary=durable_generation_boundary_callback(
+                            durable=durable, session_id=run_id, task_id=run_id, sink=sink),
                         completion_context={
                             "run_id": run_id,
                             "task": task,
@@ -202,6 +224,15 @@ def run_project_audit_advisor(
             )
     finally:
         timer.cancel()
+    try:
+        runtime_mutations.mark_terminal(run_id, run_id, stop_reason=outcome.stop_reason,
+            summary_chars=len(outcome.summary), turns=outcome.turns, max_turns=session.max_turns,
+            provider=advisor_id or "audit", final_delivery=outcome.delivery)
+    finally:
+        if outcome.completed:
+            durable.complete_task(run_id, outcome.summary, state=dict(durable.task(run_id).state))
+        else:
+            durable.fail_task(run_id, outcome.summary, state=dict(durable.task(run_id).state))
     if not outcome.completed:
         return ""
     report = _clip((outcome.summary or ""), PROJECT_AUDIT_MAX_REPORT_CHARS)
@@ -218,6 +249,9 @@ def run_project_audit_advisor(
 def run_project_audit(
     *,
     parent_policy: TaskPolicy,
+    durable: Any,
+    runtime_mutations: Any,
+    managed_outputs: Any,
     project: str | Path,
     selected_provider_id: str,
     task: str,
@@ -257,6 +291,7 @@ def run_project_audit(
                 project,
                 task,
                 parent_policy=parent_policy,
+                durable=durable, runtime_mutations=runtime_mutations, managed_outputs=managed_outputs,
                 context=context,
                 trace_recorder=trace_recorder,
                 advisor_id=advisor_id,

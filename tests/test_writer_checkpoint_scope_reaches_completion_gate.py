@@ -6,7 +6,6 @@ import pytest
 
 from codey.agents.writer_failover import CheckpointView, WriterAttempt
 from codey.operations.context import RunWork
-from codey.operations.project_adapter import run
 from codey.operations.project_completion_checks import _normalized_scope_and_change
 from codey.operations.project_completion_context import ProjectRun
 from codey.operations.project_writer_phase import _run_one_writer_attempt
@@ -15,6 +14,7 @@ from codey.policies.task_policy import TaskPolicy
 from codey.providers.api_provider import ApiProvider
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.workspace.revision import WorkspaceRevisionStore
+from tests.support.kernel_runtime import run_agent as run
 
 
 def test_checkpoint_scope_is_combined_with_new_attempt_edits():

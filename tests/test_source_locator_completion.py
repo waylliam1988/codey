@@ -75,9 +75,9 @@ def test_locator_rendering_does_not_advertise_actions_outside_the_snapshot():
 def test_required_tool_check_uses_committed_receipt_and_recovers(tmp_path, monkeypatch, commit_fails):
     from types import SimpleNamespace
 
-    from codey.operations.kernel_session_recovery import restore_task_session
-    from codey.operations.recovery import recover_effects_for_resume
     from codey.research.ledger import ResearchLedger
+    from tests.support.receipt_fixtures import inspect_receipt_facts
+    from tests.support.session_projection import restore_task_session
     from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
 
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *a, **kw: None)
@@ -103,7 +103,7 @@ def test_required_tool_check_uses_committed_receipt_and_recovers(tmp_path, monke
         else:
             assert execute()[0].ok
             assert evaluate(session, "opened").complete
-        recovered = recover_effects_for_resume(deps, session_id="s", run_id="r", project="", task_kind="project")
+        recovered = inspect_receipt_facts(deps, session_id="s", run_id="r", project="", task_kind="project")
         fresh, ledger = TaskSession(policy=policy), ResearchLedger()
         frame = SimpleNamespace(run_id="r", recovered_tool_outcomes=recovered.recovered_tool_outcomes,
                                 settled_tool_outcomes=recovered.settled_tool_outcomes,

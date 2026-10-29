@@ -423,7 +423,7 @@ class PromptEnvelopeTests(unittest.TestCase):
     def test_real_project_adapter_survives_broken_trace_recorder(self) -> None:
 
         from codey.agents.request import AgentRequest
-        from codey.operations.project_adapter import run
+        from tests.support.kernel_runtime import run_agent as run
 
         class _ExplodingTrace:
             def __getattr__(self, _name):

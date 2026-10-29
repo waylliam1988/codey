@@ -12,7 +12,6 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from codey.agents.request import AgentRequest
-from codey.operations.conversation_window import replayed_result_ids
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.provider_session import ConversationProvider
 from codey.operations.task_guidance import task_guidance_for_policy
@@ -168,16 +167,14 @@ def _wrap_provider_with_sink(request: AgentRequest, provider: Any) -> tuple[Any,
         # provider.name fallback above is conversation-display only.
         if not (request.provider_id or "").strip():
             raise ValueError("provider_id must not be empty when runtime_mutations are supplied")
-        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+        from codey.operations.task_effects import KernelEffectSink
 
         intent_sink = KernelEffectSink(
             request.runtime_mutations, session_id=request.session_id,
             run_id=request.run_id, provider_id=request.provider_id,
-            recovered_batch_id=request.recovered_tool_result_batch_id,
             managed_outputs=request.managed_outputs,
             durable=request.durable,
         )
-        provider = KernelRecordedProvider(provider, intent_sink)
     if request.conversation is not None:
         provider = ConversationProvider(provider, request.conversation)
     return provider, intent_sink
@@ -243,17 +240,6 @@ def run(request: AgentRequest) -> RunResult:
         session.verification_forbidden = ("project.verify" in policy.denied_capabilities or
                                               task_forbids_verification(request.task))
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
-    from codey.operations.kernel_session_recovery import restore_task_session
-
-    delivered, _, resume_start, initial_results = restore_task_session(
-        SimpleNamespace(
-            run_id=request.run_id or "adhoc",
-            recovered_tool_outcomes=request.recovered_tool_outcomes,
-            settled_tool_outcomes=request.settled_tool_outcomes,
-            recovered_tool_result_batch_id=request.recovered_tool_result_batch_id,
-        ),
-        session, effect_scope=effect_scope, research_ledger=getattr(request.research_tools, "ledger", None),
-    )
     outcome = run_task_kernel(
         session,
         request=KernelRunRequest(
@@ -269,11 +255,6 @@ def run(request: AgentRequest) -> RunResult:
                 ghost_sources=_project_ghost_sources(request),
                 stop_flag=request.stop_flag,
                 stagnant_turns=request.stagnant_turns,
-                delivered=delivered,
-                start_turn=resume_start,
-                initial_results=initial_results or None,
-                provider_session_changed=opened_fresh_chat,
-                replayed_result_ids=replayed_result_ids(request.window_action),
             ),
             execution=KernelExecutionDeps(
                 project_path=request.project,

@@ -17,10 +17,9 @@ from pathlib import Path
 from typing import Any, cast
 
 from codey.operations.context import RunFrame, RunHooks, RunWork
-from codey.operations.conversation_window import WindowActivationError, activate_window, replayed_result_ids
+from codey.operations.conversation_window import WindowActivationError, activate_window
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.ghost_context import ghost_control_enabled
-from codey.operations.kernel_session_recovery import restore_task_session
 from codey.operations.result import ModeOutcome
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
@@ -128,7 +127,7 @@ def _entry_policy_with_recovery(frame: RunFrame, deps: Any, kind: str) -> Any:
         if getattr(frame, "entry_policy", None) is None:
             raise RuntimeError("original task authorization unavailable for approval continuation")
         return incoming
-    recovered = bool(getattr(frame, "recovered_tool_outcomes", ()) or getattr(frame, "settled_tool_outcomes", ()))
+    recovered = durable is not None and bool(durable.task(frame.run_id).state.get("task_policy"))
     if not recovered:
         return incoming
     # A resumed run must use the policy recorded at its original entry. Never
@@ -187,7 +186,7 @@ def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, An
     active_provider = frame.provider
     mutations = getattr(deps, "runtime_mutations", None)
     if mutations is not None and request.session_id and frame.run_id:
-        from codey.operations.task_effects import KernelEffectSink, KernelRecordedProvider
+        from codey.operations.task_effects import KernelEffectSink
 
         mutations.mark_writer_running(request.session_id, frame.run_id,
                                       provider_id=frame.provider_id)
@@ -197,11 +196,9 @@ def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, An
             mutations, session_id=request.session_id, run_id=frame.run_id,
             provider_id=frame.provider_id,
             phase="research" if kind == "research" else "writer",
-            recovered_batch_id=str(getattr(frame, "recovered_tool_result_batch_id", "") or ""),
             managed_outputs=getattr(deps, "managed_outputs", None),
             durable=admitted_durable(deps.state, frame.run_id),
         )
-        active_provider = KernelRecordedProvider(active_provider, intent_sink)
     if getattr(frame, "conversation", None) is not None:
         from codey.operations.provider_session import ConversationProvider
 
@@ -385,24 +382,6 @@ def _run_entry_kernel(  # noqa: PLR0915
     if research_tools is not None and previous_tools is not None:
         research_tools.ledger = previous_tools.ledger
     frame.entry_research_tools = research_tools
-    try:
-        delivered, _, resume_start, initial_results = restore_task_session(
-            frame, session, research_ledger=getattr(research_tools, "ledger", None),
-        )
-    except Exception as exc:
-        reason = f"recovery failed: {exc}"
-        return ModeOutcome({
-            "type": "task_done",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "summary": reason,
-            "stop_reason": "recovery_failure",
-            "turns": 0,
-            "max_turns": request.max_turns,
-            "provider": frame.provider_id,
-            "mode": kind,
-            "receipt": {"display": {"summary": reason[:2000]}},
-        })
     # 会话生命周期：仅 fresh_chat 且 new_chat 成功后才开启新窗口（首发之前）；
     # 重置失败立即停止并报 provider failure，不向旧会话发送；继续会话时
     # 保留原窗口与累计预算。
@@ -455,7 +434,6 @@ def _run_entry_kernel(  # noqa: PLR0915
         ignored = ()
     try:
         tracker = _entry_project_tracker(project_path, deps, policy, frame.run_id)
-        initial_turn, frame.entry_initial_turn = frame.entry_initial_turn, None
         result = run_task_kernel(
             session,
             request=KernelRunRequest(
@@ -467,8 +445,6 @@ def _run_entry_kernel(  # noqa: PLR0915
                     provider_id=frame.provider_id,
                     user_task=request.task,
                     stop_flag=stop_flag,
-                    delivered=delivered or None,
-                    start_turn=max(resume_start, session.turn + 1) if continuation_followup else resume_start,
                     context_text="\n\n".join(part for part in (context_text, continuation_followup) if part),
                     context_scope=request_scope(request.project, request.session_id),
                     ghost_sources=ghost_sources,
@@ -476,11 +452,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                     attempt_admit_hints=lambda: ghost_control_enabled(
                         deps.state, "admit_hints", project=str(request.project or ""), session_id=request.session_id,
                     ),
-                    initial_results=initial_results or None,
-                    initial_turn=initial_turn,
                     window_ref=getattr(active_provider, "window_ref", None),
-                    provider_session_changed=bool(getattr(frame, "provider_session_changed", False)),
-                    replayed_result_ids=replayed_result_ids(frame.window_action),
                 ),
                 execution=KernelExecutionDeps(
                     executors={},

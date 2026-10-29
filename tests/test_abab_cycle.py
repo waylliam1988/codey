@@ -133,9 +133,9 @@ def test_repeated_malformed_tool_response_stops_at_protocol_limit(tmp_path: Path
     # category (no infinite loops) via the new entry.
     from unittest.mock import patch
 
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from tests.support.kernel_runtime import run_task_kernel
 
     policy = TaskPolicy(grants=frozenset({"control"}))
     session = TaskSession(policy=policy, task_kind="project", project="", max_turns=3, task_text="hi")

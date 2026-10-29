@@ -4,6 +4,7 @@ import pytest
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.recovery import policy_from_durable_task, record_entry_policy
 from codey.policies.task_policy import TaskPolicy
+from codey.runtime.write.mutation_line import RuntimeMutationLine
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
 
 
@@ -28,6 +29,8 @@ def _durable_task(
         task_state={"task_kind": task_kind, **(state or {})},
     )
     durable.start_task(run_id, state={"task_kind": task_kind, **(state or {})})
+    line = RuntimeMutationLine(durable=durable)
+    line.accept_operation(session_id=session_id, run_id=run_id, provider_id="local", turn_budget=8, max_repair_rounds=1, task_kind=task_kind)
     if policy is not None:
         durable.record_task_policy(run_id, policy.to_payload())
     return durable
@@ -60,7 +63,8 @@ def test_valid_original_policy_is_restored_exactly(tmp_path):
     original = TaskPolicy(grants=frozenset({"control", "web.read"}), strict_research=True,
                           required_checks=("research_evidence_saved",))
     durable = _durable_task("s", "r", project, policy=original)
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=original)
+    mutations = RuntimeMutationLine(durable=durable)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=original, durable=durable)
     assert policy_from_durable_task(durable, task_id="r").to_payload() == original.to_payload()
 
 
@@ -79,6 +83,7 @@ def test_every_recovery_dispatch_uses_original_policy(tmp_path, monkeypatch, kin
     original = TaskPolicy(grants=frozenset({"control", "project.read"}),
                           strict_research=True, required_checks=("research_evidence_saved",))
     durable = _durable_task("s", "r", project, policy=original)
+    mutations = RuntimeMutationLine(durable=durable)
     record_entry_policy(mutations, session_id="s", run_id="r", policy=original, durable=durable)
     request = TaskSubmission("s", str(project), "edit a.py and search official web docs",
                              8, False, "web", intent=kind, run_id="r")
@@ -90,7 +95,6 @@ def test_every_recovery_dispatch_uses_original_policy(tmp_path, monkeypatch, kin
         return ModeOutcome({"stop_reason": "blocked"})
     monkeypatch.setattr("codey.operations.task_phases.dispatch._research_deps", lambda deps: None)
     monkeypatch.setattr("codey.operations.task_phases.dispatch.run_task_mode", consume)
-    monkeypatch.setattr("codey.operations.task_phases.dispatch.run_entry_kernel", consume)
     dispatch_run_mode(SimpleNamespace(runtime_mutations=mutations, state=SimpleNamespace(durable=durable)), None, None,
                       RunWork([], ExecutionEvidence()), frame, SimpleNamespace(), kind, None)
     assert len(seen) == 1
@@ -144,6 +148,7 @@ def test_project_dispatch_records_policy_before_first_tool(tmp_path, monkeypatch
     project, state, logdir = _dirs(tmp_path)
     log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     durable = _durable_task("s", "r", project)
+    mutations = RuntimeMutationLine(durable=durable)
     request = TaskSubmission("s", str(project), "edit a.py", 8, False, "local", intent="project")
     frame = SimpleNamespace(request=request, project_text=str(project), run_id="r", entry_policy=None,
                             recovered_tool_outcomes=(), settled_tool_outcomes=())
@@ -247,23 +252,24 @@ def test_verification_requirement_parser_failure_cannot_grant_verification(monke
 def test_persisted_authorization_snapshot_cannot_be_replaced(tmp_path, change):
     from dataclasses import replace
 
-    from codey.durable.errors import CommitConflict
+    from codey.runtime.core.operation_state import RuntimeOperationTransitionError
 
     project, state, logdir = _dirs(tmp_path)
     log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     original = TaskPolicy(frozenset({"control", "project.read"}), required_checks=("must_check",),
                           denied_capabilities=frozenset({"project.write"}))
     durable = _durable_task("s", "r", project, policy=original)
+    mutations = RuntimeMutationLine(durable=durable)
     record_entry_policy(mutations, session_id="s", run_id="r", policy=original, durable=durable)
-    before = log.entries("s")
+    before = durable.commit_sequence()
     record_entry_policy(mutations, session_id="s", run_id="r", policy=original, durable=durable)
-    assert log.entries("s") == before
+    assert durable.commit_sequence() == before
     changed = replace(original, **{
         "grant": {"grants": original.grants | {"project.write"}},
         "drop_requirement": {"required_checks": ()},
         "drop_denial": {"denied_capabilities": frozenset()},
     }[change])
-    with pytest.raises(CommitConflict, match="immutable"):
+    with pytest.raises(RuntimeOperationTransitionError, match="immutable"):
         record_entry_policy(mutations, session_id="s", run_id="r", policy=changed, durable=durable)
-    assert log.entries("s") == before
+    assert durable.commit_sequence() == before
     assert policy_from_durable_task(durable, task_id="r") == original

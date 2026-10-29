@@ -6,8 +6,8 @@ import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.model import ApprovalRecord, ApprovalStatus
+from codey.operations.kernel_actions import _approval_stop
 from codey.operations.kernel_execution import execute_turn
-from codey.operations.task_loop import _approval_stop
 from codey.operations.task_session import TaskSession
 from codey.policies.command_line import resolve_shell
 from codey.policies.shell_analysis import analyze_shell

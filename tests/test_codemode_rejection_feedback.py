@@ -117,19 +117,19 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
 
     from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.completion_gate import evaluate
-    from codey.operations.kernel_session_recovery import restore_task_session
-    from codey.operations.recovery import record_entry_policy, recover_effects_for_resume
-    from codey.operations.task_effects import KernelRecordedProvider
-    from codey.operations.task_loop import (
+    from codey.operations.recovery import record_entry_policy
+    from codey.runtime.effects.effect_records import RuntimeEffectStore
+    from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from tests.support.kernel_runtime import (
         KernelExecutionDeps,
         KernelObservationDeps,
         KernelRunRequest,
         KernelTransportDeps,
         run_task_kernel,
     )
-    from codey.runtime.effects.effect_records import RuntimeEffectStore
-    from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from tests.support.receipt_fixtures import inspect_receipt_facts
+    from tests.support.session_projection import restore_task_session
     from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
 
     project, storage, logdir = _dirs(tmp_path)
@@ -209,7 +209,7 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
     provider = Provider()
     try:
         result = run_task_kernel(state, request=KernelRunRequest(
-            transport=KernelTransportDeps(provider=KernelRecordedProvider(provider, sink), run_id="r",
+            transport=KernelTransportDeps(provider=provider, run_id="r",
                 provider_id="local", effect_scope="task", user_task="Read app.py using codemode."),
             execution=KernelExecutionDeps(project_path=project, managed_outputs=managed, session_id="s",
                 durable=mutations.durable, workspace_revision_store=revisions, permission_profile="planning_readonly"),
@@ -225,7 +225,7 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
             runtime_effects=RuntimeEffectStore(durable=durable),
             tool_result_delivery=ToolResultDeliveryStore(durable=durable), managed_outputs=managed,
             workspace_revisions=revisions)
-        recovered = recover_effects_for_resume(deps, session_id="s", run_id="r", project=str(project),
+        recovered = inspect_receipt_facts(deps, session_id="s", run_id="r", project=str(project),
                                                task_kind="project")
         assert recovered.ok
         fresh = TaskSession(policy=policy, project=str(project), verification_forbidden=True)

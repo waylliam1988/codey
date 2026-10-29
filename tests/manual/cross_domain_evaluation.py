@@ -16,9 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from codey.operations.kernel_session_recovery import restore_task_session
-from codey.operations.recovery import record_entry_policy, recover_effects_for_resume
-from codey.operations.task_effects import KernelRecordedProvider
+from codey.operations.recovery import record_entry_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
@@ -34,6 +32,8 @@ from codey.research.ledger import ResearchLedger
 from codey.research.tools import ResearchTools
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from tests.manual.agent_stability_proxy import Proxy
+from tests.support.receipt_fixtures import inspect_receipt_facts
+from tests.support.session_projection import restore_task_session
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
 
 URL = "https://evaluation.test/requested"
@@ -122,7 +122,7 @@ def probe(root, proxy, model, protocol, scenario):
     with closing(connect_local(config=config)) as provider, patch("codey.research.source_gateway.check_fetch_url",
         lambda url, **kw: None if url in {URL, FINAL} else "outside evaluation fixture"):
         result = run_task_kernel(session, request=KernelRunRequest(
-            transport=KernelTransportDeps(provider=KernelRecordedProvider(provider, sink), run_id="r",
+            transport=KernelTransportDeps(provider=provider, run_id="r",
                                           effect_scope="task", provider_id="local", user_task=scenario["prompt"]),
             execution=KernelExecutionDeps(research_tools=tools, managed_outputs=managed,
                                           session_id="s", durable=mutations.durable),
@@ -135,7 +135,7 @@ def probe(root, proxy, model, protocol, scenario):
            "executed": [effect.intent.tool_name for effect in rows if effect.intent.tool_name],
            "proof": asdict(result.proof) if result.proof is not None else None}
     try:
-        recovered = recover_effects_for_resume(deps, session_id="s", run_id="r", project="", task_kind="project")
+        recovered = inspect_receipt_facts(deps, session_id="s", run_id="r", project="", task_kind="project")
         frame = SimpleNamespace(run_id="r", recovered_tool_outcomes=recovered.recovered_tool_outcomes,
             settled_tool_outcomes=recovered.settled_tool_outcomes, recovered_tool_result_batch_id=recovered.recovered_tool_result_batch_id)
         fresh, ledger = TaskSession(policy=policy), ResearchLedger()

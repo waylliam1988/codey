@@ -1,7 +1,7 @@
 """恢复必须交付原结算结果，而非重新执行产生新观察。
 
 已结算重发的生产链覆盖在 tests/test_settled_delivery_recovery.py
-（真实日志重启 → recover_effects_for_resume → 原结果交付）；
+（真实日志重启 → inspect_receipt_facts → 原结果交付）；
 本文件保留结算收据字段的单元锁定。
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ def _new_sink(tmp: Path, session_id: str, run_id: str):
     durable.admit_input(conversation_id=session_id, request_id=f"request-{run_id}", task_id=run_id,
                         text="runtime test", provider_snapshot={"provider_id": "local", "model_id": "test"})
     durable.start_task(run_id, state={"task_kind": "project"})
-    durable.advance_task(task_id=run_id, phase="assistant_response_pending", state={"task_kind": "project"})
+    durable.advance_task(task_id=run_id, phase="running", state={"task_kind": "project"})
     mutations = RuntimeMutationLine(durable=durable)
     mutations.accept_operation(
         session_id=session_id, run_id=run_id, project=str(tmp),

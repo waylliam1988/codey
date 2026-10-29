@@ -12,10 +12,10 @@ from pathlib import Path
 from unittest import mock
 
 from codey.agents.request import AgentRequest
-from codey.operations.project_adapter import run as _agent_kernel_request
 from codey.storage.local_store import StoreCorruption
 from codey.workspace import changes
 from codey.workspace.changes import ChangeTracker, SnapshotStore
+from tests.support.kernel_runtime import run_agent as _agent_kernel_request
 
 
 class FakeProvider:

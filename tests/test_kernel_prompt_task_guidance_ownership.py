@@ -1,4 +1,5 @@
 """Task guidance belongs to task composition, not to the shared prompt renderer."""
+
 import ast
 import hashlib
 import inspect
@@ -6,11 +7,12 @@ from itertools import product
 
 import pytest
 
-from codey.operations import kernel_prompt, task_loop
+from codey.operations import kernel_prompt
 from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, tools_from_specs
+from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
 
 
 def _guidance(policy):
@@ -51,7 +53,7 @@ def test_shared_kernel_sends_arbitrary_task_guidance_in_both_protocols(native, m
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})),
                           task_kind="third_task", max_turns=1)
-    task_loop.run_task_kernel(session, request=KernelRunRequest(
+    run_test_kernel(session, request=KernelRunRequest(
         transport=KernelTransportDeps(provider=Provider(), provider_id="local"),
         task_guidance="Third task completion: preserve the supplied units.",
     ))

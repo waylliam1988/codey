@@ -18,13 +18,13 @@ from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_preparation import prepare_kernel_turn
 from codey.operations.kernel_progress import KernelProgress
 from codey.operations.kernel_trace import record_outbound, record_turn
-from codey.operations.provider_receipts import json_value
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import ProviderToolResult, TurnFinish, tools_from_specs
+from codey.providers.response_record import json_value
 from codey.runtime.core import operation_state as positions
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.runtime.effects.effect_records import RuntimeEffectStore
-from codey.runtime.log.session_view import load_session_view
+from codey.runtime.log.session_view import driver_for_state, load_session_view
 from codey.workspace.context_admission import admit_ghost_context
 
 
@@ -36,6 +36,12 @@ class KernelContext:
         if self.sink is None or self.sink.durable is None or self.sink.managed_outputs is None:
             raise ValueError("kernel execution requires an admitted durable operation and managed output storage")
         self.durable = self.sink.durable
+        admitted = self.load_view().state
+        if admitted is None:
+            raise ValueError("kernel execution requires an operation checkpoint")
+        self.sink.phase = driver_for_state(admitted)
+        session.max_turns = min(session.max_turns, max(0, admitted.turn_budget - admitted.turns_used))
+        self.effect_scope = self.transport.effect_scope
         self.provider = self.transport.provider
         self.native = kernel_transport.provider_uses_native(self.provider, provider_id=self.transport.provider_id)
         self.window = getattr(self.provider, "window_ref", None) or self.transport.window_ref
@@ -83,7 +89,7 @@ class KernelContext:
             question_answered=decision.get("purpose") == "question" and question.get("id") == decision.get("question_id")
                 and question.get("state") == "answered",
             approval_ref=approval.approval_id if approval is not None else "",
-            approval_ready=approval is not None and str(approval.status) in {"execution_settled", "denied"},
+            approval_ready=approval is not None and str(approval.status) in {"execution_settled", "denied", "expired", "cancelled"},
             approval_outcome_unknown=approval is not None and str(approval.status) == "execution_claimed")
 
     def reconcile_approval(self, state: Any, identity: str, *, cancelled: bool) -> None:
@@ -93,6 +99,7 @@ class KernelContext:
         from codey.runtime.effects.effect_records import RuntimeEffectSettlement, compute_args_digest
 
         record = self.durable.approval(identity)
+        cancelled = cancelled or str(record.status) in {"expired", "cancelled"}
         command = read_approval_command(self.sink.managed_outputs, record)
         payload = resolve_shell_approval(self.durable, self.sink.managed_outputs, identity)
         if payload is None and not cancelled:
@@ -146,7 +153,12 @@ class KernelContext:
                 or envelope["schema_version"] != 1 or envelope["kind"] != "kernel_decision"
                 or not isinstance(envelope["data"], dict)):
             raise RecoveryFailed("invalid kernel decision")
-        return envelope["data"]
+        from codey.operations.kernel_control import validate_decision
+
+        try:
+            return validate_decision(envelope["data"])
+        except (ValueError, TypeError, KeyError) as exc:
+            raise RecoveryFailed(f"invalid committed control decision: {exc}") from exc
 
     def response(self, state: Any) -> Any:
         response_ref = self.response_reference(state)
@@ -154,6 +166,7 @@ class KernelContext:
             self.responses[response_ref] = self.sink.load_response(self.session, response_ref, window_ref=self.window)
         received = self.responses[response_ref]
         self.session.turn = received.logical_turn
+        self.effect_scope = received.effect_scope
         return received
 
     def response_reference(self, state: Any) -> str:
@@ -211,6 +224,7 @@ class KernelContext:
 
         self.snapshots[turn] = snapshot
         self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window)
+        self.sink._request_context["effect_scope"] = self.effect_scope
         self.sink._request_context["close_reply"] = acknowledge
         self.sink._request_context["delivery_purpose"] = self.decision(state).get("purpose", "") if state.work_ref else ""
         self.sink._request_context["work_ref"] = state.work_ref if acknowledge else ""
@@ -229,7 +243,7 @@ class KernelContext:
 
     def prepare_turn(self, state: Any) -> None:
         self.restore_facts()
-        turn = max(1, self.transport.start_turn or 1, state.logical_turn + 1)
+        turn = state.logical_turn + 1
         if turn > self.session.max_turns:
             self.close(state, KernelResult(False, self.session.last_done_text or "max turns reached", turn - 1, "max_turns"))
             return
@@ -244,6 +258,7 @@ class KernelContext:
         if not self.attempt_gate_bound:
             record_outbound(self.observation.trace_recorder, prompt, admission=admission)
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
+        prompt = "\n\n".join(part for part in (prompt, kernel_prompt.working_context(self.session)) if part)
         self.freeze(state, prepared.snapshot, turn=turn, prompt=prompt,
                     counters=replace(state.counters, progress=progress.snapshot()))
 
@@ -260,6 +275,10 @@ class KernelContext:
             if original.get("work_ref") != state.work_ref:
                 raise RecoveryFailed("protocol close response lost its original outcome")
             self.advance(state, positions.LEAF_CLOSING)
+            return
+        if turn > self.session.max_turns:
+            self.close(state, KernelResult(False, self.session.last_done_text or "max turns reached",
+                                           self.session.max_turns, "max_turns"))
             return
         kernel_events._emit_turn_event(self.observation.on_event, turn, reply)
         if self.native and reply.finish is TurnFinish.OUTPUT_LIMIT:
@@ -289,7 +308,7 @@ class KernelContext:
         if kind == "ask_user":
             from codey.task.questions import question_args
             question = question_args(dict(plan.control_args))
-            identity = f"{self.transport.run_id}:{self.transport.effect_scope}" if self.transport.effect_scope else self.transport.run_id
+            identity = f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id
             question_id = "question_" + hashlib.sha256(f"{identity}:{turn}".encode()).hexdigest()[:24]
             self.advance(state, positions.LEAF_CONTROL_READY, data={"purpose": "question", "question": question,
                 "question_id": question_id, "result": json_value(KernelResult(False, question["question"], turn, "question"))})
@@ -318,15 +337,17 @@ class KernelContext:
         if state.leaf == positions.LEAF_PLAN_READY:
             approval = wiring._approval_stop(calls, project_path=self.execution.project_path,
                 on_shell_request=self.observation.on_shell_request, turn=turn,
-                run_id=f"{self.transport.run_id}:{self.transport.effect_scope}" if self.transport.effect_scope else self.transport.run_id,
+                run_id=f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id,
                 intent_sink=self.sink, policy=self.session.policy, permission_profile=self.execution.permission_profile,
                 provider_id=self.transport.provider_id, window_ref=self.window, shell=self.session.shell,
                 durable=self.durable, managed_outputs=self.sink.managed_outputs, task_id=self.sink.run_id)
             if approval is not None:
-                if self.observation.on_boundary is not None:
-                    from codey.operations.generation_boundary import GenerationBoundaryRequest
-                    self.observation.on_boundary(GenerationBoundaryRequest("approval"))
-                return approval
+                if self.cancelled():
+                    from codey.runtime.core.cancellation import TaskCancelled
+                    raise TaskCancelled("stopped while publishing approval")
+                # The saved approval and original tool intents now determine
+                # the boundary and suspension through the same reducer.
+                return None
         if self.execution.ensure_workspace_writer is not None and any(call.name in {"edit", "run"} for call in calls):
             try:
                 self.execution.ensure_workspace_writer()
@@ -337,7 +358,7 @@ class KernelContext:
                 return None
         kernel_events._emit_tool_starts(self.observation.on_event, self.session, turn, calls)
         result = wiring._call_execute_turn(self.session, calls, self.execution.executors, self.transport.run_id,
-            self.transport.effect_scope, turn, self.execution.project_path, self.execution.tool_fns,
+            self.effect_scope, turn, self.execution.project_path, self.execution.tool_fns,
             self.execution.research_tools, self.execution.change_tracker, self.sink.managed_outputs,
             self.sink.session_id, self.execution.permission_profile, self.session._memory_results,
             self.sink, received.snapshot.allowed, wiring._outer_evidence_for_context(self.completion_context),
@@ -362,6 +383,9 @@ class KernelContext:
         results = self.results(view, action.delivery_batch_id)
         self.sink.delivery_batch_id = action.delivery_batch_id
         turn = state.turn
+        kernel_events._emit_tool_results(self.observation.on_event, self.session, results,
+            run_id=f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id,
+            turn=turn)
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
         if self.cancelled() or progress.stopped or turn >= self.session.max_turns:
             reason = "stopped" if self.cancelled() else "no_progress" if progress.stopped else "max_turns"
@@ -371,20 +395,18 @@ class KernelContext:
             self.close(state, no_progress_result(self.session, turn) if reason == "no_progress"
                        else KernelResult(False, summary, turn, reason))
             return
-        kernel_events._emit_tool_results(self.observation.on_event, self.session, results,
-            run_id=f"{self.transport.run_id}:{self.transport.effect_scope}" if self.transport.effect_scope else self.transport.run_id,
-            turn=turn)
         advance = wiring._advance_after_results(self.native, results, self.session, None,
             completion_context=self.completion_context, boundary_prompt=self.boundary_text())
         if isinstance(advance, KernelResult):
             self.close(state, advance)
             return
         messages, prompt = advance
-        if self.native and messages and self.transport.replayed_result_ids:
-            messages = [message for message in messages if message.call_id not in self.transport.replayed_result_ids]
-            if not messages:
-                messages = None
-                prompt = "Continue the unfinished task using the latest local tool results.\n\n" + kernel_prompt._format_results(results, self.session)
+        observations = kernel_prompt.working_context(self.session)
+        if self.native and messages:
+            messages[-1] = replace(messages[-1], user_content="\n\n".join(
+                part for part in (messages[-1].user_content, observations) if part))
+        else:
+            prompt = "\n\n".join(part for part in (prompt, observations) if part)
         snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native)
         if not self.native and state.response_ref:
             old = self.response(state).snapshot.contract_text

@@ -9,7 +9,12 @@ from codey.runtime.core.operation_state import (
     DRIVER_WRITER,
     KIND,
     LEAF_ACCEPTED,
+    LEAF_CLOSING,
+    LEAF_COMPLETION_PENDING,
     LEAF_COMPLETION_PROOF_RECORDED,
+    LEAF_CONTROL_READY,
+    LEAF_KERNEL_SETTLED,
+    LEAF_PLAN_READY,
     LEAF_PROVIDER_EFFECT_PENDING,
     LEAF_PROVIDER_REQUEST_READY,
     LEAF_PROVIDER_RESPONSE_READY,
@@ -25,6 +30,7 @@ from codey.runtime.core.operation_state import (
     SCHEMA_VERSION,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
+    advance_execution,
     completion_proof_satisfied,
     mark_completion_blocked,
     mark_completion_proof_recorded,
@@ -202,7 +208,7 @@ class RuntimeOperationStateTests(unittest.TestCase):
         self.assertEqual(projection.lanes[terminal.lane].open_operation_id, "")
 
     def test_operation_state_payload_is_closed_and_versioned(self) -> None:
-        self.assertEqual(SCHEMA_VERSION, 4)
+        self.assertEqual(SCHEMA_VERSION, 5)
         payload = _state(LEAF_ACCEPTED).to_payload()
         self.assertEqual(payload["schema_version"], SCHEMA_VERSION)
         self.assertEqual(payload["kind"], KIND)
@@ -448,11 +454,23 @@ class RuntimeOperationStateTests(unittest.TestCase):
             LEAF_TOOL_DELIVERY_PENDING,
             LEAF_WRITER_SETTLED,
             LEAF_COMPLETION_PROOF_RECORDED,
+    LEAF_PLAN_READY, LEAF_COMPLETION_PENDING, LEAF_CONTROL_READY, LEAF_CLOSING, LEAF_KERNEL_SETTLED,
             LEAF_REPAIR_CONTEXT_ADMITTED,
             LEAF_REPAIR_RUNNING,
             LEAF_REPAIR_SETTLED,
             LEAF_TERMINAL,
         }
+        ready = mark_provider_response_ready(
+            mark_provider_effect_pending(_state(LEAF_WRITER_RUNNING), driver=DRIVER_WRITER,
+                                         provider_id="deepseek", turn=1), response_ref="artifact_" + "a" * 24)
+        reached.add(advance_execution(ready, LEAF_PLAN_READY).leaf)
+        completion = advance_execution(ready, LEAF_COMPLETION_PENDING)
+        reached.add(completion.leaf)
+        control = advance_execution(completion, LEAF_CONTROL_READY, work_ref="artifact_" + "b" * 24)
+        reached.add(control.leaf)
+        closing = advance_execution(control, LEAF_CLOSING)
+        reached.add(closing.leaf)
+        reached.add(advance_execution(closing, LEAF_KERNEL_SETTLED).leaf)
         self.assertEqual(LEAVES, reached)
         self.assertEqual(operation_id_for_run("run-1")[:5], "task:")
 
@@ -465,8 +483,8 @@ class RuntimeOperationStateTests(unittest.TestCase):
         payload.pop("response_ref")
         self.assertIsNone(RuntimeOperationState.from_payload(payload))
         settled = mark_provider_effect_settled(ready)
-        self.assertEqual(settled.leaf, LEAF_WRITER_RUNNING)
-        self.assertEqual(settled.response_ref, "")
+        self.assertEqual(settled.leaf, LEAF_PROVIDER_RESPONSE_READY)
+        self.assertEqual(settled.response_ref, ready.response_ref)
 
     def test_prepared_request_survives_the_explicit_previous_generation_boundary(self) -> None:
         pending = mark_provider_effect_pending(_state(LEAF_WRITER_RUNNING), driver=DRIVER_WRITER,

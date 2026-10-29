@@ -7,11 +7,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
-from codey.agents.request import RecoveredToolOutcome
 from codey.agents.shell_approval import ShellApprovalRequest
 from codey.ghost.work_queue_model import GhostWorkItem
 from codey.operations.conversation_window import WindowAction
-from codey.operations.kernel_protocol import ReceivedProviderTurn
 from codey.providers.diagnostics import ProviderFailure
 from codey.runs.ledger import RunLedgerWriter
 from codey.runs.work_checkpoint import WorkCheckpoint, WorkCheckpointStore
@@ -41,13 +39,9 @@ class RunFrame:
     preflight_switches: int
     window_action: WindowAction | None = None
     trace: Any | None = None
-    recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
-    recovered_tool_result_batch_id: str = ""
     entry_policy: Any | None = None
-    settled_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
     entry_session: Any | None = None
     entry_research_tools: Any | None = None
-    entry_initial_turn: ReceivedProviderTurn | None = None
 
 
 @dataclass

@@ -4,13 +4,13 @@ from unittest.mock import Mock
 
 import pytest
 
-from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import api_transport
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition
 from codey.providers.zen.connection import ZenProvider
+from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 
 
 def response(text="", *, calls=()):

@@ -4,15 +4,16 @@ from types import SimpleNamespace
 import pytest
 
 from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_session_recovery import restore_task_session
-from codey.operations.recovery import record_entry_policy, recover_effects_for_resume
-from codey.operations.task_effects import KernelRecordedProvider
+from codey.operations.recovery import record_entry_policy
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core.models import ToolCall
 from codey.runtime.effects.effect_records import RuntimeEffectStore
+from tests.support.provider_actions import ProviderActions
+from tests.support.receipt_fixtures import inspect_receipt_facts
+from tests.support.session_projection import restore_task_session
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
 
 URL = "https://example.com/observed"
@@ -71,7 +72,7 @@ def test_commit_failure_never_publishes_and_committed_interruption_recovers(
     assert bool(rows[0].settlement) is after_commit
     calls = list(tools.search.calls)
     if after_commit:
-        recovered = recover_effects_for_resume(deps, session_id="s", run_id="r", project="", task_kind="project")
+        recovered = inspect_receipt_facts(deps, session_id="s", run_id="r", project="", task_kind="project")
         assert recovered.ok
         frame = SimpleNamespace(run_id="r", recovered_tool_outcomes=recovered.recovered_tool_outcomes,
                                 settled_tool_outcomes=recovered.settled_tool_outcomes,
@@ -97,8 +98,8 @@ def test_live_and_recovery_share_projection_without_duplicate_searches(tmp_path,
                                run_id="r", effect_scope="task", turn=turn,
                                research_tools=tools, managed_outputs=managed, session_id="s", intent_sink=sink)
         assert results[0].ok
-        KernelRecordedProvider(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
-    recovered = recover_effects_for_resume(deps, session_id="s", run_id="r", project="", task_kind="project")
+        ProviderActions(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
+    recovered = inspect_receipt_facts(deps, session_id="s", run_id="r", project="", task_kind="project")
     frame = SimpleNamespace(run_id="r", recovered_tool_outcomes=recovered.recovered_tool_outcomes,
                             settled_tool_outcomes=recovered.settled_tool_outcomes,
                             recovered_tool_result_batch_id=recovered.recovered_tool_result_batch_id)

@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations.recovery import recover_effects_for_resume
 from codey.operations.task_effects import KernelEffectSink
 from codey.providers.api_provider import ApiProvider
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -14,6 +13,7 @@ from codey.runtime.effects.effect_records import RuntimeEffectIntent, RuntimeEff
 from codey.runtime.effects.replay_policy import ReplayClass
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from tests.support.receipt_fixtures import inspect_receipt_facts
 
 
 def _runtime(tmp_path: Path):
@@ -134,22 +134,25 @@ def test_safe_recovery_uses_checkpoint_batch_and_never_runtime_jsonl(tmp_path, m
         args_digest="a" * 64, replay_class=ReplayClass.SAFE, replay_args={"path": "a.txt"}),),
         delivery_intent=DeliveryBatchIntent("batch-1", "s", "r", 1, items, compute_batch_digest(items)))
 
-    result = recover_effects_for_resume(SimpleNamespace(
+    result = inspect_receipt_facts(SimpleNamespace(
         state=SimpleNamespace(durable=durable), runtime_mutations=line,
         runtime_effects=RuntimeEffectStore(durable=durable),
         tool_result_delivery=ToolResultDeliveryStore(durable=durable), managed_outputs=None,
     ), session_id="s", run_id="r", project=str(tmp_path), task_kind="project")
     assert result.ok
     assert result.recovered_tool_result_batch_id == "batch-1"
-    assert durable.effect("read-1").status == "ok"
-    assert durable.task("r").state["operation"]["leaf"] == "tool_delivery_pending"
-    assert any(entry.kind == "tool_result" for entry in durable.entries("s"))
+    assert durable.effect("read-1").settlement is None
+    from codey.runtime.write.drive import peek_next_action
+    action = peek_next_action(durable, session_id="s", run_id="r")
+    assert action.kind == "replay_safe_tool_batch" and action.delivery_batch_id == "batch-1"
+    assert durable.task("r").state["operation"]["leaf"] == "tool_effect_pending"
+    assert not any(entry.kind == "tool_result" for entry in durable.entries("s"))
     durable.close()
 
 
 def test_settled_recovery_reads_receipt_from_durable_without_runtime_projection(tmp_path):
-    from codey.operations.recovery import recover_effects_for_resume
     from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent, DeliveryBatchItem, compute_batch_digest
+    from tests.support.receipt_fixtures import inspect_receipt_facts
 
     durable, line = _runtime(tmp_path)
     sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable)
@@ -165,7 +168,7 @@ def test_settled_recovery_reads_receipt_from_durable_without_runtime_projection(
         delivery_intent=DeliveryBatchIntent("batch-1", "s", "r", 1, batch_items, compute_batch_digest(batch_items)),
     )
     sink.settle("read-1", True, result=ToolResult(ok=True, call=call, model_text="durable receipt"))
-    result = recover_effects_for_resume(
+    result = inspect_receipt_facts(
         SimpleNamespace(state=SimpleNamespace(durable=durable), runtime_mutations=None,
                         runtime_effects=None, tool_result_delivery=None, managed_outputs=None),
         session_id="s", run_id="r", project=str(tmp_path), task_kind="project",

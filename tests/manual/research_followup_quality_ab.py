@@ -22,7 +22,6 @@ if __package__ in (None, ""):
 import contextlib
 
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.evidence_followup import run_evidence_followup
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider
 from codey.research.context import ResearchContext, ResearchPipelineConfig
@@ -52,6 +51,7 @@ from tests.manual.ab_journal import (
     TranscriptReplayCache,
 )
 from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
+from tests.support.kernel_runtime import run_evidence_followup
 from tests.support.research_iteration_adapter import ResearchIteration
 
 PROBE = "research_followup_quality_ab"

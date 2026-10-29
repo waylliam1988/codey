@@ -11,6 +11,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
+from codey.operations import kernel_execution as execute
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -31,7 +32,7 @@ def _session():
 
 class StructuredRunVerificationTests(unittest.TestCase):
     def test_text_pass_without_exit_code_is_not_run(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations import kernel_facts as ke
 
         session = _session()
         session.record_edit("a.py", revision=1)
@@ -48,12 +49,12 @@ class StructuredRunVerificationTests(unittest.TestCase):
         self.assertFalse(verdict.complete, f"must stay blocked, got {verdict}")
 
     def test_injected_run_text_pass_does_not_set_ok(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations import kernel_facts as ke
 
         session = _session()
         call = ToolCall(name="run", args={"command": "echo hi"}, call_id="c2")
         # Injected executor path: raw string result with pass text, no exit code.
-        result, ok, exit_code = ke._run_via_delegate_or_fn(
+        result, ok, exit_code = execute._run_via_delegate_or_fn(
             None, {"run": lambda c: "all pass OK"}, session, call, "run",
             active_turn=1, tool_index=0,
         )
@@ -68,7 +69,7 @@ class StructuredRunVerificationTests(unittest.TestCase):
         self.assertEqual(passing, [])
 
     def test_zero_exit_code_with_matching_identity_passes(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations import kernel_facts as ke
 
         session = _session()
         session.record_edit("a.py", revision=1)
@@ -80,7 +81,7 @@ class StructuredRunVerificationTests(unittest.TestCase):
         self.assertTrue(passing, "exit_code 0 must record a passing verification")
 
     def test_nonzero_exit_code_never_passes(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations import kernel_facts as ke
 
         session = _session()
         session.record_edit("a.py", revision=1)

@@ -48,7 +48,7 @@ class DeliveryAbandonedContractTests(unittest.TestCase):
         current = durable.task(rid)
         durable.advance_task(
             task_id=rid,
-            phase="assistant_intent_committed",
+            phase="running",
             state=current.state,
         )
         eid = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, rid)

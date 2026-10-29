@@ -146,7 +146,7 @@ for _leaf in (LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING, LEAF_PROVIDER_RESPONSE_R
 _ALLOWED_TRANSITIONS[LEAF_PROVIDER_RESPONSE_READY] |= {LEAF_PLAN_READY, LEAF_COMPLETION_PENDING, LEAF_CONTROL_READY}
 _ALLOWED_TRANSITIONS[LEAF_PLAN_READY] = frozenset({LEAF_TOOL_EFFECT_PENDING, LEAF_CLOSING, LEAF_CONTROL_READY})
 _ALLOWED_TRANSITIONS[LEAF_COMPLETION_PENDING] = frozenset({LEAF_CONTROL_READY, LEAF_CLOSING})
-_ALLOWED_TRANSITIONS[LEAF_CONTROL_READY] = frozenset({LEAF_PROVIDER_REQUEST_READY, LEAF_CLOSING, LEAF_KERNEL_SETTLED})
+_ALLOWED_TRANSITIONS[LEAF_CONTROL_READY] = frozenset({LEAF_PROVIDER_REQUEST_READY, LEAF_CLOSING, LEAF_KERNEL_SETTLED, LEAF_COMPLETION_PENDING})
 _ALLOWED_TRANSITIONS[LEAF_CLOSING] = frozenset({LEAF_PROVIDER_REQUEST_READY, LEAF_KERNEL_SETTLED})
 _ALLOWED_TRANSITIONS[LEAF_CLOSING] |= {LEAF_CLOSING}
 _ALLOWED_TRANSITIONS[LEAF_KERNEL_SETTLED] = frozenset({LEAF_WRITER_SETTLED, LEAF_REPAIR_SETTLED,
@@ -359,6 +359,10 @@ class RuntimeOperationState:
             request_ref = _text(payload.get("request_ref", ""), "request_ref", allow_empty=True)
             if bool(request_ref) != (leaf == LEAF_PROVIDER_REQUEST_READY):
                 raise RuntimeOperationTransitionError("request reference does not match operation leaf")
+            work_ref = _text(payload.get("work_ref", ""), "work_ref", allow_empty=True)
+            if ((leaf in {LEAF_CONTROL_READY, LEAF_CLOSING, LEAF_KERNEL_SETTLED} and not work_ref)
+                    or (work_ref and leaf not in _WORK_LEAVES)):
+                raise RuntimeOperationTransitionError("decision reference does not match operation leaf")
             turn_budget, max_repair_rounds, turns_used, repair_rounds, turn, tool_index = (
                 _parse_operation_counts(payload)
             )
@@ -439,7 +443,7 @@ class RuntimeOperationState:
                 tool_index=tool_index,
                 response_ref=response_ref,
                 request_ref=request_ref,
-                work_ref=_text(payload.get("work_ref", ""), "work_ref", allow_empty=True),
+                work_ref=work_ref,
                 logical_turn=_count(payload.get("logical_turn", 0), "logical_turn"),
                 counters=RuntimeExecutionCounters.from_payload(payload.get("counters")),
                 terminal=terminal,
@@ -765,6 +769,17 @@ def mark_writer_running(
 ) -> RuntimeOperationState:
     provider = _text(provider_id, "provider_id")
     attempt = state.writer_attempt if writer_attempt is None else _count(writer_attempt, "writer_attempt", minimum=1)
+    if (state.task_kind == "research" and state.writer_attempt > 0
+            and writer_attempt is not None and attempt != state.writer_attempt):
+        # Research follow-ups have fixed attempt coordinates. Restarting the
+        # same invocation keeps its receipts; only its explicit successor may
+        # start fresh after the previous kernel has settled.
+        if (attempt <= state.writer_attempt or state.leaf != LEAF_KERNEL_SETTLED
+                or state.driver != DRIVER_WRITER or state.provider_id != provider):
+            raise RuntimeOperationTransitionError("research invocation requires its settled predecessor")
+        return _transition(state, LEAF_WRITER_RUNNING, writer_attempt=attempt,
+                           counters=RuntimeExecutionCounters(), logical_turn=0, stop_reason="",
+                           work_ref="", request_ref="", response_ref="")
     if state.leaf in _PENDING_LEAVES - {LEAF_TOOL_DELIVERY_PENDING}:
         if state.driver != DRIVER_WRITER or state.provider_id != provider or state.writer_attempt != attempt:
             raise RuntimeOperationTransitionError("pending writer identity cannot be rebound")
@@ -780,7 +795,7 @@ def mark_writer_running(
             raise RuntimeOperationTransitionError("writer restart requires a new attempt after done before final proof")
         return _transition(state, LEAF_WRITER_RUNNING, provider_id=provider,
                            writer_attempt=attempt, turns_used=state.turns_used, stop_reason="",
-                           counters=RuntimeExecutionCounters())
+                           counters=RuntimeExecutionCounters(), logical_turn=0)
     if state.leaf in {LEAF_WRITER_RUNNING, LEAF_TOOL_DELIVERY_PENDING}:
         # Rebinding a writer changes transport metadata, never acknowledges
         # delivery or restarts the task state machine.
@@ -819,7 +834,7 @@ def mark_candidate_validation_running(
         raise RuntimeOperationTransitionError("stopped candidate validation admission is unavailable")
     return _transition(state, LEAF_REPAIR_RUNNING if repair else LEAF_WRITER_RUNNING,
                        writer_attempt=attempt, candidate_validation_attempted=True, stop_reason="",
-                       counters=RuntimeExecutionCounters())
+                       counters=RuntimeExecutionCounters(), logical_turn=0)
 
 
 def mark_writer_settled(

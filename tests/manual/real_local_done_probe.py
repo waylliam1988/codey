@@ -32,8 +32,9 @@ PROMPT = (
 def execution_observations(durable, outputs, session_id: str, run_id: str) -> dict[str, object]:
     """Score saved execution replies; a final SSE chunk is not a full reply."""
     from codey.durable.checkpoint import operation_from_checkpoint
-    from codey.operations.provider_receipts import RESPONSE_KIND, decode_reply, read_provider_artifact
+    from codey.operations.provider_receipts import RESPONSE_KIND, read_provider_artifact
     from codey.providers.base import AssistantTurn
+    from codey.providers.response_record import decode_reply
     effects = durable.effects(run_id)
     done_calls = 0
     for artifact in durable.artifacts_for_task(run_id):

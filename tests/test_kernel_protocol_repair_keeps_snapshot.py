@@ -6,11 +6,11 @@ import pytest
 
 from codey.operations import kernel_prompt
 from codey.operations.kernel_protocol import build_turn_snapshot
-from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, TurnFinish
 from codey.runtime.core.models import ToolPlan, ToolResult
+from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 
 
 def test_missing_tool_name_is_not_inferred_and_json_repair_keeps_visible_contract():

@@ -217,7 +217,7 @@ def test_cancellation_during_completion_check_prevents_success_ack(tmp_path, mon
 @pytest.mark.parametrize("cancelled", [False, "active", "parked"])
 def test_approval_resume_uses_original_call_and_never_executes_shell(tmp_path, cancelled):
     from codey.durable import ApprovalRecord, ApprovalStatus
-    from codey.operations.provider_receipts import json_value
+    from codey.providers.response_record import json_value
 
     durable, _, outputs, sink = runtime(tmp_path)
     original = {"command": "echo hi", "path": "."}

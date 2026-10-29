@@ -55,9 +55,9 @@ class _AlwaysLengthProvider:
 
 
 def test_kernel_consumes_one_local_length_continuation_before_done():
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from tests.support.kernel_runtime import run_task_kernel
 
     provider = _ContinuableProvider()
     session = TaskSession(
@@ -86,9 +86,9 @@ def test_kernel_consumes_one_local_length_continuation_before_done():
 
 
 def test_every_native_provider_gets_one_typed_length_continuation(monkeypatch):
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from tests.support.kernel_runtime import run_task_kernel
 
     monkeypatch.setenv("NATIVE_TOOLS", "1")
     provider = _AlwaysLengthProvider()
@@ -109,9 +109,9 @@ def test_every_native_provider_gets_one_typed_length_continuation(monkeypatch):
 
 
 def test_second_local_length_stop_is_provider_failure() -> None:
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from tests.support.kernel_runtime import run_task_kernel
 
     provider = _AlwaysLengthProvider()
     session = TaskSession(
@@ -141,9 +141,9 @@ def test_second_local_length_stop_is_provider_failure() -> None:
 
 
 def test_natural_answer_after_length_cannot_bypass_required_changes() -> None:
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from tests.support.kernel_runtime import run_task_kernel
 
     class Provider(_ContinuableProvider):
         def send_turn(self, prompt, tools=None, timeout=None):

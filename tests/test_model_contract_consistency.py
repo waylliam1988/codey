@@ -83,7 +83,7 @@ def test_registry_removal_cannot_erase_a_frozen_text_declaration():
 
 def test_registry_change_during_snapshot_cannot_split_the_sent_text_contract(monkeypatch):
     from codey.operations import kernel_protocol
-    from codey.operations.task_loop import KernelRunRequest, KernelTransportDeps, run_task_kernel
+    from tests.support.kernel_runtime import KernelRunRequest, KernelTransportDeps, run_task_kernel
 
     name = "captured_contract_churn_probe"
     assert tool_spec.register_custom_tool(name, grant="control")
@@ -175,7 +175,7 @@ def test_documented_codemode_example_executes_with_real_child_tools(tmp_path, na
 
 @pytest.mark.parametrize("native", [False, True])
 def test_project_audit_uses_only_the_kernel_protocol_contract(tmp_path, native):
-    from codey.operations.project_audit_advisor import run_project_audit_advisor
+    from tests.support.kernel_runtime import run_project_audit_advisor
 
     sent = []
     class Provider:

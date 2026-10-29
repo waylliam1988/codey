@@ -1,27 +1,13 @@
-from types import SimpleNamespace
+"""A terminal receipt closes followup calls through the sole driver."""
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
+from tests.support.kernel_runtime import KernelRunRequest, KernelTransportDeps, run_task_kernel
+from tests.test_native_done_full_kernel_receipt import _SeqNativeProvider
 
 
-def test_done_receipt_followup_is_closed_without_execution() -> None:
-    from codey.operations import kernel_transport
-
-    class Provider:
-        def __init__(self):
-            self.calls = []
-
-        def send_tool_results(self, messages, tools):
-            self.calls.append(messages)
-            return SimpleNamespace(
-                tool_calls=(SimpleNamespace(id="followup-1"),),
-            )
-
-        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
-            return self.send_tool_results(results, [])
-
-    provider = Provider()
-    first = SimpleNamespace(tool_calls=(SimpleNamespace(id="done-1"),))
-    followup = kernel_transport._take_answered_reply(
-        provider, first, True, (), "done accepted"
-    )
-
-    assert followup is not None
-    assert provider.calls[0][0].call_id == "done-1"
+def test_done_receipt_followup_is_closed_without_execution():
+    provider = _SeqNativeProvider()
+    result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control", "project.read"}))),
+        request=KernelRunRequest(transport=KernelTransportDeps(provider=provider, provider_id="local")))
+    assert result.completed, result
+    assert provider.answered == [["done-1"], ["followup-1"]]

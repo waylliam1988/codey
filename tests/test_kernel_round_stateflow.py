@@ -24,6 +24,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
 
 
 def _project_policy():
@@ -45,8 +46,8 @@ def _strict_research_policy():
 
 class SnapshotFailClosedTests(unittest.TestCase):
     def test_persistent_snapshot_failure_is_controller_failure_with_one_send(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
+        from tests.support.kernel_runtime import run_task_kernel
 
         sends: list[str] = []
 
@@ -93,7 +94,6 @@ class SnapshotFailClosedTests(unittest.TestCase):
         self.assertEqual(len(sends), 1, "no provider send after snapshot failure")
 
     def test_each_round_builds_snapshot_before_send_without_postexec_rebuild(self) -> None:
-        from codey.operations import task_loop as kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolResult
@@ -101,7 +101,7 @@ class SnapshotFailClosedTests(unittest.TestCase):
         events = []
         replies = iter(['{"tool":"read_file","args":{"path":"a.py"}}',
                         '{"tool":"done","args":{"summary":"done"}}'])
-        build = kernel.kernel_protocol.build_turn_snapshot
+        build = __import__("codey.operations.kernel_protocol", fromlist=["build_turn_snapshot"]).build_turn_snapshot
 
         def snapshot(*args, **kwargs):
             events.append("snapshot")
@@ -116,8 +116,8 @@ class SnapshotFailClosedTests(unittest.TestCase):
             return ToolResult(ok=True, call=call, model_text="a.py content")
 
         session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.read"})), max_turns=2)
-        with mock.patch.object(kernel.kernel_protocol, "build_turn_snapshot", snapshot):
-            result = kernel.run_task_kernel(
+        with mock.patch.object(__import__("codey.operations.kernel_protocol", fromlist=["build_turn_snapshot"]), "build_turn_snapshot", snapshot):
+            result = run_test_kernel(
                          session,
                          request=KernelRunRequest(
                              transport=KernelTransportDeps(
@@ -133,8 +133,8 @@ class SnapshotFailClosedTests(unittest.TestCase):
         self.assertEqual(events, ["snapshot", "send", "execute", "snapshot", "send"])
 
     def test_web_drift_notice_still_announced_on_success(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
+        from tests.support.kernel_runtime import run_task_kernel
 
         prompts: list[str] = []
         replies = [
@@ -188,7 +188,7 @@ class ApprovalEffectiveProfileTests(unittest.TestCase):
         return ToolCall("shell", {"command": "rm -rf /tmp/x", "path": "."}, "c1")
 
     def test_readonly_policy_never_pauses_without_engine_call(self) -> None:
-        from codey.operations import task_loop as kernel
+        from codey.operations import kernel_actions as kernel
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
@@ -210,7 +210,7 @@ class ApprovalEffectiveProfileTests(unittest.TestCase):
         self.assertNotIn("approval", seen)
 
     def test_research_without_shell_grant_never_pauses(self) -> None:
-        from codey.operations import task_loop as kernel
+        from codey.operations import kernel_actions as kernel
 
         policy = _strict_research_policy()
         self.assertFalse(policy.allows("shell.approval"))
@@ -227,7 +227,7 @@ class ApprovalEffectiveProfileTests(unittest.TestCase):
         self.assertEqual(requested, [])
 
     def test_explicit_auth_uses_effective_profile_and_pauses(self) -> None:
-        from codey.operations import task_loop as kernel
+        from codey.operations import kernel_actions as kernel
 
         policy = _project_policy()
         self.assertTrue(policy.allows("shell.approval"))
@@ -246,7 +246,7 @@ class ApprovalEffectiveProfileTests(unittest.TestCase):
         self.assertEqual(len(approvals), 1)
 
     def test_effective_profile_shared_with_execution_delegate(self) -> None:
-        from codey.operations import task_loop as kernel
+        from codey.operations import kernel_actions as kernel
         from codey.operations.task_execution import (
             ExecutionDelegate,
             effective_project_profile,
@@ -272,40 +272,31 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
         return ProviderToolCall(id=cid, name=name,
                                 arguments=dict(args or {"query": "q"}))
 
-    def test_repair_dangling_send_failure_raises(self) -> None:
-        from codey.operations import kernel_transport as transport
+    def test_done_acknowledgement_failure_preserves_pending_delivery(self):
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import TaskPolicy
+        from tests.support.kernel_runtime import run_task_kernel
 
-        class BoomProvider:
-            def send_tool_results(self, messages, tools, timeout=None):
+        class Provider:
+            native_tools = True
+            def send_turn(self, prompt, tools):
+                return self_reply
+            def send_tool_results(self, messages, tools):
+                raise TimeoutError("receipt boom")
+            def acknowledge_tool_results(self, messages, tools):
                 raise TimeoutError("receipt boom")
 
-            def acknowledge_tool_results(self, results, declared_tools, timeout=None):
-                return self.send_tool_results(results, [])
-
-        reply = self._native_reply([self._native_call("c1")])
-        with self.assertRaises(TimeoutError):
-            transport.repair_native_dangling(
-                BoomProvider(), reply, True, [], "bad tool call")
-
-    def test_take_answered_reply_send_failure_raises(self) -> None:
-        from codey.operations import kernel_transport as transport
-
-        class BoomProvider:
-            def send_tool_results(self, messages, tools, timeout=None):
-                raise TimeoutError("receipt boom")
-
-            def acknowledge_tool_results(self, results, declared_tools, timeout=None):
-                return self.send_tool_results(results, [])
-
-        reply = self._native_reply([self._native_call("d1", "done", {"summary": "x"})])
-        with self.assertRaises(TimeoutError):
-            transport._take_answered_reply(
-                BoomProvider(), reply, True, [], "not done yet")
+        self_reply = self._native_reply([self._native_call("d1", "done", {"summary": "x"})])
+        result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control"}))),
+            request=KernelRunRequest(transport=KernelTransportDeps(provider=Provider())))
+        self.assertEqual(result.stop_reason, "delivery_pending")
+        self.assertIn("receipt boom", result.summary)
+        self.assertFalse(result.completed)
 
     def test_protocol_error_with_failing_receipt_is_provider_failure(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.providers.base import AssistantTurn, ProviderToolCall
+        from tests.support.kernel_runtime import run_task_kernel
 
         send_turns: list = []
         receipts: list = []
@@ -344,9 +335,9 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
         self.assertEqual(len(receipts), 1)
 
     def test_done_rejection_with_failing_receipt_is_provider_failure(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.providers.base import AssistantTurn, ProviderToolCall
+        from tests.support.kernel_runtime import run_task_kernel
 
         send_turns: list = []
         receipts: list = []
@@ -410,8 +401,8 @@ class PromptAndTransportHygieneTests(unittest.TestCase):
                             for message in logs.output))
 
     def test_provider_identification_failure_never_silently_uses_web(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
+        from tests.support.kernel_runtime import run_task_kernel
 
         sends: list = []
 

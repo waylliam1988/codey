@@ -1,5 +1,4 @@
 from types import SimpleNamespace
-from unittest.mock import Mock
 
 from codey.operations.kernel_protocol import normalize_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
@@ -25,22 +24,36 @@ def test_question_event_has_both_text_and_structured_ui_projections():
     assert run_event_ui_payload("run", "chat", event)["question"]["options"] == QUESTION["options"]
 
 
-def test_question_acknowledges_its_native_call_before_publishing_the_card():
-    from codey.operations.kernel_question import pause_for_question
+def test_question_is_durable_before_notification_and_acks_original_call(tmp_path):
+    from codey.operations.task_loop import run_task_kernel
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from tests.durable.test_operation_control_actions import request_for
+    from tests.durable.test_provider_response_receipts import runtime
 
-    provider = Mock()
-    provider.acknowledge_tool_results.return_value = AssistantTurn()
-    call = ProviderToolCall(id="ask-call", name="ask_user", arguments=QUESTION)
-    reply = AssistantTurn(tool_calls=(call,))
-    events = []
-
+    durable, _, _, sink = runtime(tmp_path)
+    events, receipts = [], []
+    class Provider:
+        native_tools = True
+        def send_turn(self, prompt, tools):
+            return AssistantTurn(tool_calls=(ProviderToolCall("ask-call", "ask_user", QUESTION),))
+        def send_tool_results(self, results, tools):
+            raise AssertionError("question cannot continue execution")
+        def acknowledge_tool_results(self, results, tools):
+            receipts.extend(results)
+            return AssistantTurn()
     def emit(event):
-        assert provider.acknowledge_tool_results.called
-        events.append(event)
-
-    pause_for_question(QUESTION, provider, reply, True, [], on_event=emit, identity="run", turn=1)
-    assert provider.acknowledge_tool_results.call_args.args[0][0].call_id == "ask-call"
-    assert events[0].kind == "user_question"
+        if event.kind == "user_question":
+            assert durable.task("r").state["question"]["id"] == event.metadata["id"]
+            events.append(event)
+    try:
+        result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control"}))),
+            request=request_for(durable, sink, Provider(), on_event=emit))
+        assert result.stop_reason == "question", result
+        assert [row.call_id for row in receipts] == ["ask-call"]
+        assert len(events) == 1
+    finally:
+        durable.close()
 
 
 def test_question_answer_is_durable_and_a_different_second_answer_is_rejected(tmp_path):

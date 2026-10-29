@@ -9,7 +9,7 @@ Flow:
   open RuntimeSessionLog + ManagedOutputStore + WorkspaceRevisionStore +
   KernelEffectSink -> execute_turn edit + run(s) -> record counts/revision/
   fingerprint/call ids -> reopen all stores (restart) ->
-  recover_effects_for_resume -> formal kernel_session_recovery.restore_task_session into a
+  inspect_receipt_facts -> formal kernel_session_recovery.restore_task_session into a
   fresh TaskSession (no manual file rewrite, no hand-made identity) ->
   real completion_gate.evaluate.
 
@@ -87,10 +87,10 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
     )
     durable.start_task(run_id, state={"task_kind": "project"})
     durable.advance_task(
-        task_id=run_id, phase="assistant_intent_committed", state={"task_kind": task_kind},
+        task_id=run_id, phase="running", state={"task_kind": task_kind},
     )
     durable.advance_task(
-        task_id=run_id, phase="assistant_response_pending", state={"task_kind": task_kind},
+        task_id=run_id, phase="running", state={"task_kind": task_kind},
     )
     managed = ManagedOutputStore(state)
     rev_store = WorkspaceRevisionStore(state)
@@ -185,13 +185,20 @@ def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audit
 def _recover_formal(project, state, logdir, session_id, run_id):
     """Reopen stores (restart) then recover via the formal entry path."""
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.operations.kernel_session_recovery import restore_task_session
-    from codey.operations.recovery import recover_effects_for_resume
+    from codey.operations.kernel_context import KernelContext
+    from codey.operations.kernel_contracts import (
+        KernelExecutionDeps,
+        KernelObservationDeps,
+        KernelRunRequest,
+        KernelTransportDeps,
+    )
+    from codey.operations.task_effects import KernelEffectSink
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.workspace.revision import WorkspaceRevisionStore
+    from tests.support.receipt_fixtures import inspect_receipt_facts
 
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     mutations = RuntimeMutationLine(durable=durable)
@@ -203,7 +210,7 @@ def _recover_formal(project, state, logdir, session_id, run_id):
         managed_outputs=ManagedOutputStore(state),
         workspace_revisions=WorkspaceRevisionStore(state),
     )
-    recovery = recover_effects_for_resume(
+    recovery = inspect_receipt_facts(
         deps, session_id=session_id, run_id=run_id, project=str(project), task_kind="project",
     )
     assert recovery.ok is True
@@ -212,9 +219,16 @@ def _recover_formal(project, state, logdir, session_id, run_id):
     # before replaying facts (mirrors start_task_session via evidence).
     cur = deps.workspace_revisions.current_state(str(project), ignored_paths=())
     fresh.set_workspace_state(cur.revision, cur.fingerprint)
-    frame = SimpleNamespace(run_id=run_id, recovered_tool_outcomes=tuple(recovery.recovered_tool_outcomes),
-                            settled_tool_outcomes=recovery.settled_tool_outcomes)
-    delivered, rows, resume_start, initial = restore_task_session(frame, fresh)
+    sink = KernelEffectSink(mutations, session_id=session_id, run_id=run_id, provider_id="local",
+                            managed_outputs=deps.managed_outputs, durable=durable)
+    context = KernelContext(fresh, KernelRunRequest(
+        transport=KernelTransportDeps(provider=SimpleNamespace(), provider_id="local", run_id=run_id),
+        execution=KernelExecutionDeps(project_path=project, workspace_revision_store=deps.workspace_revisions),
+        observation=KernelObservationDeps(intent_sink=sink)))
+    context.restore_facts()
+    rows = list(recovery.recovered_tool_outcomes)
+    delivered = dict(fresh._memory_results)
+    resume_start = max((row.turn for row in recovery.settled_tool_outcomes), default=0) + 1
     durable.close()
     return fresh, recovery, delivered, rows, resume_start
 
@@ -357,9 +371,8 @@ def test_multi_turn_recovery_keeps_more_than_twenty_observations(monkeypatch):
     """25 runs in legal batches, acknowledged through the recorded provider."""
     import json
 
-    from codey.operations.task_effects import KernelRecordedProvider
-    from codey.operations.task_loop import run_task_kernel
     from codey.runtime.core.models import ToolResult
+    from tests.support.kernel_runtime import run_task_kernel
 
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -398,7 +411,7 @@ def test_multi_turn_recovery_keeps_more_than_twenty_observations(monkeypatch):
                 session,
                 request=KernelRunRequest(
                     transport=KernelTransportDeps(
-                        provider=KernelRecordedProvider(provider, sink),
+                        provider=provider,
                         provider_id="local",
                         run_id="r-many",
                         user_task="fix a.py",

@@ -10,6 +10,7 @@ from __future__ import annotations
 import unittest
 
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
 from tests.support.observed_tool_result import observed_tool_result
 
 
@@ -176,9 +177,9 @@ class NormalizeParityTests(unittest.TestCase):
 
 class WebOnlyLoopTests(unittest.TestCase):
     def test_web_only_model_completes_mixed_turns_without_native(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolResult
+        from tests.support.kernel_runtime import run_task_kernel
 
         policy = _policy(
             submission={"requested_capabilities": ("web.read",)},
@@ -257,9 +258,9 @@ class WebOnlyLoopTests(unittest.TestCase):
         self.assertFalse(hasattr(provider, "send_turn"))
 
     def test_native_parity_same_completion(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
         from codey.providers.base import AssistantTurn, ProviderToolCall
+        from tests.support.kernel_runtime import run_task_kernel
 
         policy = _policy(
             submission={"requested_capabilities": ("web.read",)},
@@ -372,8 +373,8 @@ class CompletionGateTests(unittest.TestCase):
 
 class HybridAndPlanningTests(unittest.TestCase):
     def test_hybrid_interleaves_web_and_project_in_one_run(self) -> None:
-        from codey.operations.task_loop import run_task_kernel
         from codey.operations.task_session import TaskSession
+        from tests.support.kernel_runtime import run_task_kernel
 
         policy = _policy(
             submission={"requested_capabilities": ("web.read",)},
@@ -453,7 +454,6 @@ class HybridAndPlanningTests(unittest.TestCase):
 class ThirdTaskTests(unittest.TestCase):
     def test_third_task_runs_without_kernel_change(self) -> None:
         from codey.operations import completion_gate as gate
-        from codey.operations import task_loop as kernel
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolResult
         from codey.toolchain.tool_spec import register_custom_tool, unregister_custom_tool
@@ -493,7 +493,7 @@ class ThirdTaskTests(unittest.TestCase):
                     return None
 
             session = TaskSession(policy=policy, task_kind="project", project="demo", max_turns=8)
-            outcome = kernel.run_task_kernel(
+            outcome = run_test_kernel(
                           session,
                           request=KernelRunRequest(
                               transport=KernelTransportDeps(

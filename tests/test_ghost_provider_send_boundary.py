@@ -13,13 +13,6 @@ import pytest
 from codey.agents.request import AgentRequest
 from codey.app.context import AppContext
 from codey.operations.project_adapter import _project_context, _project_ghost_sources
-from codey.operations.task_loop import (
-    KernelExecutionDeps,
-    KernelObservationDeps,
-    KernelRunRequest,
-    KernelTransportDeps,
-    run_task_kernel,
-)
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.api_provider import ApiProvider
@@ -27,6 +20,13 @@ from codey.runs.trace import RunTraceStore
 from codey.utils.refs import digest_text
 from codey.workspace.context_admission import request_scope
 from codey.workspace.context_epoch import context_epoch_id
+from tests.support.kernel_runtime import (
+    KernelExecutionDeps,
+    KernelObservationDeps,
+    KernelRunRequest,
+    KernelTransportDeps,
+    run_task_kernel,
+)
 from tests.test_chat_workspace_tools_and_answer_completion import execute_frame, workspace_frame
 
 
@@ -181,7 +181,7 @@ def test_session_scope_uses_request_session_not_candidate():
             execution=KernelExecutionDeps(session_id="current"),
         ),
     )
-    assert result.stop_reason == "provider_failure"
+    assert result.stop_reason == "controller_failure"
     assert sent == []
 
 
