@@ -3,10 +3,13 @@
 from dataclasses import replace
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.providers import api_transport, local_config, local_connection, local_selection
 from codey.providers.api_provider import ApiProvider
+from codey.providers.base import ProviderToolDefinition
+from codey.providers.text_tool_schema import text_tool_schema
 from codey.runtime.core.api_selection import ApiRunSelection
 
 
@@ -79,3 +82,44 @@ def test_headless_task_admits_constrained_request_through_shared_kernel(tmp_path
         connect_provider=lambda *_args, **_kwargs: provider, emit_jsonl=lambda _event: None)
     assert result.exit_code == 0 and result.stop_reason == "done"
     assert payloads and all("response_format" in p for p in payloads)
+    schema = payloads[0]["response_format"]["json_schema"]["schema"]
+    validator = Draft202012Validator(schema)
+    assert validator.is_valid({"tool": "done", "args": {"summary": "2"}})
+    assert not validator.is_valid({"tool": "made_up", "args": {}})
+    assert not validator.is_valid({"tool": "done", "args": []})
+    assert not any("tools" in p for p in payloads)
+
+
+def test_frozen_schema_leaves_argument_order_and_validation_to_kernel():
+    tools = [ProviderToolDefinition("inspect", "Read versions", {"type": "object"})]
+    schema = text_tool_schema(tools)
+    validator = Draft202012Validator(schema)
+    assert validator.is_valid({"tool": "inspect", "args": {"rows": [{"revision": 1}]}})
+    assert validator.is_valid({"tool": "inspect", "args": {"sources": ["url"], "evidence": [{"excerpt": "quote"}]}})
+    assert not validator.is_valid({"tool": "inspect", "args": {}, "extra": True})
+    tools.append(ProviderToolDefinition("later", "Later", {}))
+    assert not validator.is_valid({"tool": "later", "args": {}})
+    with pytest.raises(ValueError, match="declared tools"):
+        text_tool_schema([])
+
+
+def test_explicit_schema_reaches_payload_but_does_not_leak_to_next_send(monkeypatch):
+    payloads = []
+
+    def generate(_url, payload, _headers, **_kwargs):
+        payloads.append(payload)
+        return {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+
+    monkeypatch.setattr(api_transport, "generate", generate)
+    provider = ApiProvider("http://fixture/v1", "fixture", native_tools=False, thinking_enabled=False,
+                           text_tool_format="json_schema")
+    try:
+        schema = text_tool_schema([ProviderToolDefinition("inspect", "Read", {"type": "object"})])
+        assert provider.send("task", tool_call_json=True, tool_call_schema=schema) == "ok"
+        assert payloads[0]["response_format"]["json_schema"]["schema"] == schema
+        assert provider.send("ordinary") == "ok"
+        assert "response_format" not in payloads[1]
+        with pytest.raises(ValueError, match="requires JSON"):
+            provider.send("bad", tool_call_schema=schema)
+    finally:
+        provider.close()

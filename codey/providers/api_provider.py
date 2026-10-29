@@ -314,11 +314,14 @@ class ApiProvider:
             with contextlib.suppress(Exception):
                 control.cancel()
 
-    def send(self, text: str, timeout: float | None = None, *, tool_call_json: bool = False) -> str:
+    def send(self, text: str, timeout: float | None = None, *, tool_call_json: bool = False,
+             tool_call_schema: dict[str, Any] | None = None) -> str:
         if tool_call_json and self.text_tool_format != "json_schema":
             raise ValueError("JSON tool format is not enabled for this provider")
+        if tool_call_schema is not None and not tool_call_json:
+            raise ValueError("tool schema requires JSON tool format")
         return self._exchange([{"role": "user", "content": text}], None, timeout=timeout,
-                              text_only=True, tool_call_json=tool_call_json).text
+                              text_only=True, tool_call_json=tool_call_json, tool_call_schema=tool_call_schema).text
 
     def bind_durable_context(self, durable: Any, conversation_id: str) -> None:
         if durable is None or not conversation_id:
@@ -451,6 +454,7 @@ class ApiProvider:
     def _exchange(self, pending: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
                   *, timeout: float | None = None, text_only: bool = False,
                    tool_call_json: bool = False,
+                   tool_call_schema: dict[str, Any] | None = None,
                    expected_window_ref: ProtocolWindowRef | None = None,
                    delivery_commit: dict[str, Any] | None = None) -> AssistantTurn:
         """One atomic lifecycle for both codecs, with no protocol-specific commit path."""
@@ -472,6 +476,8 @@ class ApiProvider:
                 candidate = self._prepare_exchange(pending, tools)
             checkpoints: list[dict[str, Any]] = []
             generation_options: dict[str, Any] = {"tool_call_json": True} if tool_call_json else {}
+            if tool_call_schema is not None:
+                generation_options["tool_call_schema"] = tool_call_schema
             body = self._generate(candidate, tools, timeout=timeout, checkpoints=checkpoints, **generation_options)
             try:
                 turn, output = self._codec.decode_exchange(body, text_only=text_only,
@@ -575,11 +581,12 @@ class ApiProvider:
 
     def _generate(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None = None,
                   *, timeout: float | None = None, checkpoints: list[dict[str, Any]] | None = None,
-                  tool_call_json: bool = False) -> dict[str, Any]:
+                  tool_call_json: bool = False, tool_call_schema: dict[str, Any] | None = None) -> dict[str, Any]:
         from codey.providers import api_transport
 
         settings = GenerationSettings(self.model, self.stream, self.temperature, self.thinking_enabled,
-                                      self.reasoning_effort, self.tool_choice, self.context_budget.output_tokens, tool_call_json)
+                                      self.reasoning_effort, self.tool_choice, self.context_budget.output_tokens,
+                                      tool_call_json, tool_call_schema)
         deadline = time.monotonic() + (timeout if timeout is not None else self.timeout)
         connection_id, sink = self.connection_id, self.on_usage
         payload = self._admit_request(messages, tools, settings, deadline, checkpoints)
@@ -690,7 +697,7 @@ class ApiProvider:
         payload[key] = [*payload[key], {"role": "user", "content": clock if clock is not None else clock_context()}]
         if settings.text_tool_json:
             payload["response_format"] = {"type": "json_schema", "json_schema": {
-                "name": "text_tool_call", "strict": True, "schema": {"type": "object", "properties": {
+                "name": "text_tool_call", "strict": True, "schema": settings.text_tool_schema or {"type": "object", "properties": {
                     "tool": {"type": "string"}, "args": {"type": "object"}},
                     "required": ["tool", "args"], "additionalProperties": False}}}
         self.configure_request(payload)

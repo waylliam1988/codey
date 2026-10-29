@@ -302,8 +302,11 @@ class KernelContext:
                 args = (messages, self.window, tools)
         else:
             method, args = ("send_turn", (prompt, tools)) if self.native else ("send", (prompt,))
-        options = ({"tool_call_json": True}
-                   if not self.native and getattr(self.provider, "text_tool_format", "plain") == "json_schema" else {})
+        options: dict[str, Any] = {}
+        if not self.native and getattr(self.provider, "text_tool_format", "plain") == "json_schema":
+            from codey.providers.text_tool_schema import text_tool_schema
+
+            options = {"tool_call_json": True, "tool_call_schema": text_tool_schema(tools)}
         prepare_provider_request(self.sink, method, args, options, counters=(state.counters, counters or state.counters))
 
     def prepare_turn(self, state: Any) -> None:

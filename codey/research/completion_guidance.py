@@ -53,6 +53,21 @@ def render_research_observations(session: "TaskSession") -> str:
             "and read the returned passage. A broad single word may find the wrong passage; refine it "
             "if the requested fact is absent. Do not reuse an earlier quote for a different finding."
         )
+    if "中文" in session.task_text:
+        guidance += (
+            "\n\n本轮要求中文研究报告。逐项处理用户要求的比较与限制；"
+            "每项要有直接证据，查不到则明确写出该项缺口，不能凭一条背景知识声称全部覆盖。"
+        )
+        if session.policy.allows("knowledge.write"):
+            guidance += (
+                "knowledge_write 的 evidence[].claim 写完整中文结论，excerpt 保留原文。"
+                "笔记 body 中的其他说法没有因此获得证据；先补齐缺失发现，再写报告。"
+            )
+        if session.policy.strict_research:
+            guidance += (
+                "done 使用 report_sections 时，summary 只放带引用的结论，五个数组放其余内容，"
+                "不要把整篇报告再放入 summary。尚未满足反馈时，执行下一项调查动作，勿重复旧稿。"
+            )
     return guidance
 
 

@@ -66,3 +66,18 @@ def test_evidence_investigation_retains_observations_without_requiring_a_report(
                                     protocol_tool_name="done"), snapshot=build_turn_snapshot(session), native=False)
     assert "complete response in the requested format" in prompt
     assert '"evidence":["supported finding [1]"]' not in prompt
+
+
+def test_chinese_report_reminder_preserves_permission_and_evidence_only_boundaries():
+    session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "knowledge.write"}), strict_research=True),
+                          task_text="调查不同解释，给出中文研究报告")
+    text = render_research_observations(session)
+    assert "evidence[].claim 写完整中文结论" in text
+    assert "excerpt 保留原文" in text
+    assert "勿重复旧稿" in text
+    session.policy = TaskPolicy(grants=frozenset({"control"}))
+    session.task_kind = "evidence_followup"
+    text = render_research_observations(session)
+    assert "knowledge_write" not in text and "done 使用 report_sections" not in text
+    session.task_text = "Investigate competing explanations"
+    assert "本轮要求中文" not in render_research_observations(session)

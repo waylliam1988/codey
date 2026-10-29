@@ -744,3 +744,45 @@ first knowledge observation time/version; later acquisitions retain their own
 execution/ledger observations. Changed content still creates a separate snapshot.
 28 focused archive/repository/lifecycle tests and all four static checks passed.
 The next real medicine task is `artifacts/research-live-adaptive-prerequisites-20261030`.
+
+## Grammar and continuation diagnostics after the lifecycle pass
+
+The medicine-prerequisites run was cancelled and remains unaccepted: after one
+mechanism finding it duplicated a full report in summary/report_sections and
+described a registry with no posted results as preliminary efficacy. The
+source-prerequisite feedback cannot repair a proposal rejected earlier by
+protocol validation. Browser acquisition itself succeeded.
+
+`research-live-wal-thinking-low-20261030` failed before its first tool call:
+the recorded HTTP response repeated channel/thought template markers until the
+5000-token limit. This is malformed generation, not useful extended thinking or
+a browser timeout. No malformed text was promoted to an executable action.
+
+Two richer grammar experiments are retained as failures:
+`research-live-wal-contract-20261030` generated args before tool, selected the
+wrong same-shaped tool and repeated empty knowledge searches; the normal
+no-progress barrier stopped it. `research-live-wal-ordered-contract-20261030`
+selected tool first but repeatedly omitted evidence. KoboldCpp's compiled
+argument grammar orders required fields first, then optional fields: choosing
+sources can make a later evidence property unavailable. It was durably cancelled.
+Full parameter grammars are therefore NOT shipped.
+
+The production optional JSON mode now freezes the current tool-name enum in
+the existing provider request and uses ordered allOf components to select tool
+before its unrestricted args object. Arguments remain validated/authorized by
+the same kernel. This avoids sampler-imposed parameter order and preserves
+ordinary prose, auxiliary summarization, Markdown-only reports and native mode.
+The request schema is invocation data, so existing durable preparation/recovery
+owns it; no provider-global mutable schema or second execution path is added.
+
+`research-live-wal-ordered-envelope-20261030` confirmed successful evidence
+saving again but was cancelled after repeated broad reports with only one
+English finding. It is not a quality pass. Research continuation guidance now
+also gives a concise Chinese reminder when the task explicitly requests 中文:
+save Chinese finding sentences with original-language excerpts, investigate
+each requested comparison, and do not duplicate a report in summary. Permission
+and evidence-only boundaries remain intact. This is guidance, not entailment
+validation. Next live diagnostic: `research-live-wal-localized-20261030`.
+73 focused JSON/protocol/observation/prepared-request/restart tests passed.
+Ruff, mypy (553 files), Pyrefly and ty passed. JSON Schema validation in tests
+uses jsonschema, now explicitly listed in the development dependencies.

@@ -205,8 +205,16 @@ Update this file in each implementation commit with results and remaining work.
   evidence notes, but then repeated invalid document references; it was stopped
   through the durable cancellation barrier and is not accepted. Repair feedback
   now addresses the invalid reference first; all other checks still rerun.
-- Current live run: artifacts/research-three-stage-json-clean-20261030, a fresh
-  all-three-process lifecycle test with one production JSON configuration.
-  Fresh WAL and medicine live-web report acceptance remain outstanding.
+- Same-configuration lifecycle accepted: artifacts/research-three-stage-json-prerequisites-20261030,
+  three independent processes, production JSON mode/thinking off (7/4/4 turns),
+  read-before-commit and exact candidate v1-to-v2 revision. Graph: 7 nodes/7 edges.
+  This proves lifecycle, not the queue analogy's semantic validity.
+- Fresh WAL and medicine live-web report quality remain unaccepted. Browser
+  acquisition works; premature synthesis, missing coverage and repeated rejected
+  drafts remain under diagnosis. Thinking/low additionally produced a template
+  marker loop. Rejected full-argument grammar experiments are retained; shipped
+  JSON grammar constrains tool names/order only and leaves arguments unordered.
+- Current diagnostic: artifacts/research-live-wal-localized-20261030. Concise
+  Chinese continuation guidance is being evaluated; no quality pass claimed yet.
 - Detailed commands, results and failure distinctions are maintained in
   docs/research-live-validation.md. No full pytest run was used.
