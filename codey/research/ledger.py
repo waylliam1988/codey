@@ -1,7 +1,7 @@
 """Runtime evidence ledger for one Research run.
 
-The Markdown vault remains the long-term source of truth. This module keeps the
-more detailed, per-run audit trail that the UI and report validator need:
+The knowledge database owns long-term knowledge. This module keeps the
+per-run audit trail that the UI and report validator need:
 searches, opened final URLs, source quality hints, and short evidence snippets.
 """
 
@@ -288,6 +288,11 @@ class ResearchLedger:
                                "Use source_search or an offset read, then copy a short exact "
                                "passage supporting this claim. No replacement quote was saved.")
                     )
+                if note_type != "source" and self.excerpt_is_section_label(final_url, excerpt):
+                    return EvidencePreparation(error=(
+                        f"evidence item {index} quotes only a source title or section heading, not its finding: "
+                        f"{excerpt[:180]!r}. Use source_search and open_hit to read the section body, "
+                        "then quote the actual result or limitation. No evidence was saved."))
                 page = page if page is not None else inferred_page
                 prepared.append(EvidenceItem(
                     claim=_clip(str(raw.get("claim") or fallback_claim), MAX_CLAIM_CHARS),
@@ -374,6 +379,20 @@ class ResearchLedger:
         if len(excerpt_norm) < 12:
             return False
         return excerpt_norm in _normalize_for_match(text)
+
+    def excerpt_is_section_label(self, source_url: str, excerpt: str) -> bool:
+        """Recognize exact labels, without claiming to evaluate entailment."""
+        candidate = _normalize_for_match(excerpt)
+        if candidate == _normalize_for_match(self.source_title(source_url)):
+            return True
+        for line in self.source_text_for_url(source_url).splitlines():
+            match = re.match(r"^\s*#{1,6}\s+(.+?)\s*$", line)
+            if match:
+                label = match.group(1)
+                unnumbered = re.sub(r"^\d+(?:\.\d+)*\.?\s+", "", label)
+                if candidate in {_normalize_for_match(label), _normalize_for_match(unnumbered)}:
+                    return True
+        return False
 
     def page_for_excerpt(self, source_url: str, excerpt: str) -> int | None:
         if not excerpt:

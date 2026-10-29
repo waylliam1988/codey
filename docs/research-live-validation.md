@@ -786,3 +786,39 @@ validation. Next live diagnostic: `research-live-wal-localized-20261030`.
 73 focused JSON/protocol/observation/prepared-request/restart tests passed.
 Ruff, mypy (553 files), Pyrefly and ty passed. JSON Schema validation in tests
 uses jsonschema, now explicitly listed in the development dependencies.
+
+## Evidence-label and report-contract fixes
+
+`research-live-wal-localized-20261030` saved several Chinese claims, but paired
+one long-reader claim with a table-of-contents heading and added a single-writer
+claim to a quote about appending transactions. It also reversed the official
+"slower" read-heavy observation into "faster". Cancelled; not accepted.
+
+The ledger now rejects an exact page title or Markdown section label as evidence
+for a finding (source-catalogue notes can still quote titles). Whole batches
+remain atomic. This recognizes labels only; it does not prove entailment or
+detect every wrong quote. Truncated HTML rendering adds at most 16 actual
+section offsets, inside the untrusted-source block. These are locators, not
+invented findings; the source and offset identity remain unchanged.
+
+The strict Research done description now has one consistent rule: structured
+summary is conclusion-only; Markdown-only complete reports remain supported.
+Ordinary done is unchanged. The sourced-note example no longer teaches an
+arbitrary expiry date, confidence number or unrelated conceptual relation.
+Chinese continuation asks to archive one direct finding at a time.
+
+`research-live-adaptive-localized-20261030` opened real PMC sources and saved a
+mechanism finding after repairing the conditions map. It used a correctly
+separated conclusion/report_sections, but still overstated p=0.065 as significant,
+proposed a reconstructed quote (rejected by exact-source validation), and did
+not compare primary reported human results. Cancelled; not accepted.
+
+Verification: 187 focused research/prompt/recovery tests plus seven subtests;
+15 source-rendering/locator tests; 61 contract/ledger/rendering tests plus two
+subtests passed. A combined 48-test prompt/label/lifecycle/JSON check also
+passed. Ruff, mypy, Pyrefly and ty passed. No full pytest was run.
+
+Next diagnostic: `research-live-wal-clock-turn-20261030`. The manual harness
+offers explicit --merge-clock to test whether a separate trailing clock-only
+user turn harms instruction following in this template. This is an experiment,
+not production behavior or acceptance; all payloads and the flag are recorded.

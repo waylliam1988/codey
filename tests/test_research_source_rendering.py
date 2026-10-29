@@ -52,3 +52,16 @@ def test_render_opened_pdf_source_keeps_page_metadata_and_more_hint() -> None:
     assert "Kind: PDF - pages 4 / 6" in rendered
     assert "[page 4]" in rendered
     assert rendered.rstrip().endswith("[more text available: open with offset=6000]")
+
+
+def test_truncated_html_exposes_bounded_section_offsets_inside_untrusted_data():
+    text = "中文🙂 introduction.\n\n" + "\n".join(f"## {i}. Section {i}\nActual finding {i}." for i in range(20))
+    document = SourceDocument.html(requested_url="https://example.test/paper", final_url="https://example.test/paper",
+                                   title="Paper", text=text)
+    rendered = render_opened_source(document, text[:10], more_offset=10)
+    assert f"offset={text.index('## 0.')}: 0. Section 0" in rendered
+    assert "15. Section 15" in rendered and "16. Section 16" not in rendered
+    assert "Actual finding 0" not in rendered
+    assert rendered.index("Source section locators") < rendered.index(UNTRUSTED_SOURCE_END)
+    assert "Section labels are locators, not evidence" in rendered
+    assert "Source section locators" not in render_opened_source(document, text)

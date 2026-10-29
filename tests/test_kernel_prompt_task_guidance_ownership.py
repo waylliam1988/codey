@@ -177,3 +177,8 @@ def test_strict_report_has_one_preferred_example_without_changing_ordinary_done(
         return next(spec.json_examples for spec in build_turn_snapshot(session).frozen_specs if spec.name == "done")
     assert examples(strict) == (STRUCTURED_REPORT_EXAMPLE,)
     assert STRUCTURED_REPORT_EXAMPLE not in examples(ordinary)
+    description = next(s.description for s in build_turn_snapshot(strict).frozen_specs if s.name == "done")
+    assert "summary contains only the conclusion" in description
+    assert "summary is the complete user-facing response" not in description
+    ordinary_description = next(s.description for s in build_turn_snapshot(ordinary).frozen_specs if s.name == "done")
+    assert "summary is the complete user-facing response" in ordinary_description

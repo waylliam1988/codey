@@ -25,7 +25,7 @@ URLS = ("https://www.sqlite.org/wal.html", "https://www.sqlite.org/isolation.htm
 
 def stage(directory, name, upstream, model, native=False, live_web=False, question="", max_turns=12, thinking=False,
           temperature=0.3, seed=73, diagnostic_stacks=False, reasoning_effort=None, session_id=None,
-          provider_timeout=600, constrained_text=False):
+          provider_timeout=600, constrained_text=False, merge_clock=False):
     from unittest.mock import patch
 
     from codey.app import headless_runner
@@ -47,6 +47,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         "session_id": session_id,
         "provider_timeout": provider_timeout,
         "constrained_text": constrained_text,
+        "merge_clock": merge_clock,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     events = directory / f"{name}-events.jsonl"
     wire = directory / f"{name}-wire.jsonl"
@@ -103,6 +104,12 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         def configure(payload):
             configure_usage(payload)
             payload.update(seed=seed)
+            if merge_clock:
+                messages = payload.get("messages", [])
+                if (len(messages) >= 2 and messages[-1].get("role") == messages[-2].get("role") == "user"
+                        and isinstance(messages[-2].get("content"), str)):
+                    messages[-2] = {**messages[-2], "content": messages[-1]["content"] + "\n\n" + messages[-2]["content"]}
+                    messages.pop()
             record({"event": "admitted_payload", "payload": payload})
 
         counter, window = admitted_counter(upstream + "/v1", "", "openai-completions", 32768)
@@ -266,6 +273,8 @@ def main():
     parser.add_argument("--native", action="store_true", help="Use the server's structured tool protocol")
     parser.add_argument("--constrained-text", action="store_true",
                         help="Diagnostic: request a JSON tool/args envelope from the server's grammar sampler")
+    parser.add_argument("--merge-clock", action="store_true",
+                        help="Diagnostic: keep the clock and current instruction in one user turn")
     parser.add_argument("--thinking", action="store_true", help="Enable the model's reasoning mode")
     parser.add_argument("--reasoning-effort", choices=("minimal", "low", "medium", "high"),
                          help="Set the reasoning budget; combine with --thinking to enable model reasoning")
@@ -291,7 +300,7 @@ def main():
             parser.error("research requires --live-web and --question-file")
         stage(directory, args.stage, args.upstream, model, args.native, args.live_web, question, args.max_turns,
               args.thinking, args.temperature, args.seed, args.diagnostic_stacks, args.reasoning_effort, args.session_id,
-              args.provider_timeout, args.constrained_text)
+              args.provider_timeout, args.constrained_text, args.merge_clock)
         return
     documents = []
     from codey.research.extract import extract_text, extract_title
@@ -313,6 +322,7 @@ def main():
                         "--temperature", str(args.temperature), "--seed", str(args.seed),
                         "--provider-timeout", str(args.provider_timeout),
                         *(["--constrained-text"] if args.constrained_text else []),
+                        *(["--merge-clock"] if args.merge_clock else []),
                         "--max-turns", str(args.max_turns), *(["--native"] if args.native else []),
                         *(["--diagnostic-stacks"] if args.diagnostic_stacks else []),
                         *(["--reasoning-effort", args.reasoning_effort] if args.reasoning_effort else []),

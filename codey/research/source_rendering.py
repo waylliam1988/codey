@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from codey.research.source_document import SourceDocument, compact_pages
 
 UNTRUSTED_SOURCE_START = "--- BEGIN UNTRUSTED SOURCE DATA ---"
@@ -21,16 +23,33 @@ def render_opened_source(
 ) -> str:
     """Render an opened source for the model without granting source text authority."""
 
+    outline = _section_locators(document) if more_offset is not None else []
     lines = [
         UNTRUSTED_SOURCE_PREAMBLE,
         UNTRUSTED_SOURCE_START,
         *_metadata_lines(document),
         (text_window or ""),
+        *outline,
         UNTRUSTED_SOURCE_END,
     ]
     if more_offset is not None:
         lines.extend(("", f"[more text available: open with offset={max(0, more_offset)}]"))
+        if outline:
+            lines.append("Section labels are locators, not evidence. Use open_url with the section offset "
+                         "or source_search to read its actual findings before quoting them.")
     return "\n".join(lines)
+
+
+def _section_locators(document: SourceDocument) -> list[str]:
+    """Expose bounded HTML heading offsets without summarizing unseen findings."""
+    if document.content_kind != "html":
+        return []
+    rows = []
+    for match in re.finditer(r"(?m)^[ \t]{0,3}#{1,6}[ \t]+([^\n]+)", document.text):
+        rows.append(f"offset={match.start()}: {match.group(1).strip()[:120]}")
+        if len(rows) == 16:
+            break
+    return ["", "Source section locators (labels only):", *rows] if rows else []
 
 
 def _metadata_lines(document: SourceDocument) -> list[str]:

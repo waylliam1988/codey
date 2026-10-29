@@ -60,7 +60,8 @@ def render_research_observations(session: "TaskSession") -> str:
         )
         if session.policy.allows("knowledge.write"):
             guidance += (
-                "knowledge_write 的 evidence[].claim 写完整中文结论，excerpt 保留原文。"
+                "每次 knowledge_write 先归档一项发现：evidence[].claim 写完整中文结论，excerpt 保留原文。"
+                "目录标题不是结果；引文必须直接支持主张的判断、对象、条件及数字。"
                 "笔记 body 中的其他说法没有因此获得证据；先补齐缺失发现，再写报告。"
             )
         if session.policy.strict_research:
