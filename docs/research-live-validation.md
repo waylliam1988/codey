@@ -2,6 +2,30 @@
 
 Work in progress. Do not infer a live acceptance pass from deterministic tests.
 
+## Continuation: marker strings and malformed HTTP framing
+
+- `research-live-wal-member-repair-20261030` searched and opened a real page,
+  but Gemma marker-delimited strings containing raw newlines were rejected by
+  the local adapter. Stopped that unsuccessful diagnostic before a fresh run.
+  Marker strings now permit literal control characters while retaining JSON
+  escape semantics. Ordinary JSON strings still reject raw control characters;
+  malformed escapes, duplicate keys and incomplete frames remain rejected.
+  Nested evidence/report fields and exact text preservation have regression
+  tests (23 codec/gate tests passed; Ruff and production mypy passed).
+- `research-live-wal-multiline-20261030` searched and opened the official SQLite
+  WAL page, then failed on malformed generation HTTP framing: a complete HTTP
+  header appeared inside the response body, truncating the actual JSON under
+  the outer Content-Length. The unknown generation was not resent or decoded
+  by stripping headers. This is not a live acceptance pass.
+- Upstream 1.117.1 reuses one handler instance per server thread. Python's
+  `flush_headers` clears its buffer only after a successful socket write; a
+  disconnected request can leave that buffer on the reused handler. This is a
+  plausible explanation for stale nested headers after earlier aborted native
+  requests, not a proven cause of every malformed response. Restarted only the
+  owned server from its unchanged config to obtain a clean validation baseline;
+  logs: `artifacts/kobold-research-clean-server*.txt`. No external software
+  source/config changes or generation retries were introduced.
+
 ## Continuation: explicit evidence and backend parser diagnosis
 
 - The earlier `research-live-wal-action-20261030` returned `done`, but manual

@@ -181,6 +181,30 @@ def test_local_frame_uses_json_escape_semantics_including_slash_and_surrogate_pa
     assert parse_local_tool_markup(r'<|tool_call>call:grep{query:"\x41"}<tool_call|>') is None
 
 
+def test_marker_multiline_nested_arguments_preserve_text_and_json_escapes():
+    from codey.providers.local_literal import parse_mapping
+
+    raw = 'line one\nline two\t"quoted"\r\n' + r'C:\\docs\\wal.txt; literal \\n; escaped \n'
+    expected = 'line one\nline two\t"quoted"\r\nC:\\docs\\wal.txt; literal \\n; escaped \n'
+    for marker in ('<|"|>', '<|\\"|>'):
+        value = marker + raw + marker
+        parsed = parse_mapping('{body:' + value + ',evidence:[{quote:' + value
+                               + '}],report_sections:{conclusions:[' + value + ']}}')
+        assert parsed == {'body': expected, 'evidence': [{'quote': expected}],
+                          'report_sections': {'conclusions': [expected]}}
+
+
+def test_literal_controls_are_only_accepted_with_marker_delimiters():
+    from codey.providers.local_literal import parse_mapping
+
+    for char in ('\n', '\t', '\r', '\x00', '\x1f'):
+        assert parse_mapping('{body:<|"|>a' + char + 'b<|"|>}') == {'body': 'a' + char + 'b'}
+        assert parse_mapping('{body:"a' + char + 'b"}') is None
+    for body in ('{body:<|"|>unfinished}', r'{body:<|"|>bad \x41<|"|>}',
+                 '{body:<|"|>text<|"|> extra}'):
+        assert parse_mapping(body) is None
+
+
 def test_local_frame_rejects_nonfinite_values_and_unpaired_surrogates():
     for body in (r'{query:"\ud800"}', '{query:1e309}'):
         assert parse_local_tool_markup('<|tool_call>call:grep'+body+'<tool_call|>') is None

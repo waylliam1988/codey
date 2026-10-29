@@ -44,7 +44,8 @@ class _Parser:
                 if self.source.startswith(delimiter, self.pos):
                     self.pos += len(delimiter)
                     # Marker strings use JSON escapes, with ordinary quotes
-                    # as data rather than as delimiters.
+                    # as data rather than as delimiters. Unlike JSON quotes,
+                    # marker delimiters also permit literal control characters.
                     value = json.loads('"' + "".join(encoded) + '"')
                     if type(value) is not str:
                         raise ValueError("expected a string")
@@ -54,7 +55,7 @@ class _Parser:
                     encoded.append(self.source[self.pos : self.pos + 2])
                     self.pos += 1
                 else:
-                    encoded.append('\\"' if char == '"' else char)
+                    encoded.append(json.dumps(char)[1:-1] if ord(char) < 32 else '\\"' if char == '"' else char)
                 self.pos += 1
         elif self.source[start : start + 1] in ("'", '"'):
             quote = self.source[start]
