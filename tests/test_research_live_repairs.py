@@ -107,3 +107,31 @@ def test_verified_normalized_quote_keeps_original_source_offsets():
     assert text[locator.char_start:locator.char_end] == "Only one\n  writer may commit at a time."
     assert _excerpt_offsets(text, "one ... writer") == (0, 0)
     assert _excerpt_offsets(text, "a different claim") == (0, 0)
+
+
+@pytest.mark.parametrize("case", ["valid", "unopened", "invented_quote", "explicit_empty_sources"])
+def test_new_note_can_catalogue_explicit_evidence_urls_without_weakening_checks(tmp_path, case):
+    store = KnowledgeStore(tmp_path)
+    try:
+        tools = ResearchTools(None, store, KnowledgeChanges(root=store.root))
+        quote = "Only one writer commits at a time."
+        tools.sources_read.add(URL)
+        tools.ledger.record_open(URL, URL, "Experiment", quote)
+        args = {"type": "fact", "title": "Single writer", "body": quote, "evidence": [{
+            "claim": quote, "source_url": URL, "excerpt": quote, "stance": "supports",
+        }]}
+        if case == "unopened":
+            args["evidence"][0]["source_url"] = "https://example.com/unopened"
+        elif case == "invented_quote":
+            args["evidence"][0]["excerpt"] = "Many writers commit simultaneously."
+        elif case == "explicit_empty_sources":
+            args["sources"] = []
+        result = tools.knowledge_write(args)
+        assert result.ok == (case == "valid"), result.model_text
+        assert len(tools.ledger.evidence_items) == (1 if case == "valid" else 0)
+        if case == "valid":
+            assert store.read_note(tools.created_ids[0]).sources == [URL]
+        else:
+            assert store.index.count() == 0
+    finally:
+        store.close()

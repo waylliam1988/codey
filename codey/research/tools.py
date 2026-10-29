@@ -449,6 +449,13 @@ def _prepare_write_sources(
         if "sources" in args
         else list(existing_note.sources if existing_note is not None else [])
     )
+    # A new note can catalogue the URLs the caller already supplied on its
+    # evidence items. This copies explicit locators, never invents evidence.
+    if "sources" not in args and existing_note is None and isinstance(args.get("evidence"), list):
+        sources = list(dict.fromkeys(
+            item["source_url"].strip() for item in args["evidence"]
+            if isinstance(item, dict) and isinstance(item.get("source_url"), str) and item["source_url"].strip()
+        ))
     validating_sources = not updating or "sources" in args
     if note_type == "source":
         problem = (

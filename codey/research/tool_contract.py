@@ -116,6 +116,7 @@ TOOL_CONTRACTS = {
         description="save small source/fact/hypothesis/conclusion/question notes; final reports must use done. "
                     "For sourced findings use type=fact, sources=[opened URL strings], and "
                     "evidence=[{claim:your conclusion,source_url:opened URL,excerpt:exact original text,stance:supports}]. "
+                    "For a new note, omitted sources are copied from explicit evidence[].source_url values. "
                     "Do not relabel an unsupported fact as hypothesis to bypass missing sources. "
                     "conditions must be an object: {name:{state:reported,value:...}} or state "
                     "not_reported/not_extracted/not_applicable. Keep unknowns unknown. "

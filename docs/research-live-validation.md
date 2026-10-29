@@ -333,3 +333,19 @@ Transport now reports this exact framing defect with a bounded diagnostic and
 It neither strips headers nor retries inference. The corresponding one-send
 regression and 29 focused transport tests passed. Separately, 53 knowledge,
 shared-kernel, Local codec and subprocess continuation tests passed.
+
+
+Live Gemma repeatedly supplied exact evidence with its source_url while omitting
+the duplicate note-level sources list, even after specific feedback. For new
+notes only, omitted sources now catalogue the caller's explicit evidence URLs.
+Explicit empty sources and existing-note update semantics are unchanged. All
+ordinary opened-source, excerpt and evidence checks still run before commit.
+This is locator copying, not inferred provenance or semantic support.
+
+The contract documents this behavior. Regressions prove valid evidence is saved
+with the URL, unopened URLs and invented excerpts are blocked, and an explicitly
+empty list is not repaired. The production-entry cross-session knowledge test
+also exercises the omission. 48 repair/contract/golden and 20 knowledge/evidence/
+merge tests passed. Only the two reviewed research prompt snapshots changed;
+Ruff passed. This change was made after the clean probe's first process loaded,
+so its earlier omission failures are retained and not attributed to new code.

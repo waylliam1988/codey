@@ -50,7 +50,7 @@ def test_production_entry_acquire_restart_associate_revise_and_trace(tmp_path):
         ("web_search", {"query": "database concurrent commits"}),
         ("open_url", {"url": url}),
         ("knowledge_write", {"type": "fact", "title": "Writer serialization", "body": quote,
-            "sources": [url], "aliases": ["unique gate", "嵌入式数据文件"],
+            "aliases": ["unique gate", "嵌入式数据文件"],
             "conditions": {"mode": {"state": "reported", "value": "Measured database configuration"}},
             "evidence": [{"claim": "Writers serialize", "source_url": url, "excerpt": quote}]}),
         ("done", {"summary": "The measured configuration serializes writers; this does not establish queue behavior."}),
