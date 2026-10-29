@@ -711,3 +711,14 @@ examples and the alternative Markdown interface remain supported unchanged.
 53 focused lifecycle/prompt/report tests passed and all four static checks
 passed after fixing a test helper style issue. These changes are guidance, not
 a guarantee of model compliance or semantic entailment.
+
+The medicine task in `artifacts/research-live-adaptive-focused-20261030` opened
+two PMC papers and saved an original-language excerpt with a Chinese mechanism
+claim. It nevertheless proposed efficacy statements and cited the unopened
+trial registry, repeatedly rewriting the report instead of acquiring evidence.
+It is unaccepted and was stopped via request_cancel. Completion feedback now
+prioritizes cited unread sources, then opened-but-unsaved citations, ahead of
+wording/formatting checks. It supplies copyable open_url actions only when web
+reading is authorized, respects observed redirect aliases, and creates no
+evidence or execution state. Remaining checks rerun on the next proposal.
+34 focused source/report/completion tests and all four static checks passed.

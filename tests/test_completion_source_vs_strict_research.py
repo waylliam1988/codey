@@ -166,6 +166,43 @@ def test_complete_sections_with_bad_source_table_get_citation_not_heading_feedba
     assert "Missing sections:" not in feedback
 
 
+def test_cited_source_acquisition_precedes_wording_and_format_repairs():
+    from codey.completion.contract import CHECK_FAIL, CompletionCheck
+    from codey.operations.research_completion_checks import research_completion_feedback
+    from codey.research.ledger import ResearchLedger
+
+    url = "https://example.com/registered-study"
+    ledger = ResearchLedger()
+    session = _session(TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"})))
+    report = f"## 结论\nA result [1]\n\n## 来源\n[1] Trial - {url}"
+    checks = [CompletionCheck("research_claim_bindings", CHECK_FAIL, "report_claim_binding_incomplete"),
+              CompletionCheck("research_report_quality", CHECK_FAIL, "research_report_quality_failed")]
+    before = research_completion_feedback(session, report, {"research_ledger": ledger}, checks)
+    assert '"tool":"open_url"' in before and url in before
+    assert "Unbound report statements" not in before and "formatting" not in before
+    ledger.record_open(url, url, "Trial", "No Results Posted")
+    after = research_completion_feedback(session, report, {"research_ledger": ledger}, checks)
+    assert "opened but have no saved evidence" in after
+    assert "Wait for success before another done" in after
+    assert '"tool":"open_url"' not in after
+    assert not ledger.evidence_items  # Feedback cannot create a saved finding.
+
+
+def test_citation_feedback_uses_observed_redirect_aliases():
+    from codey.operations.research_completion_checks import _citation_prerequisite_feedback
+    from codey.research.ledger import ResearchLedger
+
+    ledger = ResearchLedger()
+    alias, final = "https://example.com/old", "https://example.com/current"
+    ledger.record_open(alias, final, "Trial", "No Results Posted")
+    prepared = ledger.prepare_evidence_items(
+        [{"claim": "No Results Posted", "source_url": final, "excerpt": "No Results Posted"}],
+        fallback_sources=[final], fallback_claim="", fallback_body="", note_type="fact")
+    ledger.add_evidence_items(list(prepared.items))
+    session = _session(TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"})))
+    assert not _citation_prerequisite_feedback(session, f"## 来源\n[1] Trial - {alias}", ledger)
+
+
 def test_gate_preserves_unbound_answer_and_requests_missing_claim_instead_of_shrinking_it():
     from codey.operations.research_completion_checks import finalize_research_text
     from codey.research.ledger import ResearchLedger

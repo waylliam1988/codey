@@ -136,6 +136,12 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
                      "Previously proposed or displayed calls are not saved evidence. Report formatting and "
                      "citation repairs can follow after evidence is actually saved.")
         return "\n\n".join(parts)
+    ledger = _context_get(context, "research_ledger")
+    if ledger is not None and failed.intersection({"research_citations", "research_report_sections", "research_report_quality"}):
+        prerequisite = _citation_prerequisite_feedback(session, text, ledger)
+        if prerequisite:
+            parts.append(prerequisite)
+            return "\n\n".join(parts)
     if "research_claim_bindings" in failed:
         parts.append("Some conclusion/evidence statements could not be linked to saved claim excerpts. "
                      "This is a text-binding check, not a verdict that the statement is false. "
@@ -190,6 +196,35 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
                                       search_result_urls=set(getattr(session, "search_results", {}).values()))
         parts.append(review.message)
     return "\n\n".join(parts)
+
+
+def _citation_prerequisite_feedback(session: Any, text: str, ledger: Any) -> str:
+    """Focus on observed missing source actions before report wording repairs."""
+    from codey.knowledge.model import canonical_json
+    from codey.research.report_quality import parse_citation_rows
+    from codey.reviews.report_sections import parse_sections
+
+    citations = parse_citation_rows(parse_sections(text).get("sources", ""), ledger)
+    unread = list(dict.fromkeys(item.url for item in citations if not ledger.canonical_opened_url(item.url)))
+    policy = getattr(session, "policy", None)
+    if unread and policy is not None and policy.allows("web.read"):
+        requests = [canonical_json({"tool": "open_url", "args": {"url": url}}) for url in unread[:3]]
+        return ("The report cites sources that have not been opened. Next action: execute one open_url below "
+                "and inspect its actual text, then save a supported finding before drafting again. "
+                "If acquisition fails, report the specific gap; do not invent the missing result. "
+                "Other report checks will run again after this prerequisite.\n" + "\n".join(requests))
+    saved = {ledger.canonical_opened_url(item.source_url) for item in ledger.evidence_items if item.excerpt.strip()}
+    missing = list(dict.fromkeys(item.url for item in citations
+                                if ledger.canonical_opened_url(item.url) not in saved))
+    if not unread and missing and policy is not None and policy.allows("knowledge.write"):
+        passage = ("Use source_search and open_hit if that passage was omitted. "
+                   if policy.allows("web.read") else "Use the existing source receipts; report any unavailable passage. ")
+        return ("These cited sources were opened but have no saved evidence: " + ", ".join(missing[:3]) + ". "
+                "Next action: inspect the relevant passage and execute knowledge_write with a complete scoped "
+                "evidence[].claim in the requested report language and its exact original excerpt. " + passage + "Save the actual finding, "
+                "not merely the article title. Wait for success before another done. "
+                "Other report checks will run again after this prerequisite.")
+    return ""
 
 
 def _ledger_checks(session: Any, done_text: str, context: Any) -> list[CompletionCheck]:
