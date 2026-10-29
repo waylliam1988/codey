@@ -118,7 +118,13 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
             requests = [canonical_json({"tool": "knowledge_read", "args": {"id": row["id"]}})
                         for row in raw_refs[:3] if isinstance(row, dict) and isinstance(row.get("id"), str)]
             if requests:
-                parts.append("Inspect the cited object or legacy note to obtain its structured versions:\n" + "\n".join(requests))
+                parts.append("Next action: execute one knowledge_read request below to inspect the cited object "
+                             "or legacy note. Copy the returned structured version, not its document id. "
+                             "Do not repeat done with the rejected reference.\n" + "\n".join(requests))
+        if "research_evidence_saved" not in failed:
+            parts.append("Fix this reference defect first; the remaining report/evidence checks will run again "
+                         "on the next proposed answer.")
+            return "\n\n".join(parts)
     if "research_evidence_saved" in failed:
         parts.append("No citable evidence has been saved. Use knowledge_write with type=fact, "
                      "sources=[an opened URL], and evidence=[{claim:your conclusion,source_url:the same URL,"

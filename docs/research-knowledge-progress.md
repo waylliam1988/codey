@@ -184,3 +184,29 @@ Update this file in each implementation commit with results and remaining work.
   not-sent versus unknown outcome). 66 focused repository/pipeline/policy tests
   passed. Production Ruff passed. Remaining: report/version graph, lifecycle
   cleanup, local model validation and final static checks.
+
+
+## Local real-web validation continuation (2026-10-30)
+
+- Controlled persistence/recall/revision has passed in independent processes,
+  with mixed thinking/JSON configurations; recall read its premise after the
+  candidate commit. This is lifecycle acceptance, not full research quality.
+- Production local configuration now offers optional JSON-constrained task
+  calls with thinking off, frozen/recovered by the same kernel/provider path.
+  Plain remains default; the user configuration is not silently changed.
+- Real WAL and adaptive-therapy browser tasks exposed citation-group handling,
+  wrong note-vs-claim references, spliced quotes, footer-only responses and
+  misleading compaction summaries. Fixes are committed; failed runs retained.
+- Research results and repair continuations now show bounded receipt-derived
+  opened-source identities, saved evidence and recent actual failures. Summary
+  prose cannot amend these facts. Evidence-only done repair preserves its own
+  task format. Exact claim-version candidates lead legacy document reads.
+- The receipt-guided medicine run searched/opened actual pages and saved two
+  evidence notes, but then repeated invalid document references; it was stopped
+  through the durable cancellation barrier and is not accepted. Repair feedback
+  now addresses the invalid reference first; all other checks still rerun.
+- Current live run: artifacts/research-three-stage-json-clean-20261030, a fresh
+  all-three-process lifecycle test with one production JSON configuration.
+  Fresh WAL and medicine live-web report acceptance remain outstanding.
+- Detailed commands, results and failure distinctions are maintained in
+  docs/research-live-validation.md. No full pytest run was used.

@@ -641,3 +641,15 @@ observation renderer now uses the lossless research_observation.evidence receipt
 for claim/stance; the smaller evidence_items projection contains only URL/quote.
 181 focused knowledge/research tests and seven subtests passed, plus all four
 static checks. Further live acceptance remains pending.
+
+
+The receipt-guided medicine run successfully saved two notes after opening PMC
+and the hydrated trial registry. It then repeated an invalid document id in
+knowledge_refs and was stopped via the durable cancellation barrier; it is NOT
+a passing report. Feedback now addresses this prerequisite alone when evidence
+already exists, with one exact read action; other completion checks still run
+on resubmission. Missing-evidence feedback still prioritizes obtaining a real
+save. 168 focused tests plus seven subtests passed; the expanded continuation,
+subprocess restart, recovered-result and compaction boundary suite passed 58.
+All four static checks passed. A clean three-process JSON lifecycle probe is
+now running before another fresh real-web attempt.

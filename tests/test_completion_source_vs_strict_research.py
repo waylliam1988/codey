@@ -137,6 +137,22 @@ def test_missing_evidence_feedback_prioritizes_actual_save_over_report_formattin
     assert "Saved claim wording available" not in text
 
 
+def test_existing_evidence_with_invalid_reference_gets_one_focused_next_action():
+    from codey.completion.contract import CHECK_FAIL, CompletionCheck
+    from codey.operations.research_completion_checks import research_completion_feedback
+
+    session = _session(TaskPolicy(grants=frozenset({"control", "knowledge.read"})))
+    session.last_done_args = {"knowledge_refs": [{"id": "legacy-note", "revision": 1}]}
+    text = research_completion_feedback(session, "", None, [
+        CompletionCheck("knowledge_versions", CHECK_FAIL, "knowledge_reference_invalid"),
+        CompletionCheck("research_claim_bindings", CHECK_FAIL, "report_claim_binding_incomplete"),
+    ])
+    assert "Next action: execute one knowledge_read" in text
+    assert '{"args":{"id":"legacy-note"},"tool":"knowledge_read"}' in text
+    assert "remaining report/evidence checks will run again" in text
+    assert "Unbound report statements" not in text and "Save a scoped finding" not in text
+
+
 def test_complete_sections_with_bad_source_table_get_citation_not_heading_feedback():
     from codey.completion.contract import CHECK_FAIL, CompletionCheck
     from codey.operations.research_completion_checks import research_completion_feedback
