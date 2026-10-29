@@ -791,3 +791,11 @@ def test_long_excerpt_keeps_exact_text_and_valid_char_locator() -> None:
     locator = evidence_row.locator.to_jsonable()
     assert locator["char_start"] == start
     assert locator["char_end"] == end
+
+
+def test_thematic_breaks_are_not_claims_but_bold_assertions_still_need_evidence():
+    claims, _, _, unsupported = extract_claim_candidates(
+        sections={"conclusion": "---\n* * *\n___\n**An unverified factual assertion.**"},
+        citation_urls={}, evidence_by_source={}, source_ids_by_url={})
+    assert len(claims) == unsupported == 1
+    assert "unverified factual assertion" in claims[0].claim_text

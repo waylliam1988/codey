@@ -210,9 +210,10 @@ class ResearchTools:
                 self.store.search(note_id[:16], project=self.project, session_id=self.session_id, depth=0, limit=3)
                 if len(note_id) >= 24 else [])
             suggestion = ("\nPossible exact ids (not read or selected; verify with knowledge_read):\n" +
-                canonical_json([{"id": hit.version.value.id, "revision": hit.version.revision,
-                                 "title": hit.version.value.title} for hit in hints])) if hints else ""
-            return ResearchToolOutput(f"ERROR: no knowledge object or note with id {note_id} at the requested version. "
+                "\n".join(canonical_json({"title": hit.version.value.title, "read_request": {
+                    "tool": "knowledge_read", "args": {"id": hit.version.value.id, "revision": hit.version.revision}}})
+                    for hit in hints)) if hints else ""
+            return ResearchToolOutput("ERROR: requested knowledge identity was not found at the requested version. "
                 "Copy an exact id and revision from knowledge_search; do not guess or shorten it." + suggestion, ok=False)
         if (note.project and note.project != self.project
                 or not note.project and note.session_id and note.session_id != self.session_id):

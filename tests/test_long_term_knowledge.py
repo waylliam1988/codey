@@ -99,6 +99,10 @@ def test_mistyped_identity_suggestions_are_scoped_and_never_choose_a_match(tmp_p
         result = tools.knowledge_read(prefix + "wrong-spelling")
         assert not result.ok and "not read or selected" in result.model_text
         assert all(identity in result.model_text for identity in public)
+        assert prefix + "wrong-spelling" not in result.model_text
+        requests = [json.loads(line)["read_request"] for line in result.model_text.splitlines() if line.startswith("{")]
+        assert {r["args"]["id"] for r in requests} == set(public)
+        assert all(r["tool"] == "knowledge_read" and r["args"]["revision"] == 1 for r in requests)
         assert "Private" not in result.model_text and "hidden" not in result.model_text
         assert tools.knowledge_read(public[0]).ok
         missing_revision = tools.knowledge_read(public[0], revision=99)

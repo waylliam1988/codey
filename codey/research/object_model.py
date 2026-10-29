@@ -869,6 +869,8 @@ def _claim_lines(text: str) -> tuple[str, ...]:
     lines: list[str] = []
     for raw in (text or "").splitlines():
         line = raw.strip()
+        if re.fullmatch(r"([-*_])(?:\s*\1){2,}", line):
+            continue  # Markdown thematic breaks carry no factual assertion.
         line = re.sub(r"^[-*]\s+", "", line)
         line = re.sub(r"^\d+[\.)、]\s+", "", line)
         line = line.strip()

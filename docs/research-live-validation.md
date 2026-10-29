@@ -466,3 +466,24 @@ unsupported clinical generalizations and must not be treated as verified.
 Focused checks for hidden source content, gateway, completion feedback, report
 shape and knowledge lifecycle passed 63 tests; prompt ownership/golden/repair
 checks passed 23 tests. Ruff, mypy (551 files), Pyrefly and ty passed.
+
+
+The first explicit-outcome recall run (attempt6) correctly failed its completion
+requirements but then repeated prose without action over several turns. It was
+intentionally stopped; no successful read or inference commit was observed.
+The owned Kobold process was restarted from the unchanged user config before
+a fresh diagnostic session, rather than resending any in-flight request.
+
+Runtime work observations now project pending tool requirements from the same
+existing evaluator/receipts at each tool-result boundary. Successful execution
+removes the reminder; a later answer-binding failure does not request reexecution.
+Missing-id candidates now include complete explicit read requests, avoid echoing
+the bad identity as the main instruction, retain scope filtering and never pick
+or execute a candidate. Markdown thematic rules no longer become factual
+claims; bold factual assertions still require evidence.
+
+Verification of these repairs: 103 focused object/knowledge/outcome/answer/prompt
+tests and 81 runtime/entry/feedback tests passed (sets overlap). Production Ruff,
+mypy, Pyrefly and ty passed. The next live recall session uses thinking enabled
+with medium effort, an eight-turn diagnostic bound and production request timeout.
+Its result is still pending; earlier low-effort results remain failures.

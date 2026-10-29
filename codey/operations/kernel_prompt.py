@@ -226,6 +226,20 @@ def _format_results(results: list[ToolResult], session: TaskSession) -> str:
     return "\n\n".join(blocks) + "\n\nContinue with one bare JSON tool call, or deliver the final answer."
 
 
+def _pending_execution_guidance(session: TaskSession) -> str:
+    from codey.policies.tool_requirement import parse_tool_success_check
+
+    pending: list[str] = []
+    for declaration in getattr(session.policy, "required_checks", ()):
+        requirement = parse_tool_success_check(declaration)
+        if requirement is None:
+            continue
+        outcome = requirement.evaluate(session.executed, results=session._memory_results)
+        if outcome.reason_code in {"tool_execution_missing", "tool_parent_missing"}:
+            pending.append(outcome.feedback)
+    return "\n".join(pending)
+
+
 def working_context(session: TaskSession) -> str:
     """Fresh execution facts; narrative checkpoints cannot amend these observations."""
     import json
@@ -269,6 +283,10 @@ def working_context(session: TaskSession) -> str:
         "If the user's requirements are satisfied and required verification is current and passing, call done. "
         "Do not change correct files merely to make progress. "
     )
+    pending = _pending_execution_guidance(session)
+    if pending:
+        finish_guidance = ("Outstanding declared executions (runtime receipts, not assistant narrative):\n" + pending
+                           + "\nExecute the outstanding requirements before delivering the final answer. ")
     return ("Current work observations (runtime records):\n" + json.dumps({"user_task": session.task_text,
         "project": session.project, "workspace_revision": session.workspace_revision,
         "workspace_fingerprint": session.workspace_fingerprint, "changed_files": list(session.edited_files),

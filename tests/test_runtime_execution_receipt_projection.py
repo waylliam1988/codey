@@ -114,3 +114,26 @@ def test_following_file_reads_do_not_evict_the_last_command_receipt():
     text = kernel_prompt.working_context(session)
     assert 'pytest-17' in text
     assert 'python -m pytest -q' in text
+
+
+def test_pending_execution_guidance_uses_receipts_and_disappears_after_success():
+    from codey.policies.task_policy import TaskPolicy
+    session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "knowledge.read"}),
+        required_checks=("tool_succeeded:knowledge_read",)))
+    session.last_done_text = "I read the knowledge."
+    session.executed["failed"] = {"name": "knowledge_read", "ok": False}
+    pending = kernel_prompt.working_context(session)
+    assert "Outstanding declared executions" in pending
+    assert "call knowledge_read and receive a successful tool result" in pending
+    assert "Displayed examples and failed calls" in pending
+    session.executed["successful"] = {"name": "knowledge_read", "ok": True}
+    assert "Outstanding declared executions" not in kernel_prompt.working_context(session)
+
+
+def test_answer_binding_repair_does_not_request_repeating_successful_execution():
+    from codey.policies.task_policy import TaskPolicy
+    from codey.policies.tool_requirement import require_tool_success
+    session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"}), required_checks=(
+        require_tool_success("read_file", answer_pointer="/value", result_pointer="/text"),)))
+    session.executed["read"] = {"name": "read_file", "ok": True, "argument_digests": {}}
+    assert "Outstanding declared executions" not in kernel_prompt.working_context(session)

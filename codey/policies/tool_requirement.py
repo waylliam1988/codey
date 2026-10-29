@@ -80,13 +80,14 @@ class ToolSuccessRequirement:
 
     @property
     def guidance(self) -> str:
-        target = f"{self.tool} with arguments matching {self.arguments_json}"
+        target = self.tool + (f" with arguments matching {self.arguments_json}" if self.arguments_json != "{}" else "")
         if self.via:
             execution = (f"Required execution: inside {self.via}, call tools.{target}. "
                     "The child call and its parent must both commit successfully. "
                     f"A separate top-level {self.tool} call does not satisfy this requirement.")
         else:
-            execution = f"Required execution: {target} must commit successfully."
+            execution = (f"Required execution: call {target} and receive a successful tool result. "
+                         "Displayed examples and failed calls do not satisfy this requirement.")
         if self.answer_pointer is None:
             return execution
         selected = f"value{self.result_pointer}"
