@@ -24,7 +24,7 @@ from codey.providers.response_record import json_value
 from codey.runtime.core import operation_state as positions
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.runtime.effects.effect_records import RuntimeEffectStore
-from codey.runtime.log.session_view import driver_for_state, load_session_view
+from codey.runtime.log.session_view import driver_for_state, load_session_view, not_sent_continuation_effect
 from codey.workspace.context_admission import admit_ghost_context
 
 
@@ -44,8 +44,6 @@ class KernelContext:
         self.effect_scope = self.transport.effect_scope
         self.provider = self.transport.provider
         self.native = kernel_transport.provider_uses_native(self.provider, provider_id=self.transport.provider_id)
-        from codey.operations.kernel_driver import restore_provider_window
-        restore_provider_window(self.sink, self.provider, admitted)
         self.window = getattr(self.provider, "window_ref", None) or self.transport.window_ref
         self.completion_context = wiring._completion_context_with_ignores(
             self.observation.completion_context, self.execution.workspace_ignored_paths)
@@ -177,18 +175,12 @@ class KernelContext:
             return str(state.response_ref)
         from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact, request_artifact_for_effect
 
-        effects = self.load_view().effects
-        matching = [effect for effect in effects if effect.intent.effect_category == "provider_send"
-                    and effect.intent.turn == state.turn and effect.settlement is not None
-                    and effect.settlement.sent_state == "not_sent"]
-        if len(matching) != 1 or not state.work_ref:
-            raise RecoveryFailed("control continuation has no reliable original response")
-        effect = matching[0]
+        effect = not_sent_continuation_effect(self.load_view())
         request = read_provider_artifact(self.sink.managed_outputs, request_artifact_for_effect(self.durable, effect),
             kind=REQUEST_KIND, session_id=self.sink.session_id, run_id=self.sink.run_id, effect_id=effect.intent.effect_id)
         reference = request.get("source_response_ref")
         if not isinstance(reference, str) or not reference or request.get("work_ref") != state.work_ref:
-            raise RecoveryFailed("control acknowledgement lost its original continuation")
+            raise RecoveryFailed("provider request lost its original continuation")
         return reference
 
     def restore_facts(self) -> None:
@@ -286,9 +278,10 @@ class KernelContext:
         self.sink._request_context["effect_scope"] = self.effect_scope
         self.sink._request_context["close_reply"] = acknowledge
         self.sink._request_context["delivery_purpose"] = self.decision(state).get("purpose", "") if state.work_ref else ""
-        self.sink._request_context["work_ref"] = state.work_ref if acknowledge else ""
+        self.sink._request_context["work_ref"] = state.work_ref
         self.sink._request_context["source_response_ref"] = (
-            self.response_reference(state) if state.response_ref or acknowledge else "")
+            self.response_reference(state) if state.response_ref or state.work_ref
+            or state.leaf == positions.LEAF_TOOL_DELIVERY_PENDING else "")
         tools = tools_from_specs(snapshot.frozen_specs)
         if self.native and messages:
             method = "acknowledge_tool_results" if acknowledge else "send_tool_results"

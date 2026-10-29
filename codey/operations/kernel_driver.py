@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any, cast
 
-from codey.durable.checkpoint import operation_from_checkpoint
+from codey.durable.checkpoint import checkpoint_entries, operation_from_checkpoint
 from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelResult, KernelRunRequest
 from codey.operations.kernel_errors import RecoveryFailed
@@ -24,6 +24,7 @@ from codey.runtime.core.operation_reducer import (
     ACTION_COMMIT_GENERATION_BOUNDARY,
     ACTION_SUBMIT_PROVIDER_REQUEST,
 )
+from codey.runtime.core.operation_state import LEAF_CONTROL_READY, LEAF_TOOL_DELIVERY_PENDING
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
@@ -39,7 +40,7 @@ from codey.runtime.effects.effect_records import (
     prepare_intent,
 )
 from codey.runtime.effects.replay_policy import ReplayClass
-from codey.runtime.log.session_view import driver_for_state
+from codey.runtime.log.session_view import driver_for_state, load_session_view, not_sent_continuation_effect
 from codey.runtime.write.drive import peek_next_action
 
 _METHODS = frozenset({"send", "send_turn", "send_tool_results", "acknowledge_tool_results",
@@ -167,6 +168,13 @@ def restore_provider_window(sink: Any, provider: Any, state: Any) -> None:
                       if row.intent.effect_id == response.owner_effect_id)
         payload = read_provider_artifact(sink.managed_outputs, request_artifact_for_effect(sink.durable, effect),
             kind=REQUEST_KIND, session_id=sink.session_id, run_id=sink.run_id, effect_id=effect.intent.effect_id)
+    elif state.leaf in {LEAF_CONTROL_READY, LEAF_TOOL_DELIVERY_PENDING}:
+        task, effects = sink.durable.task_facts(sink.run_id)
+        view = load_session_view(checkpoint_entries(task, effects, session_id=sink.session_id),
+                                 session_id=sink.session_id, run_id=sink.run_id)
+        effect = not_sent_continuation_effect(view)
+        payload = read_provider_artifact(sink.managed_outputs, request_artifact_for_effect(sink.durable, effect),
+            kind=REQUEST_KIND, session_id=sink.session_id, run_id=sink.run_id, effect_id=effect.intent.effect_id)
     else:
         return
     if not isinstance(payload, dict):
@@ -261,6 +269,7 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
         return KernelResult(False, f"controller configuration error: {exc}", 0, "controller_failure")
     last_decision: dict[str, Any] = {}
     last_action = ""
+    window_restored = False
     try:
         while True:
             view = context.load_view()
@@ -277,6 +286,10 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
                 return result
             if action.kind == rules.ACTION_FAIL_INVARIANT:
                 raise RecoveryFailed(f"{action.reason}: {action.effect_ids}")
+            if not window_restored:
+                restore_provider_window(context.sink, context.provider, state)
+                context.window = getattr(context.provider, "window_ref", None) or context.transport.window_ref
+                window_restored = True
             outcome = _execute_kernel_action(context, view, action)
             if outcome is not None:
                 return outcome

@@ -157,8 +157,16 @@ def build_provider_begin_rows(
     batches = view.batches
     rows = [effect_intent_entry(prepared)]
     if delivery_batch_id:
+        if expected_request_ref and not supersede_effect_id:
+            batch = next((batch for batch in batches if batch.intent.batch_id == delivery_batch_id), None)
+            if batch is not None and batch.active_attempts:
+                if len(batch.active_attempts) != 1:
+                    raise RuntimeEffectError("delivery retry requires one original send attempt")
+                supersede_effect_id = batch.active_attempts[0]
         if supersede_effect_id:
             _require_supersedable_not_sent(view, supersede_effect_id)
+            if find_effect(view.effects, supersede_effect_id).intent.delivery_batch_id != delivery_batch_id:
+                raise RuntimeEffectError("superseded provider effect belongs to another delivery batch")
             voided = send_superseded_entry(
                 session_id,
                 run_id,
@@ -247,7 +255,11 @@ def build_provider_settle_rows(
             rows.append(delivered)
     rows.append(
         operation_state_entry(
-            mark_provider_effect_settled(state)
+            mark_provider_effect_settled(state, delivery_turn=(
+                pending_batch.intent.turn if pending_batch is not None and not pending_batch.is_terminal
+                and prepared.effect_id in pending_batch.active_attempts
+                and prepared.status == SETTLEMENT_STATUS_ERROR and prepared.sent_state == SENT_STATE_NOT_SENT
+                else None))
         )
     )
     return tuple(rows), prepared

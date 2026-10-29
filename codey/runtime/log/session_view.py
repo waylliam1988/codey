@@ -31,6 +31,8 @@ from codey.runtime.core.operation_state import (
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
+    SENT_STATE_NOT_SENT,
+    SETTLEMENT_STATUS_ERROR,
     RuntimeEffectProjection,
     effects_from_entries,
 )
@@ -151,6 +153,36 @@ def require_open_view(projection: Any, view: SessionView) -> RuntimeOperationSta
     return view.state
 
 
+def not_sent_continuation_effect(view: SessionView) -> RuntimeEffectProjection:
+    """Resolve original continuation data only from a proven unsent attempt."""
+    state = view.state
+    if state is None:
+        raise RuntimeOperationTransitionError("unsent continuation requires an operation")
+    if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
+        batch_id = pending_for(view).delivery_batch_id
+        batch = next((batch for batch in view.batches
+                      if batch.intent.batch_id == batch_id), None)
+        if batch is None or len(batch.active_attempts) != 1:
+            raise RuntimeOperationTransitionError("continuation has no unique original delivery attempt")
+        matching = tuple(effect for effect in view.effects
+                         if effect.intent.effect_id in batch.active_attempts
+                         and effect.intent.delivery_batch_id == batch.intent.batch_id)
+    elif state.work_ref:
+        matching = tuple(effect for effect in view.effects
+                         if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND
+                         and effect.intent.turn == state.turn)
+    else:
+        matching = ()
+    if len(matching) != 1:
+        raise RuntimeOperationTransitionError("continuation has no unique original provider attempt")
+    effect = matching[0]
+    if (effect.intent.effect_category != EFFECT_CATEGORY_PROVIDER_SEND or effect.settlement is None
+            or effect.settlement.status != SETTLEMENT_STATUS_ERROR
+            or effect.settlement.sent_state != SENT_STATE_NOT_SENT):
+        raise RuntimeOperationTransitionError("continuation requires an error/NOT_SENT provider receipt")
+    return effect
+
+
 def driver_for_state(state: RuntimeOperationState, *, explicit: str = "") -> str:
     if explicit:
         if explicit not in {DRIVER_WRITER, DRIVER_REPAIR}:
@@ -196,6 +228,7 @@ __all__ = [
     "SessionView",
     "driver_for_state",
     "load_session_view",
+    "not_sent_continuation_effect",
     "pending_for",
     "require_open_view",
 ]

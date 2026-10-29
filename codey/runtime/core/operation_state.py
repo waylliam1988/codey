@@ -897,6 +897,7 @@ def mark_provider_effect_pending(
 
 def mark_provider_effect_settled(
     state: RuntimeOperationState,
+    *, delivery_turn: int | None = None,
 ) -> RuntimeOperationState:
     # A generation may defer the provider settlement until a post-tools or
     # final boundary. Tool intents can therefore be pending while the
@@ -908,6 +909,11 @@ def mark_provider_effect_settled(
         # A failed control acknowledgement retains its saved decision. Its
         # request artifact still references the original response and call ids.
         return _transition(state, LEAF_CONTROL_READY)
+    if state.leaf == LEAF_PROVIDER_EFFECT_PENDING and delivery_turn is not None:
+        # A proven unsent result delivery still owns the original tool batch.
+        # Its agent turn is distinct from the failed provider send counter.
+        return replace(mark_tool_delivery_pending(state, driver=state.driver, turn=delivery_turn),
+                       logical_turn=delivery_turn)
     if state.leaf in _RESPONSE_LEAVES | {LEAF_KERNEL_SETTLED}:
         return state
     if state.leaf in {LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING}:

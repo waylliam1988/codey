@@ -360,3 +360,33 @@ call id、工具结果均保留，edit_executions=1，实际执行 unittest 后 
 
 文本后续请求现在每次携带冻结声明，单次请求增加了相应契约 token；这是消除对进程内
 首轮历史依赖的明确成本。以上是选定 smoke，不是完整发布矩阵或性能基准。
+
+## NOT_SENT 恢复缺口复核（2026-10-29）
+
+本次修复评审指出的两个恢复问题：
+
+- 工具回执已经保存，但结果交付明确未发送时，provider 失败结算曾将 operation 退回
+  `writer_running`。现在同一事务将其恢复为原批次的 `tool_delivery_pending` 和原逻辑轮次，
+  保留进度与 provider 调用计数。再次接纳发送时，从该批次的唯一有效 attempt 读取旧 effect，
+  严格验证其属于原批次且具有 error / NOT_SENT 回执，再原子提交已有 `send_superseded`、
+  新发送 intent 与 operation。原工具 effect、完整结果、call id 和 batch 身份不变。
+- 普通协议修复和 done 拒绝请求曾因不是终止 acknowledge 而漏存 `work_ref`。现在只要存在
+  控制 continuation，就冻结其关联和原回复引用；连续两次 NOT_SENT 后仍能使用同一个决定。
+  原回复关联沿请求引用恢复，不重做已提交的完成评估，也不生成新的原始回复副本。
+
+工具交付和控制恢复共用从 effect / delivery 事实解析未发送 continuation 的只读函数，
+并从原冻结请求重建 provider 的内存窗口。未知发送先由 reducer 阻断，不进入窗口恢复或
+重发。旧 checkpoint 若已形成“writer/repair 可开始生成，但原批次仍未交付”的矛盾状态，
+reducer 明确报告 invariant 错误；不猜测旧执行位置，也不自动重新生成或执行工具。
+此次没有新增持久化字段、运行驱动、执行器、事实账本或 fallback。
+
+新增 28 项回归（其中一个测试含两个状态子用例），覆盖同 sink、新 sink、SQLite 重开、
+原生绑定窗口、文本协议、成功与失败工具结果、连续两次未发送、协议修复、done 拒绝，
+以及 MAYBE_SENT 不重发、替换尝试提交后中断、错误回执／跨批次关联拒绝和矛盾执行位置。
+
+最终定向回测：289 passed、40 subtests passed，3 项既有历史 fixture 跳过；未运行全量 pytest。
+Ruff、mypy（539 文件）、Pyrefly（0 errors，35 suppressed，77 warnings）、ty 和差异检查通过。
+Gemma4 12B / KoboldCpp 普通进程恢复 smoke：原生、JSON 各 1/1 通过，均保留原窗口、原结果
+和 call id，edit_executions=1，三次真实请求、无 HTTP 重试。证据分别位于
+`artifacts/operation-not-sent-native-20261029` 和 `artifacts/operation-not-sent-json-20261029`。
+这两次实机 smoke 验证原恢复链路未回退；NOT_SENT 故障由上述确定性测试注入。

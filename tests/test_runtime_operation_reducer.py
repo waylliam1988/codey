@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from codey.runtime.core.operation_reducer import (
     ACTION_CONTINUE,
@@ -179,6 +180,20 @@ def _view(
 
 
 class RuntimeOperationReducerTests(unittest.TestCase):
+    def test_running_position_cannot_generate_past_an_undelivered_result_batch(self) -> None:
+        provider = _provider_projection("failed-delivery", settled=True)
+        assert provider.settlement is not None
+        provider = replace(provider, intent=replace(provider.intent, delivery_batch_id="original-batch"),
+                           settlement=replace(provider.settlement, status="error", sent_state="not_sent"))
+        items = (DeliveryBatchItem(0, "read", "original-read", "safe", False),)
+        batch = _batch("original-batch", items, send_attempts=("failed-delivery",))
+        for leaf in (LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING):
+            with self.subTest(leaf=leaf):
+                action = next_runtime_action(_view(_state(leaf),
+                    effects=(_tool_projection("original-read", settled=True), provider), batches=(batch,)))
+                self.assertEqual(action.kind, ACTION_FAIL_INVARIANT)
+                self.assertEqual(action.reason, "unexpected_undelivered_batch")
+
     def test_missing_state_fails_closed(self) -> None:
         action = next_runtime_action(_view(None))
 

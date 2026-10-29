@@ -284,6 +284,9 @@ def _lifecycle_action(view: SessionView) -> RuntimeAction:
     }:
         if unsettled:
             return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="unexpected_pending_effects")
+        if (state.leaf in {LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING}
+                and any(not batch.is_terminal for batch in view.batches)):
+            return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="unexpected_undelivered_batch")
         return RuntimeAction(ACTION_PREPARE_TURN if state.leaf in {LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING}
                              else ACTION_CONTINUE, leaf=state.leaf)
 
