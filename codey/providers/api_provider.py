@@ -76,6 +76,7 @@ class ApiProvider:
         output_tokens: int | None = None,
         request_headers: Any = None,
         native_tools: bool | None = None,
+        text_tool_format: str = "plain",
         text_decoder: Callable[[str], str | AssistantTurn] | None = None,
         request_counter: RequestCounter = estimate_request,
         usage_parser: UsageParser = no_reported_usage,
@@ -93,6 +94,12 @@ class ApiProvider:
             raise ValueError("base_url is required")
         if not model.strip():
             raise ValueError("model is required")
+        if text_tool_format not in {"plain", "json_schema"}:
+            raise ValueError("unsupported text tool format")
+        if text_tool_format == "json_schema" and (api_protocol != "openai-completions" or native_tools is not False
+                                                   or thinking_enabled is not False):
+            raise ValueError("JSON tool format requires compatibility tools and thinking disabled")
+        self.text_tool_format = text_tool_format
         self.purpose = purpose
         self.request_policy = request_policy or LocalRequestPolicy()
         self.transport_options = transport_options
@@ -177,6 +184,8 @@ class ApiProvider:
             "base_url", "model", "api_protocol", "temperature", "system_prompt", "reasoning_effort", "thinking_enabled",
             "stream", "tool_choice",
         )}
+        if self.text_tool_format != "plain":
+            settings["text_tool_format"] = self.text_tool_format
         settings["context_budget"] = asdict(self.context_budget)
         return hashlib.sha256(json.dumps(settings, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
@@ -305,8 +314,11 @@ class ApiProvider:
             with contextlib.suppress(Exception):
                 control.cancel()
 
-    def send(self, text: str, timeout: float | None = None) -> str:
-        return self._exchange([{"role": "user", "content": text}], None, timeout=timeout, text_only=True).text
+    def send(self, text: str, timeout: float | None = None, *, tool_call_json: bool = False) -> str:
+        if tool_call_json and self.text_tool_format != "json_schema":
+            raise ValueError("JSON tool format is not enabled for this provider")
+        return self._exchange([{"role": "user", "content": text}], None, timeout=timeout,
+                              text_only=True, tool_call_json=tool_call_json).text
 
     def bind_durable_context(self, durable: Any, conversation_id: str) -> None:
         if durable is None or not conversation_id:
@@ -438,6 +450,7 @@ class ApiProvider:
 
     def _exchange(self, pending: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
                   *, timeout: float | None = None, text_only: bool = False,
+                   tool_call_json: bool = False,
                    expected_window_ref: ProtocolWindowRef | None = None,
                    delivery_commit: dict[str, Any] | None = None) -> AssistantTurn:
         """One atomic lifecycle for both codecs, with no protocol-specific commit path."""
@@ -458,7 +471,8 @@ class ApiProvider:
                 base_revision = self._history_revision
                 candidate = self._prepare_exchange(pending, tools)
             checkpoints: list[dict[str, Any]] = []
-            body = self._generate(candidate, tools, timeout=timeout, checkpoints=checkpoints)
+            generation_options: dict[str, Any] = {"tool_call_json": True} if tool_call_json else {}
+            body = self._generate(candidate, tools, timeout=timeout, checkpoints=checkpoints, **generation_options)
             try:
                 turn, output = self._codec.decode_exchange(body, text_only=text_only,
                                                            text_decoder=self._text_decoder)
@@ -560,11 +574,12 @@ class ApiProvider:
             self._last_reasoned_reply = reasoned_reply
 
     def _generate(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None = None,
-                  *, timeout: float | None = None, checkpoints: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                  *, timeout: float | None = None, checkpoints: list[dict[str, Any]] | None = None,
+                  tool_call_json: bool = False) -> dict[str, Any]:
         from codey.providers import api_transport
 
         settings = GenerationSettings(self.model, self.stream, self.temperature, self.thinking_enabled,
-                                      self.reasoning_effort, self.tool_choice, self.context_budget.output_tokens)
+                                      self.reasoning_effort, self.tool_choice, self.context_budget.output_tokens, tool_call_json)
         deadline = time.monotonic() + (timeout if timeout is not None else self.timeout)
         connection_id, sink = self.connection_id, self.on_usage
         payload = self._admit_request(messages, tools, settings, deadline, checkpoints)
@@ -673,6 +688,11 @@ class ApiProvider:
         payload = self._codec.build_payload(messages, tools, settings)
         key = "messages" if self.api_protocol == "openai-completions" else "input"
         payload[key] = [*payload[key], {"role": "user", "content": clock if clock is not None else clock_context()}]
+        if settings.text_tool_json:
+            payload["response_format"] = {"type": "json_schema", "json_schema": {
+                "name": "text_tool_call", "strict": True, "schema": {"type": "object", "properties": {
+                    "tool": {"type": "string"}, "args": {"type": "object"}},
+                    "required": ["tool", "args"], "additionalProperties": False}}}
         self.configure_request(payload)
         return payload
 

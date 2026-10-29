@@ -340,7 +340,7 @@ export interface SettingsModuleDeps {
     const base_url = $('local-base-url').value.trim(),
       model = $('local-model-name').value.trim();
     if (!base_url) return;
-    const payload: Record<string, string> = {
+    const payload: Record<string, string | boolean> = {
       base_url,
       model,
       display_name: $('local-display-name').value.trim(),
@@ -348,6 +348,7 @@ export interface SettingsModuleDeps {
       native_tools_mode: $('local-native-tools-mode').value,
       context_window_tokens: $('local-context-window').value.trim(),
     };
+    if (payload.native_tools_mode === 'json') payload.thinking_enabled = false;
     const key = $('local-api-key').value.trim();
     if (key) payload.api_key = key;
     loading = true;

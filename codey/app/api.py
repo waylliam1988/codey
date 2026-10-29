@@ -237,6 +237,8 @@ def _attach_local_metadata(local: dict[str, Any]) -> None:
         api_key=selection.api_key,
         display_name=config.display_name if selection.model == config.model and selection.base_url == config.base_url else "",
     ))
+    if config.native_tools_mode == "json":
+        local["thinking_options"] = ["off"]
 
 
 def save_local_provider_response(body: object) -> tuple[int, dict[str, Any]]:

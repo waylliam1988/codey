@@ -64,11 +64,6 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         return decode_json(raw)
 
     class ObservedProvider(ApiProvider):
-        def fork_auxiliary(self):
-            client = super().fork_auxiliary()
-            client.configure_request = self.unconstrained_configure
-            return client
-
         def _generate(self, messages, tools=None, **kwargs):
             record({"event": "generation_start", "messages": messages, "tools": [t.name for t in tools or ()]})
             started = time.monotonic()
@@ -109,13 +104,6 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             payload.update(seed=seed)
             record({"event": "admitted_payload", "payload": payload})
 
-        def constrained(payload):
-            payload["response_format"] = {"type": "json_schema", "json_schema": {
-                "name": "text_tool_call", "strict": True, "schema": {"type": "object", "properties": {
-                    "tool": {"type": "string"}, "args": {"type": "object"}},
-                    "required": ["tool", "args"], "additionalProperties": False}}}
-            configure(payload)
-
         counter, window = admitted_counter(upstream + "/v1", "", "openai-completions", 32768)
         record({"event": "connection_budget", "counter": counter, "window": window})
         client = ObservedProvider(upstream + "/v1", model, timeout=provider_timeout, temperature=temperature,
@@ -126,8 +114,8 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
                            usage_parser=parser_for("openai-completions"),
                            budget_source="server_and_configuration" if counter == "koboldcpp" else "configuration",
                            text_decoder=normalize_local_reply,
-                           configure_request=constrained if constrained_text else configure)
-        client.unconstrained_configure = configure
+                           configure_request=configure,
+                           text_tool_format="json_schema" if constrained_text else "plain")
         return client
 
     tasks = {
@@ -186,7 +174,8 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             stack.enter_context(patch("codey.research.search_factory.default_research_search_provider", Search))
             stack.enter_context(patch("codey.app.task_services.default_research_search_provider", Search, create=True))
         local_config.save_local_config(local_config.LocalProviderConfig(base_url=upstream + "/v1", model=model,
-            native_tools_mode="on" if native else "off", thinking_enabled=thinking, connection_revision="persistent-research-probe"))
+            native_tools_mode="json" if constrained_text else "on" if native else "off", thinking_enabled=thinking,
+            connection_revision="persistent-research-probe"))
         request = headless_runner.HeadlessRequest(project=None, task=tasks[name], provider_id="local",
             max_turns=max_turns, session_id=session_id,
             state_home=directory / "state", research_store_root=directory / "knowledge",

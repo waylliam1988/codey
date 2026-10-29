@@ -906,7 +906,7 @@ def test_parse_update_rejects_invalid_native_tools_mode() -> None:
     )
 
     assert parsed is None
-    assert error == "native_tools_mode must be auto, on, or off"
+    assert error == "native_tools_mode must be auto, on, off, or json"
 
 
 def test_parse_update_rejects_non_numeric_reserve_and_keep() -> None:

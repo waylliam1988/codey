@@ -88,6 +88,11 @@ def capture_local_run_config(selection: object) -> LocalProviderConfig:
     effort = selection.get("effort")
     if effort is not None and (not isinstance(effort, str) or effort not in REASONING_EFFORTS):
         raise ValueError("unsupported thinking effort")
+    enabled = effort != "off" if effort is not None else thinking
+    if saved.native_tools_mode == "json":
+        if enabled is True:
+            raise ValueError("JSON tool format requires thinking disabled; choose Off")
+        enabled = False
     return replace(saved, base_url=base, model=model.strip(), api_key=target.api_key,
-                   thinking_enabled=effort != "off" if effort is not None else thinking,
+                   thinking_enabled=enabled,
                    reasoning_effort=effort)

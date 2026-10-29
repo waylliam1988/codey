@@ -28,6 +28,8 @@ def _model_payload_from_bootstrap(local: dict[str, object]) -> dict[str, object]
     base = str(local.get("base_url") or "")
     metadata = model_metadata(base if local.get("connected") else "", model, api_key=target.api_key,
                               display_name=saved.display_name if model == saved.model else "")
+    if saved.native_tools_mode == "json":
+        metadata["thinking_options"] = ["off"]
     raw_models = local.get("models")
     model_names = [str(item) for item in raw_models] if isinstance(raw_models, list) else []
     models = list(dict.fromkeys([*model_names, *([model] if model else [])]))
@@ -108,10 +110,12 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
         context_reserve_tokens=effective.context.context_reserve_tokens,
         context_keep_recent_tokens=min(budget.context_keep_recent_tokens, window - budget.context_reserve_tokens),
         output_tokens=budget.context_reserve_tokens,
-        thinking_enabled=config.thinking_enabled if selection.base_url == config.base_url else None,
+        thinking_enabled=(False if config.native_tools_mode == "json" and config.thinking_enabled is not True
+                          else config.thinking_enabled if selection.base_url == config.base_url else None),
         reasoning_effort=config.reasoning_effort if selection.base_url == config.base_url else None,
         api_protocol=config.api_protocol,
         native_tools=effective.native_tools,
+        text_tool_format="json_schema" if config.native_tools_mode == "json" else "plain",
         text_decoder=normalize_local_reply,
         usage_parser=parser_for(config.api_protocol), configure_request=configure_usage,
         request_counter=counter_for(counter, effective.base_url, effective.model, effective.api_key, window),
@@ -151,7 +155,8 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
                            config.thinking_enabled, config.reasoning_effort,
                            stream=_local_config.resolve_local_native_tools(config),
                            output_tokens=budget.context_reserve_tokens, token_counter=counter,
-                           budget_source="server_and_configuration" if counter == "koboldcpp" else "configuration")
+                           budget_source="server_and_configuration" if counter == "koboldcpp" else "configuration",
+                           text_tool_format="json_schema" if config.native_tools_mode == "json" else "plain")
 
 
 def _target_revision(config: _local_config.LocalProviderConfig) -> str:
@@ -174,7 +179,7 @@ def config_for_selection(selection: ApiRunSelection) -> _local_config.LocalProvi
     if _target_revision(current) != selection.connection_revision:
         raise ValueError("original Local connection or credential is unavailable; restore the connection before resuming")
     return replace(current, model=selection.model_id, api_protocol=selection.protocol,
-                   native_tools_mode="on" if selection.native_tools else "off",
+                   native_tools_mode="json" if selection.text_tool_format == "json_schema" else "on" if selection.native_tools else "off",
                    context=_local_config.LocalContextBudget(selection.context_window_tokens, selection.context_reserve_tokens,
                                                           selection.context_keep_recent_tokens),
                    thinking_enabled=selection.thinking_enabled, reasoning_effort=selection.reasoning_effort)
@@ -186,6 +191,7 @@ def open_selection(selection: ApiRunSelection) -> ApiProvider:
     config = config_for_selection(selection)
     # The admitted budgets/mode cannot be overwritten by environment changes.
     provider = ApiProvider(config.base_url, selection.model_id, api_key=config.api_key, api_protocol=selection.protocol,
+                           text_tool_format=selection.text_tool_format,
                            native_tools=selection.native_tools, stream=selection.stream, tool_choice=selection.tool_choice,
                            output_tokens=selection.output_tokens, context_window_tokens=selection.context_window_tokens,
                            context_reserve_tokens=selection.context_reserve_tokens, context_keep_recent_tokens=selection.context_keep_recent_tokens,

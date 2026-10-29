@@ -41,7 +41,8 @@ SCHEMA_VERSION = 1
 NATIVE_TOOLS_AUTO = "auto"
 NATIVE_TOOLS_ON = "on"
 NATIVE_TOOLS_OFF = "off"
-NATIVE_TOOLS_MODES = (NATIVE_TOOLS_AUTO, NATIVE_TOOLS_ON, NATIVE_TOOLS_OFF)
+NATIVE_TOOLS_JSON = "json"
+NATIVE_TOOLS_MODES = (NATIVE_TOOLS_AUTO, NATIVE_TOOLS_ON, NATIVE_TOOLS_OFF, NATIVE_TOOLS_JSON)
 
 CONTEXT_PRESETS: tuple[tuple[str, str, int], ...] = (
     ("32k", "32k", 32_768),
@@ -256,6 +257,11 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
     protocol = raw.get("api_protocol", "openai-completions")
     if protocol not in {"openai-completions", "openai-responses"}:
         raise ValueError("unsupported API protocol")
+    thinking = raw.get("thinking_enabled") if type(raw.get("thinking_enabled")) is bool else None
+    if mode == NATIVE_TOOLS_JSON:
+        if protocol != "openai-completions" or thinking is True:
+            raise ValueError("JSON tool format requires Chat Completions and thinking disabled")
+        thinking = False
     context_raw = raw.get("context")
     context: LocalContextBudget | None = None
     base_url_raw = raw.get("base_url")
@@ -281,7 +287,7 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
         api_key=api_key_text,
         native_tools_mode=mode,
         context=context,
-        thinking_enabled=raw.get("thinking_enabled") if type(raw.get("thinking_enabled")) is bool else None,
+        thinking_enabled=thinking,
         display_name=str(raw.get("display_name") or "")[:160],
         reasoning_effort=raw.get("reasoning_effort"),
         api_protocol=protocol,
@@ -370,7 +376,7 @@ def parse_local_config_update(
     api_key = "" if raw_key is None else raw_key.strip()
     mode = parse_native_tools_mode(body.get("native_tools_mode"))
     if mode is None and "native_tools_mode" in body:
-        return None, "native_tools_mode must be auto, on, or off"
+        return None, "native_tools_mode must be auto, on, off, or json"
     if mode is None:
         mode = previous.native_tools_mode
     window, window_error = _parse_optional_positive_int_field(body, "context_window_tokens")
@@ -398,6 +404,10 @@ def parse_local_config_update(
         if body["thinking_enabled"] is not None and type(body["thinking_enabled"]) is not bool:
             return None, "thinking_enabled must be true, false, or null"
         thinking = body["thinking_enabled"]
+    if mode == NATIVE_TOOLS_JSON:
+        if protocol != "openai-completions" or thinking is True:
+            return None, "JSON tool format requires Chat Completions and thinking disabled"
+        thinking = False
     if window is not None:
         preset = context_budget_for_window(window)
         context = LocalContextBudget(
@@ -432,7 +442,7 @@ def resolve_local_native_tools(config: LocalProviderConfig) -> bool:
         return env_flag
     if config.native_tools_mode == NATIVE_TOOLS_ON:
         return True
-    if config.native_tools_mode == NATIVE_TOOLS_OFF:
+    if config.native_tools_mode in {NATIVE_TOOLS_OFF, NATIVE_TOOLS_JSON}:
         return False
     from codey.providers.capabilities import capability_for
 

@@ -301,7 +301,9 @@ class KernelContext:
                 args = (messages, self.window, tools)
         else:
             method, args = ("send_turn", (prompt, tools)) if self.native else ("send", (prompt,))
-        prepare_provider_request(self.sink, method, args, {}, counters=(state.counters, counters or state.counters))
+        options = ({"tool_call_json": True}
+                   if not self.native and getattr(self.provider, "text_tool_format", "plain") == "json_schema" else {})
+        prepare_provider_request(self.sink, method, args, options, counters=(state.counters, counters or state.counters))
 
     def prepare_turn(self, state: Any) -> None:
         self.restore_facts()

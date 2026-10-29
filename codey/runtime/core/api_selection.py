@@ -25,6 +25,7 @@ class ApiRunSelection:
     token_counter: str = "estimated"
     budget_source: str = "configuration"
     input_limit_tokens: int | None = None
+    text_tool_format: str = "plain"
 
     def __post_init__(self) -> None:
         for value in (self.connection_id, self.connection_revision, self.model_id):
@@ -32,6 +33,11 @@ class ApiRunSelection:
                 raise ValueError("invalid API connection or model identity")
         if self.protocol not in {"openai-completions", "openai-responses"}:
             raise ValueError("unsupported API protocol")
+        if self.text_tool_format not in {"plain", "json_schema"}:
+            raise ValueError("unsupported text tool format")
+        if self.text_tool_format == "json_schema" and (self.protocol != "openai-completions" or self.native_tools
+                                                        or self.thinking_enabled is not False):
+            raise ValueError("JSON tool format requires compatibility tools and thinking disabled")
         if not isinstance(self.token_counter, str) or not self.token_counter or len(self.token_counter) > 80:
             raise ValueError("unsupported request token counter")
         if not isinstance(self.budget_source, str) or not self.budget_source or len(self.budget_source) > 80:

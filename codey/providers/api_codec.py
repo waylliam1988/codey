@@ -16,6 +16,7 @@ class GenerationSettings:
     effort: str | None
     choice: str
     output_tokens: int | None
+    text_tool_json: bool = False
 
 
 class ApiCodec(Protocol):
