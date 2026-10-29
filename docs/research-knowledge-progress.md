@@ -91,6 +91,21 @@ Update this file in each implementation commit with results and remaining work.
   unknown generation outcome, which was correctly not resent. Full three-stage
   live acceptance has not yet passed. Keep this distinction in the final report.
 
+## Local transport correction
+
+- Final research/protocol/entry expansion: 291 tests and 7 subtests passed.
+- The live probe initially constructed ApiProvider without the local response
+  decoder used by the application. Corrected it to use normalize_local_reply.
+  Earlier results remain diagnostic attempts, not a passing application-model
+  benchmark. The probe now also checks the actual persisted changes after a
+  successful final answer, rather than trusting exit status alone.
+- A malformed local tool frame must not become a successful prose completion in
+  native mode. The local decoder now marks it as a protocol error, and the chat
+  codec preserves that verdict without recording a fictitious assistant result.
+  Canonical turns pass through unchanged; valid native calls retain precedence.
+- 48 focused local decoder, real transport-boundary and exchange tests passed.
+  Production Ruff, mypy, Pyrefly and ty passed again after this correction.
+
 ## Versioned reports, graphs and lifecycle
 
 - Reports now save independent answer objects and pin adopted knowledge versions;

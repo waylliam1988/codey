@@ -13,7 +13,7 @@ import json
 import re
 from typing import cast
 
-from codey.providers.base import AssistantTurn, ProviderToolCall
+from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.providers.local_literal import parse_mapping
 
 _FRAME_PREFIXES = ("<|tool_call>call:tool:", "<|tool_call>call:")
@@ -29,8 +29,8 @@ _GEMMA_METADATA_LIMIT = 64 * 1024
 def parse_local_tool_markup(text: str) -> ProviderToolCall | None:
     """Parse one complete supported local tool frame, or return ``None``.
 
-    The entire response must be exactly one frame.  Partial frames, prose
-    around a frame, and non-literal arguments remain ordinary assistant text.
+    The entire response must be exactly one frame. Partial frames, prose
+    around a frame, and non-literal arguments are not parsed as calls.
     Argument shape and policy are validated later by ``kernel_protocol``.
     """
     if type(text) is not str or not text.endswith(_FRAME_SUFFIX):
@@ -87,13 +87,18 @@ def parse_gemma_tool_reasoning(text: str) -> AssistantTurn | None:
     )
 
 
-def normalize_local_reply(reply: str) -> str | AssistantTurn:
+def normalize_local_reply(reply: str | AssistantTurn) -> str | AssistantTurn:
     """Convert a complete local text frame into the canonical provider turn."""
+    if isinstance(reply, AssistantTurn):
+        return reply
     reasoning = parse_gemma_tool_reasoning(reply)
     if reasoning is not None:
         return reasoning
     call = parse_local_tool_markup(reply)
     if call is None:
+        if reply.lstrip().startswith("<|tool_call>"):
+            return AssistantTurn(text="", finish=TurnFinish.PROTOCOL_ERROR,
+                                 raw={"codec": "local-text", "malformed_tool_frame": True})
         return reply
     return AssistantTurn(text="", tool_calls=(call,), raw={"codec": "local-text"})
 

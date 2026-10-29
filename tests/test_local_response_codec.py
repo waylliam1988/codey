@@ -63,16 +63,20 @@ def test_local_gemma_native_frame_accepts_shell_style_marker_and_search_context(
     }
 
 
-def test_local_gemma_incomplete_frame_stays_plain_text() -> None:
+def test_local_gemma_incomplete_frame_cannot_complete_as_plain_text() -> None:
     reply = '<|tool_call>call:tool:read_file{args:{path:"app.py"}}'
 
-    assert normalize_local_reply(reply) == reply
+    turn = normalize_local_reply(reply)
+    assert isinstance(turn, AssistantTurn)
+    assert normalize_turn(turn).protocol_error
 
 
-def test_local_gemma_invalid_literal_stays_plain_text() -> None:
+def test_local_gemma_invalid_literal_cannot_complete_as_plain_text() -> None:
     reply = '<|tool_call>call:tool:read_file{args:{path:__import__("os")}}<tool_call|>'
 
-    assert normalize_local_reply(reply) == reply
+    turn = normalize_local_reply(reply)
+    assert isinstance(turn, AssistantTurn)
+    assert normalize_turn(turn).protocol_error
 
 
 def test_local_provider_normalize_reply_returns_standard_turn() -> None:

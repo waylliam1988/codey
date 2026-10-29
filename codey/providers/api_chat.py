@@ -216,6 +216,8 @@ def decode_turn(message: dict[str, Any], *,
     if isinstance(metadata_turn, AssistantTurn):
         provider_metadata = dict(metadata_turn.raw)
         text = metadata_turn.text
+        if not parsed and not dropped and metadata_turn.finish is TurnFinish.PROTOCOL_ERROR:
+            return metadata_turn, None
         if not parsed and not dropped and not message.get("_continuable_length") and metadata_turn.tool_calls:
             parsed = [{"id": call.id, "name": call.name, "arguments": dict(call.arguments)} for call in metadata_turn.tool_calls]
             message = {**message, "content": text, "tool_calls": [

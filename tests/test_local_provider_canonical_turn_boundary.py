@@ -65,3 +65,12 @@ def test_native_valid_calls_take_precedence_over_text_frame(monkeypatch):
     turn = provider.send_turn("read", [])
     assert [call.name for call in turn.tool_calls] == ["read_file"]
     assert provider._messages[-1]["tool_calls"][0]["id"] == "read-1"
+
+
+def test_malformed_local_text_frame_is_not_a_successful_native_answer(monkeypatch):
+    provider = _reply(monkeypatch, content='<|tool_call>call:knowledge_commit{changes:[broken}<tool_call|>')
+    turn = provider.send_turn("save the candidate", [])
+    assert turn.finish is TurnFinish.PROTOCOL_ERROR
+    assert not turn.tool_calls
+    assert normalize_turn(turn).protocol_error
+    assert provider._messages[-1]["role"] != "assistant"
