@@ -161,6 +161,14 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
             "Use double-quoted JSON keys, no prose and no tool-call tags. "
             "The tool field must name an available tool, not the word 'tool'."
         )
+        if spec is not None and spec.name == "done":
+            instruction += (
+                ' For done, summary must be a top-level argument beside report_sections, not inside it. '
+                'Use {"tool":"done","args":{"summary":"conclusion [1]","report_sections":'
+                '{"evidence":["supported finding [1]"],"counter":["limitation [1]"],'
+                '"source_quality":["quality"],"coverage":["search scope"],"sources":["[1] title - URL"]}}}. '
+                'Keep summary brief when using report_sections; do not duplicate the report.'
+            )
     return f"Protocol error: {detail}\n\n{instruction} Resend the intended call. {ARGUMENT_CONTENT_GUIDANCE} Keep other valid fields."
 
 

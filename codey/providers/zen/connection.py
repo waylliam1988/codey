@@ -180,7 +180,7 @@ class ZenProvider:
     def normalize_reply(self, reply: str) -> object:
         with self._state_lock:
             previous = self._last_text_reply
-        return AssistantTurn(text=reply, reasoning=previous[1]) if previous is not None and previous[0] == reply and previous[1] else reply
+        return AssistantTurn(text=reply, reasoning=previous[1], raw={"text_protocol": True}) if previous is not None and previous[0] == reply and previous[1] else reply
 
     def _exchange(self, method: str, data: Any, tools: list[ProviderToolDefinition] | None, timeout: float | None) -> Any:
         declared, inverse = prepare_declarations(tools)

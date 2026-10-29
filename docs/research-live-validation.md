@@ -26,6 +26,36 @@ Work in progress. Do not infer a live acceptance pass from deterministic tests.
   logs: `artifacts/kobold-research-clean-server*.txt`. No external software
   source/config changes or generation retries were introduced.
 
+### Reasoning text must preserve text-protocol identity
+
+- The clean-server natural run (`research-live-wal-clean-20261030`) executed
+  actual searches, opened two official pages and saved a direct concurrency
+  quote. It then repeated an incomplete done frame with summary nested inside
+  report_sections. It failed `protocol`, not research acceptance. Its prose also
+  incorrectly described BEGIN CONCURRENT commits as simultaneous; do not reuse
+  it as an accepted answer.
+- Local adapter errors now retain bounded tool-specific diagnostics in the
+  existing raw response metadata. They survive durable receipt round trips;
+  malformed calls still cannot execute. Done repair explains the root summary
+  and supplies all five structured sections instead of just a generic error.
+- `research-three-stage-feedback-20261030` exposed an independent production
+  defect with thinking enabled: valid text JSON requests plus reasoning were
+  wrapped as a native AssistantTurn with no calls, so the kernel treated each
+  search request as a final answer. The run reached max_turns without executing
+  a search. API/Zen wrappers now explicitly mark these as text-protocol replies;
+  the shared decoder uses that identity after receipt recovery and still checks
+  the frozen ToolSpec/policy. Unmarked native prose/JSON is not promoted into
+  an executable text request. Reasoning stays separate and visible.
+- Lexical coverage no longer treats nested object/array examples, inline/fenced
+  code or dotted API fields as research topics. Long unquoted Chinese clauses
+  are not exact-match keywords; explicit quoted topics remain available. This
+  is a limited lexical check, not proof that a paraphrase is semantically valid.
+- Focused verification: 71 protocol/prompt/proof/planner tests and 22 completion,
+  merge/native-contract tests passed; a further 53 reasoning/receipt/codec/term
+  tests passed after adding protocol identity and recovery regressions. Sets
+  overlap. A fresh three-process thinking-enabled run is now validating the fix;
+  its first search has actually executed. No full live pass is claimed yet.
+
 ## Continuation: explicit evidence and backend parser diagnosis
 
 - The earlier `research-live-wal-action-20261030` returned `done`, but manual

@@ -45,7 +45,15 @@ _STOP_TERMS = frozenset(
 
 
 def question_terms(question: str) -> tuple[str, ...]:
-    text = (question or "")
+    # This is a lexical hint, not a semantic evaluator. Embedded object/array
+    # examples and dotted API fields are instructions, not research subjects.
+    text = re.sub(r"```[\s\S]*?```|`[^`]*`", " ", question or "")
+    for _ in range(12):
+        stripped = re.sub(r"(?:[A-Za-z_][A-Za-z0-9_.]*\s*=\s*)?(?:\{[^{}]*\}|\[[^\[\]]*\])", " ", text)
+        if stripped == text:
+            break
+        text = stripped
+    text = re.sub(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b", " ", text)
     tokens: list[str] = []
     quoted = re.findall(r"['\"]([^'\"]{2,80})['\"]", text)
     for item in quoted:
@@ -54,6 +62,11 @@ def question_terms(question: str) -> tuple[str, ...]:
         r"[A-Za-z][A-Za-z0-9_-]{2,}|20\d{2}|\d+(?:\.\d+)?|[\u4e00-\u9fff]{2,}",
         text,
     ):
+        # An unsegmented Chinese clause is not an exact-match keyword. Requiring
+        # its verbatim repetition penalizes ordinary paraphrases and generates
+        # irrelevant web queries. Keep short names; no guessed word boundaries.
+        if re.fullmatch(r"[\u4e00-\u9fff]{9,}", item):
+            continue
         _append_term(tokens, item)
         if len(tokens) >= 12:
             break

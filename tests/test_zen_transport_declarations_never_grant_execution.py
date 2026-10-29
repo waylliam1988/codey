@@ -154,7 +154,7 @@ def test_plain_reasoning_is_preserved_only_for_the_accepted_reply():
     runtime.send_turn.return_value = AssistantTurn(text="Answer", reasoning="Reasoned answer")
     provider = ZenProvider(runtime)
     assert provider.send("Discuss", timeout=3) == "Answer"
-    assert provider.normalize_reply("Answer") == AssistantTurn(text="Answer", reasoning="Reasoned answer")
+    assert provider.normalize_reply("Answer") == AssistantTurn(text="Answer", reasoning="Reasoned answer", raw={"text_protocol": True})
     assert provider.normalize_reply("Different") == "Different"
     provider.close()
     assert provider.normalize_reply("Answer") == "Answer"

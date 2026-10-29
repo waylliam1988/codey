@@ -97,8 +97,16 @@ def normalize_local_reply(reply: str | AssistantTurn) -> str | AssistantTurn:
     call = parse_local_tool_markup(reply)
     if call is None:
         if reply.lstrip().startswith("<|tool_call>"):
+            frame = reply.strip()
+            name = re.match(r"<\|tool_call>call:(?:tool:)?([A-Za-z_][A-Za-z0-9_]*)\{", frame)
+            detail = ("Local tool frame is missing the closing <tool_call|> marker. "
+                      "Resend a complete call as bare JSON, without tool-call markers."
+                      if not frame.endswith(_FRAME_SUFFIX) else
+                      "Local tool frame has invalid argument syntax. Use quoted strings for text, including enum choices; "
+                      "do not emit bare words such as state:reported.")
             return AssistantTurn(text="", finish=TurnFinish.PROTOCOL_ERROR,
-                                 raw={"codec": "local-text", "malformed_tool_frame": True})
+                                 raw={"codec": "local-text", "malformed_tool_frame": True,
+                                      "protocol_error": detail, "protocol_tool_name": name.group(1) if name else ""})
         return reply
     return AssistantTurn(text="", tool_calls=(call,), raw={"codec": "local-text"})
 

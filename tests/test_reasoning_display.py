@@ -57,6 +57,36 @@ def test_plain_send_keeps_string_contract_and_exposes_only_matching_reasoning() 
     assert provider.reasoning_for_reply(reply) == ""
 
 
+def test_text_json_tool_reply_with_reasoning_remains_executable_after_receipt_roundtrip() -> None:
+    from codey.operations.kernel_protocol import normalize_turn
+    from codey.policies.task_policy import TaskPolicy
+    from codey.providers.response_record import decode_reply, encode_reply
+
+    provider = ApiProvider("http://localhost:9/v1", "test")
+    text = '{"tool":"web_search","args":{"query":"official source"}}'
+    with mock.patch("codey.providers.api_transport.open_request", return_value=response({
+        "content": text, "reasoning_content": "Inspect official sources first.",
+    })):
+        reply = provider.send("research")
+    normalized = provider.normalize_reply(reply)
+    assert isinstance(normalized, AssistantTurn) and normalized.reasoning == "Inspect official sources first."
+    restored = decode_reply(encode_reply(normalized))
+    plan = normalize_turn(restored, policy=TaskPolicy(grants=frozenset({"control", "web.read"})))
+    assert not plan.protocol_error and plan.control is not None and plan.control.kind == "continue"
+    assert len(plan.calls) == 1 and plan.calls[0].name == "web_search"
+    assert plan.calls[0].args == {"query": "official source"}
+    denied = normalize_turn(restored, policy=TaskPolicy(grants=frozenset({"control"})))
+    assert denied.protocol_error_kind == "disallowed_tool" and not denied.calls
+
+
+def test_unmarked_native_prose_and_reasoning_do_not_become_text_tool_requests():
+    from codey.operations.kernel_protocol import normalize_turn
+
+    plan = normalize_turn(AssistantTurn(text='{"tool":"web_search","args":{"query":"example"}}',
+                                      reasoning="An example only."))
+    assert not plan.calls and plan.control is not None and plan.control.kind == "done"
+
+
 def test_reasoning_reaches_existing_turn_event_without_changing_tool_text() -> None:
     seen = []
     _emit_turn_event(seen.append, 2, AssistantTurn(text="answer", reasoning="Think safely."))

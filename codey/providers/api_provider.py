@@ -208,7 +208,7 @@ class ApiProvider:
         from codey.providers.base import AssistantTurn
 
         return replace(normalized, reasoning=reasoning) if isinstance(normalized, AssistantTurn) else AssistantTurn(
-            text=reply, reasoning=reasoning,
+            text=reply, reasoning=reasoning, raw={"text_protocol": True},
         )
 
     def reasoning_for_reply(self, reply: str) -> str:

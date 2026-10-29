@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
-from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests
+from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests, decode_text_turn
 from codey.providers.base import AssistantTurn, TurnFinish
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
@@ -612,10 +612,15 @@ def _response_objects(reply: DecodedTextTurn | AssistantTurn) -> list[tuple[str,
         return _decoded_text_objects(reply)
     if isinstance(reply, AssistantTurn):
         if reply.finish is TurnFinish.PROTOCOL_ERROR:
-            return _invalid_plan("provider returned malformed tool calls", kind="invalid_args")
+            detail = reply.raw.get("protocol_error")
+            tool = reply.raw.get("protocol_tool_name")
+            return _invalid_plan(detail[:500] if isinstance(detail, str) and detail else "provider returned malformed tool calls",
+                                 tool=tool[:80] if isinstance(tool, str) else "", kind="invalid_args")
         if reply.finish is not TurnFinish.COMPLETE:
             return _invalid_plan("assistant response was truncated", kind="output_limit")
         if not reply.tool_calls:
+            if reply.raw.get("text_protocol") is True:
+                return _decoded_text_objects(decode_text_turn(reply.text))
             if not reply.text.strip():
                 return _invalid_plan("empty assistant answer", kind="empty_answer")
             return ToolPlan(calls=[], control=Control(kind="done", body=reply.text.strip()))

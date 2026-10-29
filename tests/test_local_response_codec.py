@@ -69,6 +69,26 @@ def test_local_gemma_incomplete_frame_cannot_complete_as_plain_text() -> None:
     turn = normalize_local_reply(reply)
     assert isinstance(turn, AssistantTurn)
     assert normalize_turn(turn).protocol_error
+    assert turn.raw["protocol_tool_name"] == "read_file"
+    assert "closing <tool_call|>" in normalize_turn(turn).protocol_error
+
+
+def test_incomplete_done_frame_gets_specific_repair_without_executing():
+    from codey.operations.kernel_prompt import _repair_prompt
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.providers.response_record import decode_reply, encode_reply
+
+    snapshot = build_turn_snapshot(TaskSession(TaskPolicy(grants=frozenset({"control"}))), native=False)
+    reply = normalize_local_reply('<|tool_call>call:done{report_sections:{summary:"finding"}}')
+    rejected = normalize_turn(decode_reply(encode_reply(reply)), snapshot=snapshot)
+    assert rejected.protocol_error and rejected.calls == [] and rejected.control is None
+    assert rejected.protocol_tool_name == "done"
+    feedback = _repair_prompt(rejected, snapshot=snapshot, native=False)
+    assert "missing the closing" in feedback
+    assert "summary must be a top-level argument" in feedback
+    assert '"coverage":["search scope"]' in feedback
 
 
 def test_local_gemma_invalid_literal_cannot_complete_as_plain_text() -> None:
