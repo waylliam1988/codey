@@ -16,16 +16,19 @@ _STOP = {"the", "a", "an", "and", "or", "of", "to", "is", "in", "how", "what", "
 class KnowledgeAccess:
     project: str = ""
     session_id: str = ""
+    owner_id: str = ""
 
     def allows(self, version: KnowledgeVersion) -> bool:
         value = version.value
         return (value.scope == "global" or value.scope == "project" and bool(self.project) and value.scope_id == self.project
-                or value.scope in {"session", "personal"} and bool(self.session_id) and value.scope_id == self.session_id)
+                or value.scope in {"session", "personal"} and bool(self.session_id) and value.scope_id == self.session_id
+                or value.scope == "personal" and bool(self.owner_id) and value.scope_id == self.owner_id)
 
-    def sql(self, prefix: str = "v") -> tuple[str, tuple[str, str]]:
+    def sql(self, prefix: str = "v") -> tuple[str, tuple[str, str, str]]:
         return (f"({prefix}.scope='global' OR ({prefix}.scope='project' AND {prefix}.scope_id=? AND {prefix}.scope_id!='') "
-                f"OR ({prefix}.scope IN ('session','personal') AND {prefix}.scope_id=? AND {prefix}.scope_id!=''))",
-                (self.project, self.session_id))
+                f"OR ({prefix}.scope IN ('session','personal') AND {prefix}.scope_id=? AND {prefix}.scope_id!='') "
+                f"OR ({prefix}.scope='personal' AND {prefix}.scope_id=? AND {prefix}.scope_id!=''))",
+                (self.project, self.session_id, self.owner_id))
 
 
 @dataclass(frozen=True)

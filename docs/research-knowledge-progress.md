@@ -59,6 +59,38 @@ generic research methods. Markdown is interchange, never a competing authority.
 
 Update this file in each implementation commit with results and remaining work.
 
+## Final integration and acceptance (2026-10-29)
+
+- Added a stable owner identity per knowledge SQLite database. Authorized personal
+  observations survive conversation changes; reports inherit restricted premise
+  scope. This is one owner's isolated knowledge space, not a multi-user ACL.
+  Combining incompatible restricted scopes fails explicitly.
+- Both native and text tools now advertise the same detailed nested mutation,
+  evidence, condition and pinned-reference schemas. Ledger field aliases remain
+  accepted. Repository validation remains the semantic authority.
+- Recovered tool outcomes without the original persisted authorization are
+  rejected. This also fixes the previously observed entry-policy regression.
+- Repeated staged updates now include the target in every update receipt, not
+  only its first appearance. Acceptance restores three successive writes before
+  and after the SQLite commit, preserving all fragments with one claim version.
+- Production-entry acceptance passes acquisition, fresh AppContext recall with
+  different wording, candidate analogy creation, CAS premise revision, stale
+  dependency notification and graph inspection of old/new pinned versions.
+  This uses deterministic model replies; it does not measure model reasoning.
+- Focused expansion: 279 tests and 433 subtests passed; one architecture test
+  fails on baseline providers/api_provider.py exceeding 1000 lines. Verified the
+  file is byte-for-byte unchanged from d306aa8c, at 1028 lines. No baseline
+  exemption or unrelated provider refactor was added. An additional 87 scoped
+  entry/lifecycle tests, 34 schema/acceptance tests and 15 staged lifecycle tests
+  passed (these groups overlap; do not sum them as unique tests).
+- Production Ruff, mypy (551 files), Pyrefly and ty pass; Pyrefly still reports
+  its existing warning/suppression counts. Published frontend assets check passes.
+- Remaining verification: final research/protocol expansion and local model probe
+  with the production local response decoder. Earlier native probe timed out;
+  recall successfully read existing knowledge but one attempt ended with an
+  unknown generation outcome, which was correctly not resent. Full three-stage
+  live acceptance has not yet passed. Keep this distinction in the final report.
+
 ## Versioned reports, graphs and lifecycle
 
 - Reports now save independent answer objects and pin adopted knowledge versions;

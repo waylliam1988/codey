@@ -63,7 +63,7 @@ def build_version_graph(store: KnowledgeStore, session_id: str, *, focus_ids: tu
                                 (session_id,)).fetchall()
         project = str(projects[0][0]) if len(projects) == 1 else ""
     depth, node_limit, edge_limit = max(0, min(3, depth)), max(1, min(200, node_limit)), max(0, min(400, edge_limit))
-    access = KnowledgeAccess(project, session_id)
+    access = KnowledgeAccess(project, session_id, store.owner_id)
     seeds: list[tuple[str, int]] = []
     seeds.extend(_focus_versions(store, focus_ids))
     for note in notes:

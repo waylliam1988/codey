@@ -198,7 +198,7 @@ class ResearchTools:
             return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         version = self.store.repository.read(note_id, revision)
         if version is not None:
-            if not KnowledgeAccess(self.project, self.session_id).allows(version):
+            if not KnowledgeAccess(self.project, self.session_id, self.store.owner_id).allows(version):
                 return ResearchToolOutput("ERROR: knowledge scope mismatch", ok=False)
             payload = version.to_dict()
             payload["content_complete"] = len(version.value.content) <= 12000
@@ -225,15 +225,14 @@ class ResearchTools:
             if not isinstance(raw, list) or not raw:
                 raise ValueError("changes must be a nonempty list of {value, expected_revision}")
             mutations: list[KnowledgeMutation] = []
-            access = KnowledgeAccess(self.project, self.session_id)
+            access = KnowledgeAccess(self.project, self.session_id, self.store.owner_id)
             for row in raw:
                 if not isinstance(row, dict) or set(row) != {"value", "expected_revision"}:
                     raise ValueError("each change needs value and expected_revision")
                 value = KnowledgeObject.from_dict(row["value"])
-                if (value.scope != "global" and not (
-                    value.scope == "project" and self.project and value.scope_id == self.project
-                    or value.scope in {"session", "personal"} and self.session_id and value.scope_id == self.session_id
-                )):
+                from codey.knowledge.model import KnowledgeVersion
+
+                if not access.allows(KnowledgeVersion(value, 1, "", "")):
                     raise ValueError("knowledge scope mismatch")
                 old = self.store.repository.read(value.id)
                 if old is not None and not access.allows(old):
@@ -654,6 +653,10 @@ class StagedKnowledgeStore:
     @property
     def repository(self) -> Any:
         return self._parent.repository
+
+    @property
+    def owner_id(self) -> str:
+        return self._parent.owner_id
 
     def search(self, query: str, **kwargs: Any) -> Any:
         return self._parent.search(query, **kwargs)

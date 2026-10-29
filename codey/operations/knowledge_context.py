@@ -15,4 +15,8 @@ def knowledge_background(tools: Any, session: Any, question: str) -> str:
     if not callable(allows) or not allows("knowledge.read"):
         return ""
     hits = tools.store.search(question, project=tools.project, session_id=tools.session_id, limit=10, depth=2)
-    return render_recall(hits, max_chars=6000)
+    scope_guidance = (f"Personal knowledge owner for this isolated knowledge space: {tools.store.owner_id}. "
+        "Use scope=personal with that scope_id for authorized user facts and their private inferences; "
+        "scope=session is limited to the current conversation. Retain observation time and user_statement origin. "
+        "Public research uses global or the current project scope.\n")
+    return scope_guidance + render_recall(hits, max_chars=6000)

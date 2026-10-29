@@ -531,13 +531,15 @@ class ExecutionDelegate:
                 evidence_canonical["knowledge_links_created"] = tools.links_created - links_before
                 proposals: list[object] = []
                 created = [item for item in tools.created_ids if item not in created_before]
+                target = str(lowered.get("id") or "")
+                updated = list(dict.fromkeys([item for item in tools.updated_ids if item not in updated_before] +
+                    ([target] if target in tools.updated_ids else [])))
                 evidence_canonical["knowledge_notes"] = {
                     "created": created,
-                    "updated": [item for item in tools.updated_ids if item not in updated_before],
+                    "updated": updated,
                     "proposals": proposals,
                 }
-                target = str(lowered.get("id") or "")
-                affected = list(dict.fromkeys([*created, *([target] if target in tools.updated_ids else [])]))
+                affected = list(dict.fromkeys([*created, *updated]))
                 self._staged_note_receipt(tools, affected, proposals, evidence_canonical)
                 ledger = getattr(tools, "ledger", None)
                 if isinstance(ledger, ResearchLedger):

@@ -194,6 +194,44 @@ def test_repeated_staged_note_updates_keep_prior_evidence(tmp_path):
         store.close()
 
 
+def test_repeated_staged_update_receipts_restore_cumulative_proposals_after_commit(tmp_path):
+    from codey.operations.research_continuation import restore_note_proposals
+    from codey.operations.task_execution import ExecutionDelegate
+    from codey.operations.task_session import TaskSession
+    from codey.runtime.core.models import ToolCall
+
+    store = KnowledgeStore(tmp_path)
+    try:
+        tools = ResearchTools(None, store, KnowledgeChanges(tmp_path), session_id="first")
+        url = "https://example.org/staged"
+        tools.sources_read.add(url)
+        tools.ledger.record_open_document(SourceDocument.html(requested_url=url, final_url=url,
+            title="Experiment", text="One writer commits. Readers can proceed. The workload was small."))
+        staged = tools.create_staged()
+        delegate = ExecutionDelegate(session=TaskSession(TaskPolicy(frozenset({"knowledge.write"}))), research_tools=staged)
+        receipts = []
+        for index, excerpt in enumerate(("One writer commits.", "Readers can proceed.", "The workload was small.")):
+            args = {"type": "fact", "title": "Concurrency", "body": excerpt, "sources": [url],
+                "evidence": [{"source_url": url, "excerpt": excerpt, "claim": "Serialized writer", "stance": "context"}]}
+            if index:
+                args["id"] = staged.created_ids[0]
+            result, ok, _ = delegate._execute_research(ToolCall("knowledge_write", args))
+            assert ok, result.model_text
+            receipts.append(result.canonical)
+        note_id = staged.created_ids[0]
+        for _already_committed in (False, True):
+            restored = tools.create_staged()
+            for receipt in receipts:
+                restore_note_proposals(restored, receipt)
+            tools.commit_staged(restored)
+            claim = store.repository.read(stable_identity("claim", note_id, "Serialized writer"))
+            assert claim.revision == 1
+            assert len(claim.value.references) == 3
+            assert store.read_note(note_id).body == "The workload was small."
+    finally:
+        store.close()
+
+
 @pytest.mark.parametrize("stop_reason", ["controller_failure", "provider_failure", "recovery_failure", "delivery_pending"])
 def test_initial_research_failure_is_not_replaced_by_a_successor_error(tmp_path, monkeypatch, stop_reason):
     from codey.operations.kernel_contracts import KernelResult
@@ -223,3 +261,37 @@ def test_strict_research_can_read_long_tool_results_at_every_stage():
     assert "read_tool_result" in controller_allowed_for_session(session)
     session.opened_sources.add("https://example.org")
     assert "read_tool_result" in controller_allowed_for_session(session)
+
+
+def test_private_user_observations_survive_conversation_change_without_publication(tmp_path):
+    root = tmp_path / "owner-space"
+    store = KnowledgeStore(root)
+    owner = store.owner_id
+    tools = ResearchTools(None, store, KnowledgeChanges(root), session_id="first")
+    private = K("private-fact", "observation", "A private workload observation", "user_statement",
+                aliases=("workload observation",), scope="personal", scope_id=owner,
+                provenance={"observed_at": "2026-10-29", "verification": "user_reported"})
+    assert tools.knowledge_commit({"commit_id": "private", "changes": [{"expected_revision": 0, "value": private.to_dict()}]}).ok
+    store.close()
+    store = KnowledgeStore(root)
+    try:
+        assert store.owner_id == owner
+        tools = ResearchTools(None, store, KnowledgeChanges(root), session_id="later")
+        assert "private-fact" in tools.knowledge_search("workload observation").model_text
+        assert tools.knowledge_read("private-fact").ok
+        _persist_synthesis(tools, "Related question", "Qualified private answer", session_id="later", project="",
+            run_id="private-answer", on_event=lambda _: None, policy=TaskPolicy(frozenset({"knowledge.write"})),
+            knowledge_refs=[{"id": "private-fact", "revision": 1}])
+        answer = store.repository.read(stable_identity("answer", "private-answer", "initial"))
+        assert (answer.value.scope, answer.value.scope_id) == ("personal", owner)
+        from codey.knowledge.recall import KnowledgeAccess, KnowledgeRecall
+
+        assert not KnowledgeRecall(store.repository).search("workload observation", access=KnowledgeAccess())
+        another = KnowledgeStore(tmp_path / "another-owner")
+        try:
+            assert another.owner_id != owner
+            assert not KnowledgeAccess(owner_id=another.owner_id).allows(answer)
+        finally:
+            another.close()
+    finally:
+        store.close()

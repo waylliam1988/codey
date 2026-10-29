@@ -88,7 +88,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         open_questions=clean_open_questions(open_questions)[:4],
         id=note_id,
     )
-    from codey.knowledge.answer_refs import answer_references
+    from codey.knowledge.answer_refs import answer_references, answer_scope
 
     references = list(answer_references(knowledge_refs, tools.store, project=project, session_id=session_id))
     for related_id in note_ids:
@@ -96,7 +96,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
             version = tools.store.repository.read(str(row["target"]), int(row["revision"]))
             if version is not None and version.value.kind != "answer":
                 references.append(KnowledgeReference(version.value.id, version.revision, "uses"))
-    scope, scope_id = ("project", project) if project else (("session", session_id) if session_id else ("global", ""))
+    scope, scope_id = answer_scope(references, tools.store, project=project, session_id=session_id)
     answer = KnowledgeObject(answer_id, "answer", summary, "model_inference", title=note.title,
         status="active", scope=scope, scope_id=scope_id, references=tuple(dict.fromkeys(references)),
         provenance={"run_id": run_id, "session_id": session_id, "summary_digest": summary_digest,

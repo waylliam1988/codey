@@ -130,7 +130,7 @@ def _coding_specs() -> dict[str, ToolSpec]:
 
 
 def _research_specs() -> dict[str, ToolSpec]:
-    from codey.research.tool_contract import TOOL_CONTRACTS
+    from codey.research.tool_contract import TOOL_CONTRACTS, openai_parameters_schema
 
     grant_by_tool = {
         "web_search": "web.read",
@@ -149,10 +149,12 @@ def _research_specs() -> dict[str, ToolSpec]:
         if contract is None:
             continue
         params: list[tuple[str, object]] = []
+        schema = openai_parameters_schema(name)["properties"]
+        assert isinstance(schema, dict)
         for arg_name in contract.required:
-            params.append((arg_name, {"type": _research_json_type(contract.required[arg_name])}))
-        for arg_name, arg in contract.optional.items():
-            params.append((arg_name, {"type": _research_json_type(arg.type)}))
+            params.append((arg_name, schema[arg_name]))
+        for arg_name in contract.optional:
+            params.append((arg_name, schema[arg_name]))
         specs[name] = ToolSpec(
             name=name,
             aliases=(),
@@ -178,18 +180,6 @@ def _research_specs() -> dict[str, ToolSpec]:
             replay_class="safe",
         )
     return specs
-
-
-def _research_json_type(pytype: type) -> str:
-    if pytype is dict:
-        return "object"
-    if pytype is int:
-        return "integer"
-    if pytype is float:
-        return "number"
-    if pytype is list:
-        return "array"
-    return "string"
 
 
 def _all_specs() -> dict[str, ToolSpec]:

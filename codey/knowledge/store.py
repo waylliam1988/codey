@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.documents import KnowledgeDocuments
@@ -36,6 +37,9 @@ class KnowledgeStore:
         self.index = KnowledgeIndex(self.root / ".codey" / "knowledge.db")
         self.documents = KnowledgeDocuments(self.index)
         self.repository = KnowledgeRepository(self.index)
+        with self.index.transaction() as conn:
+            conn.execute("INSERT OR IGNORE INTO knowledge_meta VALUES('owner_id',?)", ("owner-" + uuid4().hex,))
+            self.owner_id = str(conn.execute("SELECT value FROM knowledge_meta WHERE key='owner_id'").fetchone()[0])
         self._import_legacy_once()
 
     def path_for(self, note: KnowledgeNote) -> Path:
@@ -54,7 +58,7 @@ class KnowledgeStore:
 
     def search(self, query: str, *, project: str = "", session_id: str = "",
                limit: int = 8, depth: int = 1) -> list[KnowledgeHit]:
-        return KnowledgeRecall(self.repository).search(query, access=KnowledgeAccess(project, session_id),
+        return KnowledgeRecall(self.repository).search(query, access=KnowledgeAccess(project, session_id, self.owner_id),
                                                        limit=limit, depth=depth)
 
     def search_notes(self, query: str, *, project: str = "", session_id: str = "") -> list[dict[str, Any]]:

@@ -100,9 +100,9 @@ TOOL_CONTRACTS = {
         required={"type": str, "title": str, "body": str},
         optional={
             "id": ToolArg(str, ""),
-            "sources": ToolArg(list, None),
-            "tags": ToolArg(list, None),
-            "aliases": ToolArg(list, None),
+            "sources": ToolArg(list, None, list_item_type=str),
+            "tags": ToolArg(list, None, list_item_type=str),
+            "aliases": ToolArg(list, None, list_item_type=str),
             "relations": ToolArg(list, None, singleton_dict=True, list_item_type=dict),
             "evidence": ToolArg(list, None, singleton_dict=True, list_item_type=dict),
             "open_questions": ToolArg(list, None, singleton_dict=True, list_item_type=str),
@@ -223,6 +223,11 @@ def openai_parameters_schema(tool: str) -> dict[str, object]:
         properties[name] = {"type": _json_type(expected)}
     for name, arg in contract.optional.items():
         properties[name] = {"type": _json_type(arg.type)}
+        if arg.type is list and arg.list_item_type is not None:
+            properties[name] = {"type": "array", "items": {"type": _json_type(arg.list_item_type)}}
+    from codey.research.knowledge_schema import parameter_schemas
+
+    properties.update(parameter_schemas(tool))
     return {
         "type": "object",
         "properties": properties,

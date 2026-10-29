@@ -129,6 +129,8 @@ def _entry_policy_with_recovery(frame: RunFrame, deps: Any, kind: str) -> Any:
         return incoming
     recovered = durable is not None and bool(durable.task(frame.run_id).state.get("task_policy"))
     if not recovered:
+        if (getattr(frame, "recovered_tool_outcomes", ()) or getattr(frame, "settled_tool_outcomes", ())):
+            raise RuntimeError("durable task policy recovery requires the original authorization")
         return incoming
     # A resumed run must use the policy recorded at its original entry. Never
     # replace a missing or malformed persisted policy with the new request's
