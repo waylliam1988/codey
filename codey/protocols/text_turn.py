@@ -8,6 +8,7 @@ The accepted shapes intentionally mirror the former kernel text decoder.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -69,6 +70,10 @@ def _json_error(source: str, exc: json.JSONDecodeError) -> TextError:
             r" Escape line breaks and tabs inside JSON strings as \n, \r and \t;"
             r' for example, "content":"first line\nsecond line\n".'
         )
+    elif exc.msg.startswith("Expecting ',' delimiter") and source[exc.pos:exc.pos + 1] in {"}", "]"}:
+        detail += (" The closing delimiter does not match the argument nesting. Close arrays with ] and objects "
+                   "with } in reverse opening order, including the outer tool request object. "
+                   "Resend the complete request; do not send only a closing suffix.")
     elif exc.msg.startswith("Expecting ':' delimiter"):
         detail += (
             ' Every object member must be "name":value. Do not append unnamed string fragments '
@@ -88,7 +93,10 @@ def _json_error(source: str, exc: json.JSONDecodeError) -> TextError:
     detail += (f"\nSource excerpt (starting at character {start + 1}):\n{source[start:end]}"
                f"\nReported error is character {exc.pos - start + 1} within this excerpt. "
                "No tool in this reply was executed. Resend the request with correct JSON syntax and escaping; preserve its values.")
-    return TextError(detail, kind="invalid_json")
+    # A literal first tool field is diagnostic only. It selects the frozen
+    # schema for repair; malformed arguments are never promoted into a call.
+    name = re.match(r'^\{\s*"tool"\s*:\s*"([a-z][a-z0-9_]*)"\s*[,}]', source)
+    return TextError(detail, kind="invalid_json", tool=name.group(1) if name else "")
 
 
 def _json_objects(text: str) -> list[dict[str, Any]] | TextError | None:

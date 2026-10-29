@@ -73,3 +73,15 @@ def test_truncated_object_requests_a_complete_reply_without_repairing_data() -> 
     assert decoded.kind == "invalid_json"
     assert "outer tool request object" in decoded.message
     assert "No tool in this reply was executed" in decoded.message
+    assert decoded.tool == "knowledge_write"
+
+
+def test_mismatched_commit_array_gets_targeted_nesting_diagnostic_not_escape_advice():
+    decoded = decode_text_turn('{"tool":"knowledge_commit","args":{"changes":[{"value":{"content":"unchanged"}}}}')
+    assert isinstance(decoded, TextError) and decoded.tool == "knowledge_commit"
+    assert "closing delimiter does not match" in decoded.message
+    assert "No tool in this reply was executed" in decoded.message
+    assert "escape each double quote" not in decoded.message
+    valid = decode_text_turn('{"tool":"knowledge_commit","args":{"changes":[{"value":{"content":"unchanged"}}]}}')
+    assert isinstance(valid, TextRequests)
+    assert valid.items[0].args["changes"][0]["value"]["content"] == "unchanged"

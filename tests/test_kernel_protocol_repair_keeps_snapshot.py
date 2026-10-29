@@ -25,6 +25,8 @@ def test_missing_tool_name_is_not_inferred_and_json_repair_keeps_visible_contrac
         assert 'find_references(args:' in prompt
         assert "knowledge_write" not in prompt and '"tool":"edit"' not in prompt.replace(" ", "")
         assert "tags" in prompt.lower()
+        assert "Outstanding declared executions" in prompt
+        assert "call find_references and receive a successful tool result" in prompt
         return '{"tool":"find_references","args":{"symbol":"calculate_total","path":"."}}'
 
     def find(call):
@@ -32,7 +34,8 @@ def test_missing_tool_name_is_not_inferred_and_json_repair_keeps_visible_contrac
         return ToolResult(ok=True, call=call, model_text="no references")
 
     result = run_task_kernel(
-        TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})), max_turns=2),
+        TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"}),
+            required_checks=("tool_succeeded:find_references",)), max_turns=2),
         request=KernelRunRequest(
             transport=KernelTransportDeps(provider=SimpleNamespace(send=send), run_id="repair-snapshot"),
             execution=KernelExecutionDeps(executors={"find_references": find}),
