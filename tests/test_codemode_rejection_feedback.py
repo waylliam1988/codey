@@ -137,7 +137,7 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
     _, mutations, managed, revisions, _, sink = _open_runtime(logdir, storage, "s", "r", project)
     policy = TaskPolicy(frozenset({"control", "project.read"}), required_checks=("tool_succeeded:codemode",))
     state = TaskSession(policy=policy, project=str(project), max_turns=5, verification_forbidden=True)
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=policy)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=policy, durable=mutations.durable)
     spec = next(spec for spec in build_turn_snapshot(state, native=native).frozen_specs if spec.name == "codemode")
     example = json.loads(spec.json_examples[0])["args"]
     bad_code = {

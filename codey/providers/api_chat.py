@@ -25,7 +25,12 @@ def pending_calls(items: list[dict[str, Any]]) -> tuple[str, ...]:
     open_calls: list[str] = []
     for item in items:
         if item.get("role") == "assistant":
-            for call in item.get("tool_calls") or ():
+            calls = item.get("tool_calls")
+            if calls is not None and not isinstance(calls, list):
+                from codey.providers.error_classification import RequestPrepError
+
+                raise RequestPrepError("local tool history has incomplete or invalid ID pairing")
+            for call in calls or ():
                 if isinstance(call, dict) and isinstance(call.get("id"), str) and call["id"]:
                     open_calls.append(call["id"])
         elif item.get("role") == "tool":

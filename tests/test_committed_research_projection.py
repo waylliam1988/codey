@@ -37,7 +37,7 @@ def runtime(tmp_path, monkeypatch):
     project, state, logdir = _dirs(tmp_path)
     _, mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     policy = TaskPolicy(frozenset({"control", "web.read"}))
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=policy)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=policy, durable=mutations.durable)
     session = TaskSession(policy=policy)
     tools = ResearchTools(search=Backend(), store=None, changes=None)
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *a, **kw: None)

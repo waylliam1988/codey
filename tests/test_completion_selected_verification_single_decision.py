@@ -261,7 +261,7 @@ def test_real_receipt_restart_preserves_long_command_identity(tmp_path):
     log, mutations, managed, store, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     current = store.current_state(str(project))
     session.set_workspace_state(current.revision, current.fingerprint)
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=session.policy)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=session.policy, durable=mutations.durable)
     command = "python -m pytest" + " -q" * 200
     result = execute_turn(session, [ToolCall("run", {"command": command, "path": "."})],
                           executors={"run": lambda call: ToolResult(call, "passed", ok=True, audit={"exit_code": 0})},

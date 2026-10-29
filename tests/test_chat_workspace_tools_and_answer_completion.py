@@ -66,12 +66,16 @@ def admit_frame(frame, state):
 
 
 def execute_frame(frame, state):
+    from tests.support.kernel_runtime import approval_notifier
+
     admit_frame(frame, state)
     events = []
     deps = SimpleNamespace(state=state, workspace_revisions=state.workspace_revisions,
                            collect_changes=collect_changes)
     result = run_entry_kernel(frame, RunWork([], ExecutionEvidence()),
-                              SimpleNamespace(on_event=events.append, on_shell_request=events.append), deps)
+                              SimpleNamespace(on_event=events.append, on_shell_request=approval_notifier(
+                                  state.durable, state.managed_outputs, frame.request.session_id, frame.run_id,
+                                  events.append)), deps)
     return result, events
 
 

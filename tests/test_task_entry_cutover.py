@@ -416,6 +416,7 @@ def test_default_project_writer_uses_shared_turn_kernel(tmp_path) -> None:
 
 def test_project_writer_can_search_and_read_in_one_model_loop(tmp_path) -> None:
     from codey.agents.request import AgentRequest
+    from codey.research.tools import ResearchTools
     from tests.support.kernel_runtime import run_agent as run
 
     (tmp_path / "file.txt").write_text("local content", encoding="utf-8")
@@ -437,15 +438,15 @@ def test_project_writer_can_search_and_read_in_one_model_loop(tmp_path) -> None:
             seen.append(str(prompt))
             return next(replies)
 
-    class ResearchTools:
-        def web_search(self, query):
+    class Search:
+        def search(self, query, limit=8):
             assert query == "official docs"
-            return "1. Docs\n   https://example.com/docs"
+            return [{"title": "Docs", "url": "https://example.com/docs", "snippet": "Official docs"}]
 
     result = run(AgentRequest(
         provider=WebProvider(), project=tmp_path, task="查官方文档并读 file.txt",
         max_turns=4, requested_capabilities=("web.read",),
-        research_tools=ResearchTools(),
+        research_tools=ResearchTools(search=Search(), store=None, changes=None),
         on_event=events.append,
     ))
     assert result.stop_reason == "done"

@@ -67,7 +67,7 @@ def probe(root, proxy, model, protocol, case):
     policy = TaskPolicy(frozenset({"control", "web.read"}), sources_open_required=required,
                         required_checks=(("research_sources_opened", "tool_succeeded:source_search", "tool_succeeded:open_hit")
                                          if case == "locator" else ("research_sources_opened",) if required else ()))
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=policy)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=policy, durable=mutations.durable)
     session = TaskSession(policy=policy, task_kind="project", task_text=prompt, max_turns=8)
     backend = SourceBackend(case)
     tools = ResearchTools(search=backend, store=None, changes=None)

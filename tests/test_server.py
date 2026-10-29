@@ -5182,6 +5182,10 @@ class SessionThreadingTests(unittest.TestCase):
                     }
                 ),
                 json.dumps({"tool": "done", "args": {"summary": report}}),
+                # The planner may inspect additional material. Finish that
+                # bounded invocation explicitly instead of exhausting Mock's
+                # reply list and relying on a swallowed provider failure.
+                json.dumps({"tool": "done", "args": {"summary": "No new relevant evidence in the additional material."}}),
             ]
 
             with (

@@ -11,6 +11,8 @@ from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core import cancellation
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
+from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
+from codey.runtime.write.drive import peek_next_action
 from tests.support.workspace_conversation import short_test_state_home
 
 pytestmark = pytest.mark.usefixtures("no_external_advisor_models")
@@ -86,8 +88,19 @@ def test_failure_boundary_publishes_one_truthful_terminal_and_closes_provider(tm
         )
         assert task.phase == "failed"
         assert operation is not None
-        assert operation.leaf == "terminal"
-        assert operation.terminal.stop_reason == result.stop_reason
+        if failure == "delivery":
+            # Stopping the worker cannot establish whether this send reached
+            # the provider or manufacture a clean operation settlement.
+            assert operation.leaf != "terminal"
+            assert operation.terminal is None
+            action = peek_next_action(durable, session_id=result.session_id, run_id=result.run_id)
+            assert action.kind == "fail_invariant"
+            assert action.reason == "external_outcome_unknown"
+            [batch] = ToolResultDeliveryStore(durable=durable).load_batches(result.session_id, result.run_id)
+            assert not batch.is_terminal and len(batch.active_attempts) == 1
+        else:
+            assert operation.leaf == "terminal"
+            assert operation.terminal.stop_reason == result.stop_reason
         if failure != "connect":
             assert provider.closed is True
         if failure in {"connect", "cancel"}:
@@ -100,5 +113,7 @@ def test_failure_boundary_publishes_one_truthful_terminal_and_closes_provider(tm
                 result.session_id, result.run_id
             )
             assert len([effect for effect in effects if effect.intent.effect_category == "tool_call" and effect.is_settled]) == 1
+            [unknown] = [effect for effect in effects if effect.settlement.sent_state == "maybe_sent"]
+            assert unknown.intent.effect_id in action.effect_ids
     finally:
         durable.close()

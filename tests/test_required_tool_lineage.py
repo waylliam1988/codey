@@ -44,7 +44,7 @@ def runtime(tmp_path, request):
                 (require_tool_success("edit", via="codemode", arguments=selectors),))
     policy = TaskPolicy(frozenset({"control", "project.read", "project.write"}), required_checks=required)
     state = TaskSession(policy=policy, project=str(project), verification_forbidden=True)
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=policy)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=policy, durable=mutations.durable)
     from codey.operations.task_changes import task_change_tracker
 
     tracker = task_change_tracker(deps.state, project, "r")
@@ -178,7 +178,13 @@ def test_parent_commit_boundary_owns_completion_and_restart_never_reexecutes(run
     assert not evaluate(runtime.state, "Completed").complete
     contents = (runtime.project / "created.txt").read_bytes()
     fresh = _restart(runtime)
-    assert evaluate(fresh, "Completed").complete
+    # Loading receipts never executes the unfinished parent or invents its
+    # success from a settled child. Only the parent's own receipt proves the
+    # required route; the sole driver owns any subsequent safe replay.
+    assert evaluate(fresh, "Completed").complete is (when == "after_parent_commit")
+    before = runtime.mutations.durable.task_facts("r")
+    assert evaluate(_restart(runtime), "Completed").complete is (when == "after_parent_commit")
+    assert runtime.mutations.durable.task_facts("r") == before
     assert (runtime.project / "created.txt").read_bytes() == contents
     assert len(parent_settlements) == 1
 

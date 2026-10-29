@@ -131,6 +131,7 @@ def probe(root):
                     from codey.operations.context import RunWork
                     from codey.operations.task_entry import run_entry_kernel
                     from codey.runtime.observe.execution_evidence import ExecutionEvidence
+                    from tests.support.kernel_runtime import approval_notifier
                     from tests.support.workspace_conversation import admit_entry_frame
                     from tests.test_chat_workspace_tools_and_answer_completion import workspace_frame
 
@@ -140,10 +141,16 @@ def probe(root):
                     events = []
                     with contextlib.closing(AppContext(root)) as state:
                         admit_entry_frame(frame, state)
+                        state.runtime_mutations.accept_operation(session_id=frame.request.session_id,
+                            run_id=frame.run_id, provider_id=frame.provider_id, turn_budget=frame.request.max_turns,
+                            max_repair_rounds=1, task_kind=frame.task_kind)
                         outcome = run_entry_kernel(
                             frame, RunWork([], ExecutionEvidence()),
-                            SimpleNamespace(on_event=events.append, on_shell_request=events.append),
-                            SimpleNamespace(state=state, workspace_revisions=state.workspace_revisions))
+                            SimpleNamespace(on_event=events.append, on_shell_request=approval_notifier(
+                                state.durable, state.managed_outputs, frame.request.session_id, frame.run_id,
+                                events.append)),
+                            SimpleNamespace(state=state, workspace_revisions=state.workspace_revisions,
+                                runtime_mutations=state.runtime_mutations, managed_outputs=state.managed_outputs))
                     assert outcome.event["stop_reason"] == "approval", outcome.event
                     assert frame.request.project is None
                     assert any(getattr(event, "command", "") == "python --version" for event in events)

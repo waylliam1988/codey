@@ -23,7 +23,7 @@ def fixture(tmp_path):
     session = _new_session(project)
     from codey.operations.recovery import record_entry_policy
 
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=session.policy)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=session.policy, durable=mutations.durable)
     return project, state, logdir, mutations, managed, revisions, sink, session
 
 

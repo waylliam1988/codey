@@ -48,7 +48,10 @@ def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, stri
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
     state = AppContext(tmp_path / "state")
     admit_entry_frame(frame, state)
-    deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=state)
+    state.runtime_mutations.accept_operation(session_id="s", run_id="r", provider_id="deepseek",
+        turn_budget=submission.max_turns, max_repair_rounds=1, task_kind="project")
+    deps = SimpleNamespace(knowledge_store=None, runtime_mutations=state.runtime_mutations,
+                           managed_outputs=state.managed_outputs, state=state)
     try:
         outcome = run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]), hooks, deps)
     finally:

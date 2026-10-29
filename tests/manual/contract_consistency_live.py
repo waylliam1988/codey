@@ -110,7 +110,7 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
                 "Do not modify files or execute shell/verification commands. Check ok before consuming value.")
     policy = TaskPolicy(frozenset({"control", "project.read"} | ({"project.write"} if writing else set())),
         required_checks=required, denied_capabilities=frozenset({"project.verify"}))
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=policy)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=policy, durable=mutations.durable)
     session = TaskSession(policy=policy, project=str(project), task_text=task, max_turns=8,
                           project_changes_required=writing, verification_forbidden=True)
     config = LocalProviderConfig(base_url=base_url, model=model, api_key="local", native_tools_mode=protocol,

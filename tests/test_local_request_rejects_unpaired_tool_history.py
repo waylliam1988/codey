@@ -23,7 +23,7 @@ def test_unpaired_result_batch_is_rejected_before_request(result_ids):
     assert provider._messages == before
 
 
-@pytest.mark.parametrize("calls", [{"id": "a"}, "a", True, 1])
+@pytest.mark.parametrize("calls", [{"id": "a"}, "a", True, 1, False, 0, "", {}])
 def test_non_list_tool_calls_are_rejected_before_request(calls):
     provider = ApiProvider("http://localhost:5001/v1", "fake")
     provider._messages = [{"role": "assistant", "tool_calls": calls}]

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 
-def _run(root: Path, boundary: str = "", resume: bool = False):
+def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exception | None = None):
     import os
     from types import SimpleNamespace
     from unittest.mock import patch
@@ -59,6 +59,8 @@ def _run(root: Path, boundary: str = "", resume: bool = False):
             if attempt == 1:
                 return json.dumps({"tool": "web_search", "args": {"query": "initial research"}})
             if attempt == 2:
+                if failure is not None:
+                    raise failure
                 return json.dumps({"tool": "knowledge_write", "args": {
                     "type": "fact", "title": "Invalid evidence", "body": "missing sources and evidence"}})
             round_index = 1 if attempt == 3 else 2
@@ -225,3 +227,41 @@ def test_research_continuation_admission_is_idempotent(tmp_path, monkeypatch):
     result, _ = _run(tmp_path)
     assert result.followup_rounds == 2
     assert len(commits) == 5
+
+
+@pytest.mark.parametrize("not_sent", [True, False])
+def test_failed_followup_retains_original_attempt_and_provider_diagnostic(tmp_path, not_sent):
+    from codey.durable import DurableSession, SQLiteDurableStore
+    from codey.durable.checkpoint import operation_from_checkpoint
+    from codey.providers.error_classification import RequestPrepError
+    from codey.research.pipeline import ResearchContinuationError
+
+    failure = RequestPrepError("followup preparation failed") if not_sent else OSError("followup outcome unknown")
+    with pytest.raises(ResearchContinuationError, match="provider failed.*followup"):
+        _run(tmp_path, failure=failure)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "state.sqlite"))
+    try:
+        position = operation_from_checkpoint(durable.task("r"), "s")
+        assert position.writer_attempt == 2
+        assert position.leaf != "kernel_settled" and position.continuation_ref
+        failed = durable.effects("r")[-1]
+        assert failed.settlement["sent_state"] == ("not_sent" if not_sent else "maybe_sent")
+        durable.recover_scheduler_state(force=True)
+    finally:
+        durable.close()
+    before = (tmp_path / "observations.jsonl").read_bytes()
+    assert [row["attempt"] for row in map(json.loads, before.splitlines()) if row["event"] == "request"] == [1, 2]
+    if not_sent:
+        result, _ = _run(tmp_path, resume=True)
+        assert result.followup_rounds == 2
+        observations = [json.loads(row) for row in (tmp_path / "observations.jsonl").read_bytes().splitlines()]
+        # The failed logical turn retains its budget charge. Recovery closes
+        # that bounded invocation before admitting the explicit repair.
+        assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 3, 4]
+        assert [row["query"] for row in observations if row["event"] == "search"] == [
+            "initial research", "followup 1", "followup 2"]
+    else:
+        for _ in range(2):
+            with pytest.raises(ResearchContinuationError, match="external_outcome_unknown"):
+                _run(tmp_path, resume=True)
+            assert (tmp_path / "observations.jsonl").read_bytes() == before

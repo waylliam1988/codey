@@ -148,7 +148,7 @@ def run_evidence_followup(
                 ),
             ),
         )
-        if outcome.stop_reason in {"recovery_failure", "controller_failure", "delivery_pending"}:
+        if outcome.stop_reason in {"recovery_failure", "controller_failure", "delivery_pending", "provider_failure"}:
             from codey.research.pipeline import ResearchContinuationError
             raise ResearchContinuationError(outcome.summary)
         if not last_error:
