@@ -245,3 +245,16 @@ def test_malformed_native_enum_requests_quoted_strings_without_coercing_the_call
     corrected = normalize_turn(normalize_local_reply(raw.replace("type:fact", 'type:"fact"')), snapshot=snapshot)
     assert not corrected.protocol_error
     assert corrected.calls[0].args == {"body": "Evidence note", "title": "Finding", "type": "fact"}
+
+
+def test_local_frame_reports_missing_outer_argument_container_without_completing_it():
+    from codey.operations.kernel_protocol import normalize_turn
+
+    raw = '<|tool_call>call:knowledge_commit{args:{"commit_id":"x","changes":[]}<tool_call|>'
+    rejected = normalize_turn(normalize_local_reply(raw))
+    assert rejected.protocol_error and not rejected.calls
+    assert "outer argument object" in rejected.protocol_error
+    assert "quoted strings" not in rejected.protocol_error
+    assert parse_local_tool_markup(raw) is None
+    repaired = parse_local_tool_markup(raw.replace('<tool_call|>', '}<tool_call|>'))
+    assert repaired is not None and repaired.arguments == {"commit_id": "x", "changes": []}

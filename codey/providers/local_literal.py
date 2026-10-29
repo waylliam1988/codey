@@ -119,14 +119,22 @@ class _Parser:
         return self.string()
 
 
-def parse_mapping(source: str) -> dict[str, object] | None:
+def parse_mapping_diagnostic(source: str) -> tuple[dict[str, object] | None, str]:
+    parser = _Parser(source)
     try:
-        parser = _Parser(source)
         value = parser.value()
         parser.whitespace()
         if parser.pos != len(source) or type(value) is not dict:
-            return None
+            return None, f"unexpected argument data at character {parser.pos + 1}"
         json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
-        return cast(dict[str, object], value)
-    except (SyntaxError, ValueError, TypeError, MemoryError, RecursionError):
-        return None
+        return cast(dict[str, object], value), ""
+    except (SyntaxError, ValueError, TypeError, MemoryError, RecursionError) as exc:
+        if parser.pos >= len(source.rstrip()):
+            return None, ("The argument object ended before all containers or strings were closed. "
+                          "Close every opened object and array, including the outer argument object; "
+                          "resend the entire call, not just a closing suffix.")
+        return None, f"{type(exc).__name__} at argument character {parser.pos + 1}: {str(exc)[:160]}"
+
+
+def parse_mapping(source: str) -> dict[str, object] | None:
+    return parse_mapping_diagnostic(source)[0]

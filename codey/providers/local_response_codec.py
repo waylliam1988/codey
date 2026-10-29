@@ -14,7 +14,7 @@ import re
 from typing import cast
 
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
-from codey.providers.local_literal import parse_mapping
+from codey.providers.local_literal import parse_mapping, parse_mapping_diagnostic
 
 _FRAME_PREFIXES = ("<|tool_call>call:tool:", "<|tool_call>call:")
 _FRAME_SUFFIX = "<tool_call|>"
@@ -104,6 +104,11 @@ def normalize_local_reply(reply: str | AssistantTurn) -> str | AssistantTurn:
                       if not frame.endswith(_FRAME_SUFFIX) else
                       "Local tool frame has invalid argument syntax. Use quoted strings for text, including enum choices; "
                       "do not emit bare words such as state:reported.")
+            if name is not None and frame.endswith(_FRAME_SUFFIX):
+                _, problem = parse_mapping_diagnostic(frame[name.end() - 1:-len(_FRAME_SUFFIX)])
+                if problem:
+                    detail = ("Local tool frame has invalid argument syntax. " + problem
+                              if problem.startswith("The argument object ended") else detail + " " + problem)
             return AssistantTurn(text="", finish=TurnFinish.PROTOCOL_ERROR,
                                  raw={"codec": "local-text", "malformed_tool_frame": True,
                                       "protocol_error": detail, "protocol_tool_name": name.group(1) if name else ""})
