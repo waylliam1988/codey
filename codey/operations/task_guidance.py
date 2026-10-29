@@ -14,7 +14,12 @@ def task_working_context(session: "TaskSession") -> str:
     from codey.operations.kernel_prompt import working_context
     from codey.research.completion_guidance import render_research_observations
 
-    parts = [working_context(session)]
+    # Pure research has no workspace mutations to verify. Its task already
+    # appears verbatim in the admitted prompt; repeating it here also repeats
+    # parent reports/plans in investigations and obscures the latest evidence.
+    research_only = (session.task_kind in {"research", "evidence_followup"}
+                     and not session.policy.allows("project.write"))
+    parts = [] if research_only else [working_context(session)]
     if session.policy.strict_research or session.task_kind == "evidence_followup":
         parts.append(render_research_observations(session))
     return "\n\n".join(parts)

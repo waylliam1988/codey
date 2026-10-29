@@ -56,6 +56,23 @@ def source_requirement_checks(session: Any, context: Any = None) -> list[Complet
     return [row] if row is not None else []
 
 
+def investigation_attempt_checks(session: Any) -> list[CompletionCheck]:
+    """An evidence-only phase must try acquisition, not recite its parent.
+
+    Failure receipts count: an unavailable source can legitimately leave a
+    gap. This is an execution check, never a claim of semantic coverage.
+    """
+    if (getattr(session, "task_kind", "") != "evidence_followup"
+            or getattr(session, "research_acquisition_limits", None) is None):
+        return []
+    acquisition = {"web_search", "open_url", "open_result", "open_hit", "reopen_source", "source_search"}
+    attempted = any(result.call.name in acquisition
+                    or (result.call.name == "knowledge_write" and result.ok)
+                    for result in session._memory_results.values())
+    return [CompletionCheck("research_investigation_attempted", CHECK_PASS if attempted else CHECK_NOT_RUN,
+                            "" if attempted else "research_investigation_not_attempted")]
+
+
 def citation_requirement_checks(session: Any, text: str, context: Any) -> list[CompletionCheck]:
     policy = getattr(session, "policy", None)
     required = "research_citations" in getattr(policy, "required_checks", ())
@@ -106,6 +123,12 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
     """Explain failed report checks without rewriting the proposed answer."""
     failed = {row.check_id for row in checks if row.status != CHECK_PASS}
     parts: list[str] = []
+    if "research_investigation_attempted" in failed:
+        return ("This evidence investigation has not attempted acquisition. Parent findings were saved in an "
+                "earlier phase, not here. Next action: use source_search on a previously opened URL or "
+                "web_search for the first missing comparison or condition, then inspect the passage and save "
+                "any supported new finding. If acquisition fails, report the actual failed attempt and remaining "
+                "gap in a brief done.summary; do not invent evidence or repeat the parent report.")
     if "knowledge_versions" in failed:
         parts.append("done.knowledge_refs must use the structured object id and revision from "
                      "Structured knowledge versions or knowledge_read, not a note_id, Markdown path, "

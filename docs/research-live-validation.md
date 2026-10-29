@@ -996,3 +996,22 @@ remaining gaps. No executor, recovery state or completion check was bypassed.
 Validation: 66 focused snapshot/protocol/observation/follow-up/subprocess-restart
 tests passed. Ruff, mypy (555 files), Pyrefly and ty passed. Fresh real-browser
 WAL task: `research-live-wal-phase-contract-20261030`, in progress, not accepted.
+
+The phase-contract WAL run has now ended with `done`, but is NOT accepted:
+it omitted old/current version differences and concrete workload measurement
+limits, used secondary blogs for several requested official-source findings,
+and the follow-up immediately repeated the parent without acquiring anything.
+The new summary-only done contract did prevent another full report loop.
+
+The investigation prompt now supplies bounded ledger-backed parent findings
+and opened URLs instead of the entire provisional report. Its method guidance
+does not request forbidden done.knowledge_refs. Pure research observations no
+longer repeat the complete task/report and empty coding verification fields.
+An acquisition-enabled investigation must have a real tool-result receipt
+before ending; failed acquisition can honestly leave gaps. This check does not
+establish semantic coverage, and extraction-only legacy phases are unaffected.
+
+Validation: 105 focused tests passed, including subprocess restart, follow-up,
+protocol and observation checks. Ruff, mypy (555 files), Pyrefly and ty passed.
+Fresh live WAL retest: `research-live-wal-targeted-investigation-20261030`,
+still running and not accepted.

@@ -84,3 +84,15 @@ def test_chinese_report_reminder_preserves_permission_and_evidence_only_boundari
     assert "结束时用 done.summary 简述" in text
     session.task_text = "Investigate competing explanations"
     assert "本轮要求中文" not in render_research_observations(session)
+
+
+def test_pure_research_observations_do_not_repeat_the_entire_task_and_parent_report():
+    session = TaskSession(TaskPolicy(frozenset({"control", "web.read"})), task_kind="evidence_followup",
+                          task_text="Long parent question, report and investigation plan")
+    text = task_working_context(session)
+    assert "Research observations" in text
+    assert session.task_text not in text
+    assert "workspace_revision" not in text
+    # Mixed research/coding tasks retain their real workspace observations.
+    session.policy = TaskPolicy(frozenset({"control", "project.write"}))
+    assert "workspace_revision" in task_working_context(session)

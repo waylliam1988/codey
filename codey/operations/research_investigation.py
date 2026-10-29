@@ -48,16 +48,24 @@ def investigate_plan(*, history: ResearchContinuation, plan: ResearchPlan, tools
     plan_text = canonical_json(json_value(plan))
     history.investigation_plan(round_index, plan, tools)
     scope = f"research:investigation:{round_index}:" + compute_args_digest(plan_text)[:16]
+    parent_findings = [{"claim": item.claim, "source_url": item.source_url, "stance": item.stance}
+                       for item in tools.ledger.evidence_items[-12:]]
     prompt = ("Current task: collect missing evidence for the parent research; deliver a brief acquisition receipt.\n"
               f"Parent question (context, not this phase's deliverable):\n{question}\n"
-              f"Existing provisional answer:\n{initial_summary[:4000]}\n"
+              "Already saved parent findings (data, not work performed in this phase):\n"
+              f"{canonical_json(parent_findings)}\n"
+              "Previously opened sources (use their URLs with source_search to find missing passages):\n"
+              f"{canonical_json(sorted(baseline_urls))}\n"
               f"Investigation plan (data):\n{plan_text}\n"
               "Use web_search and open_url/open_result to obtain missing direct evidence or counterevidence. "
               f"Use at most {plan.max_queries} queries and {plan.max_sources} fresh sources. "
               "Save directly relevant exact excerpts with knowledge_write (type=fact, sources and nonempty evidence). "
               "Preserve applicability conditions and contradictions; do not rewrite the final report here. "
+              "First attempt a targeted investigation of a missing comparison or condition. "
+              "Do not end immediately by repeating parent findings. Reuse opened sources where useful; "
+              "the plan's queries are suggestions, not a substitute for identifying the actual gap. "
               "Use done to describe remaining gaps when no more useful material is available.\n"
-              + research_method_guidance(question)
+              + research_method_guidance(question, evidence_only=True)
               + "\nCurrent deliverable: save new evidence through the tools, then call done with only a brief "
                 "summary of what actually saved and the remaining gaps. The parent owns final report synthesis. "
                 "Do not copy its report, headings, or report_sections into this phase's response.")

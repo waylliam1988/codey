@@ -375,9 +375,10 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     checks: list[CompletionCheck] = []
     checks.extend(project_completion_checks(session, context))
     checks.extend(source_requirement_checks(session, context))
-    from codey.operations.research_completion_checks import knowledge_reference_checks
+    from codey.operations.research_completion_checks import investigation_attempt_checks, knowledge_reference_checks
 
     checks.extend(knowledge_reference_checks(session, context))
+    checks.extend(investigation_attempt_checks(session))
     checks.extend(citation_checks)
     checks.extend(strict_research_checks(session, text, context))
     tool_checks, tool_evaluations = _required_tool_checks(session, text)

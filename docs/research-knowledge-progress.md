@@ -27,6 +27,13 @@ generic research methods. Markdown is interchange, never a competing authority.
 
 ## Status
 
+Latest continuation: acquisition-only follow-ups now avoid repeating parent
+reports and forbidden final-answer references, and must actually attempt
+acquisition before finishing. 105 focused tests and all four static checks
+passed. The preceding live WAL run ended normally but omitted requested
+version/workload comparisons; it remains unaccepted. Fresh targeted-investigation
+browser retest is running; see the live validation log for results.
+
 Current delivery: implementation and deterministic production acceptance complete.
 Local Gemma4 persistence/recall/revision has now passed in three independent
 processes, most recently 8/4/4 turns with request-scoped contracts. Its exported
