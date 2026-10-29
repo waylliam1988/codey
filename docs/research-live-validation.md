@@ -487,3 +487,26 @@ tests and 81 runtime/entry/feedback tests passed (sets overlap). Production Ruff
 mypy, Pyrefly and ty passed. The next live recall session uses thinking enabled
 with medium effort, an eight-turn diagnostic bound and production request timeout.
 Its result is still pending; earlier low-effort results remain failures.
+
+
+A fresh browser check exposed a second registry loading state: the glossary
+was correctly excluded, but visible navigation/footer text arrived before the
+empty application main was populated. Generic browser settling now recognizes
+empty app/main regions, waits within the existing bound and refuses to use
+navigation in place of a still-unloaded app. A real browser recheck captured
+19,379 characters including the full trial title, ER+/HER2- population and
+No Results Posted. Artifact: registry-hydrated-content-check.json. The official
+API endpoint was also readable; no API content was silently aliased to HTML.
+
+The medium recall run read the correct old version, then emitted a mismatched
+closing delimiter in knowledge_commit. It remains unaccepted. Plain JSON syntax
+diagnostics now name a literal first tool field only to select its frozen repair
+schema, and distinguish mismatched nesting from string escaping. No arguments
+are repaired or executed. Retry delivery now includes the same current work
+observations as ordinary tool results, so missing execution receipts remain
+visible after protocol errors.
+
+184 browser/acquisition/research tests and seven subtests passed; 48 targeted
+protocol/entry/recovery tests passed. Ruff, mypy and ty passed. Pyrefly identified
+one implicit Any in the new DOM boolean check; an explicit object annotation
+fixed it and its rerun passed with unchanged existing warnings/suppressions.

@@ -595,7 +595,7 @@ def _page_content_after_navigation(page: Any) -> str:
 def _fetch_page_content_after_settle(page: Any) -> tuple[str, str]:
     html = _page_content_after_navigation(page)
     text = extract_text(html)
-    if _usable_fetch_page_text(text):
+    if _usable_fetch_page_text(text) and not _application_content_pending(page):
         return html, text
     stop_at = time.monotonic() + _FETCH_SETTLE_TIMEOUT_SECONDS
     best_html = html
@@ -610,9 +610,27 @@ def _fetch_page_content_after_settle(page: Any) -> tuple[str, str]:
         if len(text) > len(best_text):
             best_html = html
             best_text = text
-        if _usable_fetch_page_text(text):
+        if _usable_fetch_page_text(text) and not _application_content_pending(page):
             return html, text
+    if _application_content_pending(page):
+        return html, ""  # Navigation/footer alone cannot stand in for an unloaded application.
     return best_html, best_text
+
+
+def _application_content_pending(page: Any) -> bool:
+    """Recognize an empty app/main region while the SPA is still hydrating."""
+    try:
+        pending: object = page.evaluate("""() => {
+            const roots = [...document.querySelectorAll('app-root, #root, #app, #__next')];
+            return roots.length > 0 && roots.every(root => {
+                const main = root.querySelector('main, [role="main"]');
+                const text = (main || root).innerText.trim();
+                return !text || /^(loading|please wait|加载中)[.\\s…]*$/i.test(text);
+            });
+        }""")
+        return pending is True
+    except Exception:
+        return False
 
 
 def _content_retryable(exc: Exception) -> bool:
