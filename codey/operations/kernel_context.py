@@ -18,6 +18,7 @@ from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_preparation import prepare_kernel_turn
 from codey.operations.kernel_progress import KernelProgress
 from codey.operations.kernel_trace import record_outbound, record_turn
+from codey.operations.task_guidance import task_working_context
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import ProviderToolResult, TurnFinish, tools_from_specs
 from codey.providers.response_record import json_value
@@ -326,7 +327,7 @@ class KernelContext:
         if not self.attempt_gate_bound:
             record_outbound(self.observation.trace_recorder, prompt, admission=admission)
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
-        prompt = "\n\n".join(part for part in (prompt, kernel_prompt.working_context(self.session)) if part)
+        prompt = "\n\n".join(part for part in (prompt, task_working_context(self.session)) if part)
         self.freeze(state, prepared.snapshot, turn=turn, prompt=prompt,
                     counters=replace(state.counters, progress=progress.snapshot()))
 
@@ -469,7 +470,7 @@ class KernelContext:
             self.close(state, advance)
             return
         messages, prompt = advance
-        observations = kernel_prompt.working_context(self.session)
+        observations = task_working_context(self.session)
         if self.native and messages:
             messages[-1] = replace(messages[-1], user_content="\n\n".join(
                 part for part in (messages[-1].user_content, observations) if part))

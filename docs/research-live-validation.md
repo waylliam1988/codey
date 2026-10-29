@@ -594,3 +594,24 @@ knowledge_refs fragment for actual claim/inference/question mutations; it does
 not select which versions an answer used. Focused knowledge/lifecycle/repository
 tests passed 26; Ruff, mypy, Pyrefly and ty passed. The live medicine process
 started before this change and remains unaccepted.
+
+
+## Live failure: misleading compacted progress and footer-only pages
+
+The production JSON medicine run repeatedly proposed reports before saving
+evidence, invented/spliced excerpts and overgeneralized animal findings. A
+compacted work-state incorrectly claimed a rejected write had succeeded. This
+is a real failure, not accepted research. Continuations now include bounded
+research observations derived from existing execution receipts: exact opened
+source identities, actual saved counts/findings and recent failed actions. The
+same composition is used for ordinary results and completion/protocol repairs,
+with no new state ledger or execution loop. Auxiliary summary instructions
+explicitly distinguish proposed calls from successful receipts and preserve
+evidence scope/uncertainty. Ordinary task prompts remain unchanged.
+
+The same run also accepted a PMC response containing only HHS Vulnerability
+Disclosure as an opened article. Acquisition now rejects pages consisting only
+of known navigation/footer lines in both browser and HTTP paths, while retaining
+articles that discuss those terms. No source body is manufactured or aliased.
+82 focused browser, prompt, compaction and lifecycle tests passed; Ruff, mypy,
+Pyrefly and ty passed (existing warnings unchanged). Fresh live runs are pending.

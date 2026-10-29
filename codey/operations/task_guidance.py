@@ -1,8 +1,23 @@
 """Select domain guidance at task composition, before entering the common loop."""
 
+from typing import TYPE_CHECKING
+
 from codey.policies.output_requirement import guidance
 from codey.policies.task_policy import TaskPolicy
 from codey.research.completion_guidance import render_completion_guidance
+
+if TYPE_CHECKING:
+    from codey.operations.task_session import TaskSession
+
+
+def task_working_context(session: "TaskSession") -> str:
+    from codey.operations.kernel_prompt import working_context
+    from codey.research.completion_guidance import render_research_observations
+
+    parts = [working_context(session)]
+    if session.policy.strict_research:
+        parts.append(render_research_observations(session))
+    return "\n\n".join(parts)
 
 
 def task_guidance_for_policy(policy: TaskPolicy) -> str:

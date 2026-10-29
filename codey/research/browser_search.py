@@ -742,6 +742,10 @@ _FETCH_PAGE_ERROR_MARKERS = (
     "请完成安全验证",
 )
 _FETCH_CHALLENGE_TEXT_MAX_CHARS = 1500
+_FETCH_BOILERPLATE_LINES = frozenset({
+    "hhs vulnerability disclosure", "skip to main content", "skip to content",
+    "privacy policy", "accessibility", "terms of use", "contact us",
+})
 
 
 def _usable_fetch_page_text(text: str) -> bool:
@@ -749,6 +753,9 @@ def _usable_fetch_page_text(text: str) -> bool:
     if not normalized:
         return False
     if _looks_like_short_fetch_challenge(normalized):
+        return False
+    if all(_clean_space(line).casefold() in _FETCH_BOILERPLATE_LINES
+           for line in text.splitlines() if line.strip()):
         return False
     return len(normalized) >= 24
 

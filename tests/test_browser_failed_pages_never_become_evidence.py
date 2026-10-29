@@ -18,11 +18,14 @@ URL = "https://example.com/article"
 @pytest.mark.parametrize("transport", ["http", "browser"])
 @pytest.mark.parametrize("html,failure", [
     ("<html><title>Blank</title><body></body></html>", "page_blank"),
+    ("<html><title>pmc.ncbi.nlm.nih.gov</title><body><footer>HHS Vulnerability Disclosure</footer></body></html>",
+     "page_blank"),
     ('<html><body>Show glossary<div aria-hidden="true"><p>Clinical trial glossary definitions.</p>'
      '<div style="display:none">' + "Unrelated definitions. " * 100 + '</div></div>'
      '<app-root></app-root></body></html>', "page_blank"),
     ("<html><body>Checking your browser before accessing this article</body></html>", "page_unavailable"),
     ("<html><body>ERROR: sample diagnostic explained by this documentation article.</body></html>", ""),
+    ("<html><body>HHS Vulnerability Disclosure explains how to report a security issue.</body></html>", ""),
 ])
 def test_failed_acquisition_is_error_and_never_records_evidence(monkeypatch, transport, html, failure):
     response = io.BytesIO(html.encode("utf-8"))
@@ -51,7 +54,7 @@ def test_failed_acquisition_is_error_and_never_records_evidence(monkeypatch, tra
         assert ledger.final_url_set() == set()
     else:
         assert result.status == "ok"
-        assert result.document.text.startswith("ERROR: sample diagnostic")
+        assert "explained by this documentation" in result.document.text or "explains how" in result.document.text
         assert ledger.final_url_set() == {URL}
     if transport == "http" or failure:
         assert response.closed

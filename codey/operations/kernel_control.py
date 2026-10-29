@@ -129,7 +129,9 @@ def prepare_control_delivery(context: Any, state: Any) -> None:
         if turn >= context.session.max_turns and not (context.native and ids):
             context.close(state, KernelResult(False, context.session.last_done_text or "max turns reached", turn, "max_turns"))
             return
-        prompt = decision["prompt"] + "\n\n" + kernel_prompt.working_context(context.session)
+        from codey.operations.task_guidance import task_working_context
+
+        prompt = decision["prompt"] + "\n\n" + task_working_context(context.session)
         messages = None
         if context.native and ids:
             messages = [ProviderToolResult(identity, "ERROR: " + (decision["error"] or prompt)) for identity in ids]

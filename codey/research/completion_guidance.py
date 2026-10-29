@@ -1,8 +1,56 @@
 """Pure model guidance for strict Research completion; no orchestration or I/O."""
 
+import json
+from typing import TYPE_CHECKING
+
 from codey.policies.task_policy import TaskPolicy
 from codey.research.tool_contract import knowledge_read_id_guidance
 from codey.reviews import report_sections
+
+if TYPE_CHECKING:
+    from codey.operations.task_session import TaskSession
+
+
+def render_research_observations(session: "TaskSession") -> str:
+    """Rebuild bounded evidence state from receipts, never narrative checkpoints."""
+    recent = []
+    findings = []
+    for identity, result in session._memory_results.items():
+        name = result.call.name
+        if name not in {"web_search", "open_url", "open_result", "open_hit", "reopen_source",
+                        "source_search", "knowledge_write", "knowledge_commit"}:
+            continue
+        recent.append({"result_ref": identity, "tool": name, "ok": result.ok,
+                       **({"error": result.model_text[:400]} if not result.ok else {})})
+        if result.ok:
+            items = result.canonical.get("evidence_items")
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        findings.append({key: str(item.get(key, ""))[:600]
+                                         for key in ("claim", "source_url", "excerpt", "stance")})
+    state = {"opened_sources": dict(list(session.source_ids.items())[-10:]),
+             "saved_notes": session.notes_saved, "saved_evidence_count": len(session.evidence),
+             "recent_receipts": recent[-4:], "saved_findings": findings[-6:]}
+    guidance = (
+        "Research observations (execution receipts override narrative summaries):\n"
+        + json.dumps(state, ensure_ascii=False)
+        + "\nA search hit is not an opened source. A rejected write saved nothing. "
+          "Keep the claim no stronger than the excerpt, preserving model/population, comparator, "
+          "endpoint and uncertainty. Registration is not reported efficacy; a trend is not a significant result. "
+    )
+    if session.policy.allows("knowledge.write"):
+        guidance += (
+            "Before drafting, save each useful finding from an opened passage; copy one short contiguous "
+            "original sentence, without ellipses or reconstructed numbers. "
+            "After a save succeeds, investigate the next missing evidence instead of saving it again. "
+        )
+    if session.policy.allows("web.read"):
+        guidance += (
+            "If a quote fails, locate it with source_search and read the returned passage "
+            "rather than guessing another quote."
+        )
+    return guidance
 
 
 def render_completion_guidance(policy: TaskPolicy) -> str:
