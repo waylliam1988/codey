@@ -897,3 +897,17 @@ using existing claims. Repair now prioritizes locating and archiving the missing
 fact; only the same predicate/conditions may reuse old wording. It preserves
 authorization, rejected report content, and all completion checks. Eighteen
 focused completion/repair/observation tests and all four static checks passed.
+
+The evidence preparation path also clipped claim content to 260 characters
+before building long-term objects. This could discard a trailing condition or
+negation. Prepared evidence, database objects and lossless recovery receipts now
+retain the full normalized claim; the public/UI projection still applies the
+260-character display bound. A regression verifies the trailing applicability
+limit survives receipt replay and closing/reopening the database. Ninety-two
+focused lifecycle/ledger/recovery/observation tests and all four static checks
+passed. This prevents information loss; it does not validate claim semantics.
+
+Next real medical browser run:
+`artifacts/research-live-adaptive-scoped-repair-20261030`. In progress; not
+accepted. It has opened original studies but again proposed a significant
+capecitabine-alone effect despite a nonsignificant reported comparison.

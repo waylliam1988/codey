@@ -107,6 +107,7 @@ class EvidenceItem:
         # item for proof locators, while everything leaving the ledger
         # (events, UI session state) carries only the bounded display form.
         data["excerpt"] = _clip(self.excerpt, MAX_SNIPPET_CHARS)
+        data["claim"] = _clip(self.claim, MAX_CLAIM_CHARS)
         return data
 
 
@@ -298,7 +299,9 @@ class ResearchLedger:
                         "then quote the actual result or limitation. No evidence was saved."))
                 page = page if page is not None else inferred_page
                 prepared.append(EvidenceItem(
-                    claim=_clip(str(raw.get("claim") or fallback_claim), MAX_CLAIM_CHARS),
+                    # Display budgets must not discard a trailing condition or
+                    # negation before the claim enters long-term knowledge.
+                    claim=_clean(str(raw.get("claim") or fallback_claim)),
                     source_url=final_url,
                     # Keep the exact matched substring: downstream proof
                     # locators re-find this text in the opened source, so any

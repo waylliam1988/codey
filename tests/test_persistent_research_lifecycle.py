@@ -143,6 +143,38 @@ def test_identical_source_reopens_do_not_create_revisions_or_stale_old_claims(tm
         store.close()
 
 
+def test_long_claim_keeps_trailing_limit_in_database_and_recovery_receipt(tmp_path):
+    from codey.research.ledger import MAX_CLAIM_CHARS, ResearchLedger
+    from codey.research.ledger_receipts import ledger_observation, restore_ledger_observation
+
+    claim = ("The observation applies only to the tested workload and measured configuration. " * 5
+             + "It does not establish performance under concurrent multi-process writes.")
+    assert len(claim) > MAX_CLAIM_CHARS
+    url = "https://example.org/measured-workload"
+    with_store = KnowledgeStore(tmp_path)
+    try:
+        tools = ResearchTools(None, with_store, None, session_id="first")
+        tools.sources_read.add(url)
+        tools.ledger.record_open(url, url, "Workload measurement", claim)
+        assert tools.knowledge_write({"type": "fact", "title": "Measured scope", "body": claim,
+            "evidence": [{"source_url": url, "claim": claim, "excerpt": claim}]}).ok
+        identity = stable_identity("claim", tools.created_ids[0], claim)
+        assert with_store.repository.read(identity).value.content == claim
+        item = tools.ledger.evidence_items[0]
+        assert item.claim == claim and len(item.to_dict()["claim"]) <= MAX_CLAIM_CHARS
+        recovered = ResearchLedger()
+        restore_ledger_observation(recovered, ledger_observation(tools.ledger, "open_url", url=url))
+        restore_ledger_observation(recovered, ledger_observation(tools.ledger, "knowledge_write"))
+        assert recovered.evidence_items[0].claim == claim
+    finally:
+        with_store.close()
+    reopened = KnowledgeStore(tmp_path)
+    try:
+        assert reopened.repository.read(identity).value.content == claim
+    finally:
+        reopened.close()
+
+
 def test_reference_check_is_mechanical_and_does_not_prove_interpretation(tmp_path):
     store = KnowledgeStore(tmp_path)
     try:
