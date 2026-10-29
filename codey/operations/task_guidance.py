@@ -15,7 +15,7 @@ def task_working_context(session: "TaskSession") -> str:
     from codey.research.completion_guidance import render_research_observations
 
     parts = [working_context(session)]
-    if session.policy.strict_research:
+    if session.policy.strict_research or session.task_kind == "evidence_followup":
         parts.append(render_research_observations(session))
     return "\n\n".join(parts)
 

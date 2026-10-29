@@ -49,3 +49,17 @@ def test_ordinary_context_is_unchanged_and_denied_tools_are_not_requested():
     text = task_working_context(session)
     assert "source_search" not in text
     assert "Before drafting, save" not in text
+
+
+def test_evidence_investigation_retains_observations_without_requiring_a_report():
+    from codey.operations.kernel_prompt import _repair_prompt
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.runtime.core.models import ToolPlan
+
+    session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "knowledge.write"})),
+                          task_kind="evidence_followup")
+    assert "Research observations" in task_working_context(session)
+    prompt = _repair_prompt(ToolPlan(calls=[], control=None, protocol_error="invalid_args",
+                                    protocol_tool_name="done"), snapshot=build_turn_snapshot(session), native=False)
+    assert "complete response in the requested format" in prompt
+    assert '"evidence":["supported finding [1]"]' not in prompt

@@ -615,3 +615,16 @@ of known navigation/footer lines in both browser and HTTP paths, while retaining
 articles that discuss those terms. No source body is manufactured or aliased.
 82 focused browser, prompt, compaction and lifecycle tests passed; Ruff, mypy,
 Pyrefly and ty passed (existing warnings unchanged). Fresh live runs are pending.
+
+
+The first production-JSON medicine run ended no_progress (zero saved notes).
+Its evidence-only investigation inherited report-shaped done repair examples
+after a protocol rejection, encouraging irrelevant report rewrites. Ordinary
+done repair now preserves the requested task format; the structured example
+is selected only when supplied by the frozen task contract. Evidence follow-up
+turns also receive the receipt-based research observations without enabling
+strict final-report checks. No policy grants or completion checks were relaxed.
+31 targeted prompt/contract/observation tests and all four static checks passed;
+only the reviewed ordinary done-repair hash changed. A fresh WAL live run is
+in progress and has actually searched/opened official documentation, saved
+evidence and read its saved note; final quality remains unaccepted.
