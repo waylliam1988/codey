@@ -134,3 +134,25 @@ def test_persistent_page_creation_failure_stops_with_a_classified_error():
     attempts = 1 + provider._replace_search_page_on_browser_thread.call_count
     assert attempts == len(provider._engine_order) * browser_search._SEARCH_NAV_ATTEMPTS
     assert len(provider.last_search_errors) == attempts
+
+
+def test_result_blocks_can_arrive_after_navigation_without_a_false_empty_result():
+    provider = BrowserSearchProvider(engine="bing")
+    page = mock.Mock(url="https://www.bing.com/search?q=database")
+    link = mock.Mock()
+    link.get_attribute.return_value = "https://sqlite.org/wal.html"
+    link.inner_text.return_value = "SQLite WAL"
+    block = mock.Mock()
+    block.query_selector.return_value = link
+    blocks = []
+
+    def appeared(*_args, **kwargs):
+        assert kwargs["state"] == "attached"
+        assert 0 < kwargs["timeout"] <= 2500
+        blocks.append(block)
+
+    page.wait_for_selector.side_effect = appeared
+    page.query_selector_all.side_effect = lambda _selector: blocks
+    hits = provider._search_page_results_on_browser_thread(page, "database", 3)
+    assert hits[0]["url"] == "https://sqlite.org/wal.html"
+    page.goto.assert_called_once()

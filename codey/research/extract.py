@@ -13,6 +13,7 @@ _BLOCK_TAGS = {
     "table", "tr", "br", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre",
 }
 _HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
+_DELETED_TAGS = {"s", "del", "strike"}
 _MULTI_BLANK_RE = re.compile(r"\n{3,}")
 _SPACES_RE = re.compile(r"[ \t\f\v]+")
 
@@ -38,6 +39,8 @@ class _Extractor(HTMLParser):
                 self._title_seen = True
         elif tag in _HEADING_TAGS:
             self.parts.append("\n\n## ")
+        elif tag in _DELETED_TAGS and not self._skip_depth:
+            self.parts.append(" [deleted text: ")
         elif tag in _BLOCK_TAGS:
             self.parts.append("\n")
 
@@ -48,6 +51,8 @@ class _Extractor(HTMLParser):
             self._skip_depth -= 1
         elif tag == "title":
             self._in_title = False
+        elif tag in _DELETED_TAGS and not self._skip_depth:
+            self.parts.append("] ")
         elif tag in _BLOCK_TAGS:
             self.parts.append("\n")
 

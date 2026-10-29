@@ -2503,7 +2503,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(runner.tools.sources_read, set())
         self.assertIsNotNone(payload)
 
-    def test_invalid_evidence_excerpt_is_replaced_with_opened_page_text(self) -> None:
+    def test_invalid_evidence_excerpt_is_rejected_without_replacing_the_quote(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(FakeSearch(), store, KnowledgeChanges(store.root))
@@ -2550,18 +2550,16 @@ class ResearchBoundaryTests(unittest.TestCase):
             ).model_text
             store.close()
 
-        self.assertIn("saved fact note", saved)
-        self.assertIn("WARNING:", saved)
-        self.assertIn("attached an exact opened-page excerpt", saved)
-        self.assertNotIn("Codey attached", saved)
+        self.assertIn("ERROR:", saved)
+        self.assertIn("No replacement quote was saved", saved)
         self.assertIn("saved fact note", accepted)
-        self.assertEqual(len(tools.ledger.evidence_items), 2)
+        self.assertEqual(len(tools.ledger.evidence_items), 1)
         self.assertEqual(
             tools.ledger.evidence_items[0].excerpt,
             "Helium is separated from natural gas streams.",
         )
 
-    def test_pdf_evidence_page_is_inferred_and_bad_excerpt_replaced_on_that_page(self) -> None:
+    def test_pdf_evidence_page_is_inferred_and_bad_excerpt_rejected_on_that_page(self) -> None:
         url = "https://example.com/report.pdf"
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -2622,11 +2620,11 @@ class ResearchBoundaryTests(unittest.TestCase):
             store.close()
 
         self.assertIn("saved fact note", inferred)
-        self.assertIn("saved fact note", replaced)
-        self.assertIn("WARNING:", replaced)
+        self.assertIn("ERROR:", replaced)
+        self.assertIn("No replacement quote was saved", replaced)
         self.assertEqual(tools.ledger.evidence_items[0].page, 4)
         self.assertEqual(tools.ledger.evidence_items[0].locator, "p.4")
-        self.assertEqual(tools.ledger.evidence_items[1].page, 4)
+        self.assertEqual(len(tools.ledger.evidence_items), 1)
 
 
     def test_research_protocol_uses_only_model_text_projection(self) -> None:

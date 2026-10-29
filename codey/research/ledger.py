@@ -266,8 +266,7 @@ class ResearchLedger:
         explicit = _coerce_evidence(evidence)
         if explicit:
             prepared: list[EvidenceItem] = []
-            warnings: list[str] = []
-            for raw in explicit:
+            for index, raw in enumerate(explicit, start=1):
                 source = str(raw.get("source_url") or raw.get("source") or "").strip()
                 if not source:
                     return EvidencePreparation(error="evidence needs source_url for each item")
@@ -282,24 +281,13 @@ class ResearchLedger:
                 if page is not None and excerpt and not self.excerpt_in_source(final_url, excerpt, page=page):
                     inferred_page = None
                 if not excerpt or not self.excerpt_in_source(final_url, excerpt, page=page):
-                    replacement, replacement_page = self.best_excerpt_with_page(
-                        final_url,
-                        fallback_body or fallback_claim,
-                        page=page,
+                    return EvidencePreparation(
+                        error=(f"evidence item {index} excerpt is missing or not present in opened source: "
+                               f"{final_url}. Rejected excerpt: {excerpt[:240]!r}. "
+                               "Quotes must be contiguous original text; do not combine passages with ellipses. "
+                               "Use source_search or an offset read, then copy a short exact "
+                               "passage supporting this claim. No replacement quote was saved.")
                     )
-                    if not replacement:
-                        return EvidencePreparation(
-                            error=(
-                                "evidence excerpt is not present in opened source and could not "
-                                f"attach a replacement excerpt: {final_url}"
-                            )
-                        )
-                    warnings.append(
-                        "supplied evidence excerpt did not match opened source; "
-                        "attached an exact opened-page excerpt instead"
-                    )
-                    excerpt = replacement
-                    inferred_page = replacement_page
                 page = page if page is not None else inferred_page
                 prepared.append(EvidenceItem(
                     claim=_clip(str(raw.get("claim") or fallback_claim), MAX_CLAIM_CHARS),
@@ -313,7 +301,7 @@ class ResearchLedger:
                     page=page,
                     locator=_locator(page),
                 ))
-            return EvidencePreparation(tuple(prepared), warning="; ".join(dict.fromkeys(warnings)))
+            return EvidencePreparation(tuple(prepared))
 
         prepared = []
         fallback_stance = "context" if note_type == "question" else "supports"

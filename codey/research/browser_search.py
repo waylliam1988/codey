@@ -340,6 +340,17 @@ class BrowserSearchProvider:
                 detail="search page redirected to an unexpected host",
                 observed_host=_url_host(final_url),
             )
+        # Search pages may paint navigation before their result blocks. A
+        # populated page body alone must not win that race as "no results".
+        wait = getattr(page, "wait_for_selector", None)
+        remaining_ms = int(max(0.0, deadline - time.monotonic()) * 1000)
+        if callable(wait) and remaining_ms:
+            try:
+                wait(active_profile["result_selector"], state="attached", timeout=min(2500, remaining_ms))
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                raise
+            except Exception:
+                pass  # Inspect the page below, including explicit no-result/challenge text.
         results: list[dict[str, Any]] = []
         for block in page.query_selector_all(active_profile["result_selector"])[: limit * 2]:
             cancellation.check()
@@ -453,6 +464,10 @@ class BrowserSearchProvider:
                 if reason:
                     return _fetch_failure(final_url, f'{reason} (after redirect)')
             if response is not None:
+                status = getattr(response, "status", None)
+                if isinstance(status, int) and status >= 400:
+                    self._discard_fetch_page_on_browser_thread(page)
+                    return _fetch_failure(final_url, f'could not load page: HTTP {status}')
                 ctype = (response.headers.get("content-type") or "").lower()
                 if _is_pdf_response(ctype, final_url):
                     return _pdf_download_sentinel(final_url, mime_type=ctype)
@@ -893,6 +908,8 @@ def _download_text_fallback(url: str) -> dict[str, Any]:
                 redirects += 1
                 continue
             headers = response.headers
+            if status >= 400:
+                return _fetch_failure(final_url, f'HTTP fallback could not load page: HTTP {status}')
             ctype = (headers.get("content-type") or "").lower()
             if _is_pdf_response(ctype, final_url):
                 return _pdf_download_sentinel(final_url, mime_type=ctype)
