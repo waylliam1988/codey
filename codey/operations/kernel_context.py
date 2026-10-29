@@ -83,11 +83,31 @@ class KernelContext:
         return envelope["data"]
 
     def response(self, state: Any) -> Any:
-        if state.response_ref not in self.responses:
-            self.responses[state.response_ref] = self.sink.load_response(self.session, state.response_ref, window_ref=self.window)
-        received = self.responses[state.response_ref]
+        response_ref = self.response_reference(state)
+        if response_ref not in self.responses:
+            self.responses[response_ref] = self.sink.load_response(self.session, response_ref, window_ref=self.window)
+        received = self.responses[response_ref]
         self.session.turn = received.logical_turn
         return received
+
+    def response_reference(self, state: Any) -> str:
+        if state.response_ref:
+            return str(state.response_ref)
+        from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact, request_artifact_for_effect
+
+        effects = self.load_view().effects
+        matching = [effect for effect in effects if effect.intent.effect_category == "provider_send"
+                    and effect.intent.turn == state.turn and effect.settlement is not None
+                    and effect.settlement.sent_state == "not_sent"]
+        if len(matching) != 1 or not state.work_ref:
+            raise RecoveryFailed("control continuation has no reliable original response")
+        effect = matching[0]
+        request = read_provider_artifact(self.sink.managed_outputs, request_artifact_for_effect(self.durable, effect),
+            kind=REQUEST_KIND, session_id=self.sink.session_id, run_id=self.sink.run_id, effect_id=effect.intent.effect_id)
+        reference = request.get("source_response_ref")
+        if not isinstance(reference, str) or not reference or request.get("work_ref") != state.work_ref:
+            raise RecoveryFailed("control acknowledgement lost its original continuation")
+        return reference
 
     def restore_facts(self) -> None:
         from codey.operations.kernel_facts import project_execution_record, project_result_observation
@@ -127,6 +147,8 @@ class KernelContext:
         self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window)
         self.sink._request_context["close_reply"] = acknowledge
         self.sink._request_context["work_ref"] = state.work_ref if acknowledge else ""
+        self.sink._request_context["source_response_ref"] = (
+            self.response_reference(state) if state.response_ref or acknowledge else "")
         tools = tools_from_specs(snapshot.frozen_specs)
         if self.native and messages:
             method = "acknowledge_tool_results" if acknowledge else "send_tool_results"
@@ -148,6 +170,8 @@ class KernelContext:
             context_text=self.transport.context_text, native=self.native, task_guidance=self.request.task_guidance,
             completion_context=self.completion_context)
         prompt = prepared.prompt
+        if state.logical_turn and self.boundary_text():
+            prompt += "\n\nNew user input at provider boundary:\n" + self.boundary_text()
         admission = admit_ghost_context(prompt, self.transport.ghost_sources, request_scope=self.transport.context_scope,
             require_all=not self.attempt_gate_bound, admit_hints=self.transport.admit_hints)
         if not self.attempt_gate_bound:
@@ -169,9 +193,6 @@ class KernelContext:
             if original.get("work_ref") != state.work_ref:
                 raise RecoveryFailed("protocol close response lost its original outcome")
             self.advance(state, positions.LEAF_CLOSING)
-            return
-        if self.cancelled():
-            self.close(state, KernelResult(False, "stopped", turn, "stopped"))
             return
         kernel_events._emit_turn_event(self.observation.on_event, turn, reply)
         if self.native and reply.finish is TurnFinish.OUTPUT_LIMIT:
@@ -234,7 +255,8 @@ class KernelContext:
                 durable=self.durable, managed_outputs=self.sink.managed_outputs, task_id=self.sink.run_id)
             if approval is not None:
                 if self.observation.on_boundary is not None:
-                    self.observation.on_boundary("approval")
+                    from codey.operations.generation_boundary import GenerationBoundaryRequest
+                    self.observation.on_boundary(GenerationBoundaryRequest("approval"))
                 return approval
         if self.execution.ensure_workspace_writer is not None and any(call.name in {"edit", "run"} for call in calls):
             try:
@@ -276,7 +298,9 @@ class KernelContext:
             reason = "stopped" if self.cancelled() else "no_progress" if progress.stopped else "max_turns"
             summary = {"stopped": "stopped", "no_progress": "stopped after repeated tool results without progress",
                        "max_turns": self.session.last_done_text or "max turns reached"}[reason]
-            self.close(state, KernelResult(False, summary, turn, reason))
+            from codey.operations.kernel_control import no_progress_result
+            self.close(state, no_progress_result(self.session, turn) if reason == "no_progress"
+                       else KernelResult(False, summary, turn, reason))
             return
         kernel_events._emit_tool_results(self.observation.on_event, self.session, results,
             run_id=f"{self.transport.run_id}:{self.transport.effect_scope}" if self.transport.effect_scope else self.transport.run_id,
@@ -306,9 +330,10 @@ class KernelContext:
                              for identity in receipt.get("submission_ids", ()))
 
     def boundary(self, action: Any) -> None:
+        from codey.operations.generation_boundary import GenerationBoundaryRequest
         if self.observation.on_boundary is None:
             raise RecoveryFailed("an admitted provider generation requires a durable boundary callback")
-        self.observation.on_boundary(action.reason)
+        self.observation.on_boundary(GenerationBoundaryRequest(action.reason))
 
     def close(self, state: Any, result: KernelResult) -> None:
         self.advance(state, positions.LEAF_CLOSING, data={"purpose": "closing", "result": json_value(result)})

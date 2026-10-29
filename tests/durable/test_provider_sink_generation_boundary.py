@@ -4,19 +4,26 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 
-from codey.operations.generation_boundary import durable_generation_boundary_callback
+import pytest
+
+from codey.operations.generation_boundary import GenerationBoundaryRequest, durable_generation_boundary_callback
 
 ROOT = Path(__file__).parents[2]
 
 
 class _Submission:
     content = {"text": "steer this turn"}
+    submission_id = "steer"
 
 
 class _Durable:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+
+    def head(self, session_id):
+        return "head", 3
 
     def has_conversation(self, session_id: str) -> bool:
         return session_id == "session"
@@ -53,7 +60,7 @@ class _FailingMutations(_Mutations):
 class _Sink:
     def __init__(self, mutations: _Mutations) -> None:
         self.mutations = mutations
-        self.pending = (object(), ())
+        self.pending = (SimpleNamespace(effect_id="provider"), ())
 
     def pending_provider_settlement(self) -> object:
         return self.pending
@@ -72,23 +79,17 @@ def test_provider_settlement_and_boundary_use_one_mutation() -> None:
     )
 
     assert callback is not None
-    assert callback("post_tools") == "steer this turn"
+    result = callback(GenerationBoundaryRequest("post_tools"))
+    assert result.text == "steer this turn"
+    assert result.submission_ids == ("steer",) and result.provider_effect_id == "provider"
     assert mutations.calls[0][0:2] == ("session", "run")
     assert mutations.calls[0][3] == "post_tools"
     assert durable.calls == []
 
 
-def test_boundary_without_pending_settlement_uses_durable_commit() -> None:
-    durable = _Durable()
-    callback = durable_generation_boundary_callback(
-        durable=durable,
-        session_id="session",
-        task_id="run",
-    )
-
-    assert callback is not None
-    assert callback("final") == "steer this turn"
-    assert durable.calls == [("run", "final")]
+def test_boundary_requires_explicit_durable_operation():
+    with pytest.raises(ValueError, match="admitted durable task"):
+        durable_generation_boundary_callback(durable=_Durable(), session_id="session", task_id="run")
 
 
 def test_failed_boundary_keeps_pending_settlement_for_recovery() -> None:
@@ -100,7 +101,7 @@ def test_failed_boundary_keeps_pending_settlement_for_recovery() -> None:
 
     assert callback is not None
     try:
-        callback("post_tools")
+        callback(GenerationBoundaryRequest("post_tools"))
     except OSError as exc:
         assert str(exc) == "injected boundary failure"
     else:

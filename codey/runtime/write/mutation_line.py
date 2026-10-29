@@ -545,6 +545,42 @@ class RuntimeMutationLine:
         )
         return placed
 
+    def settle_kernel_boundary(
+        self, session_id: str, run_id: str, *, expected: RuntimeOperationState,
+        settlement: RuntimeEffectSettlement | None, boundary: str,
+    ) -> tuple[object, ...]:
+        """Commit the last generation, final input placement and kernel verdict."""
+        from codey.runtime.core.operation_state import (
+            LEAF_KERNEL_SETTLED,
+            LEAF_REPAIR_RUNNING,
+            LEAF_WRITER_RUNNING,
+            advance_execution,
+        )
+
+        def mutation(projection: Any, entries: Any) -> Any:
+            view = load_session_view(entries, session_id=session_id, run_id=run_id)
+            if view.state != expected:
+                raise RuntimeEffectError("kernel final boundary has a stale operation identity")
+            rows: tuple[dict[str, object], ...] = ()
+            state = expected
+            if settlement is not None:
+                rows, _ = build_provider_settle_rows(projection, view, session_id=session_id,
+                                                     run_id=run_id, settlement=settlement)
+            return (*rows, operation_state_entry(advance_execution(state, LEAF_KERNEL_SETTLED)))
+
+        def placed_transition(state: RuntimeOperationState, selected: tuple[object, ...]) -> RuntimeOperationState:
+            if boundary != "final" or not selected:
+                return state
+            # New requirements invalidate the old completion proposal. Their
+            # placement and reopening share this same durable transaction.
+            return advance_execution(state, LEAF_REPAIR_RUNNING if state.driver == "repair" else LEAF_WRITER_RUNNING)
+
+        placed: list[object] = []
+        checkpoint = importlib.import_module("codey.durable.checkpoint")
+        checkpoint.mutate_checkpoint(self.durable, session_id, run_id, mutation,
+            generation_boundary=boundary, boundary_result=placed, boundary_transition=placed_transition)
+        return tuple(placed)
+
     def _settle_provider_effect(
         self,
         session_id: str,

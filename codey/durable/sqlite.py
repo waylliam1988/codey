@@ -33,6 +33,7 @@ from codey.durable.model import (
     migrate_checkpoint_phase,
     same_submission,
     thaw_json,
+    valid_cancellation_cleanup,
     valid_execution_attempt,
     valid_frozen_task_state,
     valid_input_consumption,
@@ -743,7 +744,8 @@ def _validate_existing_task(
     expected_attempt_token: str | None,
 ) -> None:
     previous_state = json.loads(row["state"])
-    if previous_state.get("cancel_requested") and task.phase not in {"cancelled", "failed"}:
+    if (previous_state.get("cancel_requested") and task.phase not in {"cancelled", "failed"}
+            and not valid_cancellation_cleanup(previous_state, task)):
         raise CommitConflict("task cancellation barrier is active")
     if not valid_execution_attempt(previous_state, TaskStatus(str(row["status"])), task, expected_attempt_token):
         raise CommitConflict("task execution attempt changed")

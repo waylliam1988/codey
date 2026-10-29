@@ -103,6 +103,34 @@ def valid_task_transition(previous: str | None, current: str) -> bool:
     return current in TASK_PHASE_TRANSITIONS.get(previous, frozenset())
 
 
+def valid_cancellation_cleanup(previous: Mapping[str, object], current: TaskCheckpoint) -> bool:
+    """Permit fenced receipt/closure commits while the cancellation stays set.
+
+    The barrier forbids new task work. It must still let its original worker
+    save returned facts and close native calls through the existing ledger.
+    Effect-intent validation independently limits admission to close receipts.
+    """
+    before, after = previous.get("operation"), current.state.get("operation")
+    if (not current.state.get("cancel_requested") or current.phase != "running"
+            or current.status != TaskStatus.RUNNING or not isinstance(before, Mapping) or not isinstance(after, Mapping)):
+        return False
+    if any(before.get(key) != after.get(key) for key in ("session_id", "run_id", "operation_id", "writer_attempt", "repair_rounds")):
+        return False
+    if after.get("leaf") not in {"closing", "control_ready", "provider_request_ready", "provider_effect_pending", "provider_response_ready",
+            "tool_effect_pending", "tool_delivery_pending", "kernel_settled", "writer_settled", "repair_settled", "terminal"}:
+        return False
+    return after.get("stop_reason") != "done"
+
+
+def cancellation_receipts_only(current: TaskCheckpoint, effects: tuple[EffectRecord, ...]) -> bool:
+    position = current.state.get("operation")
+    return (isinstance(position, Mapping) and position.get("leaf") == "provider_request_ready"
+            and bool(position.get("work_ref")) and all(
+                effect.category == "provider_send"
+                and effect.intent.get("display_ref") in {"acknowledge_tool_results", "acknowledge_tool_results_bound"}
+                and effect.intent.get("request_ref") == position.get("request_ref") for effect in effects))
+
+
 def valid_input_consumption(previous_phase: str, previous_status: str,
                             previous_state: Mapping[str, object], current: TaskCheckpoint) -> bool:
     """A queued steering receipt may settle without starting a provider task.

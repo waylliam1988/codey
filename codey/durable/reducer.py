@@ -4,14 +4,15 @@ from __future__ import annotations
 from dataclasses import replace
 
 from codey.durable.errors import CommitConflict
-from codey.durable.model import EffectRecord, TaskCheckpoint, TaskStatus, thaw_json
+from codey.durable.model import EffectRecord, TaskCheckpoint, TaskStatus, cancellation_receipts_only, thaw_json
 
 
 def with_effect_intents(current: TaskCheckpoint, effects: tuple[EffectRecord, ...]) -> TaskCheckpoint:
     if not effects or any(effect.task_id != current.task_id or effect.status != "pending"
                           or effect.settlement is not None for effect in effects):
         raise ValueError("effect intents must be pending and belong to the task")
-    if current.phase != "running" or current.status not in {TaskStatus.RUNNING, TaskStatus.WAITING} or current.state.get("cancel_requested"):
+    if current.phase != "running" or current.status not in {TaskStatus.RUNNING, TaskStatus.WAITING} or (current.state.get("cancel_requested")
+            and not cancellation_receipts_only(current, effects)):
         raise CommitConflict("task does not admit new external effects")
     state = thaw_json(current.state)
     if not isinstance(state, dict):

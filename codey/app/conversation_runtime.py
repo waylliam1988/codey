@@ -8,7 +8,7 @@ from typing import Any
 
 from codey.app.input_queue import DurableConversationInputQueue
 from codey.app.run_registry import RunSnapshot
-from codey.app.user_questions import DurableUserQuestionStore
+from codey.durable.questions import DurableUserQuestionStore
 
 
 class ConversationRuntime:

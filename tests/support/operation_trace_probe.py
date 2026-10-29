@@ -154,10 +154,11 @@ def observe_trace(
         if value.kind == "user_question":
             trace.append({"event": "question", "id": value.metadata["id"]})
 
-    def at_boundary(kind: str) -> Any:
+    def at_boundary(request: Any) -> Any:
+        kind = request.kind
         trace.append({"event": "boundary", "kind": kind})
         checkpoint(f"before_{kind}")
-        result = boundary(kind) if boundary is not None else None
+        result = boundary(request)
         checkpoint(f"after_{kind}")
         return result
 

@@ -91,6 +91,7 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
         LEAF_TERMINAL,
     }),
     LEAF_PROVIDER_EFFECT_PENDING: frozenset({
+        LEAF_CONTROL_READY,
         LEAF_PROVIDER_RESPONSE_READY,
         LEAF_WRITER_RUNNING,
         LEAF_REPAIR_RUNNING,
@@ -147,8 +148,9 @@ _ALLOWED_TRANSITIONS[LEAF_PLAN_READY] = frozenset({LEAF_TOOL_EFFECT_PENDING, LEA
 _ALLOWED_TRANSITIONS[LEAF_COMPLETION_PENDING] = frozenset({LEAF_CONTROL_READY, LEAF_CLOSING})
 _ALLOWED_TRANSITIONS[LEAF_CONTROL_READY] = frozenset({LEAF_PROVIDER_REQUEST_READY, LEAF_CLOSING, LEAF_KERNEL_SETTLED})
 _ALLOWED_TRANSITIONS[LEAF_CLOSING] = frozenset({LEAF_PROVIDER_REQUEST_READY, LEAF_KERNEL_SETTLED})
+_ALLOWED_TRANSITIONS[LEAF_CLOSING] |= {LEAF_CLOSING}
 _ALLOWED_TRANSITIONS[LEAF_KERNEL_SETTLED] = frozenset({LEAF_WRITER_SETTLED, LEAF_REPAIR_SETTLED,
-    LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING, LEAF_TERMINAL})
+    LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING, LEAF_TERMINAL, LEAF_CLOSING})
 
 MAX_TEXT_CHARS = 80
 MAX_REF_CHARS = 160
@@ -876,6 +878,10 @@ def mark_provider_effect_settled(
     # provider record is being settled; preserve the tool delivery state here.
     if state.leaf == LEAF_PROVIDER_REQUEST_READY:
         return replace(state, response_ref="", updated_at=_now())
+    if state.leaf == LEAF_PROVIDER_EFFECT_PENDING and state.work_ref:
+        # A failed control acknowledgement retains its saved decision. Its
+        # request artifact still references the original response and call ids.
+        return _transition(state, LEAF_CONTROL_READY)
     if state.leaf in _RESPONSE_LEAVES | {LEAF_KERNEL_SETTLED}:
         return state
     if state.leaf in {LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING}:

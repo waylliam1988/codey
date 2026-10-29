@@ -26,6 +26,7 @@ from codey.durable.model import (
     TaskCheckpoint,
     TaskStatus,
     same_submission,
+    valid_cancellation_cleanup,
     valid_execution_attempt,
     valid_frozen_task_state,
     valid_input_consumption,
@@ -187,9 +188,9 @@ class MemoryDurableStore:
                     transition_from_payload(
                         self._sequence,
                         execution_payload(
-                            replace(mutation, task=task, task_updates=()),
+                            mutation,
                             new_head,
-                        ),
+                        ), task.task_id,
                     )
                 )
             if mutation.effect is not None:
@@ -459,7 +460,8 @@ class MemoryDurableStore:
             if cursor == task.task_id:
                 raise CommitConflict("task ownership cycle")
         if existing is not None:
-            if existing.state.get("cancel_requested") and task.phase not in {"cancelled", "failed"}:
+            if (existing.state.get("cancel_requested") and task.phase not in {"cancelled", "failed"}
+                    and not valid_cancellation_cleanup(existing.state, task)):
                 raise CommitConflict("task cancellation barrier is active")
             if not valid_execution_attempt(existing.state, TaskStatus(str(existing.status)), task, expected_attempt_token):
                 raise CommitConflict("task execution attempt changed")

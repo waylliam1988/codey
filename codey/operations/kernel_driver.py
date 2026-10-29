@@ -215,32 +215,43 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
         while True:
             view = context.load_view()
             state = view.state
-            action = rules.next_runtime_action(view)
+            closing = bool(state.work_ref and context.decision(state).get("purpose") == "closing")
+            action = rules.next_runtime_action(view, rules.RuntimeDecisionInputs(
+                cancel_requested=context.cancelled(), closing_intent=closing))
             if action.kind == rules.ACTION_RETURN_KERNEL_RESULT:
-                return kernel_control.result_from_payload(context.decision(state)["result"])
+                decision = context.decision(state)
+                result = kernel_control.result_from_payload(decision["result"])
+                if context.native and decision["purpose"] in {"done", "question"}:
+                    result = replace(result, delivery="success")
+                return result
             if action.kind == rules.ACTION_FAIL_INVARIANT:
                 raise RecoveryFailed(f"{action.reason}: {action.effect_ids}")
-            result = _execute_kernel_action(context, view, action)
-            if result is not None:
-                return result
+            outcome = _execute_kernel_action(context, view, action)
+            if outcome is not None:
+                return outcome
             after = context.load_view()
             if after == view:
                 raise RecoveryFailed(f"operation action made no progress: {action.kind}")
     except RecoveryFailed as exc:
         return KernelResult(False, f"recovery failed: {exc}", session.turn, "recovery_failure")
     except Exception as exc:
+        failed = context.load_view().state
+        if failed.work_ref:
+            decision = context.decision(failed)
+            if decision.get("purpose") in {"done", "question"}:
+                original = kernel_control.result_from_payload(decision["result"])
+                return KernelResult(False, f"protocol delivery failed [{type(exc).__name__}]: {exc}",
+                    original.turns, "delivery_pending", proof=original.proof,
+                    delivery="unknown" if getattr(exc, "provider_failure_kind", "") == "submission_uncertain" else "failed")
         return _provider_failure(exc, session.turn, propagate=request.observation.propagate_provider_failure)
 
 
 def _execute_kernel_action(context: KernelContext, view: Any, action: Any) -> KernelResult | None:
     from codey.operations import kernel_control
     from codey.runtime.core import operation_reducer as rules
-    from codey.runtime.core import operation_state as positions
 
     state = view.state
-    if (context.cancelled() and state.leaf in {positions.LEAF_PLAN_READY, positions.LEAF_PROVIDER_REQUEST_READY,
-            positions.LEAF_COMPLETION_PENDING, positions.LEAF_WRITER_RUNNING, positions.LEAF_REPAIR_RUNNING}
-            and not (state.work_ref and context.decision(state).get("purpose") in {"done", "question", "closing"})):
+    if action.kind == rules.ACTION_BEGIN_CLOSING:
         context.close(state, KernelResult(False, "stopped", state.logical_turn, "stopped"))
     elif action.kind == rules.ACTION_PREPARE_TURN:
         context.prepare_turn(state)

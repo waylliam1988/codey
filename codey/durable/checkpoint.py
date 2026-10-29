@@ -140,12 +140,56 @@ def delivery_snapshot(batch: DeliveryBatchProjection) -> dict[str, object]:
     }
 
 
+
+def _apply_boundary_transition(mutation: DurableMutation, state: RuntimeOperationState) -> DurableMutation:
+    from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+
+    if mutation.task is None:
+        raise RuntimeOperationTransitionError("boundary lost its task")
+    payload = state.to_payload()
+    payload.pop("task_policy", None)
+    return replace(mutation, task=replace(mutation.task, state={**mutation.task.state, "operation": payload}))
+
+
+def _effect_changes(projections: Any, effects: tuple[EffectRecord, ...]) -> tuple[list[EffectRecord], list[EffectRecord]]:
+    from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+
+    known = {effect.effect_id: effect for effect in effects}
+    intents: list[EffectRecord] = []
+    settlements: list[EffectRecord] = []
+    for effect in projections:
+        intent = effect.intent
+        record = EffectRecord(intent.effect_id, intent.run_id, intent.effect_category, str(intent.replay_class),
+            intent.args_digest, effect.settlement.status if effect.settlement else "pending",
+            intent.to_payload(), effect.settlement.to_payload() if effect.settlement else None)
+        previous = known.get(record.effect_id)
+        if previous is None:
+            if record.settlement is not None:
+                raise RuntimeOperationTransitionError("effect must commit intent before settlement")
+            intents.append(record)
+        elif previous != record:
+            # Runtime projections may normalize the status label from the
+            # settlement payload (for example ``interrupted``).  Once a
+            # durable settlement exists, replaying the same receipt is an
+            # idempotent projection step; compare the settlement fact,
+            # not its derived status spelling.
+            if (previous.settlement is not None
+                    and record.settlement is not None
+                    and previous.settlement == record.settlement):
+                continue
+            if previous.settlement is not None or record.settlement is None:
+                raise RuntimeOperationTransitionError("effect outcome is immutable")
+            settlements.append(record)
+    return intents, settlements
+
+
 def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
                       derive_rows: Callable[..., Any], *,
                       messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
                       artifacts: tuple[ArtifactRecord, ...] = (),
                       generation_boundary: str | None = None,
-                      boundary_result: list[object] | None = None) -> None:
+                      boundary_result: list[object] | None = None,
+                      boundary_transition: Callable[..., RuntimeOperationState] | None = None) -> None:
     from codey.runtime.core.operation_state import RuntimeOperationTransitionError
     from codey.runtime.log.session_projection import reduce_session
     from codey.runtime.log.session_view import load_session_view
@@ -159,39 +203,7 @@ def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
         view = load_session_view(next_entries, session_id=session_id, run_id=run_id)
         if view.state is None:
             raise RuntimeOperationTransitionError("runtime mutation lost operation state")
-        known = {effect.effect_id: effect for effect in effects}
-        intents: list[EffectRecord] = []
-        settlements: list[EffectRecord] = []
-        for effect in view.effects:
-            intent = effect.intent
-            record = EffectRecord(intent.effect_id, run_id, intent.effect_category, str(intent.replay_class),
-                intent.args_digest, effect.settlement.status if effect.settlement else "pending",
-                intent.to_payload(), effect.settlement.to_payload() if effect.settlement else None)
-            previous = known.get(record.effect_id)
-            if previous is None:
-                if record.settlement is not None:
-                    raise RuntimeOperationTransitionError("effect must commit intent before settlement")
-                intents.append(record)
-            elif previous != record:
-                # Runtime projections may normalize the status label from the
-                # settlement payload (for example ``interrupted``).  Once a
-                # durable settlement exists, replaying the same receipt is an
-                # idempotent projection step; compare the settlement fact,
-                # not its derived status spelling.
-                if (task.state.get("cancel_requested") and previous.settlement is not None
-                        and record.settlement is not None):
-                    # Cancellation has already sealed the canonical effect
-                    # outcome.  Runtime JSONL may still describe the pre-stop
-                    # tool denial; it is a projection and cannot overwrite
-                    # the durable interrupted settlement.
-                    continue
-                if (previous.settlement is not None
-                        and record.settlement is not None
-                        and previous.settlement == record.settlement):
-                    continue
-                if previous.settlement is not None or record.settlement is None:
-                    raise RuntimeOperationTransitionError("effect outcome is immutable")
-                settlements.append(record)
+        intents, settlements = _effect_changes(view.effects, effects)
         next_task = replace(task, revision=task.revision + 1)
         if intents:
             from codey.durable.errors import CommitConflict
@@ -223,8 +235,10 @@ def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
             selected, mutation = durable.merge_generation_boundary(
                 mutation, task_id=run_id, at=generation_boundary,
             )
+            if boundary_transition is not None:
+                mutation = _apply_boundary_transition(mutation, boundary_transition(view.state, selected))
             if boundary_result is not None:
-                boundary_result.extend(selected)
+                boundary_result[:] = selected
         return mutation
 
     # A user stop may advance the task checkpoint while the provider worker is

@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from codey.operations.generation_boundary import GenerationBoundaryRequest, GenerationBoundaryResult
 from codey.operations.kernel_protocol import ReceivedProviderTurn
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.workspace.context_admission import GhostContextSource
@@ -78,7 +79,7 @@ class KernelObservationDeps:
     # the next text-provider prompt.  Native providers keep their protocol
     # receipt chain intact and therefore consume the durable placement on the
     # following generation boundary.
-    on_boundary: Callable[[str], str | None] | None = None
+    on_boundary: Callable[[GenerationBoundaryRequest], GenerationBoundaryResult] | None = None
 
 @dataclass(frozen=True)
 class KernelRunRequest:

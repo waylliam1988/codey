@@ -43,6 +43,7 @@ def evaluate_completion(context: Any, state: Any) -> None:
         if type(verdict.complete) is not bool:
             raise ValueError("completion gate returned an invalid verdict")
         complete, followup, proof = verdict.complete, verdict.followup, verdict.proof
+        error_source = getattr(verdict, "error_source", "")
         final_text = verdict.final_text or context.session.last_done_text
     except Exception as exc:
         complete, proof, final_text = False, None, context.session.last_done_text
@@ -60,6 +61,14 @@ def evaluate_completion(context: Any, state: Any) -> None:
 
 def _ids(reply: Any) -> list[str]:
     return list(dict.fromkeys(call.id for call in reply.tool_calls if call.id)) if isinstance(reply, AssistantTurn) else []
+
+
+def no_progress_result(session: Any, turn: int) -> KernelResult:
+    from codey.operations.explicit_execution_requirements import readonly_fix_obstruction
+
+    obstruction = readonly_fix_obstruction(session)
+    return KernelResult(False, obstruction or "stopped after repeated tool results without progress", turn,
+                        "blocked" if obstruction is not None else "no_progress")
 
 
 def prepare_control_delivery(context: Any, state: Any) -> None:
@@ -88,11 +97,16 @@ def prepare_control_delivery(context: Any, state: Any) -> None:
                        counters=RuntimeExecutionCounters.from_payload(decision["counters"]))
         return
     if purpose == "question":
+        from codey.durable.questions import DurableUserQuestionStore
         from codey.runtime.observe.events import RunEvent
         if context.observation.on_event is None:
             raise ValueError("user questions require an event surface")
-        # The event surface owns the existing durable question store. Publish
-        # before acknowledgement so a delivery fault cannot lose the question.
+        task = context.durable.task(context.sink.run_id)
+        DurableUserQuestionStore(context.durable).request(decision["question_id"], context.sink.session_id,
+            context.sink.run_id, decision["question"], {"request_ref": state.response_ref,
+                "input_request": dict(task.state.get("input_request", {}))})
+        # Notification is a projection of the saved question, so its failure
+        # leaves the same stable question available after a restart.
         context.observation.on_event(RunEvent("user_question", turn=received.logical_turn,
             message=decision["question"]["question"], metadata={"id": decision["question_id"], **decision["question"]}))
         text = "Question recorded; waiting for the user. No execution authorized."
@@ -135,24 +149,9 @@ def close_protocol(context: Any, view: Any) -> None:
         return
     # A text batch still requires an explicit abandonment, never a fabricated
     # provider delivery. The existing lifecycle settlement validates receipts.
-    if context.observation.on_boundary is not None:
-        context.observation.on_boundary("final" if result.stop_reason == "done"
-                                        and result.turns < context.session.max_turns else "settle")
-    current = operation_state(context)
-    steering = context.boundary_text() if result.stop_reason == "done" else ""
-    if steering:
-        # The final input placement is durable. The old proof cannot authorize
-        # completion of the newly extended task.
-        context.advance(current, positions.LEAF_KERNEL_SETTLED)
-        current = operation_state(context)
-        context.advance(current, positions.LEAF_REPAIR_RUNNING if current.driver == "repair"
-                        else positions.LEAF_WRITER_RUNNING)
-        return
-    if context.native and decision["purpose"] in {"done", "question"}:
-        result = replace(result, delivery="success")
-        decision = {**decision, "result": json_value(result)}
-    context.advance(current, positions.LEAF_KERNEL_SETTLED, data=decision)
+    from codey.operations.generation_boundary import GenerationBoundaryRequest
+    if context.observation.on_boundary is None:
+        raise ValueError("kernel settlement requires the durable generation boundary")
+    boundary = "final" if result.stop_reason == "done" and result.turns < context.session.max_turns else "settle"
+    context.observation.on_boundary(GenerationBoundaryRequest(boundary, settle_kernel=True, expected=state))
 
-
-def operation_state(context: Any) -> Any:
-    return context.load_view().state

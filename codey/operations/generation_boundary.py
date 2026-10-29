@@ -1,73 +1,47 @@
-"""Shared durable provider-generation boundary wiring.
-
-Every provider-backed workflow uses the same boundary callback so a provider
-settlement, inbox placement, conversation entries and task checkpoint are
-committed through one mutation.  Workflows without an admitted durable task
-return ``None`` and keep their existing ephemeral behaviour.
-"""
-
+"""Structured generation actions through the existing durable mutation line."""
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Any
 
 
+@dataclass(frozen=True)
+class GenerationBoundaryRequest:
+    kind: str
+    settle_kernel: bool = False
+    expected: Any = None
+
+
+@dataclass(frozen=True)
+class GenerationBoundaryResult:
+    kind: str
+    provider_effect_id: str
+    submission_ids: tuple[str, ...]
+    conversation_revision: int
+    text: str
+
+
 def durable_generation_boundary_callback(
-    *,
-    durable: Any,
-    session_id: str,
-    task_id: str,
-    sink: Any = None,
-) -> Callable[[str], str | None] | None:
-    """Build the callback used by the shared task kernel.
+    *, durable: Any, session_id: str, task_id: str, sink: Any = None,
+) -> Callable[[GenerationBoundaryRequest], GenerationBoundaryResult]:
+    if durable is None or sink is None or not session_id or not task_id:
+        raise ValueError("generation actions require an admitted durable task and effect sink")
 
-    A pending provider settlement is deliberately consumed only by
-    ``settle_provider_effect_at_boundary``.  That call owns the generation
-    boundary, placement and task checkpoint in one durable transaction.
-    """
-
-    if durable is None:
-        return None
-    if not callable(getattr(durable, "commit_generation_boundary", None)):
-        return None
-    if not session_id or not task_id:
-        return None
-    has_conversation = getattr(durable, "has_conversation", None)
-    if not callable(has_conversation) or not has_conversation(session_id):
-        return None
-
-    def place_boundary(boundary: str) -> str | None:
-        pending = sink.pending_provider_settlement() if sink is not None else None
-        if pending is not None:
-            settlement, messages = pending
-            mutations = getattr(sink, "mutations", None)
-            settle_at_boundary = getattr(mutations, "settle_provider_effect_at_boundary", None)
-            if not callable(settle_at_boundary):
-                raise RuntimeError("durable provider sink cannot settle at generation boundary")
-            placed = settle_at_boundary(
-                session_id,
-                task_id,
-                settlement,
-                boundary=boundary,
-                messages=messages,
-            )
+    def commit(request: GenerationBoundaryRequest) -> GenerationBoundaryResult:
+        pending = sink.pending_provider_settlement()
+        effect_id = pending[0].effect_id if pending is not None else ""
+        if request.settle_kernel:
+            placed = sink.mutations.settle_kernel_boundary(session_id, task_id, expected=request.expected,
+                settlement=pending[0] if pending is not None else None, boundary=request.kind)
+        elif pending is not None:
+            placed = sink.mutations.settle_provider_effect_at_boundary(session_id, task_id, pending[0],
+                                                                       boundary=request.kind, messages=pending[1])
         else:
-            placed = durable.commit_generation_boundary(
-                session_id,
-                task_id=task_id,
-                at=boundary,
-            )
-        texts: list[str] = []
-        for submission in placed:
-            content = getattr(submission, "content", None)
-            if not isinstance(content, Mapping):
-                continue
-            text = content.get("text")
-            if isinstance(text, str) and text.strip():
-                texts.append(text.strip())
-        return "\n\n".join(texts) or None
-
-    return place_boundary
-
-
-__all__ = ["durable_generation_boundary_callback"]
+            raise ValueError("generation action has no pending provider response")
+        texts = [item.content["text"].strip() for item in placed if isinstance(item.content, Mapping)
+                 and isinstance(item.content.get("text"), str) and item.content["text"].strip()]
+        _, revision = durable.head(session_id)
+        return GenerationBoundaryResult(request.kind, effect_id, tuple(item.submission_id for item in placed),
+                                        revision, "\n\n".join(texts))
+    return commit

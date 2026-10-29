@@ -161,6 +161,8 @@ class GateVerdict:
     followup: str
     proof: CompletionProof | None
     final_text: str = ""
+    error_source: str = ""
+    error_type: str = ""
 
 
 def evaluate(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
@@ -171,6 +173,8 @@ def evaluate(session: Any, done_text: object, *, context: Any = None) -> GateVer
             complete=False,
             followup=f"Completion check failed ({type(exc).__name__}); cannot complete yet. Continue the task.",
             proof=None,
+            error_source="completion_check",
+            error_type=type(exc).__name__,
         )
 
 
