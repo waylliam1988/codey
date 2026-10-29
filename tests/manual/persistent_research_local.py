@@ -159,6 +159,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             max_turns=max_turns, session_id=session_id,
             state_home=directory / "state", research_store_root=directory / "knowledge",
             intent="research" if name in {"first", "research"} else "hybrid", sources_open_required=live_web,
+            required_tools=("knowledge_read", "knowledge_commit") if name in {"recall", "revise"} else (),
             requested_capabilities=("knowledge.read", "knowledge.write", "web.read"))
         result = headless_runner.run_headless(request, emit_jsonl=emit, connect_provider=connect,
                                              connect_reviewer=connect if name in {"recall", "revise"} else None)
@@ -207,7 +208,9 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
                         and any("嵌入式数据文件" in v.value.aliases for v in versions)
                         and any(v.value.conditions.get("workload", {}).get("state") == "not_extracted" for v in versions))
         elif name == "recall":
-            accepted = {"knowledge_search", "knowledge_read", "knowledge_commit"} <= observed and any(
+            # The shared context already performs scoped retrieval; an extra
+            # search tool is optional when it supplied the relevant versions.
+            accepted = {"knowledge_read", "knowledge_commit"} <= observed and any(
                            v.value.status == "candidate" and any(r.relation == "depends_on" for r in v.value.references)
                            for v in versions)
         else:

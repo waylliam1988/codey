@@ -388,7 +388,7 @@ def fork_task(
     preserved = {
         key: source.state[key] for key in (
             "project", "max_turns", "provider_id", "intent", "task_kind", "requested_capabilities",
-            "strict_research", "sources_open_required", "project_changes_required", "denied_capabilities",
+            "strict_research", "sources_open_required", "project_changes_required", "denied_capabilities", "required_tools",
             "model_selection", "task_policy", "reviewer_selection",
         ) if key in source.state
     }

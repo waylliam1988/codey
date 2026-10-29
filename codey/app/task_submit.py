@@ -61,6 +61,7 @@ def run_task(
     worker_key: str = "",
     attempt_token: str = "",
     output_format: str = "text", output_schema: str = "",
+    required_tools: tuple[str, ...] = (),
 ) -> None:
     # Heavy task stack stays lazy: importing this module (and server.py)
     # must not load operations/service modules/research (see test_server_lazy_state).
@@ -133,6 +134,7 @@ def run_task(
                     provider_id=provider_id,
                     input=input,
                     output_format=output_format, output_schema=output_schema,
+                    required_tools=required_tools,
                     intent=intent,
                     run_id=run_id,
                     requested_capabilities=tuple(requested_capabilities or ()),
@@ -164,6 +166,7 @@ def run_task(
                     model_selection=model_selection.to_payload() if model_selection is not None else {},
                     input=input,
                     output_format=output_format, output_schema=output_schema,
+                    required_tools=required_tools,
                 )
             run_task_submission(
                 deps,
@@ -198,10 +201,14 @@ def submit_task(
     run_id: str = "",
     input: TaskInput | None = None,
     output_format: str = "text", output_schema: str = "",
+    required_tools: tuple[str, ...] = (),
 ) -> str | None:
     from codey.policies.output_requirement import declaration
 
     declaration(output_format, output_schema)
+    from codey.policies.tool_requirement import required_tool_names
+
+    required_tools = required_tool_names(required_tools)
     # Fail fast on config error before taking the slot; the validated value is
     # passed through so the worker never re-reads the environment (no race).
     # The state object is captured once and handed to the worker as-is, so
@@ -278,6 +285,7 @@ def submit_task(
                 "strict_research": strict_research,
                 "sources_open_required": sources_open_required,
                 "project_changes_required": project_changes_required,
+                "required_tools": list(required_tools),
                 "denied_capabilities": list(denied_capabilities),
                 "previous_run_id": previous_run_id,
                 "initial_shell_results": list(initial_shell_results),
@@ -320,6 +328,7 @@ def submit_task(
             worker_key=session_id,
             attempt_token=state.durable.task(reserved.run_id).attempt_token,
             output_format=output_format, output_schema=output_schema,
+            required_tools=required_tools,
         )
     except Exception:
         with contextlib.suppress(Exception):
@@ -440,6 +449,7 @@ def _dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) ->
                 strict_research=bool(stored.get("strict_research")),
                 sources_open_required=bool(stored.get("sources_open_required")),
                 project_changes_required=bool(stored.get("project_changes_required")),
+                required_tools=_string_tuple(stored.get("required_tools")),
                 denied_capabilities=_string_tuple(stored.get("denied_capabilities")),
                 previous_run_id=str(stored.get("previous_run_id") or ""),
                 initial_shell_results=_mapping_tuple(stored.get("initial_shell_results")),

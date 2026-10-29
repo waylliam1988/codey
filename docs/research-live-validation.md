@@ -406,3 +406,29 @@ passed. Pyrefly initially found two missing local list annotations; those were
 added and its rerun passed with unchanged existing warnings/suppressions.
 The current `research-recall-guarded` run is the first fresh process containing
 both the framing check and missing-id suggestions; outcome remains pending.
+
+
+## Explicit outcomes and accurate protocol repair (2026-10-30)
+
+The fifth recall attempt read the correctly pinned old claim after a scoped
+missing-id suggestion, but still displayed a commit example instead of saving
+it. It failed acceptance; recall and revision have not yet passed. The earlier
+prose framing heuristic was insufficient and has been removed. Answer examples
+remain non-executable.
+
+Task callers can now explicitly declare required_tools. The existing immutable
+TaskPolicy ToolSuccessRequirement and shared completion gate verify successful
+execution receipts. This does not grant permissions or infer obligations from
+natural-language keywords. API/headless submission, durable dispatch/recovery
+and forks retain the declaration. The manual recall/revision tasks declare read
+and commit, matching their existing instructions. Regression coverage runs the
+real headless entry: an example cannot complete, then an actual read/commit can.
+
+Local marker syntax diagnostics now distinguish an unclosed outer argument
+object from a bare enum. The prior generic quoting instruction caused repeated
+incorrect repairs. No missing braces or argument values are supplied by Codey.
+
+Verification: 113 focused entry, policy recovery, codec and durable tests passed.
+Production Pyrefly and ty passed (existing warnings/suppressions unchanged);
+Ruff and mypy also passed before this expanded run. Live medicine research is
+still running and has searched/opened original sources; this is not acceptance.

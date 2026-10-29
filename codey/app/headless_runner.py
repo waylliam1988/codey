@@ -58,6 +58,7 @@ class HeadlessRequest:
     input: TaskInput | None = None
     output_format: str = "text"
     output_schema: str = ""
+    required_tools: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -369,6 +370,7 @@ def _run_headless_task(
                 "strict_research": auth.strict_research,
                 "sources_open_required": auth.sources_open_required,
                 "project_changes_required": auth.project_changes_required,
+                "required_tools": list(request.required_tools),
                 "denied_capabilities": list(auth.denied_capabilities),
                 "review_source_run_id": request.review_source_run_id,
                 "model_selection": selection_payload,
@@ -394,6 +396,7 @@ def _run_headless_task(
                 review_source_run_id=request.review_source_run_id,
                 model_selection=selection_payload,
                 output_format=request.output_format, output_schema=request.output_schema,
+                required_tools=request.required_tools,
             )
         else:
             submission = TaskSubmission(
@@ -413,6 +416,7 @@ def _run_headless_task(
                 review_source_run_id=request.review_source_run_id,
                 model_selection=selection_payload,
                 output_format=request.output_format, output_schema=request.output_schema,
+                required_tools=request.required_tools,
                 input=request.input,
             )
         run_task_submission(deps, submission)

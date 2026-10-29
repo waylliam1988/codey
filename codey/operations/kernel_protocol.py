@@ -8,7 +8,6 @@ Unknown tools are denied, never passed as ``control``.
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
@@ -660,17 +659,6 @@ def normalize_turn(
         allowed = None if controller_allowed is None else {(n or "").strip().lower() for n in controller_allowed}
     items = _response_objects(reply)
     if isinstance(items, ToolPlan):
-        text_protocol = isinstance(reply, TextAnswer) or (
-            isinstance(reply, AssistantTurn) and reply.raw.get("text_protocol") is True)
-        body = items.control.body if items.control is not None else ""
-        if (text_protocol and items.control is not None and items.control.kind == "done" and policy is not None
-                and policy.allows("knowledge.write") and not body.lstrip().startswith(("{", "["))
-                and re.search(r'"tool"\s*:\s*"knowledge_(?:write|commit)"', body)):
-            return _invalid_plan(
-                "A knowledge tool request embedded in prose or a code fence was not executed. "
-                "To save knowledge, send one bare tool request and wait for its result. "
-                "If this is intentionally an example, deliver it explicitly inside done.summary; "
-                "do not claim that it was saved.", kind="embedded_tool_request")
         return items
     return _plan_from_tool_objects(
         items, policy=policy, controller_allowed=allowed,

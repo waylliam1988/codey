@@ -98,6 +98,7 @@ class TaskSubmission:
     input: TaskInput | None = None
     output_format: str = "text"
     output_schema: str = ""
+    required_tools: tuple[str, ...] = ()
 
     @classmethod
     def from_input(
@@ -118,6 +119,7 @@ class TaskSubmission:
         review_source_run_id: str = "",
         model_selection: dict[str, object] | None = None,
         output_format: str = "text", output_schema: str = "",
+        required_tools: tuple[str, ...] = (),
     ) -> TaskSubmission:
         task = input.text if isinstance(input, (StartTask, EditUserMessage)) else (
             input.instruction or "Continue the source run"
@@ -143,6 +145,7 @@ class TaskSubmission:
             model_selection=dict(model_selection or {}),
             input=input,
             output_format=output_format, output_schema=output_schema,
+            required_tools=required_tools,
         )
 
     def resolved_input(self) -> TaskInput:

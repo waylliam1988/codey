@@ -108,6 +108,7 @@ def _ensure_durable_task(state: TaskState, request: TaskSubmission) -> bool:
             "strict_research": request.strict_research,
             "sources_open_required": request.sources_open_required,
             "project_changes_required": request.project_changes_required,
+            "required_tools": list(request.required_tools),
             "denied_capabilities": list(request.denied_capabilities),
             "previous_run_id": request.previous_run_id,
             "initial_shell_results": list(request.initial_shell_results),

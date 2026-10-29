@@ -131,7 +131,7 @@ def test_edit_restart_dispatches_existing_checkpoint_without_reediting_history(t
         input = EditUserMessage(source, "new", state.durable.store.head("session")[1])
         with mock.patch.object(task_submit, "submit_browser_task", return_value=True):
             task_submit.submit_task("session", None, "new", 8, False, "deepseek", run_id="edit",
-                                    input=input, get_state=lambda: state)
+                                    input=input, get_state=lambda: state, required_tools=("knowledge_commit",))
         state.durable.unclaim_task("edit")
         state.release_run("edit")
         head = state.durable.store.head("session")
@@ -142,6 +142,7 @@ def test_edit_restart_dispatches_existing_checkpoint_without_reediting_history(t
         with mock.patch.object(task_submit, "submit_browser_task", return_value=True) as worker:
             assert task_submit.dispatch_durable_task(state.durable.task("edit"), state=state)
         assert worker.call_args.kwargs["input"] == input
+        assert worker.call_args.kwargs["required_tools"] == ("knowledge_commit",)
         assert state.durable.store.head("session") == head
         assert [row.payload["text"] for row in state.durable.context("session") if row.kind == "user_message"] == ["new"]
     finally:

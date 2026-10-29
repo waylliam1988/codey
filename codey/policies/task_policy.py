@@ -250,6 +250,10 @@ def build_task_policy(
 
     output = declaration(getattr(submission, "output_format", "text"), getattr(submission, "output_schema", ""))
     required_checks = (*required_checks, *((output,) if output else ()))
+    from codey.policies.tool_requirement import ToolSuccessRequirement, required_tool_names
+
+    required_checks = (*required_checks, *(ToolSuccessRequirement(name).declaration
+        for name in required_tool_names(getattr(submission, "required_tools", ()))))
     requested_text = ",".join(sorted(requested)) if requested else "-"
     denied_text = ",".join(sorted(denied)) if denied else "-"
     source = f"kind:{kind or 'project'};project:{'yes' if has_project else 'no'};requested:{requested_text};strict:{'yes' if strict else 'no'};denied:{denied_text}"

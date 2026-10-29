@@ -588,6 +588,16 @@ def _approval_entry(ctx: Any, session_id: str, source_run_id: str) -> tuple[str,
     }[code], 'code': code, 'approval': state})
 
 
+def _completion_fields(body: dict[str, Any]) -> dict[str, object]:
+    from codey.policies.tool_requirement import required_tool_names
+
+    fields: dict[str, object] = dict(submission_fields(body))
+    names = required_tool_names(body.get("required_tools", ()))
+    if names:
+        fields["required_tools"] = names
+    return fields
+
+
 def run_submit_response(  # noqa: C901, PLR0912
     body: object,
     submit_task: Callable[..., str | None],
@@ -691,7 +701,7 @@ def run_submit_response(  # noqa: C901, PLR0912
 
     try:
         review_source_run_id = validate_source_run_id(body.get("review_source_run_id", ""))
-        output_fields = submission_fields(body)
+        output_fields = _completion_fields(body)
     except ValueError as exc:
         return 400, {"error": str(exc)}
     if review_source_run_id and intent not in {"review", "project"}:

@@ -16,6 +16,15 @@ PREFIX = "tool_succeeded:"
 _NAME = re.compile(r"[a-z][a-z0-9_.]{0,63}\Z")
 
 
+def required_tool_names(raw: object) -> tuple[str, ...]:
+    """Explicit completion requirements, never an authorization grant."""
+    if not isinstance(raw, (tuple, list)) or len(raw) > 16:
+        raise ValueError("required_tools must be a list of at most 16 canonical tool names")
+    if any(not isinstance(name, str) or _NAME.fullmatch(name) is None for name in raw):
+        raise ValueError("required_tools must contain canonical tool names")
+    return tuple(dict.fromkeys(raw))
+
+
 def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
