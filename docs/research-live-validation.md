@@ -822,3 +822,19 @@ Next diagnostic: `research-live-wal-clock-turn-20261030`. The manual harness
 offers explicit --merge-clock to test whether a separate trailing clock-only
 user turn harms instruction following in this template. This is an experiment,
 not production behavior or acceptance; all payloads and the flag are recorded.
+
+The clock-turn experiment ended at no_progress, repeatedly translating a
+traditional-Chinese source into simplified Chinese and then English inside
+excerpt. It did not establish a clock-boundary fix; production clock handling
+is unchanged. The original requests/results remain preserved.
+
+Rejected-excerpt feedback now says not to translate or convert scripts. If an
+already-opened source has a sufficiently similar short paragraph, the rejection
+shows that exact original passage and its offset/page as an inspection hint.
+It does not replace the submitted quote, save an evidence item, or declare the
+claim supported. Matching is bounded (256 paragraphs, <=1200 characters per
+candidate, similarity >=0.65); unrelated proposals receive no hint. Tests verify
+rejection atomicity and distinguish subsequent explicit successful resubmission.
+161 focused ledger/research/recovery tests plus seven subtests and all four
+static checks passed. Next production-configuration run (no clock experiment):
+`research-live-wal-source-repair-20261030`.

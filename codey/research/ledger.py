@@ -12,6 +12,7 @@ import hashlib
 import re
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
+from difflib import get_close_matches
 from typing import Any
 
 from codey.research import source_domains
@@ -285,8 +286,10 @@ class ResearchLedger:
                         error=(f"evidence item {index} excerpt is missing or not present in opened source: "
                                f"{final_url}. Rejected excerpt: {excerpt[:240]!r}. "
                                "Quotes must be contiguous original text; do not combine passages with ellipses. "
+                               "Do not translate the quote or convert traditional/simplified characters. "
                                "Use source_search or an offset read, then copy a short exact "
-                               "passage supporting this claim. No replacement quote was saved.")
+                               "passage supporting this claim. No replacement quote was saved."
+                               + self._rejected_excerpt_hint(final_url, excerpt, page=page))
                     )
                 if note_type != "source" and self.excerpt_is_section_label(final_url, excerpt):
                     return EvidencePreparation(error=(
@@ -393,6 +396,23 @@ class ResearchLedger:
                 if candidate in {_normalize_for_match(label), _normalize_for_match(unnumbered)}:
                     return True
         return False
+
+    def _rejected_excerpt_hint(self, source_url: str, excerpt: str, *, page: int | None) -> str:
+        """Offer an observed passage for inspection, never replacement evidence."""
+        if not 12 <= len(excerpt) <= 1200:
+            return ""
+        text = (self.source_pages_for_url(source_url).get(page, "") if page is not None
+                else self.source_text_for_url(source_url))
+        candidates = {_normalize_for_match(part): part for part in text.split("\n\n")[:256]
+                      if 12 <= len(part.strip()) <= 1200}
+        matches = get_close_matches(_normalize_for_match(excerpt), candidates, n=1, cutoff=0.65)
+        if not matches:
+            return ""
+        passage = candidates[matches[0]]
+        location = f"page={page}" if page is not None else f"offset={text.index(passage)}"
+        return (f"\nPossible passage from the already-opened source ({location}); not saved and not verified "
+                "to support your claim. Inspect its actual meaning and conditions before quoting:\n"
+                + passage.strip())
 
     def page_for_excerpt(self, source_url: str, excerpt: str) -> int | None:
         if not excerpt:
