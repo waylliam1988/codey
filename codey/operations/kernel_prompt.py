@@ -230,13 +230,24 @@ def _result_context(result: ToolResult, session: TaskSession) -> str:
     return text
 
 
-def _format_results(results: list[ToolResult], session: TaskSession) -> str:
+def _format_results(results: list[ToolResult], session: TaskSession, *,
+                    text_result_spans: list[dict[str, Any]] | None = None) -> str:
     if not results:
         return "[no tool output]\n\nContinue with the next single JSON tool call."
     blocks = []
+    offset = 0
     for result in results:
         label = str(getattr(result.call, "name", "") or "tool")
-        blocks.append(f"[result: {label}]\n{_result_context(result, session)}".rstrip())
+        block = f"[result: {label}]\n{_result_context(result, session)}".rstrip()
+        if text_result_spans is not None:
+            from codey.providers.context_ledger import digest
+
+            reference = next((key for key, value in session._memory_results.items() if value is result), "")
+            if reference:
+                text_result_spans.append({"start": offset, "end": offset + len(block), "digest": digest(block),
+                                          "result_ref": reference, "tool": label, "ok": result.ok})
+        blocks.append(block)
+        offset += len(block) + 2
     return "\n\n".join(blocks) + "\n\nContinue with one bare JSON tool call, or deliver the final answer."
 
 

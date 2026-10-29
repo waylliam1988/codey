@@ -84,6 +84,18 @@ def _available_metadata(text: str, result_refs: frozenset[str]) -> ResultMetadat
     return metadata if metadata is not None and metadata.result_ref in result_refs else None
 
 
+def _old_text_indices(codec: ApiCodec, items: list[dict[str, Any]]) -> Iterator[int]:
+    from codey.providers.text_result_views import TEXT_RESULTS_KEY
+
+    # A later repair/request without new output must not make the current
+    # observed source eligible for omission.
+    latest = max((i for i, item in enumerate(items) if item.get(TEXT_RESULTS_KEY)), default=-1)
+    for start, end in codec.closed_spans(items)[:-2]:
+        for index in range(start, end):
+            if index != latest and items[index].get(TEXT_RESULTS_KEY):
+                yield index
+
+
 def output_reduction_ready(codec: ApiCodec, items: list[dict[str, Any]], result_refs: frozenset[str], *,
                            batch_receipts: bool) -> bool:
     """Treat unbacked old bodies losslessly; batch at least two backed bodies."""
@@ -92,6 +104,9 @@ def output_reduction_ready(codec: ApiCodec, items: list[dict[str, Any]], result_
         if _available_metadata(text, result_refs) is None:
             return True
         backed += 1
+    from codey.providers.text_result_views import reducible_text_result_count
+
+    backed += sum(reducible_text_result_count(items[index], result_refs) for index in _old_text_indices(codec, items))
     return batch_receipts and backed >= 2
 
 
@@ -107,6 +122,10 @@ def reduce_old_outputs(codec: ApiCodec, items: list[dict[str, Any]], result_refs
             encoded = summary_source(text)
             if not isinstance(encoded, str):
                 item[key] = _source_json(encoded)
+    from codey.providers.text_result_views import reduce_text_results
+
+    for index in _old_text_indices(codec, result):
+        result[index] = reduce_text_results(result[index], result_refs)
     return result
 
 

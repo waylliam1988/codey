@@ -928,3 +928,31 @@ check other statistical reasoning or establish general entailment. Whole
 evidence batches still reject atomically. Related validation: 64 focused tests
 before the final pattern expansion, then all 17 qualifier cases passed; all four
 static checks passed (554 production files for mypy).
+
+## Receipt-backed text results and soft admission
+
+The `research-live-adaptive-receipt-views-20261030` real-browser run was
+durably cancelled (exit 1, stopped). It opened Nature, PMC, ClinicalTrials.gov
+and NCI pages, but confused mouse and human findings and repeated fabricated
+quotes. Its saved objects and report proposals are diagnostic artifacts, not
+accepted knowledge. The support-qualifier guard does not prevent all incorrect
+interpretations, especially fabricated quotes (which exact-match checks reject).
+
+Text JSON tool outputs were previously user messages invisible to deterministic
+native-output reduction. The common kernel now freezes trusted output spans,
+digests and existing receipt references in prepared invocation arguments. The
+provider validates these and omits only backed older bodies from its counted
+view. Markers inside source/user text cannot authorize omission. Surrounding
+instructions and current source remain intact, including after later repairs.
+Internal provenance is stripped from HTTP messages. Original events and receipts
+remain lossless; read_tool_result can retrieve omitted bodies.
+
+At 60% of input capacity, two eligible backed results trigger deterministic
+reduction within the current admitted exchange. This also works when background
+view commits cannot replace durable canonical input; it uses existing staged
+checkpoints rather than a second runtime or ledger. No semantic model request
+is needed for this reduction.
+
+Validation: 64 focused JSON/delivery/compaction tests passed, three optional
+delivery cases skipped. Ruff, mypy (555 source files), Pyrefly and ty passed
+(Ruff import ordering corrected and rechecked). Live quality retest pending.

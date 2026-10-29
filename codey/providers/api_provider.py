@@ -315,14 +315,22 @@ class ApiProvider:
                 control.cancel()
 
     def send(self, text: str, timeout: float | None = None, *, tool_call_json: bool = False,
-             tool_call_schema: dict[str, Any] | None = None, tool_call_contract: str = "") -> str:
+             tool_call_schema: dict[str, Any] | None = None, tool_call_contract: str = "",
+             tool_call_results: list[dict[str, Any]] | None = None) -> str:
         if tool_call_json and self.text_tool_format != "json_schema":
             raise ValueError("JSON tool format is not enabled for this provider")
         if tool_call_schema is not None and not tool_call_json:
             raise ValueError("tool schema requires JSON tool format")
         if tool_call_contract and not tool_call_json:
             raise ValueError("tool contract requires JSON tool format")
-        return self._exchange([{"role": "user", "content": text}], None, timeout=timeout,
+        pending: dict[str, Any] = {"role": "user", "content": text}
+        if tool_call_results is not None:
+            from codey.providers.text_result_views import TEXT_RESULTS_KEY, validate_text_results
+
+            if not tool_call_json:
+                raise ValueError("text result spans require JSON tool format")
+            pending[TEXT_RESULTS_KEY] = validate_text_results(text, tool_call_results)
+        return self._exchange([pending], None, timeout=timeout,
                               text_only=True, tool_call_json=tool_call_json, tool_call_schema=tool_call_schema,
                               tool_call_contract=tool_call_contract).text
 
@@ -701,6 +709,11 @@ class ApiProvider:
 
         payload = self._codec.build_payload(messages, tools, settings)
         key = "messages" if self.api_protocol == "openai-completions" else "input"
+        from codey.providers.text_result_views import TEXT_RESULTS_KEY
+
+        # View provenance is local metadata, never an API message property.
+        payload[key] = [{name: value for name, value in item.items() if name != TEXT_RESULTS_KEY}
+                        for item in payload[key]]
         if settings.text_tool_contract:
             # Frozen request declarations, like native tools, belong to this
             # payload only. Never append obsolete tool catalogs to history.
@@ -739,6 +752,16 @@ class ApiProvider:
                 raise RequestPrepError("request context count is unavailable")
             self.last_context_count = count
             if count.value <= self.context_budget.input_limit:
+                # Receipt-backed omission needs no semantic generation. Stage
+                # it in this same exchange so durable sessions benefit even
+                # when a background view commit cannot edit canonical input.
+                if (count.value >= self.context_budget.input_limit * 0.60
+                        and output_reduction_ready(self._codec, candidate, self._result_refs, batch_receipts=True)):
+                    reduced = self._compaction.compact(candidate, tools, deadline, self._context_snapshot(),
+                        staged=staged, deterministic_only=True)
+                    if reduced is not None:
+                        candidate = reduced
+                        continue
                 messages[:] = candidate
                 return payload
             if self.purpose != "conversation":

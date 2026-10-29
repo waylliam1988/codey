@@ -279,7 +279,8 @@ class KernelContext:
 
     def freeze(self, state: Any, snapshot: Any, *, turn: int, prompt: str = "",
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
-               counters: RuntimeExecutionCounters | None = None) -> None:
+               counters: RuntimeExecutionCounters | None = None,
+               text_result_spans: list[dict[str, Any]] | None = None) -> None:
         from codey.operations.kernel_driver import prepare_provider_request
 
         json_contract = not self.native and getattr(self.provider, "text_tool_format", "plain") == "json_schema"
@@ -309,6 +310,8 @@ class KernelContext:
 
             options = {"tool_call_json": True, "tool_call_schema": text_tool_schema(tools),
                        "tool_call_contract": kernel_prompt._text_request_prompt("", snapshot)}
+            if text_result_spans:
+                options["tool_call_results"] = text_result_spans
         prepare_provider_request(self.sink, method, args, options, counters=(state.counters, counters or state.counters))
 
     def prepare_turn(self, state: Any) -> None:
@@ -470,8 +473,9 @@ class KernelContext:
             self.close(state, no_progress_result(self.session, turn) if reason == "no_progress"
                        else KernelResult(False, summary, turn, reason))
             return
+        spans: list[dict[str, Any]] = []
         advance = wiring._advance_after_results(self.native, results, self.session, None,
-            completion_context=self.completion_context, boundary_prompt=self.boundary_text())
+            completion_context=self.completion_context, boundary_prompt=self.boundary_text(), text_result_spans=spans)
         if isinstance(advance, KernelResult):
             self.close(state, advance)
             return
@@ -484,8 +488,10 @@ class KernelContext:
             # Keep the latest result after historical observations: previous
             # findings must not displace the passage currently being inspected.
             prompt = "\n\n".join(part for part in (observations, prompt) if part)
+            shift = len(observations) + 2 if observations else 0
+            spans = [{**span, "start": span["start"] + shift, "end": span["end"] + shift} for span in spans]
         snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native)
-        self.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages)
+        self.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages, text_result_spans=spans)
 
     def boundary_text(self) -> str:
         task = self.durable.task(self.sink.run_id)
