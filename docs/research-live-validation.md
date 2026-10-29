@@ -653,3 +653,29 @@ save. 168 focused tests plus seven subtests passed; the expanded continuation,
 subprocess restart, recovered-result and compaction boundary suite passed 58.
 All four static checks passed. A clean three-process JSON lifecycle probe is
 now running before another fresh real-web attempt.
+
+## Chinese retrieval failure and derived index repair
+
+The clean JSON lifecycle in `artifacts/research-three-stage-json-clean-20261030`
+passed source saving and read-before-commit candidate creation. Revision failed:
+the model revised a related reader claim instead of the queue inference. The
+validator rejected the result despite the mechanical task reporting done. The
+original failed store is retained unchanged as a diagnostic artifact.
+
+The revision prompt's background did not contain the target inference: unicode61
+does not segment Chinese runs, while incidental English schema terms recalled
+long source documents. Structured FTS now adds derived overlapping CJK bigrams,
+weights title/alias lexical matches, and automatically rebuilds outdated derived
+indexes on open. No aliases, object identities, revisions or commit receipts are
+rewritten. Oversized background entries no longer hide later fitting entries.
+Task guidance requires searching the requested topic/kind if background lacks it;
+a related premise must not be substituted for the target inference.
+
+Regression coverage includes the actual long revision query, English distractors,
+scope filtering before limit, existing-index upgrades preserving receipts, and
+bounded background rendering. 38 focused tests passed. mypy, Pyrefly and ty
+passed; Ruff's new test import ordering was fixed. Only the explicitly reviewed
+research-guidance digest changes; ordinary prompt baselines passed unchanged.
+The strengthened manual validator requires premise reads before candidate
+creation and preserves scope/origin during revision. A fresh same-config lifecycle
+is running in `artifacts/research-three-stage-json-cjk-20261030`; not yet accepted.

@@ -8,8 +8,7 @@ from typing import Any
 
 from codey.knowledge.model import KnowledgeVersion, canonical_json
 from codey.knowledge.repository import KnowledgeRepository
-
-_STOP = {"the", "a", "an", "and", "or", "of", "to", "is", "in", "how", "what", "with", "can", "for"}
+from codey.knowledge.search_text import query_terms
 
 
 @dataclass(frozen=True)
@@ -68,11 +67,11 @@ class KnowledgeRecall:
                             "AND length(a.alias)>=2 AND instr(?,a.alias)>0)" + where + "LIMIT ?",
                             (query.casefold(), *args, limit)).fetchall()
         seeds.extend((str(r[0]), int(r[1]), "explicit name or alias in question") for r in rows)
-        terms = [term for term in re.findall(r"[^\W_]+", query.casefold()) if term not in _STOP][:12]
+        terms = query_terms(query)
         if self.repository.index.fts_enabled and terms:
             match = " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
             rows = conn.execute(head + "JOIN knowledge_fts f ON f.id=v.id WHERE knowledge_fts MATCH ?" + where +
-                                "ORDER BY rank LIMIT ?", (match, *args, limit)).fetchall()
+                                "ORDER BY bm25(knowledge_fts,0,4,1,4),v.id LIMIT ?", (match, *args, limit)).fetchall()
             seeds.extend((str(r[0]), int(r[1]), "text match; relevance is not evidence strength") for r in rows)
         if not seeds:
             rows = conn.execute(head + "WHERE instr(v.payload,?)>0" + where + "LIMIT ?",
@@ -138,6 +137,6 @@ def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000) -> str:
                    {"target": r.target, "revision": r.revision, "relation": r.relation} for r in value.references]}
         text = canonical_json(row)
         if len("\n".join(lines)) + len(text) + 1 > max_chars:
-            break
+            continue
         lines.append(text)
     return "\n".join(lines)

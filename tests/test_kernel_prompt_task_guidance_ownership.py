@@ -25,7 +25,8 @@ def test_full_research_guidance_reviewed_prompt_digest():
     policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
                         strict_research=True)
     assert hashlib.sha256(_guidance(policy).encode()).hexdigest() == (
-        "6e9b242383c8821dc5eb70d8942a13f942b5c8e491138a064ffc5cf60f98500e"
+        # Reviewed: missing requested topic/kind requires target search before revision.
+        "e04584bba16331396aeafe12c01a8946de5883c11ceccf62f9f219c239158097"
     )
 
 

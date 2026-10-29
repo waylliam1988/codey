@@ -28,7 +28,8 @@ def task_guidance_for_policy(policy: TaskPolicy) -> str:
          "is an example, not a saved change. Keep candidate analogies distinct from verified findings."
          if policy.allows("knowledge.write") else ""),
         ("Use knowledge_read on the relevant versions before revising or adopting them; "
-         "copy their actual ids and revisions."
+         "copy their actual ids and revisions. If background recall lacks the requested topic or object kind, "
+         "search for that target before editing. A related premise is not the inference being revised."
          if policy.allows("knowledge.read") and policy.allows("knowledge.write") else ""),
         guidance(policy.required_checks),
     ) if part)

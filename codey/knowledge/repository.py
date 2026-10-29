@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from codey.knowledge.index import KnowledgeIndex
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeVersion, canonical_json
 from codey.knowledge.note import now_iso
+from codey.knowledge.search_text import SEARCH_INDEX_VERSION, indexed_text
 
 # Relation direction is explicit: a claim is supported_by evidence, an evidence
 # fragment is from_source a source version. Co-occurrence is not a fact relation.
@@ -39,6 +40,7 @@ class KnowledgeRepository:
         self.index = index
         with index.transaction() as conn:
             for sql in (
+                "CREATE TABLE IF NOT EXISTS knowledge_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)",
                 "CREATE TABLE IF NOT EXISTS knowledge_heads(id TEXT PRIMARY KEY,revision INTEGER NOT NULL)",
                 "CREATE TABLE IF NOT EXISTS knowledge_versions(id TEXT NOT NULL,revision INTEGER NOT NULL,"
                 "kind TEXT NOT NULL,scope TEXT NOT NULL,scope_id TEXT NOT NULL,status TEXT NOT NULL,"
@@ -60,6 +62,9 @@ class KnowledgeRepository:
             if index.fts_enabled:
                 conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5("
                              "id UNINDEXED,title,content,aliases,tokenize='unicode61')")
+                version = conn.execute("SELECT value FROM knowledge_meta WHERE key='structured_fts_version'").fetchone()
+                if version is None or version[0] != SEARCH_INDEX_VERSION:
+                    self.rebuild()
 
     def read(self, identity: str, revision: int | None = None) -> KnowledgeVersion | None:
         conn = self.index._read_conn()
@@ -206,7 +211,8 @@ class KnowledgeRepository:
         if self.index.fts_enabled:
             conn.execute("DELETE FROM knowledge_fts WHERE id=?", (value.id,))
             conn.execute("INSERT INTO knowledge_fts VALUES(?,?,?,?)",
-                         (value.id, value.title, value.content, " ".join(value.aliases)))
+                         (value.id, indexed_text(value.title), indexed_text(value.content),
+                          indexed_text(" ".join(value.aliases))))
 
     def rebuild(self) -> None:
         with self.index.transaction() as conn:
@@ -221,7 +227,11 @@ class KnowledgeRepository:
                                  [(value.id, a.casefold()) for a in (*value.aliases, value.title) if a])
                 if self.index.fts_enabled:
                     conn.execute("INSERT INTO knowledge_fts VALUES(?,?,?,?)",
-                                 (value.id, value.title, value.content, " ".join(value.aliases)))
+                                 (value.id, indexed_text(value.title), indexed_text(value.content),
+                                  indexed_text(" ".join(value.aliases))))
+            if self.index.fts_enabled:
+                conn.execute("INSERT INTO knowledge_meta VALUES('structured_fts_version',?) "
+                             "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (SEARCH_INDEX_VERSION,))
 
     def purge(self, identities: Sequence[str]) -> set[str]:
         """Purge requested content and dependent revisions, preserving no private payload.

@@ -1,8 +1,9 @@
 """Local model research/recall probe through production headless task entry.
 
-Uses a frozen copy of public SQLite documentation to isolate model behavior
-from search ranking. Each stage is a separate process and AppContext. This is
-a small capability probe, not a general research-quality benchmark.
+The default three-stage suite uses frozen public SQLite documentation to isolate
+model behavior from search ranking. Each stage has a separate process and
+AppContext. --stage research --live-web uses real production search and browser
+acquisition. Mechanical acceptance still requires a separate report-quality review.
 """
 
 from __future__ import annotations
@@ -231,8 +232,13 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         elif name == "recall":
             # The shared context already performs scoped retrieval; an extra
             # search tool is optional when it supplied the relevant versions.
+            commit_position = next((i for i, row in enumerate(events_seen)
+                if row.get("type") == "tool" and row.get("tool_name") == "knowledge_commit" and row.get("ok")), 0)
+            read_ids = {row.get("path") for row in events_seen[:commit_position]
+                if row.get("type") == "tool" and row.get("tool_name") == "knowledge_read" and row.get("ok")}
             accepted = {"knowledge_read", "knowledge_commit"} <= observed and any(
-                           v.value.status == "candidate" and any(r.relation == "depends_on" for r in v.value.references)
+                           v.value.status == "candidate" and any(r.relation == "depends_on" and r.target in read_ids
+                                                                 for r in v.value.references)
                            for v in versions)
         else:
             accepted = {"knowledge_read", "knowledge_commit"} <= observed and any(
@@ -240,6 +246,8 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
                            and v.revision == old["revision"] + 1 and v.value.status == "candidate"
                            and v.value.content == old["content"]
                            and v.value.to_dict()["references"] == old["references"]
+                           and v.value.scope == old["scope"] and v.value.scope_id == old["scope_id"]
+                           and v.value.origin == old["origin"]
                            and v.value.conditions.get("workload", {}).get("state") == "not_extracted"
                            and v.value.provenance.get("interpretation") == "analogy_requires_queue_measurement"
                            for v in versions)
