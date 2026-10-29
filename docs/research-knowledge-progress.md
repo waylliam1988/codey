@@ -27,6 +27,10 @@ generic research methods. Markdown is interchange, never a competing authority.
 
 ## Status
 
+Current delivery: implementation and deterministic production acceptance complete.
+The local Gemma4 full three-stage experiment remains unsuccessful; see the final
+verification below. Earlier step-by-step status entries are historical notes.
+
 - Baseline inspected: d306aa8c, working tree clean.
 - Existing research continuation already persists references to shared operation
   results. Material acquisition and synthesis/staged writes still need scrutiny.
@@ -105,6 +109,26 @@ Update this file in each implementation commit with results and remaining work.
   Canonical turns pass through unchanged; valid native calls retain precedence.
 - 48 focused local decoder, real transport-boundary and exchange tests passed.
   Production Ruff, mypy, Pyrefly and ty passed again after this correction.
+
+## Final verification (2026-10-30)
+
+- Final combined local-protocol, transport, production knowledge acceptance and
+  lifecycle regression: 64 tests passed. No full pytest run was performed.
+- The production-codec live attempt saved verified fact evidence but its initial
+  research stage exceeded the probe's 420-second timeout. A separate subsequent
+  recall request received an incomplete/invalid generation response and stopped
+  with GenerationUnknownError without automatic resend. No live three-stage
+  pass is claimed. Artifacts are retained in
+  `artifacts/persistent-research-production-codec-20261029/` (ignored runtime data).
+- The automated full lifecycle uses scripted provider responses through the real
+  task entry. The nine subprocess failure/restart scenarios verify the existing
+  driver/effect path separately. Neither test claims to validate arbitrary model
+  reasoning, source search quality or individual treatment applicability.
+- Implementation and focused verification are delivered. Remaining limitations:
+  local-model end-to-end stability, the pre-existing architecture line-count
+  failure, and the explicitly documented scope/deletion and semantic-evaluation
+  boundaries. No second runtime, vector service or automatic identity merger was
+  introduced. Usage and storage migration details: `docs/persistent-research.md`.
 
 ## Versioned reports, graphs and lifecycle
 
