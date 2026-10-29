@@ -10,7 +10,6 @@ from codey.operations.task_loop import (
     KernelObservationDeps,
     KernelRunRequest,
     KernelTransportDeps,
-    run_task_kernel,
 )
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
@@ -78,6 +77,7 @@ def run_evidence_followup(
 
             staged = clone_research_tools(tools)
             staged.ledger = tools.ledger.clone()
+            prior_created, prior_updated = set(tools.created_ids), set(tools.updated_ids)
             controller = EvidenceFollowupController(staged, fresh_urls)
             before = len(tools.ledger.evidence_items)
             result = controller.execute_tool_call(call.name, dict(call.args or {}))
@@ -86,6 +86,19 @@ def run_evidence_followup(
             from codey.research.ledger_receipts import ledger_observation
 
             canonical = {"research_observation": ledger_observation(staged.ledger, call.name, evidence_start=before)} if result.ok else {}
+            if result.ok:
+                from codey.providers.response_record import json_value
+                from codey.research.tools import StagedKnowledgeStore
+
+                created = [identity for identity in tools.created_ids if identity not in prior_created]
+                proposals: list[object] = []
+                if isinstance(tools.store, StagedKnowledgeStore):
+                    proposals = [json_value(tools.store._staged_notes[identity]) for identity in created]
+                canonical["knowledge_notes"] = {
+                    "created": created,
+                    "updated": [identity for identity in tools.updated_ids if identity not in prior_updated],
+                    "proposals": proposals,
+                }
             return ToolResult(call=call, model_text=result.model_text, ok=result.ok, canonical=canonical)
 
         session = TaskSession(
@@ -97,16 +110,18 @@ def run_evidence_followup(
         if runtime_mutations is not None and session_id and run_id:
             from codey.operations.task_effects import KernelEffectSink
 
-            runtime_mutations.mark_writer_running(session_id, run_id, provider_id=provider_id,
-                                                  writer_attempt=2 + (round_index - 1) * 2 + attempt - 1)
             sink = KernelEffectSink(
                 runtime_mutations, session_id=session_id, run_id=run_id,
                 provider_id=provider_id, phase="research",
                 durable=durable,
                 managed_outputs=managed_outputs,
             )
-        outcome = run_task_kernel(
+        from codey.operations.research_continuation import ResearchContinuation
+
+        history = ResearchContinuation(runtime_mutations, managed_outputs, session_id=session_id, run_id=run_id)
+        outcome = history.kernel(
             session,
+            attempt=2 + (round_index - 1) * 2 + attempt - 1,
             request=KernelRunRequest(
                 transport=KernelTransportDeps(
                     provider=active_provider,
@@ -133,6 +148,13 @@ def run_evidence_followup(
                 ),
             ),
         )
+        if outcome.stop_reason in {"recovery_failure", "controller_failure", "delivery_pending"}:
+            from codey.research.pipeline import ResearchContinuationError
+            raise ResearchContinuationError(outcome.summary)
+        if not last_error:
+            failures = [item for item in session._memory_results.values() if not item.ok]
+            if failures:
+                last_error = clip(failures[-1].model_text, 200)
         last_summary = outcome.summary
         new_count = max(0, len(getattr(tools.ledger, "evidence_items", ()) or ()) - prior_evidence)
         note_ids = tuple(item for item in (getattr(tools, "created_ids", ()) or ())

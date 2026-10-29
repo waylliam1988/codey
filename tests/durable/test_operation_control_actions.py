@@ -27,6 +27,40 @@ def request_for(durable, sink, provider, *, on_event=None, executors=None):
 
 
 @pytest.mark.parametrize("sqlite", [False, True])
+def test_settled_result_restores_original_completion_proposal(tmp_path, sqlite):
+    durable, _, _, sink = runtime(tmp_path, sqlite=sqlite)
+    sends = []
+
+    class Provider:
+        native_tools = True
+
+        def send_tool_results(self, results, tools):
+            raise AssertionError("unexpected continuation")
+
+        def send_turn(self, prompt, tools):
+            sends.append("request")
+            return AssistantTurn(tool_calls=(ProviderToolCall("done-original", "done", {"summary": "finished"}),))
+
+        def acknowledge_tool_results(self, results, tools):
+            sends.append("ack")
+            return AssistantTurn()
+
+    try:
+        request = request_for(durable, sink, Provider())
+        original = TaskSession(TaskPolicy(frozenset({"control"})))
+        first = run_task_kernel(original, request=request)
+        assert first.completed, first
+        resumed = TaskSession(original.policy)
+        second = run_task_kernel(resumed, request=request)
+        assert second == first
+        assert sends == ["request", "ack"]
+        assert resumed.last_done_text == original.last_done_text == "finished"
+        assert resumed.last_done_args == original.last_done_args == {"summary": "finished"}
+    finally:
+        durable.close()
+
+
+@pytest.mark.parametrize("sqlite", [False, True])
 def test_durable_cancel_after_response_saves_reply_and_only_admits_close_receipts(tmp_path, sqlite):
     durable, _, _, sink = runtime(tmp_path, sqlite=sqlite)
     executed, calls = [], []

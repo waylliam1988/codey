@@ -497,6 +497,8 @@ class ExecutionDelegate:
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
             if name == "knowledge_write":
                 before = len(getattr(getattr(tools, "ledger", None), "evidence_items", ()) or ())
+                created_before, updated_before = set(tools.created_ids), set(tools.updated_ids)
+                links_before = tools.links_created
                 lowered, problem = self._lower_knowledge_sources(args)
                 if problem:
                     return ToolResult(ok=False, call=call, model_text=f"ERROR: {problem}"), False, None
@@ -505,6 +507,13 @@ class ExecutionDelegate:
                     return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), False, None
                 evidence = self._ledger_evidence(before, tools.ledger)
                 evidence_canonical: dict[str, object] = {"evidence_items": evidence}
+                evidence_canonical["knowledge_links_created"] = tools.links_created - links_before
+                proposals: list[object] = []
+                evidence_canonical["knowledge_notes"] = {
+                    "created": [item for item in tools.created_ids if item not in created_before],
+                    "updated": [item for item in tools.updated_ids if item not in updated_before],
+                    "proposals": proposals,
+                }
                 ledger = getattr(tools, "ledger", None)
                 if isinstance(ledger, ResearchLedger):
                     evidence_canonical["research_observation"] = ledger_observation(ledger, name, evidence_start=before)
@@ -513,9 +522,11 @@ class ExecutionDelegate:
                     True, None,
                 )
             if name == "knowledge_link":
+                links_before = tools.links_created
                 outcome = tools.knowledge_link(str(args.get("src") or ""), str(args.get("dst") or ""),
                                             str(args.get("kind") or "relates"))
-                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
+                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text,
+                    canonical={"knowledge_links_created": tools.links_created - links_before}), outcome.ok, None
         except Exception as exc:
             return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
         return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown research tool {name}"), False, None

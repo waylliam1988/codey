@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -648,6 +648,12 @@ class StagedKnowledgeStore:
                 new_path = target_store.path_for(note)
                 orig_existed = target_store.exists(note.id)
                 orig_note = target_store.read_note(note.id) if orig_existed else None
+                # A restored proposal may already have reached the vault before
+                # the process stopped. Compare the full persisted content;
+                # write_note owns only the updated timestamp on first commit.
+                if (orig_note is not None
+                        and replace(orig_note, updated=note.updated).to_markdown() == note.to_markdown()):
+                    continue
                 orig_path = target_store.path_for(orig_note) if orig_note is not None else None
                 orig_bytes = orig_path.read_bytes() if (orig_path and orig_path.is_file()) else None
                 tracked_notes[note.id] = (new_path, orig_path, orig_bytes, orig_note)

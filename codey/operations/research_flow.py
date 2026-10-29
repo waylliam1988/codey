@@ -335,6 +335,17 @@ def run_research_pipeline(
         )
 
     followup_index = 0
+    material_index = 0
+
+    from codey.operations.research_continuation import ResearchContinuation
+
+    continuation = ResearchContinuation(deps.runtime_mutations, deps.managed_outputs,
+                                        session_id=request.session_id, run_id=frame.run_id)
+
+    def execute_plan(executor: Any, plan: Any, tools: Any) -> Any:
+        nonlocal material_index
+        material_index += 1
+        return continuation.material(material_index, executor, plan, tools, policy=frame.entry_policy)
 
     def followup(
         *,
@@ -388,6 +399,7 @@ def run_research_pipeline(
         config=ResearchPipelineConfig(),
         ledger_event_sink=lambda result: ledger_sink(hooks, result),
         research_changes_sink=changes_sink,
+        execute_plan=execute_plan,
         policy=getattr(frame, "entry_policy", None),
     )
     return pipeline.run()

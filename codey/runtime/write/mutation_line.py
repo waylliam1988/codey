@@ -251,6 +251,41 @@ class RuntimeMutationLine:
             lambda state: state_mark_candidate_validation_running(state, provider_id=provider_id,
                                                                   writer_attempt=writer_attempt))
 
+    def commit_research_continuation(
+        self, session_id: str, run_id: str, *, expected: RuntimeOperationState,
+        artifact: ArtifactRecord, writer_attempt: int | None = None,
+        artifacts: tuple[ArtifactRecord, ...] = (),
+    ) -> None:
+        """Keep completed invocation references when admitting their successor.
+
+        This is data attached to the existing operation position. Only the
+        operation's writer_attempt identifies the active invocation.
+        """
+        def mutation(projection: Any, entries: Any) -> Any:
+            view = load_session_view(entries, session_id=session_id, run_id=run_id)
+            state = expected
+            if writer_attempt is not None:
+                state = state_mark_writer_running(state, provider_id=state.provider_id, writer_attempt=writer_attempt)
+            proposed = replace(state, continuation_ref=artifact.handle)
+            if (view.state is not None and expected.task_kind == "research"
+                    and replace(view.state, updated_at=proposed.updated_at) == proposed):
+                return ()
+            if view.state != expected or expected.task_kind != "research":
+                raise RuntimeOperationTransitionError("research continuation has a stale operation identity")
+            operation_is_open(projection, expected)
+            if artifact.owner_task_id != run_id or artifact.owner_effect_id is not None:
+                raise RuntimeOperationTransitionError("research continuation belongs to another task")
+            if expected.leaf != "kernel_settled":
+                raise RuntimeOperationTransitionError("research continuation requires a settled invocation")
+            settlement = prepare_operation_settlement(view)
+            rows = [abandoned_entry(session_id, run_id, batch_id=batch_id,
+                reason="writer_settled", batches=view.batches)
+                for batch_id in settlement.abandoned_batch_ids]
+            return (*tuple(row for row in rows if row is not None),
+                    operation_state_entry(proposed))
+
+        self._mutate(session_id, run_id, mutation, artifacts=(*artifacts, artifact))
+
     def set_task_policy(
         self,
         session_id: str,

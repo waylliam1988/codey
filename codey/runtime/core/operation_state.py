@@ -27,7 +27,7 @@ from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_projection import RuntimeProjection
 from codey.storage.local_store import project_key, session_key
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 KIND = "runtime_operation_state"
 
 LEAF_ACCEPTED = "accepted"
@@ -185,7 +185,7 @@ _KNOWN_PAYLOAD_KEYS = frozenset({
     "started_at", "updated_at", "task_kind", "task_policy",
     "model_selection", "reviewer_selection", "final_delivery",
     "writer_attempt", "candidate_validation_attempted", "turns_used", "stop_reason",
-    "completion_proof_ref", "completion_proof_status", "repair_rounds",
+    "completion_proof_ref", "completion_proof_status", "repair_rounds", "continuation_ref",
     "repair_context_ref", "blocked_reason", "driver", "turn", "tool_index", "terminal", "response_ref", "request_ref", "counters", "work_ref", "logical_turn",
 })
 _KNOWN_TERMINAL_KEYS = frozenset(
@@ -286,6 +286,7 @@ class RuntimeOperationState:
     response_ref: str = ""
     request_ref: str = ""
     work_ref: str = ""
+    continuation_ref: str = ""
     logical_turn: int = 0
     counters: RuntimeExecutionCounters = field(default_factory=RuntimeExecutionCounters)
     terminal: RuntimeOperationTerminal | None = None
@@ -327,6 +328,8 @@ class RuntimeOperationState:
             payload["response_ref"] = self.response_ref
         if self.work_ref:
             payload["work_ref"] = self.work_ref
+        if self.continuation_ref:
+            payload["continuation_ref"] = self.continuation_ref
         if self.request_ref:
             payload["request_ref"] = self.request_ref
         if self.model_selection:
@@ -444,6 +447,7 @@ class RuntimeOperationState:
                 response_ref=response_ref,
                 request_ref=request_ref,
                 work_ref=work_ref,
+                continuation_ref=_parse_continuation_ref(payload),
                 logical_turn=_count(payload.get("logical_turn", 0), "logical_turn"),
                 counters=RuntimeExecutionCounters.from_payload(payload.get("counters")),
                 terminal=terminal,
@@ -461,6 +465,13 @@ def _parse_operation_identity(payload: dict[str, object]) -> tuple[str, str, str
     if leaf not in LEAVES:
         raise RuntimeOperationTransitionError("unknown operation leaf")
     return session_id, run_id, operation_id, lane, leaf
+
+
+def _parse_continuation_ref(payload: dict[str, object]) -> str:
+    reference = _text(payload.get("continuation_ref", ""), "continuation_ref", allow_empty=True)
+    if reference and (payload.get("task_kind") != "research" or not re.fullmatch(r"artifact_[0-9a-f]{24}", reference)):
+        raise RuntimeOperationTransitionError("invalid research continuation reference")
+    return reference
 
 
 def _parse_operation_counts(payload: dict[str, object]) -> tuple[int, int, int, int, int, int]:

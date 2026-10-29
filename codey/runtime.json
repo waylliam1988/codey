@@ -240,6 +240,7 @@
     "codey/operations/provider_session.py",
     "codey/operations/recovery.py",
     "codey/operations/research_completion_checks.py",
+    "codey/operations/research_continuation.py",
     "codey/operations/research_flow.py",
     "codey/operations/research_iteration.py",
     "codey/operations/result.py",

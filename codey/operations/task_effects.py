@@ -159,7 +159,8 @@ class KernelEffectSink:
         from codey.operations.provider_receipts import snapshot_description
 
         self._request_context = {"logical_turn": logical_turn, "snapshot": snapshot_description(snapshot),
-                                 "window": window_ref.to_payload() if window_ref is not None else None, "effect_scope": ""}
+                                 "window": window_ref.to_payload() if window_ref is not None else None,
+                                 "effect_scope": "", "close_reply": False}
 
     def counters(self) -> RuntimeExecutionCounters:
         from codey.durable.checkpoint import operation_from_checkpoint

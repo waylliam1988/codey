@@ -208,7 +208,7 @@ class RuntimeOperationStateTests(unittest.TestCase):
         self.assertEqual(projection.lanes[terminal.lane].open_operation_id, "")
 
     def test_operation_state_payload_is_closed_and_versioned(self) -> None:
-        self.assertEqual(SCHEMA_VERSION, 5)
+        self.assertEqual(SCHEMA_VERSION, 6)
         payload = _state(LEAF_ACCEPTED).to_payload()
         self.assertEqual(payload["schema_version"], SCHEMA_VERSION)
         self.assertEqual(payload["kind"], KIND)

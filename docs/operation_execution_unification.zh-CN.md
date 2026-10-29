@@ -261,8 +261,47 @@ Gemma 的 `<|tool_call>` 格式，违反 JSON 契约，系统按协议错误停�
 证据位于 `artifacts/operation-json-20261029-final2`。没有放宽解析、增加 fallback，
 也没有把该项标为恢复成功。
 
-尚不能声称全部六阶段已验收：research 外层 pipeline 在 followup invocation 中退出后，
-启动仍试图从 main invocation 进入，而当前 operation 身份会严格拒绝回退。
-需要保存并引用外层 continuation，让已提交的搜索材料、原 invocation 和暂存知识回执
-可恢复；不能重跑 PlanExecutor、重分配 effect 或恢复旧 loop 来绕过。
-pi/DeepSeek 的等价故障比较也尚未进行，不将缺少数据写成比较结论。
+### 阶段六收口：research 多 invocation 恢复
+
+已补完上述外层恢复缺口。operation schema 6 只增加 `continuation_ref`，指向现有 managed
+output 中的有界引用索引；当前执行位置仍是 `leaf`，当前 invocation 仍由 `writer_attempt`
+标识。索引只引用原 Kernel 结果和原 acquisition 材料，不复制回复正文、effect 或 delivery
+账本。该引用不能从当前 `work_ref` 推导，因为进入下一 invocation 后后者已经指向新工作。
+
+`research_continuation.py` 接替旧外层反复调用 main/followup 时丢失的重建职责：已完成的
+invocation 读取原结果和回执来重建投影，当前 invocation 进入原 driver。PlanExecutor 已经
+提交的搜索和来源正文从原材料恢复；未形成可靠材料前的只读 acquisition 仍保留原中断语义。
+原结果归档、前一批次合法终结和下一 invocation 接纳经过同一 mutation line 事务提交。
+提交成功但调用方没有看到成功时，可以识别同一提交，不重新执行外部动作。
+
+followup 笔记提议随原 knowledge_write 回执保存，恢复只重建原 staging。笔记已经落盘时，
+按原 ID 和完整内容比对，仅允许首次写入产生的 updated 时间差异；相同内容不重写，冲突
+明确停止，不覆盖。材料先在克隆 ledger 上完整校验，再发布投影。缺失引用、损坏材料或
+无法提交 continuation 会传播恢复故障，不能被 pipeline 吞掉后返回旧 best 结果。
+
+同时修复了另一个实测差异：已结算 Kernel 重启后丢失原 done 参数。现在从原请求绑定的
+回复恢复提议投影；不重新评估 completion gate，也不把收尾回复当成新的完成或工具执行。
+进程内使用的 provider 投影缓存可完全重建，不是新的权威状态。
+
+本次新增／复验结果（各组有交叠）：
+
+- research、协议、迭代与 operation 状态组：113 passed，12 subtests。
+- SQLite 重启、控制、原回复、请求接纳、预算、边界与无 fallback 组：115 passed。
+- reducer、delivery、审批 HTTP 重启、完成、旧轨迹与 fencing 组：104 passed，26 subtests。
+- 冻结快照、协议修复、恢复错误与新 continuation 契约组：47 passed。
+- 新增五个 research 子进程退出位置：材料提交后、修复回复保存后、工具回执后、笔记落盘后、
+  第二轮 followup 回复后。均双次恢复，模型请求、搜索、来源打开和笔记写入次数保持不变。
+- 另测 continuation 提交成功但回执丢失、重复接纳无重复状态转移、损坏材料不发布部分事实、
+  笔记冲突阻断、版本严格解码及 schema 5→6 幂等迁移。
+- Ruff、mypy（539 文件）、Pyrefly（0 errors，35 suppressed，77 warnings）、ty 均通过。
+
+最后一次 Gemma4 12B 原生 smoke 再次 4/4 通过，证据位于
+`artifacts/operation-native-20261029-research-final`。恢复使用不同 PID，edit_executions=1，
+原结果和 call id 保留；审批续跑 shell_results=1。这仍是选定 smoke，不是完整发布矩阵。
+另一次真实 research smoke 通过，证据位于 `artifacts/operation-research-20261029-final`：
+同一个 run/session 完成 web_search→open_url→知识证据写入→done，项目文件未改变。
+主研究与 followup 共 12 次真实请求，无 HTTP 重试；这项验证协议执行，不评定答案质量。
+
+按本次约定，六阶段工程迁移以定向／重点 pytest 和四项静态检查验收，全量 pytest 留给
+GitHub CI。此前记录的文本协议模型不遵循 JSON 契约问题仍保留为未通过结果；未添加解析
+fallback。pi/DeepSeek 的等价故障比较尚未进行，不将缺少数据写成比较结论。

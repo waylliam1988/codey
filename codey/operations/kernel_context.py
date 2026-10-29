@@ -48,6 +48,7 @@ class KernelContext:
         self.completion_context = wiring._completion_context_with_ignores(
             self.observation.completion_context, self.execution.workspace_ignored_paths)
         self.responses: dict[str, Any] = {}
+        self.projected_provider_effects: set[str] = set()
         self.snapshots: dict[int, Any] = {}
         self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder)
 
@@ -194,6 +195,14 @@ class KernelContext:
 
         for effect in RuntimeEffectStore(durable=self.durable).load_effects(self.sink.session_id, self.sink.run_id):
             identity = effect.intent.effect_id
+            if effect.intent.effect_category == "provider_send":
+                self.restore_completion_proposal(effect)
+                continue
+            if self.session.task_kind in {"research", "evidence_followup"}:
+                from codey.operations.task_session import turn_effect_id
+                scoped_run = f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id
+                if identity != turn_effect_id(scoped_run, effect.intent.turn, effect.intent.tool_index):
+                    continue
             if (effect.intent.effect_category != "tool_call" or effect.settlement is None
                     or identity in self.session.executed or identity in self.session.restored_effect_ids):
                 continue
@@ -210,7 +219,53 @@ class KernelContext:
             staged.restored_effect_ids.add(identity)
             if ledger is not None:
                 ledger.commit_projection(staged_ledger)
+                from codey.operations.research_continuation import restore_note_proposals
+                restore_note_proposals(self.execution.research_tools, result.canonical)
             self.session.commit_projection(staged)
+        tools = self.execution.research_tools
+        if tools is not None:
+            from codey.operations.research_continuation import ResearchContinuation
+            ResearchContinuation.project_urls(tools)
+
+    def restore_completion_proposal(self, effect: Any) -> None:
+        """Rebuild proposal metadata from its original response, without a gate."""
+        from codey.operations.provider_receipts import (
+            REQUEST_KIND,
+            RESPONSE_KIND,
+            read_provider_artifact,
+            request_artifact_for_effect,
+            restore_snapshot,
+        )
+        from codey.providers.response_record import decode_reply
+
+        identity = effect.intent.effect_id
+        if identity in self.projected_provider_effects or effect.intent.phase != self.sink.phase:
+            return
+        artifacts = [row for row in self.durable.artifacts_for_effect(identity)
+                     if row.metadata.get("kind") == RESPONSE_KIND]
+        if not artifacts:
+            return
+        if len(artifacts) != 1:
+            raise RecoveryFailed("provider proposal has conflicting response facts")
+        request = read_provider_artifact(self.sink.managed_outputs, request_artifact_for_effect(self.durable, effect),
+            kind=REQUEST_KIND, session_id=self.sink.session_id, run_id=self.sink.run_id, effect_id=identity)
+        if (not isinstance(request, dict) or type(request.get("effect_scope")) is not str
+                or type(request.get("close_reply")) is not bool):
+            raise RecoveryFailed("provider proposal has no original invocation scope")
+        if request.get("effect_scope") != self.effect_scope or request.get("close_reply"):
+            self.projected_provider_effects.add(identity)
+            return
+        raw = read_provider_artifact(self.sink.managed_outputs, artifacts[0], kind=RESPONSE_KIND,
+            session_id=self.sink.session_id, run_id=self.sink.run_id, effect_id=identity)
+        snapshot = restore_snapshot(request.get("snapshot"))
+        if snapshot.policy != self.session.policy:
+            raise RecoveryFailed("completion proposal authorization differs from its original request")
+        reply = decode_reply(raw)
+        plan = kernel_protocol.normalize_turn(decode_text_turn(reply) if isinstance(reply, str) else reply, snapshot=snapshot)
+        if not plan.protocol_error and plan.control is not None and plan.control.kind == "done":
+            self.session.last_done_text = plan.control.body or ""
+            self.session.last_done_args = dict(plan.control_args)
+        self.projected_provider_effects.add(identity)
 
     def results(self, view: Any, batch_id: str) -> list[Any]:
         self.restore_facts()

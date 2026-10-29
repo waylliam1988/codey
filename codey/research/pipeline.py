@@ -24,6 +24,10 @@ from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation
 
 
+class ResearchContinuationError(RuntimeError):
+    """A committed research continuation cannot be safely reconstructed."""
+
+
 @dataclass(frozen=True)
 class ResearchIterationRun:
     result: ResearchRunResult
@@ -117,6 +121,7 @@ class ResearchPipeline:
         config: ResearchPipelineConfig | None = None,
         ledger_event_sink: Callable[[EvidenceLedgerWriteResult], None] | None = None,
         research_changes_sink: Callable[..., None] | None = None,
+        execute_plan: Callable[[PlanExecutor, ResearchPlan, ResearchTools], PlanExecutionResult] | None = None,
         policy: object,
     ) -> None:
         self.context = context
@@ -127,6 +132,7 @@ class ResearchPipeline:
         self.config = config or ResearchPipelineConfig()
         self.ledger_event_sink = ledger_event_sink
         self.research_changes_sink = research_changes_sink
+        self.execute_plan = execute_plan
         # 原任务授权：补研究与合成均不得超越此边界
         self.policy = policy
 
@@ -205,6 +211,8 @@ class ResearchPipeline:
     def _execute_plan(self, executor: PlanExecutor, plan: ResearchPlan, staged_tools: ResearchTools) -> PlanExecutionResult:
         # 无策略重试已删除：回调先产生效果再抛 TypeError 时，向上传播，
         # 绝不去掉父策略再调一次（否则同一效果执行两次）。
+        if self.execute_plan is not None:
+            return self.execute_plan(executor, plan, staged_tools)
         return executor.execute(plan, staged_tools, policy=self.policy)
 
     def _run_followup(self, staged_tools: ResearchTools, plan: ResearchPlan,
@@ -265,6 +273,8 @@ class ResearchPipeline:
             )
             try:
                 material = self._execute_plan(executor, plan, staged_tools)
+            except ResearchContinuationError:
+                raise
             except cancellation.TaskCancelled:
                 raise
             except Exception:
@@ -277,6 +287,8 @@ class ResearchPipeline:
                 break
             try:
                 followup_result = self._run_followup(staged_tools, plan, material, best)
+            except ResearchContinuationError:
+                raise
             except cancellation.TaskCancelled:
                 raise
             except Exception:

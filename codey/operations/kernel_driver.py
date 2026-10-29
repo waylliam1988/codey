@@ -2,8 +2,8 @@
 
 Normal sends and a restart with a prepared request use this same provider
 path. There is no private execution cursor: the operation leaf and original
-effect receipts determine every action. Other kernel actions are being moved
-here from the old controller, without adding another executor or ledger.
+effect receipts determine every action. Control actions and recovery use the
+same executors and durable mutation line.
 """
 from __future__ import annotations
 
@@ -238,6 +238,7 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
             action = rules.next_runtime_action(view, context.decision_inputs(view))
             last_action = action.kind
             if action.kind == rules.ACTION_RETURN_KERNEL_RESULT:
+                context.restore_facts()
                 decision = context.decision(state)
                 result = kernel_control.result_from_payload(decision["result"])
                 if context.native and decision["purpose"] in {"done", "question"}:

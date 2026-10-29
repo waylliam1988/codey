@@ -124,7 +124,6 @@ def run_research_iteration(
     task_policy: Any = None,
     controller_denied: tuple[str, ...] = (),
 ) -> ResearchIterationRun:
-    from codey.operations.task_loop import run_task_kernel
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
 
@@ -142,7 +141,6 @@ def run_research_iteration(
             session_id=session_id,
             project=project,
         )
-    provider.new_chat()
     from codey.operations.provider_session import ObservedProvider
     from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
     from codey.workspace.context_admission import request_scope, source_from_value
@@ -187,7 +185,6 @@ def run_research_iteration(
     if mutations is not None and session_id and run_id:
         from codey.operations.task_effects import KernelEffectSink, admitted_durable
 
-        mutations.mark_writer_running(session_id, run_id, provider_id=provider_id, writer_attempt=1)
         admitted = admitted_durable(getattr(deps, "state", None), run_id)
         intent_sink = KernelEffectSink(
             mutations, session_id=session_id, run_id=run_id,
@@ -195,6 +192,13 @@ def run_research_iteration(
             managed_outputs=getattr(deps, "managed_outputs", None),
             durable=admitted,
         )
+    from codey.operations.research_continuation import ResearchContinuation
+
+    history = ResearchContinuation(mutations, getattr(deps, "managed_outputs", None),
+                                   session_id=session_id, run_id=run_id)
+    position = history.state()
+    if position.writer_attempt == 1 and position.leaf in {"accepted", "writer_running"} and not position.logical_turn:
+        provider.new_chat()
     topic_source = source_from_value(
         key="research_topic_continuity",
         text=topic_continuity_context,
@@ -202,8 +206,9 @@ def run_research_iteration(
         scope=request_scope(project, session_id),
         capability_id="research_topic_continuity",
     )
-    outcome = run_task_kernel(
+    outcome = history.kernel(
         session,
+        attempt=1,
         request=KernelRunRequest(
             task_guidance=task_guidance_for_policy(session.policy),
             transport=KernelTransportDeps(

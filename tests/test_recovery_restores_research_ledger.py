@@ -37,6 +37,9 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
     class Tools:
         def __init__(self):
             self.ledger = ledger
+            self.created_ids, self.updated_ids = [], []
+            self.sources_read, self.search_result_urls = set(), set()
+            self.links_created = 0
 
         def web_search(self, query):
             calls.append("search")
@@ -73,7 +76,8 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
     assert recovered.ok
     assert bool(recovered.recovered_tool_outcomes) is False
     assert bool(recovered.settled_tool_outcomes) is True
-    restored_tools = SimpleNamespace(ledger=ResearchLedger())
+    restored_tools = SimpleNamespace(ledger=ResearchLedger(), created_ids=[], updated_ids=[],
+                                    sources_read=set(), search_result_urls=set())
     monkeypatch.setattr("codey.operations.task_entry._entry_executors", lambda *args: (None, None, restored_tools))
     import json
     provider = TextConversation(*[json.dumps({"tool": "done", "args": {"summary": report}})])

@@ -54,6 +54,8 @@ def operation_from_checkpoint(task: TaskCheckpoint, session_id: str) -> RuntimeO
         # Schema 4 only adds a prepared-request position. Existing schema-3
         # positions and budgets keep their meaning; no execution is inferred.
         payload = {**payload, "schema_version": 5}
+    if isinstance(payload, dict) and type(payload.get("schema_version")) is int and payload["schema_version"] == 5:
+        payload = {**payload, "schema_version": 6}
     state = RuntimeOperationState.from_payload(payload)
     if state is None or state.run_id != task.task_id or state.session_id != session_id:
         raise RuntimeOperationTransitionError("invalid durable operation checkpoint")
