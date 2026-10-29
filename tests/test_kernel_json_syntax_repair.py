@@ -47,6 +47,20 @@ def test_escaped_code_string_is_preserved_exactly():
     assert plan.calls[0].args["content"] == CONTENT
 
 
+def test_unnamed_query_fragment_gets_member_repair_not_quote_escaping_advice():
+    from codey.protocols.text_turn import TextError, decode_text_turn
+
+    raw = '{"tool":"web_search","args":{"query":"topic A"," " "topic B"}}'
+    decoded = decode_text_turn(raw)
+    assert isinstance(decoded, TextError)
+    assert 'Every object member must be "name":value' in decoded.message
+    assert "no implicit string concatenation" in decoded.message
+    assert "For embedded JavaScript" not in decoded.message
+    repaired = normalize_turn('{"tool":"web_search","args":{"query":"topic A topic B"}}',
+                              policy=TaskPolicy(grants=frozenset({"control", "web.read"})))
+    assert not repaired.protocol_error and repaired.calls[0].args == {"query": "topic A topic B"}
+
+
 def test_invalid_json_member_rejects_entire_text_batch():
     valid = _edit()
     invalid = _edit("first\nsecond").replace(r"\n", "\n")

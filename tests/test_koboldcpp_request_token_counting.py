@@ -96,3 +96,28 @@ def test_changed_model_reduced_running_window_and_invalid_count_are_rejected(mon
         counter({"messages": [{"role": "user", "content": "hello"}]}, deadline=time.monotonic() + 5)
     if changed != "count":
         assert "/api/extra/tokencount" not in called
+
+
+@pytest.mark.parametrize("path", ["/api/v1/model", "/api/extra/tokencount"])
+def test_malformed_metadata_gets_one_fresh_read_without_generation(monkeypatch, path):
+    import time
+    from unittest.mock import MagicMock
+
+    from codey.providers.local_tokens import KoboldRequestCounter
+
+    response = MagicMock()
+    response.__enter__.return_value = response
+    response.read.side_effect = [b'HTTP/1.0 200 OK\r\ncontent-type: application/json\r\n\r\n{"value":88}',
+                                 b'{"value":88}']
+    opener = MagicMock()
+    opener.open.return_value = response
+    monkeypatch.setattr("urllib.request.build_opener", lambda *args: opener)
+    counter = KoboldRequestCounter("http://localhost:9/v1", "fixture", "", 4096)
+    assert counter._json(path, time.monotonic() + 5, {"messages": []} if "tokencount" in path else None) == {"value": 88}
+    assert opener.open.call_count == 2
+    assert all(call.args[0].full_url.endswith(path) for call in opener.open.call_args_list)
+    # A second malformed response fails closed; never estimate or strip headers.
+    response.read.side_effect = [b'not json', b'not json']
+    from codey.providers.error_classification import RequestPrepError
+    with pytest.raises(RequestPrepError, match="invalid JSON"):
+        counter._json(path, time.monotonic() + 5)

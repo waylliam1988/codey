@@ -42,6 +42,40 @@ Next: fresh text-protocol three-process probe, actual SQLite browser research,
 and actual non-software research. Inspect report contents and stored evidence;
 none of these fresh live acceptance outcomes has been established yet.
 
+### Further live repairs
+
+- Quote admission accepted whitespace/case normalization, but ResearchRecord's
+  char locator required a literal match. Added contiguous whitespace-aware
+  source offsets (same matching rule, no fuzzy replacement); verified against
+  original multiline text and rejected altered/ellipsis passages.
+- The text probe after restart stored both direct quotes and the alias, but
+  omitted the requested unknown workload condition. A shorter guided task now
+  gives the exact condition mapping; acceptance requirements were not weakened.
+  Its later process exited with Windows access-violation status 3221225477 before
+  a final result. Root cause is unconfirmed. Periodic CPython thread dumps in
+  the manual harness are now opt-in (`--diagnostic-stacks`), not on every run.
+- Real browser run `research-live-wal-text-20261030` successfully searched, then
+  token-count admission rejected malformed metadata JSON. A separate read-only
+  request captured HTTP response headers embedded in the `/api/v1/model` body;
+  subsequent reads returned valid JSON. Metadata/tokenizer reads now get exactly
+  one fresh retry on JSON decoding failure, within the existing deadline. They
+  still fail closed on repeated malformed responses, changed model/window or
+  invalid counts. This retry cannot send inference or any research tool effect.
+- `research-live-wal-text-count-repair-20261030` repeated the same malformed
+  unnamed search-string fragment for 20 turns. JSON repair now distinguishes
+  missing member colons/implicit concatenation from quote-escaping errors.
+  Initial research and investigations use the shared stagnant-turn bound (5)
+  for invalid calls, rather than exhausting a long research budget on syntax.
+- `report_sections` now rejects a duplicated full report in summary, including
+  literal escaped headings, with specific repair guidance; it does not strip or
+  unescape content. Non-heading literal backslashes remain preserved.
+- New regression sets: 49 locator/model/proof/merge tests; 27 counting/retry/
+  receipts tests; 62 syntax/research/continuation/report tests. Latest Ruff,
+  mypy, Pyrefly and ty all passed with unchanged configurations.
+- Fresh natural browser run `research-live-wal-member-repair-20261030` is active.
+  It has executed actual search and page opening after the syntax repair.
+  This is progress, not yet a completed research acceptance result.
+
 ## Environment
 
 - KoboldCpp 1.117.1, localhost:5001, Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.

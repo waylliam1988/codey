@@ -72,6 +72,7 @@ def investigate_plan(*, history: ResearchContinuation, plan: ResearchPlan, tools
         task_guidance="Collect missing evidence through the tools, preserving unknown conditions.",
         transport=KernelTransportDeps(provider=provider, run_id=history.run_id,
             effect_scope=scope, provider_id=provider_id, user_task=prompt,
+            stagnant_turns=5,
             stop_flag=_StopFlag(should_stop)),
         execution=KernelExecutionDeps(research_tools=tools, managed_outputs=history.outputs,
                                        session_id=history.session_id, durable=history.durable),

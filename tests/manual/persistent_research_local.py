@@ -23,7 +23,7 @@ URLS = ("https://www.sqlite.org/wal.html", "https://www.sqlite.org/isolation.htm
 
 
 def stage(directory, name, upstream, model, native=False, live_web=False, question="", max_turns=12, thinking=False,
-          temperature=0.3, seed=73):
+          temperature=0.3, seed=73, diagnostic_stacks=False):
     from unittest.mock import patch
 
     from codey.app import headless_runner
@@ -39,11 +39,13 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         "model": model, "temperature": temperature, "seed": seed, "native_tools": native,
         "stream": native, "thinking": thinking, "live_web": live_web, "max_turns": max_turns,
         "question": question,
+        "diagnostic_stacks": diagnostic_stacks,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     events = directory / f"{name}-events.jsonl"
     wire = directory / f"{name}-wire.jsonl"
     stacks = (directory / f"{name}-stacks.txt").open("a", encoding="utf-8")
-    faulthandler.dump_traceback_later(60, repeat=True, file=stacks)
+    if diagnostic_stacks:
+        faulthandler.dump_traceback_later(60, repeat=True, file=stacks)
 
     def record(row):
         with wire.open("a", encoding="utf-8") as stream:
@@ -110,21 +112,15 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
     tasks = {
         "research": question,
         "first": (
-            "研究 SQLite WAL 在并发读写时的限制，重点是为什么多个读者可并发、写者仍会竞争。"
-            "先搜索并打开官方资料；关键原文若不在当前片段中，继续定位读取，再保存证据并回答。"
-            "knowledge_write.sources必须是已读取的URL字符串数组，不能填工具回执引用。"
-            "使用提供的 SQLite 官方文档；先读取来源，再用 knowledge_write 保存准确引文、条件和限制，"
-            "必须同时保存读写并发和仅单一写者两个结论的直接证据。"
-            "若单写者原文不在首段，用source_search查找writer并打开返回的offset；"
-            "不能用多个事务可追加到WAL这句话替代同一时刻只有一个写者的直接陈述。"
-            "evidence.claim用中文概述，evidence.excerpt保持官方英文原文；报告沿用已保存的中文主张。"
-            "将WAL模式这一适用前提存入conditions，workload未实测，标为not_extracted。"
-            "标签至少含 SQLite 和 写者串行化，别名含 嵌入式数据文件。"
-            "不要保存只有报告摘要的笔记。最后给出简短、带来源的研究报告，明确何时不能外推。"
-            "报告不超过500字，优先用done.report_sections提交各部分，由系统排版六个标题。"
-            "报告只概述证据并引用[1]，无需重复带双引号的英文引文；引用表使用[1]和实际URL。"
-            "使用report_sections时summary只填结论，不要再塞入完整报告或手动编码换行。"
-            "knowledge_refs使用工具返回的结构化对象id，不是note_id。"
+            "研究 SQLite WAL：为什么读写可并发，而写者仍竞争？搜索并打开官方文档。"
+            "保存两条中文主张，分别配官方英文原文：读写互不阻塞；同一时刻只有一个写者。"
+            "找不到单写者原文就source_search查writer，并open_hit读取相应段落。"
+            'knowledge_write必须包含 aliases=["嵌入式数据文件"]、tags=["SQLite","写者串行化"]，'
+            '以及 conditions={"mode":{"state":"reported","value":"WAL"},'
+            '"workload":{"state":"not_extracted"}}，因为实际工作负载尚未测量。'
+            "然后给不超过500字的中文报告，明确外推边界。使用done.report_sections，summary只填结论，"
+            "其余五部分各用字符串数组。每句分别引用[1]，报告沿用已存中文主张，来源表填官方URL。"
+            "knowledge_refs引用工具返回的claim对象id和revision。完成前检查两个条件都已保存。"
         ),
         "recall": (
             "一个队列系统增加了处理者，但所有提交都要经过唯一闸门。我想借鉴以前研究过的嵌入式数据文件："
@@ -224,6 +220,7 @@ def main():
     parser.add_argument("--stage", choices=("first", "recall", "revise", "research"))
     parser.add_argument("--native", action="store_true", help="Use the server's structured tool protocol")
     parser.add_argument("--thinking", action="store_true", help="Enable the model's reasoning mode")
+    parser.add_argument("--diagnostic-stacks", action="store_true", help="Opt in to periodic CPython thread dumps")
     parser.add_argument("--live-web", action="store_true", help="Use production search and browser page acquisition")
     parser.add_argument("--question-file", type=Path)
     parser.add_argument("--max-turns", type=int, default=12)
@@ -240,7 +237,7 @@ def main():
         if args.stage == "research" and (not args.live_web or not question.strip()):
             parser.error("research requires --live-web and --question-file")
         stage(directory, args.stage, args.upstream, model, args.native, args.live_web, question, args.max_turns,
-              args.thinking, args.temperature, args.seed)
+              args.thinking, args.temperature, args.seed, args.diagnostic_stacks)
         return
     documents = []
     from codey.research.extract import extract_text, extract_title
@@ -260,6 +257,7 @@ def main():
                         "--directory", str(directory), "--upstream", args.upstream, "--stage", name,
                         "--temperature", str(args.temperature), "--seed", str(args.seed),
                         "--max-turns", str(args.max_turns), *(["--native"] if args.native else []),
+                        *(["--diagnostic-stacks"] if args.diagnostic_stacks else []),
                         *(["--thinking"] if args.thinking else [])],
                        check=True, timeout=args.stage_timeout)
 

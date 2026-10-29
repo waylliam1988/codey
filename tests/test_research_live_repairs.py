@@ -89,3 +89,21 @@ def test_condition_errors_identify_path_and_show_nested_repair(conditions, path)
     with pytest.raises(ValueError) as caught:
         KnowledgeObject("claim-one", "claim", "A conditional claim", "source", conditions=conditions)
     assert path in str(caught.value) and '"workload":{"state":"not_extracted"}' in str(caught.value)
+
+
+def test_verified_normalized_quote_keeps_original_source_offsets():
+    from codey.research.object_model import _excerpt_offsets, build_research_record
+
+    text = "Document header.\nOnly one\n  writer may commit at a time.\nReferences."
+    excerpt = "only one writer may commit at a time."
+    ledger = ResearchLedger()
+    ledger.record_open(URL, URL, "Concurrency", text)
+    prepared = ledger.prepare_evidence_items([{"source_url": URL, "claim": "Single writer", "excerpt": excerpt}],
+        fallback_sources=[URL], fallback_claim="Single writer", fallback_body="", note_type="fact")
+    assert not prepared.error and len(prepared.items) == 1
+    ledger.add_evidence_items(list(prepared.items))
+    record = build_research_record(question="Concurrent writers?", summary="", ledger=ledger)
+    locator = record.evidence[0].locator
+    assert text[locator.char_start:locator.char_end] == "Only one\n  writer may commit at a time."
+    assert _excerpt_offsets(text, "one ... writer") == (0, 0)
+    assert _excerpt_offsets(text, "a different claim") == (0, 0)

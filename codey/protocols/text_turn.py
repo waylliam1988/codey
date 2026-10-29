@@ -69,6 +69,13 @@ def _json_error(source: str, exc: json.JSONDecodeError) -> TextError:
             r" Escape line breaks and tabs inside JSON strings as \n, \r and \t;"
             r' for example, "content":"first line\nsecond line\n".'
         )
+    elif exc.msg.startswith("Expecting ':' delimiter"):
+        detail += (
+            ' Every object member must be "name":value. Do not append unnamed string fragments '
+            'after a field or concatenate adjacent quoted strings; JSON has no implicit string concatenation. '
+            'Put the complete value inside one quoted string for its named field, '
+            'for example {"query":"topic A topic B"}. Use separate tool turns for separate queries.'
+        )
     else:
         detail += (
             r' Inside a JSON string, escape each double quote as \" and each literal backslash as \\.'
@@ -80,7 +87,7 @@ def _json_error(source: str, exc: json.JSONDecodeError) -> TextError:
     end = min(len(source) if end < 0 else end, exc.pos + 60)
     detail += (f"\nSource excerpt (starting at character {start + 1}):\n{source[start:end]}"
                f"\nReported error is character {exc.pos - start + 1} within this excerpt. "
-               "No tool in this reply was executed. Resend the request with correct JSON escaping; preserve its values.")
+               "No tool in this reply was executed. Resend the request with correct JSON syntax and escaping; preserve its values.")
     return TextError(detail, kind="invalid_json")
 
 

@@ -974,7 +974,12 @@ def _excerpt_offsets(text: str, excerpt: str) -> tuple[int, int]:
         return 0, 0
     index = source.find(needle)
     if index < 0:
-        return 0, 0
+        # Evidence admission permits whitespace/case differences from readable
+        # HTML/PDF output. Locate that same contiguous passage in the source;
+        # otherwise valid evidence loses its locator during proof review and
+        # triggers unnecessary follow-up searches. Never guess a nearby quote.
+        match = re.search(r"\s+".join(re.escape(part) for part in needle.split()), source, re.IGNORECASE)
+        return (match.start(), match.end()) if match is not None else (0, 0)
     return index, index + len(needle)
 
 

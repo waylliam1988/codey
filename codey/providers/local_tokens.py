@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import urllib.parse
 import urllib.request
@@ -51,6 +52,19 @@ class KoboldRequestCounter:
         self.model, self.api_key, self.window = model, api_key, window
 
     def _json(self, path: str, deadline: float, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        # These are metadata/tokenizer reads, including the token-count POST;
+        # no inference request can enter this bounded retry. A fresh connection
+        # recovers occasional malformed HTTP/JSON from local server handlers.
+        for attempt in range(2):
+            try:
+                return self._read_json(path, deadline, payload)
+            except json.JSONDecodeError as exc:
+                if attempt or deadline <= time.monotonic():
+                    raise RequestPrepError(f"KoboldCpp token counting failed: invalid JSON at {path}") from exc
+                logging.getLogger(__name__).warning("Malformed KoboldCpp metadata at %s; retrying the read once", path)
+        raise AssertionError("unreachable metadata attempt")
+
+    def _read_json(self, path: str, deadline: float, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise RequestPrepError("KoboldCpp token counting deadline exceeded")
@@ -68,6 +82,8 @@ class KoboldRequestCounter:
             if not isinstance(result, dict):
                 raise ValueError("token count response must be an object")
             return result
+        except json.JSONDecodeError:
+            raise
         except (OSError, ValueError) as exc:
             raise RequestPrepError(f"KoboldCpp token counting failed: {exc}") from exc
 

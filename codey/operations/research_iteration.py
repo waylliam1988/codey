@@ -242,6 +242,7 @@ def run_research_iteration(
                 effect_scope="research:1",
                 provider_id=provider_id,
                 user_task=task,
+                stagnant_turns=5,
                 context_scope=request_scope(project, session_id),
                 ghost_sources=(topic_source,) if topic_source is not None else (),
                 admit_hints=ghost_control_enabled(

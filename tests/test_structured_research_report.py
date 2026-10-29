@@ -78,3 +78,14 @@ def test_literal_escape_sequences_in_report_content_are_preserved():
     _, plan = plan_for(args, True)
     assert plan.control
     assert args["report_sections"]["coverage"][0] in plan.control.body
+
+
+@pytest.mark.parametrize("native", [True, False])
+@pytest.mark.parametrize("separator", ["\n", r"\n"])
+def test_duplicated_full_report_is_rejected_with_specific_repair(native, separator):
+    args = arguments()
+    args["summary"] += separator + "## 关键证据" + separator + "One writer commits at a time. [1]"
+    before = copy.deepcopy(args)
+    _, plan = plan_for(args, native)
+    assert plan.control is None and "summary must contain only the conclusion" in plan.protocol_error
+    assert args == before
