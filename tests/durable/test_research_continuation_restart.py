@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 
 
-def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exception | None = None):
+def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exception | None = None,
+         cancel_on_followup: bool = False):
     import os
     from types import SimpleNamespace
     from unittest.mock import patch
@@ -60,6 +61,8 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
                 return json.dumps({"tool": "web_search", "args": {"query": "initial research"}})
             if attempt == 2 and failure is not None:
                 raise failure
+            if attempt == 2 and cancel_on_followup:
+                durable.request_cancel("r", reason="cancel real investigation")
             round_index = 1 if attempt == 2 else 2
             url = f"https://example.com/source-{round_index}"
             rows = [json.loads(row) for row in (root / "observations.jsonl").read_text(encoding="utf-8").splitlines()]
@@ -231,6 +234,22 @@ def test_research_continuation_admission_is_idempotent(tmp_path, monkeypatch):
     result, _ = _run(tmp_path)
     assert result.followup_rounds == 2
     assert len(commits) == 4
+
+
+def test_durable_cancellation_during_followup_never_returns_previous_draft_as_done(tmp_path):
+    from codey.durable import DurableSession, SQLiteDurableStore
+    from codey.runtime.core.cancellation import TaskCancelled
+
+    with pytest.raises(TaskCancelled, match="research investigation stopped"):
+        _run(tmp_path, cancel_on_followup=True)
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "state.sqlite"))
+    try:
+        assert durable.task("r").state["cancel_requested"]
+        observations = [json.loads(row) for row in (tmp_path / "observations.jsonl").read_bytes().splitlines()]
+        assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2]
+        assert not any(row["event"] in {"fetch", "write"} for row in observations)
+    finally:
+        durable.close()
 
 
 @pytest.mark.parametrize("not_sent", [True, False])

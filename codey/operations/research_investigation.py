@@ -80,6 +80,11 @@ def investigate_plan(*, history: ResearchContinuation, plan: ResearchPlan, tools
             on_boundary=durable_generation_boundary_callback(durable=history.durable,
                 session_id=history.session_id, task_id=history.run_id, sink=sink),
             completion_context={"research_ledger": tools.ledger, "source_ids": session.source_ids})))
+    if outcome.stop_reason == "stopped":
+        # Durable cancellation may arrive without setting the outer process's
+        # stop flag. Never turn it into "no new material" and return an older
+        # accepted draft as a successful completed research task.
+        raise cancellation.TaskCancelled("research investigation stopped")
     if outcome.stop_reason in {"recovery_failure", "controller_failure", "delivery_pending", "provider_failure"}:
         raise ResearchContinuationError(outcome.summary)
     stop_reason = outcome.stop_reason

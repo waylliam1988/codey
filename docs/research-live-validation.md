@@ -873,3 +873,14 @@ longer offer ordinary prose as an alternative to the required tool envelope.
 Tests cover exact prepared-request restoration, counting, nonmutation of prior
 history, and no contract leakage to later ordinary/auxiliary sends. This is a
 context-cost fix, not semantic validation. Fresh browser research is required.
+
+Validation: 83 focused protocol/prompt/prepared-request/delivery tests passed;
+Ruff, mypy (553 files), Pyrefly and ty passed. No full pytest was run.
+
+The result-focus cancellation also exposed a system defect: a stopped shared
+investigation could be interpreted as no new material and the pipeline returned
+its previous accepted draft with stop_reason=done even while task_status was
+cancelled. Investigation now propagates its stopped outcome as TaskCancelled.
+An actual durable-cancellation regression exercises the production kernel and
+ensures no previous draft can be returned as successful completion. The related
+45 pipeline/follow-up/restart tests passed; all four static checks passed.
