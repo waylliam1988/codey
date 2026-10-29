@@ -16,6 +16,7 @@ from typing import Any
 
 from codey.completion.contract import (
     CHECK_FAIL,
+    CHECK_NOT_RUN,
     CHECK_PASS,
     MAX_COMPLETION_CHECKS,
     CompletionCheck,
@@ -436,11 +437,16 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
         reason = proof.blocked_reason
     elif proof is not None and proof.reason_codes:
         reason = proof.reason_codes[0]
-    followup = (
-        f"Not done yet ({reason or 'checks incomplete'}). "
+    failed_ids = {row.check_id for row in deduped if row.status in {CHECK_FAIL, CHECK_NOT_RUN}}
+    report_repairs = {"research_report_sections", "research_report_quality", "research_claim_bindings", "knowledge_versions"}
+    instruction = (
+        "Repair the reported report or reference defect, then propose done again. "
+        "Request additional evidence only if the reported defect requires it."
+        if failed_ids and failed_ids <= report_repairs else
         "Collect the missing local evidence or fresh verification, then propose done again. "
         "Model claims alone do not complete."
     )
+    followup = f"Not done yet ({reason or 'checks incomplete'}). " + instruction
     if reason == "knowledge_reference_invalid":
         followup += (" knowledge_refs must cite structured object ids with their saved revisions from knowledge_search/read/write, "
                      "not document note_ids or old answer objects. Read the source note to find its structured versions.")

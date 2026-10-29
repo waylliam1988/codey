@@ -158,5 +158,7 @@ def test_gate_preserves_unbound_answer_and_requests_missing_claim_instead_of_shr
     verdict = gate.evaluate(session, text, context=context)
     assert not verdict.complete and not verdict.final_text
     assert "report_claim_binding_incomplete" in verdict.followup
+    assert "Repair the reported report or reference defect" in verdict.followup
+    assert "Collect the missing local evidence" not in verdict.followup
     assert missing in verdict.followup and "Saved claim wording" in verdict.followup
     assert len(ledger.evidence_items) == 1  # The repair feedback cannot create evidence.

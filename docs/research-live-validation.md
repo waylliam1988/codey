@@ -349,3 +349,22 @@ also exercises the omission. 48 repair/contract/golden and 20 knowledge/evidence
 merge tests passed. Only the two reviewed research prompt snapshots changed;
 Ruff passed. This change was made after the clean probe's first process loaded,
 so its earlier omission failures are retained and not attributed to new code.
+
+
+The clean thinking/low first stage returned production `done` at turn 12. Manual
+inspection confirmed two separate claims with their correct direct official
+quotes, both aliases and unknown workload conditions. Its report is short and
+its limitations section is weak; this is the controlled lifecycle check, not
+proof of broad research coverage. The manual validator initially rejected the
+literal official wording `there can only be one writer at a time`, including
+line breaks retained in stored evidence. It now normalizes whitespace and
+recognizes that exact phrase. Saved results were rechecked without generating
+or editing knowledge; `first-validation.json` records the post-hoc inspection.
+Recall and revision continue as separate processes on the same isolated store.
+
+Live report repair also exposed the fallback completion-contract message still
+requesting fresh evidence when the only failing checks were report/reference
+repairs. That branch now gives the same targeted repair instruction; unrelated
+source/verification failures retain their original instruction. Not-applicable
+checks do not count as failures for this feedback choice. 12 focused completion
+tests passed, including preservation of an unbound claim and targeted feedback.

@@ -195,11 +195,13 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
                 raise RuntimeError("live research must actually search, open a page and persist sourced claims")
             return
         if name == "first":
-            excerpts = [ref["content"].casefold() for row in snapshot for ref in row["referenced_versions"]
+            excerpts = [" ".join(ref["content"].casefold().split()) for row in snapshot for ref in row["referenced_versions"]
                         if ref["kind"] == "evidence"]
             accepted = (len([v for v in versions if any(r.relation == "supported_by" for r in v.value.references)]) >= 2
                         and any("readers do not block writers" in text for text in excerpts)
-                        and any("only one writer" in text or "single writer" in text for text in excerpts)
+                        and any(any(phrase in text for phrase in (
+                            "only one writer", "single writer", "there can only be one writer at a time"))
+                            for text in excerpts)
                         and any("嵌入式数据文件" in v.value.aliases for v in versions)
                         and any(v.value.conditions.get("workload", {}).get("state") == "not_extracted" for v in versions))
         elif name == "recall":
