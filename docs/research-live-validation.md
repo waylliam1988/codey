@@ -722,3 +722,25 @@ wording/formatting checks. It supplies copyable open_url actions only when web
 reading is authorized, respects observed redirect aliases, and creates no
 evidence or execution state. Remaining checks rerun on the next proposal.
 34 focused source/report/completion tests and all four static checks passed.
+
+## Same-configuration lifecycle passed
+
+`artifacts/research-three-stage-json-prerequisites-20261030` completed all three
+independent processes using production JSON mode, thinking off, temperature
+0.3 and seed 73: first 7 turns, recall 4 turns, revise 4 turns. Both first-run
+claims have their corresponding official English excerpts, WAL/workload
+conditions and requested alias. Recall read the writer claim before committing
+the candidate inference. Revision searched/read that exact candidate and changed
+it from v1 to v2, preserving identity/content/references/origin/scope/status while
+adding the requested unknown workload and analogy interpretation. The manual
+validator exited 0. The association answer still contains untested explanatory
+elaboration; this pass establishes persistence/recall/revision, not verified queue
+performance. Expanded focused source/lifecycle/report/prompt coverage passed 106.
+
+Inspection also found repeated identical page acquisition changed only the
+source's retrieved_at but created another knowledge version, unnecessarily
+marking earlier dependencies for review. Identical snapshots now retain their
+first knowledge observation time/version; later acquisitions retain their own
+execution/ledger observations. Changed content still creates a separate snapshot.
+28 focused archive/repository/lifecycle tests and all four static checks passed.
+The next real medicine task is `artifacts/research-live-adaptive-prerequisites-20261030`.

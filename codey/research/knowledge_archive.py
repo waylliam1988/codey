@@ -26,8 +26,16 @@ def note_knowledge(
     scope, scope_id = ("project", note.project) if note.project else ("global", "")
 
     def add(value: KnowledgeObject) -> KnowledgeReference:
-        objects[value.id] = value
         old = repository.read(value.id)
+        if old and value.kind == "source":
+            # Reopening identical content is an acquisition observation, not a
+            # knowledge revision. Preserve the first observation time; each
+            # subsequent fetch still has its own execution/ledger receipt.
+            original_time = old.value.provenance.get("retrieved_at")
+            same_snapshot = replace(value, provenance={**value.provenance, "retrieved_at": original_time})
+            if same_snapshot == old.value:
+                value = old.value
+        objects[value.id] = value
         revision = old.revision if old and old.value == value else (old.revision + 1 if old else 1)
         return KnowledgeReference(value.id, revision, "about")
 

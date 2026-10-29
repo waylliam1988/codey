@@ -109,6 +109,40 @@ def test_answer_pins_cited_versions_and_replay_rejects_changed_output(tmp_path):
         store.close()
 
 
+def test_identical_source_reopens_do_not_create_revisions_or_stale_old_claims(tmp_path, monkeypatch):
+    store = KnowledgeStore(tmp_path)
+    try:
+        tools = ResearchTools(None, store, None, session_id="first")
+        url = "https://example.org/concurrency"
+        body = "Readers can proceed concurrently. Only one writer at a time."
+        for timestamp, title, quote in (
+            ("2026-10-30T00:00:00+00:00", "readers", "Readers can proceed concurrently."),
+            ("2026-10-30T01:00:00+00:00", "writers", "Only one writer at a time."),
+        ):
+            monkeypatch.setattr("codey.research.ledger.now_iso", lambda stamp=timestamp: stamp)
+            tools.ledger.record_open(url, url, "Experiment", body)
+            tools.sources_read.add(url)
+            assert tools.knowledge_write({"type": "fact", "title": title, "body": quote, "sources": [url],
+                "evidence": [{"source_url": url, "claim": quote, "excerpt": quote}]}).ok
+        versions = [store.repository.read(row[0]) for row in store.index._read_conn().execute(
+            "SELECT id FROM knowledge_heads")]
+        sources = [v for v in versions if v.value.kind == "source"]
+        assert len(sources) == 1 and sources[0].revision == 1
+        assert sources[0].value.provenance["retrieved_at"] == "2026-10-30T00:00:00+00:00"
+        assert tools.ledger.source_record_for_url(url).retrieved_at == "2026-10-30T01:00:00+00:00"
+        assert not any(v.needs_review for v in versions if v.value.kind == "claim")
+        # A genuinely changed page is a different snapshot, never an overwrite.
+        updated = "Updated source: write serialization is still required."
+        tools.ledger.record_open(url, url, "Experiment", updated)
+        assert tools.knowledge_write({"type": "fact", "title": "Updated", "body": updated, "sources": [url],
+            "evidence": [{"source_url": url, "claim": updated, "excerpt": updated}]}).ok
+        assert store.repository.read(sources[0].value.id, 1).value.content == body
+        assert store.index._read_conn().execute(
+            "SELECT count(*) FROM knowledge_versions WHERE kind='source'").fetchone()[0] == 2
+    finally:
+        store.close()
+
+
 def test_reference_check_is_mechanical_and_does_not_prove_interpretation(tmp_path):
     store = KnowledgeStore(tmp_path)
     try:
