@@ -118,6 +118,24 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
                      "A hypothesis without source excerpts does not satisfy this requirement. "
                      "The excerpt must support the actual predicate and conditions of the claim; "
                      "use source_search or an offset read if the relevant passage was omitted.")
+    if "research_claim_bindings" in failed:
+        parts.append("Some conclusion/evidence statements could not be linked to saved claim excerpts. "
+                     "This is a text-binding check, not a verdict that the statement is false. "
+                     "Keep supported wording from evidence[].claim, or save a separate exact excerpt for the missing claim. "
+                     "Putting two findings in a note body with only one evidence item does not support both. "
+                     "Do not relabel a sourced finding as a hypothesis to bypass the missing evidence. "
+                     "The report has been preserved, not silently reduced to its supported subset.")
+        ledger = _context_get(context, "research_ledger")
+        if ledger is not None:
+            from codey.research.object_model import build_research_record
+
+            record = build_research_record(question=str(_context_get(context, "question") or ""),
+                                           summary=text, ledger=ledger, stop_reason="done")
+            unbound = [claim.claim_text[:240] for claim in record.claims
+                       if claim.claim_section in {"conclusion", "evidence"} and claim.status == "unsupported"]
+            parts.append("Unbound report statements:\n" + "\n".join("- " + line for line in unbound[:4]))
+            saved = list(dict.fromkeys(item.claim for item in ledger.evidence_items if item.stance == "supports"))
+            parts.append("Saved claim wording available:\n" + "\n".join("- " + line[:240] for line in saved[:6]))
     if "research_report_sections" in failed:
         from codey.reviews.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
 
@@ -234,6 +252,9 @@ def _ledger_checks(session: Any, done_text: str, context: Any) -> list[Completio
                 run_id=str(get("run_id") or ""), project=get("project"),
                 stop_reason="done",
             )
+        rows.append(CompletionCheck("research_claim_bindings",
+            CHECK_FAIL if record.unsupported_claim_count else CHECK_PASS,
+            "report_claim_binding_incomplete" if record.unsupported_claim_count else ""))
         if get("require_proof_review"):
             review = review_research_proof(record, question=str(get("question") or ""),
                                            evidence_ledger=get("evidence_ledger_payload"))
@@ -275,8 +296,10 @@ def finalize_research_text(session: Any, text: str, context: Any) -> str:
         return text
     from codey.research.done_finalizer import finalize_done_answer
 
+    # Citation compilation may renumber references; it must not silently delete
+    # or downgrade the answer before completion checks inspect its claims.
     finalized = finalize_done_answer(text, ledger, source_ids=dict(session.source_ids),
-                                    question=str(get("question") or ""), enforce_claim_support=True)
+                                    question=str(get("question") or ""), enforce_claim_support=False)
     return finalized.text.strip()
 
 

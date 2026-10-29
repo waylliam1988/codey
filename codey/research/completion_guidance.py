@@ -22,6 +22,8 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         rules += ("Save short exact excerpts with knowledge_write: type=fact, sources=[opened URL], "
                   "evidence=[{claim:conclusion,source_url:the same URL,excerpt:exact original text,stance:supports}]. "
                   "Each excerpt must support the actual claim, not merely mention the same topic. "
+                  "Only evidence[].claim becomes a reusable backed claim; the note body is a summary. "
+                  "For two findings, save two evidence items with their respective direct excerpts. "
                   "Read omitted passages with source_search or offset reads before quoting them. ")
     rules += (
         "Use only local tool results as evidence, including when a web model has built-in browsing. "

@@ -134,3 +134,29 @@ def test_complete_sections_with_bad_source_table_get_citation_not_heading_feedba
     assert "All required sections are present" in feedback
     assert '"[1] Title - https://final-url"' in feedback
     assert "Missing sections:" not in feedback
+
+
+def test_gate_preserves_unbound_answer_and_requests_missing_claim_instead_of_shrinking_it():
+    from codey.operations.research_completion_checks import finalize_research_text
+    from codey.research.ledger import ResearchLedger
+
+    url = "https://example.com/wal"
+    ledger = ResearchLedger()
+    backed, missing = "Readers do not block writers.", "Only one writer can commit at a time."
+    ledger.record_open(url, url, "WAL", backed + " " + missing)
+    prepared = ledger.prepare_evidence_items([{"claim": backed, "source_url": url, "excerpt": backed}],
+        fallback_sources=[url], fallback_claim="", fallback_body="", note_type="fact")
+    ledger.add_evidence_items(list(prepared.items))
+    policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"}), strict_research=True,
+        required_checks=("research_sources_opened", "research_evidence_saved", "research_report_sections"))
+    session = _session(policy, task_kind="research", opened_sources={url})
+    text = (f"## 结论\n- {backed} [1]\n- {missing} [1]\n\n"
+            f"## 关键证据\n- {backed} [1]\n\n## 反证与限制\n- 未找到强反证；只检查上述资料。[1]\n\n"
+            f"## 来源质量\n- 官方资料\n\n## 搜索覆盖\n- WAL\n\n## 来源\n[1] WAL - {url}")
+    context = {"research_ledger": ledger}
+    assert missing in finalize_research_text(session, text, context)
+    verdict = gate.evaluate(session, text, context=context)
+    assert not verdict.complete and not verdict.final_text
+    assert "report_claim_binding_incomplete" in verdict.followup
+    assert missing in verdict.followup and "Saved claim wording" in verdict.followup
+    assert len(ledger.evidence_items) == 1  # The repair feedback cannot create evidence.

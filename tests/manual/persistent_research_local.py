@@ -102,7 +102,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         counter, window = admitted_counter(upstream + "/v1", "", "openai-completions", 32768)
         record({"event": "connection_budget", "counter": counter, "window": window})
         return ObservedProvider(upstream + "/v1", model, timeout=180, temperature=temperature,
-                           thinking_enabled=None if reasoning_effort else thinking, reasoning_effort=reasoning_effort,
+                           thinking_enabled=thinking, reasoning_effort=reasoning_effort,
                            output_tokens=5000 if thinking or reasoning_effort else 2500, context_reserve_tokens=5500, native_tools=native,
                            stream=native, context_window_tokens=window,
                            request_counter=counter_for(counter, upstream + "/v1", model, "", window),
@@ -115,9 +115,9 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         "research": question,
         "first": (
             "研究 SQLite WAL：为什么读写可并发，而写者仍竞争？搜索并打开官方文档。"
-            "保存两条中文主张，分别配官方英文原文：读写互不阻塞；同一时刻只有一个写者。"
+            "分别用两次knowledge_write保存两条中文主张，每条配各自的官方英文原文：读写互不阻塞；同一时刻只有一个写者。"
             "找不到单写者原文就source_search查writer，并open_hit读取相应段落。"
-            'knowledge_write必须包含 aliases=["嵌入式数据文件"]、tags=["SQLite","写者串行化"]，'
+            '每次knowledge_write都必须包含 aliases=["嵌入式数据文件"]、tags=["SQLite","写者串行化"]，'
             '以及 conditions={"mode":{"state":"reported","value":"WAL"},'
             '"workload":{"state":"not_extracted"}}，因为实际工作负载尚未测量。'
             "然后给不超过500字的中文报告，明确外推边界。使用done.report_sections，summary只填结论，"
@@ -223,7 +223,7 @@ def main():
     parser.add_argument("--native", action="store_true", help="Use the server's structured tool protocol")
     parser.add_argument("--thinking", action="store_true", help="Enable the model's reasoning mode")
     parser.add_argument("--reasoning-effort", choices=("minimal", "low", "medium", "high"),
-                        help="Use the production reasoning-effort option instead of a thinking toggle")
+                         help="Set the reasoning budget; combine with --thinking to enable model reasoning")
     parser.add_argument("--diagnostic-stacks", action="store_true", help="Opt in to periodic CPython thread dumps")
     parser.add_argument("--live-web", action="store_true", help="Use production search and browser page acquisition")
     parser.add_argument("--question-file", type=Path)
@@ -232,8 +232,6 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.3, help="Local production default; recorded per stage")
     parser.add_argument("--seed", type=int, default=73, help="Fixed sampling seed for reproducible diagnostics")
     args = parser.parse_args()
-    if args.thinking and args.reasoning_effort:
-        parser.error("choose either --thinking or --reasoning-effort")
     directory = args.directory.resolve()
     directory.mkdir(parents=True, exist_ok=True)
     with urlopen(args.upstream + "/v1/models", timeout=5) as response:

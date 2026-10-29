@@ -287,3 +287,24 @@ evidence versions for every completed stage, including reported failures.
 5. Record exact successful and failed artifacts and commit remaining changes.
 
 Frontend unchanged in this iteration. Full pytest is intentionally not requested.
+
+
+## Continuation: preserve the answer and inspect actual thinking
+
+The binding-medium probe was stopped after it persisted a single-writer claim
+with a quote that only established concurrent reading and writing. It is not an
+acceptance pass. Its missing-fields/protocol repairs also consumed many turns.
+
+Completion now preserves the submitted answer rather than silently reducing it
+to supported sentences before checking it. A failed claim binding reports the
+unbound wording and the saved evidence claims. This is a text-binding check,
+not a semantic certification that the cited excerpt entails the statement.
+
+The probe previously treated `--thinking` and `--reasoning-effort` as alternatives.
+Captured payloads proved that effort alone did not enable Gemma reasoning. They
+are now independent, matching the production provider. The fresh
+`research-three-stage-thinking-low-20261030` run sends both
+`enable_thinking=true` and `reasoning_effort=low`; outcomes remain pending.
+
+Verification: 62 completion/protocol/prompt/merge tests and 17 subtests passed;
+Ruff, mypy (551 files), Pyrefly and ty passed. Existing checker warnings unchanged.
