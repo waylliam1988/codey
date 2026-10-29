@@ -287,14 +287,16 @@ def test_request_scoped_json_contract_and_schema_restore_from_original_receipt(t
     provider = Mock(send=Mock(return_value="received"))
     schema = {"type": "object", "properties": {"tool": {"const": "original"}}}
     options = {"tool_call_json": True, "tool_call_schema": schema,
-               "tool_call_contract": "FROZEN ORIGINAL DECLARATIONS"}
+               "tool_call_contract": "FROZEN ORIGINAL DECLARATIONS",
+               "tool_call_observations": "ORIGINAL RECEIPT SNAPSHOT"}
     try:
         ref = prepare_provider_request(sink, "send", ("original result",), options, counters=None)
         schema["properties"]["tool"]["const"] = "changed"
         options["tool_call_contract"] = "CHANGED DECLARATIONS"
+        options["tool_call_observations"] = "CHANGED SNAPSHOT"
         assert drive_provider_request(sink, provider, ref) == "received"
         provider.send.assert_called_once_with("original result", tool_call_json=True,
             tool_call_schema={"type": "object", "properties": {"tool": {"const": "original"}}},
-            tool_call_contract="FROZEN ORIGINAL DECLARATIONS")
+            tool_call_contract="FROZEN ORIGINAL DECLARATIONS", tool_call_observations="ORIGINAL RECEIPT SNAPSHOT")
     finally:
         durable.close()

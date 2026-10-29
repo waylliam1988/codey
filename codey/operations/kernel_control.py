@@ -134,7 +134,8 @@ def prepare_control_delivery(context: Any, state: Any) -> None:
 
         # Historical observations precede the specific current rejection so
         # they cannot bury the next action in several pages of saved findings.
-        prompt = task_working_context(context.session) + "\n\n" + decision["prompt"]
+        observations = "" if context.request_scoped_context else task_working_context(context.session)
+        prompt = "\n\n".join(part for part in (observations, decision["prompt"]) if part)
         messages = None
         if context.native and ids:
             messages = [ProviderToolResult(identity, "ERROR: " + (decision["error"] or prompt)) for identity in ids]

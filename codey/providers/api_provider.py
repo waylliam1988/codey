@@ -316,13 +316,15 @@ class ApiProvider:
 
     def send(self, text: str, timeout: float | None = None, *, tool_call_json: bool = False,
              tool_call_schema: dict[str, Any] | None = None, tool_call_contract: str = "",
-             tool_call_results: list[dict[str, Any]] | None = None) -> str:
+             tool_call_results: list[dict[str, Any]] | None = None, tool_call_observations: str = "") -> str:
         if tool_call_json and self.text_tool_format != "json_schema":
             raise ValueError("JSON tool format is not enabled for this provider")
         if tool_call_schema is not None and not tool_call_json:
             raise ValueError("tool schema requires JSON tool format")
         if tool_call_contract and not tool_call_json:
             raise ValueError("tool contract requires JSON tool format")
+        if tool_call_observations and not tool_call_json:
+            raise ValueError("tool observations require JSON tool format")
         pending: dict[str, Any] = {"role": "user", "content": text}
         if tool_call_results is not None:
             from codey.providers.text_result_views import TEXT_RESULTS_KEY, validate_text_results
@@ -332,7 +334,7 @@ class ApiProvider:
             pending[TEXT_RESULTS_KEY] = validate_text_results(text, tool_call_results)
         return self._exchange([pending], None, timeout=timeout,
                               text_only=True, tool_call_json=tool_call_json, tool_call_schema=tool_call_schema,
-                              tool_call_contract=tool_call_contract).text
+                              tool_call_contract=tool_call_contract, tool_call_observations=tool_call_observations).text
 
     def bind_durable_context(self, durable: Any, conversation_id: str) -> None:
         if durable is None or not conversation_id:
@@ -467,6 +469,7 @@ class ApiProvider:
                    tool_call_json: bool = False,
                    tool_call_schema: dict[str, Any] | None = None,
                    tool_call_contract: str = "",
+                   tool_call_observations: str = "",
                    expected_window_ref: ProtocolWindowRef | None = None,
                    delivery_commit: dict[str, Any] | None = None) -> AssistantTurn:
         """One atomic lifecycle for both codecs, with no protocol-specific commit path."""
@@ -490,8 +493,8 @@ class ApiProvider:
             generation_options: dict[str, Any] = {"tool_call_json": True} if tool_call_json else {}
             if tool_call_schema is not None:
                 generation_options["tool_call_schema"] = tool_call_schema
-            if tool_call_contract:
-                generation_options["tool_call_contract"] = tool_call_contract
+            generation_options.update({key: value for key, value in (
+                ("tool_call_contract", tool_call_contract), ("tool_call_observations", tool_call_observations)) if value})
             body = self._generate(candidate, tools, timeout=timeout, checkpoints=checkpoints, **generation_options)
             try:
                 turn, output = self._codec.decode_exchange(body, text_only=text_only,
@@ -596,12 +599,12 @@ class ApiProvider:
     def _generate(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None = None,
                   *, timeout: float | None = None, checkpoints: list[dict[str, Any]] | None = None,
                   tool_call_json: bool = False, tool_call_schema: dict[str, Any] | None = None,
-                  tool_call_contract: str = "") -> dict[str, Any]:
+                  tool_call_contract: str = "", tool_call_observations: str = "") -> dict[str, Any]:
         from codey.providers import api_transport
 
         settings = GenerationSettings(self.model, self.stream, self.temperature, self.thinking_enabled,
                                       self.reasoning_effort, self.tool_choice, self.context_budget.output_tokens,
-                                      tool_call_json, tool_call_schema, tool_call_contract)
+                                      tool_call_json, tool_call_schema, tool_call_contract, tool_call_observations)
         deadline = time.monotonic() + (timeout if timeout is not None else self.timeout)
         connection_id, sink = self.connection_id, self.on_usage
         payload = self._admit_request(messages, tools, settings, deadline, checkpoints)
@@ -722,6 +725,13 @@ class ApiProvider:
                 items[0]["content"] += "\n\n" + settings.text_tool_contract
             else:
                 items.insert(0, {"role": "system", "content": settings.text_tool_contract})
+            payload[key] = items
+        if settings.text_tool_observations:
+            # A receipt-derived snapshot describes this request. Keep it
+            # separate from history and before the current result or repair.
+            items = list(payload[key])
+            index = len(items) - 1 if items and items[-1].get("role") == "user" else len(items)
+            items.insert(index, {"role": "user", "content": settings.text_tool_observations})
             payload[key] = items
         payload[key] = [*payload[key], {"role": "user", "content": clock if clock is not None else clock_context()}]
         if settings.text_tool_json:

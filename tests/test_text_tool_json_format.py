@@ -149,8 +149,10 @@ def test_request_scoped_contract_is_counted_but_never_enters_history_or_auxiliar
     provider.request_counter = count
     auxiliary = provider.fork_auxiliary()
     try:
-        provider.send("first result", tool_call_json=True, tool_call_contract="FROZEN FIRST CONTRACT")
-        provider.send("second result", tool_call_json=True, tool_call_contract="FROZEN SECOND CONTRACT")
+        provider.send("first result", tool_call_json=True, tool_call_contract="FROZEN FIRST CONTRACT",
+                      tool_call_observations="RECEIPT SNAPSHOT ONE")
+        provider.send("second result", tool_call_json=True, tool_call_contract="FROZEN SECOND CONTRACT",
+                      tool_call_observations="RECEIPT SNAPSHOT TWO")
         provider.send("ordinary prose")
         auxiliary.send("summarize")
         assert "FROZEN FIRST CONTRACT" in str(payloads[0])
@@ -159,9 +161,18 @@ def test_request_scoped_contract_is_counted_but_never_enters_history_or_auxiliar
         assert "FROZEN SECOND CONTRACT" not in str(payloads[2:])
         assert payloads[1]["messages"][0]["content"] == "BASE SYSTEM\n\nFROZEN SECOND CONTRACT"
         assert "FROZEN" not in str(provider._messages)
+        assert "RECEIPT SNAPSHOT" not in str(provider._messages)
+        assert "RECEIPT SNAPSHOT ONE" not in str(payloads[1:])
+        assert "RECEIPT SNAPSHOT TWO" not in str(payloads[2:])
+        assert payloads[1]["messages"][-3:] == [
+            {"role": "user", "content": "RECEIPT SNAPSHOT TWO"},
+            {"role": "user", "content": "second result"}, payloads[1]["messages"][-1]]
+        assert any("RECEIPT SNAPSHOT TWO" in str(payload) for payload in counted)
         assert any("FROZEN SECOND CONTRACT" in str(payload) for payload in counted)
         with pytest.raises(ValueError, match="requires JSON"):
             provider.send("bad", tool_call_contract="must not send")
+        with pytest.raises(ValueError, match="require JSON"):
+            provider.send("bad", tool_call_observations="must not send")
     finally:
         auxiliary.close()
         provider.close()

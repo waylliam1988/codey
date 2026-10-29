@@ -956,3 +956,22 @@ is needed for this reduction.
 Validation: 64 focused JSON/delivery/compaction tests passed, three optional
 delivery cases skipped. Ruff, mypy (555 source files), Pyrefly and ty passed
 (Ruff import ordering corrected and rechecked). Live quality retest pending.
+
+The soft-admission medicine retest actually sent receipt pointers (five older
+bodies omitted by turn 13). It corrected the nonsignificant single-drug mouse
+comparison after qualifier feedback, but old runtime observation snapshots
+accumulated on every turn and the request still reached 84k characters. It
+omitted the requested human outcome comparison and repeated spliced quotations.
+Durably cancelled; not a quality pass.
+
+Latest runtime observations now travel as frozen request-only arguments in
+JSON mode. They are counted in admission, rendered as user-role data immediately
+before the current result/repair, and never accumulate in conversation history
+or auxiliary summaries. Source spans retain their original offsets; existing
+prepared-request recovery restores the original snapshot rather than rebuilding
+it from newer facts. Plain/native paths retain their existing behavior.
+
+The fresh scoped-contract lifecycle graph has also been exported and inspected:
+`research-three-stage-scoped-contract-20261030/revise-graph.json`, seven nodes,
+seven edges, candidate inference at version 2, original premise at version 1.
+This is version/provenance acceptance, not proof of the queue analogy.
