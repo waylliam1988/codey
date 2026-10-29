@@ -28,8 +28,13 @@ generic research methods. Markdown is interchange, never a competing authority.
 ## Status
 
 Current delivery: implementation and deterministic production acceptance complete.
-The local Gemma4 full three-stage experiment remains unsuccessful; see the final
-verification below. Earlier step-by-step status entries are historical notes.
+Local Gemma4 persistence/recall/revision has now passed in three independent
+processes, most recently 8/4/4 turns with request-scoped contracts. Its exported
+revision graph has seven nodes/seven edges and retains pinned version identities.
+Real broad browser research is still NOT accepted: source acquisition works,
+but coverage and interpretation failures remain. Historical failures below must
+not be read as current lifecycle status; see the latest continuation at the end
+and docs/research-live-validation.md for the live research audit.
 
 - Baseline inspected: d306aa8c, working tree clean.
 - Existing research continuation already persists references to shared operation
@@ -218,3 +223,30 @@ Update this file in each implementation commit with results and remaining work.
   Chinese continuation guidance is being evaluated; no quality pass claimed yet.
 - Detailed commands, results and failure distinctions are maintained in
   docs/research-live-validation.md. No full pytest run was used.
+
+## Current browser diagnosis and fixes (2026-10-30)
+
+- Corrected latest-result ordering and froze JSON tool catalogs per request,
+  preserving their original prepared-invocation/recovery identity.
+- Cancelled follow-up investigations now propagate cancellation, rather than
+  returning an earlier draft as done. A production durable-driver test covers it.
+- Missing-finding repair prioritizes acquisition over unrelated saved wording.
+- Full claims survive knowledge storage/recovery; UI clipping cannot erase a
+  trailing applicability condition. Explicit nonsignificant comparisons cannot
+  silently become affirmative significant support in the evidence write path.
+  This narrow guard does not establish general entailment or statistical validity.
+- Trusted text-tool result spans can use existing receipt-backed deterministic
+  compaction, with originals preserved and newest source protected across repairs.
+  Soft admission applies these views without another model generation.
+- Latest runtime observations also use frozen request-only arguments. Every
+  real JSON request now contains one current research snapshot rather than
+  appending all prior snapshots. Plain/native behavior is unchanged.
+- Failed WAL/medical runs remain isolated in artifacts, with durable cancelled
+  outcomes. They are not accepted research knowledge. New live task under
+  inspection: research-live-adaptive-current-state-20261030.
+- Latest related checks: 51 prepared-request/JSON/evidence tests, 53 compaction/
+  delivery tests (three optional skips), 20 research observation/completion/
+  subprocess-restart tests passed. Ruff, mypy (555 files), Pyrefly and ty passed.
+- Remaining: accepted broad live reports (human/animal/registration distinctions
+  and full WAL coverage); final lifecycle rerun on all changes; final artifact
+  inspection and documentation. No claim that Gemma4 now runs long research reliably.

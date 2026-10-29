@@ -217,6 +217,11 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             snapshot.append(row)
         (directory / f"{name}-knowledge.json").write_text(
             json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+        from codey.knowledge.concepts import build_unified_research_graph
+
+        graph = build_unified_research_graph(store, session_id, depth=3).to_dict()
+        (directory / f"{name}-graph.json").write_text(
+            json.dumps(graph, ensure_ascii=False, indent=2), encoding="utf-8")
         if result.exit_code:
             raise RuntimeError(f"{name} failed: {vars(result)}")
         observed = {row.get("tool_name") for row in events_seen if row.get("type") == "tool" and row.get("ok")}
