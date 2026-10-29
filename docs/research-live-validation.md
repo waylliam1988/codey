@@ -308,3 +308,12 @@ are now independent, matching the production provider. The fresh
 
 Verification: 62 completion/protocol/prompt/merge tests and 17 subtests passed;
 Ruff, mypy (551 files), Pyrefly and ty passed. Existing checker warnings unchanged.
+
+
+A deterministic follow-up evidence patch now always returns `partial` and clears
+completion proof. Previously the nonminimal branch could change a completed
+report and preserve `done` without running the shared completion gate again.
+The patch exposes `ungated_evidence_patch`; a no-op still returns the original
+result unchanged. Regression coverage includes ordinary and minimal merges,
+idempotency and pipeline selection. The focused merge/pipeline/golden set passed
+37 tests. Reviewed golden prompts already match; no fixture update was needed.

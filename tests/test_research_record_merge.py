@@ -106,7 +106,9 @@ def test_merge_evidence_patch_appends_new_evidence_and_reindexes_citations() -> 
 
             assert merged_result.turns == 2
             assert merged_result.max_turns_used == 2
-            assert merged_result.stop_reason == "done"
+            assert merged_result.stop_reason == "partial"
+            assert merged_result.completion_proof is None
+            assert "ungated_evidence_patch" in merged_result.quality_warnings
             assert "https://example.com/followup" in merged_result.summary
             assert "## 来源" in merged_result.summary
             assert "Initial Source - https://example.com/initial" in merged_result.summary
@@ -680,7 +682,7 @@ def test_merge_evidence_patch_rebuilds_when_pruning_leaves_no_supported_body_lin
 
             merged = merge_evidence_patch(initial_result, tools, material)
 
-            assert merged.stop_reason == "done"
+            assert merged.stop_reason == "partial"
             assert "Uncited invented" not in merged.summary
             assert "Dangling invented" not in merged.summary
             assert "Research findings supported" not in merged.summary

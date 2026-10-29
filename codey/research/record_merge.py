@@ -54,7 +54,7 @@ def merge_evidence_patch(
     # An evidence patch does not run an answer synthesis or the completion
     # gate. Recover useful findings without promoting a failed/budget-limited
     # investigation to "done", or reusing proof for a different summary.
-    stop_reason = "partial" if minimal_rebuild else initial.stop_reason
+    stop_reason = "partial"
     if not sections:
         sections = _blank_sections()
 
@@ -125,6 +125,7 @@ def merge_evidence_patch(
     citation_map = [item.to_dict() for item in citations]
     coverage = ledger.coverage_payload()
     warnings: list[str] = list(getattr(quality_review, "warnings", ()) or ())
+    warnings.append("ungated_evidence_patch")
     if minimal_rebuild:
         warnings.append("incomplete_evidence_reconstruction")
 
