@@ -376,6 +376,7 @@ class ResearchTools:
             return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 
     def knowledge_write(self, args: dict[str, Any], *, finding_id: str = "", locator: str = "",
+                        evidence_locators: tuple[str, ...] = (),
                         evidence_context: ResearchLedger | None = None) -> ResearchToolOutput:
         if self.store is None:
             return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
@@ -412,6 +413,10 @@ class ResearchTools:
         if locator:
             evidence_preparation = replace(evidence_preparation, items=tuple(
                 replace(item, locator=locator) for item in evidence_preparation.items))
+        if evidence_locators:
+            evidence_preparation = replace(evidence_preparation, items=tuple(
+                replace(item, locator=selected) for item, selected in
+                zip(evidence_preparation.items, evidence_locators, strict=True)))
         relations, relation_warnings = _prepare_write_relations(args, existing_note)
         status = _resolve_write_status(args, existing_note)
         tags = (

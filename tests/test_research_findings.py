@@ -176,6 +176,48 @@ def report_args(ref):
 
 
 @pytest.mark.usefixtures("public_source_dns")
+def test_multiple_passages_pin_separate_exact_excerpts_and_survive_receipt_restore(tmp_path):
+    from codey.research.evidence_view import resolve_selected_references
+
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        tools.search.text = ("The first condition applies during a long running read transaction. " * 10
+                             + "\n\n" + "The second condition concerns automatic checkpoints. " * 14)
+        opened = execute(delegate, tools, session, "open_url", {"url": URL})
+        refs = list(tools.ledger.read_passages)
+        assert len(refs) >= 2
+        args = {"claim": "Read transactions and automatic checkpoints impose separate conditions.",
+                "source_ref": "s1", "passage_ref": refs[0], "additional_passage_refs": [refs[1]]}
+        saved = execute(delegate, tools, session, "save_finding", args)
+        assert saved.ok, saved.model_text
+        label = json.loads(saved.model_text)["finding_ref"]
+        resolved = resolve_selected_references((label,), tools.ledger, store, project="", session_id="first")[0]
+        assert {row.evidence.value.provenance["locator"] for row in resolved.evidence} == {
+            "passage:" + ref for ref in refs[:2]}
+        assert {row.evidence.value.content for row in resolved.evidence} == {
+            tools.ledger.read_passages[ref].excerpt.strip() for ref in refs[:2]}
+        before = resolved.version
+        recovered = ResearchLedger()
+        for result in (opened, saved):
+            project_result_observation(TaskSession(session.policy), result.call, result, ok=True,
+                                       research_ledger=recovered)
+        tools.ledger = recovered
+        assert len(recovered.evidence_items) == 2
+        assert execute(delegate, tools, session, "save_finding", args).ok
+        assert len(recovered.evidence_items) == 2
+        assert store.repository.read(before.value.id).revision == before.revision
+        tools.search.text = "Different source version with a different condition."
+        execute(delegate, tools, session, "open_url", {"url": URL})
+        fresh = next(ref for ref in tools.ledger.read_passages if ref not in refs)
+        args["additional_passage_refs"] = [fresh]
+        rejected = execute(delegate, tools, session, "save_finding", args)
+        assert not rejected.ok and "same exact source version" in rejected.model_text
+        assert len(tools.created_ids) == 1
+    finally:
+        store.close()
+
+
+@pytest.mark.usefixtures("public_source_dns")
 def test_report_uses_only_selected_findings_and_pins_original_versions(tmp_path):
     from codey.operations.research_iteration import _persist_synthesis
     from codey.research.finding_report import compile_finding_report

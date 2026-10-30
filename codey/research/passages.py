@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -40,9 +41,16 @@ def describe_window(url: str, text_hash: str, text: str, offset: int, limit: int
     while start < end:
         stop = min(end, start + 1000)
         if stop < end:
-            boundary = text.rfind("\n", start + 350, stop)
-            if boundary >= 0:
-                stop = boundary + 1
+            # Prefer a complete paragraph, then a complete sentence. Never
+            # extend past the bytes actually shown by the read operation.
+            window = text[start + 350:stop]
+            boundaries = list(re.finditer(r"\n\s*\n", window))
+            if not boundaries:
+                boundaries = list(re.finditer(r"[.!?。！？](?:[ \t\n]+|$)", window))
+            if not boundaries:
+                boundaries = list(re.finditer(r"\n", window))
+            if boundaries:
+                stop = start + 350 + boundaries[-1].end()
         if text[start:stop].strip():
             rows.append({"ref": passage_ref(url, text_hash, start, stop), "start": start, "end": stop})
         start = stop

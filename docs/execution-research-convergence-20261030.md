@@ -87,3 +87,18 @@ Still pending: publication effect admission/settlement around the knowledge
 transaction, history projection reconstruction, semantic review/repair, tool
 exposure separation, sandbox comparison, final static checks and live probes.
 No live model requests have been made in these implementation batches yet.
+
+## Complete evidence selection (in progress)
+
+`save_finding` now accepts up to three additional already-read passages from
+the same exact source version. Every fragment retains its separate exact quote
+and locator, including receipt restoration and idempotent retry. Cross-version
+selection is rejected before writing. Passage splitting prefers paragraphs and
+sentence endings within the actually visible window.
+
+The findings/report-snapshot groups pass (16 tests). An expanded legacy
+protocol-contract module has nine failing expectations about coercion,
+unknown-field dropping, legacy synthesis writes and old error wording; no
+production validation was relaxed. Baseline confirmation and fixture updates
+remain to be recorded. Semantic assessment/repair is currently under test;
+it is not yet a validated completed batch.
