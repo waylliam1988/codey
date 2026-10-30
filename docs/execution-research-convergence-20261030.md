@@ -254,3 +254,70 @@ Implementation commit: `b9209c0b` (following the four earlier implementation
 batches listed in Git). The remaining working-tree descriptor changes are the
 preexisting user changes; only this batch's two new module entries were staged.
 Commits are local; this session has not pushed them to GitHub.
+
+## Settled assessment and protocol completion follow-up
+
+The user supplied a P1 reproduction: a passing submission published an answer,
+but a missing later model `done` was treated as a content rejection. The repair
+then changed the report and correctly collided with the immutable original
+publication. The earlier last-turn reservation did not address this case.
+An added scripted-provider regression reproduced `semantic_review_failed`
+before the fix.
+
+After the original submission receipt settles, the shared driver now advances
+to its ordinary completion gate and protocol closure without requesting a
+model `done`. Native closure sends the original tool result. A completed
+negative judgment still authorizes semantic repair; missing assessment or
+unfinished protocol closure produces `research_review_incomplete` instead.
+A known passing judgment keeps its original synthesis identity and is never
+sent through semantic repair. Its created-note projection is restored from
+that same receipt. No per-cycle publication identity was introduced.
+
+This supersedes the last-turn reservation above: a valid submission can now
+complete on the last decision turn. Native protocol acknowledgements keep
+their existing bounded closure mechanism. Fault tests include unavailable
+post-submission tools, repeated unexpected native acknowledgement calls, and
+real process exits after publication commit and after its settled receipt.
+
+## Resumed local deployment probes
+
+The restarted 5001 service reported idle=1, queue=0 and total_gens=0. A direct
+8-token request returned `OK` in about one second; request/response are kept in
+`artifacts/research-convergence-service-20261030-b`.
+
+The original frozen failed report was assessed in
+`artifacts/research-convergence-archived-review-20261030-b` through the actual
+review kernel, before the P1 follow-up. Three real responses repeatedly marked
+all five findings and all eleven report paragraphs supported, including f2's
+absent end-mark explanation, f4's absent checkpoint modes, and the inaccurate
+source-quality paragraph. The first two submissions failed requirement/path
+shape checks; the third exhausted the invocation. Final status was failed /
+review_incomplete, with no accepted assessment. This is **not** evidence that
+semantic mistakes were detected.
+
+A serial diagnostic in `artifacts/research-convergence-quotes-20261030-b`
+then asked for separate clause judgments with supporting quotations, including
+positive controls and the existing fixed-material medical comparison case.
+The f2 diagnostic identified its unsupported causal clauses. The f4 response
+also identified the absent modes but emitted a nested JSON string instead of
+the required judgment objects; it is a protocol failure. The threshold-only
+positive control was semantically supported. The wrong medical comparator
+still received a false positive, explicitly equating high-dose combination
+therapy with single-drug treatment. Its corresponding correct-comparator
+control was supported. The probe does not establish a generally reliable
+semantic gate; its raw outputs were preserved and no domain-specific answer
+rules were added to production.
+
+The production web retry with a fresh store is running in
+`artifacts/research-convergence-web-20261030-b` (original task, native tools,
+thinking=false, production server context, 40 decision turns). Final outcome
+and focused follow-up validation will be appended after completion.
+
+P1 follow-up verification: **82 tests and 12 subtests passed** across the semantic
+review/repair module, actual operation-driver restart, shared operation state,
+protocol/execution/frozen-snapshot guards, completion queue, parent synthesis
+and pipeline. The semantic module includes four actual process-exit boundaries,
+no extra model `done` in both protocols, retained publication under failed
+native closure, and no repair when no assessment settled. Ruff, full-production
+mypy (571 files), Pyrefly and ty passed again. No full pytest run was requested
+or performed.

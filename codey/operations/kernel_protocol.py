@@ -73,7 +73,7 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
     if getattr(session, "task_kind", "") == "research_review":
         submitted = any(row.call.name == "submit_research_review" and row.ok
                         for row in session._memory_results.values())
-        return ("done",) if submitted else ("submit_research_review", "done")
+        return () if submitted else ("submit_research_review",)
     policy = getattr(session, "policy", None)
     try:
         denied = {"submit_research_review"} | {str(n or "").strip().lower() for n in (getattr(session, "controller_denied", ()) or ())

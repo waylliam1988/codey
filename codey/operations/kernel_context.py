@@ -483,6 +483,13 @@ class KernelContext:
         kernel_events._emit_tool_results(self.observation.on_event, self.session, results,
             run_id=f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id,
             turn=turn)
+        if (not self.cancelled() and self.session.task_kind == "research_review" and len(results) == 1
+                and results[0].call.name == "submit_research_review" and results[0].ok):
+            # A settled domain submission is the completion proposal. Reuse
+            # the ordinary completion and protocol-close actions, not another
+            # model decision that could discard a committed publication.
+            self.advance(state, positions.LEAF_COMPLETION_PENDING)
+            return
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
         if self.cancelled() or progress.stopped or turn >= self.session.max_turns:
             reason = "stopped" if self.cancelled() else "no_progress" if progress.stopped else "max_turns"

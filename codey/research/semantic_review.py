@@ -153,7 +153,7 @@ def review_prompt(basis: dict[str, Any]) -> str:
         '"report_paths":["summary"],"state":"addressed|acknowledged_gap|missing","reason":"specific reason"}],'
         '"claims":[{"ref":"f1","verdict":"supported|unsupported|uncertain","reason":"specific reason"}],'
         '"paragraphs":[{"path":"summary","verdict":"supported|unsupported|uncertain","reason":"specific reason"}]}\n'
-        "Then call done with a brief receipt, even when the assessment rejects the draft. "
+        "A successful submission completes this assessment even when it rejects the draft; the driver closes it. "
         "Include every finding ref and every paragraph path exactly once. Explain the precise unsupported clause "
         "when rejecting. Do not let a correct main point excuse an unsupported extra clause.\nFROZEN BASIS:\n"
         + canonical_json(basis))

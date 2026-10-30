@@ -23,6 +23,7 @@ def validate_accepted_projection(result: Any, *, run_id: str, session_id: str, p
     assessment = result.semantic_review
     if (result.summary != compiled.text or result.stop_reason != "done" or not isinstance(assessment, dict)
             or assessment.get("status") != "passed" or assessment.get("issues")
+            or assessment.get("completion_status") != "complete"
             or assessment.get("kind") != "same_provider_model_assessment"
             or assessment.get("report_digest") != compiled.to_payload()["compilation_digest"]
             or not assessment.get("result_ref")):

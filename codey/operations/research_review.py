@@ -58,9 +58,13 @@ def assess_report(history: Any, result: Any, tools: Any, *, provider: Any, provi
                 session_id=history.session_id, task_id=history.run_id, sink=sink))))
     if outcome.stop_reason == "stopped":
         raise TaskCancelled("research assessment stopped")
-    if outcome.stop_reason in {"recovery_failure", "controller_failure", "delivery_pending", "provider_failure"}:
+    has_receipt = any(row.call.name == "submit_research_review" and row.ok
+                      for row in session._memory_results.values())
+    receipt = submitted_review(session, basis) if has_receipt else None
+    if receipt is not None and receipt.get("synthesis_id") and receipt["synthesis_id"] not in tools.created_ids:
+        tools.created_ids.append(receipt["synthesis_id"])
+    if receipt is None and outcome.stop_reason in {"recovery_failure", "controller_failure", "delivery_pending", "provider_failure"}:
         raise ResearchContinuationError(outcome.summary)
-    receipt = submitted_review(session, basis) if outcome.completed else None
     assessment = receipt["assessment"] if receipt is not None else None
     issues = review_issues(assessment) if assessment is not None else [{"kind": "review_incomplete",
         "reason": outcome.stop_reason}]
@@ -72,7 +76,9 @@ def assess_report(history: Any, result: Any, tools: Any, *, provider: Any, provi
     return {**({key: receipt[key] for key in ("synthesis_id", "assessment_effect_id")} if receipt is not None else {}),
         "schema": 1, "kind": "same_provider_model_assessment", "reviewer": provider_id,
         "basis_digest": basis["basis_digest"], "report_digest": basis["report_digest"],
-        "result_ref": reference, "status": "passed" if assessment is not None and not issues else "failed",
+        "result_ref": reference, "completion_status": "complete" if outcome.completed else "incomplete",
+        "completion_stop_reason": outcome.stop_reason,
+        "status": "incomplete" if assessment is None else "failed" if issues else "passed",
         "assessment": assessment, "issues": issues}
 
 
@@ -93,8 +99,6 @@ def _submission_executor(history: Any, session: Any, basis: dict[str, Any], resu
             "assessment_effect_id": effect_id}
         identity = ""
         if not issues:
-            if session.turn >= session.max_turns:
-                raise ValueError("assessment publication requires a remaining turn for its completion receipt")
             # Validate the combined acceptance contract before publishing. The
             # real result artifact replaces this effect ref once it is settled.
             reviewed_completion(result.completion_proof, {**metadata, "result_ref": effect_id})
@@ -104,7 +108,7 @@ def _submission_executor(history: Any, session: Any, basis: dict[str, Any], resu
             if not identity:
                 raise ResearchContinuationError("accepted research report was not published")
         return ToolResult(call, model_text=canonical_json({"status": metadata["status"],
-            "issues": issues, "next": "Call done with a brief assessment receipt."}), ok=True,
+            "issues": issues, "next": "The driver closes this assessment using this original receipt."}), ok=True,
             canonical={**metadata, "synthesis_id": identity})
     return submit
 
@@ -120,6 +124,12 @@ def review_and_repair(result: Any, tools: Any, *, history: Any, provider: Any, p
         current = history.state()
         used = current.turns_used + current.logical_turn
         result = replace(result, semantic_review=assessment, turns=used)
+        if assessment["completion_status"] != "complete" or assessment["status"] == "incomplete":
+            return replace(result, stop_reason="research_review_incomplete", completion_proof=None,
+                synthesis_id=assessment.get("synthesis_id", ""),
+                notes_created=list(tools.created_ids),
+                quality_warnings=[*result.quality_warnings,
+                    "Assessment completion is incomplete; its settled judgment and publication are retained."])
         if assessment["status"] == "passed":
             return replace(result, completion_proof=reviewed_completion(result.completion_proof, assessment))
         if cycle == 2 or used >= current.turn_budget:

@@ -96,7 +96,9 @@ def evaluate_completion(context: Any, state: Any) -> None:
         if context.session.task_kind == "research_review":
             from codey.research.semantic_review import submitted_review
 
-            submitted_review(context.session, completion_context["semantic_review_basis"])
+            receipt = submitted_review(context.session, completion_context["semantic_review_basis"])
+            context.session.last_done_text = "Research assessment recorded: " + receipt["status"]
+            context.session.last_done_args = {"summary": context.session.last_done_text}
         if context.session.policy.strict_research and context.session.task_kind != "evidence_followup":
             from codey.research.finding_report import compile_finding_report
 
@@ -157,6 +159,11 @@ def prepare_control_delivery(context: Any, state: Any) -> None:
     received = context.response(state)
     ids = _ids(received.reply)
     purpose = decision["purpose"]
+    if purpose == "done" and context.session.task_kind == "research_review":
+        # Closure delivers the original submission receipt. There is no
+        # synthetic model done call and no substituted tool-success message.
+        context.advance(state, positions.LEAF_CLOSING)
+        return
     if purpose == "retry":
         turn = received.logical_turn
         from codey.operations.kernel_progress import KernelProgress

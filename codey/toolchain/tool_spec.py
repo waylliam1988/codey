@@ -194,7 +194,7 @@ def _all_specs() -> dict[str, ToolSpec]:
                     ("assessment", research_assessment_schema())),
         required=("basis_digest", "assessment"),
         description="Submit the complete assessment of the frozen research basis. Records failures for repair; "
-                    "a passing assessment publishes only that exact frozen report. Then call done with a brief receipt.")
+                    "a passing assessment publishes only that exact frozen report. Submission completes this assessment.")
     codemode_example = (
         "const result = await tools.read_file({path:inputs.path}); "
         "if (!result.ok) throw new Error(result.error); return result.value.text;"

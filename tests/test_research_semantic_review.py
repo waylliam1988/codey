@@ -59,7 +59,8 @@ def test_review_uses_full_exact_excerpt_and_rejects_missing_duplicate_or_forged_
         store.close()
 
 
-def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=22, native=False):
+def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=22, native=False,
+         missing_done=False, bad_ack=False, absent_assessment=False):
     import os
     from unittest.mock import patch
 
@@ -124,8 +125,11 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
             return self.send_turn("", tools)
 
         def acknowledge_tool_results(self, results, tools, timeout=None):
-            from codey.providers.base import AssistantTurn
+            from codey.providers.base import AssistantTurn, ProviderToolCall
 
+            log(ack=state().writer_attempt)
+            if bad_ack and state().writer_attempt == 10:
+                return AssistantTurn(tool_calls=(ProviderToolCall("unavailable", "unavailable_tool", {}),))
             return AssistantTurn()
 
         def send(self, prompt):
@@ -133,12 +137,15 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
             attempt, turn = position.writer_attempt, position.logical_turn
             log(attempt=attempt, turn=turn)
             if attempt in (8, 10, 12):
+                if absent_assessment:
+                    return json.dumps({"tool": "unavailable_tool", "args": {}})
                 if turn == 1:
                     basis = json.JSONDecoder().raw_decode(prompt.split("FROZEN BASIS:\n", 1)[1])[0]
                     return json.dumps({"tool": "submit_research_review", "args": {
                         "basis_digest": basis["basis_digest"],
                         "assessment": assessment(basis, reject=attempt == 8 or reject_forever)}})
-                return json.dumps({"tool": "done", "args": {"summary": "Assessment recorded."}})
+                return json.dumps({"tool": "unavailable_tool", "args": {}}) if missing_done else json.dumps(
+                    {"tool": "done", "args": {"summary": "Assessment recorded."}})
             if attempt == 1:
                 if turn == 1:
                     name, args = "research_plan", {"questions": ["What limits writer concurrency?"]}
@@ -180,6 +187,8 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
 
     def publish(note, *args, **kwargs):
         value = original_publish(note, *args, **kwargs)
+        if note.type == "synthesis":
+            log(publication=note.id)
         if boundary == "publication_committed" and note.type == "synthesis":
             os._exit(74)
         return value
@@ -189,6 +198,9 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
         def committed(*_):
             position = state()
             if position.writer_attempt == 8 and position.leaf == boundary:
+                os._exit(74)
+            if (boundary == "publication_receipt" and position.writer_attempt == 10
+                    and position.leaf == "tool_delivery_pending"):
                 os._exit(74)
         durable.subscribe_commits(committed)
     policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True)
@@ -272,23 +284,75 @@ def test_failed_or_exhausted_assessment_never_returns_prior_draft_as_done(tmp_pa
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_last_budget_turn_cannot_publish_an_unfinished_assessment(tmp_path):
+def test_last_budget_turn_completes_the_settled_assessment(tmp_path):
     from codey.knowledge.store import KnowledgeStore
 
-    result = _run(tmp_path, budget=11)
-    assert result.stop_reason != "done" and result.completion_proof is None
-    assert result.turns == 11
+    result = _run(tmp_path, budget=10)
+    assert result.stop_reason == "done" and result.completion_proof.satisfied
+    assert result.turns == 10
     requests = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
-    assert len([row for row in requests if "attempt" in row]) == 11
+    assert len([row for row in requests if "attempt" in row]) == 10
     store = KnowledgeStore(tmp_path / "knowledge")
     try:
-        assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == 0
+        assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == 1
     finally:
         store.close()
 
 
 @pytest.mark.usefixtures("public_source_dns")
-@pytest.mark.parametrize("boundary", ["provider_response_ready", "kernel_settled", "publication_committed"])
+@pytest.mark.parametrize("native", [False, True])
+def test_settled_assessment_completes_without_another_model_done(tmp_path, native):
+    from codey.knowledge.store import KnowledgeStore
+
+    result = _run(tmp_path, native=native, missing_done=True)
+    assert result.stop_reason == "done", result.semantic_review
+    assert result.semantic_review["status"] == "passed" and result.synthesis_id
+    requests = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert [(row["attempt"], row["turn"]) for row in requests if row.get("attempt") in (8, 10, 12)] == [(8, 1), (10, 1)]
+    store = KnowledgeStore(tmp_path / "knowledge")
+    try:
+        assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == 1
+    finally:
+        store.close()
+    before = (tmp_path / "calls.jsonl").read_bytes()
+    assert _run(tmp_path, native=native, missing_done=True, resume=True) == result
+    assert (tmp_path / "calls.jsonl").read_bytes() == before
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_unfinished_protocol_preserves_published_judgment_without_semantic_repair(tmp_path):
+    from codey.knowledge.store import KnowledgeStore
+
+    result = _run(tmp_path, native=True, bad_ack=True)
+    assert result.stop_reason == "research_review_incomplete"
+    assert result.completion_proof is None
+    assert result.semantic_review["status"] == "passed"
+    assert result.semantic_review["completion_status"] == "incomplete"
+    assert result.semantic_review["synthesis_id"] == result.synthesis_id
+    requests = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert len([row for row in requests if "publication" in row]) == 1
+    assert not any(row.get("attempt") in (11, 12) for row in requests)
+    store = KnowledgeStore(tmp_path / "knowledge")
+    try:
+        assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == 1
+    finally:
+        store.close()
+    before = (tmp_path / "calls.jsonl").read_bytes()
+    assert _run(tmp_path, native=True, bad_ack=True, resume=True) == result
+    assert (tmp_path / "calls.jsonl").read_bytes() == before
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_no_settled_assessment_is_incomplete_and_cannot_start_semantic_repair(tmp_path):
+    result = _run(tmp_path, absent_assessment=True)
+    assert result.stop_reason == "research_review_incomplete" and result.completion_proof is None
+    assert result.semantic_review["status"] == "incomplete"
+    requests = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert not any(row.get("attempt") in (9, 10, 11, 12) or "publication" in row for row in requests)
+
+
+@pytest.mark.usefixtures("public_source_dns")
+@pytest.mark.parametrize("boundary", ["provider_response_ready", "kernel_settled", "publication_committed", "publication_receipt"])
 def test_real_subprocess_review_restart_reuses_original_assessment(tmp_path, boundary):
     source = ("from pathlib import Path; from tests.test_research_semantic_review import _run; import sys; "
               "_run(Path(sys.argv[1]), boundary=sys.argv[2])")
@@ -297,5 +361,6 @@ def test_real_subprocess_review_restart_reuses_original_assessment(tmp_path, bou
     result = _run(tmp_path, resume=True)
     assert result.stop_reason == "done", result.summary
     calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
-    assert len([row for row in calls if row.get("attempt") == 8]) == 2
+    assert len([row for row in calls if row.get("attempt") == 8]) == 1
+    assert len([row for row in calls if "publication" in row]) == 1
     assert len([row for row in calls if "fetch" in row]) == 1
