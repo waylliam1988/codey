@@ -1595,3 +1595,56 @@ Current stop instruction: commit, push, and pause. Do not start another model
 probe until the user makes the replacement model available. Keep deployment,
 sampling, raw outputs, exact source snapshots, mechanical failures and semantic
 failures separate in the next comparison.
+
+## Qwen 27B and production server context (2026-10-30)
+
+The user has supplied the replacement local Qwen deployment and resumed work.
+See [the comparison record](research-qwen27b-comparison-20261030.md) for the fixed
+18-prompt results, failed initial web run, code commits, focused checks and
+known pre-existing test fixture failures. Fixed extraction improved; free
+synthesis still overstates some evidence. No independent review was granted.
+
+Local automatic context now follows confirmed KoboldCpp running capacity.
+This server admits 262144 tokens with a 32768 output reserve. Explicit caps
+remain available, and resumed tasks retain the original frozen selection.
+The manual web runner now uses production selection/opening rather than its
+own 32K configuration. Web EOF and required receipt quota defects were fixed
+in ed910cbc, 974eb3b7 and 71624a43.
+
+The user's requested driver regression now covers out-of-range read failures
+after the optional attachment quota is full: a real subprocess exits after
+settlement, then the shared driver restores and delivers the original error
+without fetching again. Both EOF cases and the original four restart cases
+pass. This is mechanical recovery coverage, not semantic report acceptance.
+
+After an unresponsive constrained-JSON attempt was durably stopped, the user
+restarted KoboldCpp. The native-tool web task in
+artifacts/research-live-wal-qwen27b-server-native-20261030 registered questions,
+read official pages six times, searched four times and saved seven findings
+without the receipt storage error. Exact passage support and report output
+still had problems; no final report was accepted before diagnostic cancellation.
+
+It exposed another Local admission issue: the runner's saved thinking=false
+was overwritten when the default model selection was frozen. Actual requests
+omitted the switch. bd8092f8 fixes default setting inheritance at the Local
+connection boundary, preserving explicit chat overrides and frozen recovery.
+58 focused tests and real HTTP payload assertions pass. The corrected run is
+artifacts/research-live-wal-qwen27b-native-off-20261030; its actual request now
+contains enable_thinking=false in all 24 physical provider calls. It completed
+with exit_code=0 and stop_reason=done: six open_url calls, one real web_search,
+one open_result and five saved findings across two official sources. Initial
+report, evidence follow-up and final synthesis all completed; six report
+rejections required citation/summary repairs. No tool failed and the required
+receipt storage error did not recur. The EOF/receipt/driver combination was
+rerun on the frozen code: 14 passed.
+
+This is a mechanical completion, not a semantic research pass. The final report
+mislabels the network-filesystem restriction as historical, fails to accurately
+cover version differences, and its source-quality prose contradicts the actual
+two-source bibliography. One saved finding and its coverage answer include
+checkpoint-mode assertions absent from the selected excerpt. All five claims
+remain candidate/model_extraction and unreviewed; the graph has 14 nodes and
+19 edges without certifying their meaning. Full details and raw artifact
+pointers are in the comparison record. The Playwright TargetClosedError warnings
+also recurred during shutdown, without changing the task's completed result;
+that resource-lifecycle diagnostic remains separate from model quality.
