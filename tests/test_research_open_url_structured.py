@@ -120,3 +120,29 @@ def test_research_tool_output_is_window_plus_receipt_only() -> None:
 
     names = {field.name for field in dataclasses.fields(ResearchToolOutput)}
     assert names == {"model_text", "receipt_text", "read_passages", "read_observation", "ok"}
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_source_eof_is_explicit_and_out_of_range_reads_do_not_commit_observations(tmp_path):
+    from codey.runtime.core.models import ToolCall
+    from tests.test_research_findings import URL, execute, setup
+
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        tools.search.text = "Previous source content. " * 1400 + "FINAL_FACT"
+        size = len(tools.search.text)
+        for offset in (size, size + 8000):
+            result, ok, _ = delegate._execute_research(ToolCall("open_url", {"url": URL, "offset": offset}))
+            assert not ok and not result.ok
+            assert f"length={size} characters" in result.model_text
+            assert "No passage was read" in result.model_text
+            assert not result.canonical.get("research_observation") and not result.canonical.get("read_passages")
+        assert not tools.ledger.opened_sources and not tools.ledger.read_passages and not session.opened_sources
+        result = execute(delegate, tools, session, "open_url", {"url": URL, "offset": size - 400, "limit": 500})
+        assert "FINAL_FACT" in result.model_text
+        assert f"end={size} (exclusive), available_length={size} characters" in result.model_text
+        assert "End of available extracted source text" in result.model_text
+        assert "more text available" not in result.model_text
+        assert tools.ledger.read_passages
+    finally:
+        store.close()

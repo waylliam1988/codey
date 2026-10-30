@@ -65,3 +65,11 @@ def test_truncated_html_exposes_bounded_section_offsets_inside_untrusted_data():
     assert rendered.index("Source section locators") < rendered.index(UNTRUSTED_SOURCE_END)
     assert "Section labels are locators, not evidence" in rendered
     assert "Source section locators" not in render_opened_source(document, text)
+
+
+def test_end_of_a_truncated_extraction_does_not_claim_complete_source_coverage():
+    doc = SourceDocument.html(requested_url="https://example.test/page", final_url="https://example.test/page",
+                              title="Partial extraction", text="Visible prefix", truncated=True)
+    text = render_opened_source(doc, doc.text, read_window=(0, len(doc.text)))
+    assert "End of available extracted source text" in text
+    assert "unseen source content may remain" in text

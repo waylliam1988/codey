@@ -29,7 +29,6 @@ from codey.research.source_search import (
     render_results,
 )
 from codey.research.url_selection import source_candidate_skip_reason
-from codey.utils.text_budget import clip_middle
 
 _CITED_TYPES = {"fact", "conclusion", "decision", "implementation", "verification", "synthesis", "project_note"}
 
@@ -160,6 +159,11 @@ class ResearchTools:
         assert document is not None
         self.sources_read.update(outcome.read_urls)
         offset = max(0, _as_int(offset, 0))
+        if offset >= len(document.text):
+            return ResearchToolOutput(
+                f"ERROR: source offset={offset} is at or beyond the end of available extracted text "
+                f"(length={len(document.text)} characters). No passage was read. "
+                "Do not advance the offset; use source_search on an earlier section or investigate another source.", ok=False)
         # Leave room for exact passage labels, metadata and source boundaries.
         limit = min(OPEN_MAX_LIMIT - 2500, max(OPEN_MIN_LIMIT, _as_int(limit, OPEN_DEFAULT_LIMIT)))
         from codey.research.ledger_receipts import ledger_observation
@@ -171,22 +175,28 @@ class ResearchTools:
         source = snapshot.source_record_for_url(document.final_url)
         assert source is not None
         passages = describe_window(source.final_url, source.text_hash, document.text, offset, limit)
+        if not passages:
+            return ResearchToolOutput("ERROR: the requested source window contains no readable text; no passage was read.",
+                                      ok=False)
         window = "\n".join(f"passage_ref={row['ref']}\n{document.text[row['start']:row['end']]}" for row in passages)
         more = offset + limit < len(document.text)
         body = render_opened_source(
             document,
             window,
             more_offset=(offset + limit) if more else None,
+            read_window=(passages[0]["start"], passages[-1]["end"]),
         )
         if len(body) > OPEN_MAX_LIMIT:
             # A clipped body must not authorize a partly unseen passage. Drop
             # whole trailing passages and rerender their accurate next offset.
-            while passages and len(body) > OPEN_MAX_LIMIT:
+            while len(passages) > 1 and len(body) > OPEN_MAX_LIMIT:
                 next_offset = passages.pop()["start"]
                 window = "\n".join(f"passage_ref={row['ref']}\n{document.text[row['start']:row['end']]}" for row in passages)
-                body = render_opened_source(document, window, more_offset=next_offset)
+                body = render_opened_source(document, window, more_offset=next_offset,
+                    read_window=(passages[0]["start"], passages[-1]["end"]))
             if len(body) > OPEN_MAX_LIMIT:
-                body, _truncated = clip_middle(body, OPEN_MAX_LIMIT)
+                return ResearchToolOutput("ERROR: source metadata exceeds the readable window budget; no passage was read.",
+                                          ok=False)
         restore_passages(self.ledger, observation, passages)
         full = render_opened_source(document, document.text)
         return ResearchToolOutput(model_text=body, receipt_text=full, read_passages=tuple(passages),

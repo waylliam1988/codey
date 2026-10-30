@@ -20,6 +20,7 @@ def render_opened_source(
     text_window: str,
     *,
     more_offset: int | None = None,
+    read_window: tuple[int, int] | None = None,
 ) -> str:
     """Render an opened source for the model without granting source text authority."""
 
@@ -32,6 +33,16 @@ def render_opened_source(
         *outline,
         UNTRUSTED_SOURCE_END,
     ]
+    if read_window is not None:
+        start, end = read_window
+        if not 0 <= start < end <= len(document.text):
+            raise ValueError("invalid source text window")
+        lines.extend(("", f"[Source text window: offset={start}, end={end} (exclusive), "
+                      f"available_length={len(document.text)} characters.]"))
+        if end == len(document.text):
+            lines.append("[End of available extracted source text; there is no later text window in this snapshot.]")
+            if document.truncated:
+                lines.append("[Source acquisition is marked truncated; unseen source content may remain.]")
     if more_offset is not None:
         lines.extend(("", f"[more text available: open with offset={max(0, more_offset)}]"))
         if outline:
