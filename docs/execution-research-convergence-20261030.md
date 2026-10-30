@@ -470,3 +470,18 @@ its selected excerpt; candidates remain unreviewed. The late cancellation reques
 does not replace the actual protocol stop reason. Browser preparation and shutdown
 errors are recorded separately from model interpretation failures. Follow-up
 request-envelope probes execute no tools and grant no acceptance.
+
+The browser fetch path now reconnects once when page preparation encounters
+a closed context, before navigation. Cancellation, deadlines and unrelated
+errors do not retry. Persistent preparation failures return an ordinary failed
+fetch rather than escaping from page creation. The 60 related browser/worker/
+fetch tests passed. The separate Playwright shutdown Future warning has not
+been fixed by this preparation change.
+
+`tests/manual/research_payload_repair_probe.py` reuses an actual frozen failed
+request without dispatching its suggested tools. Disabling thinking and merging
+the final clock observation into the repair message were tested serially in
+`artifacts/research-payload-clock-original-20261030` and
+`artifacts/research-payload-clock-merged-20261030`. Both returned the same invalid
+summary-only done proposal (519 output tokens); clock placement therefore has
+not demonstrated a repair and is not changed in production.

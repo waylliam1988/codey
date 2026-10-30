@@ -40,6 +40,44 @@ def test_closed_context_during_page_preparation_reconnects_and_retries():
     assert len(provider.last_search_errors) == 1
 
 
+def test_closed_fetch_context_reconnects_before_navigation():
+    provider = BrowserSearchProvider()
+    replacement = object()
+    provider._ensure_fetch_page_on_browser_thread = mock.Mock(side_effect=[
+        RuntimeError("BrowserContext.new_page: Target page, context or browser has been closed"), replacement,
+    ])
+    provider._close_on_browser_thread = mock.Mock()
+    with mock.patch.object(browser_search, "check_fetch_url", return_value=""):
+        assert provider._prepare_fetch_page_on_browser_thread("https://example.com/report") is replacement
+    provider._close_on_browser_thread.assert_called_once_with()
+    assert provider._ensure_fetch_page_on_browser_thread.call_count == 2
+
+
+@pytest.mark.parametrize("error", [
+    cancellation.TaskCancelled("stop"), cancellation.DeadlineExceeded("expired"),
+    RuntimeError("permission denied"),
+])
+def test_fetch_preparation_does_not_retry_cancellation_or_other_errors(error):
+    provider = BrowserSearchProvider()
+    provider._ensure_fetch_page_on_browser_thread = mock.Mock(side_effect=error)
+    provider._close_on_browser_thread = mock.Mock()
+    with pytest.raises(type(error)):
+        provider._prepare_fetch_page_on_browser_thread("https://example.com/report")
+    provider._close_on_browser_thread.assert_not_called()
+    assert provider._ensure_fetch_page_on_browser_thread.call_count == 1
+
+
+def test_fetch_preparation_reconnect_is_bounded():
+    provider = BrowserSearchProvider()
+    provider._ensure_fetch_page_on_browser_thread = mock.Mock(
+        side_effect=RuntimeError("Target page, context or browser has been closed"))
+    provider._close_on_browser_thread = mock.Mock()
+    with pytest.raises(RuntimeError, match="has been closed"):
+        provider._prepare_fetch_page_on_browser_thread("https://example.com/report")
+    assert provider._ensure_fetch_page_on_browser_thread.call_count == 2
+    provider._close_on_browser_thread.assert_called_once_with()
+
+
 def test_disconnected_browser_is_reopened():
     provider = BrowserSearchProvider()
     old = mock.Mock()

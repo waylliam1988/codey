@@ -210,6 +210,22 @@ class BrowserSearchProvider:
                 self._bring_to_front_on_browser_thread(self._fetch_page)
         return self._prepare_page_on_browser_thread(self._fetch_page)
 
+    def _prepare_fetch_page_on_browser_thread(self, url: str) -> Any:
+        cancellation.check()
+        try:
+            return self._ensure_fetch_page_on_browser_thread(url)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception as exc:
+            if "has been closed" not in str(exc).lower():
+                raise
+            # Reconnect before navigation, at most once; a connected CDP
+            # transport can still retain a context that has already closed.
+            with contextlib.suppress(Exception):
+                self._close_on_browser_thread()
+            cancellation.check()
+            return self._ensure_fetch_page_on_browser_thread(url)
+
     def _page_context_on_browser_thread(self, page: Any) -> Any:
         try:
             return page.context
@@ -442,7 +458,12 @@ class BrowserSearchProvider:
             return _fetch_failure(url, f'{reason}')
         if _is_pdf_url(url):
             return _pdf_download_sentinel(url)
-        page = self._ensure_fetch_page_on_browser_thread(url)
+        try:
+            page = self._prepare_fetch_page_on_browser_thread(url)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception as exc:
+            return _fetch_failure(url, f'could not prepare page: {exc}')
         try:
             cancellation.check()
             _set_navigation_timeout(page, _FETCH_NAV_TIMEOUT_MS)
