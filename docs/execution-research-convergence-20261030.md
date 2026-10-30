@@ -374,3 +374,52 @@ unchanged production implementation. After the process ended, the patch was
 integrated for commit before the next serial live run. Non-strict publication
 still uses its existing post-kernel entry; sandbox replacement and independent
 semantic review are also outside this queue patch.
+
+Queue implementation commit: `99dcb34c` (local, not pushed).
+The next live run is serial, at
+`artifacts/research-convergence-web-20261030-c`, using that frozen production
+implementation, the original full web task, native tools and thinking enabled.
+Its actual payload confirms `enable_thinking=true` and server context 262144
+with an output budget of 32768. This changes a deployment control, not the
+acceptance contract. Raw reasoning, requests, responses and tool receipts are
+retained. At the current checkpoint it has repaired missing summary citations
+and is working through counter-paragraph citations; semantic assessment has not
+started. Its four saved candidates include incomplete selected support for
+end-mark explanations, checkpoint threshold/cost and two SQLITE_BUSY scenarios.
+These are candidate audits, not conclusions about a final accepted report.
+
+The diagnostic quote probe discussed above is kept as
+`tests/manual/research_review_quote_probe.py`; it performs no production
+acceptance or knowledge writes. Invocation used:
+
+```powershell
+python -X utf8 -m tests.manual.research_review_quote_probe --basis artifacts/research-convergence-archived-review-20261030-b/basis.json --directory artifacts/research-convergence-quotes-20261030-b
+```
+
+During that web run, inspection of actual request declarations exposed a
+separate visibility mismatch: ordinary acquisition advertised
+`submit_research_review`, although its controller correctly rejects the call.
+The tool's new executor category was missing from the controller's research
+tool classification. A new regression reproduced this before modification.
+The isolated worktree now contains commit `805b8217`: submission visibility
+obeys the ordinary controller exclusion, and review snapshots expose only their
+allowed submission action (not a later model `done`). **47 focused tests passed**
+in two disjoint groups (30 + 17), including both protocols, durable review and
+accepted queue recovery, frozen snapshots and generic tool contracts. All four
+static checks passed there. This commit is not yet integrated in the main
+worktree: keep `99dcb34c` frozen until live run c ends, then cherry-pick
+`805b8217`, verify, and run a focused real assessment with the corrected inventory.
+
+The same live trace repeatedly rewrote the entire report to repair one known
+citation field at a time. Isolated follow-up commit `9bbb3da9` collects the
+determinable binding defects in the same rejection, retaining the first issue's
+code/path and listing the other fields. It displays actual `[fN]` citation
+syntax. Rendering and acceptance still reject every invalid binding; no report
+or evidence is rewritten, acquired or published by this diagnostic. The added
+regression checks all five missing fields together and a single explicit repair.
+The frozen follow-up group passed **44 tests**, including all four process-exit
+boundaries, accepted queue integration and strict-report contracts. Ruff, mypy,
+Pyrefly and ty passed. An earlier development run was invalidated by a diagnostic
+source edit during process-restart testing; the reported passing group was
+rerun after freezing the final production sources. Integrate `9bbb3da9` after
+`805b8217`, only after the unchanged live run c ends.

@@ -59,6 +59,7 @@ def main() -> None:
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--thinking", action="store_true", help="Enable local reasoning for a deployment comparison")
     parser.add_argument("--upstream", default="http://127.0.0.1:5001")
     parser.add_argument("--timeout", type=float, default=180)
     args = parser.parse_args()
@@ -108,10 +109,10 @@ def main() -> None:
             model = json.load(response)["data"][0]["id"]
         with patch.object(local_connection, "ApiProvider", Observed):
             provider = local_connection.connect_local(config=LocalProviderConfig(
-                base_url=args.upstream + "/v1", model=model, native_tools_mode="on", thinking_enabled=False))
+                base_url=args.upstream + "/v1", model=model, native_tools_mode="on", thinking_enabled=args.thinking))
         provider.timeout = args.timeout
         write("deployment.json", {"model": model, "context_budget": vars(provider.context_budget),
-                                  "thinking": False, "native": True})
+                                  "thinking": args.thinking, "native": True})
         durable = DurableSession(SQLiteDurableStore(directory / "state.sqlite"))
         durable.admit_input(conversation_id=session_id, request_id="archive-import", task_id=run_id,
                             text=result.question, provider_snapshot={"provider_id": "local"})
