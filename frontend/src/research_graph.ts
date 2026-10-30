@@ -33,6 +33,8 @@ export interface GraphOptions {
     virtual?: boolean;
     note_type?: string;
     status?: string;
+    interpretation_review?: string;
+    dependencies_changed?: boolean;
   }
   interface RawGraphNode {
     id: string;
@@ -46,6 +48,8 @@ export interface GraphOptions {
     virtual?: boolean;
     note_type?: string;
     status?: string;
+    interpretation_review?: string;
+    dependencies_changed?: boolean;
   }
   interface GraphEdge {
     src: string;
@@ -243,7 +247,14 @@ export interface GraphOptions {
   }
 
   function nodeMeta(node: GraphNode): string {
-    return [node.kind || node.note_type || 'note', node.status || '', node.path || '', node.url || '']
+    return [
+      node.kind || node.note_type || 'note',
+      node.status || '',
+      node.interpretation_review === 'unreviewed' ? '解释未审查' : '',
+      node.dependencies_changed ? '前提已变化' : '',
+      node.path || '',
+      node.url || '',
+    ]
       .filter(Boolean)
       .join(' · ');
   }

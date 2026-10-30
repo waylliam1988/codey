@@ -1306,3 +1306,33 @@ report/lifecycle tests passed (overlap). Ruff, mypy (557 production files), Pyre
 and ty passed. The narrower real-web concurrency retest is isolated in
 research-live-wal-field-repair-20261030; it is a diagnostic, not a substitute for
 the broad WAL or medical task. Semantic acceptance remains outstanding.
+
+## Interpretation identity and review boundary (2026-10-30)
+
+Located model extractions now have origin=model_extraction and status=candidate.
+Source-author interpretation is no longer inferred from a successful excerpt
+locator. Structured reads, search/background recall, write receipts, synthesis
+handoffs and graph details expose interpretation_review=unreviewed. There is no
+independent semantic assessment subsystem: answer adoption, a model-authored
+provenance flag and unchanged prerequisites cannot create an approval. The
+separate dependencies_changed field replaces the ambiguous needs_review field;
+there is deliberately no old-field compatibility alias.
+
+A regression deliberately saves the incorrect multiple-writers claim against a
+real reader/writer quote, then reopens, recalls and adopts it in an answer. All
+views retain the unreviewed identity; automatic promotion is rejected. This
+tests honest uncertainty propagation, not automatic detection of the wrong
+interpretation. Existing historical diagnostic stores were not rewritten.
+
+Validation: 49 focused knowledge, lifecycle, observation and diagnostic tests;
+one frontend graph test and TypeScript; Ruff, full-production-tree mypy (557
+files), Pyrefly and ty passed. Pyrefly reports zero errors with 35 suppressed
+diagnostics and 77 warnings, not a warning-free result.
+
+Fixed-material local results already exist at
+artifacts/research-layered-fixed-local-20261030 (18 serial requests: three cases,
+three levels, two seeds). Do not repeat them merely because context was lost.
+Manual semantic review and a stronger reference-provider comparison remain
+separate tasks; no reference provider has been run. The subsequent live-web
+WAL run is artifacts/research-live-wal-unreviewed-20261030. Its done status does
+not establish broad question coverage: inspect the report and raw receipts.

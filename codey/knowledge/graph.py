@@ -69,6 +69,8 @@ class GraphNode:
     focus: bool = False
     excerpt: str = ""
     virtual: bool = False
+    interpretation_review: str = ""
+    dependencies_changed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -83,6 +85,8 @@ class GraphNode:
             "focus": self.focus,
             "excerpt": self.excerpt,
             "virtual": self.virtual,
+            **({"interpretation_review": self.interpretation_review,
+                "dependencies_changed": self.dependencies_changed} if self.interpretation_review else {}),
         }
 
 

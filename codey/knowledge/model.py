@@ -9,7 +9,8 @@ from typing import Any
 from codey.knowledge.note import is_safe_id
 
 KINDS = {"entity", "source", "evidence", "observation", "claim", "inference", "question", "answer"}
-ORIGINS = {"source", "observed_result", "author_interpretation", "model_inference", "user_statement", "experiment"}
+ORIGINS = {"source", "observed_result", "author_interpretation", "model_extraction", "model_inference",
+           "user_statement", "experiment"}
 STATUSES = {"candidate", "active", "stale", "withdrawn", "superseded", "contradicted"}
 SCOPES = {"global", "project", "session", "personal"}
 CONDITION_STATES = {"reported", "not_reported", "not_extracted", "not_applicable"}
@@ -86,6 +87,12 @@ class KnowledgeObject:
         data["references"] = [asdict(ref) for ref in self.references]
         return data
 
+    @property
+    def interpretation_review(self) -> str:
+        # No independent, version-pinned semantic assessment path exists yet.
+        # A provenance flag supplied by the model cannot manufacture a review.
+        return "unreviewed" if self.kind in {"claim", "inference", "answer"} else "not_applicable"
+
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> KnowledgeObject:
         data = dict(raw)
@@ -110,8 +117,13 @@ class KnowledgeVersion:
     revision: int
     recorded_at: str
     commit_id: str
-    needs_review: bool = False
+    dependencies_changed: bool = False
+
+    @property
+    def interpretation_review(self) -> str:
+        return self.value.interpretation_review
 
     def to_dict(self) -> dict[str, Any]:
         return {**self.value.to_dict(), "revision": self.revision, "recorded_at": self.recorded_at,
-                "commit_id": self.commit_id, "needs_review": self.needs_review}
+                "commit_id": self.commit_id, "dependencies_changed": self.dependencies_changed,
+                "interpretation_review": self.interpretation_review}

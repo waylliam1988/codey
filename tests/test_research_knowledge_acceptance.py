@@ -87,7 +87,7 @@ def test_production_entry_acquire_restart_associate_revise_and_trace(tmp_path):
     try:
         assert store.repository.read(claim.value.id).revision == 2
         assert store.repository.read(claim.value.id, 1).value == claim.value
-        assert store.repository.read(candidate.id).needs_review
+        assert store.repository.read(candidate.id).dependencies_changed
         graph = build_unified_research_graph(store, "third", depth=3)
         assert any(edge.kind == "depends_on" and edge.dst.endswith(claim.value.id + "@1") for edge in graph.edges)
         assert any(node.id.endswith(claim.value.id + "@2") for node in graph.nodes)

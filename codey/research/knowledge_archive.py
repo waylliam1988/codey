@@ -1,4 +1,4 @@
-"""Promote verified tool observations, never report summaries, into knowledge."""
+"""Archive located excerpts and explicitly unreviewed model extractions."""
 
 from __future__ import annotations
 
@@ -72,18 +72,19 @@ def note_knowledge(
         relation = {"supports": "supported_by", "contradicts": "refuted_by", "limits": "limited_by"}.get(
             item.stance, "limited_by")
         claim_id = stable_identity("claim", note.id, item.claim)
-        claim = KnowledgeObject(claim_id, "claim", item.claim, "author_interpretation", title=item.claim,
-            status="active" if relation == "supported_by" else "candidate", scope=scope, scope_id=scope_id,
+        claim = KnowledgeObject(claim_id, "claim", item.claim, "model_extraction", title=item.claim,
+            status="candidate", scope=scope, scope_id=scope_id,
             aliases=tuple(note.aliases), conditions=conditions or {},
             provenance={"note_id": note.id, "session_id": note.session_id,
-                        "interpretation": "model_extraction_requires_review"},
+                        "source_statement_type": "not_extracted"},
             references=(replace(fragment_ref, relation=relation), *entities))
         # Multiple excerpts about one claim keep their individual stances.
         persisted = repository.read(claim_id)
         previous = objects.get(claim_id) or (persisted.value if persisted else None)
         if previous:
             claim = replace(claim, references=tuple(dict.fromkeys((*previous.references, *claim.references))),
-                            status="active" if previous.status == "active" or claim.status == "active" else "candidate")
+                            status=previous.status if previous.status in {
+                                "withdrawn", "superseded", "contradicted", "stale"} else "candidate")
         add(claim)
     if not evidence.items and note.type in {"hypothesis", "question", "conclusion", "decision", "verification"}:
         # Saving a provisional interpretation is useful; lack of evidence never

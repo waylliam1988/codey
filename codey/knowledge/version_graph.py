@@ -19,14 +19,17 @@ def version_detail(version: KnowledgeVersion) -> str:
     value = version.value
     lines = [f"{value.kind} · {value.status} · version {version.revision}",
              f"Origin: {value.origin}", f"Recorded: {version.recorded_at}", "", value.content[:5000]]
-    if version.needs_review:
-        lines.append("\nNeeds review: this version or one of its premises has changed or been withdrawn.")
+    if version.interpretation_review == "unreviewed":
+        lines.append("\nInterpretation: unreviewed. Saving, exact citation matching and use in an answer "
+                     "do not establish semantic support or applicability.")
+    if version.dependencies_changed:
+        lines.append("\nDependencies changed: this version or one of its premises has changed or been withdrawn.")
     lines.append("\nConditions:")
     lines.extend(f"- {name}: {condition.get('value', '')} ({condition['state']})" for name, condition in value.conditions.items())
     if not value.conditions:
         lines.append("- Not extracted; absence does not mean unrestricted applicability.")
     lines.append("\nProvenance:")
-    for key in ("url", "locator", "page", "retrieved_at", "study_id", "independence", "basis", "interpretation"):
+    for key in ("url", "locator", "page", "retrieved_at", "study_id", "independence", "basis", "source_statement_type"):
         if value.provenance.get(key) is not None:
             lines.append(f"- {key}: {value.provenance[key]}")
     lines.append("\nPinned references:")
@@ -106,7 +109,8 @@ def build_version_graph(store: KnowledgeStore, session_id: str, *, focus_ids: tu
         value = version.value
         nodes.append(GraphNode(id=version_node_id(*key), label=value.title or value.content[:80],
             kind={"entity": "concept", "answer": "synthesis", "inference": "hypothesis"}.get(value.kind, value.kind),
-            note_type=value.kind, status="needs_review" if version.needs_review else value.status,
+            note_type=value.kind, status=value.status, interpretation_review=version.interpretation_review,
+            dependencies_changed=version.dependencies_changed,
             focus=key in focus, excerpt=version_detail(version), virtual=True,
             url=str(value.provenance.get("url") or "")))
         for ref in value.references:

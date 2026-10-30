@@ -13,6 +13,7 @@ def synthesis_context(tools: ResearchTools) -> str:
     for item in reversed(ledger.evidence_items[-24:]):
         row: dict[str, str | bool] = {"claim": item.claim[:1200], "source_url": item.source_url,
                "excerpt": item.excerpt[:1200], "stance": item.stance, "note_id": item.note_id,
+               "interpretation_review": "unreviewed",
                "display_truncated": len(item.claim) > 1200 or len(item.excerpt) > 1200}
         size = len(canonical_json(row))
         if size > remaining:

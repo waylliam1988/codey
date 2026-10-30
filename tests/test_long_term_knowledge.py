@@ -39,7 +39,7 @@ def test_cross_session_alias_mechanism_recall_and_revision(tmp_path):
             {"value": replace(old.value, status="withdrawn").to_dict(), "expected_revision": old.revision}]}
         assert tools.knowledge_commit(update).ok
         revised = json.loads(tools.knowledge_read("derived").model_text)
-        assert revised["needs_review"]
+        assert revised["dependencies_changed"]
         assert json.loads(tools.knowledge_read("claim", revision=1).model_text)["status"] == "active"
     finally:
         store.close()

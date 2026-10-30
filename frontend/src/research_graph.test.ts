@@ -73,7 +73,13 @@ it('wakes a settled graph during drag, keeps its neighbors moving and cleans up 
         ok: true,
         graph: {
           nodes: [
-            { id: 'one', label: 'One' },
+            {
+              id: 'one',
+              label: 'One',
+              status: 'candidate',
+              interpretation_review: 'unreviewed',
+              dependencies_changed: true,
+            },
             { id: 'two', label: 'Two' },
           ],
           edges: [
@@ -108,6 +114,11 @@ it('wakes a settled graph during drag, keeps its neighbors moving and cleans up 
     y = positions[0].y * zoom + ty;
   const edgeX = ((positions[0].x + positions[1].x) / 2) * zoom + tx;
   const edgeY = ((positions[0].y + positions[1].y) / 2) * zoom + ty;
+  pointer('pointerdown', x, y);
+  pointer('pointerup', x, y);
+  expect(panel.querySelector('.research-graph-detail-meta')?.textContent).toContain('candidate');
+  expect(panel.querySelector('.research-graph-detail-meta')?.textContent).toContain('解释未审查');
+  expect(panel.querySelector('.research-graph-detail-meta')?.textContent).toContain('前提已变化');
   pointer('pointerdown', edgeX, edgeY);
   pointer('pointerup', edgeX, edgeY);
   expect(panel.querySelector('.research-graph-detail-body')?.textContent).toContain('Pinned evidence version 1');

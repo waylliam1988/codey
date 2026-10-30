@@ -18,7 +18,11 @@ def test_graph_uses_exact_knowledge_versions_and_explains_edges(tmp_path):
         ids = {node.id for node in graph.nodes}
         assert version_node_id("claim", 1) in ids
         claim = next(node for node in graph.nodes if node.id == version_node_id("claim", 1))
-        assert claim.status == "needs_review"
+        assert claim.status == "active"  # Lifecycle remains separate from dependency validity.
+        assert claim.dependencies_changed and claim.interpretation_review == "unreviewed"
+        assert "Interpretation: unreviewed" in claim.excerpt
+        assert "Dependencies changed" in claim.excerpt
+        assert claim.to_dict()["interpretation_review"] == "unreviewed"
         assert "WAL (reported)" in claim.excerpt
         edge = next(edge for edge in graph.edges if edge.kind == "supported_by")
         assert edge.src == version_node_id("claim", 1)

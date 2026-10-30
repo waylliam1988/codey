@@ -193,7 +193,7 @@ def test_answer_pins_cited_versions_and_replay_rejects_changed_output(tmp_path):
         with pytest.raises(ValueError, match="changed"):
             _persist_synthesis(tools, "Question", "Different answer", **kwargs)
         store.repository.commit("withdraw", [M(replace(store.repository.read("claim").value, status="withdrawn"), 1)])
-        assert store.repository.read(answer.value.id).needs_review
+        assert store.repository.read(answer.value.id).dependencies_changed
         graph = build_unified_research_graph(store, "second", depth=3)
         assert any(edge.kind == "uses" and edge.dst.endswith("claim@1") for edge in graph.edges)
     finally:
@@ -221,7 +221,7 @@ def test_identical_source_reopens_do_not_create_revisions_or_stale_old_claims(tm
         assert len(sources) == 1 and sources[0].revision == 1
         assert sources[0].value.provenance["retrieved_at"] == "2026-10-30T00:00:00+00:00"
         assert tools.ledger.source_record_for_url(url).retrieved_at == "2026-10-30T01:00:00+00:00"
-        assert not any(v.needs_review for v in versions if v.value.kind == "claim")
+        assert not any(v.dependencies_changed for v in versions if v.value.kind == "claim")
         # A genuinely changed page is a different snapshot, never an overwrite.
         updated = "Updated source: write serialization is still required."
         tools.ledger.record_open(url, url, "Experiment", updated)

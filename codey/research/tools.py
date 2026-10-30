@@ -218,11 +218,16 @@ class ResearchTools:
             self.grounded_ids.add(note.id)
         references: list[dict[str, Any]] = self.store.note_references(note.id, revision) if hasattr(self.store, "note_references") else []
         answer_refs = []
+        claim_states = []
         access = KnowledgeAccess(self.project, self.session_id, self.store.owner_id)
         for ref in references:
             target = self.store.repository.read(str(ref["target"]), int(ref["revision"]))
             if target is not None and access.allows(target) and target.value.kind in {"claim", "inference", "question"}:
                 answer_refs.append({"id": target.value.id, "revision": target.revision})
+                claim_states.append({"id": target.value.id, "revision": target.revision,
+                    "origin": target.value.origin, "status": target.value.status,
+                    "interpretation_review": target.interpretation_review,
+                    "dependencies_changed": target.dependencies_changed})
         automatic_refs = self.automatic_report_refs and note.id in (*self.created_ids, *self.updated_ids)
         preface = ("Document note; its note_id is not a done.knowledge_refs object id.\n"
                    "Answer reference candidates (use only versions actually adopted):\n"
@@ -233,7 +238,8 @@ class ResearchTools:
         version_label = ("Structured knowledge versions:" if self.evidence_only or automatic_refs else
                          "Structured knowledge versions (use these for knowledge_refs):")
         return ResearchToolOutput(preface + note.to_markdown() + "\n\n" + version_label + "\n"
-                                  + canonical_json(references), ok=True)
+                                  + canonical_json(references) + "\nClaim interpretation state:\n"
+                                  + canonical_json(claim_states[:12]), ok=True)
 
     def _missing_knowledge_identity(self, identity: str) -> str:
         assert self.store is not None
@@ -370,7 +376,9 @@ class ResearchTools:
             rel,
         )
         versions = [{"id": mutation.value.id, "revision": mutation.expected_revision + 1,
-                     "kind": mutation.value.kind, "status": mutation.value.status} for mutation in mutations]
+                     "kind": mutation.value.kind, "origin": mutation.value.origin,
+                     "status": mutation.value.status, "interpretation_review": mutation.value.interpretation_review}
+                    for mutation in mutations]
         versions.sort(key=lambda row: 0 if row["kind"] in {"claim", "inference", "question"} else 1)
         answer_refs = [{"id": row["id"], "revision": row["revision"]} for row in versions
                        if row["kind"] in {"claim", "inference", "question"}][:6]

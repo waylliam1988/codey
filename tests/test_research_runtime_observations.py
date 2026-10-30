@@ -45,7 +45,8 @@ def test_observations_are_bounded_and_preserve_saved_claim_source_and_stance():
     assert len(state["opened_sources"]) == 10 and state["saved_evidence_count"] == 20
     assert len(state["recent_receipts"]) == 4 and len(state["saved_findings"]) == 6
     assert state["saved_findings"][-1] == {"claim": "claim-19", "source_url": "https://example.com/19",
-                                            "excerpt": "x" * 600, "stance": "limits", "note_id": ""}
+                                                "excerpt": "x" * 600, "stance": "limits", "note_id": "",
+                                                "interpretation_review": "unreviewed"}
 
 
 def test_excerpt_repair_survives_bounded_observation_before_long_url_and_rejected_quote():

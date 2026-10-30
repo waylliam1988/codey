@@ -37,7 +37,7 @@ def test_commit_replay_restart_revision_and_pinned_dependencies(tmp_path):
         repo = store.repository
         assert repo.read("claim").value.conditions["version"]["state"] == "not_reported"
         repo.commit("revision", [M(replace(repo.read("claim").value, status="withdrawn"), 1)])
-        assert repo.read("derived").needs_review
+        assert repo.read("derived").dependencies_changed
         assert repo.read("claim", 1).value.status == "active"
         with pytest.raises(ValueError, match="revision conflict"):
             repo.commit("stale-editor", [M(example()[3].value, 1)])

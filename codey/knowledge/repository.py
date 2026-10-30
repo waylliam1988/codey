@@ -194,6 +194,8 @@ class KnowledgeRepository:
             raise ValueError("source requires a provenance URL")
         if value.kind == "claim" and value.status == "active" and "supported_by" not in relations:
             raise ValueError("active claim requires supporting evidence; keep unsupported claims as candidates")
+        if value.kind == "claim" and value.origin == "model_extraction" and value.status == "active":
+            raise ValueError("model-extracted claims are unreviewed; keep them as candidates")
         if value.kind == "inference" and not relations.intersection({"depends_on"}):
             raise ValueError("inference requires pinned premises")
 

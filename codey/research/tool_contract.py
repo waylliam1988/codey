@@ -145,7 +145,7 @@ TOOL_CONTRACTS = {
         description="atomically create or revise long-term objects. Reuse commit_id only for identical content. "
                     "Each change has expected_revision (0 for new) and value: id, kind "
                     "(entity/source/evidence/observation/claim/inference/question/answer), content, origin "
-                    "(source/observed_result/author_interpretation/model_inference/user_statement/experiment); "
+                    "(source/observed_result/author_interpretation/model_extraction/model_inference/user_statement/experiment); "
                     "optional title, status (candidate/active/stale/withdrawn/superseded/contradicted), aliases, "
                     "scope (global/project/session/personal), scope_id, conditions, provenance, references. "
                     "References use {target,revision,relation}: about, from_source, supported_by, refuted_by, "

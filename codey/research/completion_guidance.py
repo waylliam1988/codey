@@ -29,8 +29,9 @@ def render_research_observations(session: "TaskSession") -> str:
             if isinstance(items, list):
                 for item in items:
                     if isinstance(item, dict):
-                        findings.append({key: str(item.get(key, ""))[:600]
-                                         for key in ("claim", "source_url", "excerpt", "stance", "note_id")})
+                        findings.append({"interpretation_review": "unreviewed",
+                                         **{key: str(item.get(key, ""))[:600]
+                                            for key in ("claim", "source_url", "excerpt", "stance", "note_id")}})
     state = {"opened_sources": dict(list(session.source_ids.items())[-10:]),
              "saved_notes": session.notes_saved, "saved_evidence_count": len(session.evidence),
              "recent_receipts": recent[-4:], "saved_findings": findings[-6:]}
