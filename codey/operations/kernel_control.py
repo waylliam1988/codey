@@ -15,7 +15,7 @@ from codey.runtime.core.operation_payload import RuntimeExecutionCounters, Runti
 def result_from_payload(payload: Any) -> KernelResult:
     from codey.completion.contract import _proof_from_payload
 
-    if (not isinstance(payload, dict) or set(payload) != {"completed", "summary", "turns", "stop_reason", "proof", "delivery"}
+    if (not isinstance(payload, dict) or set(payload) != {"completed", "summary", "turns", "stop_reason", "proof", "delivery", "research_report"}
             or type(payload["completed"]) is not bool or not isinstance(payload["summary"], str)
             or type(payload["turns"]) is not int or payload["turns"] < 0
             or not isinstance(payload["stop_reason"], str)
@@ -24,8 +24,15 @@ def result_from_payload(payload: Any) -> KernelResult:
     proof = _proof_from_payload(payload["proof"]) if isinstance(payload["proof"], dict) else None
     if payload["proof"] is not None and proof is None:
         raise ValueError("invalid persisted completion proof")
+    report = payload["research_report"]
+    if report is not None:
+        from codey.research.finding_report import FindingReport
+
+        compiled = FindingReport.from_payload(report)
+        if not payload["completed"] or compiled.text != payload["summary"]:
+            raise ValueError("accepted research report differs from kernel delivery")
     return KernelResult(payload["completed"], payload["summary"], payload["turns"], payload["stop_reason"],
-                        proof=proof, delivery=payload["delivery"])
+                        proof=proof, delivery=payload["delivery"], research_report=report)
 
 
 def validate_decision(payload: Any) -> dict[str, Any]:
@@ -83,6 +90,7 @@ def evaluate_completion(context: Any, state: Any) -> None:
     context.session.last_done_args = dict(plan.control_args)
     error_source = ""
     error_type = ""
+    compiled = None
     try:
         completion_context = context.completion_context
         if context.session.policy.strict_research and context.session.task_kind != "evidence_followup":
@@ -96,10 +104,7 @@ def evaluate_completion(context: Any, state: Any) -> None:
                 # Keep the repair field-local and the original proposal intact.
                 raise ValueError(f"Report reference fields: {exc}") from exc
             context.session.last_done_text = compiled.text
-            if compiled.validation_ledger is not None:
-                completion_context = {**context.completion_context, "research_ledger": compiled.validation_ledger,
-                                      "research_execution_ledger": tools.ledger,
-                                      "research_inference_statements": compiled.inference_statements}
+            completion_context = {**context.completion_context, "research_report": compiled}
         refresh_verification_candidates(context.session)
         verdict = evaluate(context.session, context.session.last_done_text, context=completion_context)
         if type(verdict.complete) is not bool:
@@ -114,7 +119,8 @@ def evaluate_completion(context: Any, state: Any) -> None:
         error_source = "completion_check"
         error_type = type(exc).__name__
     if complete:
-        result = KernelResult(True, final_text, context.session.turn, "done", proof=proof)
+        result = KernelResult(True, final_text, context.session.turn, "done", proof=proof,
+                              research_report=compiled.to_payload() if compiled else None)
         context.advance(state, positions.LEAF_CONTROL_READY, data={"purpose": "done", "result": json_value(result),
             "workspace_revision": context.session.workspace_revision, "workspace_fingerprint": context.session.workspace_fingerprint})
     else:
@@ -166,7 +172,8 @@ def prepare_control_delivery(context: Any, state: Any) -> None:
         # they cannot bury the next action in several pages of saved findings.
         observations = "" if context.request_scoped_observations else task_working_context(
             context.session, getattr(context.execution.research_tools, "ledger", None),
-                getattr(context.execution.research_tools, "store", None))
+                getattr(context.execution.research_tools, "store", None),
+                str(getattr(context.execution.research_tools, "session_id", "")))
         prompt = "\n\n".join(part for part in (observations, decision["prompt"]) if part)
         messages = None
         if context.native and ids:

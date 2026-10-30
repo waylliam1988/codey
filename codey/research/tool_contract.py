@@ -27,7 +27,7 @@ PROTOCOL_DIRECT_ANSWER = "direct_answer"
 PROTOCOL_NATIVE_SEARCH_LEAK = "native_search_leak"
 PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 
-STRUCTURED_REPORT_ARGS = {"summary": "Supported conclusion [f1]", "report_sections": {
+STRUCTURED_REPORT_ARGS: dict[str, Any] = {"summary": "Supported conclusion [f1]", "report_sections": {
     "evidence": ["Saved finding with its conditions [f1]"],
     "counter": ["Observed limitation and its scope [f1]"], "source_quality": ["Study design and limits"],
     "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Answer and remaining gap",

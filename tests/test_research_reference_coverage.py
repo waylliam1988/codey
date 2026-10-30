@@ -104,7 +104,7 @@ def test_recalled_claim_pins_old_version_without_new_fetch_or_duplicate_archive(
         saved = execute(delegate, tools, session, "save_finding", {"claim": "Only one writer can write at a time.",
             "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))})
         label = json.loads(saved.model_text)["finding_ref"]
-        claim_id = stable_identity("claim", tools.ledger.finding_refs[label], "Only one writer can write at a time.")
+        claim_id = stable_identity("claim", tools.ledger.references[label].note_id, "Only one writer can write at a time.")
         # A new invocation has no opened webpages or newly saved findings.
         tools.ledger = ResearchLedger()
         tools.ledger.questions = ("What limits writer concurrency?",)
@@ -126,11 +126,11 @@ def test_recalled_claim_pins_old_version_without_new_fetch_or_duplicate_archive(
 
         check_session = TaskSession(TaskPolicy(session.policy.grants, strict_research=True,
             required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research")
-        verdict = evaluate(check_session, compiled.text, context={"research_ledger": compiled.validation_ledger})
+        verdict = evaluate(check_session, compiled.text, context={"research_ledger": tools.ledger, "research_report": compiled})
         assert verdict.complete, verdict.followup
         restored = ResearchLedger()
         project_result_observation(TaskSession(session.policy), read.call, read, ok=True, research_ledger=restored)
-        assert restored.knowledge_refs == tools.ledger.knowledge_refs
+        assert restored.references == tools.ledger.references
         # A later update must not silently change the already bound reference.
         old = store.repository.read(claim_id)
         from dataclasses import replace
@@ -155,32 +155,31 @@ def test_inference_pins_premises_keeps_candidate_identity_and_replays(tmp_path):
         assert saved_inference.ok, saved_inference.model_text
         second = json.loads(saved_inference.model_text)["finding_ref"]
         assert (first, second) == ("f1", "f2")
-        binding = tools.ledger.knowledge_refs[second]
-        version = store.repository.read(binding["id"], binding["revision"])
+        binding = tools.ledger.references[second]
+        version = store.repository.read(binding.object_id, binding.revision)
         assert version.value.kind == "inference" and version.value.status == "candidate"
         assert version.interpretation_review == "unreviewed"
         assert all(ref.relation == "depends_on" for ref in version.value.references)
         replay = execute(delegate, tools, session, "save_inference", args)
         assert replay.ok and json.loads(replay.model_text)["finding_ref"] == second
-        assert store.repository.read(binding["id"]).revision == 1
+        assert store.repository.read(binding.object_id).revision == 1
         report = report_args(second)
         report["summary"] = args["statement"] + " [f2]"
         report["report_sections"]["evidence"] = ["Direct premise: Only one writer can write at a time. [f1]",
                                                   args["statement"] + " [f2]"]
         compiled = compile_finding_report(report, tools.ledger, store, session_id=tools.session_id)
         assert "候选推论 f2，未审查" in compiled.text
-        assert args["statement"] in compiled.inference_statements
-        assert not any(item.claim == args["statement"] for item in compiled.validation_ledger.evidence_items)
+        assert compiled.reference_metadata[second]["kind"] == "inference"
+        assert not any(item.claim == args["statement"] for item in tools.ledger.evidence_items)
         from codey.operations.completion_gate import evaluate
         from codey.policies.task_policy import STRICT_RESEARCH_REQUIRED_CHECKS
 
         check_session = TaskSession(TaskPolicy(session.policy.grants, strict_research=True,
             required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research")
-        verdict = evaluate(check_session, compiled.text, context={"research_ledger": compiled.validation_ledger,
-                            "research_inference_statements": compiled.inference_statements})
+        verdict = evaluate(check_session, compiled.text, context={"research_ledger": tools.ledger, "research_report": compiled})
         assert verdict.complete, verdict.followup
         forged = copy.deepcopy(saved_inference)
-        forged.canonical["research_reference_bindings"]["f1"] = binding
+        forged.canonical["research_reference_bindings"]["f1"] = binding.to_dict()
         with pytest.raises(ValueError, match="conflicting"):
             project_result_observation(session, forged.call, forged, ok=True, research_ledger=tools.ledger)
     finally:
@@ -197,7 +196,7 @@ def test_old_answers_private_and_truncated_objects_cannot_be_promoted_to_referen
         assert execute(delegate, tools, session, "knowledge_read", {"id": "old-answer"}).ok
         assert not execute(delegate, tools, session, "knowledge_read", {"id": "private"}).ok
         assert execute(delegate, tools, session, "knowledge_read", {"id": "too-long"}).ok
-        assert not tools.ledger.knowledge_refs
+        assert not tools.ledger.references
         result = execute(delegate, tools, session, "save_inference", {
             "statement": "A hypothesis based on an old answer", "premise_refs": ["old-answer"], "limitations": "Unknown"})
         assert not result.ok
@@ -218,7 +217,7 @@ def test_staged_finding_retry_keeps_same_identity_before_commit(tmp_path):
         assert first.ok and second.ok, second.model_text
         assert json.loads(first.model_text)["finding_ref"] == json.loads(second.model_text)["finding_ref"]
         tools.commit_staged(staged)
-        assert len(tools.ledger.finding_refs) == 1
+        assert len(tools.ledger.references) == 1
     finally:
         store.close()
 
@@ -241,7 +240,7 @@ def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_
         result = execute(delegate, tools, session, "save_finding", {"claim": "Only one writer can write at a time.",
             "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))})
         label = json.loads(result.model_text)["finding_ref"]
-        claim_id = stable_identity("claim", tools.ledger.finding_refs[label], "Only one writer can write at a time.")
+        claim_id = stable_identity("claim", tools.ledger.references[label].note_id, "Only one writer can write at a time.")
         tools.ledger = ResearchLedger()
         tools.session_id = "later-session"
         session = TaskSession(TaskPolicy(session.policy.grants, strict_research=True,

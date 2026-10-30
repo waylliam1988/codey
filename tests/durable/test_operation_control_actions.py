@@ -316,3 +316,40 @@ def test_approval_resume_uses_original_call_and_never_executes_shell(tmp_path, c
         assert not any(effect.category == "shell" for effect in durable.effects("r"))
     finally:
         durable.close()
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_accepted_research_report_replays_without_compiler_or_knowledge_reads(tmp_path, monkeypatch):
+    import json
+
+    from codey.research.ledger import ResearchLedger
+    from tests.test_research_findings import URL, execute, report_args, setup
+
+    store, tools, _session, delegate = setup(tmp_path / "knowledge")
+    execute(delegate, tools, _session, "open_url", {"url": URL})
+    execute(delegate, tools, _session, "save_finding", {"claim": "Only one writer can write at a time.",
+        "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))})
+    durable, _, _, sink = runtime(tmp_path / "runtime", sqlite=True, task_kind="research")
+
+    class Provider:
+        calls = 0
+
+        def send(self, prompt):
+            self.calls += 1
+            return json.dumps({"tool": "done", "args": report_args("f1")})
+
+    provider = Provider()
+    policy = TaskPolicy(frozenset({"control"}), strict_research=True)
+    request = replace(request_for(durable, sink, provider), execution=KernelExecutionDeps(research_tools=tools))
+    try:
+        first = run_task_kernel(TaskSession(policy, task_kind="research"), request=request)
+        assert first.completed and first.research_report, first.summary
+        monkeypatch.setattr("codey.research.finding_report.compile_finding_report",
+                            lambda *a, **k: pytest.fail("accepted report was compiled again"))
+        monkeypatch.setattr(store.repository, "read", lambda *a, **k: pytest.fail("accepted report read current knowledge"))
+        tools.ledger = ResearchLedger()
+        second = run_task_kernel(TaskSession(policy, task_kind="research"), request=request)
+        assert second == first and provider.calls == 1
+    finally:
+        durable.close()
+        store.close()

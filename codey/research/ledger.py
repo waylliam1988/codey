@@ -17,6 +17,7 @@ from typing import Any
 
 from codey.research import source_domains
 from codey.research.passages import ReadPassage
+from codey.research.reference import ResearchReference
 from codey.research.source_document import SourceDocument
 from codey.research.urls import host_key, opened_url, parsed_url
 from codey.utils.refs import coerce_int, parse_int
@@ -126,8 +127,7 @@ class ResearchLedger:
         self.evidence_items: list[EvidenceItem] = []
         self.source_searches: list[dict[str, Any]] = []
         self.read_passages: dict[str, ReadPassage] = {}
-        self.finding_refs: dict[str, str] = {}
-        self.knowledge_refs: dict[str, dict[str, Any]] = {}
+        self.references: dict[str, ResearchReference] = {}
         self.investigations: dict[str, dict[str, Any]] = {}
         self.questions: tuple[str, ...] = ()
         self._source_texts: dict[str, str] = {}
@@ -141,8 +141,7 @@ class ResearchLedger:
         forked.evidence_items = list(self.evidence_items)
         forked.source_searches = [dict(s) for s in self.source_searches]
         forked.read_passages = dict(self.read_passages)
-        forked.finding_refs = dict(self.finding_refs)
-        forked.knowledge_refs = {k: dict(v) for k, v in self.knowledge_refs.items()}
+        forked.references = dict(self.references)
         forked.investigations = {k: dict(v) for k, v in self.investigations.items()}
         forked.questions = self.questions
         forked._source_texts = dict(self._source_texts)
@@ -157,8 +156,7 @@ class ResearchLedger:
         self.evidence_items = staged.evidence_items
         self.source_searches = staged.source_searches
         self.read_passages = staged.read_passages
-        self.finding_refs = staged.finding_refs
-        self.knowledge_refs = staged.knowledge_refs
+        self.references = staged.references
         self.investigations = staged.investigations
         self.questions = staged.questions
         self._source_texts = staged._source_texts

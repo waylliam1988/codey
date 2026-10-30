@@ -317,7 +317,8 @@ class KernelContext:
         if self.request_scoped_observations and not (self.native and acknowledge):
             options["tool_call_observations"] = task_working_context(
                 self.session, getattr(self.execution.research_tools, "ledger", None),
-                getattr(self.execution.research_tools, "store", None))
+                getattr(self.execution.research_tools, "store", None),
+                str(getattr(self.execution.research_tools, "session_id", "")))
         if scoped_contract:
             options["tool_call_contract"] = kernel_prompt._text_request_prompt("", snapshot)
             if text_result_spans:
@@ -353,7 +354,8 @@ class KernelContext:
         if not self.request_scoped_observations:
             prompt = "\n\n".join(part for part in (prompt, task_working_context(
                 self.session, getattr(self.execution.research_tools, "ledger", None),
-                getattr(self.execution.research_tools, "store", None))) if part)
+                getattr(self.execution.research_tools, "store", None),
+                str(getattr(self.execution.research_tools, "session_id", "")))) if part)
         self.freeze(state, prepared.snapshot, turn=turn, prompt=prompt,
                     counters=replace(state.counters, progress=progress.snapshot()))
 
@@ -499,7 +501,8 @@ class KernelContext:
         messages, prompt = advance
         observations = "" if self.request_scoped_observations else task_working_context(
             self.session, getattr(self.execution.research_tools, "ledger", None),
-                getattr(self.execution.research_tools, "store", None))
+                getattr(self.execution.research_tools, "store", None),
+                str(getattr(self.execution.research_tools, "session_id", "")))
         if self.native and messages:
             messages[-1] = replace(messages[-1], user_content="\n\n".join(
                 part for part in (observations, messages[-1].user_content) if part))

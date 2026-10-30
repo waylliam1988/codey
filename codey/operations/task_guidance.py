@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 def task_working_context(session: "TaskSession", research_ledger: "ResearchLedger | None" = None,
-                         knowledge_store: Any = None) -> str:
+                         knowledge_store: Any = None, knowledge_session_id: str = "") -> str:
     from codey.operations.kernel_prompt import working_context
     from codey.research.completion_guidance import render_research_observations
 
@@ -23,7 +23,7 @@ def task_working_context(session: "TaskSession", research_ledger: "ResearchLedge
                      and not session.policy.allows("project.write"))
     parts = [] if research_only else [working_context(session)]
     if session.policy.strict_research or session.task_kind == "evidence_followup":
-        parts.append(render_research_observations(session, research_ledger, knowledge_store))
+        parts.append(render_research_observations(session, research_ledger, knowledge_store, session_id=knowledge_session_id))
     return "\n\n".join(parts)
 
 

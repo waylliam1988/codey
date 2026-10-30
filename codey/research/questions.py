@@ -52,6 +52,6 @@ def validate_question_coverage(raw: object, ledger: ResearchLedger) -> list[dict
             if attempt not in ledger.investigations:
                 raise ValueError(f"report_sections.coverage[{index}].investigations: unknown investigation {attempt}")
         for ref in row["findings"]:
-            if ref not in ledger.finding_refs and ref not in ledger.knowledge_refs:
+            if ref not in ledger.references:
                 raise ValueError(f"report_sections.coverage[{index}].findings: unknown finding {ref}")
     return rows

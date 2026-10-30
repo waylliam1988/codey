@@ -533,7 +533,7 @@ class ExecutionDelegate:
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
             if name == "knowledge_read":
                 outcome = tools.knowledge_read(str(args.get("id") or ""), revision=args.get("revision"))
-                canonical = {"research_reference_bindings": dict(tools.ledger.knowledge_refs)} if outcome.ok else {}
+                canonical = {"research_reference_bindings": {k: v.to_dict() for k, v in tools.ledger.references.items()}} if outcome.ok else {}
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
             if name == "knowledge_commit":
                 outcome = tools.knowledge_commit(args)
@@ -565,10 +565,8 @@ class ExecutionDelegate:
             return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), False, None
         evidence = self._ledger_evidence(before, tools.ledger)
         evidence_canonical: dict[str, object] = {"evidence_items": evidence}
-        if name == "save_finding":
-            evidence_canonical["finding_refs"] = dict(tools.ledger.finding_refs)
-        if name == "save_inference":
-            evidence_canonical["research_reference_bindings"] = dict(tools.ledger.knowledge_refs)
+        if name in {"save_finding", "save_inference"}:
+            evidence_canonical["research_reference_bindings"] = {k: v.to_dict() for k, v in tools.ledger.references.items()}
         evidence_canonical["knowledge_links_created"] = tools.links_created - links_before
         proposals: list[object] = []
         created = [item for item in tools.created_ids if item not in created_before]

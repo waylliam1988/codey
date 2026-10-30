@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Any
 
 QUESTION_STATES = {
@@ -46,12 +47,13 @@ def coverage_rows(raw: object) -> list[dict[str, Any]]:
     return rows
 
 
-def render_coverage(raw: object, questions: tuple[str, ...] = ()) -> str:
+def render_coverage(raw: object, questions: tuple[str, ...] = (), *,
+                    render_ref: Callable[[str], str] | None = None) -> str:
     lines = []
     for row in sorted(coverage_rows(raw), key=lambda value: int(value["question_ref"][1:])):
         index = int(row["question_ref"][1:]) - 1
         question = questions[index] if index < len(questions) else row["question_ref"]
-        refs = "".join(f"[{ref}]" for ref in row["findings"])
+        refs = "".join(render_ref(ref) if render_ref else f"[{ref}]" for ref in row["findings"])
         attempts = "；调查回执：" + ", ".join(row["investigations"]) if row["investigations"] else ""
         lines.append(f"{row['question_ref']} · {question}\n{QUESTION_STATES[row['state']]}：{row['answer']} {refs}{attempts}".rstrip())
     return "\n\n".join(lines)

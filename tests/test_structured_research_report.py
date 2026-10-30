@@ -60,11 +60,11 @@ def test_structured_report_preserves_arguments_and_passes_existing_gate_only_wit
         assert not plan.protocol_error
         assert plan.control and plan.control.kind == "done"
         assert args == before and plan.control_args == before
-        assert set(parse_sections(plan.control.body)) == set(REQUIRED_SECTIONS[:-1])
+        assert plan.control.body == args["summary"]  # Structure stays in arguments until completion.
         state.last_done_args = plan.control_args
         assert not completion_gate.evaluate(state, plan.control.body, context={"research_ledger": ResearchLedger()}).complete
         compiled = compile_finding_report(args, tools.ledger, store)
-        verdict = completion_gate.evaluate(state, compiled.text, context={"research_ledger": tools.ledger})
+        verdict = completion_gate.evaluate(state, compiled.text, context={"research_ledger": tools.ledger, "research_report": compiled})
         assert verdict.complete, verdict.followup
         assert set(parse_sections(compiled.text)) == set(REQUIRED_SECTIONS)
     finally:
@@ -116,7 +116,7 @@ def test_literal_escape_sequences_in_report_content_are_preserved():
     args["report_sections"]["coverage"][0]["answer"] = r"The query contained literal \n and Windows C:\data."
     _, plan = plan_for(args, True)
     assert plan.control
-    assert args["report_sections"]["coverage"][0]["answer"] in plan.control.body
+    assert plan.control_args["report_sections"]["coverage"][0]["answer"] == args["report_sections"]["coverage"][0]["answer"]
 
 
 def test_grouped_citations_are_compiled_but_unobserved_numbers_still_fail():
@@ -136,10 +136,12 @@ def test_grouped_citations_are_compiled_but_unobserved_numbers_still_fail():
         ledger.add_evidence_items(list(prepared.items), note_id=url)
     state, plan = plan_for(args, False)
     # Numbered sources are application output, not a model-supplied wire field.
-    rendered = plan.control.body + f"\n\n## 来源\n[1] Experiment - {URL}\n[2] Replication - {second}"
+    from codey.reviews.report_sections import render_done_report
+
+    rendered = render_done_report(args["summary"], args["report_sections"]) + f"\n\n## 来源\n[1] Experiment - {URL}\n[2] Replication - {second}"
     finalized = finalize_done_answer(rendered, ledger)
     assert "[1][2]" in finalized.text and citation_refs(finalized.text) == {1, 2}
-    assert completion_gate.evaluate(state, finalized.text, context={"research_ledger": ledger}).complete
+    assert not completion_gate.evaluate(state, finalized.text, context={"research_ledger": ledger}).complete
     bad = finalize_done_answer(rendered.replace("[1, 2]", "[1, 9]"), ledger)
     assert bad.reason == "unmapped_numeric_refs"
 
@@ -151,5 +153,9 @@ def test_duplicated_full_report_is_rejected_with_specific_repair(native, separat
     args["summary"] += separator + "## 关键证据" + separator + "One writer commits at a time. [1]"
     before = copy.deepcopy(args)
     _, plan = plan_for(args, native)
-    assert plan.control is None and "summary must contain only the conclusion" in plan.protocol_error
+    from codey.research.report_proposal import parse_report_proposal
+
+    assert plan.control is not None and not plan.protocol_error
+    with pytest.raises(ValueError, match="only the conclusion"):
+        parse_report_proposal(args)
     assert args == before

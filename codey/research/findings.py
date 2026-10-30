@@ -87,13 +87,14 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
 
 
 def _saved(tools: ResearchTools, identity: str, claim: str, ref: object) -> ResearchToolOutput:
+    from codey.knowledge.archive import stable_identity
+    from codey.research.references import bind_version, read_version
     from codey.research.tools import ResearchToolOutput
 
-    label = next((key for key, value in tools.ledger.finding_refs.items() if value == identity), "")
-    if not label:
-        number = max((int(key[1:]) for key in (*tools.ledger.finding_refs, *tools.ledger.knowledge_refs)), default=0) + 1
-        label = f"f{number}"
-        tools.ledger.finding_refs[label] = identity
+    version = read_version(tools.store, stable_identity("claim", identity, claim))
+    if version is None:
+        raise ValueError("saved finding has no exact claim version")
+    label = bind_version(tools.ledger, version, acquisition="current_run", note_id=identity, passage_ref=str(ref))
     return ResearchToolOutput(canonical_json({"finding_ref": label, "claim": claim,
         "passage_ref": ref, "interpretation_review": "unreviewed",
         "next": "Cite [" + label + "] only where you adopt this finding. Saving is not semantic approval."}), ok=True)

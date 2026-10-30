@@ -11,8 +11,8 @@ if TYPE_CHECKING:
 
 
 def render_research_observations(session: "TaskSession", ledger: "ResearchLedger | None" = None,
-                                 store: Any = None) -> str:
-    view = build_research_context_view(session, ledger, store)
+                                 store: Any = None, *, session_id: str = "") -> str:
+    view = build_research_context_view(session, ledger, store, session_id=session_id)
     instruction = ("Evidence acquisition only: done.summary briefly states new findings and specific remaining gaps."
                    if session.task_kind == "evidence_followup" else
                    "Use these persisted references directly; do not save them again to prepare a report.")

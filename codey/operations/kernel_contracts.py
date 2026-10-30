@@ -18,6 +18,7 @@ class KernelResult:
     stop_reason: str
     proof: Any | None = None
     delivery: str = "not_required"
+    research_report: dict[str, Any] | None = None
 
 @dataclass(frozen=True)
 class KernelTransportDeps:

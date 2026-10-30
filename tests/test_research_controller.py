@@ -349,9 +349,6 @@ class ResearchControllerTests(unittest.TestCase):
         self.assertFalse(plan.protocol_error)
         self.assertEqual(plan.calls, [ToolCall("open_url", {
             "url": "https://example.com/a",
-            "offset": 0,
-            "limit": 6000,
-            "pages": "",
         })])
 
     def test_old_open_url_id_protocol_is_not_controller_visible(self) -> None:
@@ -503,11 +500,11 @@ class ResearchControllerTests(unittest.TestCase):
                     "title": "Alpha",
                     "body": "Alpha evidence text",
                     "sources": ["s1"],
-                    "evidence": {
+                    "evidence": [{
                         "claim": "Alpha has evidence.",
                         "source_url": "s1",
                         "excerpt": "Alpha evidence text",
-                    },
+                    }],
                 },
             }),
             state,

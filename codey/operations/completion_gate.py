@@ -126,6 +126,9 @@ def _proof_evidence_refs(session: Any, context: Any) -> tuple[str, ...]:
             refs.append(stable_ref("source", source.final_url, source.text_hash, source.retrieved_at))
     except Exception:
         pass
+    compiled = _context_get(context, "research_report")
+    if compiled is not None:
+        refs.extend(f"knowledge-source:{row['id']}@{row['revision']}" for row in compiled.source_versions[:8])
     try:
         verifs = list(getattr(session, "verifications", ()) or [])[-4:]
         for item in verifs:

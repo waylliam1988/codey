@@ -29,11 +29,20 @@ def _stable_synthesis_id(run_id: str) -> str:
     return "synthesis-" + hashlib.sha256(run_id.encode("utf-8")).hexdigest()
 
 
+def _selected_note_sources(store: Any, note_ids: list[str]) -> set[str]:
+    sources: set[str] = set()
+    for identity in note_ids:
+        note = store.read_note(identity)
+        if note is not None:
+            sources.update(note.sources)
+    return sources
+
+
 def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
                        project: str, run_id: str,
                        on_event: Callable[[RunEvent], None], open_questions: Any = (),
                        policy: Any, projection: str = "initial", knowledge_refs: Any = (),
-                       finding_ids: tuple[str, ...] = (), question_coverage: Any = ()) -> str:
+                       finding_ids: tuple[str, ...] = (), question_coverage: Any = (), accepted_report: Any = None) -> str:
     """Persist one synthesis note under the parent task policy (required).
 
     ``policy=None`` denies like any non-allowing policy (fail-closed). The
@@ -79,19 +88,24 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
 
     # Only explicit selections are answer dependencies. Opening or saving a
     # source does not make every finding a premise of this answer.
+    if accepted_report is not None:
+        if accepted_report.text != summary:
+            raise ValueError("archive text differs from accepted report")
+        finding_ids = accepted_report.finding_ids
+        knowledge_refs = list(accepted_report.knowledge_refs)
+        question_coverage = accepted_report.coverage
+        open_questions = accepted_report.open_questions
     note_ids = list(finding_ids)
-    selected_sources = set()
-    for identity in note_ids:
-        selected_note = tools.store.read_note(identity)
-        if selected_note is not None:
-            selected_sources.update(selected_note.sources)
+    selected_sources = ({row["url"] for row in accepted_report.source_versions} if accepted_report
+                        else _selected_note_sources(tools.store, note_ids))
     tags = ["research"]
     if session_id:
         tags.append(f"session:{session_id}")
-    tags.extend(_run_concept_tags(tools.store, note_ids))
+    if accepted_report is None:
+        tags.extend(_run_concept_tags(tools.store, note_ids))
     note = KnowledgeNote.create(
         type="synthesis", title=_synthesis_title(task),
-        body=_synthesis_body(summary, tools.ledger), tags=tags,
+        body=summary if accepted_report else _synthesis_body(summary, tools.ledger), tags=tags,
         sources=sorted(selected_sources), session_id=session_id, project=project,
         open_questions=clean_open_questions(open_questions)[:4],
         id=note_id,
@@ -104,7 +118,8 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         status="active", scope=scope, scope_id=scope_id, references=tuple(dict.fromkeys(references)),
         provenance={"run_id": run_id, "session_id": session_id, "summary_digest": summary_digest,
                     "basis": "settled_kernel_projection", "projection": projection,
-                    "questions": list(tools.ledger.questions), "question_coverage": list(question_coverage),
+                    "questions": list(accepted_report.questions if accepted_report else tools.ledger.questions),
+                    "question_coverage": list(question_coverage),
                     "coverage_assessment": "model_reported_not_semantically_verified"})
     try:
         tools.store.publish_note(note, stable_identity("answer-commit", run_id, projection),
@@ -305,25 +320,27 @@ def run_research_iteration(
         raise ResearchContinuationError(outcome.summary)
     ledger = tools.ledger
     synthesis_id = ""
+    compiled = None
     if outcome.completed:
-        from codey.research.finding_report import compile_finding_report
+        from codey.research.finding_report import FindingReport
 
-        compiled = compile_finding_report(session.last_done_args, ledger, tools.store,
-            project=tools.project, session_id=tools.session_id) if policy.strict_research else None
+        compiled = FindingReport.from_payload(outcome.research_report) if policy.strict_research else None
+        if compiled is not None and compiled.text != outcome.summary:
+            raise ValueError("settled report does not match accepted delivery")
         # Deterministic projection of the settled driver output; the stored
         # digest rejects changes to that original output on replay.
         synthesis_id = _persist_synthesis(
             tools, task, outcome.summary, session_id=session_id,
             project=project, run_id=run_id, on_event=on_event,
-            open_questions=session.last_done_args.get("open_questions", ()),
+            open_questions=compiled.open_questions if compiled else session.last_done_args.get("open_questions", ()),
             knowledge_refs=[*session.last_done_args.get("knowledge_refs", ()), *(compiled.knowledge_refs if compiled else ())],
             finding_ids=compiled.finding_ids if compiled else (),
-            question_coverage=session.last_done_args.get("report_sections", {}).get("coverage", ()) if compiled else (),
+            accepted_report=compiled,
             policy=policy,
             projection="initial" if writer_attempt == 1 else f"writer-{writer_attempt}",
         )
     quality = None
-    if outcome.summary and outcome.stop_reason == "done":
+    if compiled is None and outcome.summary and outcome.stop_reason == "done":
         from codey.research.report_quality import review_report_quality
 
         quality = review_report_quality(
@@ -332,7 +349,12 @@ def run_research_iteration(
             search_result_urls=set(tools.search_result_urls),
         )
     record = None
-    if outcome.summary or ledger.opened_sources or ledger.evidence_items:
+    if compiled is not None:
+        from codey.research.report_projection import project_accepted_report
+
+        record = project_accepted_report(compiled, question=task, run_id=run_id, session_id=session_id,
+                                         project=project, synthesis_id=synthesis_id)
+    elif outcome.summary or ledger.opened_sources or ledger.evidence_items:
         from codey.research.object_model import build_research_record
 
         record = build_research_record(
@@ -348,12 +370,12 @@ def run_research_iteration(
         search_results=ledger.search_results_payload(),
         opened_sources=ledger.opened_sources_payload(),
         coverage={**ledger.coverage_payload(),
-                  "question_answers": session.last_done_args.get("report_sections", {}).get("coverage", [])
-                  if outcome.completed and policy.strict_research else []},
-        citation_map=quality.citation_payload() if quality is not None else [],
+                  "question_answers": list(compiled.coverage) if outcome.completed and policy.strict_research and compiled else []},
+        citation_map=list(compiled.source_versions) if compiled else quality.citation_payload() if quality is not None else [],
         evidence_items=ledger.evidence_payload(),
         counterpoints=list(quality.counterpoints) if quality is not None else [],
-        quality_warnings=list(quality.warnings) if quality is not None else [],
+        quality_warnings=["Interpretations remain unreviewed; question coverage is model reported."] if compiled else
+                         list(quality.warnings) if quality is not None else [],
         notes_created=list(tools.created_ids),
         notes_updated=list(tools.updated_ids),
         links_created=tools.links_created,

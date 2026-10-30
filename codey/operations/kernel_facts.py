@@ -46,8 +46,6 @@ def project_result_observation(
             from codey.research.passages import restore_passages
 
             restore_passages(research_ledger, observation, result.canonical["read_passages"])
-        if "finding_refs" in result.canonical:
-            _restore_finding_refs(research_ledger, result.canonical["finding_refs"])
     if research_ledger is not None and call.name in {
         "web_search", "open_url", "open_result", "reopen_source", "open_hit", "source_search", "knowledge_read"
     } and not denied_before_execution(result):
@@ -56,25 +54,6 @@ def project_result_observation(
         research_ledger.investigations[ref] = {"tool": call.name, "ok": ok,
                                               "args": dict(call.args or {})}
     record_facts_for_result(session, call, result, ok=ok, exit_code=exit_code)
-
-
-def _restore_finding_refs(ledger: ResearchLedger, raw: object) -> None:
-    if not isinstance(raw, dict) or len(raw) > 256:
-        raise ValueError("invalid finding reference mapping")
-    evidence_notes = {item.note_id for item in ledger.evidence_items}
-    pending: dict[str, str] = {}
-    for key, value in raw.items():
-        if (not isinstance(key, str) or re.fullmatch(r"f[1-9][0-9]*", key) is None
-                or not isinstance(value, str) or value not in evidence_notes):
-            raise ValueError("finding reference has no saved evidence")
-        if key in ledger.finding_refs and ledger.finding_refs[key] != value:
-            raise ValueError("conflicting finding reference")
-        if key in ledger.knowledge_refs:
-            raise ValueError("conflicting research reference namespace")
-        if any(old_key != key and old_value == value for old_key, old_value in {**ledger.finding_refs, **pending}.items()):
-            raise ValueError("duplicate finding reference identity")
-        pending[key] = value
-    ledger.finding_refs.update(pending)
 
 
 def _record_run_verification(

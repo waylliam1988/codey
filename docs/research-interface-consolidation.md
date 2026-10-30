@@ -13,11 +13,8 @@ Cold start: no compatibility reader for replaced research wire formats.
    Profiles/examples/native/text/frozen-contract regressions pass. The first
    focused runs: 41 tests + 2 subtests and 29 additional tests passed; mypy clean.
 
-Next: one bounded working view and explicit evidence input; structured report
-proposal/check/render; persist the accepted compilation; one exact reference
-binding and versioned evidence view. Fixed/local-model and real-web acceptance
-remain pending. Only local KoboldCpp is available; do not imply a reference-model
-comparison or semantic certification.
+Only local KoboldCpp is available; there is no reference-model comparison or
+semantic certification. Real-web acceptance is evaluated separately below.
 
 2. One bounded ResearchContextView now supplies current questions, short labels,
    pinned content/status/conditions, investigation previews and recent failures.
@@ -27,3 +24,50 @@ comparison or semantic certification.
    to resave historical evidence. save_finding passes an explicit frozen evidence
    context to the common writer instead of changing tools.ledger.
    Focused context/finding/protocol/lifecycle checks: 46 passed; Ruff/mypy clean.
+
+3. Strict done arguments now become a ResearchReportProposal. Questions and
+   references are checked before rendering; there is no strict Markdown round
+   trip or global inference wording exemption. Report paragraph bindings keep
+   their exact fN kinds. Historical evidence is resolved in a pure evidence view,
+   never inserted as this run's acquisition. Source keys include identity AND
+   revision, preserving two versions at one URL. ResearchReference replaces the
+   old finding/knowledge dual maps and is frozen in the common tool receipts.
+
+4. KernelResult carries the accepted compilation in the existing managed
+   decision artifact, bound by its digest. Restoration validates it; it never
+   recompiles from current knowledge. Archive and ResearchRecord projections use
+   this same compilation, selected versions, coverage and evidence metadata.
+   Cold start: no legacy research result/mapping reader was added.
+
+5. Review fixes: coverage answer citations use the same paragraph parser and
+   must agree with that question's findings; invalid refs get the exact answer
+   path. The working view checks its final serialized length. If full questions
+   alone do not fit, their wording is explicitly omitted with a budget issue,
+   never silently cropped and presented as complete. Reference previews retain
+   original evidence; knowledge_read(fN) returns precise evidence/source versions
+   and bounded original excerpts in the same read. Excerpt truncation is marked;
+   premise evidence of an inference is explicitly distinguished from direct
+   evidence. Compact recall locates details without instructing strict reports
+   to copy long ids into done.knowledge_refs.
+
+Mechanical completion confirms selected-version resolution and question
+accounting, not that a paragraph is semantically supported by its cited finding.
+The removed lexical/Markdown matching did not prove that either. Statements
+remain unreviewed; coverage is model reported. Missing sources cannot be replaced
+with an unbacked hypothesis. An honest report with explicit gaps can be partial
+in its ResearchRecord even when delivery is complete.
+
+Fixed-material probe: artifacts/research-layered-contract-view-20261030, level 2,
+3 cases, seed 73, temperature .3, thinking disabled. All outputs were fenced,
+so raw JSON shape checks failed. After manual fence removal, SQLite's duplicate
+claims, an expanded capecitabine comparison (including single-drug arms without
+that direct comparator), and retail's multi-source/ellipsis excerpt prevent a
+semantic acceptance. Raw prompts/outputs were preserved. This diagnostic does
+not exercise the new production working view and is NOT evidence of before/after
+research improvement. Final real-web and regression results are pending.
+
+Pre-live validation: 213 targeted tests + 2 subtests passed, including existing
+subprocess crash/restart cases and a new SQLite accepted-report replay check.
+After field-local coverage parsing and final schema typing, a further 69 focused
+checks passed. Ruff, mypy (569 production files), Pyrefly (0 errors; 35 suppressed,
+77 warnings) and ty passed. Final archive snapshot adjustments are verified below.

@@ -79,6 +79,10 @@ def citation_requirement_checks(session: Any, text: str, context: Any) -> list[C
     strict = bool(getattr(policy, "strict_research", False))
     if not (required or strict or getattr(policy, "sources_open_required", False)):
         return []
+    compiled = _context_get(context, "research_report")
+    if compiled is not None:
+        # Sources/citations were resolved from exact selected versions before rendering.
+        return [CompletionCheck("research_citations", CHECK_PASS)]
     ledger = _context_get(context, "research_ledger")
     if ledger is None:
         reason = "research_ledger_missing"
@@ -122,7 +126,6 @@ def strict_research_checks(session: Any, done_text: str, context: Any = None) ->
 def research_completion_feedback(session: Any, text: str, context: Any, checks: list[CompletionCheck]) -> str:
     """Explain failed report checks without rewriting the proposed answer."""
     failed = {row.check_id for row in checks if row.status != CHECK_PASS}
-    parts: list[str] = []
     if "research_investigation_attempted" in failed:
         return ("This evidence investigation has not attempted acquisition. Parent findings were saved in an "
                 "earlier phase, not here. Next action: use source_search on a previously opened URL or "
@@ -130,335 +133,27 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
                 "any supported new finding. If acquisition fails, report the actual failed attempt and remaining "
                 "gap in a brief done.summary; do not invent evidence or repeat the parent report.")
     if "knowledge_versions" in failed:
-        redundant = _current_note_reference_feedback(session, context)
-        if redundant and "research_evidence_saved" not in failed:
-            return redundant
-        parts.append("done.knowledge_refs must use the structured object id and revision from "
-                     "Structured knowledge versions or knowledge_read, not a note_id, Markdown path, "
-                     "source id, tool result_ref or old answer. Read the cited object before resubmitting; "
-                     "do not guess an id or a revision.")
-        from codey.knowledge.model import canonical_json
-
-        raw_refs = getattr(session, "last_done_args", {}).get("knowledge_refs", ())
-        if isinstance(raw_refs, (tuple, list)):
-            requests = [canonical_json({"tool": "knowledge_read", "args": {"id": row["id"]}})
-                        for row in raw_refs[:3] if isinstance(row, dict) and isinstance(row.get("id"), str)]
-            if requests:
-                parts.append("Next action: execute one knowledge_read request below to inspect the cited object "
-                             "or legacy note. Copy the returned structured version, not its document id. "
-                             "Do not repeat done with the rejected reference.\n" + "\n".join(requests))
-        if "research_evidence_saved" not in failed:
-            parts.append("Fix this reference defect first; the remaining report/evidence checks will run again "
-                         "on the next proposed answer.")
-            return "\n\n".join(parts)
-    if "research_evidence_saved" in failed:
-        parts.append("No citable evidence has been saved. Use save_finding with claim, "
-                     "source_ref=sN and passage_ref=p... from an opened read result. "
-                     "A hypothesis without source excerpts does not satisfy this requirement. "
-                     "The excerpt must support the actual predicate and conditions of the claim; "
-                     "use source_search or an offset read if the relevant passage was omitted.")
-        parts.append("Save a scoped finding and wait for a successful save_finding result before another done. "
-                     "Previously proposed or displayed calls are not saved evidence. Report formatting and "
-                     "citation repairs can follow after evidence is actually saved.")
-        return "\n\n".join(parts)
-    ledger = _context_get(context, "research_ledger")
-    if ledger is not None and failed.intersection({"research_citations", "research_report_sections", "research_report_quality"}):
-        prerequisite = _citation_prerequisite_feedback(session, text, ledger)
-        if prerequisite:
-            parts.append(prerequisite)
-            return "\n\n".join(parts)
-    if (ledger is not None and "research_report_quality" in failed
-            and "research_report_sections" not in failed):
-        from codey.research.report_quality import review_report_quality
-
-        review = review_report_quality(text, ledger=ledger, opened_sources=ledger.final_url_set(),
-                                      search_result_urls=set(getattr(session, "search_results", {}).values()))
-        if not review.ok:
-            # Source/format defects can make otherwise saved statements appear
-            # unbound. Give one repair, then rerun all checks on the next draft.
-            parts.append(review.message)
-            parts.append("Repair this citation/report defect first, preserving the other sections and saved "
-                         "source wording. This alone does not require another search or save_finding. "
-                         "Claim support and coverage checks will run again on the corrected report.")
-            return "\n\n".join(parts)
-    if "research_claim_bindings" in failed:
-        parts.append("Some conclusion/evidence statements could not be linked to saved claim excerpts. "
-                     "This is a text-binding check, not a verdict that the statement is false. "
-                     "Keep supported wording from saved claim, or save a separate passage for the missing claim. "
-                     "One finding does not support another comparison. "
-                     "Do not relabel a sourced finding as a hypothesis to bypass the missing evidence. "
-                     "The report has been preserved, not silently reduced to its supported subset.")
-        parts.append("Every factual evidence paragraph needs its own exact [f...] finding citation. "
-                     "Citations in summary or a source list do not cite an uncited evidence paragraph. "
-                     "A wording match alone is insufficient without the source citation.")
-        ledger = _context_get(context, "research_ledger")
-        if ledger is not None:
-            from codey.research.object_model import build_research_record
-
-            record = build_research_record(question=str(_context_get(context, "question") or ""),
-                                           summary=text, ledger=ledger, stop_reason="done")
-            unbound = [claim.claim_text[:240] for claim in record.claims
-                       if claim.claim_section in {"conclusion", "evidence"} and claim.status == "unsupported"]
-            parts.append("Unbound report statements:\n" + "\n".join("- " + line for line in unbound[:4]))
-            saved = list(dict.fromkeys(item.claim for item in ledger.evidence_items if item.stance == "supports"))
-            parts.append("Saved claim wording available:\n" + "\n".join("- " + line[:240] for line in saved[:6]))
-            policy = getattr(session, "policy", None)
-            if policy is not None and policy.allows("web.read") and policy.allows("knowledge.write"):
-                parts.append("Next action: investigate the first missing factual finding using source_search "
-                             "and open_hit on its cited source, then save_finding with its own scoped claim and "
-                             "passage_ref. Do not substitute an unrelated saved finding or repeat the rejected "
-                             "done. If the saved finding already expresses the SAME predicate and conditions, "
-                             "reuse that wording with its own citation instead. If evidence remains unavailable, "
-                             "state the specific unresolved question and search limit without claiming coverage.")
-            else:
-                parts.append("Use available saved wording only for the same predicate and conditions. "
-                             "Report any unresolved evidence requirement and authorization limit; "
-                             "do not substitute an unrelated saved finding.")
-            parts.append("Keep the saved conditions and limits; do not add unsupported elaborations. "
-                         "With report_sections, summary is conclusion text only, without Markdown headings.")
+        return "done.knowledge_refs must use the exact object id and revision actually read; cite original premises, not an old answer."
     if "research_report_sections" in failed:
-        from codey.reviews.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
-
-        sections = parse_sections(text)
-        missing = [section_title(key) for key in REQUIRED_SECTIONS if not sections.get(key, "").strip()]
-        parts.append("Repair report formatting using the evidence already saved; this alone does not require another search.")
-        if missing:
-            parts.append("Missing sections: " + ", ".join(missing) + ". Send done.summary as only the cited "
-                         "conclusion and done.report_sections with four nonempty text arrays: evidence, counter, "
-                         "source_quality, coverage. Cite [f...] findings; the application adds sources and headings.")
-        else:
-            parts.append("All required sections are present; repair the specific citation/report defect below. "
-                         'With report_sections, cite exact [f...] finding references. '
-                         'Source numbers and the source table are generated. Preserve the other sections.')
-        if "\\n" in text and "\n" not in text:
-            parts.append("The summary contains literal backslash+n text, not line breaks. "
-                         "Use done.report_sections: put only the conclusion in summary, and supply "
-                         "evidence, counter, source_quality, coverage as arrays of paragraphs. "
-                         "The application adds headings and paragraph breaks. "
-                         "Keep the report content and citations; no automatic text repair was applied.")
-    ledger = _context_get(context, "research_ledger")
-    if "research_report_quality" in failed and ledger is not None:
-        from codey.research.report_quality import review_report_quality
-
-        review = review_report_quality(text, ledger=ledger, opened_sources=ledger.final_url_set(),
-                                      search_result_urls=set(getattr(session, "search_results", {}).values()))
-        parts.append(review.message)
-    return "\n\n".join(parts)
-
-
-def _current_note_reference_feedback(session: Any, context: Any) -> str:
-    """Point to redundant document refs without guessing an object or revision."""
-    if (getattr(session, "task_kind", "") != "research"
-            or not getattr(getattr(session, "policy", None), "strict_research", False)):
-        return ""
-    ledger = _context_get(context, "research_ledger")
-    if ledger is None:
-        return ""
-    notes = {item.note_id for item in ledger.evidence_items if item.note_id}
-    raw = getattr(session, "last_done_args", {}).get("knowledge_refs")
-    if not isinstance(raw, list):
-        return ""
-    redundant = [f"done.knowledge_refs[{index}]" for index, row in enumerate(raw)
-                 if isinstance(row, dict) and isinstance(row.get("id"), str) and row["id"] in notes]
-    if not redundant:
-        return ""
-    return (
-        "These entries contain this research run's document note_ids, not structured object ids: "
-        + ", ".join(redundant[:6]) + ". Remove these entries from done.knowledge_refs; omit the field if none remain. "
-        "The application already attaches exact saved versions for this run. Preserve references to earlier "
-        "knowledge actually adopted. No knowledge_read or new write is needed for this redundant-reference repair. "
-        "Do not copy the note_id again. Other report checks will run on the corrected proposal. "
-        "这些是本次研究的笔记 ID，系统会自动关联其知识版本；请删除列出的引用项，"
-        "无需再读笔记或重写证据。以前研究的引用应保留。"
-    )
-
-
-def _citation_prerequisite_feedback(session: Any, text: str, ledger: Any) -> str:
-    """Focus on observed missing source actions before report wording repairs."""
-    from codey.knowledge.model import canonical_json
-    from codey.research.report_quality import parse_citation_rows
-    from codey.reviews.report_sections import parse_sections
-    from codey.utils.citation_scanner import citation_refs
-
-    sections = parse_sections(text)
-    citations = parse_citation_rows(sections.get("sources", ""), ledger)
-    body = "\n".join(value for key, value in sections.items() if key != "sources")
-    unmapped = sorted(citation_refs(body) - {item.number for item in citations})
-    if unmapped:
-        # Missing URL mappings also produce downstream binding failures. Do not
-        # tell the writer to acquire evidence for a paragraph we cannot map yet.
-        return ("Replace unresolved manual citation numbers with exact [f...] finding references: "
-                + ", ".join(f"[{number}]" for number in unmapped[:8])
-                + ". The application generates the source table from selected findings. "
-                "Resubmit done preserving the other sections. "
-                "This mapping repair alone needs no new search or save_finding. "
-                "Claim support and coverage will be checked again afterwards.")
-    unread = list(dict.fromkeys(item.url for item in citations if not ledger.canonical_opened_url(item.url)))
-    policy = getattr(session, "policy", None)
-    if unread and policy is not None and policy.allows("web.read"):
-        requests = [canonical_json({"tool": "open_url", "args": {"url": url}}) for url in unread[:3]]
-        return ("The report cites sources that have not been opened. Next action: execute one open_url below "
-                "and inspect its actual text, then save a supported finding before drafting again. "
-                "If acquisition fails, report the specific gap; do not invent the missing result. "
-                "Other report checks will run again after this prerequisite.\n" + "\n".join(requests))
-    saved = {ledger.canonical_opened_url(item.source_url) for item in ledger.evidence_items if item.excerpt.strip()}
-    missing = list(dict.fromkeys(item.url for item in citations
-                                if ledger.canonical_opened_url(item.url) not in saved))
-    if not unread and missing and policy is not None and policy.allows("knowledge.write"):
-        passage = ("Use source_search and open_hit if that passage was omitted. "
-                   if policy.allows("web.read") else "Use the existing source receipts; report any unavailable passage. ")
-        return ("These cited sources were opened but have no saved evidence: " + ", ".join(missing[:3]) + ". "
-                "Next action: inspect the relevant passage and execute save_finding with a complete scoped "
-                "claim in the requested report language and its exact passage_ref. " + passage + "Save the actual finding, "
-                "not merely the article title. Wait for success before another done. "
-                "Other report checks will run again after this prerequisite.")
+        return "The strict report requires its validated structured proposal and exact reference compilation."
     return ""
 
 
 def _ledger_checks(session: Any, done_text: str, context: Any) -> list[CompletionCheck]:
-    def get(key: str) -> Any:
-        return _context_get(context, key)
-    ledger = get("research_ledger")
-    if ledger is None:
-        return _missing_ledger_rows()
-    rows: list[CompletionCheck] = []
-    try:
-        finals = set(ledger.final_url_set())
-    except Exception as exc:
-        row = completion_check("research_ledger", CHECK_FAIL, f"ledger_error:{type(exc).__name__}")
-        return [row] if row is not None else []
-    try:
-        citable = _ledger_citable_urls(ledger, finals)
-    except Exception as exc:
-        row = completion_check("research_evidence", CHECK_FAIL, f"evidence_error:{type(exc).__name__}")
-        return [row] if row is not None else []
-    row = completion_check(
-        "research_sources_opened",
-        CHECK_PASS if finals else CHECK_NOT_RUN,
-        "" if finals else "research_source_not_opened",
-    )
-    if row is not None:
-        rows.append(row)
-    row = completion_check(
-        "research_evidence_saved",
-        CHECK_PASS if citable else CHECK_NOT_RUN,
-        "" if citable else "research_evidence_missing",
-    )
-    if row is not None:
-        rows.append(row)
-    try:
-        from codey.research.done_finalizer import finalize_done_answer
-    except Exception as exc:
-        row = completion_check("research_report", CHECK_FAIL, f"finalizer_unavailable:{type(exc).__name__}")
-        rows.append(row) if row is not None else None
-        return rows
-    try:
-        finalized = finalize_done_answer(
-            (done_text or ""), ledger,
-            source_ids=dict(session.source_ids),
-            question=str(get("question") or ""),
-        )
-    except Exception as exc:
-        row = completion_check("research_report", CHECK_FAIL, f"finalizer_error:{type(exc).__name__}")
-        if row is not None:
-            rows.append(row)
-        return rows
-    if getattr(finalized, "reason", "") in {"no_report_sections", "no_citable_sources",
-                                            "unmapped_numeric_refs", "unmapped_source_id_refs",
-                                            "no_referenced_citable_sources"}:
-        row = completion_check("research_report_sections", CHECK_FAIL, f"report_{finalized.reason}")
-    elif "结论" in (done_text or "") and "来源" in (done_text or ""):
-        row = completion_check("research_report_sections", CHECK_PASS)
-    else:
-        row = completion_check("research_report_sections", CHECK_FAIL, "research_report_incomplete")
-    if row is not None:
-        rows.append(row)
-    try:
-        from codey.research.contract import research_completion_checks
-        from codey.research.object_model import build_research_record
-        from codey.research.proof_quality import review_research_proof
-        from codey.research.report_quality import review_report_quality
+    compiled = _context_get(context, "research_report")
+    if compiled is None or compiled.text != done_text:
+        return [CompletionCheck("research_report_sections", CHECK_FAIL, "structured_report_missing")]
+    # These checks confirm structure and exact evidence chains, not semantics.
+    # Historical evidence does not become a fresh source-open execution receipt.
+    return [CompletionCheck(check, CHECK_PASS) for check in (
+        "research_sources_opened", "research_evidence_saved", "research_report_sections",
+        "research_claim_bindings", "research_question_coverage")]
 
-        record = get("research_record")
-        if record is None:
-            report_review = review_report_quality(
-                (done_text or ""),
-                ledger=ledger,
-                opened_sources=finals,
-                search_result_urls=set(getattr(session, "search_results", {}).values()),
-            )
-            quality_row = completion_check(
-                "research_report_quality",
-                CHECK_PASS if report_review.ok else CHECK_FAIL,
-                "" if report_review.ok else "research_report_quality_failed",
-            )
-            if quality_row is not None:
-                rows.append(quality_row)
-            record = build_research_record(
-                question=str(get("question") or ""), summary=(done_text or ""),
-                ledger=ledger, review=report_review,
-                run_id=str(get("run_id") or ""), project=get("project"),
-                stop_reason="done",
-            )
-        from codey.research.object_model import interpretation_text_matches
-
-        inference_statements = get("research_inference_statements") or ()
-        # Candidate inference remains an inference. Binding it to its own saved
-        # statement does not turn its premises' evidence into direct support.
-        unbound = [claim for claim in record.claims if claim.status == "unsupported" and not any(
-            interpretation_text_matches(claim.claim_text, statement) for statement in inference_statements)]
-        rows.append(CompletionCheck("research_claim_bindings",
-            CHECK_FAIL if unbound else CHECK_PASS, "report_claim_binding_incomplete" if unbound else ""))
-        if get("require_proof_review"):
-            review = review_research_proof(record, question=str(get("question") or ""),
-                                           evidence_ledger=get("evidence_ledger_payload"))
-            for item in research_completion_checks(review) or ():
-                if isinstance(item, CompletionCheck):
-                    rows.append(item)
-    except Exception as exc:
-        row = completion_check("research_proof", CHECK_FAIL, f"proof_error:{type(exc).__name__}")
-        if row is not None:
-            rows.append(row)
-    return rows
-
-
-def _ledger_citable_urls(ledger: Any, finals: set[str]) -> list[str]:
-    urls: list[str] = []
-    for item in getattr(ledger, "evidence_items", ()) or ():
-        url = str(getattr(item, "source_url", "") or "").strip()
-        excerpt = str(getattr(item, "excerpt", "") or "").strip()
-        if not url or not excerpt:
-            continue
-        canonical = ledger.canonical_opened_url(url)
-        if canonical in finals and canonical not in urls:
-            urls.append(canonical)
-    return urls
 
 def finalize_research_text(session: Any, text: str, context: Any) -> str:
-    """Check and publish the same evidence-compiled answer, as the old runner did.
-
-    A missing strict ledger never finalizes: the ledger checks already
-    block completion, and inventing a report without evidence would hide
-    that dependency.
-    """
-    if not getattr(getattr(session, "policy", None), "strict_research", False):
-        return text
-    def get(key: str) -> Any:
-        return _context_get(context, key)
-    ledger = get("research_ledger")
-    if ledger is None:
-        return text
-    from codey.research.done_finalizer import finalize_done_answer
-
-    # Citation compilation may renumber references; it must not silently delete
-    # or downgrade the answer before completion checks inspect its claims.
-    finalized = finalize_done_answer(text, ledger, source_ids=dict(session.source_ids),
-                                    question=str(get("question") or ""), enforce_claim_support=False)
-    return finalized.text.strip()
+    # Strict reports are already rendered from the accepted structured proposal.
+    # Ordinary text/import finalizers remain available to their own callers.
+    return text
 
 
-__all__ = [
-    "finalize_research_text",
-    "source_requirement_checks",
-    "strict_research_checks",
-]
+__all__ = ["finalize_research_text", "source_requirement_checks", "strict_research_checks"]
