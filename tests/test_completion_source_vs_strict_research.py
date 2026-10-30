@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from codey.operations import completion_gate as gate
 from codey.policies.task_policy import TaskPolicy
 
@@ -82,11 +84,12 @@ def test_same_facts_strict_research_still_blocks_without_evidence_report() -> No
         evidence=[],
         search_results={},
     )
-    verdict = gate.evaluate(sess, "只有结论没有来源章节" if False else "plain summary without sections", context=None)
+    verdict = gate.evaluate(sess, "plain summary without sections", context=None)
     assert not verdict.complete
 
 
-def test_required_report_failure_explains_literal_newlines_without_rewriting():
+def test_strict_report_does_not_parse_or_rewrite_markdown_even_with_saved_evidence():
+    from codey.operations.research_completion_checks import finalize_research_text, strict_research_checks
     from codey.research.ledger import ResearchLedger
 
     url = "https://example.com/a"
@@ -96,186 +99,104 @@ def test_required_report_failure_explains_literal_newlines_without_rewriting():
         [{"claim": "One writer commits at a time.", "source_url": url, "excerpt": "One writer commits at a time."}],
         fallback_sources=[url], fallback_claim="", fallback_body="", note_type="fact")
     ledger.add_evidence_items(list(prepared.items), note_id="original")
-    policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"}), strict_research=True,
-                        required_checks=("research_sources_opened", "research_evidence_saved", "research_report_sections"))
+    policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"}), strict_research=True)
     session = _session(policy, task_kind="research", opened_sources={url})
-    summary = r"## 结论\nOne writer commits at a time. [1]\n## 来源\n[1] Experiment - https://example.com/a"
-    verdict = gate.evaluate(session, summary, context={"research_ledger": ledger})
-    assert not verdict.complete
-    assert "required check 'research_report_sections'" in verdict.followup
-    assert "literal backslash+n" in verdict.followup
-    assert "done.report_sections with five nonempty text arrays" in verdict.followup
-    assert "evidence, counter, source_quality, coverage, sources" in verdict.followup
-    assert "## 结论\n## 关键证据" not in verdict.followup
-    assert "does not require another search" in verdict.followup
-    assert "Collect the missing local evidence or fresh verification" not in verdict.followup
-    assert "\n" not in summary  # The gate did not silently decode the submitted data.
+    for text in (r"## Conclusion\nOne writer commits at a time. [1]", "## Conclusion\nOne writer commits at a time. [1]"):
+        context = {"research_ledger": ledger}
+        assert finalize_research_text(session, text, context) == text
+        rows = strict_research_checks(session, text, context)
+        assert [(row.check_id, row.reason_code) for row in rows] == [
+            ("research_report_sections", "structured_report_missing")]
+        assert not gate.evaluate(session, text, context=context).complete
+    assert len(ledger.evidence_items) == 1
 
 
-def test_missing_evidence_and_wrong_knowledge_id_receive_specific_repair_guidance():
-    from codey.completion.contract import CHECK_FAIL, CompletionCheck
-    from codey.operations.research_completion_checks import research_completion_feedback
-
-    text = research_completion_feedback(_session(TaskPolicy(grants=frozenset({"control"}))), "", None, [
-        CompletionCheck("knowledge_versions", CHECK_FAIL, "knowledge_reference_invalid"),
-        CompletionCheck("research_evidence_saved", CHECK_FAIL, "research_evidence_missing"),
-    ])
-    assert "not a note_id" in text
-    assert "type=fact" in text and "source_search" in text
-    assert "hypothesis without source excerpts" in text
-
-
-def test_missing_evidence_feedback_prioritizes_actual_save_over_report_formatting():
-    from codey.completion.contract import CHECK_FAIL, CHECK_NOT_RUN, CompletionCheck
-    from codey.operations.research_completion_checks import research_completion_feedback
-
-    text = research_completion_feedback(_session(TaskPolicy(grants=frozenset({"control"}))), "", None, [
-        CompletionCheck("research_evidence_saved", CHECK_NOT_RUN, "research_evidence_missing"),
-        CompletionCheck("research_claim_bindings", CHECK_FAIL, "report_claim_binding_incomplete"),
-        CompletionCheck("research_report_sections", CHECK_FAIL, "report_unmapped_numeric_refs"),
-    ])
-    assert "successful knowledge_write result before another done" in text
-    assert "using the evidence already saved" not in text
-    assert "Saved claim wording available" not in text
-
-
-def test_existing_evidence_with_invalid_reference_gets_one_focused_next_action():
+def test_ordinary_reference_repair_does_not_demand_unavailable_acquisition_tools():
     from codey.completion.contract import CHECK_FAIL, CompletionCheck
     from codey.operations.research_completion_checks import research_completion_feedback
 
     session = _session(TaskPolicy(grants=frozenset({"control", "knowledge.read"})))
-    session.last_done_args = {"knowledge_refs": [{"id": "legacy-note", "revision": 1}]}
-    text = research_completion_feedback(session, "", None, [
+    feedback = research_completion_feedback(session, "", None, [
         CompletionCheck("knowledge_versions", CHECK_FAIL, "knowledge_reference_invalid"),
-        CompletionCheck("research_claim_bindings", CHECK_FAIL, "report_claim_binding_incomplete"),
     ])
-    assert "Next action: execute one knowledge_read" in text
-    assert '{"args":{"id":"legacy-note"},"tool":"knowledge_read"}' in text
-    assert "remaining report/evidence checks will run again" in text
-    assert "Unbound report statements" not in text and "Save a scoped finding" not in text
+    assert "exact object id and revision actually read" in feedback
+    assert "not an old answer" in feedback
+    assert "web_search" not in feedback and "save_finding" not in feedback and "knowledge_write" not in feedback
 
 
-def test_complete_sections_with_bad_source_table_get_citation_not_heading_feedback():
-    from codey.completion.contract import CHECK_FAIL, CompletionCheck
-    from codey.operations.research_completion_checks import research_completion_feedback
+@pytest.mark.usefixtures("public_source_dns")
+def test_strict_compiler_cannot_use_opened_pages_without_adopting_saved_knowledge(tmp_path):
+    from codey.research.finding_report import compile_finding_report
+    from tests.test_research_findings import URL, execute, report_args, setup
 
-    report = "\n\n".join("## " + title + "\ncontent" for title in
-                           ("结论", "关键证据", "反证与限制", "来源质量", "搜索覆盖", "来源"))
-    feedback = research_completion_feedback(_session(TaskPolicy(grants=frozenset({"control"}))), report, None,
-        [CompletionCheck("research_report_sections", CHECK_FAIL, "report_unmapped_numeric_refs")])
-    assert "All required sections are present" in feedback
-    assert '"[1] Title - https://final-url"' in feedback
-    assert "Missing sections:" not in feedback
-
-
-def test_cited_source_acquisition_precedes_wording_and_format_repairs():
-    from codey.completion.contract import CHECK_FAIL, CompletionCheck
-    from codey.operations.research_completion_checks import research_completion_feedback
-    from codey.research.ledger import ResearchLedger
-
-    url = "https://example.com/registered-study"
-    ledger = ResearchLedger()
-    session = _session(TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"})))
-    report = f"## 结论\nA result [1]\n\n## 来源\n[1] Trial - {url}"
-    checks = [CompletionCheck("research_claim_bindings", CHECK_FAIL, "report_claim_binding_incomplete"),
-              CompletionCheck("research_report_quality", CHECK_FAIL, "research_report_quality_failed")]
-    before = research_completion_feedback(session, report, {"research_ledger": ledger}, checks)
-    assert '"tool":"open_url"' in before and url in before
-    assert "Unbound report statements" not in before and "formatting" not in before
-    ledger.record_open(url, url, "Trial", "No Results Posted")
-    after = research_completion_feedback(session, report, {"research_ledger": ledger}, checks)
-    assert "opened but have no saved evidence" in after
-    assert "Wait for success before another done" in after
-    assert '"tool":"open_url"' not in after
-    assert not ledger.evidence_items  # Feedback cannot create a saved finding.
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        execute(delegate, tools, session, "open_url", {"url": URL})
+        with pytest.raises(ValueError):
+            compile_finding_report(report_args("f1"), tools.ledger, store)
+        assert not tools.ledger.references and not tools.ledger.evidence_items
+    finally:
+        store.close()
 
 
-def test_citation_feedback_uses_observed_redirect_aliases():
-    from codey.operations.research_completion_checks import _citation_prerequisite_feedback
-    from codey.research.ledger import ResearchLedger
+@pytest.mark.usefixtures("public_source_dns")
+def test_generated_source_table_uses_observed_redirect_and_rejects_manual_table(tmp_path, monkeypatch):
+    import json
 
-    ledger = ResearchLedger()
-    alias, final = "https://example.com/old", "https://example.com/current"
-    ledger.record_open(alias, final, "Trial", "No Results Posted")
-    prepared = ledger.prepare_evidence_items(
-        [{"claim": "No Results Posted", "source_url": final, "excerpt": "No Results Posted"}],
-        fallback_sources=[final], fallback_claim="", fallback_body="", note_type="fact")
-    ledger.add_evidence_items(list(prepared.items))
-    session = _session(TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"})))
-    assert not _citation_prerequisite_feedback(session, f"## 来源\n[1] Trial - {alias}", ledger)
+    from codey.research.finding_report import compile_finding_report
+    from codey.research.issues import ResearchIssue
+    from tests.test_research_findings import TEXT, URL, execute, report_args, setup
 
-
-def test_missing_numbered_urls_precede_downstream_claim_binding_repairs():
-    from codey.completion.contract import CHECK_FAIL, CompletionCheck
-    from codey.operations.research_completion_checks import research_completion_feedback
-    from codey.research.ledger import ResearchLedger
-
-    ledger = ResearchLedger()
-    ledger.record_open("https://example.org/trial", "https://example.org/trial", "Trial", "A trial exists.")
-    report = "## 结论\nA trial exists [2].\n\n## 来源\n[2] Trial"
-    session = _session(TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"})))
-    checks = [CompletionCheck("research_report_sections", CHECK_FAIL, "report_unmapped_numeric_refs"),
-              CompletionCheck("research_claim_bindings", CHECK_FAIL, "report_claim_binding_incomplete")]
-    feedback = research_completion_feedback(session, report, {"research_ledger": ledger}, checks)
-    assert "Fix the source table first" in feedback and "[2]" in feedback
-    assert "https://example.org/trial" in feedback
-    assert "no new search or knowledge_write" in feedback
-    assert "Unbound report statements" not in feedback and "Next action: investigate" not in feedback
-    assert not ledger.evidence_items
+    store, tools, session, delegate = setup(tmp_path)
+    final = URL + "-current"
+    monkeypatch.setattr(tools.search, "fetch", lambda url: {
+        "status": "ok", "url": final, "title": "Redirected study", "text": TEXT, "truncated": False})
+    try:
+        execute(delegate, tools, session, "open_url", {"url": URL})
+        saved = execute(delegate, tools, session, "save_finding", {
+            "claim": "Only one writer can write at a time.", "source_ref": "s1",
+            "passage_ref": next(iter(tools.ledger.read_passages))})
+        assert saved.ok, saved.model_text
+        args = report_args(json.loads(saved.model_text)["finding_ref"])
+        compiled = compile_finding_report(args, tools.ledger, store)
+        assert compiled.source_versions[0]["url"] == final
+        assert "[1] Redirected study - " + final in compiled.text
+        args["report_sections"]["sources"] = ["[1] Invented - https://other.example/"]
+        with pytest.raises(ResearchIssue) as error:
+            compile_finding_report(args, tools.ledger, store)
+        assert error.value.path == "report_sections"
+        assert "https://other.example/" not in compiled.text
+    finally:
+        store.close()
 
 
-def test_uncited_counter_section_gets_one_format_repair_before_claim_binding_hints():
-    from codey.completion.contract import CHECK_FAIL, CompletionCheck
-    from codey.operations.research_completion_checks import research_completion_feedback
-    from codey.research.ledger import ResearchLedger
+@pytest.mark.usefixtures("public_source_dns")
+def test_counter_repair_is_local_and_cannot_create_evidence(tmp_path):
+    import copy
+    import json
 
-    ledger = ResearchLedger()
-    url, finding = "https://example.org/wal", "Only one writer can commit."
-    ledger.record_open(url, url, "WAL", finding)
-    prepared = ledger.prepare_evidence_items([{"claim": finding, "source_url": url, "excerpt": finding}],
-        fallback_sources=[url], fallback_claim="", fallback_body="", note_type="fact")
-    ledger.add_evidence_items(list(prepared.items))
-    report = (f"## 结论\n{finding} [1]\n\n## 关键证据\n{finding} [1]\n\n"
-              f"## 反证与限制\n{finding}\n\n## 来源质量\nOfficial [1]\n\n"
-              f"## 搜索覆盖\nWAL\n\n## 来源\n[1] WAL - {url}")
-    session = _session(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"})))
-    feedback = research_completion_feedback(session, report, {"research_ledger": ledger}, [
-        CompletionCheck("research_report_quality", CHECK_FAIL, "research_report_quality_failed"),
-        CompletionCheck("research_claim_bindings", CHECK_FAIL, "report_claim_binding_incomplete")])
-    assert "反证与限制 must cite" in feedback and "defect first" in feedback
-    assert "Repair done.report_sections.counter, not summary" in feedback
-    assert "Uncited section (data): " + finding in feedback
-    assert "不能只在 summary 或 evidence 加引用" in feedback
-    assert "Unbound report statements" not in feedback and "Next action: investigate" not in feedback
+    from codey.research.finding_report import compile_finding_report
+    from codey.research.issues import ResearchIssue
+    from tests.test_research_findings import URL, execute, report_args, setup
 
-
-def test_gate_preserves_unbound_answer_and_requests_missing_claim_instead_of_shrinking_it():
-    from codey.operations.research_completion_checks import finalize_research_text
-    from codey.research.ledger import ResearchLedger
-
-    url = "https://example.com/wal"
-    ledger = ResearchLedger()
-    backed, missing = "Readers do not block writers.", "Only one writer can commit at a time."
-    ledger.record_open(url, url, "WAL", backed + " " + missing)
-    prepared = ledger.prepare_evidence_items([{"claim": backed, "source_url": url, "excerpt": backed}],
-        fallback_sources=[url], fallback_claim="", fallback_body="", note_type="fact")
-    ledger.add_evidence_items(list(prepared.items))
-    policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"}), strict_research=True,
-        required_checks=("research_sources_opened", "research_evidence_saved", "research_report_sections"))
-    session = _session(policy, task_kind="research", opened_sources={url})
-    text = (f"## 结论\n- {backed} [1]\n- {missing} [1]\n\n"
-            f"## 关键证据\n- {backed} [1]\n\n## 反证与限制\n- 未找到强反证；只检查上述资料。[1]\n\n"
-            f"## 来源质量\n- 官方资料\n\n## 搜索覆盖\n- WAL\n\n## 来源\n[1] WAL - {url}")
-    context = {"research_ledger": ledger}
-    assert missing in finalize_research_text(session, text, context)
-    verdict = gate.evaluate(session, text, context=context)
-    assert not verdict.complete and not verdict.final_text
-    assert "report_claim_binding_incomplete" in verdict.followup
-    assert "Repair the reported report or reference defect" in verdict.followup
-    assert "Collect the missing local evidence" not in verdict.followup
-    assert missing in verdict.followup and "Saved claim wording" in verdict.followup
-    assert "investigate the first missing factual finding" in verdict.followup
-    assert "source_search" in verdict.followup and "open_hit" in verdict.followup
-    assert "Do not substitute an unrelated saved finding" in verdict.followup
-    assert "Next action: revise the unbound paragraphs" not in verdict.followup
-    assert len(ledger.evidence_items) == 1  # The repair feedback cannot create evidence.
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        execute(delegate, tools, session, "open_url", {"url": URL})
+        saved = execute(delegate, tools, session, "save_finding", {
+            "claim": "Only one writer can write at a time.", "source_ref": "s1",
+            "passage_ref": next(iter(tools.ledger.read_passages))})
+        ref = json.loads(saved.model_text)["finding_ref"]
+        args = report_args(ref)
+        args["report_sections"]["coverage"][0].update(state="evidence_found", answer="Writer concurrency is limited.")
+        args["report_sections"]["counter"] = ["Only one writer can write at a time."]
+        before = copy.deepcopy(args)
+        with pytest.raises(ResearchIssue) as error:
+            compile_finding_report(args, tools.ledger, store)
+        assert error.value.code == "counter_basis_missing"
+        assert error.value.path == "report_sections.counter[0]" and not error.value.requires_acquisition
+        assert args == before and len(tools.ledger.evidence_items) == 1
+        args["report_sections"]["counter"][0] += f" [{ref}]"
+        assert compile_finding_report(args, tools.ledger, store).knowledge_refs
+        assert len(tools.ledger.evidence_items) == 1
+    finally:
+        store.close()

@@ -311,7 +311,11 @@ class ResearchLedger:
                         f"evidence item {index} quotes only a source title or section heading, not its finding: "
                         f"{excerpt[:180]!r}. Use source_search and open_hit to read the section body, "
                         "then quote the actual result or limitation. No evidence was saved."))
-                claim = _clean(str(raw.get("claim") or fallback_claim))
+                # Claim text participates in its stable knowledge identity.
+                # Normalize only its outer whitespace; collapsing internal
+                # whitespace would give the saved version a different id from
+                # the caller's exact finding (notably for multiline findings).
+                claim = str(raw.get("claim") or fallback_claim).strip()
                 stance = _normalize_stance(str(raw.get("stance") or "supports"))
                 if note_type != "source" and stance == "supports":
                     from codey.research.evidence_qualifiers import support_qualifier_problem

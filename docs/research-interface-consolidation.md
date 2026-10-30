@@ -88,3 +88,30 @@ rejection. The shared renderer now exposes literal enums, bounds, patterns and
 map values from the same frozen schema. No state alias or answer-specific prompt
 was added. The complex note writer also now uses the shared canonical evidence
 schema instead of retaining the old source/quote/p aliases in its declaration.
+
+Live probe dd7c5b9e: artifacts/research-live-wal-visible-constraints-20261030.
+The report used legal coverage states without an enum rejection. It still
+claimed answers without saved evidence, repeated writes, overstated checkpoint
+conditions and called WAL an excellent choice for a read-heavy workload without
+measurement. It did not complete; the isolated run was durably cancelled.
+There were 36 admitted requests and 29 generated responses (retries included),
+with prompt tokens from 2,076 to 16,169. Requests had at most one current working
+view. These small, interrupted runs are diagnostics, not a success-rate estimate.
+
+This probe exposed another SYSTEM defect: prepare_evidence_items collapsed
+internal whitespace after save_finding computed the claim identity. A multiline
+SQLITE_BUSY claim committed its note and differently keyed claim, then failed
+to bind its version; unchanged retries reported an identity conflict. Claim
+preparation now preserves internal whitespace. The dispatch/idempotency/restart
+regression first reproduced the failure, then passed for both single-line and
+multiline claims. No compatibility reader or repair of old diagnostic stores
+was added. A fresh store is used for the next live probe.
+
+Expanded regression found ten obsolete expectations for manual Markdown/source
+table repairs. Replaced those scenarios with current structured-contract
+boundaries: plain Markdown cannot complete strict research, opened pages alone
+cannot substitute for adopted knowledge, the application uses observed final
+URLs, manual source tables are rejected, counter feedback stays field-local,
+and feedback never creates evidence. Latest focused run: 120 tests + 2 subtests
+passed. Ruff, mypy (569 files), Pyrefly (0 errors, 35 suppressed/77 warnings), and
+ty passed. Semantic acceptance remains pending.

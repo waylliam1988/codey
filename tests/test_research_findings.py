@@ -56,19 +56,24 @@ def execute(delegate, tools, session, name, args):
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_real_dispatch_save_restart_and_exact_idempotency(tmp_path):
+@pytest.mark.parametrize("claim", [
+    "Only one writer can write at a time.",
+    "Writer concurrency:\n1. Only one writer can write at a time.\n2. Readers  and writers can run concurrently.",
+])
+def test_real_dispatch_save_restart_and_exact_idempotency(tmp_path, claim):
     store, tools, session, delegate = setup(tmp_path)
     try:
         opened = execute(delegate, tools, session, "open_url", {"url": URL})
         passage = next(iter(tools.ledger.read_passages))
         assert f"passage_ref={passage}" in opened.model_text
-        args = {"claim": "Only one writer can write at a time.", "source_ref": "s1", "passage_ref": passage,
+        args = {"claim": claim, "source_ref": "s1", "passage_ref": passage,
                 "conditions": [{"name": "mode", "state": "not_extracted"}]}
         result = execute(delegate, tools, session, "save_finding", args)
         assert result.ok, result.model_text
         ref = json.loads(result.model_text)["finding_ref"]
         claim_id = stable_identity("claim", tools.ledger.references[ref].note_id, args["claim"])
         version = store.repository.read(claim_id)
+        assert version.value.content == claim
         assert version.value.status == "candidate" and version.interpretation_review == "unreviewed"
         assert version.value.conditions == {"mode": {"state": "not_extracted"}}
         before = store.read_note(tools.ledger.references[ref].note_id).to_markdown()
