@@ -275,3 +275,7 @@ Update this file in each implementation commit with results and remaining work.
   task still failed semantic review and looped on missing source-table URLs.
 - Next diagnosis: prioritize citation-table defects before claim-binding repair,
   retain explicit trial uncertainty, and verify actual requested human outcomes.
+- Implemented focused citation-table repair priority, explicit may/might-effect
+  preservation on evidence saves and trailing comparison/check term retention.
+  50 evidence/report tests and 19 proof tests passed; Ruff/mypy/Pyrefly/ty passed.
+  New real-browser medicine run is in progress, not yet quality accepted.

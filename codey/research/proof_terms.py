@@ -56,9 +56,14 @@ def question_terms(question: str) -> tuple[str, ...]:
     text = re.sub(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b", " ", text)
     interrogatives = re.findall(r"[^。.!?！？\n]*[?？]", text)
     if interrogatives:
-        # Output/storage instructions after the actual question must not send
-        # the investigator to the web to research schema fields or formatting.
-        text = " ".join(interrogatives)
+        # Keep trailing comparison/check requests too: users often ask the
+        # question first and specify versions or competing models afterwards.
+        # Delivery/storage directives still must not become web-search topics.
+        comparisons = [clause for clause in re.split(r"[。!?！？\n；;,，]", text)
+                       if re.match(r"\s*(?:(?:please|also|then)\s+)*(?:compare|contrast|distinguish|check)\b"
+                                   r"|\s*(?:请|还请|也请|重点|同时)*(?:比较|区分|检查|对比)",
+                                   clause, re.IGNORECASE)]
+        text = " ".join([*interrogatives, *comparisons])
     tokens: list[str] = []
     quoted = re.findall(r"['\"]([^'\"]{2,80})['\"]", text)
     for item in quoted:

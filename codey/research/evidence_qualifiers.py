@@ -10,15 +10,28 @@ _NONSIGNIFICANCE = re.compile(
     re.IGNORECASE,
 )
 _SIGNIFICANCE = re.compile(r"\bsignificant(?:ly)?\b|显著", re.IGNORECASE)
+_MODAL_EFFECT = re.compile(
+    r"\b(?:may|might)\s+(?:also\s+)?(?:increase|decrease|improve|reduce|slow|stop|prevent|delay|"
+    r"prolong|enhance|suppress|inhibit|help)\b", re.IGNORECASE,
+)
+_RETAINED_UNCERTAINTY = re.compile(
+    r"\b(?:may|might|hypothes\w*|aim\w*|investigat\w*|evaluat\w*|uncertain|unproven)\b"
+    r"|可能|假设|旨在|有望|尚未|尚待|未证实|不确定|评估|拟验证", re.IGNORECASE,
+)
 
 
 def support_qualifier_problem(claim: str, excerpt: str) -> str:
-    """Flag an explicit lost nonsignificance qualifier, without choosing alpha.
+    """Flag narrow explicit qualifier losses, without general entailment claims.
 
     A quote containing several comparisons may report both significant and
     nonsignificant effects. Ask the writer to split or retain that distinction;
     do not declare all its findings false or infer significance from p-values.
     """
+    if _MODAL_EFFECT.search(excerpt) and not _RETAINED_UNCERTAINTY.search(claim):
+        return ("the excerpt says an effect may/might occur, but the supporting claim drops that uncertainty. "
+                "Preserve the hypothesis or study aim in the claim; a proposed benefit is not a reported result. "
+                "If another passage reports an actual outcome, save that separate exact passage instead. "
+                "No evidence was saved. This narrow qualifier check is not a general entailment review.")
     if not _NONSIGNIFICANCE.search(excerpt) or _NONSIGNIFICANCE.search(claim):
         return ""
     for match in _SIGNIFICANCE.finditer(claim):

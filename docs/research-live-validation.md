@@ -1080,3 +1080,24 @@ with source entries [2]/[3] lacking URLs. Feedback mixed citation-table repair
 with unnecessary investigation suggestions. It also promoted a registry's
 "may slow" into an unqualified benefit and omitted reported human outcomes.
 Durable cancellation requested; this run is NOT a semantic quality pass.
+
+## Citation repair priority and explicit uncertainty
+
+The preceding run exited stopped after durable cancellation. Missing numbered
+URL entries now take precedence over downstream claim-binding feedback. Repair
+shows actual opened URL/title candidates without guessing their citation
+numbers, and asks for mapping repair only; all evidence checks rerun afterwards.
+
+Evidence writes also reject a narrow explicit may/might-effect qualifier loss
+in supporting claims. Hypothesis/aim wording is allowed, calendar May is not
+treated as uncertainty, and counterevidence retains its stance. This is not a
+general entailment check; an exact quote can still be misinterpreted.
+
+Lexical proof hints now retain post-question comparison/check clauses instead
+of discarding all text after the question mark. Delivery/storage directives
+remain excluded. This does not establish semantic coverage.
+
+Validation: 50 focused evidence/report/completion tests and 19 proof tests
+passed. Production Ruff, mypy (556 files), Pyrefly and ty passed.
+Real-browser retest: research-live-adaptive-citation-uncertainty-20261030,
+thinking/minimal, currently in progress; no quality acceptance yet.

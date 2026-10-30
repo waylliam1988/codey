@@ -203,6 +203,25 @@ def test_citation_feedback_uses_observed_redirect_aliases():
     assert not _citation_prerequisite_feedback(session, f"## 来源\n[1] Trial - {alias}", ledger)
 
 
+def test_missing_numbered_urls_precede_downstream_claim_binding_repairs():
+    from codey.completion.contract import CHECK_FAIL, CompletionCheck
+    from codey.operations.research_completion_checks import research_completion_feedback
+    from codey.research.ledger import ResearchLedger
+
+    ledger = ResearchLedger()
+    ledger.record_open("https://example.org/trial", "https://example.org/trial", "Trial", "A trial exists.")
+    report = "## 结论\nA trial exists [2].\n\n## 来源\n[2] Trial"
+    session = _session(TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"})))
+    checks = [CompletionCheck("research_report_sections", CHECK_FAIL, "report_unmapped_numeric_refs"),
+              CompletionCheck("research_claim_bindings", CHECK_FAIL, "report_claim_binding_incomplete")]
+    feedback = research_completion_feedback(session, report, {"research_ledger": ledger}, checks)
+    assert "Fix the source table first" in feedback and "[2]" in feedback
+    assert "https://example.org/trial" in feedback
+    assert "no new search or knowledge_write" in feedback
+    assert "Unbound report statements" not in feedback and "Next action: investigate" not in feedback
+    assert not ledger.evidence_items
+
+
 def test_gate_preserves_unbound_answer_and_requests_missing_claim_instead_of_shrinking_it():
     from codey.operations.research_completion_checks import finalize_research_text
     from codey.research.ledger import ResearchLedger

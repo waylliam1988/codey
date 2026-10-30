@@ -48,3 +48,37 @@ def test_conflicting_second_item_rejects_whole_batch_but_counterevidence_keeps_s
     items[1]["stance"] = "contradicts"
     prepared = ledger.prepare_evidence_items(items, **kwargs)
     assert not prepared.error and prepared.items[1].stance == "contradicts"
+
+
+@pytest.mark.parametrize("quote", [
+    "Adaptive therapy may slow or stop tumor growth.",
+    "The strategy might reduce contention.",
+])
+def test_proposed_effect_cannot_be_saved_as_demonstrated_benefit(quote):
+    assert "may/might" in support_qualifier_problem("该干预有效改善结果。", quote)
+
+
+@pytest.mark.parametrize("claim,quote", [
+    ("该研究评估该干预是否有效。", "The intervention may improve results."),
+    ("该干预可能减缓生长，尚未证实疗效。", "Adaptive therapy may slow growth."),
+    ("The trial aims to evaluate tumor control.", "Adaptive therapy may slow growth."),
+    ("The intervention reduced events.", "In May 2026, the intervention reduced events."),
+    ("The intervention reduced events.", "Events decreased in the trial."),
+])
+def test_qualifier_check_preserves_uncertainty_and_does_not_interpret_calendar_dates(claim, quote):
+    assert not support_qualifier_problem(claim, quote)
+
+
+def test_lost_modal_qualifier_rejects_batch_atomically_but_allows_counterevidence():
+    url = "https://example.org/registration"
+    quote = "The intervention may improve results."
+    ledger = ResearchLedger()
+    ledger.record_open(url, url, "Study", "A trial is registered. " + quote)
+    items = [{"claim": "A trial is registered.", "source_url": url, "excerpt": "A trial is registered."},
+             {"claim": "该干预改善结果。", "source_url": url, "excerpt": quote}]
+    kwargs = dict(fallback_sources=[url], fallback_claim="", fallback_body="", note_type="fact")
+    prepared = ledger.prepare_evidence_items(items, **kwargs)
+    assert prepared.error and not prepared.items and not ledger.evidence_items
+    items[1]["stance"] = "contradicts"
+    prepared = ledger.prepare_evidence_items(items, **kwargs)
+    assert not prepared.error and prepared.items[1].stance == "contradicts"

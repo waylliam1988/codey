@@ -32,3 +32,17 @@ def test_explicit_quoted_topics_are_kept_including_long_chinese_names():
     terms = question_terms('Compare "snapshot isolation" and "serializable isolation". 研究"肿瘤种群演化与选择压力"。')
     assert "snapshot isolation" in terms and "serializable isolation" in terms
     assert "肿瘤种群演化与选择压力" in terms
+
+
+def test_post_question_comparisons_keep_versions_and_topics_but_not_storage_instructions():
+    terms = question_terms("How does SQLite WAL work? Compare versions 3.11 and 3.12; "
+                           "check checkpoint starvation. Save with knowledge_write. Return a 1000 word report.")
+    assert {"sqlite", "wal", "3.11", "3.12", "checkpoint", "starvation"} <= set(terms)
+    assert not {"knowledge_write", "1000", "report"} & set(terms)
+
+
+def test_chinese_comparison_after_question_keeps_explicit_version_requirement():
+    terms = question_terms("SQLite WAL 是什么？请实际打开官网，重点比较 3.11 与 3.12；"
+                           "检查 SQLITE_BUSY。保存中文主张，然后使用 knowledge_write。")
+    assert {"sqlite", "wal", "3.11", "3.12", "sqlite_busy"} <= set(terms)
+    assert "knowledge_write" not in terms

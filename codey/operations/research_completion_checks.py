@@ -236,8 +236,26 @@ def _citation_prerequisite_feedback(session: Any, text: str, ledger: Any) -> str
     from codey.knowledge.model import canonical_json
     from codey.research.report_quality import parse_citation_rows
     from codey.reviews.report_sections import parse_sections
+    from codey.utils.citation_scanner import citation_refs
 
-    citations = parse_citation_rows(parse_sections(text).get("sources", ""), ledger)
+    sections = parse_sections(text)
+    citations = parse_citation_rows(sections.get("sources", ""), ledger)
+    body = "\n".join(value for key, value in sections.items() if key != "sources")
+    unmapped = sorted(citation_refs(body) - {item.number for item in citations})
+    if unmapped:
+        # Missing URL mappings also produce downstream binding failures. Do not
+        # tell the writer to acquire evidence for a paragraph we cannot map yet.
+        candidates = [{"title": source.title, "url": source.final_url}
+                      for source in ledger.opened_sources[-8:]]
+        return ("Fix the source table first. These inline citation numbers have no numbered URL entry: "
+                + ", ".join(f"[{number}]" for number in unmapped[:8])
+                + '. In report_sections.sources use "[n] Title - https://actual-url" for EACH cited source. '
+                "A title alone is not a URL mapping. Match the number to the source you actually meant; "
+                "do not infer numbering from this candidate list. Opened source candidates (data):\n"
+                + canonical_json(candidates)
+                + "\nResubmit done with the corrected sources and preserve the other sections. "
+                "This mapping repair alone needs no new search or knowledge_write. "
+                "Claim support and coverage will be checked again afterwards.")
     unread = list(dict.fromkeys(item.url for item in citations if not ledger.canonical_opened_url(item.url)))
     policy = getattr(session, "policy", None)
     if unread and policy is not None and policy.allows("web.read"):
