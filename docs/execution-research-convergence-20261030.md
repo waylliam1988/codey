@@ -61,3 +61,29 @@ RPC, total child calls and returned output, even when a worker ignores limits.
 Validation: 70 focused CodeMode runtime/contract/replay/production/scope tests
 passed. Ruff and strict mypy over CodeMode and the effect sink passed. The Node
 VM remains the current backend; a fingerprint is not an isolation guarantee.
+
+## Explicit Research invocations and answer identity
+
+The existing continuation now records invocation purpose, original plan/result
+references and frozen domain input digest. Stable operation positions are
+translated in `ResearchInvocation` only. A recovered invocation cannot silently
+change its purpose, prompt, scope, policy or plan. Continuation schema 2 rejects
+old incomplete descriptors rather than inferring a new invocation.
+
+Answer publication now checks its full compilation, exact premise versions,
+scope, questions, coverage, gaps and source selection, as well as text. A failed
+required answer transaction propagates as an explicit continuation failure.
+Model-extracted claims remain candidate/unreviewed.
+
+Validation: the original continuation/contract combination passed 38 tests;
+29 contract tests pass after adding frozen-input changes. Knowledge lifecycle,
+report snapshot, findings and policy combinations passed 40 tests; the expanded
+combination passed 58 before fixing a three-case new fixture construction error,
+then its 29-test contract module passed. A new real subprocess exit immediately
+after answer publication passed: resume reused the original answer and versions
+without another provider request or source fetch. Ruff and targeted mypy pass.
+
+Still pending: publication effect admission/settlement around the knowledge
+transaction, history projection reconstruction, semantic review/repair, tool
+exposure separation, sandbox comparison, final static checks and live probes.
+No live model requests have been made in these implementation batches yet.

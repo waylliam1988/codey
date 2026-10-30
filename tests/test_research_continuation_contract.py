@@ -10,7 +10,7 @@ import pytest
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.research_continuation import ResearchContinuation, restore_note_proposals
+from codey.operations.research_continuation import ResearchContinuation, ResearchInvocation, restore_note_proposals
 from codey.providers.response_record import json_value
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import ledger_observation
@@ -114,6 +114,29 @@ def test_continuation_reference_is_research_data_not_a_second_position():
     state = replace(state, continuation_ref="artifact_" + "a" * 24)
     assert RuntimeOperationState.from_payload(state.to_payload()) == state
     assert RuntimeOperationState.from_payload(replace(state, task_kind="project").to_payload()) is None
+
+
+@pytest.mark.parametrize("changed", ["purpose", "prompt", "plan_ref"])
+def test_invocation_descriptor_rejects_recomputed_domain_intent(changed):
+    from codey.operations.kernel_contracts import KernelRunRequest, KernelTransportDeps
+    from codey.policies.task_policy import TaskPolicy
+
+    continuation = object.__new__(ResearchContinuation)
+    state = SimpleNamespace(writer_attempt=1, work_ref="original-settled-result")
+    index = {"invocations": {}}
+    session = SimpleNamespace(task_text="Original question", handoff="Original evidence",
+                              policy=TaskPolicy(frozenset({"control"})), max_turns=4)
+    request = KernelRunRequest(transport=KernelTransportDeps(provider=object(), effect_scope="original-scope"))
+    invocation = ResearchInvocation(2, "investigate", "original-plan")
+    continuation.bind_invocation(state, index, invocation, session, request)
+    assert index["invocations"]["2"]["input_refs"] == ["original-settled-result", "original-plan"]
+    continuation.bind_invocation(state, index, invocation, session, request)
+    if changed == "prompt":
+        session.task_text = "Recomputed question"
+    else:
+        invocation = replace(invocation, **{changed: "synthesize" if changed == "purpose" else "changed-plan"})
+    with pytest.raises(ResearchContinuationError, match="frozen purpose or input"):
+        continuation.bind_invocation(state, index, invocation, session, request)
 
 
 @pytest.mark.parametrize("schema", [True, 1.0, "1"])

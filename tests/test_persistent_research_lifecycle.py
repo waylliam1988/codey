@@ -175,9 +175,17 @@ def test_answer_pins_cited_versions_and_replay_rejects_changed_output(tmp_path):
         answer = store.repository.read(stable_identity("answer", "answer-run", "initial"))
         assert answer.value.references == (R("claim", 1, "uses"),)
         assert _persist_synthesis(tools, "Question", "Qualified answer", **kwargs) == identity
+        for changed in ({"open_questions": ["A new unresolved condition"]},
+                        {"question_coverage": [{"question_ref": "q1", "state": "partial"}]},
+                        {"project": "another-project"}):
+            with pytest.raises(ValueError, match="publication inputs"):
+                _persist_synthesis(tools, "Question", "Qualified answer", **{**kwargs, **changed})
         with pytest.raises(ValueError, match="changed"):
             _persist_synthesis(tools, "Question", "Different answer", **kwargs)
         store.repository.commit("withdraw", [M(replace(store.repository.read("claim").value, status="withdrawn"), 1)])
+        with pytest.raises(ValueError, match="publication inputs"):
+            _persist_synthesis(tools, "Question", "Qualified answer", **{
+                **kwargs, "knowledge_refs": [{"id": "claim", "revision": 2}]})
         assert store.repository.read(answer.value.id).dependencies_changed
         graph = build_unified_research_graph(store, "second", depth=3)
         assert any(edge.kind == "uses" and edge.dst.endswith("claim@1") for edge in graph.edges)

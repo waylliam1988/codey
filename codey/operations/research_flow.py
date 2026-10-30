@@ -335,7 +335,7 @@ def run_research_pipeline(
 
     investigation_index = 0
 
-    from codey.operations.research_continuation import ResearchContinuation
+    from codey.operations.research_continuation import ResearchContinuation, ResearchInvocation
 
     continuation = ResearchContinuation(deps.runtime_mutations, deps.managed_outputs,
                                         session_id=request.session_id, run_id=frame.run_id)
@@ -378,7 +378,7 @@ def run_research_pipeline(
             stop_flag=stop_flag_for(deps.state, frame.run_id), provider_id=frame.provider_id,
             run_id=frame.run_id, chat_handoff="", trace_recorder=frame.trace, search=tools.search,
             tools=tools, iteration_context=synthesis_context(tools), task_policy=frame.entry_policy,
-            writer_attempt=2 * investigation_index + 1,
+            invocation=ResearchInvocation.synthesis(investigation_index),
         ).result
         # The result/proof belong to the new parent invocation. Even when it
         # exhausts its budget, never return the older draft as successful.

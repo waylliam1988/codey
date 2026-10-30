@@ -17,7 +17,7 @@ from codey.operations.kernel_contracts import (
     KernelRunRequest,
     KernelTransportDeps,
 )
-from codey.operations.research_continuation import ResearchContinuation
+from codey.operations.research_continuation import ResearchContinuation, ResearchInvocation
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
@@ -72,7 +72,8 @@ def investigate_plan(*, history: ResearchContinuation, plan: ResearchPlan, tools
     stop_reason = "no_new_material"
     if should_stop():
         raise cancellation.TaskCancelled("research investigation stopped")
-    attempt = 2 + (round_index - 1) * 2
+    plan_ref = history.index(history.state())["materials"][str(round_index)]
+    invocation = ResearchInvocation.investigation(round_index, plan_ref)
     sink = KernelEffectSink(history.mutations, session_id=history.session_id, run_id=history.run_id,
                             provider_id=provider_id, phase="research", managed_outputs=history.outputs,
                             durable=history.durable)
@@ -80,7 +81,7 @@ def investigate_plan(*, history: ResearchContinuation, plan: ResearchPlan, tools
         plan.max_queries * 2 + plan.max_sources + 1)), task_text=prompt,
         controller_denied=("research_plan", "save_inference", "knowledge_write", "knowledge_commit", "knowledge_link"),
         research_acquisition_limits=(plan.max_queries, plan.max_sources))
-    outcome = history.kernel(session, attempt=attempt, request=KernelRunRequest(
+    outcome = history.kernel(session, invocation=invocation, request=KernelRunRequest(
         task_guidance="Collect missing evidence through the tools, preserving unknown conditions.",
         transport=KernelTransportDeps(provider=provider, run_id=history.run_id,
             effect_scope=scope, provider_id=provider_id, user_task=prompt,

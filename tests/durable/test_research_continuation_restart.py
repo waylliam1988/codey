@@ -112,6 +112,15 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
         return result
 
     store.write_note = write
+    original_publish = store.publish_note
+
+    def publish(note, *args, **kwargs):
+        result = original_publish(note, *args, **kwargs)
+        if boundary == "synthesis_published" and note.type == "synthesis":
+            os._exit(74)
+        return result
+
+    store.publish_note = publish
     if boundary and boundary != "vault":
         def committed(_result, _mutation):
             position = state()
@@ -168,7 +177,7 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
 
 
 @pytest.mark.parametrize("boundary", ["material", "response", "receipt", "vault", "second_round",
-                                       "synthesis_response", "synthesis_settled"])
+                                       "synthesis_response", "synthesis_settled", "synthesis_published"])
 def test_research_restart_preserves_material_invocations_and_note_ids(tmp_path, boundary):
     source = ("from pathlib import Path; from tests.durable.test_research_continuation_restart import _run; "
               "import sys; _run(Path(sys.argv[1]), sys.argv[2])")

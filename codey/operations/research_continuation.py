@@ -1,6 +1,8 @@
 """Reference-only research continuations over the existing operation and outputs.
 
-The writer attempt remains the invocation identity. Completed kernel decisions
+The operation writer attempt remains the execution position. Explicit invocation
+descriptors record purpose and frozen input identity, not another lifecycle.
+Completed kernel decisions
 and acquired material are referenced here so rebuilding the outer research
 projection never sends an old request or acquires the same settled material.
 This module has no execution loop, effect store, or provider adapter.
@@ -8,8 +10,8 @@ This module has no execution loop, effect store, or provider adapter.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import fields, replace
-from typing import Any, cast
+from dataclasses import dataclass, fields, replace
+from typing import Any, Literal, cast
 
 from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.model import thaw_json
@@ -19,6 +21,27 @@ from codey.research.ledger_receipts import ledger_observation, restore_ledger_ob
 from codey.research.pipeline import ResearchContinuationError
 from codey.research.plan_executor import PlanExecutionResult
 from codey.runtime.effects.effect_records import compute_args_digest
+
+
+@dataclass(frozen=True)
+class ResearchInvocation:
+    attempt: int
+    purpose: Literal["research", "investigate", "synthesize", "review"]
+    plan_ref: str = ""
+
+    @classmethod
+    def investigation(cls, round_index: int, plan_ref: str) -> ResearchInvocation:
+        # Stable legacy positions are translated here only. Consumers use the
+        # purpose and original input references, never parity or round algebra.
+        if not 1 <= round_index <= 3 or not plan_ref:
+            raise ResearchContinuationError("invalid investigation invocation")
+        return cls(2 + (round_index - 1) * 2, "investigate", plan_ref)
+
+    @classmethod
+    def synthesis(cls, rounds: int) -> ResearchInvocation:
+        if not 1 <= rounds <= 3:
+            raise ResearchContinuationError("invalid synthesis invocation")
+        return cls(2 * rounds + 1, "synthesize")
 
 
 def restore_note_proposals(tools: Any, canonical: Mapping[str, object]) -> None:
@@ -111,7 +134,8 @@ class ResearchContinuation:
                 raise ValueError("continuation artifact ownership mismatch")
             payload = self.outputs.read_json_artifact(raw)
             if (not isinstance(payload, dict) or type(payload.get("schema_version")) is not int
-                    or payload["schema_version"] != 1 or payload.get("kind") != kind):
+                    or payload["schema_version"] != (2 if kind == "research_continuation" else 1)
+                    or payload.get("kind") != kind):
                 raise ValueError("invalid continuation artifact")
             return payload
         except Exception as exc:
@@ -121,10 +145,11 @@ class ResearchContinuation:
         if not state.continuation_ref:
             if state.writer_attempt > 1:
                 raise ResearchContinuationError("active research followup has no original continuation")
-            return {"schema_version": 1, "kind": "research_continuation", "results": {}, "materials": {}}
+            return {"schema_version": 2, "kind": "research_continuation", "results": {}, "materials": {}, "invocations": {}}
         payload = self.read(state.continuation_ref, "research_continuation")
-        if (set(payload) != {"schema_version", "kind", "results", "materials"}
+        if (set(payload) != {"schema_version", "kind", "results", "materials", "invocations"}
                 or not isinstance(payload["results"], dict) or not isinstance(payload["materials"], dict)
+                or not isinstance(payload["invocations"], dict) or len(payload["invocations"]) > 16
                 or len(payload["results"]) > 7 or len(payload["materials"]) > 3):
             raise ResearchContinuationError("invalid bounded research continuation")
         for name, maximum in (("results", 7), ("materials", 3)):
@@ -133,6 +158,24 @@ class ResearchContinuation:
                    for key, value in payload[name].items()):
                 raise ResearchContinuationError("invalid research continuation reference")
         return payload
+
+    def bind_invocation(self, state: Any, index: dict[str, Any], invocation: ResearchInvocation,
+                        session: Any, request: KernelRunRequest) -> None:
+        """Freeze domain intent using the original continuation commit."""
+        key = str(invocation.attempt)
+        description = {"purpose": invocation.purpose, "plan_ref": invocation.plan_ref,
+            "input_digest": compute_args_digest(json_value({"task": session.task_text, "handoff": session.handoff,
+                "scope": request.transport.effect_scope, "guidance": request.task_guidance,
+                "policy": session.policy.to_payload(), "max_turns": session.max_turns}))}
+        previous = index["invocations"].get(key)
+        if previous is not None:
+            if {name: previous.get(name) for name in description} != description:
+                raise ResearchContinuationError("research invocation differs from its frozen purpose or input")
+            return
+        if invocation.attempt <= state.writer_attempt:
+            raise ResearchContinuationError("research invocation has no original frozen descriptor")
+        index["invocations"][key] = {**description, "input_refs": [state.work_ref,
+            *([invocation.plan_ref] if invocation.plan_ref else [])]}
 
     def artifact(self, payload: dict[str, Any]) -> Any:
         ref = self.outputs.write_json_artifact(session_id=self.session_id, run_id=self.run_id, payload=payload)
@@ -154,15 +197,19 @@ class ResearchContinuation:
         except Exception as exc:
             raise ResearchContinuationError(f"research continuation was not committed: {exc}") from exc
 
-    def kernel(self, session: Any, request: KernelRunRequest, *, attempt: int) -> KernelResult:
+    def kernel(self, session: Any, request: KernelRunRequest, *, invocation: ResearchInvocation) -> KernelResult:
         """Restore a completed output or enter the sole driver for active work."""
         from codey.operations.kernel_context import KernelContext
         from codey.operations.kernel_control import result_from_payload
         from codey.operations.task_loop import run_task_kernel
 
         state = self.state()
+        attempt = invocation.attempt
+        index = self.index(state)
+        if attempt != 1:
+            self.bind_invocation(state, index, invocation, session, request)
         if attempt < state.writer_attempt:
-            reference = self.index(state)["results"].get(str(attempt))
+            reference = index["results"].get(str(attempt))
             if not reference:
                 raise ResearchContinuationError("completed research invocation has no original result reference")
             context = KernelContext(session, request)
@@ -170,7 +217,7 @@ class ResearchContinuation:
             decision = context.decision(replace(state, work_ref=reference))
             return result_from_payload(decision["result"])
         if attempt > state.writer_attempt:
-            self.commit(state, self.index(state), attempt=attempt)
+            self.commit(state, index, attempt=attempt)
         else:
             self.mutations.mark_writer_running(self.session_id, self.run_id, provider_id=state.provider_id,
                                                 writer_attempt=attempt)
@@ -212,7 +259,7 @@ class ResearchContinuation:
             self.restore_material(tools, plan, material, payload["observations"])
             self.project_urls(tools)
             return material
-        if state.writer_attempt >= 2 + (round_index - 1) * 2:
+        if state.writer_attempt >= ResearchInvocation.investigation(round_index, str(plan.plan_ref)).attempt:
             raise ResearchContinuationError("active research followup has no original material receipt")
         old_urls = set(tools.ledger.final_url_set())
         material = cast(PlanExecutionResult, executor.execute(plan, tools, policy=policy))

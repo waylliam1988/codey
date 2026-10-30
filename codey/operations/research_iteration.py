@@ -8,6 +8,7 @@ from typing import Any
 
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.ghost_context import ghost_control_enabled
+from codey.operations.research_continuation import ResearchInvocation
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
@@ -66,20 +67,11 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
     import hashlib
 
     from codey.knowledge.archive import stable_identity
-    from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
+    from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, canonical_json
 
     note_id = _stable_synthesis_id(run_id if projection == "initial" else run_id + ":" + projection)
     answer_id = stable_identity("answer", run_id, projection)
     summary_digest = hashlib.sha256(summary.encode("utf-8")).hexdigest()
-    previous = tools.store.repository.read(answer_id)
-    if previous is not None:
-        if previous.value.provenance.get("summary_digest") != summary_digest:
-            raise ValueError("settled research projection changed its original summary")
-        if tools.store.exists(note_id):
-            tools.synthesis_id = note_id
-            if note_id not in tools.created_ids:
-                tools.created_ids.append(note_id)
-            return note_id
     from codey.knowledge.note import KnowledgeNote, clean_open_questions
     from codey.research.synthesis import run_concept_tags as _run_concept_tags
     from codey.research.synthesis import synthesis_body as _synthesis_body
@@ -103,6 +95,24 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         tags.append(f"session:{session_id}")
     if accepted_report is None:
         tags.extend(_run_concept_tags(tools.store, note_ids))
+    from codey.knowledge.answer_refs import answer_references, answer_scope
+
+    references = list(answer_references(knowledge_refs, tools.store, project=project, session_id=session_id))
+    scope, scope_id = answer_scope(references, tools.store, project=project, session_id=session_id)
+    publication_digest = hashlib.sha256(canonical_json({"schema": 1, "task": task, "summary": summary,
+        "references": [{"id": ref.target, "revision": ref.revision} for ref in references],
+        "findings": list(finding_ids), "coverage": list(question_coverage), "open_questions": list(open_questions),
+        "scope": [scope, scope_id], "session_id": session_id, "project": project, "sources": sorted(selected_sources),
+        "report": accepted_report.to_payload() if accepted_report is not None else None}).encode()).hexdigest()
+    previous = tools.store.repository.read(answer_id)
+    if previous is not None:
+        if previous.value.provenance.get("publication_digest") != publication_digest:
+            raise ValueError("settled research projection changed its original publication inputs")
+        if tools.store.exists(note_id):
+            tools.synthesis_id = note_id
+            if note_id not in tools.created_ids:
+                tools.created_ids.append(note_id)
+            return note_id
     note = KnowledgeNote.create(
         type="synthesis", title=_synthesis_title(task),
         body=summary if accepted_report else _synthesis_body(summary, tools.ledger), tags=tags,
@@ -110,13 +120,10 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         open_questions=clean_open_questions(open_questions)[:4],
         id=note_id,
     )
-    from codey.knowledge.answer_refs import answer_references, answer_scope
-
-    references = list(answer_references(knowledge_refs, tools.store, project=project, session_id=session_id))
-    scope, scope_id = answer_scope(references, tools.store, project=project, session_id=session_id)
     answer = KnowledgeObject(answer_id, "answer", summary, "model_inference", title=note.title,
         status="active", scope=scope, scope_id=scope_id, references=tuple(dict.fromkeys(references)),
         provenance={"run_id": run_id, "session_id": session_id, "summary_digest": summary_digest,
+                    "publication_digest": publication_digest, "publication_schema": 1,
                     "basis": "settled_kernel_projection", "projection": projection,
                     "questions": list(accepted_report.questions if accepted_report else tools.ledger.questions),
                     "question_coverage": list(question_coverage),
@@ -124,8 +131,10 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
     try:
         tools.store.publish_note(note, stable_identity("answer-commit", run_id, projection),
                                  [KnowledgeMutation(answer)], changes=tools.changes)
-    except OSError:
-        return ""
+    except OSError as exc:
+        from codey.research.pipeline import ResearchContinuationError
+
+        raise ResearchContinuationError(f"research answer publication failed: {exc}") from exc
     if note_id not in tools.created_ids:
         tools.created_ids.append(note_id)
     tools.synthesis_id = note_id
@@ -169,10 +178,13 @@ def run_research_iteration(
     task_policy: Any = None,
     controller_denied: tuple[str, ...] = (),
     writer_attempt: int = 1,
+    invocation: ResearchInvocation | None = None,
 ) -> ResearchIterationRun:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
 
+    invocation = invocation or ResearchInvocation(writer_attempt, "research" if writer_attempt == 1 else "synthesize")
+    writer_attempt = invocation.attempt
     if tools is None:
         from codey.knowledge.changes import KnowledgeChanges
         from codey.research.tools import ResearchTools
@@ -265,7 +277,7 @@ def run_research_iteration(
     )
     outcome = history.kernel(
         session,
-        attempt=writer_attempt,
+        invocation=invocation,
         request=KernelRunRequest(
             task_guidance=task_guidance_for_policy(session.policy),
             transport=KernelTransportDeps(
