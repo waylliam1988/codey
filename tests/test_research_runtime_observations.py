@@ -48,6 +48,26 @@ def test_observations_are_bounded_and_preserve_saved_claim_source_and_stance():
                                             "excerpt": "x" * 600, "stance": "limits", "note_id": ""}
 
 
+def test_excerpt_repair_survives_bounded_observation_before_long_url_and_rejected_quote():
+    from codey.research.ledger import ResearchLedger
+
+    ledger = ResearchLedger()
+    url = "https://example.org/" + "long-path/" * 40
+    ledger.record_open(url, url, "Original", "Only one writer commits at a time.")
+    prepared = ledger.prepare_evidence_items([{"claim": "A scoped finding", "source_url": url,
+        "excerpt": "A guessed quote " * 50}], fallback_sources=[url], fallback_claim="",
+        fallback_body="", note_type="fact")
+    session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.write"}), strict_research=True))
+    session._memory_results["rejected"] = ToolResult(call=ToolCall(name="knowledge_write", args={}),
+        ok=False, model_text="ERROR: " + prepared.error)
+    text = render_research_observations(session)
+    state = json.loads(text.split("summaries):\n", 1)[1].split("\n", 1)[0])
+    error = state["recent_receipts"][0]["error"]
+    assert "Do not repeat the rejected quote" in error and "source_search" in error
+    assert "without ellipses" in error and "whole claim" in error
+    assert not prepared.items and not ledger.evidence_items
+
+
 def test_ordinary_context_is_unchanged_and_denied_tools_are_not_requested():
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
     assert task_working_context(session) == working_context(session)

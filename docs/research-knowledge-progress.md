@@ -321,3 +321,12 @@ Update this file in each implementation commit with results and remaining work.
   saved versions in the answer archive. 82 focused tests and all static checks
   passed. New official-URL-seeded broad WAL fixture isolates acquisition from
   discovery; it does not replace the unseeded benchmark.
+- The official-URL-seeded WAL probe completed mechanically but FAILED semantic
+  review: it claimed concurrent WAL writers could commit and omitted BUSY/version
+  boundaries. The narrower concurrency probe exhausted final synthesis turns,
+  with format loops and an unsupported simultaneous-append statement. Neither
+  artifact is accepted knowledge.
+- Current-run non-entity versions are now excluded from automatic background
+  recall before limits/graph expansion; older premises and explicit access remain.
+  Quote repair actions now survive the 400-character error observation limit.
+  Regressions cover retrieval crowding and long-source-URL quote rejection.

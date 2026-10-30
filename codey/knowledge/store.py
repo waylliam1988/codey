@@ -57,9 +57,11 @@ class KnowledgeStore:
         return self.documents.get(note_id) is not None
 
     def search(self, query: str, *, project: str = "", session_id: str = "",
-               limit: int = 8, depth: int = 1, exclude_kinds: tuple[str, ...] = ()) -> list[KnowledgeHit]:
+               limit: int = 8, depth: int = 1, exclude_kinds: tuple[str, ...] = (),
+               exclude_ids: tuple[str, ...] = ()) -> list[KnowledgeHit]:
         return KnowledgeRecall(self.repository).search(query, access=KnowledgeAccess(project, session_id, self.owner_id),
-                                                       limit=limit, depth=depth, exclude_kinds=exclude_kinds)
+                                                       limit=limit, depth=depth, exclude_kinds=exclude_kinds,
+                                                       exclude_ids=exclude_ids)
 
     def search_notes(self, query: str, *, project: str = "", session_id: str = "") -> list[dict[str, Any]]:
         rows = self.index.search(query, limit=32)

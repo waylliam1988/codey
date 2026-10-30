@@ -1255,3 +1255,27 @@ and adds an official starting URL, without supplying the answers. This isolates
 source-discovery difficulty from page reading/comparison; it cannot substitute
 for the original unseeded source-discovery benchmark. The real-web probe is in
 research-live-wal-official-auto-refs-20261030 using JSON/temperature=0.3.
+
+## Current-run recall isolation and quote repair visibility
+
+That official-URL-seeded probe finished mechanically, but FAILED semantic review:
+its report incorrectly claimed multiple simultaneous WAL writers could commit,
+misreading sequentially appended transactions as concurrent writes. It also
+missed requested BUSY/version boundaries. The isolated artifact is not accepted
+knowledge and a successful completion gate is not semantic approval.
+
+The subsequent narrower concurrency probe (research-live-wal-concurrency-final-
+20261030) really searched/opened SQLite.org, saved evidence, investigated and
+entered final synthesis. It exhausted its final 18 turns on repeated full-report
+format/citation repairs. It still asserted unsupported simultaneous appends.
+It is also FAILED, not a reliable research report.
+
+Automatic background recall now excludes this run's saved non-entity objects
+before seed and graph-neighbor limits, retaining capacity for genuinely earlier
+knowledge. Explicit search/read remains available. A regression checks 30 new
+objects cannot crowd out an older premise or return through incoming/outgoing
+edges. Quote rejection now leads with actionable source_search/offset repair
+instructions: long URLs and rejected text can no longer push the instructions
+past the 400-character observation boundary. Failed quotes are never silently
+replaced or persisted. The prior 38 recall/store tests and 163 quote/observation
+tests plus seven subtests passed (overlap with subsequent validation).

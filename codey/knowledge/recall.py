@@ -45,7 +45,8 @@ class KnowledgeRecall:
         self.repository = repository
 
     def search(self, query: str, *, access: KnowledgeAccess | None = None,
-               limit: int = 8, depth: int = 1, exclude_kinds: tuple[str, ...] = ()) -> list[KnowledgeHit]:
+               limit: int = 8, depth: int = 1, exclude_kinds: tuple[str, ...] = (),
+               exclude_ids: tuple[str, ...] = ()) -> list[KnowledgeHit]:
         query = query.strip()
         access = access or KnowledgeAccess()
         limit, depth = max(1, min(24, limit)), max(0, min(2, depth))
@@ -60,6 +61,9 @@ class KnowledgeRecall:
         if exclude_kinds:
             where += " AND v.kind NOT IN (" + ",".join("?" for _ in exclude_kinds) + ") "
             args += exclude_kinds
+        if exclude_ids:
+            where += " AND v.id NOT IN (SELECT value FROM json_each(?)) "
+            args += (canonical_json(exclude_ids),)
         seeds: list[tuple[str, int, str]] = []
         if re.fullmatch(r"[a-z][a-z0-9_-]{15,127}", query):
             rows = conn.execute(head + "WHERE v.id GLOB ?" + where + "ORDER BY v.id LIMIT ?",
@@ -94,12 +98,13 @@ class KnowledgeRecall:
             next_frontier: list[KnowledgeHit] = []
             for hit in frontier:
                 for identity, revision, relation in self.neighbors(hit.version, access, limit=8,
-                                                                 exclude_kinds=exclude_kinds):
+                                                                 exclude_kinds=exclude_kinds, exclude_ids=exclude_ids):
                     key = (identity, revision)
                     if key in hits:
                         continue
                     version = self.repository.read(identity, revision)
                     if (version is None or not access.allows(version) or version.value.kind in exclude_kinds
+                            or version.value.id in exclude_ids
                             or version.value.status in {"withdrawn", "superseded"}):
                         continue
                     item = KnowledgeHit(version, f"related via {relation}; investigate applicability",
@@ -112,7 +117,7 @@ class KnowledgeRecall:
         return list(hits.values())[:limit]
 
     def neighbors(self, version: KnowledgeVersion, access: KnowledgeAccess, *, limit: int = 8,
-                  exclude_kinds: tuple[str, ...] = ()) -> list[tuple[str, int, str]]:
+                  exclude_kinds: tuple[str, ...] = (), exclude_ids: tuple[str, ...] = ()) -> list[tuple[str, int, str]]:
         conn = self.repository.index._read_conn()
         scope, scope_args = access.sql()
         args: tuple[str, ...] = scope_args
@@ -120,6 +125,9 @@ class KnowledgeRecall:
         if exclude_kinds:
             excluded = " AND v.kind NOT IN (" + ",".join("?" for _ in exclude_kinds) + ") "
             args += exclude_kinds
+        if exclude_ids:
+            excluded += " AND v.id NOT IN (SELECT value FROM json_each(?)) "
+            args += (canonical_json(exclude_ids),)
         rows = conn.execute(
             "SELECT r.id,r.revision,r.relation FROM knowledge_refs r JOIN knowledge_heads h "
             "ON r.id=h.id AND r.revision=h.revision JOIN knowledge_versions v ON v.id=r.id AND v.revision=r.revision "
@@ -127,7 +135,7 @@ class KnowledgeRecall:
             "ORDER BY CASE r.relation WHEN 'refuted_by' THEN 0 WHEN 'limited_by' THEN 1 ELSE 2 END LIMIT ?",
             (version.value.id, *args, limit),
         ).fetchall()
-        outgoing = [(r.target, r.revision, r.relation) for r in version.value.references]
+        outgoing = [(r.target, r.revision, r.relation) for r in version.value.references if r.target not in exclude_ids]
         return (outgoing + [(str(r[0]), int(r[1]), str(r[2])) for r in rows])[:limit]
 
 

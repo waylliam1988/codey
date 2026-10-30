@@ -284,12 +284,12 @@ class ResearchLedger:
                     inferred_page = None
                 if not excerpt or not self.excerpt_in_source(final_url, excerpt, page=page):
                     return EvidencePreparation(
-                        error=(f"evidence item {index} excerpt is missing or not present in opened source: "
-                               f"{final_url}. Rejected excerpt: {excerpt[:240]!r}. "
-                               "Quotes must be contiguous original text; do not combine passages with ellipses. "
+                        error=(f"evidence item {index} excerpt is missing or not present in opened source. "
+                               "No replacement quote was saved. Do not repeat the rejected quote. "
+                               "Use source_search or an offset read; copy contiguous original text without ellipses, "
+                               "enough to support the whole claim. "
                                "Do not translate the quote or convert traditional/simplified characters. "
-                               "Use source_search or an offset read, then copy a short exact "
-                               "passage supporting this claim. No replacement quote was saved."
+                               f"Source: {final_url}. Rejected excerpt: {excerpt[:240]!r}."
                                + self._rejected_excerpt_hint(final_url, excerpt, page=page))
                     )
                 if note_type != "source" and self.excerpt_is_section_label(final_url, excerpt):

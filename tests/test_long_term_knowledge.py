@@ -84,6 +84,40 @@ def test_automatic_background_excludes_answers_before_limit_and_graph_expansion(
         store.close()
 
 
+def test_current_run_objects_do_not_displace_prior_knowledge_or_reenter_via_edges(tmp_path):
+    from codey.knowledge.note import KnowledgeNote
+
+    store = KnowledgeStore(tmp_path)
+    try:
+        store.repository.commit("premise", [M(K("premise", "claim", "PREVIOUS_PREMISE Writers serialize.",
+            "author_interpretation", title="SQLite", aliases=("SQLite",)))])
+        tools = ResearchTools(None, store, None, session_id="current")
+        for i in range(30):
+            note_id, claim_id = f"note-{i}", f"current-{i}"
+            value = K(claim_id, "inference", "CURRENT_HANDOFF SQLite WAL", "model_inference",
+                      title="SQLite WAL", references=(R("premise", 1, "depends_on"),))
+            store.publish_note(KnowledgeNote(id=note_id, body=value.content), f"commit-{i}", [M(value)])
+            tools.created_ids.append(note_id)
+        session = SimpleNamespace(policy=SimpleNamespace(allows=lambda _: True), task_kind="research")
+        text = knowledge_background(tools, session, "SQLite")
+        assert "PREVIOUS_PREMISE" in text and "CURRENT_HANDOFF" not in text
+        assert "knowledge_refs" in text  # Genuine prior premises still require explicit references.
+        assert "CURRENT_HANDOFF" in tools.knowledge_search("SQLite").model_text
+        assert tools.knowledge_read("current-0").ok
+        # Filtering occurs in SQL before seed limits and incoming expansion.
+        excluded = tuple(f"current-{i}" for i in range(30))
+        hits = store.search("SQLite", limit=4, depth=2, exclude_ids=excluded)
+        assert [hit.version.value.id for hit in hits] == ["premise"]
+        # Outgoing exclusions must not consume the limited neighbor slots.
+        hub = K("hub", "inference", "A mechanism", "model_inference", references=(
+            *(R(identity, 1, "depends_on") for identity in excluded), R("premise", 1, "depends_on")))
+        store.repository.commit("hub", [M(hub)])
+        assert KnowledgeRecall(store.repository).neighbors(store.repository.read("hub"), KnowledgeAccess(),
+            limit=1, exclude_ids=excluded) == [("premise", 1, "depends_on")]
+    finally:
+        store.close()
+
+
 def test_commit_safe_replay_returns_original_receipt_after_restart(tmp_path):
     store = KnowledgeStore(tmp_path)
     value = K("open-question", "question", "What would overturn the hypothesis?", "model_inference")
