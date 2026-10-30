@@ -321,3 +321,56 @@ no extra model `done` in both protocols, retained publication under failed
 native closure, and no repair when no assessment settled. Ruff, full-production
 mypy (571 files), Pyrefly and ty passed again. No full pytest run was requested
 or performed.
+
+## Accepted completion at the actual work queue
+
+The next P1 report was reproduced through the real durable research runner,
+the production `complete_or_block_work_item` entry, and a SQLite Ghost queue.
+The accepted report had an explicitly admitted historical-version evidence
+gap, a passing assessment and a satisfied original completion proof. Before
+the fix, the queue nevertheless blocked it with `research_proof_partial_answer`.
+The queue validated the accepted compilation and then continued into the old
+ResearchRecord proof algorithm, which also expects obsolete citation/relation
+fields absent from this delivery projection.
+
+Accepted results now return immediately after validating the original frozen
+report, completed assessment, publication identity, run/session/project, task
+text and original content-addressed completion proof. The returned proof is
+the original object, including its proof id; no new semantic judgment or
+all-questions-answered policy is introduced by the queue. Real work continuation
+passes its admitted task text, including its saved-task wrapper. The queue
+stores the original shared proof reference and full publication identity, and
+replays those same references from its events. Its older ResearchRecord path
+remains for results without an accepted report/assessment.
+
+New regression coverage includes both text and native durable protocols,
+accepted explicit gaps, actual queue claim/completion/rebuild/repeated delivery,
+and rejection of changed reports, assessments, proof identities, publication,
+task or execution scope. A shared proof reference without a valid publication
+reference cannot satisfy the queue storage transition. No legacy review is
+called for accepted results, including invalid ones.
+
+The focused group passed **95 tests**: accepted queue integration, semantic
+review/repair and real process restarts, completion queue, production Ghost
+post-turn work queue, queue storage and run ownership. The unchanged tested
+sources were then copied to the main worktree. Ruff, mypy (571 production files),
+Pyrefly and ty passed there as well. Pyrefly reports zero active errors with
+35 suppressed diagnostics and 78 warnings. `git diff --check` passed. No full
+pytest suite was run.
+
+The prior frozen-source web run in
+`artifacts/research-convergence-web-20261030-b` has now ended. It made 31 actual
+generation requests/responses, searched five times, successfully opened pages
+seven times, and saved seven sourced candidate findings. It stopped with
+`no_progress` after repeated completion proposals omitted required `[fN]`
+citations, despite field-specific feedback. It never reached semantic assessment;
+there are zero answer versions in its knowledge database. Its candidates remain
+unreviewed. The browser-close `TargetClosedError` warning remains visible.
+This is a failed live acceptance, not a demonstration of semantic improvement.
+
+The queue patch was prepared in the isolated worktree
+`D:/codey-research-queue-20261030` while that original web process retained its
+unchanged production implementation. After the process ended, the patch was
+integrated for commit before the next serial live run. Non-strict publication
+still uses its existing post-kernel entry; sandbox replacement and independent
+semantic review are also outside this queue patch.

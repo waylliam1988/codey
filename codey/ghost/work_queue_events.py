@@ -32,6 +32,7 @@ from codey.ghost.work_queue_model import (
     _research_proof_ref,
     _valid_work_item_payload,
 )
+from codey.utils.refs import generated_ref
 
 _PROJECTION_KIND = "ghost_work_items_projection"
 
@@ -915,9 +916,14 @@ def _receipt_proves_project_work(receipt: Mapping[str, object]) -> bool:
 
 
 def _primary_proof_matches_item_kind(item: GhostWorkItem, refs: Iterable[str]) -> bool:
+    refs = tuple(refs)
     prefixes = {ref.split(":", 1)[0] for ref in refs}
     if item.kind in {"research", "open_question"}:
-        return any(_research_proof_ref(ref) for ref in refs)
+        # Accepted reports carry the original shared proof and publication,
+        # validated by ResearchCompletionGate before this storage transition.
+        return any(_research_proof_ref(ref) for ref in refs) or (
+            any(generated_ref(ref, "completion_proof") for ref in refs)
+            and any(ref.startswith("research:") and ref.removeprefix("research:") for ref in refs))
     if item.kind == "review":
         return "review" in prefixes
     if item.kind in {"coding", "project_followup"}:

@@ -1,12 +1,4 @@
-"""Research completion gate for local queued work items.
-
-The gate's observable contract is unchanged: queued research items complete
-only when a durable proof review passes, and every decision carries the same
-action/blocked_reason/proof_refs values as before. Since 0.4.9 the decision
-also carries the shared ``CompletionProof`` projection so runs can audit why
-an item completed or stayed blocked without re-deriving evidence semantics
-inside the queue layer.
-"""
+"""Consume accepted completion proofs; review legacy records only without one."""
 
 from __future__ import annotations
 
@@ -61,6 +53,7 @@ class ResearchCompletionGate:
         research_result: Any = None,
         session_id: str = "",
         project: str | Path | None = None,
+        task: str | None = None,
     ) -> ResearchCompletionDecision:
         kind = identifier(getattr(item, "kind", ""), 40)
         if kind not in RESEARCH_QUEUE_KINDS:
@@ -76,14 +69,23 @@ class ResearchCompletionGate:
             )
         record = getattr(research_result, "research_record", None)
         accepted = getattr(research_result, "accepted_report", None)
-        if accepted is not None:
+        if accepted is not None or getattr(research_result, "semantic_review", None) is not None:
             from codey.research.report_projection import validate_accepted_projection
 
             try:
-                validate_accepted_projection(research_result, run_id=str(event.get("run_id") or ""),
+                run_id = str(event.get("run_id") or "")
+                expected_task = task if task is not None else str(getattr(item, "title", "") or "").strip()
+                if (not run_id or not expected_task or research_result.question != expected_task
+                        or getattr(item, "started_run_id", run_id) != run_id):
+                    raise ValueError("accepted report belongs to another queued task")
+                validate_accepted_projection(research_result, run_id=run_id,
                                              session_id=session_id, project=str(project or ""))
             except (ValueError, TypeError, AttributeError, KeyError):
                 return ResearchCompletionDecision("block", blocked_reason="accepted_report_projection_invalid")
+            proof = research_result.completion_proof
+            return ResearchCompletionDecision("complete", proof=proof,
+                proof_refs=(proof.proof_id, f"research:{research_result.synthesis_id}",
+                            *research_external_refs(event=event)))
         question = (
             str(getattr(item, "title", "") or "").strip() or str(getattr(research_result, "question", "") or "").strip()
         )

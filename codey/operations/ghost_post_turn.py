@@ -353,6 +353,7 @@ def complete_or_block_work_item(
                     research_result=research_result,
                     session_id=frame.request.session_id,
                     project=frame.project_text,
+                    task=frame.request.task,
                 )
                 if deps.record_completion_proof_trace is not None:
                     deps.record_completion_proof_trace(frame.trace, decision.proof)

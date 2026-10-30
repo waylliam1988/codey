@@ -60,7 +60,7 @@ def test_review_uses_full_exact_excerpt_and_rejects_missing_duplicate_or_forged_
 
 
 def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=22, native=False,
-         missing_done=False, bad_ack=False, absent_assessment=False):
+         missing_done=False, bad_ack=False, absent_assessment=False, task=TASK):
     import os
     from unittest.mock import patch
 
@@ -80,7 +80,7 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
         if durable.task("r").status == "pending":
             durable.claim_task("r")
     else:
-        durable.admit_input(conversation_id="s", request_id="input", task_id="r", text=TASK, provider_snapshot={})
+        durable.admit_input(conversation_id="s", request_id="input", task_id="r", text=task, provider_snapshot={})
         durable.claim_task("r")
         durable.start_task("r", state=dict(durable.task("r").state))
     line = RuntimeMutationLine(durable=durable)
@@ -208,11 +208,11 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
         search_factory=Search, run_research_advisors=None, ghost_continuity=lambda **_: None,
         managed_outputs=ManagedOutputStore(root), runtime_mutations=line)
     frame = SimpleNamespace(provider=Provider(), provider_id="local", project_text="", trace=None, run_id="r",
-        research_handoff="", entry_policy=policy, request=SimpleNamespace(task=TASK, session_id="s", requested_capabilities=()))
+        research_handoff="", entry_policy=policy, request=SimpleNamespace(task=task, session_id="s", requested_capabilities=()))
     try:
         with patch("codey.operations.research_flow.ResearchPipelineConfig", return_value=ResearchPipelineConfig(enabled=False)):
             result = run_research_pipeline(deps, frame, SimpleNamespace(on_event=lambda _: None), max_turns=budget,
-                build_context=lambda *a, **kw: ResearchContext(question=TASK, session_id="s", run_id="r", max_turns=budget))
+                build_context=lambda *a, **kw: ResearchContext(question=task, session_id="s", run_id="r", max_turns=budget))
         return result.final_result
     finally:
         store.close()
