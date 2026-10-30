@@ -294,3 +294,9 @@ Update this file in each implementation commit with results and remaining work.
   current query targets survive receipt replay, and invalid updates write
   nothing. 54 focused tests and 52 source/feedback tests passed (overlap), all
   static checks passed. Fresh three-process final-code lifecycle is running.
+- That lifecycle was cancelled after repeated citation/binding failures; it did
+  not pass. Feedback now prioritizes a single report-quality repair before
+  binding hints when sections exist. The manual control fixture explicitly asks
+  for full saved sentences and individually cited paragraphs; this is a fixture
+  clarification, not a broad research quality claim. 26 focused format tests
+  and 44 completion/lifecycle/restart tests passed (overlap), static checks passed.

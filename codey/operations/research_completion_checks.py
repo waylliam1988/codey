@@ -165,6 +165,20 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
         if prerequisite:
             parts.append(prerequisite)
             return "\n\n".join(parts)
+    if (ledger is not None and "research_report_quality" in failed
+            and "research_report_sections" not in failed):
+        from codey.research.report_quality import review_report_quality
+
+        review = review_report_quality(text, ledger=ledger, opened_sources=ledger.final_url_set(),
+                                      search_result_urls=set(getattr(session, "search_results", {}).values()))
+        if not review.ok:
+            # Source/format defects can make otherwise saved statements appear
+            # unbound. Give one repair, then rerun all checks on the next draft.
+            parts.append(review.message)
+            parts.append("Repair this citation/report defect first, preserving the other sections and saved "
+                         "source wording. This alone does not require another search or knowledge_write. "
+                         "Claim support and coverage checks will run again on the corrected report.")
+            return "\n\n".join(parts)
     if "research_claim_bindings" in failed:
         parts.append("Some conclusion/evidence statements could not be linked to saved claim excerpts. "
                      "This is a text-binding check, not a verdict that the statement is false. "

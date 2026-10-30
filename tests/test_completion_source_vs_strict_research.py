@@ -222,6 +222,28 @@ def test_missing_numbered_urls_precede_downstream_claim_binding_repairs():
     assert not ledger.evidence_items
 
 
+def test_uncited_counter_section_gets_one_format_repair_before_claim_binding_hints():
+    from codey.completion.contract import CHECK_FAIL, CompletionCheck
+    from codey.operations.research_completion_checks import research_completion_feedback
+    from codey.research.ledger import ResearchLedger
+
+    ledger = ResearchLedger()
+    url, finding = "https://example.org/wal", "Only one writer can commit."
+    ledger.record_open(url, url, "WAL", finding)
+    prepared = ledger.prepare_evidence_items([{"claim": finding, "source_url": url, "excerpt": finding}],
+        fallback_sources=[url], fallback_claim="", fallback_body="", note_type="fact")
+    ledger.add_evidence_items(list(prepared.items))
+    report = (f"## 结论\n{finding} [1]\n\n## 关键证据\n{finding} [1]\n\n"
+              f"## 反证与限制\n{finding}\n\n## 来源质量\nOfficial [1]\n\n"
+              f"## 搜索覆盖\nWAL\n\n## 来源\n[1] WAL - {url}")
+    session = _session(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"})))
+    feedback = research_completion_feedback(session, report, {"research_ledger": ledger}, [
+        CompletionCheck("research_report_quality", CHECK_FAIL, "research_report_quality_failed"),
+        CompletionCheck("research_claim_bindings", CHECK_FAIL, "report_claim_binding_incomplete")])
+    assert "反证与限制 must cite" in feedback and "defect first" in feedback
+    assert "Unbound report statements" not in feedback and "Next action: investigate" not in feedback
+
+
 def test_gate_preserves_unbound_answer_and_requests_missing_claim_instead_of_shrinking_it():
     from codey.operations.research_completion_checks import finalize_research_text
     from codey.research.ledger import ResearchLedger

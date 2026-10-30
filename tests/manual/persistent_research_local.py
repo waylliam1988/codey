@@ -130,13 +130,15 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         "research": question,
         "first": (
             "研究 SQLite WAL：为什么读写可并发，而写者仍竞争？搜索并打开官方文档。"
-            "分别用两次knowledge_write保存两条中文主张，每条配各自的官方英文原文：读写互不阻塞；同一时刻只有一个写者。"
+            "分别用两次knowledge_write保存两条完整中文句子，每条配各自的官方英文原文：WAL读写互不阻塞；"
+            "WAL同一时刻只有一个写者。不要只存几个字的标签或片段。"
             "找不到单写者原文就source_search查writer，并open_hit读取相应段落。"
             '每次knowledge_write都必须包含 aliases=["嵌入式数据文件"]、tags=["SQLite","写者串行化"]，'
             '以及 conditions={"mode":{"state":"reported","value":"WAL"},'
             '"workload":{"state":"not_extracted"}}，因为实际工作负载尚未测量。'
             "然后给不超过500字的中文报告，明确外推边界。使用done.report_sections，summary只填结论，"
-            "其余五部分各用字符串数组。每句分别引用[1]，报告沿用已存中文主张，来源表填官方URL。"
+            "其余五部分各用字符串数组。summary直接复用已存两条完整中文句子，每句独立段落且分别引用[1]。"
+            "反证与限制中的单写者约束也引用[1]，来源表填官方URL。"
             "knowledge_refs引用工具返回的claim对象id和revision。完成前检查两个条件都已保存。"
         ),
         "recall": (

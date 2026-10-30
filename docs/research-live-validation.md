@@ -1159,3 +1159,21 @@ bounded observations retain evidence note_id for later inspection.
 54 focused knowledge/source/observation/report tests and 52 source/feedback tests
 passed (overlap). Ruff, mypy (556 files), Pyrefly and ty passed. Fresh final-code
 three-process lifecycle: research-three-stage-final-isolated-20261030, in progress.
+
+## Focused report repair and controlled lifecycle retry
+
+That lifecycle was cancelled and exited stopped; it did not complete three
+stages. Its short saved claim fragments and uncited counter section triggered
+both citation and lexical binding feedback. Report-quality defects now receive
+one focused repair before binding hints, provided the report sections exist;
+all evidence checks run again on the repaired draft. Missing-section/literal
+newline repair keeps its existing priority.
+
+The manual lifecycle fixture now explicitly requests full Chinese claim
+sentences, separate cited conclusion paragraphs reusing those sentences, and a
+citation on the single-writer limit. This is a more explicit controlled fixture,
+not evidence of improved broad research quality. A fresh directory is required.
+
+Validation: 26 focused completion/structured-report tests and 44 completion/
+lifecycle/durable-continuation tests passed (overlap). Ruff, mypy (556 files),
+Pyrefly and ty passed. Broad real-web semantic acceptance remains outstanding.
