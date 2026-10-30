@@ -1051,7 +1051,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 self.routes.append((pattern, handler))
 
             def unroute_all(self, *, behavior) -> None:
-                assert behavior == "ignoreErrors"
+                assert behavior == "wait"
                 return None
 
             def goto(self, _url, wait_until="domcontentloaded") -> None:
@@ -1253,7 +1253,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 self.routes.append((pattern, handler))
 
             def unroute_all(self, *, behavior) -> None:
-                assert behavior == "ignoreErrors"
+                assert behavior == "wait"
                 return None
 
             def goto(self, _url, wait_until="domcontentloaded") -> None:
@@ -4060,7 +4060,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 return "<html><title>Blank</title><body></body></html>"
 
             def unroute_all(self, *, behavior) -> None:
-                assert behavior == "ignoreErrors"
+                assert behavior == "wait"
                 return None
 
             def close(self) -> None:
@@ -4128,7 +4128,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 )
 
             def unroute_all(self, *, behavior) -> None:
-                assert behavior == "ignoreErrors"
+                assert behavior == "wait"
                 return None
 
             def close(self) -> None:
@@ -4626,7 +4626,7 @@ class NetworkPolicyTests(unittest.TestCase):
                 self.routes.append((pattern, handler))
 
             def unroute_all(self, *, behavior) -> None:
-                assert behavior == "ignoreErrors"
+                assert behavior == "wait"
                 return None
 
             def close(self) -> None:

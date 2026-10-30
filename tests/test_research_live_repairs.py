@@ -27,7 +27,7 @@ def test_browser_close_detaches_inflight_routes_before_context_close():
     provider._fetch_page = provider._search_page = Page()
     provider._session = SimpleNamespace(close=lambda: calls.append(("context", "close")))
     provider._close_on_browser_thread()
-    assert calls == [("routes", "ignoreErrors"), ("context", "close")]
+    assert calls == [("routes", "wait"), ("context", "close")]
     assert provider._fetch_page is provider._search_page is provider._session is None
     provider._close_on_browser_thread()
     assert len(calls) == 2

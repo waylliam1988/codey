@@ -576,7 +576,8 @@ class BrowserSearchProvider:
 
     def _release_page_guard_on_browser_thread(self, page: Any) -> None:
         try:
-            page.unroute_all(behavior="ignoreErrors")
+            # Drain handlers before pw.stop() disconnects their interception updates.
+            page.unroute_all(behavior="wait")
             page._codey_research_guarded = False
         except Exception:
             pass
