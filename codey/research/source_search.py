@@ -13,6 +13,7 @@ SOURCE_SEARCH_MAX_LIMIT = 12
 SOURCE_SEARCH_SNIPPET_CHARS = 320
 SOURCE_SEARCH_MAX_TOKEN_HITS = 64
 _TOKEN_RE = re.compile(r"[A-Za-z0-9$._/-]{3,}|[\u4e00-\u9fff]{2,}")
+_QUERY_STOP_WORDS = frozenset({"and", "the", "for", "with", "from", "that", "this", "are", "was", "were", "has", "have"})
 
 
 @dataclass(frozen=True)
@@ -43,7 +44,10 @@ def search_text(text: str, query: str, limit: int = SOURCE_SEARCH_DEFAULT_LIMIT)
     hits: list[SourceSearchHit] = []
     for offset in _candidate_offsets(text, tokens):
         snippet = snippet_at(text, offset)
-        hits.append(SourceSearchHit(offset=offset, snippet=snippet, score=_score(snippet, tokens)))
+        score = _score(snippet, tokens)
+        if _label_match(text, offset):
+            score -= len(tokens) + 1
+        hits.append(SourceSearchHit(offset=offset, snippet=snippet, score=score))
     return _rank_hits(hits, bounded_limit(limit))
 
 
@@ -106,7 +110,21 @@ def query_tokens(query: str) -> tuple[str, ...]:
             tokens.append(cleaned)
         if len(tokens) >= 8:
             break
-    return tuple(tokens)
+    useful = tuple(token for token in tokens if token not in _QUERY_STOP_WORDS)
+    # A literal search for a single common word must remain possible.
+    return useful or tuple(tokens)
+
+
+def _label_match(text: str, offset: int) -> bool:
+    """Prefer body passages over headings/TOC; keep labels as fallbacks."""
+    start = text.rfind("\n", 0, offset) + 1
+    end = text.find("\n", offset)
+    line = text[start:end if end >= 0 else len(text)].strip()
+    if re.match(r"#{1,6}\s|\d+(?:\.\d+)*[.\s]", line):
+        return True
+    first_heading = re.search(r"(?m)^#{1,6}\s", text)
+    return bool(first_heading and offset < first_heading.start()
+                and re.search(r"(?i)table\s+of\s+contents|目录", text[:first_heading.start()]))
 
 
 def snippet_at(text: str, offset: int) -> str:
@@ -146,7 +164,15 @@ def _score(snippet: str, tokens: tuple[str, ...]) -> int:
 
 def _rank_hits(hits: list[SourceSearchHit], limit: int) -> list[SourceSearchHit]:
     ranked = sorted(hits, key=lambda hit: (-hit.score, hit.page or 0, hit.offset))
-    return ranked[:limit]
+    selected: list[SourceSearchHit] = []
+    for hit in ranked:
+        if any(hit.page == previous.page and abs(hit.offset - previous.offset) < SOURCE_SEARCH_SNIPPET_CHARS // 2
+               for previous in selected):
+            continue
+        selected.append(hit)
+        if len(selected) >= limit:
+            break
+    return selected
 
 
 def _clip(value: str, limit: int) -> str:

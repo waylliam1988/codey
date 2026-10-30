@@ -200,14 +200,20 @@ def _result_context(result: ToolResult, session: TaskSession) -> str:
         text = f"Result data (JSON):\n{text}"
     result_ref = next((key for key, value in session._memory_results.items() if value is result), "")
     if result_ref:
+        source_result = result.call.name in {"web_search", "source_search", "open_url", "open_result", "open_hit", "reopen_source"}
         instruction = (
             "For omitted detail, use read_tool_result with query (a literal keyword) or a bounded offset."
             if result.truncated else "If more detail is needed, use read_tool_result."
         )
-        text += (f"\n\n{render_result_metadata(result_ref, tool=result.call.name, ok=result.ok)}\n"
-                 "For read_tool_result only, copy the complete result_ref including its prefix. "
-                 f'Read omitted detail with read_tool_result({{"result_ref":"{result_ref}","query":"literal keyword"}}). '
-                 f"{instruction} do not repeat execution to recover output.")
+        text += f"\n\n{render_result_metadata(result_ref, tool=result.call.name, ok=result.ok)}\n"
+        if source_result:
+            text += ("result_ref identifies this tool receipt only; it is not a source URL, source offset or hit id. "
+                     "Use the source URLs/locators below for further page reading. "
+                     "Use read_tool_result only to recover an omitted receipt, copying the complete result_ref.")
+        else:
+            text += ("For read_tool_result only, copy the complete result_ref including its prefix. "
+                     f'Read omitted detail with read_tool_result({{"result_ref":"{result_ref}","query":"literal keyword"}}). '
+                     f"{instruction} do not repeat execution to recover output.")
     if result.call.name == "web_search" and session.search_results:
         refs = "\n".join(f"{key}: {url}" for key, url in list(session.search_results.items())[-12:])
         example = next(iter(session.search_results))
@@ -226,7 +232,9 @@ def _result_context(result: ToolResult, session: TaskSession) -> str:
                 "Use read_tool_result only to inspect omitted locator-list output.")
     if result.call.name in {"open_url", "open_result", "open_hit", "reopen_source"} and session.source_ids:
         refs = "\n".join(f"{key}: {url}" for key, url in list(session.source_ids.items())[-12:])
-        return f"{text}\n\nOpened source references for citations:\n{refs}"
+        return (f"{text}\n\nOpened source references for citations:\n{refs}\n"
+                "For another passage, use source_search with the opened URL, then open_hit, "
+                "or open_url with the page's source offset. Source offsets are not receipt offsets.")
     return text
 
 
