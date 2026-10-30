@@ -64,21 +64,29 @@ class FindingReport:
 
 def validate_report_bindings(proposal: ResearchReportProposal, resolved: tuple[ResolvedReference, ...]) -> None:
     by_label = {item.label: item for item in resolved}
+    issues = []
     for answer, coverage in zip(proposal.coverage_answers, proposal.coverage, strict=True):
         if not set(answer.refs) <= set(coverage["findings"]):
-            raise ResearchIssue("coverage_reference_mismatch", answer.path,
-                "answer citations must also occur in this question's findings", allowed_refs=tuple(coverage["findings"]))
+            issues.append(ResearchIssue("coverage_reference_mismatch", answer.path,
+                "answer citations must also occur in this question's findings", allowed_refs=tuple(coverage["findings"])))
     for row in (proposal.conclusion, *proposal.evidence):
         if not row.refs:
-            raise ResearchIssue("missing_citation", row.path, "cite the exact finding adopted in this paragraph",
-                                allowed_refs=tuple(by_label))
+            issues.append(ResearchIssue("missing_citation", row.path, "cite the exact finding adopted in this paragraph",
+                                        allowed_refs=tuple(by_label)))
     # An uncited counter paragraph may state a recorded gap; it is not contrary
     # evidence. Whether its prose accurately describes that gap remains unreviewed.
     if all(row["state"] == "evidence_found" for row in proposal.coverage):
         for row in proposal.counter:
             if not row.refs:
-                raise ResearchIssue("counter_basis_missing", row.path,
-                    "cite a finding for observed limitations, or record the specific unresolved question in coverage")
+                issues.append(ResearchIssue("counter_basis_missing", row.path,
+                    "cite a finding for observed limitations, or record the specific unresolved question in coverage",
+                    allowed_refs=tuple(by_label)))
+    if issues:
+        first = issues[0]
+        details = "\nAlso repair these fields in the same proposal:\n" + "\n".join(
+            f"{issue.path}: {issue.message}" for issue in issues[1:]) if len(issues) > 1 else ""
+        raise ResearchIssue(first.code, first.path, first.message + details,
+            allowed_refs=first.allowed_refs, requires_acquisition=first.requires_acquisition)
 
 
 def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedReference, ...],

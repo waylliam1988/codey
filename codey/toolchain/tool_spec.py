@@ -457,7 +457,7 @@ def _is_research_tool(name: str) -> bool:
         spec = tool_specs().get((name or "").strip().lower())
     except Exception:
         return False
-    return spec is not None and spec.executor in {"source", "knowledge"}
+    return spec is not None and spec.executor in {"source", "knowledge", "research_review"}
 
 
 def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None, *, native: bool = False) -> tuple[str, ...]:

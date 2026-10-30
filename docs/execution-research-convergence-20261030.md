@@ -423,3 +423,50 @@ Pyrefly and ty passed. An earlier development run was invalidated by a diagnosti
 source edit during process-restart testing; the reported passing group was
 rerun after freezing the final production sources. Integrate `9bbb3da9` after
 `805b8217`, only after the unchanged live run c ends.
+
+## Ordinary Publication and WASM Isolation Follow-up
+
+The review-only tool visibility and combined citation diagnostics from
+`805b8217` and `9bbb3da9` are now integrated in the main working tree.
+
+Ordinary (non-strict) Research publication now admits a frozen command artifact
+on the existing operation mutation line before writing knowledge. Its identity
+is stable per run/projection; the command pins the original note, mutations,
+authorization, settled kernel result and caller inputs. Recovery queries the
+original knowledge transaction and restores the original effect receipt rather
+than resolving current heads, rebuilding metadata or invoking acquisition.
+Pending publication prevents successor admission. Strict Research retains its
+existing assessment/submission effect. Real process exits cover publication
+admission, database commit and receipt commit; cancellation before admission
+writes no answer, and changed publication inputs are rejected.
+
+CodeMode now uses vendored MIT `quickjs-wasi@3.6.2`. Node is disposable transport;
+the untrusted program runs in QuickJS/WASM with a 64 MiB guest memory limit,
+bounded stack and interrupt deadline. Only serialized strings cross the guest
+boundary. The guest receives no Node functions, objects, errors, filesystem,
+module loader or network API. Intrinsics and global bindings are frozen before
+execution: adversarial tests reproduced and then prevented protocol serializer
+replacement and unawaited-call accounting bypass. Recovery binds all engine
+assets, including the WASM binary. The wheel includes these assets and an
+extracted-wheel execution returned 42. This is capability isolation with host
+authorization and quotas, not a claim that the engine has no implementation bugs.
+
+After the final sandbox hardening, 60 runtime/isolation/contract tests and 51
+host/state/replay/driver tests passed. The extended ordinary restart suite had
+16 passing tests before the cancellation regression, which separately passed.
+The final combined Research regression passed 46 tests, including all extended
+ordinary restart/cancellation cases, strict semantic review, accepted queue,
+report snapshots and frozen tool visibility.
+Ruff and all three production type checkers passed (573 Python files for mypy;
+Pyrefly: zero active errors, 35 suppressed diagnostics and 79 warnings).
+No full pytest suite was run.
+
+The real native/thinking web run in
+`artifacts/research-convergence-final-web-20261030` ended with `protocol`, not
+success: it saved four candidates, searched during follow-up, then repeatedly
+omitted `report_sections` in final synthesis. It never reached semantic review
+and published no answer. Its SQLITE_BUSY candidate also includes clauses beyond
+its selected excerpt; candidates remain unreviewed. The late cancellation request
+does not replace the actual protocol stop reason. Browser preparation and shutdown
+errors are recorded separately from model interpretation failures. Follow-up
+request-envelope probes execute no tools and grant no acceptance.

@@ -16,6 +16,26 @@ from tests.test_research_findings import URL, execute, report_args, setup
 
 
 @pytest.mark.usefixtures("public_source_dns")
+def test_missing_citation_feedback_collects_all_fields(tmp_path):
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        execute(delegate, tools, session, "open_url", {"url": URL})
+        saved = execute(delegate, tools, session, "save_finding", {"claim": "Only one writer can write at a time.",
+            "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))})
+        ref = json.loads(saved.model_text)["finding_ref"]
+        args = report_args(ref)
+        args["summary"] = "One writer."
+        args["report_sections"]["evidence"] = ["One writer."]
+        original = copy.deepcopy(args)
+        with pytest.raises(ResearchIssue) as error:
+            compile_finding_report(args, tools.ledger, store)
+        assert "summary" in str(error.value) and "report_sections.evidence[0]" in str(error.value)
+        assert f"[{ref}]" in str(error.value) and args == original
+    finally:
+        store.close()
+
+
+@pytest.mark.usefixtures("public_source_dns")
 def test_same_url_keeps_two_exact_source_versions_and_rendering_is_last(tmp_path, monkeypatch):
     store, tools, session, delegate = setup(tmp_path)
     try:

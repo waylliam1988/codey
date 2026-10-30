@@ -1,6 +1,18 @@
 from codey.providers.base import AssistantTurn, ProviderToolCall
 
 
+def test_assessment_submission_is_visible_only_in_its_own_assessment_window() -> None:
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+
+    policy = TaskPolicy(grants=frozenset({"control", "knowledge.write"}))
+    for kind in ("chat", "research", "evidence_followup"):
+        assert "submit_research_review" not in build_turn_snapshot(TaskSession(policy=policy, task_kind=kind)).tool_names
+    review = TaskSession(policy=policy, task_kind="research_review")
+    assert build_turn_snapshot(review, native=True).tool_names == ("submit_research_review",)
+
+
 def test_tools_registered_after_snapshot_are_not_accepted_this_turn() -> None:
     from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
     from codey.operations.task_session import TaskSession

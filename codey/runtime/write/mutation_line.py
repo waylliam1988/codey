@@ -121,6 +121,22 @@ class RuntimeMutationLine:
             self.durable, session_id, run_id, mutation, messages=messages, artifacts=artifacts,
         )
 
+    def record_research_publication(self, session_id: str, run_id: str, *, expected: RuntimeOperationState,
+                                   intent: RuntimeEffectIntent | None = None,
+                                   settlement: RuntimeEffectSettlement | None = None,
+                                   artifact: ArtifactRecord | None = None) -> None:
+        from codey.runtime.write.research_publication import publication_rows
+
+        def mutation(projection: Any, entries: Any) -> Any:
+            if intent is not None and self.durable.task(run_id).state.get("cancel_requested"):
+                from codey.runtime.core.cancellation import TaskCancelled
+
+                raise TaskCancelled("research publication cancelled before admission")
+            return publication_rows(projection, entries, session_id=session_id, run_id=run_id, expected=expected,
+                                    intent=intent, settlement=settlement, artifact=artifact)
+
+        self._mutate(session_id, run_id, mutation, artifacts=(artifact,) if artifact is not None else ())
+
     def admit_reviewer_selection(self, session_id: str, run_id: str, payload: dict[str, object]) -> RuntimeOperationState | None:
         from codey.runtime.core.operation_payload import _parse_model_selection
 

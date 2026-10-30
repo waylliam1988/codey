@@ -12,6 +12,6 @@ class ResearchIssue(ValueError):
         super().__init__(str(self))
 
     def __str__(self) -> str:
-        refs = "; available: " + ", ".join(self.allowed_refs) if self.allowed_refs else ""
+        refs = "; available citations: " + ", ".join(f"[{ref}]" for ref in self.allowed_refs) if self.allowed_refs else ""
         action = "Acquire missing evidence or state a specific gap." if self.requires_acquisition else "This field repair does not require a new search or write."
         return f"{self.path}: {self.message}{refs}. {action}"

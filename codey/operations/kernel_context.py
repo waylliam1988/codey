@@ -204,6 +204,8 @@ class KernelContext:
 
         for effect in RuntimeEffectStore(durable=self.durable).load_effects(self.sink.session_id, self.sink.run_id):
             identity = effect.intent.effect_id
+            if effect.intent.tool_name == "_publish_research_answer":
+                continue
             if effect.intent.effect_category == "provider_send":
                 self.restore_completion_proposal(effect)
                 continue

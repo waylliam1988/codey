@@ -39,7 +39,7 @@ class CodeModeRuntime(Protocol):
 
 
 class NodeWorkerRuntime:
-    """Run one program in a disposable Node worker with host mediated tools."""
+    """Run a QuickJS/WASM guest in disposable Node transport, mediating tools."""
 
     def __init__(self, *, node: str = "node", runner: Path | None = None) -> None:
         self.node = shutil.which(node) or node
@@ -52,7 +52,12 @@ class NodeWorkerRuntime:
             "timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,"
             "locale:Intl.DateTimeFormat().resolvedOptions().locale})"],
             check=True, capture_output=True, text=True, encoding="utf-8", timeout=5)
-        contract = {"schema": 1, "runner": hashlib.sha256(self.runner.read_bytes()).hexdigest(),
+        assets = Path(__file__).parent
+        dependencies = [assets / "guest_runner.js", *sorted((assets / "quickjs").glob("*.js")),
+                        assets / "quickjs" / "quickjs.wasm", assets / "quickjs" / "package.json"]
+        contract = {"schema": 2, "runner": hashlib.sha256(self.runner.read_bytes()).hexdigest(),
+                    "sandbox": {path.relative_to(assets).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                                for path in dependencies}, "memory_bytes": 64 * 1024 * 1024,
                     "engine": json.loads(probe.stdout), "rpc": 1, "determinism": 1,
                     "result_delivery": "issuance_order", "heap_mb": 128, "timeout": "per_attempt"}
         return hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -138,6 +143,7 @@ class NodeWorkerRuntime:
                 for item in catalog
             ],
             "limits": {
+                "timeoutMs": limits.timeout_ms,
                 "maxChildCalls": limits.max_child_calls,
                 "maxConcurrentCalls": limits.max_concurrent_calls,
                 "maxPendingPromises": limits.max_pending_promises,

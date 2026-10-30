@@ -58,6 +58,7 @@ codey = [
 ]
 "codey.providers" = ["profiles.json"]
 "*" = ["*.mjs"]
+"codey.codemode" = ["*.mjs", "guest_runner.js", "quickjs/*.js", "quickjs/*.wasm", "quickjs/package.json", "quickjs/LICENSE", "quickjs/README.md"]
 "codey.research" = ["search_profiles.json"]
 "codey.policies" = ["*.ps1"]
 

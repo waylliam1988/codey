@@ -124,6 +124,11 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
     if boundary and boundary != "vault":
         def committed(_result, _mutation):
             position = state()
+            publications = [effect for effect in durable.effects("r")
+                            if effect.intent.get("tool_name") == "_publish_research_answer"]
+            if publications and ((boundary == "publication_admitted" and publications[-1].settlement is None)
+                                 or (boundary == "publication_settled" and publications[-1].settlement is not None)):
+                os._exit(74)
             if ((boundary == "material" and position.writer_attempt == 1 and position.continuation_ref)
                     or (boundary == "response" and position.writer_attempt == 2
                         and position.logical_turn >= 3 and position.leaf == "provider_response_ready")
@@ -177,7 +182,8 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
 
 
 @pytest.mark.parametrize("boundary", ["material", "response", "receipt", "vault", "second_round",
-                                       "synthesis_response", "synthesis_settled", "synthesis_published"])
+                                       "synthesis_response", "synthesis_settled", "synthesis_published",
+                                       "publication_admitted", "publication_settled"])
 def test_research_restart_preserves_material_invocations_and_note_ids(tmp_path, boundary):
     source = ("from pathlib import Path; from tests.durable.test_research_continuation_restart import _run; "
               "import sys; _run(Path(sys.argv[1]), sys.argv[2])")
@@ -206,6 +212,63 @@ def test_research_restart_preserves_material_invocations_and_note_ids(tmp_path, 
     assert [row["url"] for row in observations if row["event"] == "fetch"] == [
         "https://example.com/source-1", "https://example.com/source-2"]
     assert set(row["identity"] for row in observations if row["event"] == "write") == set(first.final_result.notes_created)
+    from codey.durable import DurableSession, SQLiteDurableStore
+    from codey.knowledge.store import KnowledgeStore
+
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "state.sqlite"))
+    try:
+        publications = [effect for effect in durable.effects("r")
+                        if effect.intent.get("tool_name") == "_publish_research_answer"]
+        assert len(publications) == 1 and publications[0].settlement["status"] == "ok"
+        assert len(durable.artifacts_for_effect(publications[0].effect_id)) >= 1
+    finally:
+        durable.close()
+    store = KnowledgeStore(tmp_path / "knowledge")
+    try:
+        assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == 1
+    finally:
+        store.close()
+
+
+def test_ordinary_publication_rejects_changed_inputs_before_any_new_write(tmp_path, monkeypatch):
+    from codey.operations import research_publication
+    from codey.research.pipeline import ResearchContinuationError
+
+    original = research_publication.publish_synthesis
+
+    def publish(history, tools, task, summary, **kwargs):
+        identity = original(history, tools, task, summary, **kwargs)
+        for altered in ({"project": "other-scope"}, {"knowledge_refs": [{"id": "other", "revision": 2}]},
+                        {"open_questions": ["Changed question"]}):
+            with pytest.raises(ResearchContinuationError, match="frozen inputs"):
+                original(history, tools, task, summary, **{**kwargs, **altered})
+        return identity
+
+    monkeypatch.setattr(research_publication, "publish_synthesis", publish)
+    result, _ = _run(tmp_path)
+    assert result.final_result.stop_reason == "done"
+
+
+def test_ordinary_publication_cancelled_before_admission_never_writes_answer(tmp_path, monkeypatch):
+    from codey.knowledge.store import KnowledgeStore
+    from codey.runtime.core.cancellation import TaskCancelled
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+
+    original = RuntimeMutationLine.record_research_publication
+
+    def cancel(self, session_id, run_id, **kwargs):
+        if kwargs.get("intent") is not None:
+            self.durable.request_cancel(run_id, reason="cancel before answer publication")
+        return original(self, session_id, run_id, **kwargs)
+
+    monkeypatch.setattr(RuntimeMutationLine, "record_research_publication", cancel)
+    with pytest.raises(TaskCancelled):
+        _run(tmp_path)
+    store = KnowledgeStore(tmp_path / "knowledge")
+    try:
+        assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == 0
+    finally:
+        store.close()
 
 
 def test_lost_continuation_commit_acknowledgement_never_reacquires_material(tmp_path, monkeypatch):

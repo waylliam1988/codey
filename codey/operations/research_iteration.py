@@ -44,7 +44,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
                        on_event: Callable[[RunEvent], None], open_questions: Any = (),
                        policy: Any, projection: str = "initial", knowledge_refs: Any = (),
                        finding_ids: tuple[str, ...] = (), question_coverage: Any = (), accepted_report: Any = None,
-                       semantic_review: Any = None) -> str:
+                       semantic_review: Any = None, publisher: Callable[[dict[str, Any]], str] | None = None) -> str:
     """Persist one synthesis note under the parent task policy (required).
 
     ``policy=None`` denies like any non-allowing policy (fail-closed). The
@@ -91,9 +91,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
     note_ids = list(finding_ids)
     selected_sources = ({row["url"] for row in accepted_report.source_versions} if accepted_report
                         else _selected_note_sources(tools.store, note_ids))
-    tags = ["research"]
-    if session_id:
-        tags.append(f"session:{session_id}")
+    tags = ["research", *([f"session:{session_id}"] if session_id else [])]
     if accepted_report is None:
         tags.extend(_run_concept_tags(tools.store, note_ids))
     from codey.knowledge.answer_refs import answer_references, answer_scope
@@ -110,7 +108,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
     if previous is not None:
         if previous.value.provenance.get("publication_digest") != publication_digest:
             raise ValueError("settled research projection changed its original publication inputs")
-        if tools.store.exists(note_id):
+        if tools.store.exists(note_id) and publisher is None:
             tools.synthesis_id = note_id
             if note_id not in tools.created_ids:
                 tools.created_ids.append(note_id)
@@ -133,6 +131,11 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
                     "accepted_report": accepted_report.to_payload() if accepted_report is not None else None,
                     "task": task, "project": project, "synthesis_id": note_id,
                     "semantic_review": semantic_review})
+    if publisher is not None:
+        from codey.providers.response_record import json_value
+
+        return publisher({"schema": 1, "note": json_value(note), "commit_id": stable_identity("answer-commit", run_id, projection),
+                          "mutations": [{"value": answer.to_dict(), "expected_revision": 0}]})
     try:
         tools.store.publish_note(note, stable_identity("answer-commit", run_id, projection),
                                  [KnowledgeMutation(answer)], changes=tools.changes)
@@ -347,7 +350,9 @@ def run_research_iteration(
             raise ValueError("settled report does not match accepted delivery")
         # Deterministic projection of the settled driver output; the stored
         # digest rejects changes to that original output on replay.
-        synthesis_id = _persist_synthesis(
+        from codey.operations.research_publication import publish_synthesis as publish_answer
+
+        synthesis_id = publish_answer(history,
             tools, task, outcome.summary, session_id=session_id,
             project=project, run_id=run_id, on_event=on_event,
             open_questions=compiled.open_questions if compiled else session.last_done_args.get("open_questions", ()),
