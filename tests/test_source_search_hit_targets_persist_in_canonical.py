@@ -19,6 +19,55 @@ def _session():
     return TaskSession(policy=_policy(), task_kind="research", project="", max_turns=4)
 
 
+def test_source_locator_guidance_uses_current_query_and_preserves_reused_ids():
+    from codey.operations.kernel_facts import record_facts_for_result
+    from codey.operations.kernel_prompt import _result_context
+    from codey.operations.task_execution import ExecutionDelegate
+    from codey.research.ledger import ResearchLedger
+    from codey.research.tools import ResearchToolOutput
+    from codey.runtime.core.models import ToolCall, ToolResult
+
+    session = _session()
+    session.hit_targets["h1"] = {"url": "https://example.com/old", "offset": 10, "pages": ""}
+
+    class Tools:
+        ledger = ResearchLedger()
+
+        def source_search(self, url, query, limit=6):
+            self.ledger.record_source_search(url, query, [{"offset": 200, "page": None, "snippet": "new passage"}])
+            return ResearchToolOutput("new passage", ok=True)
+
+    delegate = ExecutionDelegate(session=session, research_tools=Tools())
+    call = ToolCall("source_search", {"url": "https://example.com/new", "query": "new"})
+    for _ in range(2):
+        result, ok, _ = delegate._execute_research(call)
+        assert ok and list(result.canonical["hit_targets"]) == ["h2"]
+        record_facts_for_result(session, call, result, ok=True)
+        guidance = _result_context(result, session)
+        assert 'open_hit({"hit_id":"h2"})' in guidance
+        assert "https://example.com/old" not in guidance and '"hit_id":"h1"' not in guidance
+    assert session.hit_targets["h1"]["offset"] == 10
+    empty = ToolResult(ok=True, call=call, model_text="no hits", canonical={"hit_targets": {}})
+    assert "open_hit" not in _result_context(empty, session)
+    failed = ToolResult(ok=False, call=call, model_text="ERROR: search failed")
+    assert "Source locator references" not in _result_context(failed, session)
+
+
+def test_web_locator_guidance_uses_current_search_not_first_historical_result():
+    from codey.operations.kernel_prompt import _result_context
+    from codey.runtime.core.models import ToolCall, ToolResult
+
+    session = _session()
+    session.search_results = {"r1": "https://example.com/old", "r8": "https://example.com/new"}
+    result = ToolResult(ok=True, call=ToolCall("web_search", {"query": "new"}), model_text="new result",
+        canonical={"research_observation": {"search": {"results": [{"url": "https://example.com/new"}]}}})
+    guidance = _result_context(result, session)
+    assert 'open_result({"result_id":"r8"})' in guidance
+    assert "https://example.com/old" not in guidance
+    result.canonical["research_observation"]["search"]["results"] = []
+    assert "open_result" not in _result_context(result, session)
+
+
 def test_source_search_canonical_replays_to_same_facts():
     from codey.operations.kernel_facts import record_facts_for_result
     from codey.operations.task_execution import ExecutionDelegate

@@ -219,18 +219,29 @@ def _result_context(result: ToolResult, session: TaskSession) -> str:
             text += ("For read_tool_result only, copy the complete result_ref including its prefix. "
                      f'Read omitted detail with read_tool_result({{"result_ref":"{result_ref}","query":"literal keyword"}}). '
                      f"{instruction} do not repeat execution to recover output.")
-    if result.call.name == "web_search" and session.search_results:
-        refs = "\n".join(f"{key}: {url}" for key, url in list(session.search_results.items())[-12:])
-        example = next(iter(session.search_results))
+    if result.ok and result.call.name == "web_search" and session.search_results:
+        mapping = session.search_results
+        observation = result.canonical.get("research_observation")
+        if isinstance(observation, dict) and isinstance(observation.get("search"), dict):
+            urls = [row["url"] for row in observation["search"].get("results", ())]
+            by_url = {url: key for key, url in session.search_results.items()}
+            mapping = {by_url[url]: url for url in urls if url in by_url}
+        if not mapping:
+            return text
+        refs = "\n".join(f"{key}: {url}" for key, url in list(mapping.items())[:12])
+        example = next(iter(mapping))
         return (f"{text}\n\nSearch result references:\n{refs}\nUse these rN ids with open_result. "
                 f'Example opening a hit: open_result({{"result_id":"{example}"}}). '
                 "result_ref reads a tool receipt; it cannot open a web page.")
-    if result.call.name == "source_search" and session.hit_targets:
+    if result.ok and result.call.name == "source_search" and session.hit_targets:
+        targets = result.canonical.get("hit_targets", session.hit_targets)
+        if not isinstance(targets, dict) or not targets:
+            return text
         refs = "\n".join(
             f"{key}: {target.get('url')} offset={target.get('offset')} pages={target.get('pages')}"
-            for key, target in list(session.hit_targets.items())[-12:]
+            for key, target in list(targets.items())[:12]
         )
-        example = next(iter(session.hit_targets))
+        example = next(iter(targets))
         return (f"{text}\n\nSource locator references:\n{refs}\n"
                 f'Open the passage with open_hit({{"hit_id":"{example}"}}), or open_url with the source URL and its offset. '
                 "These offsets refer to source text, not tool receipts; do not pass them to read_tool_result. "

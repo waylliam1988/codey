@@ -53,6 +53,27 @@ def test_evidence_only_tool_receipts_do_not_request_parent_done_fields(tmp_path)
         store.close()
 
 
+def test_unknown_explicit_note_update_cannot_silently_create_duplicates(tmp_path):
+    store = KnowledgeStore(tmp_path)
+    try:
+        tools = ResearchTools(None, store, KnowledgeChanges(tmp_path), session_id="first")
+        args = {"id": "claim-guessed-identity", "type": "hypothesis", "title": "Writer hypothesis",
+                "body": "A serial bottleneck may exist."}
+        for _ in range(2):
+            outcome = tools.knowledge_write(args)
+            assert not outcome.ok and "no new note was created" in outcome.model_text
+        assert not tools.created_ids and not store.search_notes("Writer")
+        del args["id"]
+        assert tools.knowledge_write(args).ok
+        identity = tools.created_ids[0]
+        args["id"] = identity
+        args["body"] = "A serial bottleneck may exist; workload remains unknown."
+        assert tools.knowledge_write(args).ok
+        assert tools.created_ids == [identity] and store.read_note(identity).body == args["body"]
+    finally:
+        store.close()
+
+
 def test_explicit_commit_undo_and_session_graph(tmp_path):
     with_store = KnowledgeStore(tmp_path)
     try:

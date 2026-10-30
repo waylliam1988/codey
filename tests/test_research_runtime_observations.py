@@ -42,7 +42,7 @@ def test_observations_are_bounded_and_preserve_saved_claim_source_and_stance():
     assert len(state["opened_sources"]) == 10 and state["saved_evidence_count"] == 20
     assert len(state["recent_receipts"]) == 4 and len(state["saved_findings"]) == 6
     assert state["saved_findings"][-1] == {"claim": "claim-19", "source_url": "https://example.com/19",
-                                            "excerpt": "x" * 600, "stance": "limits"}
+                                            "excerpt": "x" * 600, "stance": "limits", "note_id": ""}
 
 
 def test_ordinary_context_is_unchanged_and_denied_tools_are_not_requested():

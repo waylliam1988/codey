@@ -122,6 +122,8 @@ TOOL_CONTRACTS = {
         },
         example='{"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"one supported finding","sources":["https://..."],"evidence":[{"claim":"one scoped finding in the requested answer language","source_url":"https://...","excerpt":"exact contiguous result or limitation copied from opened text","stance":"supports"}],"conditions":{"applicability":{"state":"not_extracted"}}}}',
         description="save small source/fact/hypothesis/conclusion/question notes; final reports must use done. "
+                    "Omit id for a new note. To update, id must be an existing note_id from knowledge_write, "
+                    "not a structured claim/source/evidence id. "
                     "For sourced findings use type=fact, sources=[opened URL strings], and "
                     "evidence=[{claim:your conclusion,source_url:opened URL,excerpt:exact original text,stance:supports}]. "
                     "For a new note, omitted sources are copied from explicit evidence[].source_url values. "

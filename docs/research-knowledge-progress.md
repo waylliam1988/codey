@@ -289,3 +289,8 @@ Update this file in each implementation commit with results and remaining work.
   excerpts. Added focused unknown-property repair and explicit saved-extraction
   audit guidance; 60 pipeline/restart/protocol tests, 19 repair/quote tests and
   ten synthesis/observation tests passed (overlap). All static checks passed.
+- Native WAL probe exposed two more concrete defects: stale first-hit examples
+  and silent creation on an unknown explicit note update id. Both are fixed;
+  current query targets survive receipt replay, and invalid updates write
+  nothing. 54 focused tests and 52 source/feedback tests passed (overlap), all
+  static checks passed. Fresh three-process final-code lifecycle is running.

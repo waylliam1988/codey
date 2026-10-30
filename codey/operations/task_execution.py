@@ -664,8 +664,11 @@ class ExecutionDelegate:
                     counter += 1
                 hit_id = f"h{counter}"
                 counter += 1
-                batch[hit_id] = {"url": target[0], "offset": target[1], "pages": target[2]}
                 by_target[target] = hit_id
+            # The receipt describes this query's targets, including reused ids.
+            # Otherwise the display cannot distinguish an empty result from a
+            # repeat query that legitimately found the same passages.
+            batch[hit_id] = {"url": target[0], "offset": target[1], "pages": target[2]}
             hit_ids.append(hit_id)
         hits = [SourceSearchHit(**hit) for hit in observation["hits"]]
         return render_results(hits, hit_ids=tuple(hit_ids)), batch

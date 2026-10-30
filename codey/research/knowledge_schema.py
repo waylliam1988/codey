@@ -40,6 +40,7 @@ def parameter_schemas(tool: str) -> dict[str, Any]:
                             "stance": text, "page": {"type": "integer", "minimum": 1},
                             "p": {"type": "integer", "minimum": 1}, "locator": text})
         return {"body": {"type": "string", "description": "Required note text, even when evidence is supplied."},
+                "id": {"type": "string", "description": "Optional existing note_id to update, exactly as returned by knowledge_write. Omit for a new note; never invent it or use a structured object id."},
                 "type": {"type": "string", "enum": list(NOTE_TYPES)},
                 "sources": _array(text), "tags": _array(text), "aliases": _array(text),
                 "evidence": {**_array(evidence), "description": "Required for sourced findings. Each excerpt must be an exact contiguous passage from an opened source; never a page title or navigation text."},

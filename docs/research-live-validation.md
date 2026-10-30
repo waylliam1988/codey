@@ -1139,3 +1139,23 @@ persistence success as interpretation approval. Nineteen focused repair/quote
 tests and ten synthesis/observation tests passed (overlap); all static checks
 passed. Sixty pipeline/final-synthesis/subprocess-restart/protocol tests also
 passed after the preceding self-recall and receipt changes.
+
+## Query-local locators and missing update identity
+
+`research-live-wal-native-isolated-20261030` ended protocol-failed. It really
+searched/opened SQLite.org and located passages, but repeated locator queries,
+created duplicate notes under a guessed update id, then emitted incomplete
+native done frames. It is not accepted.
+
+Two concrete defects were corrected: locator footers previously suggested the
+first historical rN/hN rather than the current query's first match; and an
+explicit unknown knowledge_write.id silently fell back to creating a new note.
+Receipts now retain current targets even when ids are reused. Displays use only
+current-query locators, and empty/failed searches do not show historical hits.
+Unknown explicit update ids fail without writes; new notes omit id. Schema and
+receipt guidance distinguish note updates from structured object ids, and
+bounded observations retain evidence note_id for later inspection.
+
+54 focused knowledge/source/observation/report tests and 52 source/feedback tests
+passed (overlap). Ruff, mypy (556 files), Pyrefly and ty passed. Fresh final-code
+three-process lifecycle: research-three-stage-final-isolated-20261030, in progress.

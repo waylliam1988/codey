@@ -374,6 +374,7 @@ class ResearchTools:
         model_text += "\nStructured knowledge versions:\n" + canonical_json(versions[:24])
         model_text += ("\nFor knowledge_read use these object ids and revisions, not note_id." if self.evidence_only else
                        "\nFor knowledge_read and done.knowledge_refs use these object ids and revisions, not note_id.")
+        model_text += "\nTo update this note, knowledge_write.id must be its exact note_id above, not a claim/source/evidence id."
         return ResearchToolOutput(model_text, ok=True)
 
     def knowledge_link(self, src: str, dst: str, kind: str = "relates") -> ResearchToolOutput:
@@ -437,7 +438,9 @@ def _resolve_write_target(
     existing_note = store.read_note(existing_id) if existing_id else None
     updating = existing_note is not None
     if existing_id and not updating:
-        existing_id = ""
+        return ("", None, False, "ERROR: knowledge_write.id does not identify an existing note; no new note was created. "
+                "For a new finding omit id. For a note update copy the exact note_id returned by knowledge_write; "
+                "a structured claim/source/evidence id is not a note_id. Use knowledge_commit to revise structured objects.")
     return (existing_id, existing_note, updating, None)
 
 
