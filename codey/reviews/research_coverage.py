@@ -35,15 +35,13 @@ def coverage_rows(raw: object) -> list[dict[str, Any]]:
                 or any(not isinstance(ref, str) or re.fullmatch(r"f[1-9][0-9]*", ref) is None for ref in findings)
                 or len(set(findings)) != len(findings)):
             raise ValueError(path + ".findings requires exact raw finding references, e.g. [\"f1\"], without brackets in ids")
-        if bool(findings) != (row["state"] in {"evidence_found", "partial"}):
-            raise ValueError(path + ": evidence_found/partial require findings; gap states require an empty findings array")
         attempts = row["investigations"]
         if (not isinstance(attempts, list) or len(attempts) > 32
                 or any(not isinstance(ref, str) or re.fullmatch(r"a[1-9][0-9]*", ref) is None for ref in attempts)
                 or len(set(attempts)) != len(attempts)):
             raise ValueError(path + ".investigations requires actual investigation references, e.g. [\"a1\"]")
-        if row["state"] == "not_investigated" and attempts or row["state"] == "unanswered_after_search" and not attempts:
-            raise ValueError(path + ": not_investigated needs no investigations; unanswered_after_search needs actual investigations")
+        # Evidence sufficiency and state consistency belong to the completion
+        # check. They can require investigation, not just resending formatted JSON.
         rows.append(dict(row))
     return rows
 

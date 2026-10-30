@@ -1514,3 +1514,39 @@ and ty currently pass. The final combined targeted run passed 162 tests and two
 subtests, including all 12 subprocess recovery cases. No
 reference model is available. Live validation of the final short-reference and
 coverage contracts is still pending and must not be inferred from unit results.
+
+
+### Frozen real-web short-reference probe and final pause boundary
+
+artifacts/research-live-wal-short-coverage-20261030 opened the official WAL
+page and located/read its concurrency and SQLITE_BUSY sections. It saved f1/f2/f3
+without the earlier long-reference copying failures. This run did not complete
+an accepted research report and did not yet perform a general web_search.
+Do not describe it as the full requested real-web research acceptance.
+
+It exposed a repair-category error: several questions were marked answered or
+partial with findings=[]; the structural renderer rejected them and triggered
+protocol repair asking the model to resend the intended report while preserving
+argument strings. The model changed evidence_found to partial but still had no
+evidence. The isolated run run_5422a34cb7aa40cb987dab3d160ce267 was explicitly
+cancelled through its own durable task so the failure and source artifacts remain
+reviewable. The user's KoboldCpp process/configuration was not restarted.
+
+The final fix keeps shape validation in the parser and moves coverage state /
+evidence consistency into the existing completion check. The feedback lists all
+qN answers missing saved/read findings and gives the actual alternatives:
+investigate/save direct evidence, or explain the concrete unresolved gap with an
+appropriate gap state and actual investigation receipts. Simply changing to
+partial is explicitly not a remedy. No claim or citation is silently repaired.
+A regression verifies the formerly rejected JSON now reaches the completion
+path, gets actionable research feedback, and an honest gap is admissible.
+
+After this repair, 61 targeted tests pass. Ruff, mypy over 563 production files,
+Pyrefly (0 errors, 35 suppressed/77 warnings), and ty pass again. The preceding
+combined run passed 162 tests plus two subtests including 12 subprocess recovery
+cases. No full pytest was run. The full local-model research chain remains
+semantically unaccepted; the fixed boundary has deterministic regression
+coverage, not a new successful model rerun. The older Playwright shutdown
+TargetClosedError remains an unresolved separate diagnostic. No reference model
+is available. At the user's explicit request: commit, push to GitHub, then pause;
+do not start another real research task in this turn.

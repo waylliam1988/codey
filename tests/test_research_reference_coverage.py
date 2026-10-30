@@ -75,6 +75,27 @@ def test_each_gap_requires_its_own_selected_real_investigation_record():
         validate_question_coverage([{**first, "state": "partial", "findings": ["f99"]}, second], ledger)
 
 
+def test_missing_evidence_is_a_research_completion_defect_not_a_json_repair():
+    args = json.loads(STRUCTURED_REPORT_EXAMPLE)["args"]
+    args["report_sections"]["coverage"][0]["findings"] = []
+    # The call is structurally valid. Resending the same prose is not the remedy.
+    assert validate_tool_args("done", args).ok
+    state = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read"}), strict_research=True))
+    plan = normalize_turn(decode_text_turn(json.dumps({"tool": "done", "args": args})),
+                          snapshot=build_turn_snapshot(state))
+    assert not plan.protocol_error and plan.control is not None
+    ledger = ResearchLedger()
+    ledger.questions = ("What must be answered?",)
+    with pytest.raises(ValueError, match="Changing evidence_found to partial alone") as failure:
+        validate_question_coverage(args["report_sections"]["coverage"], ledger)
+    assert "q1" in str(failure.value) and "Next action: investigate" in str(failure.value)
+    assert "not_investigated" in str(failure.value) and "unanswered_after_search" in str(failure.value)
+    # An honestly stated gap is admissible; it is not certified as an answer.
+    args["report_sections"]["coverage"][0].update(
+        state="not_investigated", answer="No direct investigation of this question yet.")
+    assert validate_question_coverage(args["report_sections"]["coverage"], ledger)
+
+
 @pytest.mark.usefixtures("public_source_dns")
 def test_recalled_claim_pins_old_version_without_new_fetch_or_duplicate_archive(tmp_path):
     store, tools, session, delegate = setup(tmp_path)

@@ -30,7 +30,24 @@ def validate_question_coverage(raw: object, ledger: ResearchLedger) -> list[dict
     if observed != expected:
         raise ValueError("report_sections.coverage must account for every registered question exactly once. Missing: "
                          + ", ".join(sorted(expected - observed)) + "; unknown: " + ", ".join(sorted(observed - expected)))
+    missing = [row["question_ref"] for row in rows
+               if row["state"] in {"evidence_found", "partial"} and not row["findings"]]
+    if missing:
+        raise ValueError("report_sections.coverage: " + ", ".join(missing)
+            + " claim an answer without any saved/read finding. Next action: investigate the first missing question "
+            "and save its direct evidence with save_finding, or state its specific unresolved gap with "
+            "not_investigated (investigations=[]) / unanswered_after_search (select actual aN receipts). "
+            "Gap states require findings=[] and an answer explaining what remains unknown. "
+            "Changing evidence_found to partial alone does not fix missing evidence; do not repeat the same report.")
     for index, row in enumerate(rows):
+        path = f"report_sections.coverage[{index}] ({row['question_ref']})"
+        if row["state"] in {"not_investigated", "unanswered_after_search"} and row["findings"]:
+            raise ValueError(path + ": gap states require findings=[]; use partial when giving a supported partial answer")
+        if row["state"] == "not_investigated" and row["investigations"]:
+            raise ValueError(path + ": not_investigated requires investigations=[]; otherwise describe the actual attempt and gap")
+        if row["state"] == "unanswered_after_search" and not row["investigations"]:
+            raise ValueError(path + ": unanswered_after_search needs actual investigations for this question; "
+                             "use not_investigated if it was not investigated")
         for attempt in row["investigations"]:
             if attempt not in ledger.investigations:
                 raise ValueError(f"report_sections.coverage[{index}].investigations: unknown investigation {attempt}")
