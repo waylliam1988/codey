@@ -62,3 +62,19 @@ def test_invalid_report_fields_rejected_identically(mutation):
     text = normalize_turn(decode_text_turn(json.dumps({"tool": "done", "args": args})), snapshot=snapshot)
     native = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("bad", "done", args),)), snapshot=snapshot)
     assert text.protocol_error == native.protocol_error and text.protocol_error
+
+
+def test_text_declarations_expose_the_frozen_nested_constraints():
+    from codey.research.tool_contract import done_spec_for_purpose
+    from codey.reviews.research_coverage import QUESTION_STATES
+    from codey.toolchain.tool_prompt import json_contract_text
+    from codey.toolchain.tool_spec import spec_for_tool
+
+    spec = done_spec_for_purpose(spec_for_tool("done"), "report")
+    contract = json_contract_text((spec,))
+    for state in QUESTION_STATES:
+        assert '"' + state + '"' in contract
+    assert '"state": string' not in contract
+    assert 'pattern "^q[1-8]$"' in contract
+    assert "items 1..8" in contract
+    assert spec.parameters  # Rendering must leave the captured declaration unchanged.

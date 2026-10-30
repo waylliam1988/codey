@@ -15,6 +15,7 @@ from codey.research.knowledge_schema import (
     condition_map_schema,
     knowledge_reference_schema,
     mutation_schema,
+    note_evidence_schema,
     object_schema,
     report_sections_schema,
 )
@@ -134,7 +135,7 @@ TOOL_CONTRACTS = {
             'tags': array_schema({'type': 'string'}),
             'aliases': array_schema({'type': 'string'}),
             'relations': array_schema({'type': 'object'}),
-            'evidence': {'type': 'array', 'items': {'type': 'object', 'properties': {'claim': {'type': 'string'}, 'source_url': {'type': 'string'}, 'source': {'type': 'string'}, 'excerpt': {'type': 'string'}, 'quote': {'type': 'string'}, 'stance': {'type': 'string'}, 'page': {'type': 'integer', 'minimum': 1}, 'p': {'type': 'integer', 'minimum': 1}, 'locator': {'type': 'string'}}, 'required': [], 'additionalProperties': False}, 'description': 'Required for sourced findings. Each excerpt must be an exact contiguous passage from an opened source; never a page title or navigation text.'},
+            'evidence': array_schema(note_evidence_schema()),
             'open_questions': array_schema({'type': 'string'}),
             'confidence': {'type': 'number'},
             'retrieved_at': {'type': 'string'},

@@ -84,15 +84,32 @@ def read_page_line(value: Any, line: int) -> str | None:
 
 
 def schema_typescript(schema: Mapping[str, Any]) -> str:
-    """Render declarations from the same schema validated by the host."""
+    """Render types and constraints from the same frozen schema the host validates."""
+    values = schema.get("enum")
+    if values is not None:
+        return " | ".join(json.dumps(value, ensure_ascii=False) for value in values)
     kind = schema.get("type")
     if kind == "object":
         properties = schema.get("properties", {})
         required = schema.get("required", ())
         fields = [f"{json.dumps(key)}{'' if key in required else '?'}: {schema_typescript(value)}"
                   for key, value in properties.items()]
+        additional = schema.get("additionalProperties")
+        if isinstance(additional, Mapping):
+            fields.append(f"[key: string]: {schema_typescript(additional)}")
         return "{ " + "; ".join(fields) + " }"
     if kind == "array":
-        return f"Array<{schema_typescript(schema['items']) if 'items' in schema else 'unknown'}>"
-    return {"string": "string", "integer": "number", "number": "number",
-            "boolean": "boolean"}.get(str(kind), "unknown")
+        result = f"Array<{schema_typescript(schema['items']) if 'items' in schema else 'unknown'}>"
+    else:
+        result = {"string": "string", "integer": "number", "number": "number",
+                  "boolean": "boolean"}.get(str(kind), "unknown")
+    constraints = []
+    for label, low, high in (("length", "minLength", "maxLength"), ("items", "minItems", "maxItems"),
+                             ("range", "minimum", "maximum")):
+        if low in schema or high in schema:
+            constraints.append(f"{label} {schema.get(low, '*')}..{schema.get(high, '*')}")
+    if "pattern" in schema:
+        constraints.append("pattern " + json.dumps(schema["pattern"]))
+    if schema.get("uniqueItems"):
+        constraints.append("distinct items")
+    return result + (" /* " + "; ".join(constraints) + " */" if constraints else "")

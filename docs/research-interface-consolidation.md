@@ -71,3 +71,20 @@ subprocess crash/restart cases and a new SQLite accepted-report replay check.
 After field-local coverage parsing and final schema typing, a further 69 focused
 checks passed. Ruff, mypy (569 production files), Pyrefly (0 errors; 35 suppressed,
 77 warnings) and ty passed. Final archive snapshot adjustments are verified below.
+
+Live probe e007b604: artifacts/research-live-wal-consolidated-20261030. Initial
+writer saved f1/f2/f3 but did not complete. It first used an invalid complete
+coverage state, then corrected that after feedback, but repeated the missing-q6
+repair without saving the missing evidence. The followup performed web_search
+and opened an official page and a secondary page; it also saved a reworded f4.
+The isolated diagnostic was durably cancelled before changing frozen source.
+Its reports still overgeneralized checkpoint completion and exclusive locking;
+no semantic acceptance. Cancellation reproduced the pre-existing Playwright
+TargetClosedError shutdown warning. KoboldCpp was not restarted or reconfigured.
+
+A concrete interface omission was found: schema_typescript rendered every enum
+as string, so the text model could not see coverage's allowed states until a
+rejection. The shared renderer now exposes literal enums, bounds, patterns and
+map values from the same frozen schema. No state alias or answer-specific prompt
+was added. The complex note writer also now uses the shared canonical evidence
+schema instead of retaining the old source/quote/p aliases in its declaration.
