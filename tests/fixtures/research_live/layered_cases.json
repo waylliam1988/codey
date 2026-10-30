@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "sqlite-concurrency",
+      "domain": "software",
+      "question": "这些材料说明 SQLite WAL 提供了怎样的并发能力？对于一个读多写少的本机应用，还不能据此确定什么？",
+      "sources": [
+        {
+          "ref": "S1",
+          "url": "https://www.sqlite.org/wal.html",
+          "title": "Write-Ahead Logging",
+          "material_type": "official_documentation_excerpt",
+          "text": "WAL provides more concurrency as readers do not block writers and a writer does not block readers. Reading and writing can proceed concurrently."
+        },
+        {
+          "ref": "S2",
+          "url": "https://www.sqlite.org/isolation.html",
+          "title": "Isolation In SQLite",
+          "material_type": "official_documentation_excerpt",
+          "text": "SQLite implements serializable transactions by actually serializing the writes. There can only be a single writer at a time to an SQLite database. There can be multiple database connections open at the same time, and all of those database connections can write to the database file, but they have to take turns."
+        }
+      ],
+      "review_rubric_not_sent": [
+        "Distinguish reader/writer concurrency from multiple concurrent writers; no simultaneous multiple-writer commit claim.",
+        "Retain single-writer serialization; do not infer measured application throughput or optimal configuration.",
+        "Extraction must give separate supported scoped findings, not duplicate compound claims with partial support."
+      ]
+    },
+    {
+      "id": "capecitabine-preclinical",
+      "domain": "clinical_evidence",
+      "question": "这项研究对适应性治疗提供了什么证据？不同用药比较的结果如何，能支持哪些实际判断，还有什么缺口？",
+      "sources": [
+        {
+          "ref": "S1",
+          "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10813385/",
+          "title": "Testing Adaptive Therapy Protocols Using Gemcitabine and Capecitabine in a Preclinical Model of Endocrine-Resistant Breast Cancer",
+          "material_type": "open_access_original_abstract_excerpt",
+          "retrieved_via": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:38254748%20AND%20SRC:MED&format=json&resultType=core",
+          "text": "In preparation for a clinical trial, we used endocrine-resistant MCF7 breast cancer to stimulate second-line therapy and tested adaptive therapy using capecitabine, gemcitabine, or their combination in a mouse xenograft model. Dose modulation adaptive therapy with capecitabine alone increased survival time relative to MTD but not statistically significantly (HR = 0.22, 95% CI = 0.043-1.1, p = 0.065). However, when we alternated the drugs in both dose modulation (HR = 0.11, 95% CI = 0.024-0.55, p = 0.007) and intermittent adaptive therapies, the survival time was significantly increased compared to high-dose combination therapy (HR = 0.07, 95% CI = 0.013-0.42, p = 0.003)."
+        }
+      ],
+      "review_rubric_not_sent": [
+        "Explicitly preclinical mouse xenograft evidence, not a reported human trial or individualized treatment recommendation.",
+        "Capecitabine-alone comparison is not statistically significant; do not transfer alternating-regimen significance to it.",
+        "Preserve the respective comparators and uncertainty; do not merge alternating with simultaneous combined treatment."
+      ]
+    },
+    {
+      "id": "retail-causal-pilot",
+      "domain": "business_causal",
+      "question": "现有资料能说明新店面布局的效果吗？如果决定是否推广，还需要什么信息？",
+      "sources": [
+        {
+          "ref": "S1",
+          "url": "fixture://synthetic-retail-pilot/report",
+          "title": "Synthetic retail pilot report (diagnostic material, not a real study)",
+          "material_type": "explicitly_synthetic_diagnostic",
+          "text": "Eight stores volunteered to try layout A in June. Their average sales were 18% higher than in May. The remaining twenty stores kept their original layout; their average sales were 12% higher than in May. Assignment was not randomized. The report did not record advertising spend, local holidays, or store-level uncertainty intervals."
+        },
+        {
+          "ref": "S2",
+          "url": "fixture://synthetic-retail-pilot/selection",
+          "title": "Synthetic selection memo (diagnostic material, not a real study)",
+          "material_type": "explicitly_synthetic_diagnostic",
+          "text": "All eight volunteer stores were in tourist districts. Twelve of the twenty comparison stores were in residential districts. Managers chose whether to volunteer. No pre-June sales trends or profit margins were supplied."
+        }
+      ],
+      "review_rubric_not_sent": [
+        "Do not present the 18% before/after change as an established causal effect of the layout.",
+        "Account for comparison-store growth and selection/confounding; a six percentage point difference is not a proven treatment effect.",
+        "Do not infer profit or generalizability; distinguish missing data from negative findings."
+      ]
+    }
+  ]
+}
