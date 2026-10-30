@@ -64,6 +64,7 @@ class ResearchTools:
     links_created: int = 0
     ledger: ResearchLedger = field(default_factory=ResearchLedger)
     evidence_only: bool = False
+    automatic_report_refs: bool = False
 
     def create_staged(self) -> ResearchTools:
         staged_store = StagedKnowledgeStore(self.store) if self.store is not None else None
@@ -84,6 +85,7 @@ class ResearchTools:
             links_created=self.links_created,
             ledger=self.ledger.clone(),
             evidence_only=self.evidence_only,
+            automatic_report_refs=self.automatic_report_refs,
         )
 
     def commit_staged(self, staged: ResearchTools) -> None:
@@ -368,12 +370,16 @@ class ResearchTools:
         versions.sort(key=lambda row: 0 if row["kind"] in {"claim", "inference", "question"} else 1)
         answer_refs = [{"id": row["id"], "revision": row["revision"]} for row in versions
                        if row["kind"] in {"claim", "inference", "question"}][:6]
-        if answer_refs and not self.evidence_only:
+        if answer_refs and not self.evidence_only and not self.automatic_report_refs:
             model_text += ("\nAnswer reference candidates (copy only versions actually used into done.knowledge_refs):\n"
                            + canonical_json({"knowledge_refs": answer_refs}))
         model_text += "\nStructured knowledge versions:\n" + canonical_json(versions[:24])
-        model_text += ("\nFor knowledge_read use these object ids and revisions, not note_id." if self.evidence_only else
+        model_text += ("\nFor knowledge_read use these object ids and revisions, not note_id."
+                       if self.evidence_only or self.automatic_report_refs else
                        "\nFor knowledge_read and done.knowledge_refs use these object ids and revisions, not note_id.")
+        if self.automatic_report_refs and not self.evidence_only:
+            model_text += ("\nThese newly saved versions are automatically attached to this research report; "
+                           "no manual answer-reference copy is needed. Keep numbered source citations in the report.")
         model_text += "\nTo update this note, knowledge_write.id must be its exact note_id above, not a claim/source/evidence id."
         return ResearchToolOutput(model_text, ok=True)
 

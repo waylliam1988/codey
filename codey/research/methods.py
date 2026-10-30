@@ -47,7 +47,7 @@ METHODS = (
 )
 
 
-def research_method_guidance(question: str, *, evidence_only: bool = False) -> str:
+def research_method_guidance(question: str, *, evidence_only: bool = False, automatic_report_refs: bool = False) -> str:
     text = question.casefold()
     selected = [method for method in METHODS if any(term in text for term in method.terms)]
     lines = [
@@ -79,9 +79,15 @@ def research_method_guidance(question: str, *, evidence_only: bool = False) -> s
         "graph proximity cannot increase evidence strength. Read current versions before revising knowledge.",
     ]
     if not evidence_only:
-        lines.append("When done uses saved knowledge, include knowledge_refs:[{id:...,revision:...}] for the exact "
-                     "versions used. These pin provenance, not proof of interpretation; cite original premises "
-                     "rather than old answers.")
+        if automatic_report_refs:
+            lines.append("This research run automatically attaches its newly saved note versions to the report. "
+                         "Do not manually recopy their ids into done.knowledge_refs. For knowledge recalled from "
+                         "earlier work, include knowledge_refs:[{id:...,revision:...}] for the exact versions used. "
+                         "Never guess an id; these pin provenance, not proof of interpretation. Cite original premises.")
+        else:
+            lines.append("When done uses saved knowledge, include knowledge_refs:[{id:...,revision:...}] for the exact "
+                         "versions used. These pin provenance, not proof of interpretation; cite original premises "
+                         "rather than old answers.")
     for method in selected[:4]:
         lines.append(f"{method.name}: sources: {method.sources}. Extract when available: "
                      f"{', '.join(method.conditions)}. Check: {method.evaluation}.")

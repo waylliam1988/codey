@@ -26,6 +26,9 @@ def test_failed_writes_and_search_hits_never_become_saved_or_opened_facts():
     assert "Registration is not reported efficacy" in text
     assert "A broad single word may find the wrong passage" in text
     assert "Do not reuse an earlier quote for a different finding" in text
+    assert "passage sufficient for the WHOLE claim" in text
+    assert "Several adjacent sentences may be needed" in text
+    assert "one short contiguous original sentence" not in text
 
 
 def test_observations_are_bounded_and_preserve_saved_claim_source_and_stance():

@@ -429,6 +429,9 @@ class ExecutionDelegate:
             # This is a per-call presentation setting. The shared facade and
             # stored knowledge must not inherit a child phase's output contract.
             tools.evidence_only = self.session is not None and self.session.task_kind == "evidence_followup"
+        if hasattr(tools, "automatic_report_refs"):
+            tools.automatic_report_refs = (self.session is not None and self.session.task_kind == "research"
+                                           and self.session.policy.strict_research)
         ledger = getattr(tools, "ledger", None)
         if isinstance(ledger, ResearchLedger):
             # A read receipt contains this acquisition alone, not stale pages

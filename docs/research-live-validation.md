@@ -1207,3 +1207,51 @@ and seven subtests (overlap).
 Ruff, mypy (557 files), Pyrefly and ty passed. A real web WAL probe with explicit
 thinking/low is isolated in research-live-wal-focused-feedback-low-20261030;
 no default provider configuration was changed and quality is not accepted yet.
+
+## Browser retests and sufficient excerpt context
+
+The thinking/low WAL probe produced only repeated channel/thought template
+markers before any tool call. Read-only KoboldCpp pending-output inspection
+confirmed the loop; its raw output is saved as template-loop-partial.json.
+After durable cancellation the owned local generation was aborted and the
+process exited stopped. This is a failed model/template diagnostic, not a
+browser failure.
+
+The following thinking/minimal plain run really searched/opened SQLite.org,
+saved concurrency and single-writer passages, and used source_search/open_hit
+after ellipsized evidence was rejected. However it eventually shortened the
+tradeoff quote to a generic introductory sentence while keeping a detailed
+claim, then repeatedly emitted malformed final frames (nested summary and
+missing fields). It was cancelled, exited stopped, and is not accepted.
+
+The current-observation instruction unnecessarily required one short sentence.
+It now requests a contiguous passage sufficient for the whole claim, explicitly
+allowing adjacent sentences and requiring separate findings for separate
+passages. The locator/exact-quote checks remain strict. Eleven focused
+observation/API-context tests passed. A fresh JSON/temperature=0.7 real-web
+diagnostic is isolated in research-live-wal-json-passage-20261030; defaults are
+unchanged and semantic review is pending.
+
+## Current-run references and source-discovery isolation
+
+That JSON/0.7 run ended no_progress after repeating a misspelled claim id. It
+acquired and saved evidence from a secondary Chinese explanation, but never
+opened the requested official source. It is a failed broad-quality diagnostic.
+
+The existing research synthesis archive already attaches exact versions from
+the run's newly saved notes. Parent research write receipts/method guidance now
+explain that this does not require manually copying those long ids into done.
+knowledge_refs. Previously recalled knowledge still needs explicit pinned refs;
+explicit refs remain fully validated. Evidence-only receipts retain their prior
+contract. This is per-execution presentation, never a global facade mutation.
+A regression checks the resulting answer references actually contain the saved
+claim/evidence/source versions without any model-supplied refs.
+
+82 focused lifecycle/phase/task-entry tests passed; Ruff, mypy (557 files),
+Pyrefly and ty passed. Restart/production-entry checks are running separately.
+
+The fresh sqlite_wal_official_zh.txt fixture preserves the broad WAL questions
+and adds an official starting URL, without supplying the answers. This isolates
+source-discovery difficulty from page reading/comparison; it cannot substitute
+for the original unseeded source-discovery benchmark. The real-web probe is in
+research-live-wal-official-auto-refs-20261030 using JSON/temperature=0.3.

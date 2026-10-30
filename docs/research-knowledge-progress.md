@@ -307,3 +307,17 @@ Update this file in each implementation commit with results and remaining work.
   be reported honestly without counting as a completed check, and Chinese repair
   reminders distinguish formatting from evidence acquisition. Real web WAL
   thinking/low probe in progress. Default model settings are unchanged.
+- WAL thinking/low failed on repeated template markers before tool use; the raw
+  pending output was saved and the owned generation durably cancelled/aborted.
+  Minimal/plain performed real browser acquisition but repeated malformed final
+  frames and was cancelled. Removed the overly narrow single-sentence excerpt
+  instruction; enough adjacent context is now requested. Eleven focused tests
+  passed. JSON/temperature=0.7 WAL probe in progress; no broad quality pass yet.
+- JSON/0.7 ended no_progress on repeated misspelled references; it never opened
+  an official source, so is not accepted. Research already archives this run's
+  note versions automatically; parent prompts/receipts now avoid unnecessary id
+  copying for these versions. Recalled earlier knowledge still needs explicit
+  refs, and explicit ref validation remains strict. A regression verifies exact
+  saved versions in the answer archive. 82 focused tests and all static checks
+  passed. New official-URL-seeded broad WAL fixture isolates acquisition from
+  discovery; it does not replace the unseeded benchmark.

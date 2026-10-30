@@ -23,7 +23,7 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
     if snapshot.policy.strict_research:
         from codey.research.methods import research_method_guidance
 
-        guidance.append(research_method_guidance(user_task))
+        guidance.append(research_method_guidance(user_task, automatic_report_refs=session.task_kind == "research"))
     for check_id in snapshot.policy.required_checks:
         requirement = parse_tool_success_check(check_id)
         if requirement is not None:

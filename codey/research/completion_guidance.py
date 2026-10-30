@@ -43,8 +43,10 @@ def render_research_observations(session: "TaskSession") -> str:
     )
     if session.policy.allows("knowledge.write"):
         guidance += (
-            "Before drafting, save each useful finding from an opened passage; copy one short contiguous "
-            "original sentence, without ellipses or reconstructed numbers. "
+            "Before drafting, save each useful finding from an opened passage; copy a contiguous original "
+            "passage sufficient for the WHOLE claim, without ellipses or reconstructed numbers. "
+            "Several adjacent sentences may be needed for conditions or comparisons; a generic opening "
+            "sentence does not support the details that follow. Split findings when different passages are needed. "
             "After a save succeeds, investigate the next missing evidence instead of saving it again. "
         )
     if session.policy.allows("web.read"):
