@@ -62,6 +62,8 @@ def research_method_guidance(question: str, *, evidence_only: bool = False) -> s
         "cover results in the broader field. When a source reports multiple interventions or comparators, "
         "save separate findings and exact passages for each comparison, including null results and limits. "
         "Never transfer a positive result between arms or treat a study protocol as an outcome.",
+        "Check that a source uses the same definition and intervention as the question; similar names can "
+        "describe different mechanisms. Preserve original names alongside translations when identity is uncertain.",
         "Preserve observed results, author interpretations, user statements and model inferences separately. "
         "For knowledge_write, conditions can use {name:{state:reported,value:...}} or state "
         "not_reported/not_extracted/not_applicable. Leave unknown information unknown; never fill a template by guessing.",

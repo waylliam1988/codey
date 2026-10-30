@@ -68,6 +68,21 @@ def test_evidence_investigation_retains_observations_without_requiring_a_report(
     assert '"evidence":["supported finding [1]"]' not in prompt
 
 
+def test_unknown_property_repair_allows_correcting_keys_without_rewriting_source_values():
+    from codey.operations.kernel_prompt import _repair_prompt
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.runtime.core.models import ToolPlan
+
+    session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.write"})), task_kind="evidence_followup")
+    for native in (False, True):
+        for error in ("knowledge_write unexpected arg ''", "knowledge_write arg 'evidence[0]' unexpected property ''"):
+            prompt = _repair_prompt(ToolPlan(calls=[], control=None, protocol_error=error,
+                protocol_tool_name="knowledge_write"), snapshot=build_turn_snapshot(session, native=native), native=native)
+            assert "Remove the rejected property key at the reported location" in prompt
+            assert "Preserve valid source excerpts" in prompt
+            assert "the rejected key must change" in prompt
+
+
 def test_chinese_report_reminder_preserves_permission_and_evidence_only_boundaries():
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "knowledge.write"}), strict_research=True),
                           task_text="调查不同解释，给出中文研究报告")

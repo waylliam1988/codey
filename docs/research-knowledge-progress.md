@@ -285,3 +285,7 @@ Update this file in each implementation commit with results and remaining work.
   Child-phase write/read/search receipt guidance now omits parent-only answer
   reference instructions. Removed generic no-counter templates and clarified
   independent comparator searches. 80 focused tests and all static checks passed.
+- JSON broad-task diagnostic still failed on empty argument keys and spliced
+  excerpts. Added focused unknown-property repair and explicit saved-extraction
+  audit guidance; 60 pipeline/restart/protocol tests, 19 repair/quote tests and
+  ten synthesis/observation tests passed (overlap). All static checks passed.

@@ -1127,3 +1127,15 @@ Validation: 80 focused knowledge/context/phase tests passed, including 30 old
 reports competing with a usable premise; 78 earlier focused method/phase tests
 passed (overlap). Ruff, mypy, Pyrefly and ty passed before the final example-only
 edit. Broad semantic acceptance remains outstanding.
+
+`research-live-adaptive-isolated-synthesis-json-20261030` repeatedly emitted
+empty/undeclared keys during knowledge writes (including an empty stance key)
+and reused ellipsized excerpts. Cancelled as a failed protocol diagnostic; no
+semantic pass. JSON constraints did not resolve this local model's argument
+quality. Unknown-property repairs now explicitly require changing/removing the
+rejected key while preserving valid source strings. Final synthesis explicitly
+audits saved model extractions and may correct a note, rather than treating
+persistence success as interpretation approval. Nineteen focused repair/quote
+tests and ten synthesis/observation tests passed (overlap); all static checks
+passed. Sixty pipeline/final-synthesis/subprocess-restart/protocol tests also
+passed after the preceding self-recall and receipt changes.

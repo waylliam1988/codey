@@ -180,6 +180,11 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
         elif spec is not None and spec.name == "done":
             instruction += (' Use {"tool":"done","args":{"summary":"complete response in the requested format"}}. '
                             'Do not add a structured research report unless the current task requests one.')
+    if "unexpected arg '" in error or "unexpected property '" in error:
+        instruction += (" Remove the rejected property key at the reported location, rather than changing only "
+                        "its value or adding another key. Blank property names are not placeholders. "
+                        "If that value belongs in a declared field, use that field's actual name. "
+                        "Preserve valid source excerpts and other valid values; the rejected key must change.")
     return f"Protocol error: {detail}\n\n{instruction} Resend the intended call. {ARGUMENT_CONTENT_GUIDANCE} Keep other valid fields."
 
 
