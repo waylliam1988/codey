@@ -1550,3 +1550,48 @@ coverage, not a new successful model rerun. The older Playwright shutdown
 TargetClosedError remains an unresolved separate diagnostic. No reference model
 is available. At the user's explicit request: commit, push to GitHub, then pause;
 do not start another real research task in this turn.
+
+
+## Interface consolidation and pause for a 27B model (2026-10-30)
+
+The preceding pause was superseded by the user's request to consolidate the
+interfaces and run again. Implementation and individual probe outcomes are in
+[research-interface-consolidation.md](research-interface-consolidation.md).
+
+Committed changes use complete frozen schemas, one bounded working view with
+original excerpts, explicit evidence input, unified pinned references, and a
+structured proposal checked before Markdown rendering. Completion and archival
+reuse the same persisted compilation rather than rebuilding it from current
+knowledge. Coverage answer citations are checked before rendering, final view
+serialization obeys its character budget, and a complete knowledge_read returns
+the exact supporting material along with the adopted claim.
+
+Real-web runs found two further reproducible system defects: enum values were
+hidden in text contracts, and multiline claims had their whitespace changed
+after identity generation. Both are fixed with regression coverage. Raw model
+outputs and source observations remain in their separate artifact directories;
+failed runs have not been relabelled successful.
+
+The last frozen 12B run was
+artifacts/research-live-wal-exact-claims-20261030 at commit 1ac6d7bd.
+It saved four findings successfully and no tool receipt failed. It performed
+official-page opens and page searches, but no general web_search before being
+stopped. It correctly read single-writer concurrency. It still overgeneralized
+read-heavy suitability and repeated a report rejected for putting the full
+report into summary. The no-progress guard stopped that attempt. The user then
+requested a pause to replace the local model with 27B; the isolated task was
+durably cancelled (stop_reason=stopped). There is no accepted final report or
+full semantic research pass from this run. No new answer-specific prompt was
+added, and no independent review status was granted.
+
+Current focused validation: 120 tests + 2 subtests, then 62 additional targeted
+recovery/report checks passed. Ruff, mypy (569 production files), Pyrefly
+(0 errors, 35 suppressed/77 warnings), and ty passed. No full pytest or reference
+model comparison was run. This verifies the exercised program boundaries, not
+that all software defects are absent. The earlier Playwright shutdown warning
+has not been resolved or attributed to model capability.
+
+Current stop instruction: commit, push, and pause. Do not start another model
+probe until the user makes the replacement model available. Keep deployment,
+sampling, raw outputs, exact source snapshots, mechanical failures and semantic
+failures separate in the next comparison.

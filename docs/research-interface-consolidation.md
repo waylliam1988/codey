@@ -115,3 +115,27 @@ URLs, manual source tables are rejected, counter feedback stays field-local,
 and feedback never creates evidence. Latest focused run: 120 tests + 2 subtests
 passed. Ruff, mypy (569 files), Pyrefly (0 errors, 35 suppressed/77 warnings), and
 ty passed. Semantic acceptance remains pending.
+
+Final 12B probe at 1ac6d7bd:
+artifacts/research-live-wal-exact-claims-20261030, run_dbfb3730c3b84b10b37a1bbfa5479429.
+Four finding saves succeeded with no failed tool receipts or identity-binding
+errors. It opened the official page and searched within it, but had not executed
+a general web_search, so the requested search/open/research acceptance was not
+met. It read the single-writer relationship correctly, yet still recommended WAL
+as the first choice for a read-heavy application without workload measurement,
+despite the official page's caveat. It repeatedly submitted a full report in
+summary after field-local duplicate-report rejection. The common no-progress
+guard ended that attempt; outer synthesis had started when the user requested
+a pause to switch to 27B. The run was durably cancelled through its own task,
+without restarting or reconfiguring KoboldCpp. Recorded at cancellation:
+24 admitted requests, 18 generated responses; no accepted final report.
+
+Additional targeted recovery/report checks: 62 passed, including subprocess
+restart and accepted-result replay. This supplements the 120 tests + 2 subtests
+above; no full pytest was run. Known reproduced program defects are fixed, but
+this does not prove an absence of other defects. Current semantic failures and
+instruction-following failures remain diagnostic findings, not certified model
+limits. Production semantic review and reference-model comparison remain absent.
+At the user's request, commit/push the current work and stop model testing until
+the replacement model is available. Do not resume the cancelled 12B artifact
+store with changed code; use a fresh diagnostic directory for comparison.
