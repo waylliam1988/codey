@@ -15,9 +15,24 @@ from codey.durable.model import ArtifactRecord, thaw_json
 from codey.providers.response_record import json_value
 from codey.runtime.effects.effect_records import RuntimeEffectError
 from codey.storage.managed_outputs import ManagedOutputStore
+from codey.workspace.context_admission import GhostContextSource
 
 REQUEST_KIND = "provider_request"
 RESPONSE_KIND = "provider_response"
+
+
+def restore_ghost_context(payload: object) -> tuple[str, tuple[GhostContextSource, ...]]:
+    if (not isinstance(payload, dict) or set(payload) != {"text", "ghost_sources"}
+            or not isinstance(payload["text"], str) or not isinstance(payload["ghost_sources"], list)):
+        raise ValueError("frozen request has no valid context snapshot")
+    sources = []
+    expected = {field.name for field in fields(GhostContextSource)}
+    for row in payload["ghost_sources"]:
+        if (not isinstance(row, dict) or set(row) != expected or type(row["budget"]) is not int
+                or any(not isinstance(row[key], str) for key in expected - {"budget"})):
+            raise ValueError("invalid frozen Ghost source")
+        sources.append(GhostContextSource(**row))
+    return payload["text"], tuple(sources)
 
 
 def write_provider_artifact(store: ManagedOutputStore, *, session_id: str, run_id: str,

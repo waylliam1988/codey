@@ -161,12 +161,15 @@ class KernelEffectSink:
     def has_unsettled(self, identity: str) -> bool:
         return identity in self._old_pending
 
-    def bind_request(self, snapshot: Any, *, logical_turn: int, window_ref: Any = None) -> None:
+    def bind_request(self, snapshot: Any, *, logical_turn: int, window_ref: Any = None,
+                     context_text: str = "", ghost_sources: tuple[Any, ...] = ()) -> None:
         from codey.operations.provider_receipts import snapshot_description
+        from codey.providers.response_record import json_value
 
         self._request_context = {"logical_turn": logical_turn, "snapshot": snapshot_description(snapshot),
                                  "window": window_ref.to_payload() if window_ref is not None else None,
-                                 "effect_scope": "", "close_reply": False}
+                                 "effect_scope": "", "close_reply": False,
+                                 "context": {"text": context_text, "ghost_sources": json_value(ghost_sources)}}
 
     def counters(self) -> RuntimeExecutionCounters:
         from codey.durable.checkpoint import operation_from_checkpoint

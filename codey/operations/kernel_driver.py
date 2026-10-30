@@ -156,7 +156,7 @@ def load_prepared_request(sink: Any, request_ref: str) -> tuple[dict[str, Any], 
     return payload, replace(intent, request_ref=request_ref)
 
 
-def restore_provider_window(sink: Any, provider: Any, state: Any) -> None:
+def restore_provider_window(sink: Any, provider: Any, state: Any) -> dict[str, Any] | None:
     """Rebuild the window projection from this operation's frozen request."""
     from codey.operations.provider_receipts import request_artifact_for_effect
 
@@ -176,21 +176,22 @@ def restore_provider_window(sink: Any, provider: Any, state: Any) -> None:
         payload = read_provider_artifact(sink.managed_outputs, request_artifact_for_effect(sink.durable, effect),
             kind=REQUEST_KIND, session_id=sink.session_id, run_id=sink.run_id, effect_id=effect.intent.effect_id)
     else:
-        return
+        return None
     if not isinstance(payload, dict):
         raise RecoveryFailed("frozen request has no protocol window data")
     window = payload.get("window")
     if window is None:
-        return
+        return payload
     ref = ProtocolWindowRef.from_payload(window)
     if getattr(provider, "window_ref", None) == ref:
-        return
+        return payload
     restore = getattr(provider, "restore_protocol_window", None)
     if not callable(restore):
         raise RecoveryFailed("provider cannot restore the original protocol window")
     restore(ref)
     if getattr(provider, "window_ref", None) != ref:
         raise RecoveryFailed("provider did not restore the original protocol window")
+    return payload
 
 
 def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> Any:
@@ -287,7 +288,9 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
             if action.kind == rules.ACTION_FAIL_INVARIANT:
                 raise RecoveryFailed(f"{action.reason}: {action.effect_ids}")
             if not window_restored:
-                restore_provider_window(context.sink, context.provider, state)
+                original_request = restore_provider_window(context.sink, context.provider, state)
+                if original_request is not None:
+                    context.restore_context(original_request)
                 context.window = getattr(context.provider, "window_ref", None) or context.transport.window_ref
                 window_restored = True
             outcome = _execute_kernel_action(context, view, action)

@@ -58,6 +58,13 @@ class KernelContext:
         self.snapshots: dict[int, Any] = {}
         self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder)
 
+    def restore_context(self, payload: dict[str, Any]) -> None:
+        from codey.operations.provider_receipts import restore_ghost_context
+
+        text, sources = restore_ghost_context(payload.get("context"))
+        self.transport = replace(self.transport, context_text=text, ghost_sources=sources)
+        self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder)
+
     @property
     def request_scoped_context(self) -> bool:
         return not self.native and (getattr(self.provider, "text_tool_format", "plain") == "json_schema"
@@ -298,7 +305,8 @@ class KernelContext:
         if not self.native and not scoped_contract and state.leaf not in {positions.LEAF_WRITER_RUNNING, positions.LEAF_REPAIR_RUNNING}:
             prompt = kernel_prompt._text_request_prompt(prompt, snapshot)
         self.snapshots[turn] = snapshot
-        self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window)
+        self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window,
+                               context_text=self.transport.context_text, ghost_sources=self.transport.ghost_sources)
         self.sink._request_context["effect_scope"] = self.effect_scope
         self.sink._request_context["close_reply"] = acknowledge
         self.sink._request_context["delivery_purpose"] = self.decision(state).get("purpose", "") if state.work_ref else ""
@@ -317,10 +325,15 @@ class KernelContext:
             method, args = ("send_turn", (prompt, tools)) if self.native else ("send", (prompt,))
         options: dict[str, Any] = {}
         if self.request_scoped_observations and not (self.native and acknowledge):
-            options["tool_call_observations"] = task_working_context(
+            observations = task_working_context(
                 self.session, getattr(self.execution.research_tools, "ledger", None),
                 getattr(self.execution.research_tools, "store", None),
                 str(getattr(self.execution.research_tools, "session_id", "")))
+            # Canonical replay excludes Ghost hints. Each continuation must
+            # carry its frozen context without relying on a warm wire history.
+            context = self.transport.context_text
+            options["tool_call_observations"] = "\n\n".join(part for part in (
+                context if context and context not in prompt else "", observations) if part)
         if scoped_contract:
             options["tool_call_contract"] = kernel_prompt._text_request_prompt("", snapshot)
             if text_result_spans:
