@@ -190,28 +190,11 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
 
     names = tuple(visible_tool_names_for_snapshot(session.policy, allowed, native=native))
     frozen = _frozen_specs_for_names(names)
-    if getattr(session, "task_kind", "") == "evidence_followup":
-        frozen = tuple(replace(spec,
-            parameters=tuple(item for item in spec.parameters if item[0] == "summary"),
-            required=("summary",),
-            json_examples=('{"tool":"done","args":{"summary":"Saved findings and remaining evidence gaps"}}',),
-            description="End this evidence investigation with a brief receipt of saved findings and remaining gaps. "
-                        "The parent task owns the final report. Do not draft its report in this phase.")
-            if spec.name == "done" else spec for spec in frozen)
-    elif session.policy.strict_research:
-        from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE
+    from codey.research.tool_contract import done_spec_for_purpose
 
-        frozen = tuple(replace(spec, required=("summary", "report_sections"),
-                               json_examples=(STRUCTURED_REPORT_EXAMPLE,),
-                               description="Finish the research. summary contains only "
-                                           "the conclusion with [f1] finding citations, without report headings. "
-                                           "evidence/counter/source_quality are text arrays. coverage accounts for every qN "
-                                           "using {question_ref,state,answer,findings} records. Do not duplicate sections in summary. "
-                                           "Use report_sections for the final report; the application supplies headings "
-                                           "and paragraph breaks, source numbers and the source table. "
-                                           "Do not submit sources or copy knowledge ids for current findings. "
-                                           "Evidence and citation checks still apply.")
-                       if spec.name == "done" else spec for spec in frozen)
+    purpose = ("evidence" if getattr(session, "task_kind", "") == "evidence_followup" else
+               "report" if session.policy.strict_research else "ordinary")
+    frozen = tuple(done_spec_for_purpose(spec, purpose) if spec.name == "done" else spec for spec in frozen)
     if "codemode" in names:
         from codey.codemode.catalog import build_codemode_catalog, render_declarations
 
@@ -451,10 +434,14 @@ def _validate_tool_args(
     if name == "done":
         # ``done`` is a control tool with no runtime executor. Its
         # canonical ToolSpec validation above is the complete contract.
-        from codey.research.tool_contract import validate_tool_args
+        if "report_sections" in args:
+            from codey.reviews.report_sections import render_done_report
 
-        validated_done = validate_tool_args("done", args)
-        return (dict(validated_done.args), "") if validated_done.ok else ({}, validated_done.error)
+            try:
+                render_done_report(args["summary"], args["report_sections"])
+            except ValueError as exc:
+                return {}, str(exc)
+        return dict(args), ""
     if name == "codemode":
         try:
             from codey.codemode.protocol import parse_codemode_args
@@ -479,7 +466,7 @@ def _validate_tool_args(
     if executor == "project":
         return _validate_coding_args(name, args)
     if executor in {"source", "knowledge"}:
-        return _validate_research_args(name, args)
+        return dict(args), ""
     return {}, "unsupported tool executor"
 
 

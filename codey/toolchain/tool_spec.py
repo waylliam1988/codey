@@ -130,7 +130,7 @@ def _coding_specs() -> dict[str, ToolSpec]:
 
 
 def _research_specs() -> dict[str, ToolSpec]:
-    from codey.research.tool_contract import TOOL_CONTRACTS, openai_parameters_schema
+    from codey.research.tool_contract import TOOL_CONTRACTS
 
     grant_by_tool = {
         "research_plan": "knowledge.read",
@@ -151,19 +151,12 @@ def _research_specs() -> dict[str, ToolSpec]:
         contract = TOOL_CONTRACTS.get(name)
         if contract is None:
             continue
-        params: list[tuple[str, object]] = []
-        schema = openai_parameters_schema(name)["properties"]
-        assert isinstance(schema, dict)
-        for arg_name in contract.required:
-            params.append((arg_name, schema[arg_name]))
-        for arg_name in contract.optional:
-            params.append((arg_name, schema[arg_name]))
         specs[name] = ToolSpec(
             name=name,
             aliases=(),
             grant=grant,
-            parameters=tuple(params),
-            required=tuple(sorted(contract.required.keys())),
+            parameters=tuple(contract.input_schema["properties"].items()),
+            required=tuple(contract.input_schema["required"]),
             json_examples=(contract.example,),
             description=contract.description,
             executor="source" if grant == "web.read" else "knowledge",
@@ -273,9 +266,9 @@ def _allowed_schema_keys(kind: str) -> set[str]:
     if kind in {"integer", "number"}:
         return {"type", "minimum", "maximum", "enum"}
     if kind == "string":
-        return {"type", "enum"}
+        return {"type", "enum", "minLength", "maxLength", "pattern"}
     if kind == "array":
-        return {"type", "items", "enum"}
+        return {"type", "items", "enum", "minItems", "maxItems", "uniqueItems"}
     if kind == "object":
         return {"type", "properties", "required", "additionalProperties", "enum"}
     if kind == "boolean":
@@ -321,10 +314,8 @@ def _valid_schema_nested(kind: str, schema: Mapping[Any, Any]) -> bool:
                 return False
     if "required" in schema and not isinstance(schema["required"], list):
         return False
-    return not (
-        "additionalProperties" in schema
-        and not isinstance(schema["additionalProperties"], bool)
-    )
+    extra = schema.get("additionalProperties", True)
+    return isinstance(extra, bool) or _valid_custom_schema(extra)
 
 
 def _valid_custom_schema(schema: object) -> bool:
@@ -667,6 +658,12 @@ def _check_array_value(spec_name: str, key: str, schema: object, value: Any, *, 
         return _spec_type_error(spec_name, key, "array", value)
     if not isinstance(schema, Mapping) or schema.get("items") is None:
         return ""
+    for bound_name, compare in (("minItems", len(value) < int(schema.get("minItems", 0))),
+                           ("maxItems", len(value) > int(schema.get("maxItems", len(value))))):
+        if compare:
+            return f"{spec_name} arg '{key}' violates {bound_name}={schema[bound_name]}"
+    if schema.get("uniqueItems") and any(value[i] == value[j] for i in range(len(value)) for j in range(i)):
+        return f"{spec_name} arg '{key}' requires unique items"
     for index, item in enumerate(value):
         error = _check_spec_value_against_schema(spec_name, f"{key}[{index}]", schema["items"], item, strict=strict)
         if error:
@@ -692,7 +689,9 @@ def _check_object_value(spec_name: str, key: str, schema: object, value: Any, *,
                 if child_schema is None:
                     if schema.get("additionalProperties", True) is False:
                         return f"{spec_name} arg '{key}' unexpected property '{child_key}'"
-                    continue
+                    child_schema = schema.get("additionalProperties")
+                    if not isinstance(child_schema, Mapping):
+                        continue
                 error = _check_spec_value_against_schema(spec_name, f"{key}.{child_key}", child_schema, child_value, strict=strict)
                 if error:
                     return error
@@ -724,7 +723,17 @@ def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, v
         if isinstance(enum, (list, tuple)) and not any(_json_value_equal(value, item) for item in enum):
             return f"{spec_name} arg '{key}' must be one of {enum!r}"
     if want == "string":
-        return _check_string_value(spec_name, key, value)
+        error = _check_string_value(spec_name, key, value)
+        if error or not isinstance(schema, Mapping):
+            return error
+        if len(value) < int(schema.get("minLength", 0)) or len(value) > int(schema.get("maxLength", len(value))):
+            return f"{spec_name} arg '{key}' violates declared string length bounds"
+        if "pattern" in schema:
+            import re
+
+            if re.search(schema["pattern"], value) is None:
+                return f"{spec_name} arg '{key}' must match {schema['pattern']}"
+        return ""
     if want == "integer":
         return _check_integer_value(spec_name, key, value, minimum, maximum, strict=strict)
     if want == "number":
