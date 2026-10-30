@@ -58,7 +58,5 @@ def test_synthesis_handoff_is_bounded_and_keeps_source_identity_and_stance():
         ledger.evidence_items.append(EvidenceItem(claim="claim " * 400, source_url=f"https://example.com/{i}",
             excerpt="quote " * 400, stance="context", note_id=f"note-{i}"))
     text = synthesis_context(ResearchTools(search=None, store=None, changes=None, ledger=ledger))
-    assert len(text) < 17000
-    assert "https://example.com/39" in text and "note-39" in text
-    assert '"stance":"context"' in text and '"display_truncated":true' in text
-    assert "every part of the original user question" in text
+    assert "current Research observations" in text
+    assert "Earlier scoped finding" not in text

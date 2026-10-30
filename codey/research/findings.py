@@ -75,19 +75,12 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
         # Archive against the frozen source observation selected by the caller,
         # even when the same URL has subsequently changed. Do not change the
         # live ledger's latest source view.
-        original = tools.ledger
         frozen = ResearchLedger()
         frozen.merge_opened_source(passage.source, passage.source_text, dict(passage.pages))
-        frozen.read_passages = dict(original.read_passages)
-        frozen.evidence_items = list(original.evidence_items)
-        tools.ledger = frozen
-        try:
-            outcome = tools.knowledge_write(lowered, finding_id=identity, locator="passage:" + passage.ref)
-        finally:
-            tools.ledger = original
+        outcome = tools.knowledge_write(lowered, finding_id=identity, locator="passage:" + passage.ref,
+                                        evidence_context=frozen)
         if not outcome.ok:
             return outcome
-        original.evidence_items = frozen.evidence_items
         return _saved(tools, identity, claim, ref)
     except (ValueError, TypeError, KeyError) as exc:
         return ResearchToolOutput(f"ERROR: {exc}", ok=False)

@@ -362,7 +362,8 @@ class ResearchTools:
         except ValueError as exc:
             return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 
-    def knowledge_write(self, args: dict[str, Any], *, finding_id: str = "", locator: str = "") -> ResearchToolOutput:
+    def knowledge_write(self, args: dict[str, Any], *, finding_id: str = "", locator: str = "",
+                        evidence_context: ResearchLedger | None = None) -> ResearchToolOutput:
         if self.store is None:
             return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         existing_id, existing_note, updating, identity_error = _resolve_write_target(self.store, args)
@@ -385,7 +386,8 @@ class ResearchTools:
                 '"source_url":"opened URL","excerpt":"exact contiguous source text","stance":"supports"}]. '
                 'Use source_search to locate a passage, then copy it exactly. '
                 'A URL alone is not evidence; no inferred quote or supporting claim was saved.', ok=False)
-        evidence_preparation = self.ledger.prepare_evidence_items(
+        evidence_context = evidence_context if evidence_context is not None else self.ledger
+        evidence_preparation = evidence_context.prepare_evidence_items(
             args.get("evidence"),
             fallback_sources=sources,
             fallback_claim=title,
@@ -423,7 +425,7 @@ class ResearchTools:
         from codey.research.knowledge_archive import note_knowledge
 
         try:
-            commit_id, mutations = note_knowledge(note, self.ledger, evidence_preparation, self.store.repository,
+            commit_id, mutations = note_knowledge(note, evidence_context, evidence_preparation, self.store.repository,
                                                  conditions=args.get("conditions"))
         except (ValueError, TypeError) as exc:
             return ResearchToolOutput(f"ERROR: {exc}", ok=False)

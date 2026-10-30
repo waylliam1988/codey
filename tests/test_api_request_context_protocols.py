@@ -51,7 +51,7 @@ def test_latest_research_context_is_ephemeral_in_real_kernel_requests(monkeypatc
         assert result.completed, result
         assert len(payloads) == 2
         for payload in payloads:
-            assert str(payload).count("Research observations (execution receipts") == 1
+            assert str(payload).count("Research observations (current receipt") == 1
             assert "response_format" not in payload
             assert "_codey_text_results" not in str(payload)
         assert "Research observations" not in str(provider._messages)

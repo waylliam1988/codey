@@ -50,45 +50,9 @@ METHODS = (
 def research_method_guidance(question: str, *, evidence_only: bool = False, finding_report: bool = False) -> str:
     text = question.casefold()
     selected = [method for method in METHODS if any(term in text for term in method.terms)]
-    lines = [
-        "Research method:",
-        "Clarify the question, constraints and what evidence would change the answer. Search saved knowledge, "
-        "then investigate direct evidence and competing explanations. Use additional mechanism/constraint queries "
-        "to discover relevant knowledge even when exact terms differ. A new connection remains a candidate until checked.",
-        "Cover each comparison and constraint explicitly requested by the user. For each, obtain a direct passage "
-        "and save its finding, or report that specific evidence gap. One saved general fact does not answer "
-        "the remaining questions; investigate them before drafting. Do not claim coverage of unread passages.",
-        "For a comparison, investigate each side independently. A search limited to one example does not "
-        "cover results in the broader field. When a source reports multiple interventions or comparators, "
-        "save separate findings and exact passages for each comparison, including null results and limits. "
-        "Never transfer a positive result between arms or treat a study protocol as an outcome.",
-        "Check that a source uses the same definition and intervention as the question; similar names can "
-        "describe different mechanisms. Preserve original names alongside translations when identity is uncertain.",
-        "Preserve observed results, author interpretations, user statements and model inferences separately. "
-        "For save_finding, conditions can use [{name:...,state:reported,value:...}] or state "
-        "not_reported/not_extracted/not_applicable. Leave unknown information unknown; never fill a template by guessing.",
-        "After reading a useful passage, save it with save_finding(claim, source_ref=sN, passage_ref=p...). "
-        "Select the exact p reference shown by the read tool; do not use a search preview or a heading. "
-        "Write claim in the requested answer language; the application keeps the original passage. "
-        "Use complete, scoped claim sentences that can be reused in the report, not topic labels. "
-        "If the page is mostly navigation or the passage is omitted, use source_search and a bounded read; "
-        "a title or search snippet is not the full study. Wait for each tool result; proposed calls are not saved facts.",
-        "Before done, check important claims against original evidence, contrary findings, scope and time. "
-        "Record unresolved questions and limitations; search absence is not a negative finding. "
-        "Multiple reports of one study are not independent evidence. Old answers, Ghost affinity and "
-        "graph proximity cannot increase evidence strength. Read current versions before revising knowledge.",
-    ]
-    if not evidence_only:
-        if finding_report:
-            lines.append("Cite only adopted findings with [f...] returned by save_finding. The application attaches "
-                         "ONLY those exact versions to the report; saved but uncited findings are not answer premises. "
-                         "Do not manually recopy their ids into done.knowledge_refs. For knowledge recalled from "
-                         "earlier work, include knowledge_refs:[{id:...,revision:...}] for the exact versions used. "
-                         "Never guess an id; these pin provenance, not proof of interpretation. Cite original premises.")
-        else:
-            lines.append("When done uses saved knowledge, include knowledge_refs:[{id:...,revision:...}] for the exact "
-                         "versions used. These pin provenance, not proof of interpretation; cite original premises "
-                         "rather than old answers.")
+    lines = ["Relevant domain checks:"]
+    if not evidence_only and not finding_report:
+        lines.append("When adopting saved knowledge, include its exact id and revision in done.knowledge_refs.")
     for method in selected[:4]:
         lines.append(f"{method.name}: sources: {method.sources}. Extract when available: "
                      f"{', '.join(method.conditions)}. Check: {method.evaluation}.")

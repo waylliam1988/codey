@@ -17,7 +17,7 @@ def test_investigation_done_accepts_only_acquisition_receipt(native, strict):
     snapshot = build_turn_snapshot(session, native=native)
     spec = next(item for item in snapshot.frozen_specs if item.name == "done")
     assert set(dict(spec.parameters)) == {"summary"}
-    assert "parent task owns the final report" in spec.description
+    assert "parent owns final synthesis" in spec.description
     assert "report_sections" not in snapshot.contract_text
     for extra, accepted in [({}, True), ({"report_sections": {"evidence": ["old report"]}}, False)]:
         args = {"summary": "Saved one finding; independent replication remains unlocated.", **extra}

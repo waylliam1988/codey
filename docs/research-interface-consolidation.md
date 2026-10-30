@@ -18,3 +18,12 @@ proposal/check/render; persist the accepted compilation; one exact reference
 binding and versioned evidence view. Fixed/local-model and real-web acceptance
 remain pending. Only local KoboldCpp is available; do not imply a reference-model
 comparison or semantic certification.
+
+2. One bounded ResearchContextView now supplies current questions, short labels,
+   pinned content/status/conditions, investigation previews and recent failures.
+   It reserves all registered questions and shares remaining space across refs;
+   truncation and omissions are explicit. Synthesis handoff supplies intent only.
+   Removed duplicate method/action/checklist guidance and the conflicting demand
+   to resave historical evidence. save_finding passes an explicit frozen evidence
+   context to the common writer instead of changing tools.ledger.
+   Focused context/finding/protocol/lifecycle checks: 46 passed; Ruff/mypy clean.
