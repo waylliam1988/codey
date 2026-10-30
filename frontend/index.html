@@ -148,12 +148,12 @@
         <input id="local-display-name" placeholder="Use the model name" maxlength="160" autocomplete="off" />
       </label>
       <label class="settings-field" for="local-context-preset">Context limit
-        <select id="local-context-preset"><option value="32768">32,768 tokens</option><option value="131072">131,072 tokens</option><option value="262144">262,144 tokens</option><option value="custom">Custom…</option></select>
+        <select id="local-context-preset"><option value="auto">Follow server</option><option value="32768">32,768 tokens</option><option value="131072">131,072 tokens</option><option value="262144">262,144 tokens</option><option value="custom">Custom…</option></select>
       </label>
       <label class="settings-field" id="local-custom-context" for="local-context-window" hidden>Custom limit (tokens)
         <input id="local-context-window" inputmode="numeric" type="number" min="1" step="1" />
       </label>
-      <p class="settings-hint">Match the context loaded by your model server.</p>
+      <p class="settings-hint">Automatic uses the running capacity reported by KoboldCpp. Other servers use a 32K fallback; select a limit to override.</p>
       <label class="settings-field" for="local-api-protocol">API protocol
         <select id="local-api-protocol"><option value="openai-completions">Chat Completions</option><option value="openai-responses">Responses</option></select>
       </label>

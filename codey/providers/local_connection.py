@@ -96,19 +96,17 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
         raise RuntimeError(
             f"local model at {effective.base_url} returned no usable model"
         )
-    from codey.providers.local_tokens import admitted_counter, counter_for
+    from codey.providers.local_tokens import admitted_context_budget, counter_for
 
-    budget = effective.context
-    counter, window = admitted_counter(effective.base_url, effective.api_key, config.api_protocol, budget.context_window_tokens)
-    if window <= budget.context_reserve_tokens:
-        raise ValueError("Local running context cannot accommodate the configured output reserve")
+    counter, budget = admitted_context_budget(effective.base_url, effective.api_key, config.api_protocol, effective.context)
+    window = budget.context_window_tokens
     return ApiProvider(
         effective.base_url,
         effective.model,
         api_key=effective.api_key,
         context_window_tokens=window,
-        context_reserve_tokens=effective.context.context_reserve_tokens,
-        context_keep_recent_tokens=min(budget.context_keep_recent_tokens, window - budget.context_reserve_tokens),
+        context_reserve_tokens=budget.context_reserve_tokens,
+        context_keep_recent_tokens=budget.context_keep_recent_tokens,
         output_tokens=budget.context_reserve_tokens,
         thinking_enabled=(False if config.native_tools_mode == "json" and config.thinking_enabled is not True
                           else config.thinking_enabled if selection.base_url == config.base_url else None),
@@ -120,7 +118,7 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
         usage_parser=parser_for(config.api_protocol), configure_request=configure_usage,
         request_counter=counter_for(counter, effective.base_url, effective.model, effective.api_key, window),
         connection_revision=config.connection_revision or "local-runtime",
-        budget_source="server_and_configuration" if counter == "koboldcpp" else "configuration",
+        budget_source="server" if budget.source == "server" else "server_and_configuration" if counter == "koboldcpp" else "configuration",
     )
 
 
@@ -144,18 +142,17 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
         selection = {"base_url": target.base_url, "model": target.model}
     config = capture_local_run_config(selection)
     budget = _local_config.resolve_local_context_budget(config)
-    from codey.providers.local_tokens import admitted_counter
+    from codey.providers.local_tokens import admitted_context_budget
 
-    counter, window = admitted_counter(config.base_url, config.api_key, config.api_protocol, budget.context_window_tokens)
-    if window <= budget.context_reserve_tokens:
-        raise ValueError("Local running context cannot accommodate the configured output reserve")
+    counter, budget = admitted_context_budget(config.base_url, config.api_key, config.api_protocol, budget)
+    window = budget.context_window_tokens
     return ApiRunSelection("local", _target_revision(config), config.model, config.api_protocol,
                            _local_config.resolve_local_native_tools(config), window,
                            budget.context_reserve_tokens, min(budget.context_keep_recent_tokens, window - budget.context_reserve_tokens),
                            config.thinking_enabled, config.reasoning_effort,
                            stream=_local_config.resolve_local_native_tools(config),
                            output_tokens=budget.context_reserve_tokens, token_counter=counter,
-                           budget_source="server_and_configuration" if counter == "koboldcpp" else "configuration",
+                           budget_source="server" if budget.source == "server" else "server_and_configuration" if counter == "koboldcpp" else "configuration",
                            text_tool_format="json_schema" if config.native_tools_mode == "json" else "plain")
 
 

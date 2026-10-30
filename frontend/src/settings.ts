@@ -161,7 +161,9 @@ export interface SettingsModuleDeps {
       const custom = $('local-context-preset').value === 'custom';
       $('local-custom-context').hidden = !custom;
       if (custom) $('local-context-window').focus();
-      else $('local-context-window').value = $('local-context-preset').value;
+      else
+        $('local-context-window').value =
+          $('local-context-preset').value === 'auto' ? '' : $('local-context-preset').value;
       updateConnectionSaveState();
     };
     $('local-config-form').addEventListener('input', updateConnectionSaveState);
@@ -236,6 +238,7 @@ export interface SettingsModuleDeps {
         models?: string[];
         candidates?: string[];
         context?: { context_window_tokens?: string | number };
+        context_mode: 'auto' | 'manual';
         native_tools_mode?: string;
         api_protocol?: string;
         context_error?: string;
@@ -270,9 +273,10 @@ export interface SettingsModuleDeps {
           return button;
         }),
       );
-      const tokens = String(local.context?.context_window_tokens || 32768);
+      const tokens = local.context_mode === 'auto' ? '' : String(local.context?.context_window_tokens || '');
       $('local-context-window').value = tokens;
-      $('local-context-preset').value = ['32768', '131072', '262144'].includes(tokens) ? tokens : 'custom';
+      $('local-context-preset').value =
+        local.context_mode === 'auto' ? 'auto' : ['32768', '131072', '262144'].includes(tokens) ? tokens : 'custom';
       $('local-custom-context').hidden = $('local-context-preset').value !== 'custom';
       $('local-native-tools-mode').value = local.native_tools_mode || 'auto';
       $('local-api-protocol').value = local.api_protocol || 'openai-completions';
@@ -323,6 +327,7 @@ export interface SettingsModuleDeps {
         'local-api-protocol',
         'local-native-tools-mode',
         'local-context-window',
+        'local-context-preset',
         'local-api-key',
       ].map((id) => $(id).value.trim()),
     );
@@ -340,13 +345,13 @@ export interface SettingsModuleDeps {
     const base_url = $('local-base-url').value.trim(),
       model = $('local-model-name').value.trim();
     if (!base_url) return;
-    const payload: Record<string, string | boolean> = {
+    const payload: Record<string, string | boolean | null> = {
       base_url,
       model,
       display_name: $('local-display-name').value.trim(),
       api_protocol: $('local-api-protocol').value,
       native_tools_mode: $('local-native-tools-mode').value,
-      context_window_tokens: $('local-context-window').value.trim(),
+      context_window_tokens: $('local-context-preset').value === 'auto' ? null : $('local-context-window').value.trim(),
     };
     if (payload.native_tools_mode === 'json') payload.thinking_enabled = false;
     const key = $('local-api-key').value.trim();

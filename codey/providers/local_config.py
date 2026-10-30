@@ -393,7 +393,7 @@ def parse_local_config_update(
             "context_window_tokens required when overriding "
             "context_reserve_tokens or context_keep_recent_tokens"
         )
-    context = previous.context
+    context = None if "context_window_tokens" in body and body["context_window_tokens"] is None else previous.context
     thinking = previous.thinking_enabled if base_url == previous.base_url.rstrip("/") else None
     display_name = previous.display_name if base_url == previous.base_url.rstrip("/") and model == previous.model else ""
     if "display_name" in body:
@@ -580,6 +580,7 @@ def assemble_bootstrap_payload(
         "native_tools": native_tools,
         "api_protocol": config.api_protocol,
         "context": context_payload,
+        "context_mode": "auto" if context_payload is not None and context_payload["source"] == "default" else "manual",
         "context_window_tokens": context_window,
         "context_reserve_tokens": context_reserve,
         "context_keep_recent_tokens": context_keep,

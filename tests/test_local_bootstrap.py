@@ -48,6 +48,23 @@ def test_context_budget_validation() -> None:
     assert validate_context_budget(LocalContextBudget(8192, 2048, 6144)) == ""
 
 
+def test_explicit_null_restores_automatic_context_but_omission_preserves_cap():
+    from codey.providers import local_config as config
+
+    previous = config.LocalProviderConfig(base_url="http://localhost:9/v1", model="fixture",
+        context=config.context_budget_for_window(131072))
+    body = {"base_url": previous.base_url, "model": previous.model}
+    unchanged, error = config.parse_local_config_update(body, previous)
+    assert not error and unchanged is not None and unchanged.context == previous.context
+    automatic, error = config.parse_local_config_update({**body, "context_window_tokens": None}, previous)
+    assert not error and automatic is not None and automatic.context is None
+    restored = config.config_from_dict(config.config_to_payload(automatic))
+    assert restored.context is None
+    target = config.LocalTargetSelection(previous.base_url, previous.model, "")
+    assert config.assemble_bootstrap_payload(restored, target, None, [])["context_mode"] == "auto"
+    assert config.assemble_bootstrap_payload(previous, target, None, [])["context_mode"] == "manual"
+
+
 def test_parse_update_derives_preset_and_mode() -> None:
     from codey.providers.local_config import LocalProviderConfig, parse_local_config_update
 

@@ -74,6 +74,40 @@ def test_connection_save_is_independent_and_returns_to_clean_state(page, models)
     expect(connection).to_be_disabled()
 
 
+def test_context_auto_survives_unrelated_save_and_can_restore_follow_server(page):
+    local = model_settings_route(page)
+    local["context_mode"] = "auto"
+    saved = []
+
+    def route(request):
+        if request.request.method == "POST":
+            body = request.request.post_data_json
+            saved.append(body)
+            local["context_mode"] = "auto" if body["context_window_tokens"] is None else "manual"
+            if body["context_window_tokens"] is not None:
+                local["context"] = {"context_window_tokens": int(body["context_window_tokens"])}
+        request.fulfill(json={"ok": True, "local": local})
+
+    page.route("**/api/local_provider", route)
+    open_connection_settings(page)
+    page.locator("#local-advanced summary").click()
+    expect(page.locator("#local-context-preset-button")).to_have_text("Follow server")
+    page.locator("#local-display-name").fill("My local model")
+    page.locator("#local-config-save").click()
+    expect(page.locator("#local-config-save")).to_be_disabled()
+    assert saved[-1]["context_window_tokens"] is None
+    page.locator("#local-context-preset-button").click()
+    page.get_by_role("option", name="131,072 tokens", exact=True).click()
+    page.locator("#local-config-save").click()
+    expect(page.locator("#local-config-save")).to_be_disabled()
+    assert saved[-1]["context_window_tokens"] == "131072"
+    page.locator("#local-context-preset-button").click()
+    page.get_by_role("option", name="Follow server", exact=True).click()
+    page.locator("#local-config-save").click()
+    expect(page.locator("#local-config-save")).to_be_disabled()
+    assert saved[-1]["context_window_tokens"] is None
+
+
 def test_catalog_removing_focused_model_returns_focus_to_its_source(page, models):
     pending = []
     page.route('**/api/model_catalog', lambda r:pending.append(r))

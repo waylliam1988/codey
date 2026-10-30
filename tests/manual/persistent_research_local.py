@@ -29,11 +29,8 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
     from unittest.mock import patch
 
     from codey.app import headless_runner
-    from codey.providers import api_transport, local_config
+    from codey.providers import api_transport, local_config, local_connection
     from codey.providers.api_provider import ApiProvider
-    from codey.providers.local_response_codec import normalize_local_reply
-    from codey.providers.local_tokens import admitted_counter, counter_for
-    from codey.providers.local_usage import configure_usage, parser_for
     from codey.providers.model_preferences import ModelPreferences
 
     documents = [] if live_web else json.loads((directory / "sources.json").read_text(encoding="utf-8"))
@@ -66,6 +63,25 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         return decode_json(raw)
 
     class ObservedProvider(ApiProvider):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.timeout, self.temperature = provider_timeout, temperature
+            original_configure = self.configure_request
+
+            def configure(payload):
+                original_configure(payload)
+                payload.update(seed=seed)
+                if merge_clock:
+                    messages = payload.get("messages", [])
+                    if (len(messages) >= 2 and messages[-1].get("role") == messages[-2].get("role") == "user"
+                            and isinstance(messages[-2].get("content"), str)):
+                        messages[-2] = {**messages[-2], "content": messages[-1]["content"] + "\n\n" + messages[-2]["content"]}
+                        messages.pop()
+                record({"event": "admitted_payload", "payload": payload})
+
+            self.configure_request = configure
+            record({"event": "connection_budget", "budget": vars(self.context_budget)})
+
         def _generate(self, messages, tools=None, **kwargs):
             record({"event": "generation_start", "messages": messages, "tools": [t.name for t in tools or ()]})
             started = time.monotonic()
@@ -101,30 +117,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
     def connect(provider_id, **kwargs):
         if provider_id != "local":
             raise ValueError("probe permits local model only")
-        def configure(payload):
-            configure_usage(payload)
-            payload.update(seed=seed)
-            if merge_clock:
-                messages = payload.get("messages", [])
-                if (len(messages) >= 2 and messages[-1].get("role") == messages[-2].get("role") == "user"
-                        and isinstance(messages[-2].get("content"), str)):
-                    messages[-2] = {**messages[-2], "content": messages[-1]["content"] + "\n\n" + messages[-2]["content"]}
-                    messages.pop()
-            record({"event": "admitted_payload", "payload": payload})
-
-        counter, window = admitted_counter(upstream + "/v1", "", "openai-completions", 32768)
-        record({"event": "connection_budget", "counter": counter, "window": window})
-        client = ObservedProvider(upstream + "/v1", model, timeout=provider_timeout, temperature=temperature,
-                           thinking_enabled=thinking, reasoning_effort=reasoning_effort,
-                           output_tokens=5000 if thinking or reasoning_effort else 2500, context_reserve_tokens=5500, native_tools=native,
-                           stream=native, context_window_tokens=window,
-                           request_counter=counter_for(counter, upstream + "/v1", model, "", window),
-                           usage_parser=parser_for("openai-completions"),
-                           budget_source="server_and_configuration" if counter == "koboldcpp" else "configuration",
-                           text_decoder=normalize_local_reply,
-                           configure_request=configure,
-                           text_tool_format="json_schema" if constrained_text else "plain")
-        return client
+        return local_connection.connect_local()
 
     tasks = {
         "research": question,
@@ -175,6 +168,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
 
     with ExitStack() as stack:
         stack.enter_context(patch.object(headless_runner, "HeadlessAppContext", Context))
+        stack.enter_context(patch.object(local_connection, "ApiProvider", ObservedProvider))
         stack.enter_context(patch.object(api_transport, "_json_object", observed_json))
         stack.enter_context(patch.object(local_config, "DEFAULT_STATE_HOME", directory / "state"))
         stack.enter_context(patch.dict(os.environ, {"LOCAL_OPENAI_BASE_URL": upstream + "/v1", "LOCAL_OPENAI_MODEL": model}))
@@ -183,6 +177,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             stack.enter_context(patch("codey.app.task_services.default_research_search_provider", Search, create=True))
         local_config.save_local_config(local_config.LocalProviderConfig(base_url=upstream + "/v1", model=model,
             native_tools_mode="json" if constrained_text else "on" if native else "off", thinking_enabled=thinking,
+            reasoning_effort=reasoning_effort,
             connection_revision="persistent-research-probe"))
         request = headless_runner.HeadlessRequest(project=None, task=tasks[name], provider_id="local",
             max_turns=max_turns, session_id=session_id,
@@ -190,7 +185,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             intent="research" if name in {"first", "research"} else "hybrid", sources_open_required=live_web,
             required_tools=("knowledge_read", "knowledge_commit") if name in {"recall", "revise"} else (),
             requested_capabilities=("knowledge.read", "knowledge.write", "web.read"))
-        result = headless_runner.run_headless(request, emit_jsonl=emit, connect_provider=connect,
+        result = headless_runner.run_headless(request, emit_jsonl=emit,
                                              connect_reviewer=connect if name in {"recall", "revise"} else None)
     faulthandler.cancel_dump_traceback_later()
     stacks.close()

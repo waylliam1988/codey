@@ -11,6 +11,7 @@ from typing import Any
 from codey.providers.api_metering import RequestCounter, estimate_request
 from codey.providers.api_transport import NoGenerationRedirect
 from codey.providers.error_classification import RequestPrepError
+from codey.providers.local_config import LocalContextBudget, context_budget_for_window, validate_context_budget
 from codey.providers.local_selection import _metadata_json
 from codey.providers.token_accounting import RequestContextCount
 
@@ -22,7 +23,7 @@ def kobold_root(base_url: str) -> str:
     return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
 
 
-def admitted_counter(base_url: str, api_key: str, protocol: str, window: int) -> tuple[str, int]:
+def admitted_counter(base_url: str, api_key: str, protocol: str, window: int, follow_server: bool = False) -> tuple[str, int]:
     parsed = urllib.parse.urlsplit(base_url)
     if parsed.path.rstrip("/") != "/v1" or protocol != "openai-completions":
         return "estimated", window
@@ -35,7 +36,24 @@ def admitted_counter(base_url: str, api_key: str, protocol: str, window: int) ->
     maximum = _metadata_json(root + "/api/extra/true_max_context_length", api_key).get("value")
     if type(maximum) is not int or maximum <= 0:
         raise ValueError("KoboldCpp did not report a valid running context capacity")
-    return "koboldcpp", min(window, maximum)
+    return "koboldcpp", maximum if follow_server else min(window, maximum)
+
+
+def admitted_context_budget(base_url: str, api_key: str, protocol: str,
+                            budget: LocalContextBudget) -> tuple[str, LocalContextBudget]:
+    """Admit one connection budget; only an unconfigured window follows the server."""
+    from dataclasses import replace
+
+    counter, window = admitted_counter(base_url, api_key, protocol, budget.context_window_tokens, budget.source == "default")
+    if counter == "koboldcpp" and budget.source == "default":
+        admitted = replace(context_budget_for_window(window), source="server")
+    else:
+        admitted = replace(budget, context_window_tokens=window,
+                           context_keep_recent_tokens=min(budget.context_keep_recent_tokens, window - budget.context_reserve_tokens))
+    error = validate_context_budget(admitted)
+    if error:
+        raise ValueError(f"Local running context cannot accommodate the configured budget: {error}")
+    return counter, admitted
 
 
 def counter_for(identity: str, base_url: str, model: str, api_key: str, window: int) -> RequestCounter:

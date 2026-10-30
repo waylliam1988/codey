@@ -227,7 +227,7 @@ def select_connection_models(page, connection, selected=None):
 def model_settings_route(page, *, thinking=True):
     local = {"connected": True, "base_url": "http://127.0.0.1:5001/v1", "model": "koboldcpp/Gemma4-12B-Q4",
              "display_name": "Gemma4 12B", "models": ["koboldcpp/Gemma4-12B-Q4", "second-model"],
-             "context": {"context_window_tokens": 262144}, "native_tools_mode": "auto", "has_api_key": True,
+             "context": {"context_window_tokens": 262144}, "context_mode": "manual", "native_tools_mode": "auto", "has_api_key": True,
              "thinking_options": ["off", "minimal", "low", "medium", "high"] if thinking else []}
     page.route("**/api/local_provider", lambda route: route.fulfill(json={"ok": True, "local": local}))
     page.route("**/api/api_models", lambda route: route.fulfill(json={"ok": True, "connections": [api_connection_payload(local)]}))

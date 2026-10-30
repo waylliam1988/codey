@@ -1,9 +1,63 @@
 """KoboldCpp factories count the complete template using the admitted running model."""
 import json
 import threading
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import SimpleNamespace
 
 import pytest
+
+
+@pytest.mark.parametrize("entrypoint", ["admitted", "direct"])
+@pytest.mark.parametrize("mode,expected", [("auto", 262144), ("manual", 131072), ("env", 65536)])
+def test_production_local_budget_follows_server_unless_explicitly_capped(tmp_path, monkeypatch, entrypoint, mode, expected):
+    from codey.providers import local_config, local_connection, local_tokens
+
+    for key in ("LOCAL_OPENAI_CONTEXT_WINDOW", "LOCAL_OPENAI_CONTEXT_RESERVE", "LOCAL_OPENAI_CONTEXT_KEEP"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(local_config, "DEFAULT_STATE_HOME", tmp_path)
+    config = local_config.LocalProviderConfig(base_url="http://localhost:9/v1", model="fixture", connection_revision="test")
+    if mode == "manual":
+        config = replace(config, context=local_config.context_budget_for_window(expected))
+    if mode == "env":
+        monkeypatch.setenv("LOCAL_OPENAI_CONTEXT_WINDOW", str(expected))
+    local_config.save_local_config(config)
+    maximum = [262144]
+    monkeypatch.setattr(local_tokens, "_metadata_json", lambda url, key: (
+        {"result": "KoboldCpp", "jinja": True} if url.endswith("/version") else {"value": maximum[0]}))
+    monkeypatch.setattr(local_connection._local_discovery, "resolve_local_endpoint", lambda **kwargs: SimpleNamespace(
+        base_url=config.base_url, models=(config.model,)))
+    if entrypoint == "admitted":
+        selection = local_connection.capture_selection({"base_url": config.base_url, "model": config.model})
+        assert selection.context_window_tokens == expected
+        assert selection.token_counter == "koboldcpp"
+        assert selection.budget_source == ("server" if mode == "auto" else "server_and_configuration")
+        # A resumed task keeps the admitted budget, even after settings/server growth.
+        maximum[0] = 524288
+        local_config.save_local_config(replace(config, context=local_config.context_budget_for_window(32768)))
+        monkeypatch.setenv("LOCAL_OPENAI_CONTEXT_WINDOW", "32768")
+        provider = local_connection.open_selection(selection)
+        assert provider.context_budget.window_tokens == expected
+        assert provider.context_budget.output_tokens + provider.context_budget.safety_tokens == selection.context_reserve_tokens
+        if mode == "auto":
+            monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_WINDOW")
+            local_config.save_local_config(config)
+            assert local_connection.capture_selection({"base_url": config.base_url, "model": config.model}).context_window_tokens == maximum[0]
+    else:
+        provider = local_connection.connect_local(config=config)
+    assert provider.context_budget.window_tokens == expected
+    if mode == "auto":
+        assert provider.context_budget.output_tokens + provider.context_budget.safety_tokens == 32768
+        assert provider.context_budget.keep_recent_tokens == 32000
+
+
+def test_automatic_budget_does_not_invent_capacity_for_unconfirmed_server(monkeypatch):
+    from codey.providers import local_config, local_tokens
+
+    monkeypatch.setattr(local_tokens, "_metadata_json", lambda url, key: {})
+    counter, budget = local_tokens.admitted_context_budget("http://localhost:9/v1", "", "openai-completions",
+        local_config.LocalContextBudget(32768, 8192, 12000))
+    assert counter == "estimated" and budget.context_window_tokens == 32768
 
 
 @pytest.mark.parametrize("entrypoint", ["admitted", "direct"])
