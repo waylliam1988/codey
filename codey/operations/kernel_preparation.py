@@ -35,5 +35,6 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
         native=native, tool_names=snapshot.tool_names, task_guidance="\n\n".join(guidance),
         coding_context=prepare_coding_context(session, completion_context=completion_context),
         request_scoped_contract=request_scoped_contract,
+        done_spec=next((spec for spec in snapshot.model_specs if spec.name == "done"), None),
     )
     return PreparedKernelTurn(snapshot, prompt)

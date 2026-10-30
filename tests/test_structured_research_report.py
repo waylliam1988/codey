@@ -104,6 +104,29 @@ def test_ordinary_done_keeps_plain_answer_contract(native):
     assert plan.control and plan.control.body == "Answer" and not plan.protocol_error
 
 
+@pytest.mark.parametrize("kind", ["research", "evidence_followup", "chat"])
+def test_native_completion_guidance_matches_frozen_phase_schema(kind):
+    from codey.operations.kernel_preparation import prepare_kernel_turn
+    from codey.operations.kernel_prompt import _repair_prompt
+
+    state = session()
+    state.task_kind = kind
+    prepared = prepare_kernel_turn(state, user_task="Investigate the evidence", context_text="",
+                                   task_guidance="", native=True)
+    done = next(spec for spec in prepared.snapshot.model_specs if spec.name == "done")
+    structured = "report_sections" in done.required
+    invalid = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("bad", "done", {}),)),
+                             snapshot=prepared.snapshot)
+    repair = _repair_prompt(invalid, snapshot=prepared.snapshot, native=True)
+    for text in (prepared.prompt, repair):
+        assert ("BOTH required top-level arguments" in text) == structured
+        assert ("summary contains the complete response" in text) != structured
+        example = text.split("Native done arguments example (replace sample content with verified task facts): ", 1)[1]
+        args = json.JSONDecoder().raw_decode(example)[0]
+        assert set(done.required) <= set(args)
+        assert "tool" not in args and "args" not in args
+
+
 @pytest.mark.parametrize("reply", [AssistantTurn(text="A plain research report"),
                                    decode_text_turn("A plain research report")])
 def test_plain_text_cannot_bypass_required_research_report_arguments(reply):

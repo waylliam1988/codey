@@ -7,6 +7,7 @@ they never send, execute, or hold task state.
 
 from __future__ import annotations
 
+import json
 import sys
 from typing import TYPE_CHECKING, Any
 
@@ -20,6 +21,7 @@ from codey.workspace.revision import valid_workspace_fingerprint, valid_workspac
 
 if TYPE_CHECKING:
     from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.toolchain.tool_spec import ToolSpec
 
 __all__ = [
     "kernel_prompt_for_session",
@@ -34,12 +36,23 @@ _NATIVE_READ_BATCH_RULE = (
     "Group independent read-only calls into one native tool_calls turn. "
     "Wait for their results before dependent actions. Submit verification and done separately."
 )
-_NATIVE_FINAL_RULE = (
-    "For the final answer, use done with a summary string if declared. Without report_sections, summary contains the complete response "
-    "in the user's requested final format. With report_sections, summary contains only the conclusion; "
-    "put the remaining report parts in report_sections, without duplicating the full report in summary. "
-    "Requested JSON is a bare document without Markdown fences inside summary, not the outer tool-call object."
-)
+def _native_final_rule(*, structured_report: bool) -> str:
+    if structured_report:
+        return ("Call done with BOTH required top-level arguments: summary and report_sections. "
+                "summary contains only the cited conclusion; put the remaining report parts in report_sections. "
+                "A complete report inside summary alone is invalid. Do not duplicate the report in summary.")
+    return ("For the final answer, use done with a summary string if declared. summary contains the complete response "
+            "in the user's requested final format. Requested JSON is a bare document without Markdown fences "
+            "inside summary, not the outer tool-call object.")
+
+
+def _native_done_guidance(spec: ToolSpec | None) -> str:
+    rule = _native_final_rule(structured_report=spec is not None and "report_sections" in spec.required)
+    if spec is not None and spec.json_examples:
+        example = json.loads(spec.json_examples[0])
+        rule += " Native done arguments example (replace sample content with verified task facts): " + json.dumps(
+            example["args"], ensure_ascii=False, separators=(",", ":"))
+    return rule
 _TEXT_ACTION_RULE = (
     "For actions, reply with exactly one bare JSON tool call per turn and wait for its result. "
     "Do not wrap executable calls in code fences."
@@ -71,6 +84,7 @@ def kernel_prompt_for_session(
     task_guidance: str = "",
     coding_context: CodingContext | None = None,
     request_scoped_contract: bool = False,
+    done_spec: ToolSpec | None = None,
 ) -> str:
     task_text = str(user_task or getattr(session, "task_text", "") or "").strip()
     handoff = str(getattr(session, "handoff", "") or "").strip()
@@ -95,7 +109,7 @@ def kernel_prompt_for_session(
     if native:
         parts.append(
             "For actions, use native tool calls, not JSON in prose. "
-            + _NATIVE_READ_BATCH_RULE + " " + _NATIVE_ARGUMENTS_RULE + " " + _NATIVE_FINAL_RULE
+            + _NATIVE_READ_BATCH_RULE + " " + _NATIVE_ARGUMENTS_RULE + " " + _native_done_guidance(done_spec)
         )
     elif request_scoped_contract:
         parts.append(
@@ -159,7 +173,8 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
                 "do not emit bare words such as state:reported. Use booleans only for boolean parameters."
             )
         if spec is None or spec.name == "done":
-            instruction += " " + _NATIVE_FINAL_RULE
+            done = next((item for item in snapshot.model_specs if item.name == "done"), None)
+            instruction += " " + _native_done_guidance(done)
     else:
         detail = (tool_repair_text(error, spec) if spec is not None else
                   error + "\nAvailable tool signatures:\n" + "\n".join(tool_signature(item) for item in snapshot.model_specs))
@@ -192,7 +207,7 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
 
 def _completion_followup(feedback: str, *, native: bool, structured_report: bool = False) -> str:
     """Render completion feedback for its transport without changing the verdict."""
-    rule = (_NATIVE_ARGUMENTS_RULE + " " + _NATIVE_FINAL_RULE if native else
+    rule = (_NATIVE_ARGUMENTS_RULE + " " + _native_final_rule(structured_report=structured_report) if native else
             r'Preserve the requested answer format. Encode any needed line breaks once as \n inside JSON strings. '
             "Fenced examples are answer text and do not execute tools.")
     if structured_report:
