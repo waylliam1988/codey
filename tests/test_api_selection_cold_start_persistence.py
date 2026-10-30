@@ -2,6 +2,8 @@
 import json
 from dataclasses import replace
 
+import pytest
+
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.providers import local_config
 from codey.runtime.core.api_selection import ApiRunSelection
@@ -9,6 +11,30 @@ from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.write.task_runtime import TaskRuntime
 from codey.task.model import TaskSubmission
+
+
+@pytest.mark.parametrize("thinking,effort", [(False, None), (True, "low")])
+def test_default_local_admission_keeps_saved_controls_without_leaking_to_other_models(tmp_path, monkeypatch, thinking, effort):
+    from codey.providers.local_connection import capture_selection, open_selection
+
+    for name in ("LOCAL_OPENAI_BASE_URL", "LOCAL_OPENAI_MODEL", "LOCAL_OPENAI_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(local_config, "DEFAULT_STATE_HOME", tmp_path)
+    monkeypatch.setattr("codey.providers.local_tokens.admitted_counter", lambda *args: ("estimated", 32768))
+    config = local_config.LocalProviderConfig(base_url="http://localhost:9/v1", model="original", connection_revision="test",
+        thinking_enabled=thinking, reasoning_effort=effort)
+    local_config.save_local_config(config)
+    frozen = capture_selection()
+    assert frozen.thinking_enabled is thinking and frozen.reasoning_effort == effort
+    local_config.save_local_config(replace(config, thinking_enabled=not thinking, reasoning_effort=None))
+    provider = open_selection(frozen)
+    assert provider.thinking_enabled is thinking and provider.reasoning_effort == effort
+    explicit = capture_selection({"base_url": config.base_url, "model": config.model})
+    assert explicit.thinking_enabled is None and explicit.reasoning_effort is None
+    monkeypatch.setenv("LOCAL_OPENAI_MODEL", "different-model")
+    other = capture_selection()
+    assert other.model_id == "different-model"
+    assert other.thinking_enabled is None and other.reasoning_effort is None
 
 
 def test_cold_start_keeps_admitted_selection_and_does_not_write_secret(tmp_path):

@@ -139,7 +139,13 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
             if endpoint is None:
                 raise ValueError("Local connection is unavailable")
             target = _local_config.LocalTargetSelection(endpoint.base_url, endpoint.default_model, target.api_key)
-        selection = {"base_url": target.base_url, "model": target.model}
+        default_selection: dict[str, object] = {"base_url": target.base_url, "model": target.model}
+        # A default admission uses this connection's saved model settings.
+        # Explicit per-chat selections remain independent, and environment
+        # target/model overrides cannot inherit another model's controls.
+        if target.base_url.rstrip("/") == saved.base_url.rstrip("/") and target.model == saved.model:
+            default_selection.update(thinking=saved.thinking_enabled, effort=saved.reasoning_effort)
+        selection = default_selection
     config = capture_local_run_config(selection)
     budget = _local_config.resolve_local_context_budget(config)
     from codey.providers.local_tokens import admitted_context_budget

@@ -60,7 +60,7 @@ def test_automatic_budget_does_not_invent_capacity_for_unconfirmed_server(monkey
     assert counter == "estimated" and budget.context_window_tokens == 32768
 
 
-@pytest.mark.parametrize("entrypoint", ["admitted", "direct"])
+@pytest.mark.parametrize("entrypoint", ["admitted", "admitted_default", "direct"])
 @pytest.mark.parametrize("request_mode", ["text", "tools"])
 def test_local_factory_freezes_kobold_capability_clamps_window_and_counts_before_generating(tmp_path, monkeypatch, entrypoint, request_mode):
     from codey.providers import local_config, local_connection
@@ -102,8 +102,9 @@ def test_local_factory_freezes_kobold_capability_clamps_window_and_counts_before
         base_url=base, model="fixture", thinking_enabled=False,
         context=local_config.LocalContextBudget(8192, 1024, 2048)))
     try:
-        if entrypoint == "admitted":
-            selection = local_connection.capture_selection({"base_url": base, "model": "fixture", "thinking": False})
+        if entrypoint in {"admitted", "admitted_default"}:
+            selection = local_connection.capture_selection(
+                {"base_url": base, "model": "fixture", "thinking": False} if entrypoint == "admitted" else None)
             assert selection.context_window_tokens == 4096
             provider = local_connection.open_selection(selection)
         else:
