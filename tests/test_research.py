@@ -1050,7 +1050,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             def route(self, pattern, handler) -> None:
                 self.routes.append((pattern, handler))
 
-            def unroute(self, _pattern, _handler) -> None:
+            def unroute_all(self, *, behavior) -> None:
+                assert behavior == "ignoreErrors"
                 return None
 
             def goto(self, _url, wait_until="domcontentloaded") -> None:
@@ -1251,7 +1252,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             def route(self, pattern, handler) -> None:
                 self.routes.append((pattern, handler))
 
-            def unroute(self, _pattern, _handler) -> None:
+            def unroute_all(self, *, behavior) -> None:
+                assert behavior == "ignoreErrors"
                 return None
 
             def goto(self, _url, wait_until="domcontentloaded") -> None:
@@ -4057,7 +4059,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             def content(self) -> str:
                 return "<html><title>Blank</title><body></body></html>"
 
-            def unroute(self, _pattern, _handler) -> None:
+            def unroute_all(self, *, behavior) -> None:
+                assert behavior == "ignoreErrors"
                 return None
 
             def close(self) -> None:
@@ -4124,7 +4127,8 @@ class ResearchBoundaryTests(unittest.TestCase):
                     "and reload this page to continue.</body></html>"
                 )
 
-            def unroute(self, _pattern, _handler) -> None:
+            def unroute_all(self, *, behavior) -> None:
+                assert behavior == "ignoreErrors"
                 return None
 
             def close(self) -> None:
@@ -4621,7 +4625,8 @@ class NetworkPolicyTests(unittest.TestCase):
             def route(self, pattern, handler) -> None:
                 self.routes.append((pattern, handler))
 
-            def unroute(self, _pattern, _handler) -> None:
+            def unroute_all(self, *, behavior) -> None:
+                assert behavior == "ignoreErrors"
                 return None
 
             def close(self) -> None:

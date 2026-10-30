@@ -16,6 +16,23 @@ from codey.research.tools import ResearchTools
 URL = "https://example.com/article"
 
 
+def test_browser_close_detaches_inflight_routes_before_context_close():
+    provider = browser_search.BrowserSearchProvider()
+    calls = []
+
+    class Page:
+        def unroute_all(self, *, behavior):
+            calls.append(("routes", behavior))
+
+    provider._fetch_page = provider._search_page = Page()
+    provider._session = SimpleNamespace(close=lambda: calls.append(("context", "close")))
+    provider._close_on_browser_thread()
+    assert calls == [("routes", "ignoreErrors"), ("context", "close")]
+    assert provider._fetch_page is provider._search_page is provider._session is None
+    provider._close_on_browser_thread()
+    assert len(calls) == 2
+
+
 @pytest.mark.usefixtures("public_source_dns")
 def test_chinese_challenge_is_not_acquired_as_citable_evidence():
     response = mock.MagicMock(status=200, headers={"content-type": "text/html; charset=utf-8"})

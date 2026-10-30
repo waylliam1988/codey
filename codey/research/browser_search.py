@@ -576,7 +576,7 @@ class BrowserSearchProvider:
 
     def _release_page_guard_on_browser_thread(self, page: Any) -> None:
         try:
-            page.unroute("**/*", self._guard_request)
+            page.unroute_all(behavior="ignoreErrors")
             page._codey_research_guarded = False
         except Exception:
             pass

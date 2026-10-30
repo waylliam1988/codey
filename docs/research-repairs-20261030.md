@@ -32,3 +32,18 @@ Ruff,
 mypy, Pyrefly and ty passed. Previously documented prompt hash and wording tests
 still fail on the parent revision and were not rewritten to conceal the baseline.
 No full pytest or push was performed.
+
+## Browser route shutdown
+
+BrowserSearchProvider now detaches its page routes with
+`unroute_all(behavior="ignoreErrors")` before closing the context. This uses
+Playwright's route-handler lifecycle support so callbacks already in flight do
+not leave unobserved TargetClosedError futures after shutdown. Shared search/fetch
+pages are still released exactly once; repeated close remains harmless.
+
+The real production browser fetched `https://www.sqlite.org/wal.html` successfully
+(31,603 text characters), then closed twice without TargetClosedError. Node still
+reported its unrelated DEP0169 deprecation warning. The focused regression checks
+route teardown precedes context close. Browser tests, finding tests and structured
+report tests passed together (47 tests); Ruff and the three production type checks
+passed. This verifies the shutdown path, not research content correctness.
