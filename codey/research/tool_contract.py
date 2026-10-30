@@ -16,11 +16,10 @@ PROTOCOL_NATIVE_SEARCH_LEAK = "native_search_leak"
 PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 
 STRUCTURED_REPORT_EXAMPLE = (
-    '{"tool":"done","args":{"summary":"Supported conclusion [1]","report_sections":'
-    '{"evidence":["Saved evidence[].claim wording [1]"],'
-    '"counter":["Observed limitation and its scope [1]"],'
-    '"source_quality":["Study design and limits"],"coverage":["Queries and gaps"],'
-    '"sources":["[1] Opened and saved source title - https://exact-opened-url"]}}}'
+    '{"tool":"done","args":{"summary":"Supported conclusion [f0123456789abcdef]","report_sections":'
+    '{"evidence":["Saved finding with its conditions [f0123456789abcdef]"],'
+    '"counter":["Observed limitation and its scope [f0123456789abcdef]"],'
+    '"source_quality":["Study design and limits"],"coverage":["Queries and gaps"]}}}'
 )
 
 def knowledge_read_id_guidance(*, source_tool: str = "") -> str:
@@ -132,6 +131,18 @@ TOOL_CONTRACTS = {
                     "not_reported/not_extracted/not_applicable. Keep unknowns unknown. "
                     "confidence is not evidence strength. Use knowledge_commit with restricted scope for user observations.",
     ),
+    "save_finding": ToolContract(
+        name="save_finding", required={"claim": str, "source_ref": str, "passage_ref": str},
+        optional={"conditions": ToolArg(list, None, list_item_type=dict), "comparison": ToolArg(dict, None)},
+        example='{"tool":"save_finding","args":{"claim":"One complete scoped finding","source_ref":"s1","passage_ref":"p..."}}',
+        description="Save ONE finding supported by an exact opened passage. Copy source_ref=sN and passage_ref=p... "
+                    "from the read result. The application saves the original excerpt and pinned source version. "
+                    "Keep conditions and uncertainty in claim; do not transfer a result between comparators. "
+                    "Optional conditions=[{name:...,state:reported,value:...}] (or not_reported/not_extracted/not_applicable). "
+                    "For comparisons optionally supply subject, factor, comparator, endpoint, direction, uncertainty; "
+                    "use unknown for absent information. A successful save remains unreviewed. "
+                    "Cite the returned [f...] in the report; do not copy object ids or build a source table.",
+    ),
     "knowledge_link": ToolContract(
         name="knowledge_link",
         required={"src": str, "dst": str},
@@ -161,8 +172,9 @@ TOOL_CONTRACTS = {
                   "knowledge_refs": ToolArg(list, None, list_item_type=dict), "report_sections": ToolArg(dict, None)},
         example='{"tool":"done","args":{"summary":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}',
         description="For a structured research report, summary is the conclusion with citations, and "
-                    "report_sections supplies evidence, counter, source_quality, coverage, sources as arrays of text paragraphs. "
-                    "The application adds the six headings and paragraph breaks; all evidence checks still apply. "
+                    "report_sections supplies evidence, counter, source_quality, coverage as arrays of text paragraphs. "
+                    "Cite selected findings with [f...] from save_finding; the application generates source numbers, "
+                    "source table, exact knowledge versions, headings and paragraph breaks. All evidence checks still apply. "
                     "Without report_sections, summary is the complete final answer.",
     ),
 }
@@ -174,6 +186,7 @@ def research_tool_names(*, include_source_search: bool = True) -> tuple[str, ...
         "open_url",
         "knowledge_search",
         "knowledge_read",
+        "save_finding",
         "knowledge_write",
         "knowledge_link",
         "knowledge_commit",
@@ -188,6 +201,7 @@ def research_tool_names(*, include_source_search: bool = True) -> tuple[str, ...
         "source_search",
         "knowledge_search",
         "knowledge_read",
+        "save_finding",
         "knowledge_write",
         "knowledge_link",
         "knowledge_commit",

@@ -47,7 +47,7 @@ METHODS = (
 )
 
 
-def research_method_guidance(question: str, *, evidence_only: bool = False, automatic_report_refs: bool = False) -> str:
+def research_method_guidance(question: str, *, evidence_only: bool = False, finding_report: bool = False) -> str:
     text = question.casefold()
     selected = [method for method in METHODS if any(term in text for term in method.terms)]
     lines = [
@@ -65,11 +65,11 @@ def research_method_guidance(question: str, *, evidence_only: bool = False, auto
         "Check that a source uses the same definition and intervention as the question; similar names can "
         "describe different mechanisms. Preserve original names alongside translations when identity is uncertain.",
         "Preserve observed results, author interpretations, user statements and model inferences separately. "
-        "For knowledge_write, conditions can use {name:{state:reported,value:...}} or state "
+        "For save_finding, conditions can use [{name:...,state:reported,value:...}] or state "
         "not_reported/not_extracted/not_applicable. Leave unknown information unknown; never fill a template by guessing.",
-        "After reading a useful passage, save the supported finding with knowledge_write and its exact original "
-        "excerpt before drafting the report. Copy source_url exactly from opened source references. "
-        "Write evidence[].claim in the requested answer language, while keeping excerpt in its original language. "
+        "After reading a useful passage, save it with save_finding(claim, source_ref=sN, passage_ref=p...). "
+        "Select the exact p reference shown by the read tool; do not use a search preview or a heading. "
+        "Write claim in the requested answer language; the application keeps the original passage. "
         "Use complete, scoped claim sentences that can be reused in the report, not topic labels. "
         "If the page is mostly navigation or the passage is omitted, use source_search and a bounded read; "
         "a title or search snippet is not the full study. Wait for each tool result; proposed calls are not saved facts.",
@@ -79,8 +79,9 @@ def research_method_guidance(question: str, *, evidence_only: bool = False, auto
         "graph proximity cannot increase evidence strength. Read current versions before revising knowledge.",
     ]
     if not evidence_only:
-        if automatic_report_refs:
-            lines.append("This research run automatically attaches its newly saved note versions to the report. "
+        if finding_report:
+            lines.append("Cite only adopted findings with [f...] returned by save_finding. The application attaches "
+                         "ONLY those exact versions to the report; saved but uncited findings are not answer premises. "
                          "Do not manually recopy their ids into done.knowledge_refs. For knowledge recalled from "
                          "earlier work, include knowledge_refs:[{id:...,revision:...}] for the exact versions used. "
                          "Never guess an id; these pin provenance, not proof of interpretation. Cite original premises.")

@@ -172,9 +172,10 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
                 and any('"report_sections"' in example for example in spec.json_examples)):
             instruction += (
                 ' For done, summary must be a top-level argument beside report_sections, not inside it. '
-                'Use {"tool":"done","args":{"summary":"conclusion [1]","report_sections":'
-                '{"evidence":["supported finding [1]"],"counter":["limitation [1]"],'
-                '"source_quality":["quality"],"coverage":["search scope"],"sources":["[1] title - URL"]}}}. '
+                'Use {"tool":"done","args":{"summary":"conclusion [f0123456789abcdef]","report_sections":'
+                '{"evidence":["supported finding [f0123456789abcdef]"],"counter":["investigation limits"],'
+                '"source_quality":["quality"],"coverage":["search scope"]}}}. '
+                'Copy actual finding references from save_finding; the application generates sources. '
                 'Keep summary brief when using report_sections; do not duplicate the report.'
             )
         elif spec is not None and spec.name == "done":

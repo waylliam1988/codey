@@ -23,7 +23,6 @@ def arguments():
         "counter": ["未找到强反证；本轮仅检索并打开上述来源。[1]"],
         "source_quality": ["Original experiment; workload limits applicability. [1]"],
         "coverage": ["Searched writer concurrency and opened the original experiment."],
-        "sources": [f"[1] Experiment - {URL}"],
     }}
 
 
@@ -42,26 +41,34 @@ def plan_for(args, native):
 
 
 @pytest.mark.parametrize("native", [True, False])
-def test_structured_report_preserves_arguments_and_passes_existing_gate_only_with_evidence(native):
-    args = arguments()
+@pytest.mark.usefixtures("public_source_dns")
+def test_structured_report_preserves_arguments_and_passes_existing_gate_only_with_evidence(native, tmp_path):
+    from codey.research.finding_report import compile_finding_report
+    from tests.test_research_findings import URL as source_url
+    from tests.test_research_findings import execute, report_args, setup
+
+    store, tools, execution_session, delegate = setup(tmp_path)
+    execute(delegate, tools, execution_session, "open_url", {"url": source_url})
+    saved = execute(delegate, tools, execution_session, "save_finding", {
+        "claim": "Only one writer can write at a time.", "source_ref": "s1",
+        "passage_ref": next(iter(tools.ledger.read_passages))})
+    ref = json.loads(saved.model_text)["finding_ref"]
+    args = report_args(ref)
     before = copy.deepcopy(args)
-    state, plan = plan_for(args, native)
-    assert not plan.protocol_error
-    assert plan.control and plan.control.kind == "done"
-    assert args == before and plan.control_args == before
-    assert set(parse_sections(plan.control.body)) == set(REQUIRED_SECTIONS)
-    state.last_done_args = plan.control_args
-    ledger = ResearchLedger()
-    context = {"research_ledger": ledger}
-    assert not completion_gate.evaluate(state, plan.control.body, context=context).complete
-    ledger.record_open(URL, URL, "Experiment", "One writer commits at a time.")
-    assert not completion_gate.evaluate(state, plan.control.body, context=context).complete
-    prepared = ledger.prepare_evidence_items(
-        [{"claim": "One writer commits at a time.", "source_url": URL, "excerpt": "One writer commits at a time."}],
-        fallback_sources=[URL], fallback_claim="", fallback_body="", note_type="fact")
-    ledger.add_evidence_items(list(prepared.items), note_id="fact")
-    verdict = completion_gate.evaluate(state, plan.control.body, context=context)
-    assert verdict.complete, verdict.followup
+    try:
+        state, plan = plan_for(args, native)
+        assert not plan.protocol_error
+        assert plan.control and plan.control.kind == "done"
+        assert args == before and plan.control_args == before
+        assert set(parse_sections(plan.control.body)) == set(REQUIRED_SECTIONS[:-1])
+        state.last_done_args = plan.control_args
+        assert not completion_gate.evaluate(state, plan.control.body, context={"research_ledger": ResearchLedger()}).complete
+        compiled = compile_finding_report(args, tools.ledger, store)
+        verdict = completion_gate.evaluate(state, compiled.text, context={"research_ledger": tools.ledger})
+        assert verdict.complete, verdict.followup
+        assert set(parse_sections(compiled.text)) == set(REQUIRED_SECTIONS)
+    finally:
+        store.close()
 
 
 @pytest.mark.parametrize("value", [None, {}, {"evidence": ["only one section"]},
@@ -120,7 +127,6 @@ def test_grouped_citations_are_compiled_but_unobserved_numbers_still_fail():
     second = "https://example.com/replication"
     args["summary"] = "One writer commits at a time. [1, 2]"
     args["report_sections"]["evidence"] = ["One writer commits at a time. [1, 2]"]
-    args["report_sections"]["sources"].append(f"[2] Replication - {second}")
     ledger = ResearchLedger()
     for url in (URL, second):
         ledger.record_open(url, url, "Experiment", "One writer commits at a time.")
@@ -129,10 +135,12 @@ def test_grouped_citations_are_compiled_but_unobserved_numbers_still_fail():
             fallback_sources=[url], fallback_claim="", fallback_body="", note_type="fact")
         ledger.add_evidence_items(list(prepared.items), note_id=url)
     state, plan = plan_for(args, False)
-    finalized = finalize_done_answer(plan.control.body, ledger)
+    # Numbered sources are application output, not a model-supplied wire field.
+    rendered = plan.control.body + f"\n\n## 来源\n[1] Experiment - {URL}\n[2] Replication - {second}"
+    finalized = finalize_done_answer(rendered, ledger)
     assert "[1][2]" in finalized.text and citation_refs(finalized.text) == {1, 2}
     assert completion_gate.evaluate(state, finalized.text, context={"research_ledger": ledger}).complete
-    bad = finalize_done_answer(plan.control.body.replace("[1, 2]", "[1, 9]"), ledger)
+    bad = finalize_done_answer(rendered.replace("[1, 2]", "[1, 9]"), ledger)
     assert bad.reason == "unmapped_numeric_refs"
 
 

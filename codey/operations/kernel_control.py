@@ -84,6 +84,16 @@ def evaluate_completion(context: Any, state: Any) -> None:
     error_source = ""
     error_type = ""
     try:
+        if context.session.policy.strict_research and context.session.task_kind != "evidence_followup":
+            from codey.research.finding_report import compile_finding_report
+
+            tools = context.execution.research_tools
+            try:
+                compiled = compile_finding_report(context.session.last_done_args, tools.ledger, tools.store)
+            except ValueError as exc:
+                # Keep the repair field-local and the original proposal intact.
+                raise ValueError(f"Report reference fields: {exc}") from exc
+            context.session.last_done_text = compiled.text
         refresh_verification_candidates(context.session)
         verdict = evaluate(context.session, context.session.last_done_text, context=context.completion_context)
         if type(verdict.complete) is not bool:

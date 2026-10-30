@@ -139,6 +139,7 @@ def _research_specs() -> dict[str, ToolSpec]:
         "knowledge_search": "knowledge.read",
         "knowledge_read": "knowledge.read",
         "knowledge_write": "knowledge.write",
+        "save_finding": "knowledge.write",
         "knowledge_commit": "knowledge.write",
         "knowledge_link": "knowledge.link",
         "done": "control",
@@ -164,7 +165,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             json_examples=(contract.example,),
             description=contract.description,
             executor="source" if grant == "web.read" else "knowledge",
-            replay_class="safe" if grant in {"web.read", "knowledge.read"} or name == "knowledge_commit" else "unsafe",
+            replay_class="safe" if grant in {"web.read", "knowledge.read"} or name in {"knowledge_commit", "save_finding"} else "unsafe",
             parallel_safe=contract.parallel_safe,
         )
     for alias, (_canonical, id_arg) in _CONTROLLER_ALIAS_ID_ARG.items():
@@ -471,7 +472,7 @@ def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None,
             allowed = None
     order = ("list_dir", "read_file", "read_files", "grep", "find_references", "parallel", "codemode", "edit", "run", "shell",
              "web_search", "open_url", "source_search", "knowledge_search", "knowledge_read",
-             "knowledge_write", "knowledge_commit", "knowledge_link", "read_tool_result", "done")
+             "save_finding", "knowledge_write", "knowledge_commit", "knowledge_link", "read_tool_result", "done")
     names: list[str] = []
     for name in order:
         if native and is_text_batch_tool(name):

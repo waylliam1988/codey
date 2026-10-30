@@ -22,6 +22,11 @@ def parameter_schemas(tool: str) -> dict[str, Any]:
         "state": {"type": "string", "enum": sorted(CONDITION_STATES)}, "value": text}, "state")}
     reference = _object({"target": text, "revision": {"type": "integer", "minimum": 1}, "relation": text},
                         "target", "revision", "relation")
+    if tool == "save_finding":
+        comparison_keys = ("subject", "factor", "comparator", "endpoint", "direction", "uncertainty")
+        return {"conditions": _array(_object({"name": text, "state": {"type": "string", "enum": sorted(CONDITION_STATES)},
+                                                "value": text}, "name", "state")),
+                "comparison": _object(dict.fromkeys(comparison_keys, text), *comparison_keys)}
     if tool == "knowledge_commit":
         value = _object({
             "id": text, "kind": {"type": "string", "enum": sorted(KINDS)}, "content": text,
@@ -48,7 +53,7 @@ def parameter_schemas(tool: str) -> dict[str, Any]:
     if tool == "done":
         from codey.reviews.report_sections import REQUIRED_SECTIONS
 
-        keys = REQUIRED_SECTIONS[1:]
+        keys = REQUIRED_SECTIONS[1:-1]
         return {"knowledge_refs": _array(_object({"id": text, "revision": {"type": "integer", "minimum": 1}},
                                                   "id", "revision")),
                 "report_sections": _object({key: _array(text) for key in keys}, *keys)}

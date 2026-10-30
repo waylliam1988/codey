@@ -16,6 +16,7 @@ from difflib import get_close_matches
 from typing import Any
 
 from codey.research import source_domains
+from codey.research.passages import ReadPassage
 from codey.research.source_document import SourceDocument
 from codey.research.urls import host_key, opened_url, parsed_url
 from codey.utils.refs import coerce_int, parse_int
@@ -124,6 +125,7 @@ class ResearchLedger:
         self.opened_sources: list[OpenedSource] = []
         self.evidence_items: list[EvidenceItem] = []
         self.source_searches: list[dict[str, Any]] = []
+        self.read_passages: dict[str, ReadPassage] = {}
         self._source_texts: dict[str, str] = {}
         self._source_pages: dict[str, dict[int, str]] = {}
         self._source_page_versions: dict[str, dict[int, tuple[str, str]]] = {}
@@ -134,6 +136,7 @@ class ResearchLedger:
         forked.opened_sources = list(self.opened_sources)
         forked.evidence_items = list(self.evidence_items)
         forked.source_searches = [dict(s) for s in self.source_searches]
+        forked.read_passages = dict(self.read_passages)
         forked._source_texts = dict(self._source_texts)
         forked._source_pages = {k: dict(v) for k, v in self._source_pages.items()}
         forked._source_page_versions = {k: dict(v) for k, v in self._source_page_versions.items()}
@@ -145,6 +148,7 @@ class ResearchLedger:
         self.opened_sources = staged.opened_sources
         self.evidence_items = staged.evidence_items
         self.source_searches = staged.source_searches
+        self.read_passages = staged.read_passages
         self._source_texts = staged._source_texts
         self._source_pages = staged._source_pages
         self._source_page_versions = staged._source_page_versions

@@ -72,13 +72,16 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
                 return json.dumps({"tool": "web_search", "args": {"query": f"followup {round_index}"}})
             if not any(row.get("url") == url for row in rows):
                 return json.dumps({"tool": "open_url", "args": {"url": url}})
-            if "saved fact note id=" in prompt:
-                return json.dumps({"tool": "done", "args": {"summary": "Evidence saved."}})
             excerpt = f"Recovery evidence number {round_index} is durable."
-            return json.dumps({"tool": "knowledge_write", "args": {
-                "type": "fact", "title": f"Recovery evidence {round_index}", "body": excerpt,
-                "sources": [url], "evidence": [{"source_url": url, "excerpt": excerpt,
-                    "claim": excerpt, "stance": "supports"}]}})
+            if store.search_notes(excerpt):
+                return json.dumps({"tool": "done", "args": {"summary": "Evidence saved."}})
+            import hashlib
+
+            from codey.research.passages import passage_ref
+
+            ref = passage_ref(url, hashlib.sha256(excerpt.encode()).hexdigest()[:16], 0, len(excerpt))
+            return json.dumps({"tool": "save_finding", "args": {
+                "claim": excerpt, "source_ref": "s1", "passage_ref": ref}})
 
     class Search:
         def search(self, query, limit=8):

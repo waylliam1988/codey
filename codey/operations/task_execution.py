@@ -398,7 +398,7 @@ class ExecutionDelegate:
             return ToolResult(ok=False, call=call, model_text=model_text), False, None
         if not isinstance(ledger, ResearchLedger):
             raise ValueError("successful source read requires a research ledger observation")
-        observation = ledger_observation(ledger, "open", url=url)
+        observation = opened.read_observation or ledger_observation(ledger, "open", url=url)
         from codey.research.output_receipts import maybe_externalize_output
 
         title = next((line.removeprefix("Title: ") for line in model_text.splitlines()
@@ -413,6 +413,8 @@ class ExecutionDelegate:
         base = _tool_result(call, outcome)
         merged = dict(base.canonical)
         merged["research_observation"] = observation
+        if opened.read_passages:
+            merged["read_passages"] = list(opened.read_passages)
         result = ToolResult(
             ok=base.ok, call=base.call, model_text=base.model_text, truncated=base.truncated,
             presentation=dict(base.presentation) if isinstance(base.presentation, dict) else {},
@@ -429,8 +431,8 @@ class ExecutionDelegate:
             # This is a per-call presentation setting. The shared facade and
             # stored knowledge must not inherit a child phase's output contract.
             tools.evidence_only = self.session is not None and self.session.task_kind == "evidence_followup"
-        if hasattr(tools, "automatic_report_refs"):
-            tools.automatic_report_refs = (self.session is not None and self.session.task_kind == "research"
+        if hasattr(tools, "finding_report"):
+            tools.finding_report = (self.session is not None and self.session.task_kind == "research"
                                            and self.session.policy.strict_research)
         ledger = getattr(tools, "ledger", None)
         if isinstance(ledger, ResearchLedger):
@@ -531,14 +533,15 @@ class ExecutionDelegate:
             if name == "knowledge_commit":
                 outcome = tools.knowledge_commit(args)
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
-            if name == "knowledge_write":
+            if name in {"knowledge_write", "save_finding"}:
                 before = len(getattr(getattr(tools, "ledger", None), "evidence_items", ()) or ())
                 created_before, updated_before = set(tools.created_ids), set(tools.updated_ids)
                 links_before = tools.links_created
-                lowered, problem = self._lower_knowledge_sources(args)
+                lowered, problem = (self._lower_finding_source(args) if name == "save_finding"
+                                    else self._lower_knowledge_sources(args))
                 if problem:
                     return ToolResult(ok=False, call=call, model_text=f"ERROR: {problem}"), False, None
-                outcome = tools.knowledge_write(lowered)
+                outcome = tools.save_finding(lowered) if name == "save_finding" else tools.knowledge_write(lowered)
                 if not outcome.ok:
                     return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), False, None
                 evidence = self._ledger_evidence(before, tools.ledger)
@@ -627,6 +630,13 @@ class ExecutionDelegate:
                 evidence.append(row)
             lowered["evidence"] = evidence
         return lowered, ""
+
+    def _lower_finding_source(self, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        reference = args.get("source_ref")
+        sources = dict(getattr(self.session, "source_ids", {}) or {})
+        if not isinstance(reference, str) or reference not in sources:
+            return {}, "source_ref must be an exact opened source reference: " + ", ".join(sources)
+        return {**args, "source_ref": sources[reference]}, ""
 
     def _resolve_alias_url(self, alias: str, args: dict[str, Any]) -> str:
         session = self.session

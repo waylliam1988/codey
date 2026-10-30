@@ -4,7 +4,6 @@ import json
 from typing import TYPE_CHECKING
 
 from codey.policies.task_policy import TaskPolicy
-from codey.research.tool_contract import knowledge_read_id_guidance
 from codey.reviews import report_sections
 
 if TYPE_CHECKING:
@@ -19,7 +18,7 @@ def render_research_observations(session: "TaskSession", ledger: "ResearchLedger
     for identity, result in session._memory_results.items():
         name = result.call.name
         if name not in {"web_search", "open_url", "open_result", "open_hit", "reopen_source",
-                        "source_search", "knowledge_write", "knowledge_commit"}:
+                        "source_search", "save_finding", "knowledge_write", "knowledge_commit"}:
             continue
         recent.append({"result_ref": identity, "tool": name, "ok": result.ok,
                        **({"error": result.model_text[:400]} if not result.ok else {})})
@@ -38,6 +37,7 @@ def render_research_observations(session: "TaskSession", ledger: "ResearchLedger
     # require the model to write them again to populate this phase's memory.
     if ledger is not None:
         findings = [{"interpretation_review": "unreviewed",
+                     "finding_ref": item.note_id,
                      **{key: str(getattr(item, key))[:600]
                         for key in ("claim", "source_url", "excerpt", "stance", "note_id")}}
                     for item in ledger.evidence_items[-6:]]
@@ -57,11 +57,11 @@ def render_research_observations(session: "TaskSession", ledger: "ResearchLedger
             guidance += (
                 "Findings above are already persisted, including earlier phases of this research. "
                 "Adopt supported findings directly; save only a genuinely new finding or a correction "
-                "using the existing note_id as id. Do not recreate notes to prepare a report. "
+                "with save_finding; corrected wording creates a distinct finding. Do not recreate notes to prepare a report. "
             )
         guidance += (
-            "For a new finding, save it from an opened passage; copy a contiguous original "
-            "passage sufficient for the WHOLE claim, without ellipses or reconstructed numbers. "
+            "For a new finding use save_finding(claim, source_ref, passage_ref). Select an opened p passage "
+            "sufficient for the WHOLE claim; the application stores its exact original text. "
             "Several adjacent sentences may be needed for conditions or comparisons; a generic opening "
             "sentence does not support the details that follow. Split findings when different passages are needed. "
             "After a save succeeds, investigate the next missing evidence instead of saving it again. "
@@ -81,15 +81,16 @@ def render_research_observations(session: "TaskSession", ledger: "ResearchLedger
         )
         if session.policy.allows("knowledge.write"):
             guidance += (
-                "每次 knowledge_write 先归档一项发现：evidence[].claim 写完整中文结论，excerpt 保留原文。"
+                "每次 save_finding 归档一项发现：claim 写完整中文结论，选择 s 来源和 p 正文片段引用。"
                 "目录标题不是结果；引文必须直接支持主张的判断、对象、条件及数字。"
-                "笔记 body 中的其他说法没有因此获得证据；先补齐缺失发现。"
+                "保存成功不代表解释已经核实；先补齐缺失发现。"
             )
         if session.task_kind == "evidence_followup":
             guidance += "结束时用 done.summary 简述实际保存的发现和剩余缺口，最终报告交由父任务处理。"
         elif session.policy.strict_research:
             guidance += (
-                "done 使用 report_sections 时，summary 只放带引用的结论，五个数组放其余内容，"
+                "done 使用 report_sections 时，summary 只放带 [f...] 引用的结论，四个数组放其余内容，"
+                "不填写 sources，来源表与编号由程序生成。"
                 "不要把整篇报告再放入 summary。按最新反馈修复：格式或引用表错误先就地修正，"
                 "仅在缺少证据时执行补查；勿重复旧稿。"
             )
@@ -110,13 +111,11 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
             "refine the query with a relevant site: filter or follow original citations until the original is opened. "
         )
     if policy.allows("knowledge.write"):
-        rules += ("Save short exact excerpts with knowledge_write: type=fact, sources=[opened URL], "
-                  "evidence=[{claim:conclusion,source_url:the same URL,excerpt:exact original text,stance:supports}]. "
-                  "Each excerpt must support the actual claim, not merely mention the same topic. "
-                  "Write evidence[].claim as a complete scoped sentence in the requested report language; "
-                  "keep excerpt in its original language. "
-                  "Only evidence[].claim becomes a reusable backed claim; the note body is a summary. "
-                  "For two findings, save two evidence items with their respective direct excerpts. "
+        rules += ("Save one finding with save_finding(claim, source_ref=sN, passage_ref=p...). "
+                  "Select a passage that supports the actual claim, not merely the topic. "
+                  "Write claim as a complete scoped sentence in the requested report language; "
+                  "the application preserves the original excerpt and source version. "
+                  "For two findings, use two calls with their respective direct passages. "
                   "Read omitted passages with source_search or offset reads before quoting them. ")
     rules += (
         "Use only local tool results as evidence, including when a web model has built-in browsing. "
@@ -125,7 +124,7 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
     )
     checklist = "Strict research completion checklist: "
     if policy.allows("knowledge.write"):
-        checklist += "Do not call done before knowledge_write has saved evidence from an opened source. "
+        checklist += "Do not call done before save_finding has saved evidence from an opened source. "
     else:
         checklist += (
             "Saved evidence is still required; without permission to save missing evidence, "
@@ -140,23 +139,21 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         checklist += "After a completion rejection, repair the report using the available tool results. "
     if policy.allows("knowledge.write"):
         checklist += (
-            "Do not repeat knowledge_write for the same evidence; add a new evidence excerpt "
+            "Do not repeat save_finding for the same evidence; add a new finding "
             "only when the opened source supports a new claim. "
         )
-        if policy.allows("knowledge.read"):
-            checklist += knowledge_read_id_guidance(source_tool="knowledge_write")
     report = (
-        "Report arguments: done.summary is only the conclusion with [1]-style citations; "
-        "done.report_sections={evidence:[text],counter:[text],source_quality:[text],coverage:[text],sources:[text]}. "
+        "Report arguments: done.summary is only the conclusion with [f...]-style finding citations; "
+        "done.report_sections={evidence:[text],counter:[text],source_quality:[text],coverage:[text]}. "
         "Each array contains the paragraphs for that section. The application adds headings and actual line breaks, "
         "so these values need no manually encoded newline separators. "
         "Do not put headings or the whole report in summary or encode paragraph separators yourself. "
-        "Put [1]-style citations in summary and evidence paragraphs. "
-        "In counter cite [n] for observed limitations or contrary results. "
+        "Put exact [f...] references from successful saves in summary and evidence paragraphs. "
+        "In counter cite [f...] for observed limitations or contrary results. "
         "If no contrary evidence was found, describe the actual search scope and remaining limits; "
         "if it was not investigated, say so. Do not copy a generic no-counter statement as evidence of a check. "
-        "In 来源, list each cited source as "
-        "[1] Title - https://...; use only URLs opened and saved in this run."
+        "Do not provide sources, source numbers, titles or URLs; the application generates the source table "
+        "and exact knowledge versions from ONLY the findings you explicitly cite. "
         " Preserve deleted/struck-through text as historical, not current guidance; check adjacent version exceptions. "
     )
     return "\n\n".join((rules, checklist.rstrip(), report))

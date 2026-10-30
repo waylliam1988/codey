@@ -48,7 +48,8 @@ REQUIRED_SECTIONS = (
 
 def render_done_report(summary: str, sections: object) -> str:
     """Render explicitly supplied report parts; never decode or invent content."""
-    keys = REQUIRED_SECTIONS[1:]
+    # Sources are generated from explicitly selected saved findings.
+    keys = REQUIRED_SECTIONS[1:-1]
     if not isinstance(sections, dict) or set(sections) != set(keys):
         raise ValueError("report_sections requires exactly: " + ", ".join(keys))
     # A full report inside the conclusion duplicates the rendered sections.
@@ -59,7 +60,7 @@ def render_done_report(summary: str, sections: object) -> str:
         summary, re.IGNORECASE,
     ):
         raise ValueError("With report_sections, summary must contain only the conclusion, without report headings. "
-                         "Remove the duplicated full report from summary; keep the five report_sections arrays.")
+                         "Remove the duplicated full report from summary; keep the four report_sections arrays.")
     bodies = {"conclusion": summary}
     for key in keys:
         rows = sections[key]
@@ -67,7 +68,7 @@ def render_done_report(summary: str, sections: object) -> str:
                 or any(not isinstance(row, str) or not row.strip() or len(row) > 16000 for row in rows)):
             raise ValueError(f"report_sections.{key} requires 1..32 nonempty text paragraphs of at most 16000 characters")
         bodies[key] = "\n\n".join(rows)
-    return "\n\n".join(f"## {section_title(key)}\n{bodies[key]}" for key in REQUIRED_SECTIONS)
+    return "\n\n".join(f"## {section_title(key)}\n{bodies[key]}" for key in REQUIRED_SECTIONS[:-1])
 _SECTION_KEY_ORDER = (
     "source_quality",
     "conclusion",

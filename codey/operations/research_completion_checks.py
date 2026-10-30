@@ -67,7 +67,7 @@ def investigation_attempt_checks(session: Any) -> list[CompletionCheck]:
         return []
     acquisition = {"web_search", "open_url", "open_result", "open_hit", "reopen_source", "source_search"}
     attempted = any(result.call.name in acquisition
-                    or (result.call.name == "knowledge_write" and result.ok)
+                    or (result.call.name in {"knowledge_write", "save_finding"} and result.ok)
                     for result in session._memory_results.values())
     return [CompletionCheck("research_investigation_attempted", CHECK_PASS if attempted else CHECK_NOT_RUN,
                             "" if attempted else "research_investigation_not_attempted")]
@@ -152,13 +152,12 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
                          "on the next proposed answer.")
             return "\n\n".join(parts)
     if "research_evidence_saved" in failed:
-        parts.append("No citable evidence has been saved. Use knowledge_write with type=fact, "
-                     "sources=[an opened URL], and evidence=[{claim:your conclusion,source_url:the same URL,"
-                     "excerpt:exact text read from that page,stance:supports}]. "
+        parts.append("No citable evidence has been saved. Use save_finding with claim, "
+                     "source_ref=sN and passage_ref=p... from an opened read result. "
                      "A hypothesis without source excerpts does not satisfy this requirement. "
                      "The excerpt must support the actual predicate and conditions of the claim; "
                      "use source_search or an offset read if the relevant passage was omitted.")
-        parts.append("Save a scoped finding and wait for a successful knowledge_write result before another done. "
+        parts.append("Save a scoped finding and wait for a successful save_finding result before another done. "
                      "Previously proposed or displayed calls are not saved evidence. Report formatting and "
                      "citation repairs can follow after evidence is actually saved.")
         return "\n\n".join(parts)
@@ -179,17 +178,17 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
             # unbound. Give one repair, then rerun all checks on the next draft.
             parts.append(review.message)
             parts.append("Repair this citation/report defect first, preserving the other sections and saved "
-                         "source wording. This alone does not require another search or knowledge_write. "
+                         "source wording. This alone does not require another search or save_finding. "
                          "Claim support and coverage checks will run again on the corrected report.")
             return "\n\n".join(parts)
     if "research_claim_bindings" in failed:
         parts.append("Some conclusion/evidence statements could not be linked to saved claim excerpts. "
                      "This is a text-binding check, not a verdict that the statement is false. "
-                     "Keep supported wording from evidence[].claim, or save a separate exact excerpt for the missing claim. "
-                     "Putting two findings in a note body with only one evidence item does not support both. "
+                     "Keep supported wording from saved claim, or save a separate passage for the missing claim. "
+                     "One finding does not support another comparison. "
                      "Do not relabel a sourced finding as a hypothesis to bypass the missing evidence. "
                      "The report has been preserved, not silently reduced to its supported subset.")
-        parts.append("Every factual evidence paragraph needs its own inline [n] citation to the numbered source table. "
+        parts.append("Every factual evidence paragraph needs its own exact [f...] finding citation. "
                      "Citations in summary or a source list do not cite an uncited evidence paragraph. "
                      "A wording match alone is insufficient without the source citation.")
         ledger = _context_get(context, "research_ledger")
@@ -206,8 +205,8 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
             policy = getattr(session, "policy", None)
             if policy is not None and policy.allows("web.read") and policy.allows("knowledge.write"):
                 parts.append("Next action: investigate the first missing factual finding using source_search "
-                             "and open_hit on its cited source, then knowledge_write its own scoped claim and "
-                             "exact passage. Do not substitute an unrelated saved finding or repeat the rejected "
+                             "and open_hit on its cited source, then save_finding with its own scoped claim and "
+                             "passage_ref. Do not substitute an unrelated saved finding or repeat the rejected "
                              "done. If the saved finding already expresses the SAME predicate and conditions, "
                              "reuse that wording with its own citation instead. If evidence remains unavailable, "
                              "state the specific unresolved question and search limit without claiming coverage.")
@@ -225,16 +224,16 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
         parts.append("Repair report formatting using the evidence already saved; this alone does not require another search.")
         if missing:
             parts.append("Missing sections: " + ", ".join(missing) + ". Send done.summary as only the cited "
-                         "conclusion and done.report_sections with five nonempty text arrays: evidence, counter, "
-                         "source_quality, coverage, sources. The application adds the required headings.")
+                         "conclusion and done.report_sections with four nonempty text arrays: evidence, counter, "
+                         "source_quality, coverage. Cite [f...] findings; the application adds sources and headings.")
         else:
             parts.append("All required sections are present; repair the specific citation/report defect below. "
-                         'With report_sections, sources must contain numbered entries such as '
-                         '"[1] Title - https://final-url", not bare URLs. Preserve the other sections.')
+                         'With report_sections, cite exact [f...] finding references. '
+                         'Source numbers and the source table are generated. Preserve the other sections.')
         if "\\n" in text and "\n" not in text:
             parts.append("The summary contains literal backslash+n text, not line breaks. "
                          "Use done.report_sections: put only the conclusion in summary, and supply "
-                         "evidence, counter, source_quality, coverage, sources as arrays of paragraphs. "
+                         "evidence, counter, source_quality, coverage as arrays of paragraphs. "
                          "The application adds headings and paragraph breaks. "
                          "Keep the report content and citations; no automatic text repair was applied.")
     ledger = _context_get(context, "research_ledger")
@@ -288,16 +287,11 @@ def _citation_prerequisite_feedback(session: Any, text: str, ledger: Any) -> str
     if unmapped:
         # Missing URL mappings also produce downstream binding failures. Do not
         # tell the writer to acquire evidence for a paragraph we cannot map yet.
-        candidates = [{"title": source.title, "url": source.final_url}
-                      for source in ledger.opened_sources[-8:]]
-        return ("Fix the source table first. These inline citation numbers have no numbered URL entry: "
+        return ("Replace unresolved manual citation numbers with exact [f...] finding references: "
                 + ", ".join(f"[{number}]" for number in unmapped[:8])
-                + '. In report_sections.sources use "[n] Title - https://actual-url" for EACH cited source. '
-                "A title alone is not a URL mapping. Match the number to the source you actually meant; "
-                "do not infer numbering from this candidate list. Opened source candidates (data):\n"
-                + canonical_json(candidates)
-                + "\nResubmit done with the corrected sources and preserve the other sections. "
-                "This mapping repair alone needs no new search or knowledge_write. "
+                + ". The application generates the source table from selected findings. "
+                "Resubmit done preserving the other sections. "
+                "This mapping repair alone needs no new search or save_finding. "
                 "Claim support and coverage will be checked again afterwards.")
     unread = list(dict.fromkeys(item.url for item in citations if not ledger.canonical_opened_url(item.url)))
     policy = getattr(session, "policy", None)
@@ -314,8 +308,8 @@ def _citation_prerequisite_feedback(session: Any, text: str, ledger: Any) -> str
         passage = ("Use source_search and open_hit if that passage was omitted. "
                    if policy.allows("web.read") else "Use the existing source receipts; report any unavailable passage. ")
         return ("These cited sources were opened but have no saved evidence: " + ", ".join(missing[:3]) + ". "
-                "Next action: inspect the relevant passage and execute knowledge_write with a complete scoped "
-                "evidence[].claim in the requested report language and its exact original excerpt. " + passage + "Save the actual finding, "
+                "Next action: inspect the relevant passage and execute save_finding with a complete scoped "
+                "claim in the requested report language and its exact passage_ref. " + passage + "Save the actual finding, "
                 "not merely the article title. Wait for success before another done. "
                 "Other report checks will run again after this prerequisite.")
     return ""

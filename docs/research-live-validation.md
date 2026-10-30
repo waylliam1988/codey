@@ -1411,9 +1411,60 @@ graph test, TypeScript and production build passed; generated codey/web was
 published locally and tools.publish_frontend --check passes. No running Codey
 service or user's model configuration was restarted/changed by these probes.
 
-The same broad unseeded medical question is rerunning from a fresh database at
+The same broad unseeded medical question reran from a fresh database at
 artifacts/research-live-adaptive-reference-repair-20261030 with the same local
 sampling controls. It passed the initial report/reference path without the
 previous read loop and proceeded to actual follow-up browsing. Final status
-and semantic acceptance are still pending; no stronger reference-model run has
-been performed.
+was done, but semantic acceptance FAILED: it described a trial protocol as
+optimizing efficacy, treated P=0.065 as lower significance instead of a
+nonsignificant result, and did not recognize the preprint and formal publication
+as one study. It also failed to compare published human adaptive-therapy
+outcomes as requested. This is mechanical reference-repair progress only.
+The process logged a Playwright TargetClosedError during browser shutdown;
+the result/report artifacts were produced, but that cleanup exception remains
+unresolved. No stronger reference-model run has been performed. The user has
+confirmed that only the existing local model is currently available.
+
+## One-finding interface and selected citations (2026-10-30)
+
+Research now exposes save_finding(claim, source_ref, passage_ref), with optional
+conditions and an optional explicit comparison. Open tools label exact visible
+passages with content-derived references. Source receipt plus character ranges
+rebuild those bindings on recovery; source_search previews cannot authorize a
+finding. A passage keeps its original source snapshot even after that URL
+changes. The existing note/knowledge transaction and common tool effect own
+the write; an identical retry reuses the same note and claim version.
+
+Strict research hides the more complex note/commit/link tools. General/hybrid
+knowledge revisions retain them. Conditions remain optional and unknown fields
+stay unknown. Comparison fields are model assertions, not verified observations.
+Every extraction remains candidate/unreviewed.
+
+The sole structured report input has four paragraph arrays (evidence, counter,
+source_quality, coverage). It no longer accepts a model-written sources field.
+The model cites selected [f...] findings; the application resolves exact pinned
+claim versions and generates the source table/numbers and actual query record.
+Uncited findings and opened-but-unused pages are not answer premises. An unknown
+reference fails with a specific repair rather than fuzzy matching or automatic
+addition of supporting evidence. Markdown report output still has six sections.
+
+At this checkpoint 98 focused tests and two subtests pass, including both common-kernel wire
+protocols, old-source snapshot selection, forged/cross-source reference refusal,
+exact write replay, and explicit answer dependencies. All 12 subprocess recovery
+tests pass, including vault commit, receipt, subsequent investigation rounds and
+final synthesis boundaries. Ruff, mypy (560 files), Pyrefly (0 errors, 35
+suppressed/77 warnings) and ty pass the error gates.
+
+The first simple-interface live WAL probe at
+artifacts/research-live-wal-simple-findings-20261030 exposed a deterministic
+presentation error: the model copied the displayed [p...] brackets into the
+passage_ref argument and repeated the rejected call. The diagnostic was
+explicitly cancelled through its own durable task after the failure was
+reproduced in follow-up; no successful finding/report is claimed. Passages now
+display passage_ref=p..., and bracketed ids get a field-local exact correction
+without silent normalization. A fresh web rerun is next; deterministic tests
+alone do not establish semantic acceptance.
+
+Still pending: structured per-question coverage, production semantic review
+(not enabled), and reference-model comparison (no provider available). Current
+work prioritizes the simple interface before expanding the knowledge model.

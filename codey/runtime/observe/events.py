@@ -146,6 +146,7 @@ def display_tool(name: str, args: dict[str, Any], path: str = "") -> tuple[str, 
         "knowledge_search": ("recall", str(args.get("query") or "")),
         "knowledge_read": ("note", str(args.get("id") or args.get("note_id") or "")),
         "knowledge_write": ("note", str(args.get("title") or args.get("type") or "")),
+        "save_finding": ("note", str(args.get("claim") or "")),
         "knowledge_link": ("link", str(args.get("src") or "")),
     }
     if name in research_names:

@@ -84,6 +84,7 @@ PERMISSION_PROFILES = {
         research_tools=(
             "knowledge_search",
             "knowledge_read",
+            "save_finding",
             "knowledge_write",
             "knowledge_commit",
             "knowledge_link",

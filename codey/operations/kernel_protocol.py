@@ -70,6 +70,9 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
     if not bool(getattr(policy, "strict_research", False)):
         base: tuple[str, ...] | None = None
     else:
+        # Research exposes one simple acquisition write, keeping complex
+        # knowledge revision tools available to ordinary/hybrid tasks.
+        denied.update({"knowledge_write", "knowledge_commit", "knowledge_link"})
         results = dict(getattr(session, "search_results", {}) or {})
         opened = set(getattr(session, "opened_sources", set()) or set())
         evidence = list(getattr(session, "evidence", []) or [])
@@ -87,6 +90,7 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
                 "reopen_source",
                 "open_hit",
                 "source_search",
+                "save_finding",
                 "knowledge_write",
                 "done",
             )
@@ -195,10 +199,12 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
         frozen = tuple(replace(spec, required=("summary", "report_sections"),
                                json_examples=(STRUCTURED_REPORT_EXAMPLE,),
                                description="Finish the research. summary contains only "
-                                           "the conclusion with citations, without report headings. The five arrays "
+                                           "the conclusion with [f...] finding citations, without report headings. The four arrays "
                                            "contain the other sections; do not duplicate them in summary. "
                                            "Use report_sections for the final report; the application supplies headings "
-                                           "and paragraph breaks. Evidence and citation checks still apply.")
+                                           "and paragraph breaks, source numbers and the source table. "
+                                           "Do not submit sources or copy knowledge ids for current findings. "
+                                           "Evidence and citation checks still apply.")
                        if spec.name == "done" else spec for spec in frozen)
     if "codemode" in names:
         from codey.codemode.catalog import build_codemode_catalog, render_declarations

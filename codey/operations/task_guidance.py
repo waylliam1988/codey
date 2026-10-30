@@ -29,13 +29,16 @@ def task_working_context(session: "TaskSession", research_ledger: "ResearchLedge
 def task_guidance_for_policy(policy: TaskPolicy) -> str:
     return "\n".join(part for part in (
         render_completion_guidance(policy) if policy.strict_research else "",
-        ("Knowledge actions: when the user requests saving or revising knowledge, execute knowledge_write or "
+        ("Knowledge actions: use save_finding to save an opened finding; cite only selected [f...] findings in done. "
+         "Saving does not certify understanding."
+         if policy.strict_research and policy.allows("knowledge.write") else ""),
+        ("Knowledge actions: when the user requests saving or revising knowledge, execute save_finding, knowledge_write or "
          "knowledge_commit and wait for success before calling done. Tool JSON inside a code fence or a report "
          "is an example, not a saved change. Keep candidate analogies distinct from verified findings."
-         if policy.allows("knowledge.write") else ""),
+         if policy.allows("knowledge.write") and not policy.strict_research else ""),
         ("Use knowledge_read on the relevant versions before revising or adopting them; "
          "copy their actual ids and revisions. If background recall lacks the requested topic or object kind, "
          "search for that target before editing. A related premise is not the inference being revised."
-         if policy.allows("knowledge.read") and policy.allows("knowledge.write") else ""),
+         if policy.allows("knowledge.read") and policy.allows("knowledge.write") and not policy.strict_research else ""),
         guidance(policy.required_checks),
     ) if part)

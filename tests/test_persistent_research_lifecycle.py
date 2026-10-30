@@ -89,40 +89,25 @@ def test_explicit_commit_undo_and_session_graph(tmp_path):
         with_store.close()
 
 
-def test_research_report_attaches_current_run_versions_without_model_copying_ids(tmp_path):
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.task_session import TaskSession
-    from codey.runtime.core.models import ToolCall
-
+def test_uncited_saved_knowledge_is_not_automatically_attached_to_answer(tmp_path):
     store = KnowledgeStore(tmp_path)
     try:
         tools = ResearchTools(None, store, KnowledgeChanges(tmp_path), session_id="current")
         url, finding = "https://example.org/current", "Only one writer commits."
         tools.sources_read.add(url)
         tools.ledger.record_open(url, url, "Writers", finding)
-        session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read", "knowledge.write"}), strict_research=True),
-                              task_kind="research")
-        result = execute_turn(session, [ToolCall(name="knowledge_write", args={"type": "fact",
-            "title": "Writer limit", "body": finding, "sources": [url],
-            "evidence": [{"claim": finding, "source_url": url, "excerpt": finding}]})],
-            research_tools=tools, run_id="current", turn=1)[0]
-        assert result.ok and "automatically attached" in result.model_text
-        assert "done.knowledge_refs" not in result.model_text
-        assert not tools.automatic_report_refs  # Presentation belongs to the execution copy.
-        assert "Do not manually recopy" in research_method_guidance("Research writers", automatic_report_refs=True)
-        note_id = result.canonical["knowledge_notes"]["created"][0]
-        read = execute_turn(session, [ToolCall(name="knowledge_read", args={"id": note_id})],
-                            research_tools=tools, run_id="current", turn=2)[0]
-        assert read.ok and "automatically attached" in read.model_text
-        assert "knowledge_refs" not in read.model_text
-        pinned = store.note_references(note_id)
-        _persist_synthesis(tools, "Research writers", finding + " [1]", session_id="current", project="",
-                           run_id="auto-pinned-report", on_event=lambda _: None, policy=session.policy)
-        answer = store.repository.read(stable_identity("answer", "auto-pinned-report", "initial"))
-        assert {(ref.target, ref.revision) for ref in answer.value.references} == {
-            (row["target"], row["revision"]) for row in pinned}
-        assert any(store.repository.read(ref.target, ref.revision).value.kind == "claim"
-                   for ref in answer.value.references)
+        assert tools.knowledge_write({"type": "fact", "title": "Writer limit", "body": finding,
+            "sources": [url], "evidence": [{"claim": finding, "source_url": url, "excerpt": finding}]}).ok
+        policy = TaskPolicy(frozenset({"control", "knowledge.read", "knowledge.write"}))
+        _persist_synthesis(tools, "Research writers", finding, session_id="current", project="",
+                           run_id="uncited", on_event=lambda _: None, policy=policy)
+        assert not store.repository.read(stable_identity("answer", "uncited", "initial")).value.references
+        claim_id = stable_identity("claim", tools.created_ids[0], finding)
+        _persist_synthesis(tools, "Research writers", finding, session_id="current", project="",
+                           run_id="explicit", on_event=lambda _: None, policy=policy,
+                           knowledge_refs=[{"id": claim_id, "revision": 1}])
+        references = store.repository.read(stable_identity("answer", "explicit", "initial")).value.references
+        assert {(ref.target, ref.revision) for ref in references} == {(claim_id, 1)}
     finally:
         store.close()
 

@@ -40,6 +40,8 @@ class ResearchToolOutput:
 
     model_text: str
     receipt_text: str = ""
+    read_passages: tuple[dict[str, Any], ...] = ()
+    read_observation: dict[str, Any] = field(default_factory=dict)
     ok: bool = field(kw_only=True)
 
     def __post_init__(self) -> None:
@@ -64,7 +66,7 @@ class ResearchTools:
     links_created: int = 0
     ledger: ResearchLedger = field(default_factory=ResearchLedger)
     evidence_only: bool = False
-    automatic_report_refs: bool = False
+    finding_report: bool = False
 
     def create_staged(self) -> ResearchTools:
         staged_store = StagedKnowledgeStore(self.store) if self.store is not None else None
@@ -85,7 +87,7 @@ class ResearchTools:
             links_created=self.links_created,
             ledger=self.ledger.clone(),
             evidence_only=self.evidence_only,
-            automatic_report_refs=self.automatic_report_refs,
+            finding_report=self.finding_report,
         )
 
     def commit_staged(self, staged: ResearchTools) -> None:
@@ -158,8 +160,18 @@ class ResearchTools:
         assert document is not None
         self.sources_read.update(outcome.read_urls)
         offset = max(0, _as_int(offset, 0))
-        limit = min(OPEN_MAX_LIMIT, max(OPEN_MIN_LIMIT, _as_int(limit, OPEN_DEFAULT_LIMIT)))
-        window = document.text[offset : offset + limit]
+        # Leave room for exact passage labels, metadata and source boundaries.
+        limit = min(OPEN_MAX_LIMIT - 2500, max(OPEN_MIN_LIMIT, _as_int(limit, OPEN_DEFAULT_LIMIT)))
+        from codey.research.ledger_receipts import ledger_observation
+        from codey.research.passages import describe_window, restore_passages
+
+        snapshot = ResearchLedger()
+        snapshot.record_open_document(document)
+        observation = ledger_observation(snapshot, "open", url=document.final_url)
+        source = snapshot.source_record_for_url(document.final_url)
+        assert source is not None
+        passages = describe_window(source.final_url, source.text_hash, document.text, offset, limit)
+        window = "\n".join(f"passage_ref={row['ref']}\n{document.text[row['start']:row['end']]}" for row in passages)
         more = offset + limit < len(document.text)
         body = render_opened_source(
             document,
@@ -167,9 +179,18 @@ class ResearchTools:
             more_offset=(offset + limit) if more else None,
         )
         if len(body) > OPEN_MAX_LIMIT:
-            body, _truncated = clip_middle(body, OPEN_MAX_LIMIT)
+            # A clipped body must not authorize a partly unseen passage. Drop
+            # whole trailing passages and rerender their accurate next offset.
+            while passages and len(body) > OPEN_MAX_LIMIT:
+                next_offset = passages.pop()["start"]
+                window = "\n".join(f"passage_ref={row['ref']}\n{document.text[row['start']:row['end']]}" for row in passages)
+                body = render_opened_source(document, window, more_offset=next_offset)
+            if len(body) > OPEN_MAX_LIMIT:
+                body, _truncated = clip_middle(body, OPEN_MAX_LIMIT)
+        restore_passages(self.ledger, observation, passages)
         full = render_opened_source(document, document.text)
-        return ResearchToolOutput(model_text=body, receipt_text=full, ok=True)
+        return ResearchToolOutput(model_text=body, receipt_text=full, read_passages=tuple(passages),
+                                  read_observation=observation, ok=True)
 
     def source_search(self, url: str, query: str, limit: object = SOURCE_SEARCH_DEFAULT_LIMIT) -> ResearchToolOutput:
         outcome = self.gateway.search_inside(url, query, limit)
@@ -228,13 +249,13 @@ class ResearchTools:
                     "origin": target.value.origin, "status": target.value.status,
                     "interpretation_review": target.interpretation_review,
                     "dependencies_changed": target.dependencies_changed})
-        automatic_refs = self.automatic_report_refs and note.id in (*self.created_ids, *self.updated_ids)
+        automatic_refs = self.finding_report and note.id in (*self.created_ids, *self.updated_ids)
         preface = ("Document note; its note_id is not a done.knowledge_refs object id.\n"
                    "Answer reference candidates (use only versions actually adopted):\n"
                    + canonical_json({"knowledge_refs": answer_refs[:6]}) + "\n\n"
                    ) if answer_refs and not self.evidence_only and not automatic_refs else ""
         if automatic_refs and not self.evidence_only:
-            preface = "This run's saved note versions are automatically attached to the report.\n\n"
+            preface = "Cite this saved finding by [finding_ref] only if adopted; the application resolves its exact versions.\n\n"
         preface += ("Document status describes the saved note, not semantic approval of its summary. "
                     "Inspect the linked claim and its exact evidence before adopting the wording.\n"
                     "Claim interpretation state:\n" + canonical_json(claim_states[:12]) + "\n\n")
@@ -307,7 +328,13 @@ class ResearchTools:
         except (ValueError, TypeError, KeyError) as exc:
             return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 
-    def knowledge_write(self, args: dict[str, Any]) -> ResearchToolOutput:
+    def save_finding(self, args: dict[str, Any]) -> ResearchToolOutput:
+        """Deterministic organization of one explicit, unreviewed interpretation."""
+        from codey.research.findings import save_finding
+
+        return save_finding(self, args)
+
+    def knowledge_write(self, args: dict[str, Any], *, finding_id: str = "", locator: str = "") -> ResearchToolOutput:
         if self.store is None:
             return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         existing_id, existing_note, updating, identity_error = _resolve_write_target(self.store, args)
@@ -339,6 +366,9 @@ class ResearchTools:
         )
         if evidence_preparation.error:
             return ResearchToolOutput(f"ERROR: {evidence_preparation.error}", ok=False)
+        if locator:
+            evidence_preparation = replace(evidence_preparation, items=tuple(
+                replace(item, locator=locator) for item in evidence_preparation.items))
         relations, relation_warnings = _prepare_write_relations(args, existing_note)
         status = _resolve_write_status(args, existing_note)
         tags = (
@@ -360,6 +390,8 @@ class ResearchTools:
             self.session_id,
             self.project,
         )
+        if finding_id:
+            note.id = finding_id
         from codey.research.knowledge_archive import note_knowledge
 
         try:
@@ -384,15 +416,15 @@ class ResearchTools:
         versions.sort(key=lambda row: 0 if row["kind"] in {"claim", "inference", "question"} else 1)
         answer_refs = [{"id": row["id"], "revision": row["revision"]} for row in versions
                        if row["kind"] in {"claim", "inference", "question"}][:6]
-        if answer_refs and not self.evidence_only and not self.automatic_report_refs:
+        if answer_refs and not self.evidence_only and not self.finding_report:
             model_text += ("\nAnswer reference candidates (copy only versions actually used into done.knowledge_refs):\n"
                            + canonical_json({"knowledge_refs": answer_refs}))
         model_text += "\nStructured knowledge versions:\n" + canonical_json(versions[:24])
         model_text += ("\nFor knowledge_read use these object ids and revisions, not note_id."
-                       if self.evidence_only or self.automatic_report_refs else
+                       if self.evidence_only or self.finding_report else
                        "\nFor knowledge_read and done.knowledge_refs use these object ids and revisions, not note_id.")
-        if self.automatic_report_refs and not self.evidence_only:
-            model_text += ("\nThese newly saved versions are automatically attached to this research report; "
+        if self.finding_report and not self.evidence_only:
+            model_text += ("\nCite only adopted findings returned by save_finding; "
                            "no manual answer-reference copy is needed. Keep numbered source citations in the report.")
         model_text += "\nTo update this note, knowledge_write.id must be its exact note_id above, not a claim/source/evidence id."
         return ResearchToolOutput(model_text, ok=True)

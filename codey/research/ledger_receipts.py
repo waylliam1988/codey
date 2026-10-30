@@ -140,7 +140,7 @@ def ledger_observation(ledger: ResearchLedger, kind: str, *, url: str = "", evid
         observation = {"source_search": copy.deepcopy(ledger.source_searches[-1])}
         source_search_observation(observation)
         return observation
-    if kind == "knowledge_write":
+    if kind in {"knowledge_write", "save_finding"}:
         return {"evidence": [asdict(item) for item in ledger.evidence_items[evidence_start:]]}
     source = ledger.source_record_for_url(url) if url else None
     if source is not None:
@@ -170,8 +170,12 @@ def restore_ledger_observation(ledger: ResearchLedger, observation: dict[str, An
     elif keys == {"evidence"}:
         items = [EvidenceItem(**item) for item in observation["evidence"]]
         for item in items:
+            from codey.research.passages import passage_evidence_valid
+
             if (not item.note_id or not ledger.canonical_opened_url(item.source_url)
-                    or not ledger.excerpt_in_source(item.source_url, item.excerpt, page=item.page)):
+                    or not (passage_evidence_valid(ledger, item.source_url, item.excerpt, item.locator)
+                            if item.locator.startswith("passage:") else
+                            ledger.excerpt_in_source(item.source_url, item.excerpt, page=item.page))):
                 raise ValueError("recovered evidence has no opened source or archived note")
         ledger.add_evidence_items(items)
     else:

@@ -146,9 +146,9 @@ def _missing_required_sections_review(missing: list[str]) -> ReportQualityReview
         False,
         "Report quality failed: missing required section(s): "
         + ", ".join(section_title(item) for item in missing)
-        + ". Send done.summary as only the cited conclusion and done.report_sections with five nonempty "
-          "text arrays: evidence, counter, source_quality, coverage, sources. "
-          "The application adds headings and paragraph breaks; do not repeat the full report in summary.",
+        + ". Send done.summary as only the cited conclusion and done.report_sections with four nonempty "
+          "text arrays: evidence, counter, source_quality, coverage. Cite [f...] findings. "
+          "The application adds sources, headings and paragraph breaks; do not repeat the full report in summary.",
     )
 
 
@@ -287,8 +287,8 @@ def _review_source_table(
             ReportQualityReview(
                 False,
                 "Report quality failed: every cited source needs at least one saved evidence snippet "
-                "copied from opened page text. Use knowledge_write with evidence.source_url and an exact "
-                "evidence.excerpt before done. Missing snippet-backed citation(s): "
+                "from opened page text. Use save_finding with source_ref and an exact "
+                "passage_ref before done. Missing snippet-backed citation(s): "
                 + ", ".join(missing_evidence[:3]),
             ),
             (),
@@ -304,14 +304,14 @@ def _required_body_citation_review(sections: Mapping[str, str]) -> ReportQuality
     if not citation_refs(sections["conclusion"]):
         return ReportQualityReview(
             False,
-            "Report quality failed: the 结论 section must cite evidence with [n]. "
+            "Report quality failed: the 结论 section must cite evidence with [f...] finding references. "
             "Repair done.summary: add the matching saved-source citation to supported conclusions; "
             "remove or qualify unsupported claims, without rewriting other sections.",
         )
     if not citation_refs(sections["evidence"]):
         return ReportQualityReview(
             False,
-            "Report quality failed: the 关键证据 section must cite opened sources with [n]. "
+            "Report quality failed: the 关键证据 section must cite opened sources with [f...] finding references. "
             "Repair done.report_sections.evidence: cite the saved source for each finding.",
         )
     counter_text = sections["counter"]
@@ -319,9 +319,9 @@ def _required_body_citation_review(sections: Mapping[str, str]) -> ReportQuality
             and not counter_investigation_incomplete(counter_text)):
         return ReportQualityReview(
             False,
-            "Report quality failed: 反证与限制 must cite counter-evidence with [n]. "
+            "Report quality failed: 反证与限制 must cite counter-evidence with [f...] finding references. "
             "Repair done.report_sections.counter, not summary. "
-            "反证与限制这一栏缺少引用：保留有证据的限制时，在该段加上实际对应的 [n]；"
+            "反证与限制这一栏缺少引用：保留有证据的限制时，在该段加上实际对应的 [f...]；"
             "不能只在 summary 或 evidence 加引用。无依据的事实应删除或补证。"
             "若尚未调查反证，应明确说明；若确实查过但没找到，说明实际搜索范围，不能捏造调查。 "
             "This does not request a new report. Uncited section (data): " + counter_text[:400],

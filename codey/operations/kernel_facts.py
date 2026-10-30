@@ -38,6 +38,10 @@ def project_result_observation(
         if not isinstance(observation, dict):
             raise ValueError("research observation must be an object")
         restore_ledger_observation(research_ledger, observation)
+        if "read_passages" in result.canonical:
+            from codey.research.passages import restore_passages
+
+            restore_passages(research_ledger, observation, result.canonical["read_passages"])
     record_facts_for_result(session, call, result, ok=ok, exit_code=exit_code)
 
 
@@ -221,7 +225,7 @@ def record_facts_for_result(
         _record_search_results(session, result)
     elif name == "open_url" or name in _CONTROLLER_ALIASES:
         _record_open_fact(session, result)
-    elif name == "knowledge_write":
+    elif name in {"knowledge_write", "save_finding"}:
         _record_knowledge_fact(session, result)
     elif name == "edit":
         _record_edit_fact(session, args, result)

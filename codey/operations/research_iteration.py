@@ -32,7 +32,8 @@ def _stable_synthesis_id(run_id: str) -> str:
 def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
                        project: str, run_id: str,
                        on_event: Callable[[RunEvent], None], open_questions: Any = (),
-                       policy: Any, projection: str = "initial", knowledge_refs: Any = ()) -> str:
+                       policy: Any, projection: str = "initial", knowledge_refs: Any = (),
+                       finding_ids: tuple[str, ...] = ()) -> str:
     """Persist one synthesis note under the parent task policy (required).
 
     ``policy=None`` denies like any non-allowing policy (fail-closed). The
@@ -56,7 +57,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
     import hashlib
 
     from codey.knowledge.archive import stable_identity
-    from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference
+    from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
 
     note_id = _stable_synthesis_id(run_id if projection == "initial" else run_id + ":" + projection)
     answer_id = stable_identity("answer", run_id, projection)
@@ -76,7 +77,14 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
     from codey.research.synthesis import synthesis_title as _synthesis_title
     from codey.runtime.observe.events import RunEvent
 
-    note_ids = [*tools.created_ids, *tools.updated_ids]
+    # Only explicit selections are answer dependencies. Opening or saving a
+    # source does not make every finding a premise of this answer.
+    note_ids = list(finding_ids)
+    selected_sources = set()
+    for identity in note_ids:
+        selected_note = tools.store.read_note(identity)
+        if selected_note is not None:
+            selected_sources.update(selected_note.sources)
     tags = ["research"]
     if session_id:
         tags.append(f"session:{session_id}")
@@ -84,18 +92,13 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
     note = KnowledgeNote.create(
         type="synthesis", title=_synthesis_title(task),
         body=_synthesis_body(summary, tools.ledger), tags=tags,
-        sources=sorted(tools.sources_read), session_id=session_id, project=project,
+        sources=sorted(selected_sources), session_id=session_id, project=project,
         open_questions=clean_open_questions(open_questions)[:4],
         id=note_id,
     )
     from codey.knowledge.answer_refs import answer_references, answer_scope
 
     references = list(answer_references(knowledge_refs, tools.store, project=project, session_id=session_id))
-    for related_id in note_ids:
-        for row in tools.store.note_references(related_id):
-            version = tools.store.repository.read(str(row["target"]), int(row["revision"]))
-            if version is not None and version.value.kind != "answer":
-                references.append(KnowledgeReference(version.value.id, version.revision, "uses"))
     scope, scope_id = answer_scope(references, tools.store, project=project, session_id=session_id)
     answer = KnowledgeObject(answer_id, "answer", summary, "model_inference", title=note.title,
         status="active", scope=scope, scope_id=scope_id, references=tuple(dict.fromkeys(references)),
@@ -300,13 +303,17 @@ def run_research_iteration(
     ledger = tools.ledger
     synthesis_id = ""
     if outcome.completed:
+        from codey.research.finding_report import compile_finding_report
+
+        compiled = compile_finding_report(session.last_done_args, ledger, tools.store) if policy.strict_research else None
         # Deterministic projection of the settled driver output; the stored
         # digest rejects changes to that original output on replay.
         synthesis_id = _persist_synthesis(
             tools, task, outcome.summary, session_id=session_id,
             project=project, run_id=run_id, on_event=on_event,
             open_questions=session.last_done_args.get("open_questions", ()),
-            knowledge_refs=session.last_done_args.get("knowledge_refs", ()),
+            knowledge_refs=[*session.last_done_args.get("knowledge_refs", ()), *(compiled.knowledge_refs if compiled else ())],
+            finding_ids=compiled.finding_ids if compiled else (),
             policy=policy,
             projection="initial" if writer_attempt == 1 else f"writer-{writer_attempt}",
         )

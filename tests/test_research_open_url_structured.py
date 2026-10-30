@@ -46,7 +46,8 @@ def test_open_url_returns_structured_window_and_full_receipt() -> None:
 
     assert isinstance(opened, ResearchToolOutput)
     expected_window = full_text[6000:8000]
-    assert expected_window in opened.model_text
+    # Labels delimit exact subpassages without changing their original bytes.
+    assert "".join(full_text[row["start"]:row["end"]] for row in opened.read_passages) == expected_window
     assert "NEEDLE_" in opened.model_text
     # Window must not leak the far tail.
     assert "TAIL_ONLY_MARKER_END" not in opened.model_text
@@ -118,4 +119,4 @@ def test_research_tool_output_is_window_plus_receipt_only() -> None:
     import dataclasses
 
     names = {field.name for field in dataclasses.fields(ResearchToolOutput)}
-    assert names == {"model_text", "receipt_text", "ok"}
+    assert names == {"model_text", "receipt_text", "read_passages", "read_observation", "ok"}
