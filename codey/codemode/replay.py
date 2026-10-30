@@ -10,7 +10,8 @@ import hashlib
 import json
 import secrets
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from threading import RLock
 from typing import TypedDict, cast
 
@@ -65,7 +66,7 @@ class DurableCodeModeReplay:
         self._state_index = 0
         self._children_seen: set[str] = set()
         self._lock = RLock()
-        self.failure = ""
+        self._failure = ""
 
         def initialize(current: TaskCheckpoint) -> Mapping[str, object] | None:
             records = self._records(current)
@@ -86,6 +87,28 @@ class DurableCodeModeReplay:
         durable.transform_task_state(task_id, initialize)
         record = self._record(durable.task(task_id))
         self.context = {"epochMs": record["epoch_ms"], "seed": record["seed"]}
+
+    def invalidate(self, reason: str) -> None:
+        """Permanently close this invocation, retaining its first fatal cause."""
+        with self._lock:
+            if not self._failure:
+                self._failure = reason
+
+    @contextmanager
+    def admission(self) -> Iterator[None]:
+        """Serialize invalidation with intent admission and state transactions.
+
+        The caller releases this guard before executing an admitted tool. Its
+        eventual settlement remains allowed even if a sibling invalidates us.
+        """
+        with self._lock:
+            if self._failure:
+                raise CodeModeReplayError(self._failure)
+            try:
+                yield
+            except Exception as exc:
+                self.invalidate(str(exc))
+                raise
 
     @staticmethod
     def _records(current: TaskCheckpoint) -> dict[str, ReplayRecord]:
@@ -111,7 +134,7 @@ class DurableCodeModeReplay:
 
     def child(self, call: ToolCall, effect_id: str) -> None:
         """Inspect the original effect intent; never write a second child log."""
-        try:
+        with self.admission():
             self._children_seen.add(effect_id)
             try:
                 effect = self.durable.effect(effect_id)
@@ -126,9 +149,6 @@ class DurableCodeModeReplay:
                 raise CodeModeReplayError("CodeMode child identity changed during recovery")
             if effect.settlement is None or effect.status not in ("ok", "error"):
                 raise CodeModeReplayError("CodeMode child receipt is missing or uncertain; refusing re-execution")
-        except Exception as exc:
-            self.failure = str(exc)
-            raise
 
     def store(self, key: str, value: object) -> None:
         self._state_step("store", key, value)
@@ -137,52 +157,48 @@ class DurableCodeModeReplay:
         return self._state_step("load", key)
 
     def _state_step(self, op: str, key: str, value: object = None) -> object:
-        try:
-            with self._lock:
-                key = self.state._key(key)
-                request = digest({"op": op, "key": key, **({"value": value} if op == "store" else {})})
-                index = self._state_index
-                result: object = None
+        with self.admission():
+            key = self.state._key(key)
+            request = digest({"op": op, "key": key, **({"value": value} if op == "store" else {})})
+            index = self._state_index
+            result: object = None
 
-                def apply(current: TaskCheckpoint) -> Mapping[str, object] | None:
-                    nonlocal result
-                    records = self._records(current)
-                    steps = self._record(current)["state"]
-                    if index < len(steps):
-                        step = steps[index]
-                        if step["request"] != request:
-                            raise CodeModeReplayError("CodeMode state operation changed during recovery")
-                        if op == "load":
-                            history = self.durable.task_timeline(self.task_id)
-                            past = next((t.task for t in history if t.task.revision == step["revision"]), None)
-                            if past is None:
-                                raise CodeModeReplayError("CodeMode state history is missing")
-                            result = self.state.values_at(past).get(key)
-                        return None
-                    if index != len(steps) or len(steps) >= 256:
-                        raise CodeModeReplayError("CodeMode state recovery sequence exceeds its budget")
-                    state = self.state.values_at(current)
-                    if op == "store":
-                        state = self.state.prepare_store(current, key, value)
-                    else:
-                        result = state.get(key)
-                    steps.append({"request": request, "revision": current.revision + 1})
-                    records[self.execution_id]["state"] = steps
-                    patch: dict[str, object] = {"codemode_replay": records}
-                    if op == "store":
-                        patch["codemode_state"] = state
-                    return patch
+            def apply(current: TaskCheckpoint) -> Mapping[str, object] | None:
+                nonlocal result
+                records = self._records(current)
+                steps = self._record(current)["state"]
+                if index < len(steps):
+                    step = steps[index]
+                    if step["request"] != request:
+                        raise CodeModeReplayError("CodeMode state operation changed during recovery")
+                    if op == "load":
+                        history = self.durable.task_timeline(self.task_id)
+                        past = next((t.task for t in history if t.task.revision == step["revision"]), None)
+                        if past is None:
+                            raise CodeModeReplayError("CodeMode state history is missing")
+                        result = self.state.values_at(past).get(key)
+                    return None
+                if index != len(steps) or len(steps) >= 256:
+                    raise CodeModeReplayError("CodeMode state recovery sequence exceeds its budget")
+                state = self.state.values_at(current)
+                if op == "store":
+                    state = self.state.prepare_store(current, key, value)
+                else:
+                    result = state.get(key)
+                steps.append({"request": request, "revision": current.revision + 1})
+                records[self.execution_id]["state"] = steps
+                patch: dict[str, object] = {"codemode_replay": records}
+                if op == "store":
+                    patch["codemode_state"] = state
+                return patch
 
-                self.durable.transform_task_state(self.task_id, apply)
-                self._state_index += 1
-                return result
-        except Exception as exc:
-            self.failure = str(exc)
-            raise
+            self.durable.transform_task_state(self.task_id, apply)
+            self._state_index += 1
+            return result
 
     def assert_valid(self) -> None:
-        if self.failure:
-            raise CodeModeReplayError(self.failure)
+        if self._failure:
+            raise CodeModeReplayError(self._failure)
         record = self._record(self.durable.task(self.task_id))
         children = {
             effect.effect_id

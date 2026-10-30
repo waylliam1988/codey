@@ -165,6 +165,7 @@ def build_execute_turn_executor(
                 digest({"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
                         "runtime": runtime.contract_digest()}),
                 parent_effect_id=child_sink.parent_effect_id, effect_scope=effect_scope, allow_writes=allow_writes)
+            child_sink.admission_guard = replay.admission
 
         def execute_child(child: ToolCall) -> ToolResult:
             from codey.operations.kernel_events import _event_call
@@ -211,8 +212,9 @@ def build_execute_turn_executor(
             if not results:
                 raise RuntimeError("nested kernel returned no tool result")
             if replay is not None and results[0].audit.get("recovery_disposition") in {"failed", "mismatch"}:
-                replay.failure = "CodeMode child recovery could not verify its original receipt"
-                raise ValueError(replay.failure)
+                reason = "CodeMode child recovery could not verify its original receipt"
+                replay.invalidate(reason)
+                raise ValueError(reason)
             child_identity = turn_effect_id(f"{run_id}:{child_effect_scope}", turn, child_index)
             if child_identity not in session.executed:
                 raise RuntimeError(f"nested kernel result was not committed: {results[0].model_text}")

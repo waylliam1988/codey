@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
@@ -82,6 +84,7 @@ class KernelEffectSink:
         self.managed_outputs = managed_outputs
         self.durable = durable
         self.parent_effect_id = parent_effect_id
+        self.admission_guard: Callable[[], AbstractContextManager[None]] | None = None
         self._request_context: dict[str, object] = {}
         store = RuntimeEffectStore(durable=durable)
         previous = store.load_effects(session_id, run_id)
@@ -141,14 +144,17 @@ class KernelEffectSink:
         if not batch_items:
             return
         batch_tuple = tuple(batch_items)
-        self.mutations.begin_tool_batch(
-            self.session_id, self.run_id, intents=tuple(intents),
-            delivery_intent=None if self.parent_effect_id else DeliveryBatchIntent(
-                batch_id=batch_id, session_id=self.session_id, run_id=self.run_id,
-                turn=turn, items=batch_tuple,
-                batch_digest=compute_batch_digest(batch_tuple),
-            ),
-        )
+        # Nested CodeMode calls share their replay guard with state operations.
+        # Check at the actual durable admission, not before parallel preparation.
+        with self.admission_guard() if self.admission_guard is not None else nullcontext():
+            self.mutations.begin_tool_batch(
+                self.session_id, self.run_id, intents=tuple(intents),
+                delivery_intent=None if self.parent_effect_id else DeliveryBatchIntent(
+                    batch_id=batch_id, session_id=self.session_id, run_id=self.run_id,
+                    turn=turn, items=batch_tuple,
+                    batch_digest=compute_batch_digest(batch_tuple),
+                ),
+            )
         if not self.parent_effect_id:
             self.delivery_batch_id = batch_id
 

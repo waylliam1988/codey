@@ -76,14 +76,19 @@ def test_completed_parent_restores_original_receipt_without_vm(tmp_path, monkeyp
         m.durable.close()
 
 
-def test_missing_child_receipt_blocks_instead_of_reexecuting(tmp_path):
+@pytest.mark.parametrize("continuation", [
+    "return 1;",
+    "try { await store('after_failure', true); } catch {} return await tools.read_file({path:'a.py'});",
+    "try { await tools.read_file({path:'a.py'}); } catch {} return await store('after_failure', true);",
+])
+def test_missing_child_receipt_blocks_instead_of_reexecuting(tmp_path, continuation):
     from codey.codemode.identity import parent_execution_id
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import turn_effect_id
 
     project, state, logdir, m, managed, revs, sink, session = fixture(tmp_path)
     call = ToolCall(
-        "codemode", {"code": "try { await tools.read_file({path:'a.py'}); } catch {} return 1;"}, call_id="parent"
+        "codemode", {"code": "try { await tools.read_file({path:'a.py'}); } catch {} " + continuation}, call_id="parent"
     )
     snapshot = build_turn_snapshot(session)
     specs = {spec.name: spec for spec in snapshot.frozen_specs}
@@ -117,7 +122,80 @@ def test_missing_child_receipt_blocks_instead_of_reexecuting(tmp_path):
         assert "receipt is missing or uncertain" in result.model_text
         assert m.durable.effect(child_id).settlement is None
         assert len(m.durable.effects("r")) == 2
+        assert "after_failure" not in m.durable.task("r").state.get("codemode_state", {})
         assert "children" not in str(m.durable.task("r").state.get("codemode_replay", {}))
+    finally:
+        m.durable.close()
+
+
+def test_normal_child_failure_allows_state_and_later_read(tmp_path):
+    project, _, _, m, managed, revs, sink, session = fixture(tmp_path)
+    call = ToolCall("codemode", {"code": """
+        const missing = await tools.read_file({path:'missing.py'});
+        await store('handled', !missing.ok);
+        return await tools.read_file({path:'a.py'});
+    """}, call_id="parent")
+    try:
+        result = execute_turn(session, [call], executors={"codemode": builder(project, m, managed, revs, sink, session)},
+            run_id="r", effect_scope="outer", turn=0, snapshot=build_turn_snapshot(session),
+            intent_sink=sink, durable=m.durable)[0]
+        assert result.ok, result.model_text
+        assert m.durable.task("r").state["codemode_state"]["handled"] is True
+        assert len(m.durable.effects("r")) == 3
+        assert all(effect.settlement is not None for effect in m.durable.effects("r"))
+    finally:
+        m.durable.close()
+
+
+@pytest.mark.parametrize("already_admitted", [False, True])
+def test_parallel_invalidation_is_atomic_with_intent_admission(tmp_path, monkeypatch, already_admitted):
+    from threading import Event
+
+    from codey.codemode.replay import CodeModeReplayError, DurableCodeModeReplay
+    from codey.operations.task_effects import KernelEffectSink
+
+    project, _, _, m, managed, revs, sink, session = fixture(tmp_path)
+    reached, invalidated = Event(), Event()
+    original_child, original_begin = DurableCodeModeReplay.child, KernelEffectSink.begin_turn
+
+    def child(replay, call, effect_id):
+        original_child(replay, call, effect_id)
+        if call.call_id.endswith(":child:1"):
+            assert reached.wait(5)
+            replay.invalidate("first fatal recovery cause")
+            replay.invalidate("later error must not replace it")
+            invalidated.set()
+            raise CodeModeReplayError("later error must not replace it")
+        if not already_admitted:
+            reached.set()
+            assert invalidated.wait(5)
+
+    def begin(active_sink, items, **kwargs):
+        original_begin(active_sink, items, **kwargs)
+        if active_sink.parent_effect_id and already_admitted:
+            reached.set()
+            assert invalidated.wait(5)
+
+    monkeypatch.setattr(DurableCodeModeReplay, "child", child)
+    monkeypatch.setattr(KernelEffectSink, "begin_turn", begin)
+    call = ToolCall("codemode", {"code": """
+        await Promise.allSettled([
+          tools.read_file({path:'a.py'}), tools.read_file({path:'a.py'})
+        ]);
+        try { await store('after_failure', true); } catch {}
+        return 1;
+    """}, call_id="parent")
+    try:
+        result = execute_turn(session, [call], executors={"codemode": builder(project, m, managed, revs, sink, session)},
+            run_id="r", effect_scope="outer", turn=0, snapshot=build_turn_snapshot(session),
+            intent_sink=sink, durable=m.durable)[0]
+        assert not result.ok
+        assert "first fatal recovery cause" in result.model_text
+        assert "later error must not replace" not in result.model_text
+        effects = m.durable.effects("r")
+        assert len(effects) == (2 if already_admitted else 1)
+        assert all(effect.settlement is not None for effect in effects)
+        assert "after_failure" not in m.durable.task("r").state.get("codemode_state", {})
     finally:
         m.durable.close()
 
