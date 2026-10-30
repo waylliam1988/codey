@@ -70,23 +70,27 @@ def test_synthesis_identity_does_not_collide_after_sanitizing_run_ids():
     assert _stable_synthesis_id("研究") != _stable_synthesis_id("run")
 
 
-def test_synthesis_write_failure_does_not_report_created_note():
+def test_synthesis_write_failure_does_not_report_created_note(tmp_path, monkeypatch):
+    from codey.knowledge.archive import stable_identity
+    from codey.knowledge.changes import KnowledgeChanges
+    from codey.knowledge.store import KnowledgeStore
     from codey.operations.research_iteration import _persist_synthesis
-    from codey.research.ledger import ResearchLedger
+    from codey.research.tools import ResearchTools
 
-    class Store:
-        def exists(self, note_id):
-            return False
+    def disk_full(*args, **kwargs):
+        raise OSError("disk full")
 
-        def write_note(self, *args, **kwargs):
-            raise OSError("disk full")
-
-    tools = SimpleNamespace(store=Store(), changes=object(), created_ids=[], updated_ids=[],
-                            ledger=ResearchLedger(), sources_read=set())
-    assert not _persist_synthesis(tools, "question", "summary", session_id="s", project="",
-                                  run_id="r", on_event=lambda _:None,
-                                  policy=TaskPolicy(grants=frozenset({"knowledge.write"})))
-    assert not tools.created_ids
+    store = KnowledgeStore(tmp_path)
+    try:
+        monkeypatch.setattr(store, "publish_note", disk_full)
+        tools = ResearchTools(None, store, KnowledgeChanges(tmp_path))
+        assert not _persist_synthesis(tools, "question", "summary", session_id="s", project="",
+                                      run_id="r", on_event=lambda _: None,
+                                      policy=TaskPolicy(grants=frozenset({"knowledge.write"})))
+        assert not tools.created_ids
+        assert store.repository.read(stable_identity("answer", "r", "initial")) is None
+    finally:
+        store.close()
 
 
 def test_invalid_durable_identity_fails_before_chat_or_project_creation(tmp_path):
@@ -97,7 +101,7 @@ def test_invalid_durable_identity_fails_before_chat_or_project_creation(tmp_path
 
     provider = mock.Mock()
     project = tmp_path / "not-created"
-    with pytest.raises(RuntimeError, match="task policy persistence is unavailable"):
+    with pytest.raises(RuntimeError, match="task authorization requires its admitted durable mutation line"):
         run(AgentRequest(provider=provider, project=project, task="task",
                          runtime_mutations=object(), session_id="s", run_id="r"))
     provider.new_chat.assert_not_called()

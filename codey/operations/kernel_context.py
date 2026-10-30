@@ -315,7 +315,8 @@ class KernelContext:
             method, args = ("send_turn", (prompt, tools)) if self.native else ("send", (prompt,))
         options: dict[str, Any] = {}
         if self.request_scoped_observations and not (self.native and acknowledge):
-            options["tool_call_observations"] = task_working_context(self.session)
+            options["tool_call_observations"] = task_working_context(
+                self.session, getattr(self.execution.research_tools, "ledger", None))
         if scoped_contract:
             options["tool_call_contract"] = kernel_prompt._text_request_prompt("", snapshot)
             if text_result_spans:
@@ -349,7 +350,8 @@ class KernelContext:
             record_outbound(self.observation.trace_recorder, prompt, admission=admission)
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
         if not self.request_scoped_observations:
-            prompt = "\n\n".join(part for part in (prompt, task_working_context(self.session)) if part)
+            prompt = "\n\n".join(part for part in (prompt, task_working_context(
+                self.session, getattr(self.execution.research_tools, "ledger", None))) if part)
         self.freeze(state, prepared.snapshot, turn=turn, prompt=prompt,
                     counters=replace(state.counters, progress=progress.snapshot()))
 
@@ -493,7 +495,8 @@ class KernelContext:
             self.close(state, advance)
             return
         messages, prompt = advance
-        observations = "" if self.request_scoped_observations else task_working_context(self.session)
+        observations = "" if self.request_scoped_observations else task_working_context(
+            self.session, getattr(self.execution.research_tools, "ledger", None))
         if self.native and messages:
             messages[-1] = replace(messages[-1], user_content="\n\n".join(
                 part for part in (observations, messages[-1].user_content) if part))

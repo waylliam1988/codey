@@ -1336,3 +1336,46 @@ Manual semantic review and a stronger reference-provider comparison remain
 separate tasks; no reference provider has been run. The subsequent live-web
 WAL run is artifacts/research-live-wal-unreviewed-20261030. Its done status does
 not establish broad question coverage: inspect the report and raw receipts.
+
+## Shared observations and bounded completion repair
+
+The first unreviewed WAL run really searched/opened SQLite.org, saved excerpts,
+investigated and returned done. Its final synthesis created three duplicate
+finding notes (six finding notes plus the report). The fresh synthesis's current
+observation list was empty despite an existing parent ledger; generic guidance
+still requested saving before drafting. Current observations now read that same
+committed ledger in every kernel transport path. Local recent receipts remain
+local: displaying earlier findings does not invent a child execution receipt.
+
+The same seeded broad question was rerun at
+artifacts/research-live-wal-shared-observations-20261030, same model/seed and live
+browser. It returned done with three finding notes plus the report, and made no
+new finding writes in final synthesis. It preserved single-writer serialization.
+This is useful mechanical progress, not broad semantic acceptance: it still
+omits the requested version boundary, inadequately covers SQLITE_BUSY, and
+overstates that reads will necessarily end to allow checkpoint progress. The
+query/locator choices also varied, so this is not a controlled causal estimate.
+
+Rejected completion proposals now participate in the shared operation's bounded
+progress history. Three identical proposal/rejection pairs stop as no_progress,
+preserving the unaccepted draft and feedback. Distinct proposals/feedback can
+continue, bounded by the existing turn budget. The history is saved atomically
+with the control decision; no synthetic tool effect/batch or second research
+counter is introduced. Text/native closure and snapshot roundtrip are tested.
+
+64 focused completion, observation, structured-report and cold-start tests pass.
+Expanded testing also passed the research subprocess continuation tests. It
+exposed obsolete fixture failures: the cold-start synthesis stub lacked the
+SQLite repository API, and an authorization test matched an old error message;
+these two tests now exercise current contracts. The broader recovery-trace
+fixture still fails after its direct ProviderActions send because it omits the
+required original invocation scope. A representative failure was reproduced
+with all five modified runtime/guidance modules loaded from HEAD before these
+changes; it is not fixed by relaxing production recovery. The historical parity
+fixture also supplies a now-rejected full Markdown done instead of structured
+report_sections. These expanded suites are not reported as passing.
+
+The fixed-material semantic review is in research-layered-review-20261030.md.
+An unseeded real-web adaptive-therapy task is running separately in
+artifacts/research-live-adaptive-unreviewed-20261030. Its results require source
+and comparator review; do not infer acceptance from task status.

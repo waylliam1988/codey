@@ -102,10 +102,16 @@ def evaluate_completion(context: Any, state: Any) -> None:
         context.advance(state, positions.LEAF_CONTROL_READY, data={"purpose": "done", "result": json_value(result),
             "workspace_revision": context.session.workspace_revision, "workspace_fingerprint": context.session.workspace_fingerprint})
     else:
+        from codey.operations.kernel_progress import KernelProgress
+
+        progress = KernelProgress(context.transport.stagnant_turns, snapshot=state.counters.progress)
+        progress.reject_completion(context.session.last_done_args, followup, context.session)
+        counters = replace(state.counters, progress=progress.snapshot())
         context.advance(state, positions.LEAF_CONTROL_READY, data={"purpose": "retry",
             "prompt": kernel_prompt._completion_followup(followup, native=context.native,
                 structured_report="report_sections" in context.session.last_done_args), "error": "",
-            "counters": state.counters.to_payload(), "error_source": error_source, "error_type": error_type})
+            "counters": counters.to_payload(), "error_source": error_source, "error_type": error_type},
+            counters=counters)
 
 
 def _ids(reply: Any) -> list[str]:
@@ -127,6 +133,14 @@ def prepare_control_delivery(context: Any, state: Any) -> None:
     purpose = decision["purpose"]
     if purpose == "retry":
         turn = received.logical_turn
+        from codey.operations.kernel_progress import KernelProgress
+
+        if KernelProgress(context.transport.stagnant_turns, snapshot=state.counters.progress).stopped:
+            context.close(state, KernelResult(False,
+                "Stopped after repeated rejected completion proposals without progress.\n\n"
+                + decision["prompt"] + "\n\nUnaccepted draft:\n" + context.session.last_done_text,
+                turn, "no_progress"))
+            return
         if turn >= context.session.max_turns and not (context.native and ids):
             context.close(state, KernelResult(False, context.session.last_done_text or "max turns reached", turn, "max_turns"))
             return
@@ -134,7 +148,8 @@ def prepare_control_delivery(context: Any, state: Any) -> None:
 
         # Historical observations precede the specific current rejection so
         # they cannot bury the next action in several pages of saved findings.
-        observations = "" if context.request_scoped_observations else task_working_context(context.session)
+        observations = "" if context.request_scoped_observations else task_working_context(
+            context.session, getattr(context.execution.research_tools, "ledger", None))
         prompt = "\n\n".join(part for part in (observations, decision["prompt"]) if part)
         messages = None
         if context.native and ids:

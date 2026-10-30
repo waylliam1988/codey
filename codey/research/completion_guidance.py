@@ -9,9 +9,10 @@ from codey.reviews import report_sections
 
 if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
+    from codey.research.ledger import ResearchLedger
 
 
-def render_research_observations(session: "TaskSession") -> str:
+def render_research_observations(session: "TaskSession", ledger: "ResearchLedger | None" = None) -> str:
     """Rebuild bounded evidence state from receipts, never narrative checkpoints."""
     recent = []
     findings = []
@@ -32,8 +33,17 @@ def render_research_observations(session: "TaskSession") -> str:
                         findings.append({"interpretation_review": "unreviewed",
                                          **{key: str(item.get(key, ""))[:600]
                                             for key in ("claim", "source_url", "excerpt", "stance", "note_id")}})
+    # A synthesis starts with a fresh local receipt projection, but the same
+    # committed research ledger. Never show its earlier findings as absent or
+    # require the model to write them again to populate this phase's memory.
+    if ledger is not None:
+        findings = [{"interpretation_review": "unreviewed",
+                     **{key: str(getattr(item, key))[:600]
+                        for key in ("claim", "source_url", "excerpt", "stance", "note_id")}}
+                    for item in ledger.evidence_items[-6:]]
+    evidence_count = len(ledger.evidence_items) if ledger is not None else len(session.evidence)
     state = {"opened_sources": dict(list(session.source_ids.items())[-10:]),
-             "saved_notes": session.notes_saved, "saved_evidence_count": len(session.evidence),
+             "saved_notes": session.notes_saved, "saved_evidence_count": evidence_count,
              "recent_receipts": recent[-4:], "saved_findings": findings[-6:]}
     guidance = (
         "Research observations (execution receipts override narrative summaries):\n"
@@ -43,8 +53,14 @@ def render_research_observations(session: "TaskSession") -> str:
           "endpoint and uncertainty. Registration is not reported efficacy; a trend is not a significant result. "
     )
     if session.policy.allows("knowledge.write"):
+        if evidence_count:
+            guidance += (
+                "Findings above are already persisted, including earlier phases of this research. "
+                "Adopt supported findings directly; save only a genuinely new finding or a correction "
+                "using the existing note_id as id. Do not recreate notes to prepare a report. "
+            )
         guidance += (
-            "Before drafting, save each useful finding from an opened passage; copy a contiguous original "
+            "For a new finding, save it from an opened passage; copy a contiguous original "
             "passage sufficient for the WHOLE claim, without ellipses or reconstructed numbers. "
             "Several adjacent sentences may be needed for conditions or comparisons; a generic opening "
             "sentence does not support the details that follow. Split findings when different passages are needed. "

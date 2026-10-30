@@ -138,3 +138,23 @@ def test_pure_research_observations_do_not_repeat_the_entire_task_and_parent_rep
     # Mixed research/coding tasks retain their real workspace observations.
     session.policy = TaskPolicy(frozenset({"control", "project.write"}))
     assert "workspace_revision" in task_working_context(session)
+
+
+def test_parent_synthesis_observations_use_committed_ledger_without_recreating_notes():
+    from codey.research.ledger import EvidenceItem, ResearchLedger
+
+    ledger = ResearchLedger()
+    ledger.evidence_items.append(EvidenceItem(claim="Earlier scoped finding", source_url="https://example.org/",
+        excerpt="Observed result", stance="supports", note_id="original-note"))
+    session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.write"}), strict_research=True),
+                          task_kind="research")
+    assert not session._memory_results  # New synthesis phase; original action did not run here.
+    text = task_working_context(session, ledger)
+    state = json.loads(text.split("summaries):\n", 1)[1].split("\n", 1)[0])
+    assert state["saved_evidence_count"] == 1
+    assert state["saved_findings"][0]["note_id"] == "original-note"
+    assert state["saved_findings"][0]["interpretation_review"] == "unreviewed"
+    assert state["recent_receipts"] == []  # Never manufacture a local success receipt.
+    assert "Do not recreate notes" in text
+    assert "using the existing note_id as id" in text
+    assert "Before drafting, save each useful finding" not in text

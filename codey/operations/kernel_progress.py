@@ -6,6 +6,7 @@ from typing import Any
 
 from codey.agents.runaway_guard import attempt_record, should_block_or_remind
 from codey.agents.state import SeenInfoLRU, ToolAttemptRecord, seen_info_key
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.progress import ProgressSnapshot
 
 
@@ -59,3 +60,18 @@ class KernelProgress:
         # A newly changed file or genuinely new output must never be stopped
         # merely because its call arguments appeared earlier in the session.
         return self.stopped
+
+    def reject_completion(self, args: dict[str, Any], feedback: str, session: Any) -> None:
+        """Account for a rejected proposal without inventing a tool execution.
+
+        Distinct proposal/feedback pairs allow real repairs. Exact repetitions
+        and short cycles use the same bounded history as ordinary tool results.
+        Persist this snapshot atomically with the control decision. It does not
+        claim a result batch: last_batch_id retains its original tool receipt.
+        """
+        call = ToolCall("done", args)
+        result = ToolResult(call, feedback, ok=False)
+        record = attempt_record(call, result, turn=session.turn, edit_epoch=max([0, *session.edited_files.values()]))
+        self.attempts.append(record)
+        novel = self.seen.add(seen_info_key("done", record.call_fp, feedback))
+        self.idle = 0 if novel else self.idle + 1
