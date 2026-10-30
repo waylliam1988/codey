@@ -64,3 +64,9 @@ def test_every_execution_asset_is_bound_by_recovery_contract(monkeypatch):
 
     monkeypatch.setattr(Path, "read_bytes", changed)
     assert NodeWorkerRuntime().contract_digest() != first
+
+
+@pytest.mark.parametrize("literal", ['"\\ud800"', '"\\udfff"', '"\\ud83d\\ude00"'])
+def test_guest_json_strings_have_a_bounded_encoding_result(literal):
+    result = NodeWorkerRuntime().execute("return " + literal + ";", catalog=(), invoke=lambda *_: None)
+    assert result.ok or result.error_code == "result_encoding"

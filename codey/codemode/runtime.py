@@ -230,8 +230,13 @@ class NodeWorkerRuntime:
                 pending[str(message["callId"])] = ready
                 continue
             if kind == "done":
-                value_bytes = len(json.dumps(message.get("value"), ensure_ascii=False,
-                                            separators=(",", ":")).encode("utf-8"))
+                try:
+                    value_bytes = len(json.dumps(message.get("value"), ensure_ascii=False,
+                                                separators=(",", ":")).encode("utf-8"))
+                except UnicodeEncodeError:
+                    return CodeModeResult(False, error_code="result_encoding",
+                                          error="codemode result contains invalid Unicode",
+                                          child_calls=child_index)
                 if message.get("ok") is True and value_bytes > limits.max_output_bytes:
                     return CodeModeResult(False, error_code="output_limit", error="codemode output exceeds its byte limit",
                                           child_calls=child_index)
