@@ -82,9 +82,11 @@ PERMISSION_PROFILES = {
     "research": PermissionProfile(
         name="research",
         research_tools=(
+            "research_plan",
             "knowledge_search",
             "knowledge_read",
             "save_finding",
+            "save_inference",
             "knowledge_write",
             "knowledge_commit",
             "knowledge_link",

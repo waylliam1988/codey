@@ -147,7 +147,7 @@ def _missing_required_sections_review(missing: list[str]) -> ReportQualityReview
         "Report quality failed: missing required section(s): "
         + ", ".join(section_title(item) for item in missing)
         + ". Send done.summary as only the cited conclusion and done.report_sections with four nonempty "
-          "text arrays: evidence, counter, source_quality, coverage. Cite [f...] findings. "
+          "evidence/counter/source_quality text arrays and structured qN coverage records. Cite [fN] references. "
           "The application adds sources, headings and paragraph breaks; do not repeat the full report in summary.",
     )
 

@@ -796,6 +796,13 @@ def _content_overlap_supports(claim_text: str, evidence_text: str) -> bool:
     return len(overlap) / max(1, len(claim_terms)) >= 0.25
 
 
+def interpretation_text_matches(statement: str, saved_statement: str) -> bool:
+    """Lexical binding to a candidate interpretation, never semantic approval."""
+    left, right = _normalize_for_match(statement), _normalize_for_match(saved_statement)
+    return bool(left and right and (left == right or len(left) >= 24 and len(right) >= 24
+        and (left in right or right in left) or _content_overlap_supports(left, right)))
+
+
 def _content_match_terms(text: str) -> set[str]:
     normalized = _normalize_for_match(text)
     terms: set[str] = set()

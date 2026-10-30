@@ -126,6 +126,10 @@ class ResearchLedger:
         self.evidence_items: list[EvidenceItem] = []
         self.source_searches: list[dict[str, Any]] = []
         self.read_passages: dict[str, ReadPassage] = {}
+        self.finding_refs: dict[str, str] = {}
+        self.knowledge_refs: dict[str, dict[str, Any]] = {}
+        self.investigations: dict[str, dict[str, Any]] = {}
+        self.questions: tuple[str, ...] = ()
         self._source_texts: dict[str, str] = {}
         self._source_pages: dict[str, dict[int, str]] = {}
         self._source_page_versions: dict[str, dict[int, tuple[str, str]]] = {}
@@ -137,6 +141,10 @@ class ResearchLedger:
         forked.evidence_items = list(self.evidence_items)
         forked.source_searches = [dict(s) for s in self.source_searches]
         forked.read_passages = dict(self.read_passages)
+        forked.finding_refs = dict(self.finding_refs)
+        forked.knowledge_refs = {k: dict(v) for k, v in self.knowledge_refs.items()}
+        forked.investigations = {k: dict(v) for k, v in self.investigations.items()}
+        forked.questions = self.questions
         forked._source_texts = dict(self._source_texts)
         forked._source_pages = {k: dict(v) for k, v in self._source_pages.items()}
         forked._source_page_versions = {k: dict(v) for k, v in self._source_page_versions.items()}
@@ -149,6 +157,10 @@ class ResearchLedger:
         self.evidence_items = staged.evidence_items
         self.source_searches = staged.source_searches
         self.read_passages = staged.read_passages
+        self.finding_refs = staged.finding_refs
+        self.knowledge_refs = staged.knowledge_refs
+        self.investigations = staged.investigations
+        self.questions = staged.questions
         self._source_texts = staged._source_texts
         self._source_pages = staged._source_pages
         self._source_page_versions = staged._source_page_versions
@@ -530,6 +542,9 @@ class ResearchLedger:
             if len(skipped) >= 16:
                 break
         return {
+            "questions": [{"question_ref": f"q{index}", "question": text}
+                          for index, text in enumerate(self.questions, 1)],
+            "investigations": {k: dict(v) for k, v in self.investigations.items()},
             "queries": [item.query for item in self.searches[:MAX_PAYLOAD_SEARCHES]],
             "searches": [item.to_dict() for item in self.searches[:MAX_PAYLOAD_SEARCHES]],
             "source_searches": list(self.source_searches[:MAX_PAYLOAD_SOURCE_SEARCHES]),

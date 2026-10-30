@@ -33,7 +33,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
                        project: str, run_id: str,
                        on_event: Callable[[RunEvent], None], open_questions: Any = (),
                        policy: Any, projection: str = "initial", knowledge_refs: Any = (),
-                       finding_ids: tuple[str, ...] = ()) -> str:
+                       finding_ids: tuple[str, ...] = (), question_coverage: Any = ()) -> str:
     """Persist one synthesis note under the parent task policy (required).
 
     ``policy=None`` denies like any non-allowing policy (fail-closed). The
@@ -103,7 +103,9 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
     answer = KnowledgeObject(answer_id, "answer", summary, "model_inference", title=note.title,
         status="active", scope=scope, scope_id=scope_id, references=tuple(dict.fromkeys(references)),
         provenance={"run_id": run_id, "session_id": session_id, "summary_digest": summary_digest,
-                    "basis": "settled_kernel_projection", "projection": projection})
+                    "basis": "settled_kernel_projection", "projection": projection,
+                    "questions": list(tools.ledger.questions), "question_coverage": list(question_coverage),
+                    "coverage_assessment": "model_reported_not_semantically_verified"})
     try:
         tools.store.publish_note(note, stable_identity("answer-commit", run_id, projection),
                                  [KnowledgeMutation(answer)], changes=tools.changes)
@@ -210,6 +212,7 @@ def run_research_iteration(
     # A parent synthesis adopts actual ledger observations from completed
     # acquisition, without pretending those actions ran in this invocation.
     if writer_attempt > 1:
+        session.research_questions = tools.ledger.questions
         for source in tools.ledger.opened_sources:
             session.record_open(source.final_url)
         for item in tools.ledger.evidence_items:
@@ -305,7 +308,8 @@ def run_research_iteration(
     if outcome.completed:
         from codey.research.finding_report import compile_finding_report
 
-        compiled = compile_finding_report(session.last_done_args, ledger, tools.store) if policy.strict_research else None
+        compiled = compile_finding_report(session.last_done_args, ledger, tools.store,
+            project=tools.project, session_id=tools.session_id) if policy.strict_research else None
         # Deterministic projection of the settled driver output; the stored
         # digest rejects changes to that original output on replay.
         synthesis_id = _persist_synthesis(
@@ -314,6 +318,7 @@ def run_research_iteration(
             open_questions=session.last_done_args.get("open_questions", ()),
             knowledge_refs=[*session.last_done_args.get("knowledge_refs", ()), *(compiled.knowledge_refs if compiled else ())],
             finding_ids=compiled.finding_ids if compiled else (),
+            question_coverage=session.last_done_args.get("report_sections", {}).get("coverage", ()) if compiled else (),
             policy=policy,
             projection="initial" if writer_attempt == 1 else f"writer-{writer_attempt}",
         )
@@ -342,7 +347,9 @@ def run_research_iteration(
         queries=[item.query for item in ledger.searches],
         search_results=ledger.search_results_payload(),
         opened_sources=ledger.opened_sources_payload(),
-        coverage=ledger.coverage_payload(),
+        coverage={**ledger.coverage_payload(),
+                  "question_answers": session.last_done_args.get("report_sections", {}).get("coverage", [])
+                  if outcome.completed and policy.strict_research else []},
         citation_map=quality.citation_payload() if quality is not None else [],
         evidence_items=ledger.evidence_payload(),
         counterpoints=list(quality.counterpoints) if quality is not None else [],

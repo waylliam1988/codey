@@ -78,7 +78,7 @@ def investigate_plan(*, history: ResearchContinuation, plan: ResearchPlan, tools
                             durable=history.durable)
     session = TaskSession(policy=policy, task_kind="evidence_followup", max_turns=max(3, min(12,
         plan.max_queries * 2 + plan.max_sources + 1)), task_text=prompt,
-        controller_denied=("knowledge_write", "knowledge_commit", "knowledge_link"),
+        controller_denied=("research_plan", "save_inference", "knowledge_write", "knowledge_commit", "knowledge_link"),
         research_acquisition_limits=(plan.max_queries, plan.max_sources))
     outcome = history.kernel(session, attempt=attempt, request=KernelRunRequest(
         task_guidance="Collect missing evidence through the tools, preserving unknown conditions.",

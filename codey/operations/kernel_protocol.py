@@ -76,10 +76,12 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
         results = dict(getattr(session, "search_results", {}) or {})
         opened = set(getattr(session, "opened_sources", set()) or set())
         evidence = list(getattr(session, "evidence", []) or [])
-        if not results and not opened:
-            base = ("knowledge_search", "knowledge_read", "web_search", "done")
+        if not getattr(session, "research_questions", ()):
+            base = ("research_plan", "knowledge_search", "knowledge_read", "done")
+        elif not results and not opened:
+            base = ("knowledge_search", "knowledge_read", "web_search", "open_url", "save_inference", "done")
         elif not opened:
-            base = ("knowledge_search", "knowledge_read", "web_search", "open_url", "open_result", "done")
+            base = ("knowledge_search", "knowledge_read", "web_search", "open_url", "open_result", "save_inference", "done")
         elif not evidence:
             base = (
                 "knowledge_search",
@@ -91,11 +93,14 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
                 "open_hit",
                 "source_search",
                 "save_finding",
+                "save_inference",
                 "knowledge_write",
                 "done",
             )
         else:
             base = None
+        if base is not None and "research_plan" not in base:
+            base = ("research_plan", *base)
     if base is not None:
         base = (*base, "ask_user", "read_tool_result")
     # Reference aliases require an observed target, in ordinary and strict
@@ -199,8 +204,9 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
         frozen = tuple(replace(spec, required=("summary", "report_sections"),
                                json_examples=(STRUCTURED_REPORT_EXAMPLE,),
                                description="Finish the research. summary contains only "
-                                           "the conclusion with [f...] finding citations, without report headings. The four arrays "
-                                           "contain the other sections; do not duplicate them in summary. "
+                                           "the conclusion with [f1] finding citations, without report headings. "
+                                           "evidence/counter/source_quality are text arrays. coverage accounts for every qN "
+                                           "using {question_ref,state,answer,findings} records. Do not duplicate sections in summary. "
                                            "Use report_sections for the final report; the application supplies headings "
                                            "and paragraph breaks, source numbers and the source table. "
                                            "Do not submit sources or copy knowledge ids for current findings. "

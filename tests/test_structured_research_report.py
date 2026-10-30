@@ -22,7 +22,7 @@ def arguments():
         "evidence": ["One writer commits at a time. [1]"],
         "counter": ["未找到强反证；本轮仅检索并打开上述来源。[1]"],
         "source_quality": ["Original experiment; workload limits applicability. [1]"],
-        "coverage": ["Searched writer concurrency and opened the original experiment."],
+        "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Writer concurrency investigated", "findings": ["f1"], "investigations": []}],
     }}
 
 
@@ -113,10 +113,10 @@ def test_plain_text_cannot_bypass_required_research_report_arguments(reply):
 
 def test_literal_escape_sequences_in_report_content_are_preserved():
     args = arguments()
-    args["report_sections"]["coverage"] = [r"The query contained literal \n and Windows C:\data."]
+    args["report_sections"]["coverage"][0]["answer"] = r"The query contained literal \n and Windows C:\data."
     _, plan = plan_for(args, True)
     assert plan.control
-    assert args["report_sections"]["coverage"][0] in plan.control.body
+    assert args["report_sections"]["coverage"][0]["answer"] in plan.control.body
 
 
 def test_grouped_citations_are_compiled_but_unobserved_numbers_still_fail():

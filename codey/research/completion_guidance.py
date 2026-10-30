@@ -1,7 +1,7 @@
 """Pure model guidance for strict Research completion; no orchestration or I/O."""
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from codey.policies.task_policy import TaskPolicy
 from codey.reviews import report_sections
@@ -37,12 +37,16 @@ def render_research_observations(session: "TaskSession", ledger: "ResearchLedger
     # require the model to write them again to populate this phase's memory.
     if ledger is not None:
         findings = [{"interpretation_review": "unreviewed",
-                     "finding_ref": item.note_id,
+                     "finding_ref": next((key for key, value in ledger.finding_refs.items() if value == item.note_id), ""),
                      **{key: str(getattr(item, key))[:600]
                         for key in ("claim", "source_url", "excerpt", "stance", "note_id")}}
                     for item in ledger.evidence_items[-6:]]
     evidence_count = len(ledger.evidence_items) if ledger is not None else len(session.evidence)
     state = {"opened_sources": dict(list(session.source_ids.items())[-10:]),
+             "questions": [{"question_ref": f"q{index}", "question": text}
+                           for index, text in enumerate(ledger.questions if ledger else session.research_questions, 1)],
+             "investigations": dict(list(ledger.investigations.items())[-12:]) if ledger else dict[str, Any](),
+             "read_knowledge_refs": ledger.knowledge_refs if ledger else dict[str, Any](),
              "saved_notes": session.notes_saved, "saved_evidence_count": evidence_count,
              "recent_receipts": recent[-4:], "saved_findings": findings[-6:]}
     guidance = (
@@ -100,7 +104,8 @@ def render_research_observations(session: "TaskSession", ledger: "ResearchLedger
 def render_completion_guidance(policy: TaskPolicy) -> str:
     titles = [report_sections.section_title(key) for key in report_sections.REQUIRED_SECTIONS]
     rules = (
-        "Research evidence rules: select the next useful tool action and wait for its result. "
+        "Research evidence rules: first call research_plan to register 1..8 questions covering the user request. "
+        "Then select the next useful tool action and wait for its result. "
         "Keep planning brief; do not repeatedly restate the task or draft the report before gathering evidence. "
         "Search results are leads, not evidence. "
     )
@@ -144,8 +149,16 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         )
     report = (
         "Report arguments: done.summary is only the conclusion with [f...]-style finding citations; "
-        "done.report_sections={evidence:[text],counter:[text],source_quality:[text],coverage:[text]}. "
-        "Each array contains the paragraphs for that section. The application adds headings and actual line breaks, "
+        "done.report_sections has evidence/counter/source_quality text arrays, and coverage question records: "
+        "{question_ref:q1,state:partial,answer:specific answer or gap,findings:[f1],investigations:[a1]}. "
+        "Account for every registered qN exactly once. States: evidence_found, partial, not_investigated, "
+        "unanswered_after_search. Evidence states need exact fN refs; gap states need findings=[]. "
+        "For unanswered_after_search select actual aN investigation receipts for THAT question; a search for another "
+        "question is not an investigation of this one. not_investigated uses investigations=[]. "
+        "A knowledge_read of a complete claim or inference returns fN pinned to its read revision; cite it only if adopted. "
+        "Use save_inference(statement,premise_refs=[fN],limitations) to preserve a new conditional hypothesis, "
+        "never relabel it as a directly demonstrated result. "
+        "The application adds headings and actual line breaks, "
         "so these values need no manually encoded newline separators. "
         "Do not put headings or the whole report in summary or encode paragraph separators yourself. "
         "Put exact [f...] references from successful saves in summary and evidence paragraphs. "

@@ -27,6 +27,8 @@ def parameter_schemas(tool: str) -> dict[str, Any]:
         return {"conditions": _array(_object({"name": text, "state": {"type": "string", "enum": sorted(CONDITION_STATES)},
                                                 "value": text}, "name", "state")),
                 "comparison": _object(dict.fromkeys(comparison_keys, text), *comparison_keys)}
+    if tool == "save_inference":
+        return {"premise_refs": {**_array({"type": "string", "pattern": "^f[1-9][0-9]*$"}), "minItems": 1, "maxItems": 16}}
     if tool == "knowledge_commit":
         value = _object({
             "id": text, "kind": {"type": "string", "enum": sorted(KINDS)}, "content": text,
@@ -52,9 +54,19 @@ def parameter_schemas(tool: str) -> dict[str, Any]:
                 "conditions": conditions}
     if tool == "done":
         from codey.reviews.report_sections import REQUIRED_SECTIONS
+        from codey.reviews.research_coverage import QUESTION_STATES
 
         keys = REQUIRED_SECTIONS[1:-1]
+        sections = {key: _array(text) for key in keys}
+        sections["coverage"] = {**_array(_object({
+            "question_ref": {"type": "string", "pattern": "^q[1-8]$"},
+            "state": {"type": "string", "enum": list(QUESTION_STATES)},
+            "answer": text, "findings": _array({"type": "string", "pattern": "^f[1-9][0-9]*$"}),
+            "investigations": _array({"type": "string", "pattern": "^a[1-9][0-9]*$"}),
+        }, "question_ref", "state", "answer", "findings", "investigations")), "minItems": 1, "maxItems": 8}
         return {"knowledge_refs": _array(_object({"id": text, "revision": {"type": "integer", "minimum": 1}},
                                                   "id", "revision")),
-                "report_sections": _object({key: _array(text) for key in keys}, *keys)}
+                "report_sections": _object(sections, *keys)}
+    if tool == "research_plan":
+        return {"questions": {**_array(text), "minItems": 1, "maxItems": 8}}
     return {}

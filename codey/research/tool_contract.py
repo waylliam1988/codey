@@ -16,10 +16,11 @@ PROTOCOL_NATIVE_SEARCH_LEAK = "native_search_leak"
 PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 
 STRUCTURED_REPORT_EXAMPLE = (
-    '{"tool":"done","args":{"summary":"Supported conclusion [f0123456789abcdef]","report_sections":'
-    '{"evidence":["Saved finding with its conditions [f0123456789abcdef]"],'
-    '"counter":["Observed limitation and its scope [f0123456789abcdef]"],'
-    '"source_quality":["Study design and limits"],"coverage":["Queries and gaps"]}}}'
+    '{"tool":"done","args":{"summary":"Supported conclusion [f1]","report_sections":'
+    '{"evidence":["Saved finding with its conditions [f1]"],'
+    '"counter":["Observed limitation and its scope [f1]"],'
+    '"source_quality":["Study design and limits"],"coverage":[{"question_ref":"q1",'
+    '"state":"partial","answer":"Answer and remaining gap","findings":["f1"],"investigations":[]}]}}}'
 )
 
 def knowledge_read_id_guidance(*, source_tool: str = "") -> str:
@@ -57,6 +58,13 @@ class ContractResult:
 
 
 TOOL_CONTRACTS = {
+    "research_plan": ToolContract(
+        name="research_plan", required={"questions": list},
+        example='{"tool":"research_plan","args":{"questions":["What must be answered?","What limits applicability?"]}}',
+        description="Register 1..8 questions covering the user request before investigation. Returns stable q1, q2, etc. "
+                    "Keep questions concise. Later calls may append questions, never replace or reorder them. "
+                    "The final report accounts for every question with evidence or a specific gap; planning is not completion.",
+    ),
     "web_search": ToolContract(
         name="web_search",
         required={"query": str},
@@ -100,7 +108,7 @@ TOOL_CONTRACTS = {
         example='{"tool":"knowledge_read","args":{"id":"<note id>"}}',
         description=("read a structured object and its pinned revision, conditions, provenance and references; "
                      "also accepts legacy note ids. " + knowledge_read_id_guidance()),
-        parallel_safe=True,
+        parallel_safe=False,
     ),
     "knowledge_write": ToolContract(
         name="knowledge_write",
@@ -143,6 +151,14 @@ TOOL_CONTRACTS = {
                     "use unknown for absent information. A successful save remains unreviewed. "
                     "Cite the returned [f...] in the report; do not copy object ids or build a source table.",
     ),
+    "save_inference": ToolContract(
+        name="save_inference", required={"statement": str, "premise_refs": list, "limitations": str},
+        example='{"tool":"save_inference","args":{"statement":"A conditional hypothesis linking these findings",'
+                '"premise_refs":["f1","f2"],"limitations":"No direct test of the proposed link"}}',
+        description="Save a NEW candidate inference from previously saved or read fN premises. "
+                    "Explain its conditions and limitations; do not present a plausible link as established evidence. "
+                    "Returns a short fN pinned to exact premise versions. Remains candidate and unreviewed.",
+    ),
     "knowledge_link": ToolContract(
         name="knowledge_link",
         required={"src": str, "dst": str},
@@ -172,7 +188,9 @@ TOOL_CONTRACTS = {
                   "knowledge_refs": ToolArg(list, None, list_item_type=dict), "report_sections": ToolArg(dict, None)},
         example='{"tool":"done","args":{"summary":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}',
         description="For a structured research report, summary is the conclusion with citations, and "
-                    "report_sections supplies evidence, counter, source_quality, coverage as arrays of text paragraphs. "
+                    "report_sections supplies evidence, counter, source_quality as text arrays, and coverage as question records "
+                    "{question_ref:q1,state:partial,answer:answer or gap,findings:[f1],investigations:[a1]}. States: evidence_found, partial, "
+                    "not_investigated, unanswered_after_search. Evidence states need findings; gap states need an empty findings array. "
                     "Cite selected findings with [f...] from save_finding; the application generates source numbers, "
                     "source table, exact knowledge versions, headings and paragraph breaks. All evidence checks still apply. "
                     "Without report_sections, summary is the complete final answer.",
@@ -182,11 +200,13 @@ TOOL_CONTRACTS = {
 
 def research_tool_names(*, include_source_search: bool = True) -> tuple[str, ...]:
     base = (
+        "research_plan",
         "web_search",
         "open_url",
         "knowledge_search",
         "knowledge_read",
         "save_finding",
+        "save_inference",
         "knowledge_write",
         "knowledge_link",
         "knowledge_commit",
@@ -196,12 +216,14 @@ def research_tool_names(*, include_source_search: bool = True) -> tuple[str, ...
         return base
     # source_search is inserted after open_url to match the system prompt order
     return (
+        "research_plan",
         "web_search",
         "open_url",
         "source_search",
         "knowledge_search",
         "knowledge_read",
         "save_finding",
+        "save_inference",
         "knowledge_write",
         "knowledge_link",
         "knowledge_commit",

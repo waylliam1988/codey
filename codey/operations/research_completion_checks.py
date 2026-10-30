@@ -44,7 +44,7 @@ def source_requirement_checks(session: Any, context: Any = None) -> list[Complet
     policy = getattr(session, "policy", None)
     if not bool(getattr(policy, "sources_open_required", False)):
         return []
-    ledger = _context_get(context, "research_ledger")
+    ledger = _context_get(context, "research_execution_ledger") or _context_get(context, "research_ledger")
     if ledger is None:
         return [CompletionCheck("research_sources_opened", CHECK_FAIL, "research_ledger_missing")]
     opened = ledger.final_url_set()
@@ -400,9 +400,15 @@ def _ledger_checks(session: Any, done_text: str, context: Any) -> list[Completio
                 run_id=str(get("run_id") or ""), project=get("project"),
                 stop_reason="done",
             )
+        from codey.research.object_model import interpretation_text_matches
+
+        inference_statements = get("research_inference_statements") or ()
+        # Candidate inference remains an inference. Binding it to its own saved
+        # statement does not turn its premises' evidence into direct support.
+        unbound = [claim for claim in record.claims if claim.status == "unsupported" and not any(
+            interpretation_text_matches(claim.claim_text, statement) for statement in inference_statements)]
         rows.append(CompletionCheck("research_claim_bindings",
-            CHECK_FAIL if record.unsupported_claim_count else CHECK_PASS,
-            "report_claim_binding_incomplete" if record.unsupported_claim_count else ""))
+            CHECK_FAIL if unbound else CHECK_PASS, "report_claim_binding_incomplete" if unbound else ""))
         if get("require_proof_review"):
             review = review_research_proof(record, question=str(get("question") or ""),
                                            evidence_ledger=get("evidence_ledger_payload"))

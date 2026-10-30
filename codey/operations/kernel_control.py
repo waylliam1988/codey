@@ -84,18 +84,24 @@ def evaluate_completion(context: Any, state: Any) -> None:
     error_source = ""
     error_type = ""
     try:
+        completion_context = context.completion_context
         if context.session.policy.strict_research and context.session.task_kind != "evidence_followup":
             from codey.research.finding_report import compile_finding_report
 
             tools = context.execution.research_tools
             try:
-                compiled = compile_finding_report(context.session.last_done_args, tools.ledger, tools.store)
+                compiled = compile_finding_report(context.session.last_done_args, tools.ledger, tools.store,
+                    project=tools.project, session_id=tools.session_id)
             except ValueError as exc:
                 # Keep the repair field-local and the original proposal intact.
                 raise ValueError(f"Report reference fields: {exc}") from exc
             context.session.last_done_text = compiled.text
+            if compiled.validation_ledger is not None:
+                completion_context = {**context.completion_context, "research_ledger": compiled.validation_ledger,
+                                      "research_execution_ledger": tools.ledger,
+                                      "research_inference_statements": compiled.inference_statements}
         refresh_verification_candidates(context.session)
-        verdict = evaluate(context.session, context.session.last_done_text, context=context.completion_context)
+        verdict = evaluate(context.session, context.session.last_done_text, context=completion_context)
         if type(verdict.complete) is not bool:
             raise ValueError("completion gate returned an invalid verdict")
         complete, followup, proof = verdict.complete, verdict.followup, verdict.proof

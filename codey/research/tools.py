@@ -78,7 +78,7 @@ class ResearchTools:
             diagnostics=self.diagnostics,
             session_id=self.session_id,
             project=self.project,
-            sources_read=set(self.sources_read),
+            sources_read=set(self.sources_read) | self.ledger.final_url_set(),
             search_result_urls=set(self.search_result_urls),
             grounded_ids=set(self.grounded_ids),
             created_ids=list(self.created_ids),
@@ -221,6 +221,12 @@ class ResearchTools:
     def knowledge_read(self, note_id: str, *, revision: int | None = None) -> ResearchToolOutput:
         if self.store is None:
             return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
+        binding = self.ledger.knowledge_refs.get(note_id)
+        if binding:
+            if revision is not None and revision != binding["revision"]:
+                return ResearchToolOutput("ERROR: short reference is pinned to another revision", ok=False)
+            note_id, revision = binding["id"], binding["revision"]
+        note_id = self.ledger.finding_refs.get(note_id, note_id)
         version = self.store.repository.read(note_id, revision)
         if version is not None:
             if not KnowledgeAccess(self.project, self.session_id, self.store.owner_id).allows(version):
@@ -228,6 +234,11 @@ class ResearchTools:
             payload = version.to_dict()
             payload["content_complete"] = len(version.value.content) <= 12000
             payload["content"] = version.value.content[:12000]
+            if version.value.kind in {"claim", "inference", "observation"} and payload["content_complete"]:
+                from codey.research.references import bind_version
+
+                payload["finding_ref"] = bind_version(self.ledger, version)
+                payload["adoption"] = "Cite this fN only if adopted. It stays pinned and unreviewed; old answers are not evidence."
             return ResearchToolOutput(canonical_json(payload), ok=True)
         note = self.store.read_note((note_id or "").strip(), **({"revision": revision} if revision is not None else {}))
         if note is None:
@@ -333,6 +344,23 @@ class ResearchTools:
         from codey.research.findings import save_finding
 
         return save_finding(self, args)
+
+    def save_inference(self, args: dict[str, Any]) -> ResearchToolOutput:
+        from codey.research.references import save_inference
+
+        return save_inference(self, args)
+
+    def research_plan(self, questions: object) -> ResearchToolOutput:
+        from codey.research.questions import question_plan
+
+        try:
+            self.ledger.questions = question_plan(questions, self.ledger.questions)
+            return ResearchToolOutput(canonical_json({"questions": [
+                {"question_ref": f"q{index}", "question": text} for index, text in enumerate(self.ledger.questions, 1)],
+                "next": "Investigate these questions; final coverage must answer or explain the gap for every question. "
+                        "A recorded plan is not completed research."}), ok=True)
+        except ValueError as exc:
+            return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 
     def knowledge_write(self, args: dict[str, Any], *, finding_id: str = "", locator: str = "") -> ResearchToolOutput:
         if self.store is None:

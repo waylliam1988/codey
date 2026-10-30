@@ -111,8 +111,10 @@ def test_chinese_report_reminder_preserves_permission_and_evidence_only_boundari
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "knowledge.write"}), strict_research=True),
                           task_text="调查不同解释，给出中文研究报告")
     text = render_research_observations(session)
-    assert "evidence[].claim 写完整中文结论" in text
-    assert "excerpt 保留原文" in text
+    assert "每次 save_finding 归档一项发现" in text
+    assert "claim 写完整中文结论" in text
+    assert "the application stores its exact original text" in text
+    assert "evidence[].claim" not in text
     assert "勿重复旧稿" in text
     assert "格式或引用表错误先就地修正" in text
     assert "仅在缺少证据时执行补查" in text
@@ -156,5 +158,6 @@ def test_parent_synthesis_observations_use_committed_ledger_without_recreating_n
     assert state["saved_findings"][0]["interpretation_review"] == "unreviewed"
     assert state["recent_receipts"] == []  # Never manufacture a local success receipt.
     assert "Do not recreate notes" in text
-    assert "using the existing note_id as id" in text
+    assert "corrected wording creates a distinct finding" in text
+    assert "using the existing note_id as id" not in text
     assert "Before drafting, save each useful finding" not in text

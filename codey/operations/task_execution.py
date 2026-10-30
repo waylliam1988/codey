@@ -469,6 +469,10 @@ class ExecutionDelegate:
         tools = self._observation_tools(source_read=name in {"open_url", "open_result", "reopen_source", "open_hit"})
         args = dict(call.args or {})
         try:
+            if name == "research_plan":
+                outcome = tools.research_plan(args.get("questions"))
+                canonical = {"research_observation": {"questions": list(tools.ledger.questions)}} if outcome.ok else {}
+                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
             if name == "web_search":
                 from codey.research.text_args import first_text_arg
 
@@ -529,43 +533,13 @@ class ExecutionDelegate:
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
             if name == "knowledge_read":
                 outcome = tools.knowledge_read(str(args.get("id") or ""), revision=args.get("revision"))
-                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
+                canonical = {"research_reference_bindings": dict(tools.ledger.knowledge_refs)} if outcome.ok else {}
+                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
             if name == "knowledge_commit":
                 outcome = tools.knowledge_commit(args)
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
-            if name in {"knowledge_write", "save_finding"}:
-                before = len(getattr(getattr(tools, "ledger", None), "evidence_items", ()) or ())
-                created_before, updated_before = set(tools.created_ids), set(tools.updated_ids)
-                links_before = tools.links_created
-                lowered, problem = (self._lower_finding_source(args) if name == "save_finding"
-                                    else self._lower_knowledge_sources(args))
-                if problem:
-                    return ToolResult(ok=False, call=call, model_text=f"ERROR: {problem}"), False, None
-                outcome = tools.save_finding(lowered) if name == "save_finding" else tools.knowledge_write(lowered)
-                if not outcome.ok:
-                    return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), False, None
-                evidence = self._ledger_evidence(before, tools.ledger)
-                evidence_canonical: dict[str, object] = {"evidence_items": evidence}
-                evidence_canonical["knowledge_links_created"] = tools.links_created - links_before
-                proposals: list[object] = []
-                created = [item for item in tools.created_ids if item not in created_before]
-                target = str(lowered.get("id") or "")
-                updated = list(dict.fromkeys([item for item in tools.updated_ids if item not in updated_before] +
-                    ([target] if target in tools.updated_ids else [])))
-                evidence_canonical["knowledge_notes"] = {
-                    "created": created,
-                    "updated": updated,
-                    "proposals": proposals,
-                }
-                affected = list(dict.fromkeys([*created, *updated]))
-                self._staged_note_receipt(tools, affected, proposals, evidence_canonical)
-                ledger = getattr(tools, "ledger", None)
-                if isinstance(ledger, ResearchLedger):
-                    evidence_canonical["research_observation"] = ledger_observation(ledger, name, evidence_start=before)
-                return (
-                    ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=evidence_canonical),
-                    True, None,
-                )
+            if name in {"knowledge_write", "save_finding", "save_inference"}:
+                return self._execute_research_write(call, tools)
             if name == "knowledge_link":
                 links_before = tools.links_created
                 outcome = tools.knowledge_link(str(args.get("src") or ""), str(args.get("dst") or ""),
@@ -575,6 +549,46 @@ class ExecutionDelegate:
         except Exception as exc:
             return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
         return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown research tool {name}"), False, None
+
+    def _execute_research_write(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
+        name, args = call.name, dict(call.args or {})
+        before = len(getattr(getattr(tools, "ledger", None), "evidence_items", ()) or ())
+        created_before, updated_before = set(tools.created_ids), set(tools.updated_ids)
+        links_before = tools.links_created
+        lowered, problem = (self._lower_finding_source(args) if name == "save_finding" else
+                            (args, "") if name == "save_inference" else self._lower_knowledge_sources(args))
+        if problem:
+            return ToolResult(ok=False, call=call, model_text=f"ERROR: {problem}"), False, None
+        outcome = (tools.save_finding(lowered) if name == "save_finding" else
+                   tools.save_inference(lowered) if name == "save_inference" else tools.knowledge_write(lowered))
+        if not outcome.ok:
+            return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), False, None
+        evidence = self._ledger_evidence(before, tools.ledger)
+        evidence_canonical: dict[str, object] = {"evidence_items": evidence}
+        if name == "save_finding":
+            evidence_canonical["finding_refs"] = dict(tools.ledger.finding_refs)
+        if name == "save_inference":
+            evidence_canonical["research_reference_bindings"] = dict(tools.ledger.knowledge_refs)
+        evidence_canonical["knowledge_links_created"] = tools.links_created - links_before
+        proposals: list[object] = []
+        created = [item for item in tools.created_ids if item not in created_before]
+        target = str(lowered.get("id") or "")
+        updated = list(dict.fromkeys([item for item in tools.updated_ids if item not in updated_before] +
+            ([target] if target in tools.updated_ids else [])))
+        evidence_canonical["knowledge_notes"] = {
+            "created": created,
+            "updated": updated,
+            "proposals": proposals,
+        }
+        affected = list(dict.fromkeys([*created, *updated]))
+        self._staged_note_receipt(tools, affected, proposals, evidence_canonical)
+        ledger = getattr(tools, "ledger", None)
+        if isinstance(ledger, ResearchLedger) and name != "save_inference":
+            evidence_canonical["research_observation"] = ledger_observation(ledger, name, evidence_start=before)
+        return (
+            ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=evidence_canonical),
+            True, None,
+        )
 
     @staticmethod
     def _staged_note_receipt(tools: Any, created: list[str], proposals: list[object], canonical: dict[str, object]) -> None:

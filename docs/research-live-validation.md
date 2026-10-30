@@ -1468,3 +1468,49 @@ alone do not establish semantic acceptance.
 Still pending: structured per-question coverage, production semantic review
 (not enabled), and reference-model comparison (no provider available). Current
 work prioritizes the simple interface before expanding the knowledge model.
+
+
+## Short references, reused premises, and explicit question coverage (2026-10-30)
+
+The second web probe, artifacts/research-live-wal-raw-passages-20261030,
+successfully saved findings but failed final references: the model prefixed the
+long f identity with its own sequence number and repeated a rejected report.
+That isolated diagnostic was explicitly cancelled; it is not a successful run.
+
+Current cold-start contracts use short f1/f2 labels over stable internal note
+identities. Successful complete knowledge_read of a claim/inference/observation
+also provides a short label pinned to its read revision. Final citation is the
+explicit adoption; search results alone and old answers never become evidence.
+A historical source validation view is built from exact stored evidence and
+source versions without altering the execution ledger or claiming a new fetch.
+The final report explicitly says when old sources were not fetched this run.
+An explicit fresh-source requirement still uses the actual execution ledger.
+
+save_inference(statement, premise_refs, limitations) saves a candidate,
+unreviewed model inference with exact depends_on edges, using the existing
+knowledge transaction and shared tool effect. It does not attach the premises'
+excerpts as direct evidence for the inference. Its report citations are visibly
+marked as candidate inferences. No independent semantic certification is added.
+
+research_plan registers 1..8 append-only questions through a normal tool receipt.
+Final coverage is exclusively a structured list of question_ref, state, answer,
+findings, investigations. Every qN must occur once, either answered/partial with
+fN references or a concrete gap. Investigation aN references come from settled
+acquisition/read results, including failures, and are projected identically on
+restart. A gap marked investigated must select actual aN receipts for that
+question; the application validates existence, not semantic relevance or search
+exhaustiveness. Planning and model-reported coverage are not verified knowledge.
+
+The actual model example is tested against schema, parser and coverage validator.
+Shared-driver regressions cover new findings, old-only answers without fresh
+fetches, and saving/using a candidate inference. Other regressions check pinned
+old versions after revision, rejected private/old-answer premises, forged
+reference collisions, staged retry, append-only plans, missing questions and
+nonexistent investigation receipts. The two old prompt assertions now check the
+simple interface and preserve the evidence-only/permission boundaries.
+
+Ruff, mypy (563 production files), Pyrefly (0 errors, 35 suppressed/77 warnings)
+and ty currently pass. The final combined targeted run passed 162 tests and two
+subtests, including all 12 subprocess recovery cases. No
+reference model is available. Live validation of the final short-reference and
+coverage contracts is still pending and must not be inferred from unit results.

@@ -133,6 +133,7 @@ def _research_specs() -> dict[str, ToolSpec]:
     from codey.research.tool_contract import TOOL_CONTRACTS, openai_parameters_schema
 
     grant_by_tool = {
+        "research_plan": "knowledge.read",
         "web_search": "web.read",
         "open_url": "web.read",
         "source_search": "web.read",
@@ -140,6 +141,7 @@ def _research_specs() -> dict[str, ToolSpec]:
         "knowledge_read": "knowledge.read",
         "knowledge_write": "knowledge.write",
         "save_finding": "knowledge.write",
+        "save_inference": "knowledge.write",
         "knowledge_commit": "knowledge.write",
         "knowledge_link": "knowledge.link",
         "done": "control",
@@ -165,7 +167,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             json_examples=(contract.example,),
             description=contract.description,
             executor="source" if grant == "web.read" else "knowledge",
-            replay_class="safe" if grant in {"web.read", "knowledge.read"} or name in {"knowledge_commit", "save_finding"} else "unsafe",
+            replay_class="safe" if grant in {"web.read", "knowledge.read"} or name in {"knowledge_commit", "save_finding", "save_inference"} else "unsafe",
             parallel_safe=contract.parallel_safe,
         )
     for alias, (_canonical, id_arg) in _CONTROLLER_ALIAS_ID_ARG.items():
@@ -472,7 +474,7 @@ def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None,
             allowed = None
     order = ("list_dir", "read_file", "read_files", "grep", "find_references", "parallel", "codemode", "edit", "run", "shell",
              "web_search", "open_url", "source_search", "knowledge_search", "knowledge_read",
-             "save_finding", "knowledge_write", "knowledge_commit", "knowledge_link", "read_tool_result", "done")
+             "research_plan", "save_finding", "save_inference", "knowledge_write", "knowledge_commit", "knowledge_link", "read_tool_result", "done")
     names: list[str] = []
     for name in order:
         if native and is_text_batch_tool(name):

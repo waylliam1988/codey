@@ -44,14 +44,15 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
                     "state": "reported", "value": value}
         digest = hashlib.sha256(canonical_json({"session": tools.session_id, "project": tools.project,
             "claim": claim, "passage": ref, "conditions": conditions}).encode()).hexdigest()
-        identity = "f" + digest[:16]
+        identity = "finding-" + digest[:16]
         if tools.store is None:
             raise ValueError("knowledge store is unavailable")
         existing = tools.store.read_note(identity)
         if existing is not None:
             from codey.knowledge.archive import stable_identity
+            from codey.research.references import read_version
 
-            version = tools.store.repository.read(stable_identity("claim", identity, claim))
+            version = read_version(tools.store, stable_identity("claim", identity, claim))
             if (existing.body != claim or existing.sources != [passage.source.final_url]
                     or version is None or version.value.content != claim or version.value.conditions != conditions
                     or version.value.status != "candidate"):
@@ -65,7 +66,7 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
                 tools.ledger.add_evidence_items([item])
             if identity not in tools.created_ids and identity not in tools.updated_ids:
                 tools.updated_ids.append(identity)
-            return _saved(identity, claim, ref)
+            return _saved(tools, identity, claim, ref)
         # A retry reuses the same exact input identity; no fuzzy deduplication.
         lowered: dict[str, Any] = {"type": "fact", "title": claim[:160], "body": claim,
             "sources": [passage.source.final_url], "conditions": conditions,
@@ -87,17 +88,22 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
         if not outcome.ok:
             return outcome
         original.evidence_items = frozen.evidence_items
-        return _saved(identity, claim, ref)
+        return _saved(tools, identity, claim, ref)
     except (ValueError, TypeError, KeyError) as exc:
         return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 
 
-def _saved(identity: str, claim: str, ref: object) -> ResearchToolOutput:
+def _saved(tools: ResearchTools, identity: str, claim: str, ref: object) -> ResearchToolOutput:
     from codey.research.tools import ResearchToolOutput
 
-    return ResearchToolOutput(canonical_json({"finding_ref": identity, "claim": claim,
+    label = next((key for key, value in tools.ledger.finding_refs.items() if value == identity), "")
+    if not label:
+        number = max((int(key[1:]) for key in (*tools.ledger.finding_refs, *tools.ledger.knowledge_refs)), default=0) + 1
+        label = f"f{number}"
+        tools.ledger.finding_refs[label] = identity
+    return ResearchToolOutput(canonical_json({"finding_ref": label, "claim": claim,
         "passage_ref": ref, "interpretation_review": "unreviewed",
-        "next": "Cite [" + identity + "] only where you adopt this finding. Saving is not semantic approval."}), ok=True)
+        "next": "Cite [" + label + "] only where you adopt this finding. Saving is not semantic approval."}), ok=True)
 
 
 def _conditions(raw: object) -> dict[str, dict[str, str]]:

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import re
 
+from codey.reviews.research_coverage import render_coverage
+
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
 _BOLD_LABEL_RE = re.compile(r"^\s*(?:\*\*|__)\s*(.+?)\s*(?:\*\*|__)\s*[:：]\s*(.*)$")
 _LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)、]\s+)")
@@ -46,7 +48,7 @@ REQUIRED_SECTIONS = (
 )
 
 
-def render_done_report(summary: str, sections: object) -> str:
+def render_done_report(summary: str, sections: object, *, questions: tuple[str, ...] = ()) -> str:
     """Render explicitly supplied report parts; never decode or invent content."""
     # Sources are generated from explicitly selected saved findings.
     keys = REQUIRED_SECTIONS[1:-1]
@@ -64,6 +66,9 @@ def render_done_report(summary: str, sections: object) -> str:
     bodies = {"conclusion": summary}
     for key in keys:
         rows = sections[key]
+        if key == "coverage":
+            bodies[key] = render_coverage(rows, questions)
+            continue
         if (not isinstance(rows, list) or not 1 <= len(rows) <= 32
                 or any(not isinstance(row, str) or not row.strip() or len(row) > 16000 for row in rows)):
             raise ValueError(f"report_sections.{key} requires 1..32 nonempty text paragraphs of at most 16000 characters")

@@ -35,6 +35,8 @@ def setup(tmp_path):
     tools = ResearchTools(Search(), store, KnowledgeChanges(tmp_path), session_id="first")
     session = TaskSession(TaskPolicy(frozenset({"web.read", "knowledge.write", "knowledge.read", "control"})),
                           task_kind="research")
+    tools.ledger.questions = ("What limits writer concurrency?",)
+    session.research_questions = tools.ledger.questions
     delegate = ExecutionDelegate(session=session, research_tools=tools)
     return store, tools, session, delegate
 
@@ -65,11 +67,11 @@ def test_real_dispatch_save_restart_and_exact_idempotency(tmp_path):
         result = execute(delegate, tools, session, "save_finding", args)
         assert result.ok, result.model_text
         ref = json.loads(result.model_text)["finding_ref"]
-        claim_id = stable_identity("claim", ref, args["claim"])
+        claim_id = stable_identity("claim", tools.ledger.finding_refs[ref], args["claim"])
         version = store.repository.read(claim_id)
         assert version.value.status == "candidate" and version.interpretation_review == "unreviewed"
         assert version.value.conditions == {"mode": {"state": "not_extracted"}}
-        before = store.read_note(ref).to_markdown()
+        before = store.read_note(tools.ledger.finding_refs[ref]).to_markdown()
         # Reconstruct the read bindings through the committed receipt alone.
         recovered = ResearchLedger()
         restored_session = TaskSession(session.policy, task_kind="research")
@@ -79,7 +81,7 @@ def test_real_dispatch_save_restart_and_exact_idempotency(tmp_path):
         tools.ledger = recovered
         replay = execute(delegate, tools, restored_session, "save_finding", args)
         assert replay.ok and json.loads(replay.model_text)["finding_ref"] == ref
-        assert store.read_note(ref).to_markdown() == before
+        assert store.read_note(tools.ledger.finding_refs[ref]).to_markdown() == before
         assert store.repository.read(claim_id).revision == version.revision
     finally:
         store.close()
@@ -102,7 +104,7 @@ def test_old_passage_still_archives_old_source_after_url_changes(tmp_path):
             "claim": "Only one writer can write at a time.", "source_ref": "s1", "passage_ref": ref})
         assert result.ok, result.model_text
         finding = json.loads(result.model_text)["finding_ref"]
-        claim = store.repository.read(stable_identity("claim", finding, "Only one writer can write at a time."))
+        claim = store.repository.read(stable_identity("claim", tools.ledger.finding_refs[finding], "Only one writer can write at a time."))
         evidence = store.repository.read(claim.value.references[0].target, claim.value.references[0].revision)
         source = store.repository.read(evidence.value.references[0].target, evidence.value.references[0].revision)
         assert source.value.content == TEXT
@@ -150,7 +152,7 @@ def test_comparison_is_optional_unreviewed_and_never_filled_by_application(tmp_p
         result = execute(delegate, tools, session, "save_finding", args)
         assert result.ok, result.model_text
         finding = json.loads(result.model_text)["finding_ref"]
-        claim = store.repository.read(stable_identity("claim", finding, args["claim"]))
+        claim = store.repository.read(stable_identity("claim", tools.ledger.finding_refs[finding], args["claim"]))
         assert claim.value.conditions["comparison_comparator"] == {"state": "not_extracted"}
         assert claim.interpretation_review == "unreviewed"
         args["comparison"].pop("uncertainty")
@@ -165,7 +167,7 @@ def report_args(ref):
         "evidence": [f"Only one writer can write at a time. [{ref}]"],
         "counter": ["本轮尚未调查反证，仍有证据缺口。"],
         "source_quality": [f"Original documentation; interpretation remains unreviewed. [{ref}]"],
-        "coverage": ["Only writer concurrency was investigated; version boundaries remain unknown."]}}
+        "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Writer concurrency answered; version boundaries remain unknown.", "findings": [ref], "investigations": []}]}}
 
 
 @pytest.mark.usefixtures("public_source_dns")
@@ -191,16 +193,16 @@ def test_report_uses_only_selected_findings_and_pins_original_versions(tmp_path)
         assert args == original
         assert URL + "-uncited" not in compiled.text
         assert "[1]" in compiled.text and "[2]" not in compiled.text and "[f" not in compiled.text
-        assert compiled.finding_ids == (chosen,)
+        assert compiled.finding_ids == (tools.ledger.finding_refs[chosen],)
         refs = compiled.knowledge_refs
         _persist_synthesis(tools, "Research writers", compiled.text, session_id="first", project="",
             run_id="selected", on_event=lambda _: None, policy=session.policy,
             knowledge_refs=list(refs), finding_ids=compiled.finding_ids)
         answer = store.repository.read(stable_identity("answer", "selected", "initial"))
         assert {(r.target, r.revision) for r in answer.value.references} == {(r["id"], r["revision"]) for r in refs}
-        assert stable_identity("claim", omitted, "Writers and readers can run concurrently.") not in {
+        assert stable_identity("claim", tools.ledger.finding_refs[omitted], "Writers and readers can run concurrently.") not in {
             r.target for r in answer.value.references}
-        for bad in (report_args("f0000000000000000"), report_args("1"), report_args("s1")):
+        for bad in (report_args("f999"), report_args("1"), report_args("s1")):
             with pytest.raises(ValueError):
                 compile_finding_report(bad, tools.ledger, store)
         with pytest.raises(ValueError, match="exactly"):
@@ -224,7 +226,9 @@ def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path
 
     store, tools, session, _ = setup(tmp_path)
     session.policy = TaskPolicy(session.policy.grants, strict_research=True)
-    session.max_turns = 6
+    session.research_questions = ()
+    tools.ledger.questions = ()
+    session.max_turns = 7
     monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", lambda *a, **k: native)
 
     class Provider:
@@ -233,14 +237,16 @@ def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path
         def reply(self):
             self.turns += 1
             if self.turns == 1:
-                name, args = "web_search", {"query": "writer concurrency official documentation"}
+                name, args = "research_plan", {"questions": ["What limits writer concurrency?"]}
             elif self.turns == 2:
-                name, args = "open_result", {"result_id": "r1"}
+                name, args = "web_search", {"query": "writer concurrency official documentation"}
             elif self.turns == 3:
+                name, args = "open_result", {"result_id": "r1"}
+            elif self.turns == 4:
                 name, args = "save_finding", {"claim": "Only one writer can write at a time.",
                     "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))}
             else:
-                name, args = "done", report_args(next(item.note_id for item in tools.ledger.evidence_items))
+                name, args = "done", report_args(next(iter(tools.ledger.finding_refs)))
             return (AssistantTurn(tool_calls=(ProviderToolCall(f"call-{self.turns}", name, args),)) if native else
                     json.dumps({"tool": name, "args": args}))
 

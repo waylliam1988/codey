@@ -34,6 +34,10 @@ def project_result_observation(
 ) -> None:
     """The shared live/recovery projection, applied only to staged views."""
     observation = result.canonical.get("research_observation")
+    if ok and research_ledger is not None and "research_reference_bindings" in result.canonical:
+        from codey.research.references import restore_bindings
+
+        restore_bindings(research_ledger, result.canonical["research_reference_bindings"])
     if ok and research_ledger is not None and observation is not None:
         if not isinstance(observation, dict):
             raise ValueError("research observation must be an object")
@@ -42,7 +46,35 @@ def project_result_observation(
             from codey.research.passages import restore_passages
 
             restore_passages(research_ledger, observation, result.canonical["read_passages"])
+        if "finding_refs" in result.canonical:
+            _restore_finding_refs(research_ledger, result.canonical["finding_refs"])
+    if research_ledger is not None and call.name in {
+        "web_search", "open_url", "open_result", "reopen_source", "open_hit", "source_search", "knowledge_read"
+    } and not denied_before_execution(result):
+        # Called exactly once for each settled effect by live and restart projection.
+        ref = f"a{len(research_ledger.investigations) + 1}"
+        research_ledger.investigations[ref] = {"tool": call.name, "ok": ok,
+                                              "args": dict(call.args or {})}
     record_facts_for_result(session, call, result, ok=ok, exit_code=exit_code)
+
+
+def _restore_finding_refs(ledger: ResearchLedger, raw: object) -> None:
+    if not isinstance(raw, dict) or len(raw) > 256:
+        raise ValueError("invalid finding reference mapping")
+    evidence_notes = {item.note_id for item in ledger.evidence_items}
+    pending: dict[str, str] = {}
+    for key, value in raw.items():
+        if (not isinstance(key, str) or re.fullmatch(r"f[1-9][0-9]*", key) is None
+                or not isinstance(value, str) or value not in evidence_notes):
+            raise ValueError("finding reference has no saved evidence")
+        if key in ledger.finding_refs and ledger.finding_refs[key] != value:
+            raise ValueError("conflicting finding reference")
+        if key in ledger.knowledge_refs:
+            raise ValueError("conflicting research reference namespace")
+        if any(old_key != key and old_value == value for old_key, old_value in {**ledger.finding_refs, **pending}.items()):
+            raise ValueError("duplicate finding reference identity")
+        pending[key] = value
+    ledger.finding_refs.update(pending)
 
 
 def _record_run_verification(
@@ -221,11 +253,18 @@ def record_facts_for_result(
         return
     if not ok:
         return
-    if name == "web_search":
+    if name == "research_plan":
+        from codey.research.questions import question_plan
+
+        observation = result.canonical.get("research_observation")
+        if not isinstance(observation, dict) or set(observation) != {"questions"}:
+            raise ValueError("research plan requires its committed question observation")
+        session.research_questions = question_plan(observation["questions"], session.research_questions)
+    elif name == "web_search":
         _record_search_results(session, result)
     elif name == "open_url" or name in _CONTROLLER_ALIASES:
         _record_open_fact(session, result)
-    elif name in {"knowledge_write", "save_finding"}:
+    elif name in {"knowledge_write", "save_finding", "save_inference"}:
         _record_knowledge_fact(session, result)
     elif name == "edit":
         _record_edit_fact(session, args, result)
