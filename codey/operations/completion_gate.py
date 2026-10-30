@@ -448,9 +448,6 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
         "Model claims alone do not complete."
     )
     followup = f"Not done yet ({reason or 'checks incomplete'}). " + instruction
-    if reason == "knowledge_reference_invalid":
-        followup += (" knowledge_refs must cite structured object ids with their saved revisions from knowledge_search/read/write, "
-                     "not document note_ids or old answer objects. Read the source note to find its structured versions.")
     feedback = research_completion_feedback(session, text, context, deduped)
     if feedback:
         followup += "\n\n" + feedback

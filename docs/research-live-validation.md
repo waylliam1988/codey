@@ -1368,14 +1368,52 @@ Expanded testing also passed the research subprocess continuation tests. It
 exposed obsolete fixture failures: the cold-start synthesis stub lacked the
 SQLite repository API, and an authorization test matched an old error message;
 these two tests now exercise current contracts. The broader recovery-trace
-fixture still fails after its direct ProviderActions send because it omits the
-required original invocation scope. A representative failure was reproduced
-with all five modified runtime/guidance modules loaded from HEAD before these
-changes; it is not fixed by relaxing production recovery. The historical parity
-fixture also supplies a now-rejected full Markdown done instead of structured
-report_sections. These expanded suites are not reported as passing.
+fixture initially failed after its direct ProviderActions send because it
+omitted the required original invocation scope. A representative failure was
+reproduced with all five modified runtime/guidance modules loaded from HEAD
+before these changes. The fixture now binds its original snapshot through
+sink.bind_request, as production does; all 81 traces pass without relaxing
+production recovery. One research restart test run overlapped a source edit and
+correctly rejected changed implementation identity; a stable-source rerun passes
+all 12 research subprocess continuation tests. The historical parity fixture
+still supplies a now-rejected full Markdown done instead of report_sections;
+that historical suite is not reported as passing.
 
 The fixed-material semantic review is in research-layered-review-20261030.md.
 An unseeded real-web adaptive-therapy task is running separately in
 artifacts/research-live-adaptive-unreviewed-20261030. Its results require source
 and comparator review; do not infer acceptance from task status.
+
+## Field-local reference repair from a real medical failure
+
+That medical run ended no_progress: it acquired real web pages (mechanism
+research, a clinical registration and the mouse preprint), saved candidate
+findings and repaired both an uncertainty omission and a nonsignificant-result
+overstatement. It did not complete a correct comparison with published human
+outcomes. Final synthesis submitted document note ids as knowledge_refs, then
+repeatedly read the same note in response to generic reference feedback. This
+is a failed broad research test, not an accepted medical report.
+
+Current-run note references now get precise removal instructions: the parent
+already attaches those exact saved versions. The rejected proposal is not
+silently normalized or accepted, and earlier-work references must remain pinned.
+The unconditional upper-gate instruction to read the note was removed so it
+cannot contradict the field-local remedy. Ordinary/hybrid reference validation
+retains its own read/repair behavior. Note reads also show claim interpretation
+state before document prose: an archival note's active status is not semantic
+approval of its body.
+
+Final focused verification: 106 tests pass across knowledge storage/review,
+lifecycle, structured report, completion repair, shared kernel progress and
+native closure. The three type checkers pass over production code, Ruff passes
+over codey and the new/updated tests, and git diff --check passes. The frontend
+graph test, TypeScript and production build passed; generated codey/web was
+published locally and tools.publish_frontend --check passes. No running Codey
+service or user's model configuration was restarted/changed by these probes.
+
+The same broad unseeded medical question is rerunning from a fresh database at
+artifacts/research-live-adaptive-reference-repair-20261030 with the same local
+sampling controls. It passed the initial report/reference path without the
+previous read loop and proceeded to actual follow-up browsing. Final status
+and semantic acceptance are still pending; no stronger reference-model run has
+been performed.

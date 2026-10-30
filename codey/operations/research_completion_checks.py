@@ -130,6 +130,9 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
                 "any supported new finding. If acquisition fails, report the actual failed attempt and remaining "
                 "gap in a brief done.summary; do not invent evidence or repeat the parent report.")
     if "knowledge_versions" in failed:
+        redundant = _current_note_reference_feedback(session, context)
+        if redundant and "research_evidence_saved" not in failed:
+            return redundant
         parts.append("done.knowledge_refs must use the structured object id and revision from "
                      "Structured knowledge versions or knowledge_read, not a note_id, Markdown path, "
                      "source id, tool result_ref or old answer. Read the cited object before resubmitting; "
@@ -242,6 +245,33 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
                                       search_result_urls=set(getattr(session, "search_results", {}).values()))
         parts.append(review.message)
     return "\n\n".join(parts)
+
+
+def _current_note_reference_feedback(session: Any, context: Any) -> str:
+    """Point to redundant document refs without guessing an object or revision."""
+    if (getattr(session, "task_kind", "") != "research"
+            or not getattr(getattr(session, "policy", None), "strict_research", False)):
+        return ""
+    ledger = _context_get(context, "research_ledger")
+    if ledger is None:
+        return ""
+    notes = {item.note_id for item in ledger.evidence_items if item.note_id}
+    raw = getattr(session, "last_done_args", {}).get("knowledge_refs")
+    if not isinstance(raw, list):
+        return ""
+    redundant = [f"done.knowledge_refs[{index}]" for index, row in enumerate(raw)
+                 if isinstance(row, dict) and isinstance(row.get("id"), str) and row["id"] in notes]
+    if not redundant:
+        return ""
+    return (
+        "These entries contain this research run's document note_ids, not structured object ids: "
+        + ", ".join(redundant[:6]) + ". Remove these entries from done.knowledge_refs; omit the field if none remain. "
+        "The application already attaches exact saved versions for this run. Preserve references to earlier "
+        "knowledge actually adopted. No knowledge_read or new write is needed for this redundant-reference repair. "
+        "Do not copy the note_id again. Other report checks will run on the corrected proposal. "
+        "这些是本次研究的笔记 ID，系统会自动关联其知识版本；请删除列出的引用项，"
+        "无需再读笔记或重写证据。以前研究的引用应保留。"
+    )
 
 
 def _citation_prerequisite_feedback(session: Any, text: str, ledger: Any) -> str:

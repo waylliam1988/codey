@@ -235,11 +235,13 @@ class ResearchTools:
                    ) if answer_refs and not self.evidence_only and not automatic_refs else ""
         if automatic_refs and not self.evidence_only:
             preface = "This run's saved note versions are automatically attached to the report.\n\n"
+        preface += ("Document status describes the saved note, not semantic approval of its summary. "
+                    "Inspect the linked claim and its exact evidence before adopting the wording.\n"
+                    "Claim interpretation state:\n" + canonical_json(claim_states[:12]) + "\n\n")
         version_label = ("Structured knowledge versions:" if self.evidence_only or automatic_refs else
                          "Structured knowledge versions (use these for knowledge_refs):")
         return ResearchToolOutput(preface + note.to_markdown() + "\n\n" + version_label + "\n"
-                                  + canonical_json(references) + "\nClaim interpretation state:\n"
-                                  + canonical_json(claim_states[:12]), ok=True)
+                                  + canonical_json(references), ok=True)
 
     def _missing_knowledge_identity(self, identity: str) -> str:
         assert self.store is not None

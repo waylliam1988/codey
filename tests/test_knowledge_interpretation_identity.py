@@ -32,6 +32,9 @@ def test_wrong_extraction_stays_unreviewed_after_save_reopen_recall_and_answer_a
         assert version.interpretation_review == "unreviewed" and not version.dependencies_changed
         assert version.value.provenance["source_statement_type"] == "not_extracted"
         assert '"interpretation_review":"unreviewed"' in result.model_text
+        document = tools.knowledge_read(note_id).model_text
+        assert document.index("Claim interpretation state:") < document.index("---\n")
+        assert "not semantic approval of its summary" in document
         # A model may write arbitrary commentary but cannot assert an assessment.
         forged = replace(version.value, provenance={**version.value.provenance, "reviewed": True})
         store.repository.commit("model-self-assertion", [KnowledgeMutation(forged, 1)])
