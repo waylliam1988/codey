@@ -366,16 +366,23 @@ def run_research_pipeline(
     )
     ledger_sink = record_ledger_write or record_evidence_ledger_write
 
-    def project_result(result: Any, tools: Any) -> Any:
-        from codey.operations.research_iteration import _persist_synthesis
-
-        identity = _persist_synthesis(tools, request.task, result.summary, session_id=request.session_id,
-            project=frame.project_text, run_id=frame.run_id, on_event=hooks.on_event,
-            policy=frame.entry_policy, projection="final")
-        if not identity:
+    def synthesize_result(result: Any, tools: Any) -> Any:
+        if not investigation_index:
             return result
-        return replace(result, synthesis_id=identity, notes_created=list(tools.created_ids),
-                       research_record=replace(result.research_record, synthesis_id=identity) if result.research_record else None)
+        from codey.operations.research_iteration import run_research_iteration
+        from codey.operations.research_synthesis import synthesis_context
+
+        final = run_research_iteration(
+            deps, provider=frame.provider, session_id=request.session_id, project=frame.project_text,
+            task=request.task, max_turns=max_turns, on_event=hooks.on_event,
+            stop_flag=stop_flag_for(deps.state, frame.run_id), provider_id=frame.provider_id,
+            run_id=frame.run_id, chat_handoff="", trace_recorder=frame.trace, search=tools.search,
+            tools=tools, iteration_context=synthesis_context(tools), task_policy=frame.entry_policy,
+            writer_attempt=2 * investigation_index + 1,
+        ).result
+        # The result/proof belong to the new parent invocation. Even when it
+        # exhausts its budget, never return the older draft as successful.
+        return final
 
     pipeline = ResearchPipeline(
         context=context_builder(
@@ -386,7 +393,7 @@ def run_research_pipeline(
         run_iteration=iteration,
         search_factory=deps.search_factory,
         investigate=investigate,
-        project_result=project_result,
+        synthesize_result=synthesize_result,
         evidence_ledgers=deps.evidence_ledgers,
         config=ResearchPipelineConfig(),
         ledger_event_sink=lambda result: ledger_sink(hooks, result),

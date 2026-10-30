@@ -1015,3 +1015,46 @@ Validation: 105 focused tests passed, including subprocess restart, follow-up,
 protocol and observation checks. Ruff, mypy (555 files), Pyrefly and ty passed.
 Fresh live WAL retest: `research-live-wal-targeted-investigation-20261030`,
 still running and not accepted.
+
+## Parent synthesis after investigation
+
+The targeted-investigation WAL run ended with the old draft: acquisition now
+really searched/opened passages, but several proposed quotes were rejected.
+The pipeline had no gated parent synthesis after acquisition. It only merged
+an ungated evidence patch, which must remain partial and could lose ranking
+against the old draft simply because the draft had stopped with done.
+
+Production now retains validated acquired findings and passes them to a fresh
+parent synthesis through the same driver and continuation (attempts 1 initial,
+2/4/6 acquisition, then 3/5/7 final synthesis). Sources/evidence are inherited
+from the ledger, output is checked by the common completion gate, and a failed
+or cancelled synthesis cannot fall back to the older successful draft. The
+bounded handoff includes source identity, stance, exact excerpts and note ids;
+long displays are explicitly marked incomplete. Stable synthesis identities
+are distinct per invocation, with no duplicate final persistence projection.
+
+Validation: 52 focused pipeline/source/restart tests passed; subprocess crashes
+now also cover the final synthesis response and settled output. An additional
+28 focused patch/phase/handoff tests passed (groups overlap). Ruff, mypy (556
+files), Pyrefly and ty passed.
+
+`research-live-wal-parent-synthesis-20261030` completed acquisition and the new
+parent synthesis with done. It is still NOT a semantic pass: the report omits
+requested version distinctions and understates long-reader checkpoint limits.
+No claim of broad research reliability follows from this completed runtime.
+
+## Source locator ranking and reading guidance
+
+Actual source_search for `checkpoint and SQLITE_BUSY` returned three overlapping
+TOC previews. Common query words no longer dominate multiword search; body
+matches rank above heading/TOC matches, and near-duplicate windows no longer
+fill the result budget. Labels remain searchable when no body match exists.
+Page offsets and tool-receipt offsets now have distinct navigation guidance;
+source tool results no longer generically direct every next read to a receipt.
+45 focused source/protocol/compaction tests passed (overlaps earlier groups).
+
+Next live run: `research-live-adaptive-parent-synthesis-thinking-20261030`,
+real production browser, local Gemma4 with thinking/minimal enabled. In progress,
+not accepted. Normal text protocol is used because the JSON-only diagnostic
+sampler excludes thinking. This is a configuration comparison, not a silent
+change to the user's model preferences.

@@ -123,6 +123,7 @@ class ResearchPipeline:
         research_changes_sink: Callable[..., None] | None = None,
         execute_plan: Callable[[PlanExecutor, ResearchPlan, ResearchTools], PlanExecutionResult] | None = None,
         investigate: Callable[[ResearchPlan, ResearchTools, str], tuple[PlanExecutionResult, EvidenceFollowupResult]] | None = None,
+        synthesize_result: Callable[[ResearchRunResult, ResearchTools], ResearchRunResult] | None = None,
         project_result: Callable[[ResearchRunResult, ResearchTools], ResearchRunResult] | None = None,
         policy: object,
     ) -> None:
@@ -136,6 +137,7 @@ class ResearchPipeline:
         self.research_changes_sink = research_changes_sink
         self.execute_plan = execute_plan
         self.investigate = investigate
+        self.synthesize_result = synthesize_result
         self.project_result = project_result
         # 原任务授权：补研究与合成均不得超越此边界
         self.policy = policy
@@ -315,7 +317,10 @@ class ResearchPipeline:
                 material=material,
             )
             candidate_review = self._review(candidate, require_ledger_record=False)
-            if followup_selection.selects_candidate(candidate, candidate_review, best, best_review):
+            # With a gated parent synthesis, retain validated acquired evidence
+            # even if the ungated patch ranks below the old draft. The patch is
+            # input to that synthesis, never its completion proof.
+            if self.synthesize_result is not None or followup_selection.selects_candidate(candidate, candidate_review, best, best_review):
                 try:
                     best_tools.commit_staged(staged_tools)
                 except cancellation.TaskCancelled:
@@ -373,6 +378,8 @@ class ResearchPipeline:
         total_attempted_fresh_sources: int,
         total_attempted_new_evidence: int,
     ) -> ResearchPipelineResult:
+        if best_tools is not None and self.synthesize_result is not None:
+            best = self.synthesize_result(best, best_tools)
         if followup_rounds and best_tools is not None and self.project_result is not None:
             best = self.project_result(best, best_tools)
         ledger_result = self._append_final_record(best)

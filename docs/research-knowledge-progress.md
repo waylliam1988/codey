@@ -27,6 +27,14 @@ generic research methods. Markdown is interchange, never a competing authority.
 
 ## Status
 
+Parent synthesis is now connected after evidence investigation through the same
+driver/continuation and completion gate. Crashes at final response/settlement
+resume without another model request or another evidence write. A synthesis
+failure never restores the old successful draft. Source locator ranking now
+avoids repeated TOC hits and distinguishes page offsets from receipt offsets.
+The real WAL run exercised final synthesis successfully but still failed content
+review. A fresh real medical comparison with local thinking enabled is running.
+
 Latest continuation: acquisition-only follow-ups now avoid repeating parent
 reports and forbidden final-answer references, and must actually attempt
 acquisition before finishing. 105 focused tests and all four static checks

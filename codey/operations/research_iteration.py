@@ -148,6 +148,7 @@ def run_research_iteration(
     requested_capabilities: tuple[str, ...] = (),
     task_policy: Any = None,
     controller_denied: tuple[str, ...] = (),
+    writer_attempt: int = 1,
 ) -> ResearchIterationRun:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
@@ -203,6 +204,14 @@ def run_research_iteration(
             iteration_context, topic_continuity_context,
         ) if x),
     )
+    # A parent synthesis adopts actual ledger observations from completed
+    # acquisition, without pretending those actions ran in this invocation.
+    if writer_attempt > 1:
+        for source in tools.ledger.opened_sources:
+            session.record_open(source.final_url)
+        for item in tools.ledger.evidence_items:
+            session.record_evidence(item.source_url, item.excerpt)
+        session.notes_saved = len(set(tools.created_ids + tools.updated_ids))
     intent_sink = None
     active_provider = provider
     admitted = None
@@ -222,7 +231,9 @@ def run_research_iteration(
     history = ResearchContinuation(mutations, getattr(deps, "managed_outputs", None),
                                    session_id=session_id, run_id=run_id)
     position = history.state()
-    if position.writer_attempt == 1 and position.leaf in {"accepted", "writer_running"} and not position.logical_turn:
+    if (position.writer_attempt < writer_attempt
+            or (position.writer_attempt == writer_attempt and position.leaf in {"accepted", "writer_running"}
+                and not position.logical_turn)):
         provider.new_chat()
     topic_source = source_from_value(
         key="research_topic_continuity",
@@ -233,13 +244,13 @@ def run_research_iteration(
     )
     outcome = history.kernel(
         session,
-        attempt=1,
+        attempt=writer_attempt,
         request=KernelRunRequest(
             task_guidance=task_guidance_for_policy(session.policy),
             transport=KernelTransportDeps(
                 provider=active_provider,
                 run_id=run_id,
-                effect_scope="research:1",
+                effect_scope=f"research:{writer_attempt}",
                 provider_id=provider_id,
                 user_task=task,
                 stagnant_turns=5,
@@ -278,6 +289,10 @@ def run_research_iteration(
             ),
         ),
     )
+    if writer_attempt > 1 and outcome.stop_reason == "stopped":
+        from codey.runtime.core.cancellation import TaskCancelled
+
+        raise TaskCancelled("research synthesis stopped")
     if outcome.stop_reason in {"recovery_failure", "controller_failure", "delivery_pending", "provider_failure"}:
         from codey.research.pipeline import ResearchContinuationError
 
@@ -293,6 +308,7 @@ def run_research_iteration(
             open_questions=session.last_done_args.get("open_questions", ()),
             knowledge_refs=session.last_done_args.get("knowledge_refs", ()),
             policy=policy,
+            projection="initial" if writer_attempt == 1 else f"writer-{writer_attempt}",
         )
     quality = None
     if outcome.summary and outcome.stop_reason == "done":

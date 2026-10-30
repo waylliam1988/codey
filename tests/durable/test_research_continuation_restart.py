@@ -59,6 +59,8 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
             append("request", attempt=attempt)
             if attempt == 1:
                 return json.dumps({"tool": "web_search", "args": {"query": "initial research"}})
+            if attempt > 1 and attempt % 2:
+                return json.dumps({"tool": "done", "args": {"summary": "Synthesized saved evidence; gaps remain explicit."}})
             if attempt == 2 and failure is not None:
                 raise failure
             if attempt == 2 and cancel_on_followup:
@@ -116,7 +118,11 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
                     or (boundary == "receipt" and position.writer_attempt == 2
                         and position.logical_turn >= 3 and position.leaf == "tool_delivery_pending")
                     or (boundary == "second_round" and position.writer_attempt == 4
-                        and position.leaf == "provider_response_ready")):
+                        and position.leaf == "provider_response_ready")
+                    or (boundary == "synthesis_response" and position.writer_attempt == 5
+                        and position.leaf == "provider_response_ready")
+                    or (boundary == "synthesis_settled" and position.writer_attempt == 5
+                        and position.leaf == "kernel_settled")):
                 os._exit(74)
         durable.subscribe_commits(committed)
 
@@ -158,7 +164,8 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
         durable.close()
 
 
-@pytest.mark.parametrize("boundary", ["material", "response", "receipt", "vault", "second_round"])
+@pytest.mark.parametrize("boundary", ["material", "response", "receipt", "vault", "second_round",
+                                       "synthesis_response", "synthesis_settled"])
 def test_research_restart_preserves_material_invocations_and_note_ids(tmp_path, boundary):
     source = ("from pathlib import Path; from tests.durable.test_research_continuation_restart import _run; "
               "import sys; _run(Path(sys.argv[1]), sys.argv[2])")
@@ -167,6 +174,9 @@ def test_research_restart_preserves_material_invocations_and_note_ids(tmp_path, 
     assert child.returncode == 74, child.stderr.decode(errors="replace")
     first, state = _run(tmp_path, resume=True)
     assert first.followup_rounds == 2, first
+    assert first.final_result.stop_reason == "done"
+    assert first.final_result.summary == "Synthesized saved evidence; gaps remain explicit."
+    assert first.final_result.completion_proof is not None
     assert first.new_evidence_count == 2
     assert len(first.final_result.notes_created) == 3
     before = (tmp_path / "observations.jsonl").read_bytes()
@@ -177,7 +187,7 @@ def test_research_restart_preserves_material_invocations_and_note_ids(tmp_path, 
     assert (tmp_path / "observations.jsonl").read_bytes() == before
     assert {str(path): path.read_bytes() for path in (tmp_path / "knowledge").rglob("*.md")} == notes
     observations = [json.loads(row) for row in before.splitlines()]
-    assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4]
+    assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4, 5]
     assert [row["query"] for row in observations if row["event"] == "search"] == [
         "initial research", "followup 1", "followup 2"]
     assert [row["url"] for row in observations if row["event"] == "fetch"] == [
@@ -214,7 +224,7 @@ def test_lost_continuation_commit_acknowledgement_never_reacquires_material(tmp_
     observations = [json.loads(row) for row in (tmp_path / "observations.jsonl").read_bytes().splitlines()]
     assert [row["query"] for row in observations if row["event"] == "search"] == [
         "initial research", "followup 1", "followup 2"]
-    assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4]
+    assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4, 5]
 
 
 def test_research_continuation_admission_is_idempotent(tmp_path, monkeypatch):
@@ -233,7 +243,7 @@ def test_research_continuation_admission_is_idempotent(tmp_path, monkeypatch):
     monkeypatch.setattr(RuntimeMutationLine, "commit_research_continuation", commit)
     result, _ = _run(tmp_path)
     assert result.followup_rounds == 2
-    assert len(commits) == 4
+    assert len(commits) == 5
 
 
 def test_durable_cancellation_during_followup_never_returns_previous_draft_as_done(tmp_path):
@@ -280,7 +290,7 @@ def test_failed_followup_retains_original_attempt_and_provider_diagnostic(tmp_pa
         observations = [json.loads(row) for row in (tmp_path / "observations.jsonl").read_bytes().splitlines()]
         # The failed logical turn retains its budget charge. Recovery closes
         # that bounded invocation before admitting the explicit repair.
-        assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4]
+        assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4, 5]
         assert [row["query"] for row in observations if row["event"] == "search"] == [
             "initial research", "followup 1", "followup 2"]
     else:
