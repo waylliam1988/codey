@@ -271,6 +271,125 @@ def test_ordinary_publication_cancelled_before_admission_never_writes_answer(tmp
         store.close()
 
 
+def _settle_production_cancel(root, *, kind="research", publication_deps=True):
+    from types import SimpleNamespace
+
+    from codey.durable import DurableSession, SQLiteDurableStore
+    from codey.durable.checkpoint import operation_from_checkpoint
+    from codey.knowledge.store import KnowledgeStore
+    from codey.operations.context import RunWork
+    from codey.operations.ghost_post_turn import GhostTaskPolicyDeps
+    from codey.operations.task_phases.settlement import settle_cancelled_run
+    from codey.runtime.observe.execution_evidence import ExecutionEvidence
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from codey.storage.managed_outputs import ManagedOutputStore
+
+    durable = DurableSession(SQLiteDurableStore(root / "state.sqlite"))
+    store = KnowledgeStore(root / "knowledge")
+    events = []
+    state = SimpleNamespace(durable=durable, set_provider_session=lambda *_: None,
+                            finish_run=lambda _, event: events.append(event))
+    line = RuntimeMutationLine(durable=durable)
+    deps = SimpleNamespace(state=state, runtime_mutations=line,
+                           managed_outputs=ManagedOutputStore(root) if publication_deps else None,
+                           knowledge_store=store if publication_deps else None, run_ledgers=None, work_checkpoints=None)
+    try:
+        position = operation_from_checkpoint(durable.task("r"), "s")
+        work = RunWork(recent_events=[], evidence=ExecutionEvidence(), operation=position)
+        result = settle_cancelled_run(deps, state, work, GhostTaskPolicyDeps(state=state),
+            run_id="r", session_id="s", max_turns=12, provider_id="local", task_kind=kind,
+            project=None, frame=None, finish_trace=lambda _: None)
+        assert result.status == "aborted"
+        assert "runtime_settlement_error" not in events[-1]
+        assert str(durable.task("r").status) == "cancelled"
+        assert operation_from_checkpoint(durable.task("r"), "s").leaf == "terminal"
+        assert all(effect.settlement is not None for effect in durable.effects("r"))
+        return durable.effects("r")
+    finally:
+        store.close()
+        durable.close()
+
+
+@pytest.mark.parametrize("boundary", ["publication_admitted", "synthesis_published", "publication_settled"])
+@pytest.mark.parametrize("resume_pipeline", [False, True])
+def test_crashed_publication_cancel_settles_original_transaction_without_new_work(tmp_path, boundary, resume_pipeline):
+    from codey.durable import DurableSession, SQLiteDurableStore
+    from codey.knowledge.store import KnowledgeStore
+    from codey.runtime.core.cancellation import TaskCancelled
+
+    source = ("from pathlib import Path; from tests.durable.test_research_continuation_restart import _run; "
+              "import sys; _run(Path(sys.argv[1]), sys.argv[2])")
+    child = subprocess.run([sys.executable, "-c", source, str(tmp_path), boundary],
+                           capture_output=True, timeout=50)
+    assert child.returncode == 74, child.stderr.decode(errors="replace")
+    before = (tmp_path / "observations.jsonl").read_bytes()
+    notes = {str(path): path.read_bytes() for path in (tmp_path / "knowledge").rglob("*.md")}
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "state.sqlite"))
+    try:
+        original = next(effect for effect in durable.effects("r")
+                        if effect.intent.get("tool_name") == "_publish_research_answer")
+        durable.request_cancel("r", reason="cancel after publication crash")
+        durable.recover_scheduler_state()
+    finally:
+        durable.close()
+    if resume_pipeline:
+        expected = "research synthesis stopped" if boundary == "publication_settled" else "publication settled"
+        with pytest.raises(TaskCancelled, match=expected):
+            _run(tmp_path, resume=True)
+    effects = _settle_production_cancel(tmp_path)
+    publication = next(effect for effect in effects if effect.effect_id == original.effect_id)
+    assert publication.intent == original.intent
+    assert publication.settlement["status"] == ("interrupted" if boundary == "publication_admitted" else "ok")
+    if boundary == "publication_admitted":
+        assert publication.settlement["error_code"] == "cancelled"
+    if original.settlement is not None:
+        assert publication.settlement == original.settlement
+    # Repeated production cleanup must retain the exact same facts and receipt.
+    assert _settle_production_cancel(tmp_path) == effects
+    assert (tmp_path / "observations.jsonl").read_bytes() == before
+    assert {str(path): path.read_bytes() for path in (tmp_path / "knowledge").rglob("*.md")} == notes
+    store = KnowledgeStore(tmp_path / "knowledge")
+    try:
+        assert store.index._read_conn().execute(
+            "SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == (
+                0 if boundary == "publication_admitted" else 1)
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("kind", ["coding", "research"])
+def test_production_cancel_without_publication_needs_no_research_dependencies(tmp_path, kind):
+    from codey.durable import DurableSession, SQLiteDurableStore
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "state.sqlite"))
+    try:
+        durable.admit_input(conversation_id="s", request_id="input", task_id="r", text="coding", provider_snapshot={})
+        durable.claim_task("r")
+        durable.start_task("r", state=dict(durable.task("r").state))
+        line = RuntimeMutationLine(durable=durable)
+        line.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=12,
+                              max_repair_rounds=0, task_kind=kind)
+        line.mark_writer_running("s", "r", provider_id="local", writer_attempt=1)
+        durable.request_cancel("r", reason="cancel coding")
+    finally:
+        durable.close()
+    _settle_production_cancel(tmp_path, kind=kind, publication_deps=False)
+
+
+def test_ordinary_research_accepts_no_stop_flag(tmp_path, monkeypatch):
+    from codey.operations import research_iteration
+
+    original = research_iteration.run_research_iteration
+
+    def without_flag(*args, **kwargs):
+        return original(*args, **{**kwargs, "stop_flag": None})
+
+    monkeypatch.setattr(research_iteration, "run_research_iteration", without_flag)
+    result, _ = _run(tmp_path)
+    assert result.final_result.stop_reason == "done"
+
+
 def test_lost_continuation_commit_acknowledgement_never_reacquires_material(tmp_path, monkeypatch):
     from codey.durable import DurableSession, SQLiteDurableStore
     from codey.research.pipeline import ResearchContinuationError

@@ -272,6 +272,13 @@ def run_research_iteration(
 
     history = ResearchContinuation(mutations, getattr(deps, "managed_outputs", None),
                                    session_id=session_id, run_id=run_id)
+    if ((stop_flag is not None and stop_flag.is_set())
+            or history.durable.task(run_id).state.get("cancel_requested")):
+        from codey.operations.research_publication import settle_cancelled_publications
+        from codey.runtime.core.cancellation import TaskCancelled
+
+        if settle_cancelled_publications(history, tools.store):
+            raise TaskCancelled("research publication settled after cancellation")
     position = history.state()
     if (position.writer_attempt < writer_attempt
             or (position.writer_attempt == writer_attempt and position.leaf in {"accepted", "writer_running"}

@@ -126,7 +126,7 @@ delivery requirement. The original `assessment.json` is preserved as evidence
 of false acceptance. The production label remains same_provider_model_assessment,
 not independent certification; do not report this as a semantic improvement.
 
-A fresh full web run is now active, frozen at `dcb9d05a`:
+A fresh full web run was executed on production sources frozen at `dcb9d05a`:
 
 ```powershell
 python -X utf8 -m tests.manual.persistent_research_local --directory artifacts/research-convergence-web-final-off-20261030 --stage research --live-web --native --question-file artifacts/research-convergence-web-20261030-a/question.txt --max-turns 48 --provider-timeout 300 --seed 74
@@ -134,9 +134,52 @@ python -X utf8 -m tests.manual.persistent_research_local --directory artifacts/r
 
 Run id: `run_4ee5e81e9523452d9bc05ad6411a7d2d`. Thinking is explicitly disabled;
 the seed and decision budget differ from the failed thinking-enabled run, so
-this is an operational trial, not an isolated causal comparison. It has begun
-actual searches and page acquisition. Production sources must remain unchanged
-until the run and any recovery finish; docs and tests can be updated meanwhile.
+this is an operational trial, not an isolated causal comparison. It performed
+research_plan, three knowledge searches, two web searches (one failed), and
+successful official-page acquisition. Repeated open_url calls paginated through
+offsets 6000/12000/18000/24000/30000, rather than fetching the same visible slice.
+The run was deliberately cancelled to freeze it before implementing the reported
+publication cancellation defect. It ended with actual stop_reason stopped and
+durable task_status cancelled; no findings, assessment or answer were published.
+This interrupted attempt does not establish either final synthesis success or a
+new model failure. Its artifacts and raw wire remain intact.
+
+## Publication Cancellation Handoff
+
+The P2 reproduction is covered at three actual subprocess crash boundaries:
+publication intent admitted, knowledge transaction committed before receipt,
+and original receipt settled. Cancellation now verifies the frozen command
+artifact and original knowledge commit before closing the durable task or
+allowing the Research kernel to replace its result reference. An uncommitted
+command receives an interrupted/cancelled receipt without a knowledge write;
+a committed command receives its original success receipt. Already settled
+receipts remain unchanged. No new scheduler, execution ledger, intent or
+knowledge commit identity is introduced.
+
+Regression coverage runs both direct production cancellation cleanup and
+Research pipeline recovery followed by production cleanup. It asserts terminal
+operation, cancelled task, no pending effects, unchanged provider/search/write
+observations and note bytes, exact original intent, one-or-zero answer versions,
+and idempotent repeated cleanup. Generic cancellation checks task kind before
+constructing ResearchContinuation, and does not require Research stores when
+there is no pending publication. stop_flag=None remains supported.
+
+The small preceding commit `aec467ee` makes isolated invalid UTF-16 surrogate
+results return result_encoding instead of raising a host UnicodeEncodeError;
+the 53 CodeMode runtime/isolation tests pass. The 46 related semantic-review,
+accepted-queue, structured-report and snapshot tests pass. The complete focused
+Research restart file passes all 26 tests, including the nine new publication
+and compatibility cases. Another 25 cancellation/checkpoint/topic-continuity
+tests pass (one skipped): 150 passing tests across these four groups.
+Mypy checks all 573
+production files; Pyrefly reports 0 errors, 35 suppressed and 80 warnings; ty,
+Ruff and the runtime asset manifest pass. No full pytest was run.
+
+Broader targeted checks also expose 10 existing entry/guidance fixture failures
+and three existing architecture expectations (tool catalog, file size, report
+parser import). All 13 reproduce on the unchanged pre-P2 commit `aec467ee` in
+`artifacts/publication-cancel-baseline-aec467ee`. They are not claimed green.
+Do not weaken production acceptance or architecture checks to hide them.
 
 After this diagnostic, continue serially with a fresh full web run on frozen
 production sources, audit the exact passages, final requirement coverage,

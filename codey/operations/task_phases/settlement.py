@@ -258,8 +258,32 @@ def _seal_cancel_before_runtime(deps: Any, run_id: str, event: dict[str, object]
         return False
     if not task.state.get("cancel_requested"):
         return False
+    _settle_research_publications(deps, task.conversation_id, run_id)
     _fail_durable_task(deps, run_id, event)
     return True
+
+
+def _settle_research_publications(deps: Any, session_id: str, run_id: str) -> None:
+    from codey.durable.checkpoint import operation_from_checkpoint
+    from codey.operations.research_continuation import ResearchContinuation
+    from codey.operations.research_publication import settle_cancelled_publications
+    from codey.runtime.write.research_publication import PUBLICATION_TOOL
+
+    mutations = getattr(deps, "runtime_mutations", None)
+    if mutations is None:
+        return
+    try:
+        position = operation_from_checkpoint(mutations.durable.task(run_id), session_id)
+    except KeyError:
+        return
+    if position is None or position.task_kind != "research":
+        return
+    if not any(effect.intent.get("tool_name") == PUBLICATION_TOOL and effect.settlement is None
+               for effect in mutations.durable.effects(run_id)):
+        return
+    history = ResearchContinuation(mutations, getattr(deps, "managed_outputs", None),
+                                   session_id=session_id, run_id=run_id)
+    settle_cancelled_publications(history, getattr(deps, "knowledge_store", None))
 
 
 def _finish_failed_operation(deps: Any, work: RunWork | None, event: dict[str, object]) -> None:
@@ -290,6 +314,7 @@ def settle_cancelled_run(
     conversation: Any | None = None,
 ) -> OperationOutcome:
     """Settle a TaskCancelled stop; mirrors the previous inline except block."""
+    _settle_research_publications(deps, session_id, run_id)
     state.set_provider_session(provider_id, None)
     if work is not None:
         _update_checkpoint_safely(deps, work, "stopped")
