@@ -46,3 +46,100 @@ temperature and output cap, with `--upstream`, `--model`, and optionally
 `--api-key-env`. Do not compare different evidence packs or leak the rubric.
 Level 4 uses `tests.manual.persistent_research_local --stage research --live-web`
 and a fresh knowledge store; its browser ranking can vary between runs.
+
+## Handoff: Runtime Fixes and Live Research
+
+Updated 2026-10-30. The task remains to obtain an accepted, evidence-bound live
+Research result from the user's actual local deployment. Do not infer semantic
+success from tool completion or a same-model assessment alone. See also
+`research-qwen27b-comparison-20261030.md` and
+`execution-research-convergence-20261030.md` for earlier trials.
+
+Current deployment is Qwen3.8 27B TurboFCFusion Q4_K_M on KoboldCpp 1.117.1,
+`http://127.0.0.1:5001`, Jinja enabled, server context 262144 and output reserve
+32768. No external reference provider has been used. Preserve the original
+SQLite question at `artifacts/research-convergence-web-20261030-a/question.txt`;
+do not add answer-specific hints or relax publication acceptance.
+
+Local commits (not pushed):
+
+- `10917d5c`: replace Node vm execution with a QuickJS/WASM guest, freeze guest
+  intrinsics, bind shipped engine assets to recovery, and admit/settle ordinary
+  Research publication on the original mutation line. Includes the previously
+  isolated review-tool visibility and combined citation-feedback fixes.
+- `dcb9d05a`: one bounded reconnect for a closed browser context during fetch
+  page preparation; cancellation/deadlines do not retry. Includes the frozen
+  request-envelope diagnostic runner.
+
+Focused validation after these changes: 60 CodeMode runtime/isolation/contract
+tests, 51 host/state/replay/driver tests, 46 Research restart/semantic-review/
+queue/report/snapshot tests, and 60 related browser tests passed. These are
+separate groups, not a full pytest run. Ruff, mypy (573 production files),
+Pyrefly (0 active errors, 35 suppressed, 79 warnings) and ty passed. Earlier
+broader `tests/test_research.py` execution reproduced 10 existing obsolete
+fixture/expectation failures in the unchanged secondary worktree; these were
+not fixed by weakening production behavior. The exact targeted commands and
+all current edits remain reviewable in git.
+
+Latest full web run:
+`artifacts/research-convergence-final-web-20261030`, run
+`run_bf2fcea3a381457fb818d3fcb3a5afd8`, native tools, thinking enabled,
+temperature .3, seed 73, 40 decision turns, 300-second provider timeout.
+It saved four sourced candidates, performed actual web_search during follow-up,
+then repeated the same summary-only done proposal despite the missing
+report_sections error. Actual stop reason was `protocol`; a cancellation request
+arrived around its termination and must not relabel that failure. No semantic
+assessment or answer publication occurred. Candidate f4 contains additional
+SQLITE_BUSY cases absent from its selected excerpt. Keep it unreviewed.
+Two page acquisition failures occurred before the browser reconnect fix;
+the Playwright shutdown Future/TargetClosedError warning remains unresolved.
+
+Frozen-request probes in `artifacts/research-payload-clock-original-20261030`
+and `artifacts/research-payload-clock-merged-20261030` both returned the same
+invalid summary-only done call. Both disabled thinking, and the second merged
+the clock into the repair message. They dispatch no tools and are not completed
+Research runs. There is no demonstrated benefit from clock placement, so the
+production clock envelope is unchanged.
+
+Current serial experiment:
+
+```powershell
+python -X utf8 -m tests.manual.research_semantic_review_local --source artifacts/research-live-wal-qwen27b-native-off-20261030 --directory artifacts/research-convergence-review-final-20261030 --timeout 240
+```
+
+This imports an archived frozen report into a fresh diagnostic store. The import
+receipt is explicitly synthetic; only assessment calls are real model work.
+Inspect `assessment.json` and raw `wire.jsonl` before interpreting success. The
+known defects include unsupported checkpoint modes, incomplete selected support,
+missing historical-version coverage and inconsistent source-quality prose.
+Its only visible review tool must be submit_research_review, and a settled
+submission closes without requiring another model done call.
+
+That archived assessment has now completed in two real requests. The first
+submission was rejected for a research requirement with no qN; the second
+repaired that field, settled and published the frozen archive with status
+passed. **Manual semantic acceptance failed:** the model endorsed the known
+wrong historical network-filesystem label, treated retrieval time as support
+for a current-stable-version assertion, and accepted checkpoint modes absent
+from the selected excerpt. It also classified the historical comparison as a
+delivery requirement. The original `assessment.json` is preserved as evidence
+of false acceptance. The production label remains same_provider_model_assessment,
+not independent certification; do not report this as a semantic improvement.
+
+A fresh full web run is now active, frozen at `dcb9d05a`:
+
+```powershell
+python -X utf8 -m tests.manual.persistent_research_local --directory artifacts/research-convergence-web-final-off-20261030 --stage research --live-web --native --question-file artifacts/research-convergence-web-20261030-a/question.txt --max-turns 48 --provider-timeout 300 --seed 74
+```
+
+Run id: `run_4ee5e81e9523452d9bc05ad6411a7d2d`. Thinking is explicitly disabled;
+the seed and decision budget differ from the failed thinking-enabled run, so
+this is an operational trial, not an isolated causal comparison. It has begun
+actual searches and page acquisition. Production sources must remain unchanged
+until the run and any recovery finish; docs and tests can be updated meanwhile.
+
+After this diagnostic, continue serially with a fresh full web run on frozen
+production sources, audit the exact passages, final requirement coverage,
+conditions, scope and published knowledge versions. Keep failed attempts and
+unaccepted drafts intact. Run only relevant pytest and the four static checks;
+the user explicitly does not want full pytest. Stage commits are authorized.
