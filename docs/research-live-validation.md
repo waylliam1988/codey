@@ -1058,3 +1058,25 @@ real production browser, local Gemma4 with thinking/minimal enabled. In progress
 not accepted. Normal text protocol is used because the JSON-only diagnostic
 sampler excludes thinking. This is a configuration comparison, not a silent
 change to the user's model preferences.
+
+## Shared request context across API protocols
+
+The thinking/plain medicine run was durably stopped after detecting six old
+research snapshots in one request (76,546 characters). Request-only tool
+contracts, current observations and receipt-backed text views now cover plain
+text as well as JSON mode; native API turns also receive a single ephemeral
+observation. JSON grammars remain exclusive to JSON mode. Prepared request
+recovery still uses the frozen original arguments, and native terminal
+acknowledgements do not create another generation.
+
+Validation: 71 focused protocol/delivery/prepared-request tests passed, three
+optional skips; after expanding plain/JSON soft-admission coverage, 22 focused
+tests passed. Ruff, mypy (556 files), Pyrefly and ty passed (test groups overlap).
+
+Live retest: research-live-adaptive-all-protocol-context-20261030 confirmed one
+current observation and one contract per plain request. It searched and opened
+MDPI, ClinicalTrials.gov and PMC and persisted findings. It then repeated done
+with source entries [2]/[3] lacking URLs. Feedback mixed citation-table repair
+with unnecessary investigation suggestions. It also promoted a registry's
+"may slow" into an unqualified benefit and omitted reported human outcomes.
+Durable cancellation requested; this run is NOT a semantic quality pass.

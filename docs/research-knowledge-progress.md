@@ -265,3 +265,13 @@ Update this file in each implementation commit with results and remaining work.
 - Remaining: accepted broad live reports (human/animal/registration distinctions
   and full WAL coverage); final lifecycle rerun on all changes; final artifact
   inspection and documentation. No claim that Gemma4 now runs long research reliably.
+
+- Follow-up prompts now carry bounded ledger findings instead of old reports;
+  evidence-only phases require an actual acquisition receipt. Production adds
+  gated parent synthesis after investigation through the same durable driver.
+- Request-only observations/contracts now cover ordinary text and native API
+  protocols, with grammar exclusive to JSON. Real thinking/plain requests retain
+  one current snapshot. Focused protocol/recovery checks passed; the live medicine
+  task still failed semantic review and looped on missing source-table URLs.
+- Next diagnosis: prioritize citation-table defects before claim-binding repair,
+  retain explicit trial uncertainty, and verify actual requested human outcomes.

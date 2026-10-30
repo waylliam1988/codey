@@ -129,7 +129,8 @@ def test_explicit_schema_reaches_payload_but_does_not_leak_to_next_send(monkeypa
         provider.close()
 
 
-def test_request_scoped_contract_is_counted_but_never_enters_history_or_auxiliary(monkeypatch):
+@pytest.mark.parametrize("text_format", ["plain", "json_schema"])
+def test_request_scoped_contract_is_counted_but_never_enters_history_or_auxiliary(monkeypatch, text_format):
     payloads = []
     counted = []
 
@@ -139,7 +140,7 @@ def test_request_scoped_contract_is_counted_but_never_enters_history_or_auxiliar
 
     monkeypatch.setattr(api_transport, "generate", generate)
     provider = ApiProvider("http://fixture/v1", "fixture", native_tools=False, thinking_enabled=False,
-                           text_tool_format="json_schema", system_prompt="BASE SYSTEM")
+                           text_tool_format=text_format, system_prompt="BASE SYSTEM")
     counter = provider.request_counter
 
     def count(payload, **kwargs):
@@ -149,9 +150,9 @@ def test_request_scoped_contract_is_counted_but_never_enters_history_or_auxiliar
     provider.request_counter = count
     auxiliary = provider.fork_auxiliary()
     try:
-        provider.send("first result", tool_call_json=True, tool_call_contract="FROZEN FIRST CONTRACT",
+        provider.send("first result", tool_call_json=text_format == "json_schema", tool_call_contract="FROZEN FIRST CONTRACT",
                       tool_call_observations="RECEIPT SNAPSHOT ONE")
-        provider.send("second result", tool_call_json=True, tool_call_contract="FROZEN SECOND CONTRACT",
+        provider.send("second result", tool_call_json=text_format == "json_schema", tool_call_contract="FROZEN SECOND CONTRACT",
                       tool_call_observations="RECEIPT SNAPSHOT TWO")
         provider.send("ordinary prose")
         auxiliary.send("summarize")
@@ -169,10 +170,7 @@ def test_request_scoped_contract_is_counted_but_never_enters_history_or_auxiliar
             {"role": "user", "content": "second result"}, payloads[1]["messages"][-1]]
         assert any("RECEIPT SNAPSHOT TWO" in str(payload) for payload in counted)
         assert any("FROZEN SECOND CONTRACT" in str(payload) for payload in counted)
-        with pytest.raises(ValueError, match="requires JSON"):
-            provider.send("bad", tool_call_contract="must not send")
-        with pytest.raises(ValueError, match="require JSON"):
-            provider.send("bad", tool_call_observations="must not send")
+        assert ("response_format" in payloads[0]) is (text_format == "json_schema")
     finally:
         auxiliary.close()
         provider.close()

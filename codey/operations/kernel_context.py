@@ -60,7 +60,12 @@ class KernelContext:
 
     @property
     def request_scoped_context(self) -> bool:
-        return not self.native and getattr(self.provider, "text_tool_format", "plain") == "json_schema"
+        return not self.native and (getattr(self.provider, "text_tool_format", "plain") == "json_schema"
+                                    or getattr(self.provider, "request_scoped_tool_context", False) is True)
+
+    @property
+    def request_scoped_observations(self) -> bool:
+        return self.request_scoped_context or getattr(self.provider, "request_scoped_tool_context", False) is True
 
     def load_view(self) -> Any:
         task, effects = self.durable.task_facts(self.sink.run_id)
@@ -287,8 +292,8 @@ class KernelContext:
                text_result_spans: list[dict[str, Any]] | None = None) -> None:
         from codey.operations.kernel_driver import prepare_provider_request
 
-        json_contract = self.request_scoped_context
-        if not self.native and not json_contract and state.leaf not in {positions.LEAF_WRITER_RUNNING, positions.LEAF_REPAIR_RUNNING}:
+        scoped_contract = self.request_scoped_context
+        if not self.native and not scoped_contract and state.leaf not in {positions.LEAF_WRITER_RUNNING, positions.LEAF_REPAIR_RUNNING}:
             prompt = kernel_prompt._text_request_prompt(prompt, snapshot)
         self.snapshots[turn] = snapshot
         self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window)
@@ -309,14 +314,16 @@ class KernelContext:
         else:
             method, args = ("send_turn", (prompt, tools)) if self.native else ("send", (prompt,))
         options: dict[str, Any] = {}
-        if json_contract:
-            from codey.providers.text_tool_schema import text_tool_schema
-
-            options = {"tool_call_json": True, "tool_call_schema": text_tool_schema(tools),
-                       "tool_call_contract": kernel_prompt._text_request_prompt("", snapshot),
-                       "tool_call_observations": task_working_context(self.session)}
+        if self.request_scoped_observations and not (self.native and acknowledge):
+            options["tool_call_observations"] = task_working_context(self.session)
+        if scoped_contract:
+            options["tool_call_contract"] = kernel_prompt._text_request_prompt("", snapshot)
             if text_result_spans:
                 options["tool_call_results"] = text_result_spans
+        if scoped_contract and getattr(self.provider, "text_tool_format", "plain") == "json_schema":
+            from codey.providers.text_tool_schema import text_tool_schema
+
+            options.update(tool_call_json=True, tool_call_schema=text_tool_schema(tools))
         prepare_provider_request(self.sink, method, args, options, counters=(state.counters, counters or state.counters))
 
     def prepare_turn(self, state: Any) -> None:
@@ -332,7 +339,7 @@ class KernelContext:
             context_text="\n\n".join(part for part in (self.transport.context_text, recalled) if part),
             native=self.native, task_guidance=self.request.task_guidance,
             completion_context=self.completion_context,
-            request_scoped_contract=not self.native and getattr(self.provider, "text_tool_format", "plain") == "json_schema")
+            request_scoped_contract=self.request_scoped_context)
         prompt = prepared.prompt
         if state.logical_turn and self.boundary_text():
             prompt += "\n\nNew user input at provider boundary:\n" + self.boundary_text()
@@ -341,7 +348,7 @@ class KernelContext:
         if not self.attempt_gate_bound:
             record_outbound(self.observation.trace_recorder, prompt, admission=admission)
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
-        if not self.request_scoped_context:
+        if not self.request_scoped_observations:
             prompt = "\n\n".join(part for part in (prompt, task_working_context(self.session)) if part)
         self.freeze(state, prepared.snapshot, turn=turn, prompt=prompt,
                     counters=replace(state.counters, progress=progress.snapshot()))
@@ -486,7 +493,7 @@ class KernelContext:
             self.close(state, advance)
             return
         messages, prompt = advance
-        observations = "" if self.request_scoped_context else task_working_context(self.session)
+        observations = "" if self.request_scoped_observations else task_working_context(self.session)
         if self.native and messages:
             messages[-1] = replace(messages[-1], user_content="\n\n".join(
                 part for part in (observations, messages[-1].user_content) if part))

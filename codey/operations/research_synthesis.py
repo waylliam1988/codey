@@ -8,10 +8,10 @@ from codey.research.tools import ResearchTools
 
 def synthesis_context(tools: ResearchTools) -> str:
     ledger = tools.ledger
-    findings: list[dict[str, object]] = []
+    findings: list[dict[str, str | bool]] = []
     remaining = 14000
     for item in reversed(ledger.evidence_items[-24:]):
-        row = {"claim": item.claim[:1200], "source_url": item.source_url,
+        row: dict[str, str | bool] = {"claim": item.claim[:1200], "source_url": item.source_url,
                "excerpt": item.excerpt[:1200], "stance": item.stance, "note_id": item.note_id,
                "display_truncated": len(item.claim) > 1200 or len(item.excerpt) > 1200}
         size = len(canonical_json(row))

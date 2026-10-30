@@ -101,9 +101,10 @@ def test_provider_compacts_only_old_marked_output_and_preserves_events_without_m
         provider.close()
 
 
-def test_soft_admission_reduces_backed_history_without_background_commit_or_summary():
+@pytest.mark.parametrize("text_format", ["plain", "json_schema"])
+def test_soft_admission_reduces_backed_history_without_background_commit_or_summary(text_format):
     provider = ApiProvider("http://localhost:9/v1", "fixture", native_tools=False, thinking_enabled=False,
-                           text_tool_format="json_schema", context_window_tokens=8192,
+                           text_tool_format=text_format, context_window_tokens=8192,
                            context_reserve_tokens=1024)
     body = "An actual distinct observation with retained caveats. " * 120
     original = []
@@ -123,7 +124,7 @@ def test_soft_admission_reduces_backed_history_without_background_commit_or_summ
                 provider, "_commit_context", side_effect=AssertionError("no background commit")), patch(
                 "codey.providers.api_transport.generate", side_effect=lambda _url, payload, *_args, **_kwargs:
                 (payloads.append(payload) or {"choices": [{"message": {"content": "ok"}}]})):
-            provider.send("Recheck the current source", tool_call_json=True)
+            provider.send("Recheck the current source", tool_call_json=text_format == "json_schema")
         assert len(payloads) == 1
         sent = payloads[0]["messages"]
         assert sum("Stored body omitted" in row.get("content", "") for row in sent) == 2

@@ -51,6 +51,9 @@ DEFAULT_TEMPERATURE = 0.3
 
 
 class ApiProvider:
+    # The common kernel may freeze ephemeral declarations/observations for all
+    # API protocols; these never enter canonical conversation history.
+    request_scoped_tool_context = True
     name = "Local"
     # Single in-flight (fail-fast) + generation: sequential worker-thread
     # sends are safe and Stop-abandoned late replies skip history.
@@ -321,16 +324,10 @@ class ApiProvider:
             raise ValueError("JSON tool format is not enabled for this provider")
         if tool_call_schema is not None and not tool_call_json:
             raise ValueError("tool schema requires JSON tool format")
-        if tool_call_contract and not tool_call_json:
-            raise ValueError("tool contract requires JSON tool format")
-        if tool_call_observations and not tool_call_json:
-            raise ValueError("tool observations require JSON tool format")
         pending: dict[str, Any] = {"role": "user", "content": text}
         if tool_call_results is not None:
             from codey.providers.text_result_views import TEXT_RESULTS_KEY, validate_text_results
 
-            if not tool_call_json:
-                raise ValueError("text result spans require JSON tool format")
             pending[TEXT_RESULTS_KEY] = validate_text_results(text, tool_call_results)
         return self._exchange([pending], None, timeout=timeout,
                               text_only=True, tool_call_json=tool_call_json, tool_call_schema=tool_call_schema,
@@ -414,20 +411,24 @@ class ApiProvider:
             self._send_lock.release()
 
     def send_turn(self, prompt: str, tools: list[ProviderToolDefinition] | None = None,
-                  timeout: float | None = None) -> AssistantTurn:
-        return self._exchange([{"role": "user", "content": prompt}], tools, timeout=timeout)
+                  timeout: float | None = None, *, tool_call_observations: str = "") -> AssistantTurn:
+        return self._exchange([{"role": "user", "content": prompt}], tools, timeout=timeout,
+                              tool_call_observations=tool_call_observations)
 
     def send_tool_results(self, results: list[ProviderToolResult], tools: list[ProviderToolDefinition] | None = None,
-                          timeout: float | None = None) -> AssistantTurn:
-        return self._exchange(self._codec.encode_results(results), tools, timeout=timeout)
+                          timeout: float | None = None, *, tool_call_observations: str = "") -> AssistantTurn:
+        return self._exchange(self._codec.encode_results(results), tools, timeout=timeout,
+                              tool_call_observations=tool_call_observations)
 
     def send_tool_results_bound(self, results: list[ProviderToolResult], window_ref: ProtocolWindowRef,
                                 tools: list[ProviderToolDefinition] | None = None,
                                 timeout: float | None = None,
-                                delivery_commit: dict[str, Any] | None = None) -> AssistantTurn:
+                                delivery_commit: dict[str, Any] | None = None,
+                                tool_call_observations: str = "") -> AssistantTurn:
         """Deliver native results only to the exact protocol window that created them."""
         return self._exchange(self._codec.encode_results(results), tools, timeout=timeout,
-                              expected_window_ref=window_ref, delivery_commit=delivery_commit)
+                              expected_window_ref=window_ref, delivery_commit=delivery_commit,
+                              tool_call_observations=tool_call_observations)
 
     def _prepare_exchange(self, pending: list[dict[str, Any]],
                           tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
