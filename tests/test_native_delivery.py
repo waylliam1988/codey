@@ -807,11 +807,11 @@ def test_large_receipt_store_failure_never_creates_an_inline_success() -> None:
     from codey.runtime.core.models import ToolResult
 
     class RefusingStore:
-        def write_tool_output(self, **kwargs):
+        def write_json_artifact(self, **kwargs):
             return None
 
     class ExplodingStore:
-        def write_tool_output(self, **kwargs):
+        def write_json_artifact(self, **kwargs):
             raise OSError("disk gone")
 
     result = ToolResult(ToolCall("search", {"query": "q"}), "z" * 30_000, ok=True)

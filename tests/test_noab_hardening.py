@@ -48,11 +48,12 @@ def test_receipts_persist_complete_large_results(tmp_path: Path) -> None:
     result = result_receipt_fields(ToolResult(ToolCall("search", {"query": "q"}), "z" * 30_000, ok=True),
                                    store=store, session_id="s", run_id="r", effect_id="e")
     assert result["result_payload"] == ""
-    assert result["result_ref"].startswith("out_")
-    payload, metadata = store.read_tool_output("s", "r", result["result_ref"])
+    assert result["result_ref"].startswith("artifact_")
+    data = store.read_json_artifact({"session_id": "s", "run_id": "r", "handle": result["result_ref"],
+        "schema_version": 2, "sha256": result["result_payload_sha256"]})
+    payload = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     assert text_digest(payload) == result["result_payload_sha256"]
     assert json.loads(payload)["model_text"] == "z" * 30_000
-    assert metadata["stored_truncated"] is False
 
 
 def test_edit_line_prefix_retry(tmp_path: Path) -> None:

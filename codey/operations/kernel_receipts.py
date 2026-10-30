@@ -37,7 +37,7 @@ def result_receipt_fields(result: ToolResult, *, store: Any,
     from codey.operations.kernel_provenance import _kernel_workspace_identity_of
 
     identity = _kernel_workspace_identity_of(result)
-    payload = json.dumps({
+    data = {
         "schema_version": 2,
         "call_name": result.call.name,
         "ok": result.ok,
@@ -49,17 +49,16 @@ def result_receipt_fields(result: ToolResult, *, store: Any,
         "truncated": result.truncated,
         "workspace_identity": {"workspace_revision": identity.revision,
                                "workspace_fingerprint": identity.fingerprint} if identity is not None else None,
-    }, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    }
+    payload = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
     inline, ref = payload, ""
     if len(payload) > INLINE_RECEIPT_CHARS:
         if store is None:
             raise ValueError("tool result requires a durable managed receipt")
-        receipt = store.write_tool_output(
-            session_id=session_id, run_id=run_id, tool_id=effect_id,
-            permission_profile="coding_writer", tool_name="tool_result",
-            display_ref=effect_id, text=payload,
-        )
-        if receipt is None or receipt.stored_truncated:
+        # Required execution records use the existing lossless JSON artifacts;
+        # optional output attachments have a separate, bounded handle quota.
+        receipt = store.write_json_artifact(session_id=session_id, run_id=run_id, payload=data, schema_version=2)
+        if receipt is None or receipt.sha256 != text_digest(payload):
             raise ValueError("tool result receipt could not be stored completely")
         inline, ref = "", receipt.handle
     text = result.model_text
@@ -87,9 +86,9 @@ def restore_result_receipt(projection: Any, *, store: Any,
     if settlement.result_ref:
         if payload or store is None:
             raise ValueError("invalid managed result receipt")
-        payload, metadata = store.read_tool_output(session_id, run_id, settlement.result_ref)
-        if metadata.get("stored_truncated"):
-            raise ValueError("result receipt was clipped")
+        data = store.read_json_artifact({"session_id": session_id, "run_id": run_id,
+            "handle": settlement.result_ref, "schema_version": 2, "sha256": settlement.result_payload_sha256})
+        payload = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
     if not payload or text_digest(payload) != settlement.result_payload_sha256:
         raise ValueError("tool result receipt digest mismatch")
     data = json.loads(payload)

@@ -12,6 +12,14 @@ def test_long_model_result_and_metadata_survive_restart(tmp_path):
     log, mutations, durable = _new_log(tmp_path, "session", "run")
     _accept_and_mark(mutations, "session", "run", str(tmp_path))
     store = ManagedOutputStore(tmp_path / "state")
+    # Exhaust optional output attachments before settling a mandatory receipt.
+    from codey.policies.action import MAX_MANAGED_OUTPUTS_PER_RUN
+
+    for index in range(MAX_MANAGED_OUTPUTS_PER_RUN):
+        assert store.write_tool_output(session_id="session", run_id="run", tool_id=str(index),
+            permission_profile="coding_writer", tool_name="run", display_ref="test", text=str(index)) is not None
+    assert store.write_tool_output(session_id="session", run_id="run", tool_id="overflow",
+        permission_profile="coding_writer", tool_name="run", display_ref="test", text="overflow") is None
     sink = KernelEffectSink(mutations, session_id="session", run_id="run",
                             provider_id="local", managed_outputs=store, durable=durable)
     call = ToolCall("run", {"command": "pytest", "path": "."}, call_id="call-1")
@@ -30,6 +38,7 @@ def test_long_model_result_and_metadata_survive_restart(tmp_path):
     assert restored.presentation == result.presentation
     assert restored.audit == result.audit
     assert restored.truncated == result.truncated
+    assert projection.settlement.result_ref.startswith("artifact_")
 
 
 def test_managed_receipt_preserves_crlf_bytes(tmp_path):
