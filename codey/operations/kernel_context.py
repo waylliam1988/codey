@@ -207,7 +207,7 @@ class KernelContext:
             if effect.intent.effect_category == "provider_send":
                 self.restore_completion_proposal(effect)
                 continue
-            if self.session.task_kind in {"research", "evidence_followup"}:
+            if self.session.task_kind in {"research", "evidence_followup", "research_review"}:
                 from codey.operations.task_session import turn_effect_id
                 scoped_run = f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id
                 if identity != turn_effect_id(scoped_run, effect.intent.turn, effect.intent.tool_index):
@@ -304,7 +304,7 @@ class KernelContext:
         self.sink._request_context["source_response_ref"] = (
             self.response_reference(state) if state.response_ref or state.work_ref
             or state.leaf == positions.LEAF_TOOL_DELIVERY_PENDING else "")
-        tools = tools_from_specs(snapshot.frozen_specs)
+        tools = tools_from_specs(snapshot.model_specs)
         if self.native and messages:
             method = "acknowledge_tool_results" if acknowledge else "send_tool_results"
             args: tuple[Any, ...] = (messages, tools)

@@ -142,7 +142,7 @@ def build_execute_turn_executor(
     frozen_specs = getattr(snapshot, "frozen_specs", ()) or ()
     specs = {str(getattr(spec, "name", "")): spec for spec in frozen_specs}
     catalog = build_codemode_catalog(
-        specs,
+        {name: spec for name, spec in specs.items() if name in snapshot.nested_tool_names},
         allow_writes=allow_writes,
     )
     child_executors = {key: value for key, value in dict(executors or {}).items() if key != "codemode"}
@@ -210,6 +210,7 @@ def build_execute_turn_executor(
                 stop_flag=stop_flag,
                 snapshot=snapshot,
                 durable=durable,
+                nested=True,
             )
             if not results:
                 raise RuntimeError("nested kernel returned no tool result")

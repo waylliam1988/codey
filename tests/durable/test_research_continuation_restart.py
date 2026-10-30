@@ -200,6 +200,7 @@ def test_research_restart_preserves_material_invocations_and_note_ids(tmp_path, 
     assert {str(path): path.read_bytes() for path in (tmp_path / "knowledge").rglob("*.md")} == notes
     observations = [json.loads(row) for row in before.splitlines()]
     assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4, 5]
+    assert state.turns_used + state.logical_turn == 10
     assert [row["query"] for row in observations if row["event"] == "search"] == [
         "initial research", "followup 1", "followup 2"]
     assert [row["url"] for row in observations if row["event"] == "fetch"] == [

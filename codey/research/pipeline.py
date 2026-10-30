@@ -387,7 +387,7 @@ class ResearchPipeline:
         if self.ledger_event_sink is not None and ledger_result is not None:
             self.ledger_event_sink(ledger_result)
         self.context.trace.record_result(best)
-        final_review = self._review(best, require_ledger_record=self.evidence_ledgers is not None)
+        final_review = self._review(best, require_ledger_record=self.evidence_ledgers is not None and best.accepted_report is None)
         self.context.trace.record_proof_review(final_review)
         self._record_final_findings(best, final_review)
         self.context.trace.record_plan(self._plan(final_review))
@@ -501,12 +501,19 @@ class ResearchPipeline:
             return
 
     def _append_final_record(self, result: ResearchRunResult) -> EvidenceLedgerWriteResult | None:
+        if result.accepted_report is not None and result.semantic_review is not None and result.stop_reason != "done":
+            return None
         if self.evidence_ledgers is None:
             return None
         record = getattr(result, "research_record", None)
         if record is None:
             return None
         try:
+            if result.accepted_report is not None:
+                return self.evidence_ledgers.append_accepted_report(
+                    result.accepted_report.to_payload(), question=self.context.question,
+                    run_id=self.context.run_id, session_id=self.context.session_id,
+                    project=self.context.project, synthesis_id=result.synthesis_id)
             return self.evidence_ledgers.append_record(
                 record,
                 run_id=self.context.run_id,

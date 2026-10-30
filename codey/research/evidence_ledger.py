@@ -224,6 +224,17 @@ class EvidenceLedgerStore:
             raise ValueError("state_home required")
         self.root = Path(state_home) / "research" / "evidence_ledgers"
 
+    def append_accepted_report(self, report: Any, *, question: str, run_id: str,
+                               session_id: str, project: str, synthesis_id: str) -> EvidenceLedgerWriteResult:
+        """Reconstruct history from a frozen compilation, without model or source I/O."""
+        from codey.research.finding_report import FindingReport
+        from codey.research.report_projection import project_accepted_report
+
+        compiled = FindingReport.from_payload(report)
+        record = project_accepted_report(compiled, question=question, run_id=run_id, session_id=session_id,
+                                         project=project, synthesis_id=synthesis_id)
+        return self.append_record(record, run_id=run_id, session_id=session_id, project=project)
+
     def append_record(
         self,
         record: ResearchRecord | None,

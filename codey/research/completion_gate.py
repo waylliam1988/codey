@@ -75,11 +75,20 @@ class ResearchCompletionGate:
                 or "run_not_done",
             )
         record = getattr(research_result, "research_record", None)
+        accepted = getattr(research_result, "accepted_report", None)
+        if accepted is not None:
+            from codey.research.report_projection import validate_accepted_projection
+
+            try:
+                validate_accepted_projection(research_result, run_id=str(event.get("run_id") or ""),
+                                             session_id=session_id, project=str(project or ""))
+            except (ValueError, TypeError, AttributeError, KeyError):
+                return ResearchCompletionDecision("block", blocked_reason="accepted_report_projection_invalid")
         question = (
             str(getattr(item, "title", "") or "").strip() or str(getattr(research_result, "question", "") or "").strip()
         )
         ledger_payload: Mapping[str, object] | None = None
-        if self.evidence_ledgers is not None:
+        if self.evidence_ledgers is not None and accepted is None:
             try:
                 snapshot = self.evidence_ledgers.load(session_id=session_id, project=project)
                 if snapshot.available:
@@ -91,7 +100,7 @@ class ResearchCompletionGate:
                 record,
                 question=question,
                 evidence_ledger=ledger_payload,
-                require_ledger_record=True,
+                require_ledger_record=accepted is None,
             )
         except Exception:
             review = review_research_proof(

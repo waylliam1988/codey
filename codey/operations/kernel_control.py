@@ -93,6 +93,10 @@ def evaluate_completion(context: Any, state: Any) -> None:
     compiled = None
     try:
         completion_context = context.completion_context
+        if context.session.task_kind == "research_review":
+            from codey.research.semantic_review import submitted_review
+
+            submitted_review(context.session, completion_context["semantic_review_basis"])
         if context.session.policy.strict_research and context.session.task_kind != "evidence_followup":
             from codey.research.finding_report import compile_finding_report
 

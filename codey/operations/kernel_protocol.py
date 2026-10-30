@@ -45,6 +45,15 @@ class TurnSnapshot:
     frozen_specs: tuple[Any, ...] = ()
     custom_executors: tuple[tuple[str, Any], ...] = ()
     implementation_compatible: bool = True
+    nested_tool_names: tuple[str, ...] = ()
+
+    @property
+    def inventory_names(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys((*self.tool_names, *self.nested_tool_names)))
+
+    @property
+    def model_specs(self) -> tuple[Any, ...]:
+        return tuple(spec for spec in self.frozen_specs if spec.name in self.tool_names)
 
 
 @dataclass(frozen=True)
@@ -61,12 +70,16 @@ class ReceivedProviderTurn:
 
 
 def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
+    if getattr(session, "task_kind", "") == "research_review":
+        submitted = any(row.call.name == "submit_research_review" and row.ok
+                        for row in session._memory_results.values())
+        return ("done",) if submitted else ("submit_research_review", "done")
     policy = getattr(session, "policy", None)
     try:
-        denied = {str(n or "").strip().lower() for n in (getattr(session, "controller_denied", ()) or ())
+        denied = {"submit_research_review"} | {str(n or "").strip().lower() for n in (getattr(session, "controller_denied", ()) or ())
                   if str(n or "").strip()}
     except Exception:
-        denied = set()
+        denied = {"submit_research_review"}
     if not bool(getattr(policy, "strict_research", False)):
         base: tuple[str, ...] | None = None
     else:
@@ -166,7 +179,7 @@ def frozen_spec_map(snapshot: TurnSnapshot | None) -> dict[str, Any] | None:
     if snapshot is None:
         return None
     mapping = {spec.name: spec for spec in snapshot.frozen_specs}
-    if set(mapping) != set(snapshot.tool_names):
+    if set(mapping) != set(snapshot.inventory_names):
         raise ValueError("incomplete tool snapshot definitions")
     return mapping
 
@@ -175,7 +188,7 @@ def frozen_custom_executor_map(snapshot: TurnSnapshot | None) -> dict[str, Any] 
     if snapshot is None:
         return None
     mapping = dict(snapshot.custom_executors)
-    if set(mapping) != set(snapshot.tool_names):
+    if set(mapping) != set(snapshot.inventory_names):
         raise ValueError("incomplete tool snapshot executor bindings")
     return mapping
 
@@ -188,25 +201,34 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     allowed = controller_allowed_for_session(session)
     from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
 
-    names = tuple(visible_tool_names_for_snapshot(session.policy, allowed, native=native))
-    frozen = _frozen_specs_for_names(names)
+    authorized = tuple(visible_tool_names_for_snapshot(session.policy, allowed, native=native))
+    exposure = getattr(session, "model_tool_names", None)
+    if exposure is not None and (len(set(exposure)) != len(exposure) or not set(exposure) <= set(authorized)):
+        raise ValueError("model exposure must narrow the authorized tool inventory")
+    names = tuple(name for name in authorized if exposure is None or name in exposure)
+    frozen = _frozen_specs_for_names(authorized)
     from codey.research.tool_contract import done_spec_for_purpose
 
     purpose = ("evidence" if getattr(session, "task_kind", "") == "evidence_followup" else
                "report" if session.policy.strict_research else "ordinary")
     frozen = tuple(done_spec_for_purpose(spec, purpose) if spec.name == "done" else spec for spec in frozen)
+    nested: tuple[str, ...] = ()
     if "codemode" in names:
         from codey.codemode.catalog import build_codemode_catalog, render_declarations
 
         catalog = build_codemode_catalog(frozen, allow_writes=session.policy.allows("project.write"))
+        nested = tuple(entry.name for entry in catalog.entries)
         declarations = render_declarations(catalog)
         frozen = tuple(replace(spec, declarations=declarations)
                        if spec.name == "codemode" else spec for spec in frozen)
     from codey.toolchain.tool_spec import json_contract_text as _contract
 
     # JSON 与 native 契约同源：都从同一冻结定义生成，不再查实时注册表。
-    contract_now = _contract(frozen)
-    executors = _frozen_custom_executors(names)
+    inventory = tuple(dict.fromkeys((*names, *nested)))
+    by_name = {spec.name: spec for spec in frozen}
+    frozen = tuple(by_name[name] for name in inventory)
+    contract_now = _contract(tuple(by_name[name] for name in names))
+    executors = _frozen_custom_executors(inventory)
     return TurnSnapshot(
         allowed=allowed,
         contract_text=contract_now,
@@ -214,6 +236,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
         policy=session.policy,
         frozen_specs=frozen,
         custom_executors=executors,
+        nested_tool_names=nested,
     )
 
 
@@ -529,6 +552,8 @@ def _plan_from_tool_objects(
         return _invalid_plan(batch_error)
     if sum(1 for raw_tool, _args, _call_id in items if _canonical_name(raw_tool) == "shell") and len(items) != 1:
         return _invalid_plan("shell must be the only tool call in a turn", kind="mixed_shell_batch", tool="shell")
+    if len(items) != 1 and any(_canonical_name(name) == "submit_research_review" for name, _, _ in items):
+        return _invalid_plan("submit_research_review must be the only tool call in a turn")
     calls: list[ToolCall] = []
     text_keys: set[str] = set()
     for raw_tool, args, call_id in items:

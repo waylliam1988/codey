@@ -43,6 +43,25 @@ class ResearchInvocation:
             raise ResearchContinuationError("invalid synthesis invocation")
         return cls(2 * rounds + 1, "synthesize")
 
+    @classmethod
+    def assessment(cls, cycle: int) -> ResearchInvocation:
+        if not 0 <= cycle <= 2:
+            raise ResearchContinuationError("invalid research assessment cycle")
+        return cls(8 + 2 * cycle, "review")
+
+    @classmethod
+    def extraction(cls, round_index: int, attempt: int, plan_ref: str) -> ResearchInvocation:
+        # Legacy bounded-material adapter; production uses investigation().
+        if not 1 <= round_index <= 3 or not 1 <= attempt <= 2 or not plan_ref:
+            raise ResearchContinuationError("invalid extraction invocation")
+        return cls(2 + (round_index - 1) * 2 + attempt - 1, "investigate", plan_ref)
+
+    @classmethod
+    def repair(cls, cycle: int) -> ResearchInvocation:
+        if not 0 <= cycle <= 1:
+            raise ResearchContinuationError("invalid research repair cycle")
+        return cls(9 + 2 * cycle, "synthesize")
+
 
 def restore_note_proposals(tools: Any, canonical: Mapping[str, object]) -> None:
     """Rebuild note metadata and in-memory proposals from the original receipt.
@@ -150,9 +169,9 @@ class ResearchContinuation:
         if (set(payload) != {"schema_version", "kind", "results", "materials", "invocations"}
                 or not isinstance(payload["results"], dict) or not isinstance(payload["materials"], dict)
                 or not isinstance(payload["invocations"], dict) or len(payload["invocations"]) > 16
-                or len(payload["results"]) > 7 or len(payload["materials"]) > 3):
+                or len(payload["results"]) > 16 or len(payload["materials"]) > 3):
             raise ResearchContinuationError("invalid bounded research continuation")
-        for name, maximum in (("results", 7), ("materials", 3)):
+        for name, maximum in (("results", 16), ("materials", 3)):
             if any(key not in {str(number) for number in range(1, maximum + 1)}
                    or not isinstance(value, str) or not value
                    for key, value in payload[name].items()):

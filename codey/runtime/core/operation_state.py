@@ -784,11 +784,13 @@ def mark_writer_running(
             and writer_attempt is not None and attempt != state.writer_attempt):
         # Research follow-ups have fixed attempt coordinates. Restarting the
         # same invocation keeps its receipts; only its explicit successor may
-        # start fresh after the previous kernel has settled.
+        # start fresh after the previous kernel has settled. Charge the settled
+        # invocation here, atomically with that successor, exactly once.
         if (attempt <= state.writer_attempt or state.leaf != LEAF_KERNEL_SETTLED
                 or state.driver != DRIVER_WRITER or state.provider_id != provider):
             raise RuntimeOperationTransitionError("research invocation requires its settled predecessor")
         return _transition(state, LEAF_WRITER_RUNNING, writer_attempt=attempt,
+                           turns_used=_count(state.turns_used + state.logical_turn, "turns_used", maximum=state.turn_budget),
                            counters=RuntimeExecutionCounters(), logical_turn=0, stop_reason="",
                            work_ref="", request_ref="", response_ref="")
     if state.leaf in _PENDING_LEAVES - {LEAF_TOOL_DELIVERY_PENDING}:

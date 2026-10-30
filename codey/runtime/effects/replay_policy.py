@@ -16,7 +16,7 @@ from codey.toolchain.definition import (
 )
 
 SAFE_RUNTIME_TOOL_NAMES = READ_ONLY_RUNTIME_TOOL_NAMES
-IDEMPOTENT_RUNTIME_TOOL_NAMES = frozenset({"knowledge_commit"})
+IDEMPOTENT_RUNTIME_TOOL_NAMES = frozenset({"knowledge_commit", "submit_research_review"})
 UNSAFE_RUNTIME_TOOL_NAMES = SUPPORTED_RUNTIME_TOOL_NAMES - SAFE_RUNTIME_TOOL_NAMES
 # CodeMode is a resumable container. Its recovery still re-enters the kernel;
 # it is never passed to the information-tool dispatcher.

@@ -57,6 +57,9 @@ class TaskSession:
     # narrowed scope flows through the SAME snapshot into prompt, schemas,
     # parsing, and execution. Empty means state-derived only.
     controller_denied: tuple[str, ...] = ()
+    # Optional direct model exposure. Authorization and nested capabilities
+    # still come from the same policy/controller intersection.
+    model_tool_names: tuple[str, ...] | None = None
     # Per-invocation source bounds. Consumption is reconstructed from ordinary
     # tool receipts, never a separate research progress ledger.
     research_acquisition_limits: tuple[int, int] | None = None

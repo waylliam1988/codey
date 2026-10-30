@@ -43,7 +43,8 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
                        project: str, run_id: str,
                        on_event: Callable[[RunEvent], None], open_questions: Any = (),
                        policy: Any, projection: str = "initial", knowledge_refs: Any = (),
-                       finding_ids: tuple[str, ...] = (), question_coverage: Any = (), accepted_report: Any = None) -> str:
+                       finding_ids: tuple[str, ...] = (), question_coverage: Any = (), accepted_report: Any = None,
+                       semantic_review: Any = None) -> str:
     """Persist one synthesis note under the parent task policy (required).
 
     ``policy=None`` denies like any non-allowing policy (fail-closed). The
@@ -103,7 +104,8 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         "references": [{"id": ref.target, "revision": ref.revision} for ref in references],
         "findings": list(finding_ids), "coverage": list(question_coverage), "open_questions": list(open_questions),
         "scope": [scope, scope_id], "session_id": session_id, "project": project, "sources": sorted(selected_sources),
-        "report": accepted_report.to_payload() if accepted_report is not None else None}).encode()).hexdigest()
+        "report": accepted_report.to_payload() if accepted_report is not None else None,
+        "semantic_review": semantic_review}).encode()).hexdigest()
     previous = tools.store.repository.read(answer_id)
     if previous is not None:
         if previous.value.provenance.get("publication_digest") != publication_digest:
@@ -127,7 +129,10 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
                     "basis": "settled_kernel_projection", "projection": projection,
                     "questions": list(accepted_report.questions if accepted_report else tools.ledger.questions),
                     "question_coverage": list(question_coverage),
-                    "coverage_assessment": "model_reported_not_semantically_verified"})
+                    "coverage_assessment": "model_reported_not_semantically_verified",
+                    "accepted_report": accepted_report.to_payload() if accepted_report is not None else None,
+                    "task": task, "project": project, "synthesis_id": note_id,
+                    "semantic_review": semantic_review})
     try:
         tools.store.publish_note(note, stable_identity("answer-commit", run_id, projection),
                                  [KnowledgeMutation(answer)], changes=tools.changes)
@@ -144,7 +149,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         can_link = bool(allows_link("knowledge.link")) if callable(allows_link) else False
     except Exception:
         can_link = False
-    if can_link:
+    if can_link and accepted_report is None:
         for related_id in note_ids:
             if related_id and related_id != note.id:
                 try:
@@ -179,6 +184,7 @@ def run_research_iteration(
     controller_denied: tuple[str, ...] = (),
     writer_attempt: int = 1,
     invocation: ResearchInvocation | None = None,
+    publish_synthesis: bool = True,
 ) -> ResearchIterationRun:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
@@ -350,7 +356,7 @@ def run_research_iteration(
             accepted_report=compiled,
             policy=policy,
             projection="initial" if writer_attempt == 1 else f"writer-{writer_attempt}",
-        )
+        ) if publish_synthesis else ""
     quality = None
     if compiled is None and outcome.summary and outcome.stop_reason == "done":
         from codey.research.report_quality import review_report_quality
@@ -397,6 +403,7 @@ def run_research_iteration(
         research_record=record,
         max_turns_used=max_turns,
         completion_proof=outcome.proof,
+        accepted_report=compiled,
     )
     return ResearchIterationRun(result=result, tools=tools)
 

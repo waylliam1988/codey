@@ -222,6 +222,7 @@ def execute_turn(
     stop_flag: Any = None,
     snapshot: Any = None,
     durable: Any = None,
+    nested: bool = False,
 ) -> list[ToolResult]:
     """Execute one turn; identity is run+turn+index with durable delivery first.
 
@@ -239,8 +240,11 @@ def execute_turn(
                     for call in calls]
         if session.policy != snapshot.policy:
             return [_error_result(call, "turn policy differs from the captured authorization") for call in calls]
+        if nested and durable is not None and (intent_sink is None or not getattr(intent_sink, "parent_effect_id", "")):
+            return [_error_result(call, "nested execution requires its admitted parent effect") for call in calls]
+        available = snapshot.nested_tool_names if nested else snapshot.tool_names
         for call in calls:
-            if call.name not in snapshot.tool_names:
+            if call.name not in available:
                 return [_error_result(item, f"tool not available in the captured turn: {call.name}") for item in calls]
             _args, error = _validate_tool_args(call.name, call.args, frozen_specs=frozen_specs)
             if error:

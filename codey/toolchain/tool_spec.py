@@ -185,7 +185,16 @@ def _research_specs() -> dict[str, ToolSpec]:
 
 
 def _all_specs() -> dict[str, ToolSpec]:
+    from codey.research.knowledge_schema import research_assessment_schema
+
     specs = _coding_specs()
+    specs["submit_research_review"] = ToolSpec(name="submit_research_review", grant="knowledge.write",
+        executor="research_review", replay_class="safe",
+        parameters=(("basis_digest", {"type": "string"}),
+                    ("assessment", research_assessment_schema())),
+        required=("basis_digest", "assessment"),
+        description="Submit the complete assessment of the frozen research basis. Records failures for repair; "
+                    "a passing assessment publishes only that exact frozen report. Then call done with a brief receipt.")
     codemode_example = (
         "const result = await tools.read_file({path:inputs.path}); "
         "if (!result.ok) throw new Error(result.error); return result.value.text;"

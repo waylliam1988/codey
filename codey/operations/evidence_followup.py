@@ -124,12 +124,12 @@ def run_evidence_followup(
                 durable=durable,
                 managed_outputs=managed_outputs,
             )
-        from codey.operations.research_continuation import ResearchContinuation
+        from codey.operations.research_continuation import ResearchContinuation, ResearchInvocation
 
         history = ResearchContinuation(runtime_mutations, managed_outputs, session_id=session_id, run_id=run_id)
         outcome = history.kernel(
             session,
-            attempt=2 + (round_index - 1) * 2 + attempt - 1,
+            invocation=ResearchInvocation.extraction(round_index, attempt, plan.plan_ref),
             request=KernelRunRequest(
                 transport=KernelTransportDeps(
                     provider=active_provider,

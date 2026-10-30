@@ -38,7 +38,7 @@ _REPLAY_ARG_SPECS = {
         required=frozenset({"path", "symbol"}),
     ),
 }
-REPLAY_ARG_TOOL_NAMES = frozenset(_REPLAY_ARG_SPECS) | {"codemode", "knowledge_commit"}
+REPLAY_ARG_TOOL_NAMES = frozenset(_REPLAY_ARG_SPECS) | {"codemode", "knowledge_commit", "submit_research_review"}
 
 
 def _validate_replay_text_arg(value: object, key: str) -> str:
@@ -107,6 +107,14 @@ def validate_replay_args_shape(
         raise ValueError("replay args must be a mapping")
     if canonical_name == "knowledge_commit":
         return _validate_knowledge_commit(args)
+    if canonical_name == "submit_research_review":
+        import json
+
+        if (set(args) != {"basis_digest", "assessment"} or not isinstance(args["basis_digest"], str)
+                or len(args["basis_digest"]) != 64 or not isinstance(args["assessment"], dict)):
+            raise ValueError("review replay requires its original basis digest and assessment")
+        json.dumps(dict(args), allow_nan=False)
+        return dict(args)
     if canonical_name == "codemode":
         from codey.codemode.protocol import parse_codemode_args
         from codey.toolchain.tool_spec import spec_for_tool

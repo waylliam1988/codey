@@ -378,7 +378,12 @@ def _tool_pending_action(
             delivery_batch_id=pending.delivery_batch_id,
             driver=state.driver,
         )
-    if state.task_kind not in {"project", "hybrid"}:
+    # Research acquisition is not generally replayable: a fresh fetch can
+    # change the evidence basis. Its frozen publication transaction is the
+    # same idempotent local commit in every task profile.
+    research_publication = (state.task_kind == "research" and all(
+        projection.intent.tool_name == "submit_research_review" for projection in live_pending))
+    if state.task_kind not in {"project", "hybrid"} and not research_publication:
         return RuntimeAction(
             ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS,
             leaf=state.leaf,

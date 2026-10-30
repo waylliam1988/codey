@@ -148,7 +148,7 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
     from codey.toolchain.tool_prompt import tool_repair_text, tool_signature
 
     error = (plan.protocol_error or "invalid tool call").strip()
-    spec = next((item for item in snapshot.frozen_specs if item.name == plan.protocol_tool_name), None)
+    spec = next((item for item in snapshot.model_specs if item.name == plan.protocol_tool_name), None)
     if native:
         detail = (error + f"\nCorrect {spec.name}; required arguments: {', '.join(spec.required) or '(none)'}."
                   if spec is not None else error + "\nAvailable tools: " + ", ".join(snapshot.tool_names))
@@ -162,7 +162,7 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
             instruction += " " + _NATIVE_FINAL_RULE
     else:
         detail = (tool_repair_text(error, spec) if spec is not None else
-                  error + "\nAvailable tool signatures:\n" + "\n".join(tool_signature(item) for item in snapshot.frozen_specs))
+                  error + "\nAvailable tool signatures:\n" + "\n".join(tool_signature(item) for item in snapshot.model_specs))
         instruction = (
             'Reply with exactly one JSON object using {"tool":"ACTUAL_TOOL_NAME","args":{...}}. '
             "Use double-quoted JSON keys, no prose and no tool-call tags. "

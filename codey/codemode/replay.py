@@ -10,7 +10,7 @@ import hashlib
 import json
 import secrets
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from threading import RLock
 from typing import TypedDict, cast
@@ -95,7 +95,7 @@ class DurableCodeModeReplay:
                 self._failure = reason
 
     @contextmanager
-    def admission(self) -> Iterator[None]:
+    def admission(self) -> Generator[None]:
         """Serialize invalidation with intent admission and state transactions.
 
         The caller releases this guard before executing an admitted tool. Its

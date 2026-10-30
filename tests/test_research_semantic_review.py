@@ -1,0 +1,301 @@
+"""Assessment scope and real durable review/repair, without semantic keyword gates."""
+
+import copy
+import json
+import subprocess
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from codey.research.finding_report import compile_finding_report
+from codey.research.semantic_review import parse_review, review_basis, review_issues
+from tests.test_research_findings import URL, execute, report_args, setup
+
+TASK = "Explain writer concurrency and distinguish historical version restrictions."
+
+
+def assessment(basis, reject=False):
+    return {"requirements": [{"task_excerpt": "writer concurrency", "kind": "research", "question_refs": ["q1"],
+                "report_paths": ["summary"], "state": "addressed", "reason": "Explicit writer limit."},
+            {"task_excerpt": "historical version restrictions", "kind": "research", "question_refs": [] if reject else ["q2"],
+                "report_paths": [] if reject else ["report_sections.counter[0]"],
+                "state": "missing" if reject else "acknowledged_gap", "reason": "Version evidence is missing."}],
+        "claims": [{"ref": row["ref"], "verdict": "unsupported" if reject else "supported",
+                    "reason": "The excerpt permits only one writer; concurrent writers are unsupported." if reject else
+                              "The excerpt explicitly permits only one writer."} for row in basis["claims"]],
+        "paragraphs": [{"path": row["path"], "verdict": "unsupported" if reject else "supported",
+                        "reason": "Check writer limit and stated gaps."} for row in basis["paragraphs"]]}
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_review_uses_full_exact_excerpt_and_rejects_missing_duplicate_or_forged_judgments(tmp_path):
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        tools.search.text = "Context without the essential condition. " * 20 + "Only one writer at a time."
+        execute(delegate, tools, session, "open_url", {"url": URL})
+        saved = execute(delegate, tools, session, "save_finding", {"claim": "Only one writer can write at a time.",
+            "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))})
+        label = json.loads(saved.model_text)["finding_ref"]
+        report = compile_finding_report(report_args(label), tools.ledger, store)
+        assert report.evidence_bindings[0]["display_truncated"]
+        basis = review_basis(report, tools, TASK)
+        assert basis["claims"][0]["evidence"][0]["excerpt"].endswith("Only one writer at a time.")
+        raw = assessment(basis, reject=True)
+        parsed = parse_review(json.dumps(raw), basis)
+        assert {row["kind"] for row in review_issues(parsed)} == {"task_coverage", "claim_support", "report_scope"}
+        assert review_issues(parsed)[0]["requirement_kind"] == "research"
+        for mutation in (lambda row: row["claims"].clear(),
+                         lambda row: row["paragraphs"].append(row["paragraphs"][0]),
+                         lambda row: row["requirements"][0].update(task_excerpt="invented task requirement"),
+                         lambda row: row["requirements"][0].update(question_refs=[]),
+                         lambda row: row["claims"][0].update(verdict="probably")):
+            corrupt = copy.deepcopy(raw)
+            mutation(corrupt)
+            with pytest.raises(ValueError):
+                parse_review(json.dumps(corrupt), basis)
+    finally:
+        store.close()
+
+
+def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=22, native=False):
+    import os
+    from unittest.mock import patch
+
+    from codey.durable import DurableSession, SQLiteDurableStore
+    from codey.durable.checkpoint import operation_from_checkpoint
+    from codey.knowledge.store import KnowledgeStore
+    from codey.operations.research_flow import ResearchFlowDeps, run_research_pipeline
+    from codey.policies.task_policy import TaskPolicy
+    from codey.research.context import ResearchContext, ResearchPipelineConfig
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from codey.storage.managed_outputs import ManagedOutputStore
+
+    root.mkdir(parents=True, exist_ok=True)
+    durable = DurableSession(SQLiteDurableStore(root / "state.sqlite"))
+    if resume:
+        durable.recover_scheduler_state()
+        if durable.task("r").status == "pending":
+            durable.claim_task("r")
+    else:
+        durable.admit_input(conversation_id="s", request_id="input", task_id="r", text=TASK, provider_snapshot={})
+        durable.claim_task("r")
+        durable.start_task("r", state=dict(durable.task("r").state))
+    line = RuntimeMutationLine(durable=durable)
+    if not resume:
+        line.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=budget,
+                              max_repair_rounds=0, task_kind="research")
+
+    def state():
+        return operation_from_checkpoint(durable.task("r"), "s")
+
+    def log(**row):
+        with (root / "calls.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(row) + "\n")
+
+    class Search:
+        def search(self, query, limit=8):
+            log(search=query)
+            return [{"title": "Official example", "url": URL, "snippet": "One writer."}]
+
+        def fetch(self, url):
+            log(fetch=url)
+            return {"status": "ok", "url": url, "title": "Official example",
+                    "text": "Readers and a writer may run concurrently. Only one writer at a time.", "truncated": False}
+
+        def close(self):
+            pass
+
+    class Provider:
+        native_tools = native
+
+        def new_chat(self):
+            pass
+
+        def send_turn(self, prompt, tools):
+            from codey.providers.base import AssistantTurn, ProviderToolCall
+
+            row = json.loads(self.send(prompt))
+            return AssistantTurn(tool_calls=(ProviderToolCall(
+                f"call-{state().writer_attempt}-{state().logical_turn}", row["tool"], row["args"]),))
+
+        def send_tool_results(self, results, tools):
+            return self.send_turn("", tools)
+
+        def acknowledge_tool_results(self, results, tools, timeout=None):
+            from codey.providers.base import AssistantTurn
+
+            return AssistantTurn()
+
+        def send(self, prompt):
+            position = state()
+            attempt, turn = position.writer_attempt, position.logical_turn
+            log(attempt=attempt, turn=turn)
+            if attempt in (8, 10, 12):
+                if turn == 1:
+                    basis = json.JSONDecoder().raw_decode(prompt.split("FROZEN BASIS:\n", 1)[1])[0]
+                    return json.dumps({"tool": "submit_research_review", "args": {
+                        "basis_digest": basis["basis_digest"],
+                        "assessment": assessment(basis, reject=attempt == 8 or reject_forever)}})
+                return json.dumps({"tool": "done", "args": {"summary": "Assessment recorded."}})
+            if attempt == 1:
+                if turn == 1:
+                    name, args = "research_plan", {"questions": ["What limits writer concurrency?"]}
+                elif turn == 2:
+                    name, args = "web_search", {"query": "official writer concurrency"}
+                elif turn == 3:
+                    name, args = "open_url", {"url": URL}
+                elif turn == 4:
+                    import hashlib
+
+                    from codey.research.passages import passage_ref
+
+                    text = "Readers and a writer may run concurrently. Only one writer at a time."
+                    name, args = "save_finding", {"claim": "The database allows multiple concurrent writers.",
+                        "source_ref": "s1", "passage_ref": passage_ref(URL, hashlib.sha256(text.encode()).hexdigest()[:16], 0, len(text))}
+                else:
+                    name, args = "done", report_args("f1")
+                    args["summary"] = "The database allows multiple concurrent writers. [f1]"
+            elif turn == 1:
+                name, args = "research_plan", {"questions": ["What limits writer concurrency?", "Which restrictions are historical?"]}
+            elif turn == 2:
+                # URL is allowed here as the resolved input; read identity is still pinned.
+                import hashlib
+
+                from codey.research.passages import passage_ref
+
+                text = "Readers and a writer may run concurrently. Only one writer at a time."
+                name, args = "save_finding", {"claim": "Only one writer can write at a time.",
+                    "source_ref": "s1", "passage_ref": passage_ref(URL, hashlib.sha256(text.encode()).hexdigest()[:16], 0, len(text))}
+            else:
+                name, args = "done", report_args("f2")
+                args["report_sections"]["counter"] = ["Historical version restrictions remain an evidence gap."]
+                args["report_sections"]["coverage"].append({"question_ref": "q2", "state": "not_investigated",
+                    "answer": "Historical version restrictions remain unknown.", "findings": [], "investigations": []})
+            return json.dumps({"tool": name, "args": args})
+
+    store = KnowledgeStore(root / "knowledge")
+    original_publish = store.publish_note
+
+    def publish(note, *args, **kwargs):
+        value = original_publish(note, *args, **kwargs)
+        if boundary == "publication_committed" and note.type == "synthesis":
+            os._exit(74)
+        return value
+
+    store.publish_note = publish
+    if boundary:
+        def committed(*_):
+            position = state()
+            if position.writer_attempt == 8 and position.leaf == boundary:
+                os._exit(74)
+        durable.subscribe_commits(committed)
+    policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True)
+    deps = ResearchFlowDeps(state=SimpleNamespace(durable=durable), knowledge_store=store, evidence_ledgers=None,
+        search_factory=Search, run_research_advisors=None, ghost_continuity=lambda **_: None,
+        managed_outputs=ManagedOutputStore(root), runtime_mutations=line)
+    frame = SimpleNamespace(provider=Provider(), provider_id="local", project_text="", trace=None, run_id="r",
+        research_handoff="", entry_policy=policy, request=SimpleNamespace(task=TASK, session_id="s", requested_capabilities=()))
+    try:
+        with patch("codey.operations.research_flow.ResearchPipelineConfig", return_value=ResearchPipelineConfig(enabled=False)):
+            result = run_research_pipeline(deps, frame, SimpleNamespace(on_event=lambda _: None), max_turns=budget,
+                build_context=lambda *a, **kw: ResearchContext(question=TASK, session_id="s", run_id="r", max_turns=budget))
+        return result.final_result
+    finally:
+        store.close()
+        durable.close()
+
+
+@pytest.mark.usefixtures("public_source_dns")
+@pytest.mark.parametrize("native", [False, True])
+def test_shared_driver_repairs_coverage_and_support_before_publication(tmp_path, native):
+    from codey.knowledge.store import KnowledgeStore
+
+    result = _run(tmp_path, native=native)
+    assert result.stop_reason == "done", result.summary
+    assert result.semantic_review["status"] == "passed"
+    assert result.semantic_review["kind"] == "same_provider_model_assessment"
+    assert {"task_coverage_assessed", "claim_support_assessed", "report_scope_assessed"} <= {
+        row.check_id for row in result.completion_proof.checks}
+    assert "Only one writer" in result.summary and result.synthesis_id
+    requests = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert result.turns == len([row for row in requests if "attempt" in row])
+    store = KnowledgeStore(tmp_path / "knowledge")
+    try:
+        assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == 1
+    finally:
+        store.close()
+    before = (tmp_path / "calls.jsonl").read_bytes()
+    again = _run(tmp_path, resume=True, native=native)
+    assert again == result
+    assert (tmp_path / "calls.jsonl").read_bytes() == before
+    from codey.research.evidence_ledger import EvidenceLedgerStore
+    from codey.research.report_projection import validate_accepted_projection
+
+    validate_accepted_projection(result, run_id="r", session_id="s", project="")
+    from dataclasses import replace
+
+    for corrupt in (
+        replace(result, completion_proof=None),
+        replace(result, synthesis_id="another-answer"),
+        replace(result, semantic_review={**result.semantic_review, "assessment": assessment(
+            {"claims": [{"ref": ref} for ref in result.accepted_report.reference_metadata],
+             "paragraphs": result.accepted_report.paragraph_bindings}, reject=True)}),
+        replace(result, semantic_review={**result.semantic_review, "result_ref": "another-result"}),
+    ):
+        with pytest.raises(ValueError):
+            validate_accepted_projection(corrupt, run_id="r", session_id="s", project="")
+    ledgers = EvidenceLedgerStore(tmp_path / "history")
+    def append():
+        return ledgers.append_accepted_report(result.accepted_report.to_payload(), question=TASK,
+            run_id="r", session_id="s", project="", synthesis_id=result.synthesis_id)
+    assert append().ok
+    original = ledgers.load(session_id="s", project="").payload
+    path = ledgers.path_for("s", "")
+    path.unlink()
+    assert append().ok
+    reconstructed = ledgers.load(session_id="s", project="").payload
+    for key in ("sources", "evidence", "claims", "relations"):
+        assert reconstructed[key] == original[key]
+    assert reconstructed["records"][0]["record_digest"] == original["records"][0]["record_digest"]
+    assert (tmp_path / "calls.jsonl").read_bytes() == before
+
+
+@pytest.mark.usefixtures("public_source_dns")
+@pytest.mark.parametrize("budget", [6, 22])
+def test_failed_or_exhausted_assessment_never_returns_prior_draft_as_done(tmp_path, budget):
+    result = _run(tmp_path, reject_forever=True, budget=budget)
+    assert result.stop_reason != "done"
+    assert result.completion_proof is None
+    assert not result.synthesis_id
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_last_budget_turn_cannot_publish_an_unfinished_assessment(tmp_path):
+    from codey.knowledge.store import KnowledgeStore
+
+    result = _run(tmp_path, budget=11)
+    assert result.stop_reason != "done" and result.completion_proof is None
+    assert result.turns == 11
+    requests = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert len([row for row in requests if "attempt" in row]) == 11
+    store = KnowledgeStore(tmp_path / "knowledge")
+    try:
+        assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == 0
+    finally:
+        store.close()
+
+
+@pytest.mark.usefixtures("public_source_dns")
+@pytest.mark.parametrize("boundary", ["provider_response_ready", "kernel_settled", "publication_committed"])
+def test_real_subprocess_review_restart_reuses_original_assessment(tmp_path, boundary):
+    source = ("from pathlib import Path; from tests.test_research_semantic_review import _run; import sys; "
+              "_run(Path(sys.argv[1]), boundary=sys.argv[2])")
+    child = subprocess.run([sys.executable, "-c", source, str(tmp_path), boundary], capture_output=True, timeout=50)
+    assert child.returncode == 74, child.stderr.decode(errors="replace")
+    result = _run(tmp_path, resume=True)
+    assert result.stop_reason == "done", result.summary
+    calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert len([row for row in calls if row.get("attempt") == 8]) == 2
+    assert len([row for row in calls if "fetch" in row]) == 1

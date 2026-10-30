@@ -54,7 +54,7 @@ def validate_replay_args(
         shaped_args = validate_replay_args_shape(canonical_name, args)
     except ValueError as exc:
         raise RuntimeEffectError(f"invalid replay args: {exc}") from exc
-    if canonical_name in {"codemode", "knowledge_commit"}:
+    if canonical_name in {"codemode", "knowledge_commit", "submit_research_review"}:
         return shaped_args
 
     try:
