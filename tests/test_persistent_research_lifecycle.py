@@ -21,6 +21,38 @@ from codey.research.tools import ResearchTools
 from tests.test_knowledge_repository import example
 
 
+def test_evidence_only_tool_receipts_do_not_request_parent_done_fields(tmp_path):
+    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.task_session import TaskSession
+    from codey.runtime.core.models import ToolCall
+
+    store = KnowledgeStore(tmp_path)
+    try:
+        url, finding = "https://example.org/writers", "Only one writer can commit at a time."
+        tools = ResearchTools(None, store, KnowledgeChanges(tmp_path), session_id="first")
+        tools.sources_read.add(url)
+        tools.ledger.record_open(url, url, "Writers", finding)
+        session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read", "knowledge.write"})),
+                              task_kind="evidence_followup")
+        result = execute_turn(session, [ToolCall(name="knowledge_write", args={"type": "fact",
+            "title": "Writer concurrency", "body": finding, "sources": [url],
+            "evidence": [{"claim": finding, "source_url": url, "excerpt": finding}]})],
+            research_tools=tools, run_id="phase", turn=1)[0]
+        assert result.ok and "Structured knowledge versions" in result.model_text
+        assert "knowledge_refs" not in result.model_text
+        identity = result.canonical["knowledge_notes"]["created"][0]
+        for turn, call in enumerate((ToolCall(name="knowledge_read", args={"id": identity}),
+                                     ToolCall(name="knowledge_search", args={"query": "writer"})), 2):
+            read = execute_turn(session, [call], research_tools=tools, run_id="phase", turn=turn)[0]
+            assert read.ok and "knowledge_refs" not in read.model_text
+            assert finding in read.model_text
+        # A child phase must not alter the parent's facade or stored versions.
+        assert not tools.evidence_only
+        assert "knowledge_refs" in tools.knowledge_read(identity).model_text
+    finally:
+        store.close()
+
+
 def test_explicit_commit_undo_and_session_graph(tmp_path):
     with_store = KnowledgeStore(tmp_path)
     try:

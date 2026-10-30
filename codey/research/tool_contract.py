@@ -18,7 +18,7 @@ PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 STRUCTURED_REPORT_EXAMPLE = (
     '{"tool":"done","args":{"summary":"Supported conclusion [1]","report_sections":'
     '{"evidence":["Saved evidence[].claim wording [1]"],'
-    '"counter":["未找到强反证；本轮仅检索并打开上述来源。[1]"],'
+    '"counter":["Observed limitation and its scope [1]"],'
     '"source_quality":["Study design and limits"],"coverage":["Queries and gaps"],'
     '"sources":["[1] Opened and saved source title - https://exact-opened-url"]}}}'
 )

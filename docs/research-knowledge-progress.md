@@ -279,3 +279,9 @@ Update this file in each implementation commit with results and remaining work.
   preservation on evidence saves and trailing comparison/check term retention.
   50 evidence/report tests and 19 proof tests passed; Ruff/mypy/Pyrefly/ty passed.
   New real-browser medicine run is in progress, not yet quality accepted.
+- That run ended protocol-failed. Final synthesis re-recalled its own saved
+  initial report; automatic background now excludes answer objects before seed
+  limits/graph traversal. Explicit historical search/read remains available.
+  Child-phase write/read/search receipt guidance now omits parent-only answer
+  reference instructions. Removed generic no-counter templates and clarified
+  independent comparator searches. 80 focused tests and all static checks passed.

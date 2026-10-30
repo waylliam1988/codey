@@ -1101,3 +1101,29 @@ Validation: 50 focused evidence/report/completion tests and 19 proof tests
 passed. Production Ruff, mypy (556 files), Pyrefly and ty passed.
 Real-browser retest: research-live-adaptive-citation-uncertainty-20261030,
 thinking/minimal, currently in progress; no quality acceptance yet.
+
+## Child receipt guidance and draft self-recall
+
+That retest ended with protocol failure in final synthesis, not an accepted
+report. Acquisition really used source_search/open_hit and saved another
+finding, but still missed human outcomes and conflated study arms. A child
+knowledge_write receipt also told it to supply forbidden done.knowledge_refs.
+The tool facade now receives per-call evidence-only presentation on its copy;
+write/read/search receipts retain identities and versions without instructing
+that child to fill the parent's answer-reference field. Parent guidance remains.
+
+More significantly, fresh parent synthesis automatically recalled its own saved
+initial answer. Its request thus contained an old report despite the bounded
+evidence handoff. Automatic background now excludes answer objects in SQL before
+seed limits and relationship expansion. Explicit search/read still exposes
+historical reports; automatic background uses underlying knowledge instead.
+
+Removed the copyable generic "no strong counterevidence" example from both
+completion guidance and tool examples. Guidance asks for actual investigated
+limits/search scope or an honest not-investigated gap. Methods also request
+independent comparator searches and separate multi-arm findings.
+
+Validation: 80 focused knowledge/context/phase tests passed, including 30 old
+reports competing with a usable premise; 78 earlier focused method/phase tests
+passed (overlap). Ruff, mypy, Pyrefly and ty passed before the final example-only
+edit. Broad semantic acceptance remains outstanding.

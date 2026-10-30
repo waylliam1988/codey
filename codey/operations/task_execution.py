@@ -425,6 +425,10 @@ class ExecutionDelegate:
         # Acquisition mutates a temporary ledger. Only the committed result
         # receipt may publish it into the run's formal projection.
         tools = copy.copy(self.research_tools)
+        if hasattr(tools, "evidence_only"):
+            # This is a per-call presentation setting. The shared facade and
+            # stored knowledge must not inherit a child phase's output contract.
+            tools.evidence_only = self.session is not None and self.session.task_kind == "evidence_followup"
         ledger = getattr(tools, "ledger", None)
         if isinstance(ledger, ResearchLedger):
             # A read receipt contains this acquisition alone, not stale pages

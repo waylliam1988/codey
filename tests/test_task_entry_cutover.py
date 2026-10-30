@@ -260,10 +260,12 @@ def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
         "literal Markdown headings",
         "## 结论, ## 关键证据, ## 反证与限制, ## 来源质量, ## 搜索覆盖, ## 来源",
         "[1]-style citations",
-        "A valid no-counter example is exactly",
+        "describe the actual search scope and remaining limits",
+        "if it was not investigated, say so",
         "pass the note id exactly as returned",
     ):
         assert required in prompt
+    assert "A valid no-counter example is exactly" not in prompt
 
 
 @pytest.mark.usefixtures("public_source_dns")

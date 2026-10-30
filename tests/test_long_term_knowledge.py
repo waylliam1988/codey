@@ -63,6 +63,27 @@ def test_scope_filter_happens_before_limit_and_read_is_scoped(tmp_path):
         store.close()
 
 
+def test_automatic_background_excludes_answers_before_limit_and_graph_expansion(tmp_path):
+    store = KnowledgeStore(tmp_path)
+    try:
+        store.repository.commit("premise", [M(K("premise", "claim", "Writers serialize.", "author_interpretation",
+                                                title="WAL", aliases=("SQLite",)))])
+        for i in range(30):
+            store.repository.commit(f"answer-{i}", [M(K(f"answer-{i}", "answer", "OLD_DRAFT_MARKER SQLite WAL",
+                "model_inference", title="SQLite WAL", references=(R("premise", 1, "uses"),)))])
+        tools = ResearchTools(None, store, None, session_id="chat")
+        session = SimpleNamespace(policy=SimpleNamespace(allows=lambda _: True), task_kind="research")
+        background = knowledge_background(tools, session, "SQLite")
+        assert "Writers serialize" in background and "OLD_DRAFT_MARKER" not in background
+        hits = store.search("SQLite", limit=4, depth=2, exclude_kinds=("answer",))
+        assert hits and all(hit.version.value.kind != "answer" for hit in hits)
+        # Explicit historical queries still have access to the report objects.
+        assert json.loads(tools.knowledge_read("answer-0").model_text)["kind"] == "answer"
+        assert any(hit.version.value.kind == "answer" for hit in store.search("OLD_DRAFT_MARKER", depth=0))
+    finally:
+        store.close()
+
+
 def test_commit_safe_replay_returns_original_receipt_after_restart(tmp_path):
     store = KnowledgeStore(tmp_path)
     value = K("open-question", "question", "What would overturn the hypothesis?", "model_inference")

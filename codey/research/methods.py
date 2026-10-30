@@ -58,6 +58,10 @@ def research_method_guidance(question: str, *, evidence_only: bool = False) -> s
         "Cover each comparison and constraint explicitly requested by the user. For each, obtain a direct passage "
         "and save its finding, or report that specific evidence gap. One saved general fact does not answer "
         "the remaining questions; investigate them before drafting. Do not claim coverage of unread passages.",
+        "For a comparison, investigate each side independently. A search limited to one example does not "
+        "cover results in the broader field. When a source reports multiple interventions or comparators, "
+        "save separate findings and exact passages for each comparison, including null results and limits. "
+        "Never transfer a positive result between arms or treat a study protocol as an outcome.",
         "Preserve observed results, author interpretations, user statements and model inferences separately. "
         "For knowledge_write, conditions can use {name:{state:reported,value:...}} or state "
         "not_reported/not_extracted/not_applicable. Leave unknown information unknown; never fill a template by guessing.",

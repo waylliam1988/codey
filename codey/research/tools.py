@@ -63,6 +63,7 @@ class ResearchTools:
     synthesis_id: str = ""
     links_created: int = 0
     ledger: ResearchLedger = field(default_factory=ResearchLedger)
+    evidence_only: bool = False
 
     def create_staged(self) -> ResearchTools:
         staged_store = StagedKnowledgeStore(self.store) if self.store is not None else None
@@ -82,6 +83,7 @@ class ResearchTools:
             synthesis_id=self.synthesis_id,
             links_created=self.links_created,
             ledger=self.ledger.clone(),
+            evidence_only=self.evidence_only,
         )
 
     def commit_staged(self, staged: ResearchTools) -> None:
@@ -182,7 +184,7 @@ class ResearchTools:
         if not query:
             return ResearchToolOutput("ERROR: knowledge_search needs a query", ok=False)
         hits = self.store.search(query, project=self.project, session_id=self.session_id, depth=depth)
-        recalled = render_recall(hits)
+        recalled = render_recall(hits, include_answer_refs=not self.evidence_only)
         rows = self.store.search_notes(query, project=self.project, session_id=self.session_id)
         if not rows:
             return ResearchToolOutput(recalled or "no local notes yet on this topic", ok=True)
@@ -221,8 +223,10 @@ class ResearchTools:
                 answer_refs.append({"id": target.value.id, "revision": target.revision})
         preface = ("Legacy document note; its note_id is not a done.knowledge_refs object id.\n"
                    "Answer reference candidates (use only versions actually adopted):\n"
-                   + canonical_json({"knowledge_refs": answer_refs[:6]}) + "\n\n") if answer_refs else ""
-        return ResearchToolOutput(preface + note.to_markdown() + "\n\nStructured knowledge versions (use these for knowledge_refs):\n"
+                   + canonical_json({"knowledge_refs": answer_refs[:6]}) + "\n\n") if answer_refs and not self.evidence_only else ""
+        version_label = ("Structured knowledge versions:" if self.evidence_only else
+                         "Structured knowledge versions (use these for knowledge_refs):")
+        return ResearchToolOutput(preface + note.to_markdown() + "\n\n" + version_label + "\n"
                                   + canonical_json(references), ok=True)
 
     def _missing_knowledge_identity(self, identity: str) -> str:
@@ -364,11 +368,12 @@ class ResearchTools:
         versions.sort(key=lambda row: 0 if row["kind"] in {"claim", "inference", "question"} else 1)
         answer_refs = [{"id": row["id"], "revision": row["revision"]} for row in versions
                        if row["kind"] in {"claim", "inference", "question"}][:6]
-        if answer_refs:
+        if answer_refs and not self.evidence_only:
             model_text += ("\nAnswer reference candidates (copy only versions actually used into done.knowledge_refs):\n"
                            + canonical_json({"knowledge_refs": answer_refs}))
         model_text += "\nStructured knowledge versions:\n" + canonical_json(versions[:24])
-        model_text += "\nFor knowledge_read and done.knowledge_refs use these object ids and revisions, not note_id."
+        model_text += ("\nFor knowledge_read use these object ids and revisions, not note_id." if self.evidence_only else
+                       "\nFor knowledge_read and done.knowledge_refs use these object ids and revisions, not note_id.")
         return ResearchToolOutput(model_text, ok=True)
 
     def knowledge_link(self, src: str, dst: str, kind: str = "relates") -> ResearchToolOutput:
