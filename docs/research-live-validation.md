@@ -1177,3 +1177,33 @@ not evidence of improved broad research quality. A fresh directory is required.
 Validation: 26 focused completion/structured-report tests and 44 completion/
 lifecycle/durable-continuation tests passed (overlap). Ruff, mypy (556 files),
 Pyrefly and ty passed. Broad real-web semantic acceptance remains outstanding.
+
+## Honest incomplete investigation and current lifecycle result
+
+The Chinese current-observation reminder still requested an investigation for
+every unmet feedback item, contradicting focused citation/format-only repairs.
+It now distinguishes those repairs from actual missing-evidence acquisition.
+The report format gate also permits explicit unfinished counter-search
+declarations. The structural proof review does not count such a declaration as
+counterevidence_checked. Uncited factual counterclaims remain rejected. This is
+explicit-gap recognition, not a semantic evaluation of the completed search.
+
+The focused three-process suite at
+artifacts/research-three-stage-focused-final-20261030 exited zero for all stages.
+It searched/opened frozen official pages, persisted claims with unknown workload,
+read an earlier version in a different process, saved a candidate analogy and
+revised that same inference from revision 1 to 2 with pinned premises intact.
+This validates the controlled lifecycle. Manual inspection found over-compound
+initial claims and an incomplete final revision explanation despite valid JSON.
+It is not broad semantic acceptance, and the fixture changes above are material.
+
+Expanded pipeline tests exposed two creation fixtures still supplying a guessed
+update id. They now create without id and use the returned identity for updates,
+consistent with the deliberate unknown-update rejection; ownership/provenance
+assertions remain intact.
+
+36 focused report/counter tests passed, followed by 216 expanded research tests
+and seven subtests (overlap).
+Ruff, mypy (557 files), Pyrefly and ty passed. A real web WAL probe with explicit
+thinking/low is isolated in research-live-wal-focused-feedback-low-20261030;
+no default provider configuration was changed and quality is not accepted yet.

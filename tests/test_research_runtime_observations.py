@@ -90,6 +90,9 @@ def test_chinese_report_reminder_preserves_permission_and_evidence_only_boundari
     assert "evidence[].claim 写完整中文结论" in text
     assert "excerpt 保留原文" in text
     assert "勿重复旧稿" in text
+    assert "格式或引用表错误先就地修正" in text
+    assert "仅在缺少证据时执行补查" in text
+    assert "尚未满足反馈时，执行下一项调查动作" not in text
     session.policy = TaskPolicy(grants=frozenset({"control"}))
     session.task_kind = "evidence_followup"
     text = render_research_observations(session)

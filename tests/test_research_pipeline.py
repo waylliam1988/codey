@@ -1267,7 +1267,6 @@ def test_knowledge_write_update_merges_existing_provenance_and_scope() -> None:
         tools.sources_read.add(source)
         tools.ledger.record_open(source, source, "Source", "Original observed result. Updated observed result.")
         created = tools.knowledge_write({
-            "id": "fact-a",
             "type": "fact",
             "title": "Original fact",
             "body": "Original body.",
@@ -1320,7 +1319,6 @@ def test_knowledge_write_update_rejects_cross_session_owner() -> None:
         first.sources_read.add(source)
         first.ledger.record_open(source, source, "Source", "Original observed result.")
         first.knowledge_write({
-            "id": "fact-a",
             "type": "fact",
             "title": "Original fact",
             "body": "Original body.",

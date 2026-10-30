@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
+from codey.research.counter_status import counter_investigation_incomplete
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.research.proof_helpers import _positive_ints
 from codey.utils.refs import bounded_refs, clip, identifier, nonnegative_int
@@ -65,7 +66,7 @@ def _review_relation_rows(relations: tuple[Mapping[str, object], ...], claims: M
             continue
         if kind == 'supports':
             _check_support_relation(from_ref, to_ref, relation_id, evidence, source_ids, support_by_claim, hard, diagnostics, claims, sources)
-        elif kind in {'refutes', 'limits'} and _check_counter_relation(to_ref, relation_id, evidence, assumption_ids, source_ids, hard, diagnostics, claims, sources):
+        elif kind in {'refutes', 'limits'} and _check_counter_relation(to_ref, relation_id, evidence, assumption_ids, source_ids, hard, diagnostics, claims, sources) and not counter_investigation_incomplete(str(claims[from_ref].get('claim_text', ''))):
             counter_checked = True
     return counter_checked
 
@@ -117,7 +118,7 @@ def _review_claim_rows(claims: Mapping[str, Mapping[str, object]], evidence: Map
             required_claims += 1
         if is_supported:
             supported_required += 1
-        if section == 'counter' and (status == 'assumption' or assumption_refs):
+        if section == 'counter' and (status == 'assumption' or assumption_refs) and not counter_investigation_incomplete(str(claim.get('claim_text', ''))):
             counter_from_claims = True
     return (citation_present, required_claims, supported_required, counter_from_claims)
 

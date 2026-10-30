@@ -300,3 +300,10 @@ Update this file in each implementation commit with results and remaining work.
   for full saved sentences and individually cited paragraphs; this is a fixture
   clarification, not a broad research quality claim. 26 focused format tests
   and 44 completion/lifecycle/restart tests passed (overlap), static checks passed.
+- The controlled three-process suite now completes (fresh focused-final artifact):
+  save, restart/recall, candidate analogy, pinned revision update all validated.
+  Compound saved claims and an incomplete final explanation remain quality
+  limitations; this is not a broad research pass. Counter-search gaps can now
+  be reported honestly without counting as a completed check, and Chinese repair
+  reminders distinguish formatting from evidence acquisition. Real web WAL
+  thinking/low probe in progress. Default model settings are unchanged.

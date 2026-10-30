@@ -71,7 +71,8 @@ def render_research_observations(session: "TaskSession") -> str:
         elif session.policy.strict_research:
             guidance += (
                 "done 使用 report_sections 时，summary 只放带引用的结论，五个数组放其余内容，"
-                "不要把整篇报告再放入 summary。尚未满足反馈时，执行下一项调查动作，勿重复旧稿。"
+                "不要把整篇报告再放入 summary。按最新反馈修复：格式或引用表错误先就地修正，"
+                "仅在缺少证据时执行补查；勿重复旧稿。"
             )
     return guidance
 

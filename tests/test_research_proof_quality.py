@@ -5,6 +5,8 @@ import tempfile
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import (
@@ -291,6 +293,31 @@ def test_counterevidence_or_limitations_check_is_required_for_ok_review() -> Non
     assert review.ok is False
     assert review.counterevidence_checked is False
     assert "counterevidence_not_checked" in review.missing_evidence
+
+
+@pytest.mark.parametrize("declaration", [
+    "本轮尚未调查反证；目前仅核查了供应机制，不能断言没有相反研究。",
+    "反证检索尚未完成；仍需检查其他数据。",
+    "Contrary evidence was not investigated; the present search only covered supply mechanisms.",
+])
+def test_explicit_incomplete_counter_search_is_reportable_but_not_a_verified_check(declaration: str) -> None:
+    summary = _report().replace("未找到强反证；需要持续追踪新供应数据。", declaration)
+    record = _record(summary=summary)  # Formatting permits an honest gap without a fabricated citation.
+    review = review_research_proof(record, question="Research helium supply", require_ledger_record=False)
+    assert not review.ok
+    assert not review.counterevidence_checked
+    assert "counterevidence_not_checked" in review.missing_evidence
+
+
+def test_uncited_factual_counter_is_not_an_incomplete_search_declaration() -> None:
+    from codey.research.report_quality import _required_body_citation_review
+
+    review = _required_body_citation_review({
+        "conclusion": "Finding [1]", "evidence": "Finding [1]",
+        "counter": "An independent experiment disproved this conclusion.",
+    })
+    assert review is not None and not review.ok
+    assert "not investigated" in review.message
 
 
 def test_missing_ledger_record_blocks_queue_proof() -> None:

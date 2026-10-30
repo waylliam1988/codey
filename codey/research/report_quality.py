@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from codey.research.counter_status import counter_investigation_incomplete
 from codey.research.ledger import ResearchLedger
 from codey.research.provenance import provenance_problem
 from codey.research.urls import opened_url
@@ -309,11 +310,13 @@ def _required_body_citation_review(sections: Mapping[str, str]) -> ReportQuality
             "Report quality failed: the 关键证据 section must cite opened sources with [n].",
         )
     counter_text = sections["counter"]
-    if not citation_refs(counter_text) and not _says_no_strong_counter(counter_text):
+    if (not citation_refs(counter_text) and not _says_no_strong_counter(counter_text)
+            and not counter_investigation_incomplete(counter_text)):
         return ReportQualityReview(
             False,
             "Report quality failed: 反证与限制 must cite counter-evidence with [n], "
-            "or explicitly say 未找到强反证 and explain what was searched.",
+            "or describe the actual unsuccessful search scope. If the check was not performed, "
+            "explicitly declare that contrary evidence was not investigated; do not claim a negative finding.",
         )
     return None
 
@@ -324,6 +327,8 @@ def _source_quality_warnings(
     sections: Mapping[str, str],
 ) -> list[str]:
     warnings: list[str] = []
+    if counter_investigation_incomplete(sections["counter"]):
+        warnings.append("contrary evidence investigation is explicitly incomplete")
     if len(citations) < 2:
         warnings.append("strong conclusion is supported by only one cited source")
     quality_refs = citation_refs(sections["source_quality"])
