@@ -16,6 +16,7 @@ from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from tests.stress.test_completion_truthful_oracle_real_run import _real_research_gate
 from tests.support.provider_actions import ProviderActions
 from tests.support.receipt_fixtures import inspect_receipt_facts
+from tests.support.research_report import report_args
 from tests.support.workspace_conversation import TextConversation
 from tests.test_chat_workspace_tools_and_answer_completion import workspace_frame
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
@@ -80,7 +81,7 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
                                     sources_read=set(), search_result_urls=set())
     monkeypatch.setattr("codey.operations.task_entry._entry_executors", lambda *args: (None, None, restored_tools))
     import json
-    provider = TextConversation(*[json.dumps({"tool": "done", "args": {"summary": report}})])
+    provider = TextConversation(*[json.dumps({"tool": "done", "args": report_args(report)})])
     frame = workspace_frame("", provider, task="Research helium supply")
     frame.run_id = "r"
     frame.request = replace(frame.request, session_id="s", intent="research", max_turns=8)

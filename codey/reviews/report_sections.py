@@ -51,16 +51,15 @@ def render_done_report(summary: str, sections: object) -> str:
     keys = REQUIRED_SECTIONS[1:]
     if not isinstance(sections, dict) or set(sections) != set(keys):
         raise ValueError("report_sections requires exactly: " + ", ".join(keys))
-    # Supplying both formats can hide duplicated or escaped full reports inside
-    # the conclusion. Reject the ambiguity; never strip or unescape user text.
+    # A full report inside the conclusion duplicates the rendered sections.
+    # Reject it; never strip or unescape user text.
     if any(heading_key(line) in REQUIRED_SECTIONS for line in summary.splitlines()) or re.search(
         r"\\n\s*#{1,6}\s+(?:" + "|".join(re.escape(alias) for key in REQUIRED_SECTIONS
                                             for alias in SECTION_ALIASES[key]) + r")(?:\\n|\s|$)",
         summary, re.IGNORECASE,
     ):
         raise ValueError("With report_sections, summary must contain only the conclusion, without report headings. "
-                         "Remove the duplicated full report from summary; keep the five report_sections arrays. "
-                         "Alternatively omit report_sections and provide a complete Markdown summary.")
+                         "Remove the duplicated full report from summary; keep the five report_sections arrays.")
     bodies = {"conclusion": summary}
     for key in keys:
         rows = sections[key]

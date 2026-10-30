@@ -25,8 +25,8 @@ def test_full_research_guidance_reviewed_prompt_digest():
     policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
                         strict_research=True)
     assert hashlib.sha256(_guidance(policy).encode()).hexdigest() == (
-        # Reviewed: scoped claims use report language; excerpts keep their original language.
-        "47a90814bf5d76666369b4b5995bbddd06134f2efb30e9f82533954504f7d6e4"
+        # Reviewed: structured arguments are the sole strict research completion format.
+        "fe899a7a36d1c671cdacc260a72587b00fd22d9caf5560f6e6bccca6ef6e7c76"
     )
 
 
@@ -76,7 +76,7 @@ def test_ordinary_web_task_has_no_strict_research_guidance():
 ])
 def test_research_guidance_does_not_direct_unauthorized_tools(grants, forbidden):
     text = _guidance(TaskPolicy(grants=frozenset(grants), strict_research=True))
-    assert "report format is strict" in text.lower()
+    assert "done.report_sections=" in text
     for name in forbidden:
         assert name not in text
 
@@ -141,7 +141,7 @@ def test_report_headings_come_from_the_existing_report_contract(monkeypatch):
 
     monkeypatch.setattr(report_sections, "REQUIRED_SECTIONS", ("conclusion", "sources"))
     text = _guidance(TaskPolicy(grants=frozenset({"control"}), strict_research=True))
-    assert "## 结论, ## 来源." in text
+    assert "report sections: 结论, 来源." in text
     assert "## 关键证据" not in text
 
 

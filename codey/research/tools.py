@@ -223,10 +223,14 @@ class ResearchTools:
             target = self.store.repository.read(str(ref["target"]), int(ref["revision"]))
             if target is not None and access.allows(target) and target.value.kind in {"claim", "inference", "question"}:
                 answer_refs.append({"id": target.value.id, "revision": target.revision})
-        preface = ("Legacy document note; its note_id is not a done.knowledge_refs object id.\n"
+        automatic_refs = self.automatic_report_refs and note.id in (*self.created_ids, *self.updated_ids)
+        preface = ("Document note; its note_id is not a done.knowledge_refs object id.\n"
                    "Answer reference candidates (use only versions actually adopted):\n"
-                   + canonical_json({"knowledge_refs": answer_refs[:6]}) + "\n\n") if answer_refs and not self.evidence_only else ""
-        version_label = ("Structured knowledge versions:" if self.evidence_only else
+                   + canonical_json({"knowledge_refs": answer_refs[:6]}) + "\n\n"
+                   ) if answer_refs and not self.evidence_only and not automatic_refs else ""
+        if automatic_refs and not self.evidence_only:
+            preface = "This run's saved note versions are automatically attached to the report.\n\n"
+        version_label = ("Structured knowledge versions:" if self.evidence_only or automatic_refs else
                          "Structured knowledge versions (use these for knowledge_refs):")
         return ResearchToolOutput(preface + note.to_markdown() + "\n\n" + version_label + "\n"
                                   + canonical_json(references), ok=True)

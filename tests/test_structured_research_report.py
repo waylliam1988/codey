@@ -72,6 +72,38 @@ def test_malformed_structured_reports_do_not_become_completion(value):
     assert plan.protocol_error and plan.control is None
 
 
+@pytest.mark.parametrize("native", [True, False])
+def test_strict_research_rejects_summary_only_even_with_a_complete_markdown_report(native):
+    from codey.reviews.report_sections import render_done_report
+
+    args = arguments()
+    report = render_done_report(args["summary"], args["report_sections"])
+    state = session()
+    snapshot = build_turn_snapshot(state, native=native)
+    done = next(spec for spec in snapshot.frozen_specs if spec.name == "done")
+    assert set(done.required) == {"summary", "report_sections"}
+    assert "Alternatively" not in snapshot.contract_text
+    reply = (AssistantTurn(tool_calls=(ProviderToolCall("old-format", "done", {"summary": report}),)) if native
+             else decode_text_turn(json.dumps({"tool": "done", "args": {"summary": report}})))
+    plan = normalize_turn(reply, snapshot=snapshot)
+    assert plan.control is None and "report_sections" in plan.protocol_error
+
+
+@pytest.mark.parametrize("native", [True, False])
+def test_ordinary_done_keeps_plain_answer_contract(native):
+    state = TaskSession(TaskPolicy(grants=frozenset({"control"})))
+    reply = AssistantTurn(tool_calls=(ProviderToolCall("answer", "done", {"summary": "Answer"}),))
+    plan = normalize_turn(reply, snapshot=build_turn_snapshot(state, native=native))
+    assert plan.control and plan.control.body == "Answer" and not plan.protocol_error
+
+
+@pytest.mark.parametrize("reply", [AssistantTurn(text="A plain research report"),
+                                   decode_text_turn("A plain research report")])
+def test_plain_text_cannot_bypass_required_research_report_arguments(reply):
+    plan = normalize_turn(reply, snapshot=build_turn_snapshot(session()))
+    assert plan.control is None and "report_sections" in plan.protocol_error
+
+
 def test_literal_escape_sequences_in_report_content_are_preserved():
     args = arguments()
     args["report_sections"]["coverage"] = [r"The query contained literal \n and Windows C:\data."]

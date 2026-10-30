@@ -11,6 +11,7 @@ import pytest
 
 from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.research_report import report_args
 
 
 def _cutover_parent_policy():
@@ -198,7 +199,8 @@ def test_unified_kernel_passes_authoritative_research_ledger_to_gate() -> None:
     ledger = object()
     class Provider:
         def send(self, _prompt, timeout=None):
-            return '{"tool":"done","args":{"summary":"结论 x 来源 y"}}'
+            return json.dumps({"tool": "done", "args": {"summary": "结论 x", "report_sections": {
+                key: ["未核实"] for key in ("evidence", "counter", "source_quality", "coverage", "sources")}}})
 
     with patch("codey.operations.completion_gate.evaluate") as evaluate:
         evaluate.return_value = SimpleNamespace(complete=False, followup="missing")
@@ -257,8 +259,8 @@ def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
         "Do not call done before knowledge_write",
         "knowledge_read",
         "Do not repeat knowledge_write for the same evidence",
-        "literal Markdown headings",
-        "## 结论, ## 关键证据, ## 反证与限制, ## 来源质量, ## 搜索覆盖, ## 来源",
+        "done.summary is only the conclusion",
+        "done.report_sections={evidence:[text],counter:[text],source_quality:[text],coverage:[text],sources:[text]}",
         "[1]-style citations",
         "describe the actual search scope and remaining limits",
         "if it was not investigated, say so",
@@ -266,6 +268,7 @@ def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
     ):
         assert required in prompt
     assert "A valid no-counter example is exactly" not in prompt
+    assert "Alternatively supply" not in prompt
 
 
 @pytest.mark.usefixtures("public_source_dns")
@@ -735,7 +738,7 @@ def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> 
                           "source_url": url, "excerpt": "Pipeline source text says the fact.",
                           "stance": "supports"}],
         }},
-        {"tool": "done", "args": {"summary": answer}},
+        {"tool": "done", "args": report_args(answer)},
     ))
 
     class Search:

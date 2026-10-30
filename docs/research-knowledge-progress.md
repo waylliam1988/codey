@@ -330,3 +330,16 @@ Update this file in each implementation commit with results and remaining work.
   recall before limits/graph expansion; older premises and explicit access remain.
   Quote repair actions now survive the 400-character error observation limit.
   Regressions cover retrieval crowding and long-source-URL quote rejection.
+- Cold-start cutover: strict research now requires summary plus report_sections;
+  neither summary-only Markdown nor direct prose bypasses the contract. There
+  is no legacy strict-report input. Ordinary answers and evidence-only receipts
+  retain their distinct contracts. Internal Markdown rendering remains shared.
+- Fixed current-note reads reintroducing reference-copy instructions; counter
+  citation feedback now identifies the exact field/uncited section in Chinese.
+  The structured-only broad live run was cancelled after repeated uncited
+  counter paragraphs, not accepted. A narrower field-repair retest is running.
+  300 expanded tests plus seven subtests and 52 final focused tests passed
+  (overlap); Ruff/mypy/Pyrefly/ty passed.
+- Next priority from user review: model extraction identity and explicit
+  unreviewed interpretation state, separate from dependency invalidation;
+  fixed-material layered evaluation instead of more ad hoc prompt additions.

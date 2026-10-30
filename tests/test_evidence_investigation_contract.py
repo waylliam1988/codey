@@ -29,6 +29,7 @@ def test_parent_research_retains_its_full_report_contract():
     session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research")
     spec = next(item for item in build_turn_snapshot(session).frozen_specs if item.name == "done")
     assert "report_sections" in dict(spec.parameters)
+    assert set(spec.required) == {"summary", "report_sections"}
 
 
 def test_investigation_cannot_end_by_repeating_parent_without_attempting_acquisition():

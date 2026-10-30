@@ -100,7 +100,7 @@ def test_research_report_attaches_current_run_versions_without_model_copying_ids
         url, finding = "https://example.org/current", "Only one writer commits."
         tools.sources_read.add(url)
         tools.ledger.record_open(url, url, "Writers", finding)
-        session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.write"}), strict_research=True),
+        session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read", "knowledge.write"}), strict_research=True),
                               task_kind="research")
         result = execute_turn(session, [ToolCall(name="knowledge_write", args={"type": "fact",
             "title": "Writer limit", "body": finding, "sources": [url],
@@ -111,6 +111,10 @@ def test_research_report_attaches_current_run_versions_without_model_copying_ids
         assert not tools.automatic_report_refs  # Presentation belongs to the execution copy.
         assert "Do not manually recopy" in research_method_guidance("Research writers", automatic_report_refs=True)
         note_id = result.canonical["knowledge_notes"]["created"][0]
+        read = execute_turn(session, [ToolCall(name="knowledge_read", args={"id": note_id})],
+                            research_tools=tools, run_id="current", turn=2)[0]
+        assert read.ok and "automatically attached" in read.model_text
+        assert "knowledge_refs" not in read.model_text
         pinned = store.note_references(note_id)
         _persist_synthesis(tools, "Research writers", finding + " [1]", session_id="current", project="",
                            run_id="auto-pinned-report", on_event=lambda _: None, policy=session.policy)
@@ -350,7 +354,7 @@ def test_repeated_staged_note_updates_keep_prior_evidence(tmp_path):
         assert {ref.relation for ref in claim.value.references} == {"supported_by", "limited_by"}
         assert len(store.note_references(note_id)) == 4
         read = tools.knowledge_read(note_id)
-        assert read.ok and read.model_text.startswith("Legacy document note")
+        assert read.ok and read.model_text.startswith("Document note")
         read_refs = next(json.loads(line)["knowledge_refs"] for line in read.model_text.splitlines()
                          if line.startswith('{"knowledge_refs":'))
         assert read_refs == [{"id": claim.value.id, "revision": claim.revision}]

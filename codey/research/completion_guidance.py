@@ -129,20 +129,17 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         if policy.allows("knowledge.read"):
             checklist += knowledge_read_id_guidance(source_tool="knowledge_write")
     report = (
-        "Preferred report arguments: done.summary is the conclusion with [1]-style citations; "
+        "Report arguments: done.summary is only the conclusion with [1]-style citations; "
         "done.report_sections={evidence:[text],counter:[text],source_quality:[text],coverage:[text],sources:[text]}. "
         "Each array contains the paragraphs for that section. The application adds headings and actual line breaks, "
         "so these values need no manually encoded newline separators. "
-        "Alternatively supply a complete Markdown report in summary alone. "
-        "When using summary alone, report format is strict: use these literal Markdown headings, each on its own line: "
-        f"{', '.join('## ' + title for title in titles)}. "
-        "Do not replace headings with bold labels or inline prose. Put [1]-style citations "
-        "in 结论 and 关键证据. In 反证与限制 cite [n] for observed limitations or contrary results. "
+        "Do not put headings or the whole report in summary or encode paragraph separators yourself. "
+        "Put [1]-style citations in summary and evidence paragraphs. "
+        "In counter cite [n] for observed limitations or contrary results. "
         "If no contrary evidence was found, describe the actual search scope and remaining limits; "
         "if it was not investigated, say so. Do not copy a generic no-counter statement as evidence of a check. "
         "In 来源, list each cited source as "
         "[1] Title - https://...; use only URLs opened and saved in this run."
         " Preserve deleted/struck-through text as historical, not current guidance; check adjacent version exceptions. "
-        "When using summary alone, it must contain actual multiline Markdown after argument decoding."
     )
     return "\n\n".join((rules, checklist.rstrip(), report))

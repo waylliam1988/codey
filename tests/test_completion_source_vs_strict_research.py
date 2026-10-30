@@ -104,7 +104,9 @@ def test_required_report_failure_explains_literal_newlines_without_rewriting():
     assert not verdict.complete
     assert "required check 'research_report_sections'" in verdict.followup
     assert "literal backslash+n" in verdict.followup
-    assert "## 结论\n## 关键证据\n## 反证与限制" in verdict.followup
+    assert "done.report_sections with five nonempty text arrays" in verdict.followup
+    assert "evidence, counter, source_quality, coverage, sources" in verdict.followup
+    assert "## 结论\n## 关键证据" not in verdict.followup
     assert "does not require another search" in verdict.followup
     assert "Collect the missing local evidence or fresh verification" not in verdict.followup
     assert "\n" not in summary  # The gate did not silently decode the submitted data.
@@ -241,6 +243,9 @@ def test_uncited_counter_section_gets_one_format_repair_before_claim_binding_hin
         CompletionCheck("research_report_quality", CHECK_FAIL, "research_report_quality_failed"),
         CompletionCheck("research_claim_bindings", CHECK_FAIL, "report_claim_binding_incomplete")])
     assert "反证与限制 must cite" in feedback and "defect first" in feedback
+    assert "Repair done.report_sections.counter, not summary" in feedback
+    assert "Uncited section (data): " + finding in feedback
+    assert "不能只在 summary 或 evidence 加引用" in feedback
     assert "Unbound report statements" not in feedback and "Next action: investigate" not in feedback
 
 

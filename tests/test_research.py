@@ -41,6 +41,7 @@ from tests.support.research_controller import (
 )
 from tests.support.research_iteration_adapter import ResearchIteration
 from tests.support.research_protocol import JsonToolCodec
+from tests.support.research_report import report_args
 
 
 def _research_policy():
@@ -2742,7 +2743,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_iteration_controller_prompt_limits_initial_tools(self) -> None:
         provider = FakeProvider(
-            json.dumps({"tool": "done", "args": {"summary": "premature"}}),
+            json.dumps({"tool": "done", "args": report_args(valid_research_report("https://example.com/helium"))}),
             json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
         )
         with tempfile.TemporaryDirectory() as td:
@@ -2887,7 +2888,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Visible tools", provider.sent[0])
         self.assertNotIn("Research controller current allowed actions", provider.sent[0])
 
-    def test_research_natural_answer_requires_opened_source_evidence(self) -> None:
+    def test_research_natural_answer_requires_structured_done_before_evidence_checks(self) -> None:
         provider = FakeProvider(
             "## 结论\nAlpha requires notice.\n\n## 来源\n[1] Alpha - https://example.com",
             json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
@@ -2899,7 +2900,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             list(runner.run("Research alpha"))
             store.close()
 
-        self.assertIn("research_sources_opened", provider.sent[1])
+        self.assertIn("Protocol error: Research completion requires done with summary and report_sections", provider.sent[1])
         self.assertNotIn('{"tool":"done","args":{"summary":"<the full report>"}}', provider.sent[1])
         self.assertNotIn("Codey", provider.sent[1])
 
@@ -2937,7 +2938,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             list(runner.run("Research alpha"))
             store.close()
 
-        self.assertIn("research_sources_opened", provider.sent[1])
+        self.assertIn("Protocol error: Research completion requires done with summary and report_sections", provider.sent[1])
+        self.assertIn("web_search", provider.sent[1])
 
     def test_research_iteration_unknown_tool_repair_respects_disabled_source_search(self) -> None:
         provider = FakeProvider(
@@ -2987,8 +2989,8 @@ class ResearchBoundaryTests(unittest.TestCase):
                     },
                 }
             ),
-            json.dumps({"tool": "done", "args": {"summary": invalid}}),
-            json.dumps({"tool": "done", "args": {"summary": valid_research_report(url)}}),
+            json.dumps({"tool": "done", "args": report_args(invalid)}),
+            json.dumps({"tool": "done", "args": report_args(valid_research_report(url))}),
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -3831,9 +3833,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             json.dumps(
                 {
                     "tool": "done",
-                    "args": {
-                        "summary": valid_research_report("https://example.com/helium"),
-                    },
+                    "args": report_args(valid_research_report("https://example.com/helium")),
                 }
             ),
         )
@@ -3878,7 +3878,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             json.dumps(
                 {
                     "tool": "done",
-                    "args": {"summary": valid_research_report(url)},
+                    "args": report_args(valid_research_report(url)),
                 }
             ),
         )

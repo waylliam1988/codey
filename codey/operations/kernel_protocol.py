@@ -192,12 +192,13 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     elif session.policy.strict_research:
         from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE
 
-        frozen = tuple(replace(spec, json_examples=(STRUCTURED_REPORT_EXAMPLE,),
-                               description="Finish the research. With report_sections, summary contains only "
+        frozen = tuple(replace(spec, required=("summary", "report_sections"),
+                               json_examples=(STRUCTURED_REPORT_EXAMPLE,),
+                               description="Finish the research. summary contains only "
                                            "the conclusion with citations, without report headings. The five arrays "
                                            "contain the other sections; do not duplicate them in summary. "
-                                           "Alternatively omit report_sections and supply the complete Markdown report "
-                                           "in summary. Evidence and citation checks apply to both formats.")
+                                           "Use report_sections for the final report; the application supplies headings "
+                                           "and paragraph breaks. Evidence and citation checks still apply.")
                        if spec.name == "done" else spec for spec in frozen)
     if "codemode" in names:
         from codey.codemode.catalog import build_codemode_catalog, render_declarations
@@ -677,6 +678,11 @@ def normalize_turn(
         allowed = None if controller_allowed is None else {(n or "").strip().lower() for n in controller_allowed}
     items = _response_objects(reply)
     if isinstance(items, ToolPlan):
+        done_spec = frozen.get("done") if frozen is not None else None
+        if (items.control is not None and items.control.kind == "done" and not items.protocol_error
+                and done_spec is not None and "report_sections" in done_spec.required):
+            return _invalid_plan("Research completion requires done with summary and report_sections; "
+                                 "plain text and summary-only reports are not accepted.", tool="done")
         return items
     return _plan_from_tool_objects(
         items, policy=policy, controller_allowed=allowed,

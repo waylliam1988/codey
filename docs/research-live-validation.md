@@ -1279,3 +1279,30 @@ instructions: long URLs and rejected text can no longer push the instructions
 past the 400-character observation boundary. Failed quotes are never silently
 replaced or persisted. The prior 38 recall/store tests and 163 quote/observation
 tests plus seven subtests passed (overlap with subsequent validation).
+
+## One strict report interface (cold-start cutover)
+
+At the user's explicit request there is no legacy strict-research completion
+interface: done requires summary (conclusion only) and the five report_sections
+arrays. Native schemas, text contracts and admission agree. Plain final prose
+cannot bypass the required fields. Evidence-only done still accepts just its
+acquisition receipt; ordinary tasks retain their own answer contract. Markdown
+is the internally rendered report, not an alternative model input. Removed the
+alternative from duplicate-report errors, completion guidance and format repair.
+Tests now submit canonical arguments rather than retaining a product adapter.
+
+The structured-only broad live probe really searched/read secondary and official
+pages, but repeated an uncited counter section despite feedback. It was durably
+cancelled; abort surfaced OutputLengthError/error while durable task_status is
+cancelled. It is NOT accepted. Repair feedback now names report_sections.counter,
+quotes the failing section and explains the local repair in Chinese; it never
+inserts a citation or invents a negative search. Reading this run's own saved note
+no longer reintroduces manual knowledge_refs instructions. Earlier notes still
+expose precise reference candidates.
+
+Validation: 300 focused/expanded task-entry, pipeline, ledger-recovery and
+lifecycle tests plus seven subtests passed. After field-local repair, 52 focused
+report/lifecycle tests passed (overlap). Ruff, mypy (557 production files), Pyrefly
+and ty passed. The narrower real-web concurrency retest is isolated in
+research-live-wal-field-repair-20261030; it is a diagnostic, not a substitute for
+the broad WAL or medical task. Semantic acceptance remains outstanding.
