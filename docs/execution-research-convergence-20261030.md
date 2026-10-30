@@ -42,3 +42,22 @@ ordinary failed tool results do not close admission.
 Validation: 24 replay/production-boundary/durable-scope tests passed, including
 both sides of the concurrent admission boundary. Ruff and targeted strict mypy
 passed. Broader validation and live results will be recorded below.
+
+## Runtime contract and host limits
+
+Replay now binds the runner, actual Node/V8/ICU/Unicode versions, platform,
+architecture, locale/timezone, RPC/determinism versions, result ordering and
+complete limits. A runtime factory can replace the backend without changing
+tool/effect authority. Tests change the reported engine during real durable
+recovery and verify that original children are never re-executed.
+
+`timeout_ms` is explicitly a per-worker-attempt timeout, bounded by any inherited
+outer cancellation deadline. There is no new cumulative wall-time budget or
+retry counter. The child limit bounds logical program positions, including the
+replayed prefix; recovered positions reuse original receipts and do not create
+new execution charges. Host code independently bounds worker messages, queued
+RPC, total child calls and returned output, even when a worker ignores limits.
+
+Validation: 70 focused CodeMode runtime/contract/replay/production/scope tests
+passed. Ruff and strict mypy over CodeMode and the effect sink passed. The Node
+VM remains the current backend; a fingerprint is not an isolation guarantee.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import queue
+import shutil
 import subprocess
 import threading
 import time
@@ -20,6 +21,9 @@ ToolInvoker = Callable[[str, dict[str, object]], object]
 
 
 class CodeModeRuntime(Protocol):
+    def contract_digest(self) -> str:
+        """Identify the engine and execution semantics used for recovery."""
+
     def execute(
         self,
         code: str,
@@ -38,12 +42,20 @@ class NodeWorkerRuntime:
     """Run one program in a disposable Node worker with host mediated tools."""
 
     def __init__(self, *, node: str = "node", runner: Path | None = None) -> None:
-        self.node = node
+        self.node = shutil.which(node) or node
         self.runner = runner or Path(__file__).with_name("node_runner.mjs")
 
     def contract_digest(self) -> str:
-        """Bind pending control-flow recovery to this exact worker implementation."""
-        return hashlib.sha256(self.runner.read_bytes()).hexdigest()
+        """Bind recovery to the worker, actual engine and ambient JS semantics."""
+        probe = subprocess.run([self.node, "-p", "JSON.stringify({node:process.version,v8:process.versions.v8,"
+            "icu:process.versions.icu,unicode:process.versions.unicode,platform:process.platform,arch:process.arch,"
+            "timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,"
+            "locale:Intl.DateTimeFormat().resolvedOptions().locale})"],
+            check=True, capture_output=True, text=True, encoding="utf-8", timeout=5)
+        contract = {"schema": 1, "runner": hashlib.sha256(self.runner.read_bytes()).hexdigest(),
+                    "engine": json.loads(probe.stdout), "rpc": 1, "determinism": 1,
+                    "result_delivery": "issuance_order", "heap_mb": 128, "timeout": "per_attempt"}
+        return hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
     def execute(
         self,
@@ -89,18 +101,32 @@ class NodeWorkerRuntime:
         stdout = process.stdout
         assert stdin is not None
         assert stdout is not None
-        messages: queue.Queue[dict[str, Any]] = queue.Queue()
+        messages: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=limits.max_pending_promises + 8)
+
+        def publish(message: dict[str, Any]) -> None:
+            while not stop.is_set():
+                try:
+                    messages.put(message, timeout=0.05)
+                    return
+                except queue.Full:
+                    continue
 
         def read_messages() -> None:
-            for line in stdout:
+            while not stop.is_set():
+                line = stdout.readline(limits.max_rpc_bytes + 1)
+                if not line:
+                    break
+                if len(line.encode("utf-8")) > limits.max_rpc_bytes:
+                    publish({"type": "error", "code": "rpc_limit", "message": "worker RPC message exceeds its byte limit"})
+                    return
                 try:
                     message = json.loads(line)
                 except json.JSONDecodeError:
-                    messages.put({"type": "error", "code": "protocol", "message": "worker emitted invalid JSON"})
+                    publish({"type": "error", "code": "protocol", "message": "worker emitted invalid JSON"})
                     continue
                 if isinstance(message, dict):
-                    messages.put(message)
-            messages.put({"type": "eof"})
+                    publish(message)
+            publish({"type": "eof"})
 
         reader = threading.Thread(target=read_messages, daemon=True)
         request = {
@@ -168,6 +194,9 @@ class NodeWorkerRuntime:
                 continue
             kind = message.get("type")
             if kind == "call":
+                if child_index >= limits.max_child_calls:
+                    return CodeModeResult(False, error_code="call_limit", error="codemode child call limit exceeded",
+                                          child_calls=child_index)
                 call_id = str(message.get("callId", ""))
                 if len(pending) >= limits.max_pending_promises:
                     self._write_line(stdin, {
@@ -186,12 +215,20 @@ class NodeWorkerRuntime:
                 child_index += 1
                 continue
             if kind == "state":
+                if len(pending) >= limits.max_pending_promises:
+                    return CodeModeResult(False, error_code="pending_limit", error="codemode pending promise limit exceeded",
+                                          child_calls=child_index)
                 response = self._handle_state(message, state_store)
                 ready: Future[dict[str, Any]] = Future()
                 ready.set_result(response)
                 pending[str(message["callId"])] = ready
                 continue
             if kind == "done":
+                value_bytes = len(json.dumps(message.get("value"), ensure_ascii=False,
+                                            separators=(",", ":")).encode("utf-8"))
+                if message.get("ok") is True and value_bytes > limits.max_output_bytes:
+                    return CodeModeResult(False, error_code="output_limit", error="codemode output exceeds its byte limit",
+                                          child_calls=child_index)
                 if message["ok"] is True and message["unawaitedCalls"]:
                     return CodeModeResult(
                         False, error_code="unawaited_calls",

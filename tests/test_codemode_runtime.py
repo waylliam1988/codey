@@ -3,6 +3,46 @@ from __future__ import annotations
 import pytest
 
 
+@pytest.mark.parametrize("boundary", ["calls", "rpc", "output"])
+def test_host_enforces_limits_even_when_worker_ignores_them(tmp_path, boundary):
+    import json
+
+    from codey.codemode.runtime import NodeWorkerRuntime
+    from codey.codemode.types import CodeModeLimits
+
+    calls = []
+    messages = {
+        "calls": [{"type": "call", "callId": f"c{i}", "name": "read_file", "args": {}} for i in range(2)],
+        "rpc": [{"type": "call", "callId": "c0", "name": "read_file", "args": {"data": "x" * 2000}}],
+        "output": [{"type": "done", "ok": True, "unawaitedCalls": 0, "childCalls": 0, "value": "x" * 2000}],
+    }[boundary]
+    runner = tmp_path / "untrusted-worker.mjs"
+    runner.write_text("process.stdin.once('data', () => {" + "".join(
+        "process.stdout.write(" + json.dumps(json.dumps(message) + "\n") + ");" for message in messages
+    ) + "});", encoding="utf-8")
+    result = NodeWorkerRuntime(runner=runner).execute("return 1;", catalog=(),
+        invoke=lambda *args: calls.append(args), limits=CodeModeLimits(
+            max_child_calls=1, max_concurrent_calls=1,
+            max_rpc_bytes=1000 if boundary == "rpc" else 4000, max_output_bytes=1000))
+    assert not result.ok
+    assert result.error_code == {"calls": "call_limit", "rpc": "rpc_limit", "output": "output_limit"}[boundary]
+    assert len(calls) <= (1 if boundary == "calls" else 0)
+
+
+def test_runtime_fingerprint_ignores_location_but_binds_engine_and_worker(tmp_path):
+    import shutil
+
+    from codey.codemode.runtime import NodeWorkerRuntime
+
+    original = NodeWorkerRuntime()
+    worker = tmp_path / "worker.mjs"
+    shutil.copyfile(original.runner, worker)
+    copied = NodeWorkerRuntime(runner=worker)
+    assert copied.contract_digest() == original.contract_digest()
+    worker.write_text(worker.read_text(encoding="utf-8") + "\n// changed contract\n", encoding="utf-8")
+    assert copied.contract_digest() != original.contract_digest()
+
+
 def test_data_inputs_preserve_text_without_javascript_source_interpretation():
     from codey.codemode.runtime import NodeWorkerRuntime
 

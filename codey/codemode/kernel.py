@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
+from dataclasses import asdict, replace
 from typing import Any
 
 from codey.codemode.catalog import build_catalog_snapshot, build_codemode_catalog
@@ -134,6 +134,7 @@ def build_execute_turn_executor(
     allow_writes: bool = False,
     state_store: Any = None,
     on_event: Callable[[Any], None] | None = None,
+    runtime_factory: Callable[[], CodeModeRuntime] | None = None,
 ) -> Callable[[ToolCall], ToolResult]:
     """Build the production parent executor; every child re-enters execute_turn."""
     from codey.operations.kernel_execution import execute_turn
@@ -155,7 +156,7 @@ def build_execute_turn_executor(
         from codey.operations.task_effects import KernelEffectSink
 
         child_sink = intent_sink.for_child(call, turn=turn) if isinstance(intent_sink, KernelEffectSink) else intent_sink
-        runtime = NodeWorkerRuntime()
+        runtime = (runtime_factory or NodeWorkerRuntime)()
         replay = None
         if durable is not None:
             if not isinstance(child_sink, KernelEffectSink):
@@ -163,6 +164,7 @@ def build_execute_turn_executor(
             from codey.codemode.replay import DurableCodeModeReplay, digest
             replay = DurableCodeModeReplay(durable, str(run_id), parent_id,
                 digest({"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
+                        "limits": asdict(limits or CodeModeLimits()),
                         "runtime": runtime.contract_digest()}),
                 parent_effect_id=child_sink.parent_effect_id, effect_scope=effect_scope, allow_writes=allow_writes)
             child_sink.admission_guard = replay.admission

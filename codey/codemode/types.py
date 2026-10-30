@@ -17,12 +17,18 @@ def _freeze_value(value: object) -> object:
 
 @dataclass(frozen=True)
 class CodeModeLimits:
+    """One attempt's worker limits; child positions span the logical invocation.
+
+    Replayed positions consume their original receipts, not new effect budget.
+    timeout_ms bounds each worker attempt and inherits any outer deadline.
+    """
     source_bytes: int = 100_000
     timeout_ms: int = 30_000
     max_child_calls: int = 64
     max_concurrent_calls: int = 8
     max_output_bytes: int = 200_000
     max_pending_promises: int = 64
+    max_rpc_bytes: int = 1_000_000
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -32,6 +38,7 @@ class CodeModeLimits:
             "max_concurrent_calls",
             "max_output_bytes",
             "max_pending_promises",
+            "max_rpc_bytes",
         ):
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:

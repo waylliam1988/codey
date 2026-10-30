@@ -226,7 +226,7 @@ def test_parallel_result_delivery_and_child_identity_are_deterministic():
 
 
 @pytest.mark.parametrize("read_path", ["a.py", "./a.py"])
-@pytest.mark.parametrize("tamper", [False, True, "runtime"])
+@pytest.mark.parametrize("tamper", [False, True, "runtime", "engine"])
 def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(tmp_path, monkeypatch, read_path, tamper):
     from codey.codemode.runtime import NodeWorkerRuntime
     from codey.operations.generation_boundary import durable_generation_boundary_callback
@@ -291,6 +291,20 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(tmp_
     monkeypatch.setattr(NodeWorkerRuntime, "execute", original)
     if tamper == "runtime":
         monkeypatch.setattr(NodeWorkerRuntime, "contract_digest", lambda _: "changed-worker")
+    if tamper == "engine":
+        import subprocess
+
+        original_probe = subprocess.run
+
+        def changed_engine(args, **kwargs):
+            result = original_probe(args, **kwargs)
+            if args[1] == "-p":
+                identity = json.loads(result.stdout)
+                identity["node"] = "different-node-version"
+                result.stdout = json.dumps(identity)
+            return result
+
+        monkeypatch.setattr(subprocess, "run", changed_engine)
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     durable.recover_scheduler_state()
     if durable.task("r").status == "pending":
