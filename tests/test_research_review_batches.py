@@ -43,6 +43,12 @@ def test_current_batch_schema_rejects_invented_refs_and_unselected_categories(na
     validator = Draft202012Validator(text_tool_schema(tools))
     raw = {"tool": "submit_research_review", "args": {"assessment": assessment(next_batch(session, root))}}
     assert validator.is_valid(raw)
+    long_reason = copy.deepcopy(raw)
+    long_reason["args"]["assessment"]["claims"][0]["units"][0]["reason"] = "x" * 4001
+    # Sampler projection avoids expensive bounded-string grammars; the same
+    # frozen kernel contract retains the authoritative length check.
+    assert validator.is_valid(long_reason)
+    assert normalize_turn(decode_text_turn(json.dumps(long_reason)), snapshot=snapshot).protocol_error
     for mutate in (lambda body: body["claims"][0].update(ref="f999"),
                    lambda body: body["claims"][0].update(reason="extra"),
                    lambda body: body["requirements"].append({}),

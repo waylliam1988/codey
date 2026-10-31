@@ -142,3 +142,15 @@ payload，计数与发送一致，不修改持久配置或后续普通请求预�
 
 验证：API/history/JSON 选集 21 passed，参数校验位置调整后边界与截断 3 passed；Ruff、改动文件 Mypy 通过。
 完整 driver 测试同时验证冻结请求中保存上限，原生及文本评审 payload 都使用 2048。
+
+## 实机 3 与 11. 采样 grammar 的字符串长度兼容性
+
+`calibration-json-writer-01` 正例未完成：KoboldCpp 返回三次函数式文本而不是请求指定的 JSON，
+原流程以 no_progress 拒绝，未卡死或发布。请求上限已生效，单次响应约 13–14 秒。
+固定相同 prompt 的诊断表明：简单常量 schema 生效；完整嵌套长度约束没有约束输出；去除字符串
+minLength/maxLength 后返回规范 JSON。只有移除 maxLength 的探针出现 HTTP IncompleteRead，
+保留诊断快照，不据此宣称通过。服务保持空闲，未重试结果未知请求。
+
+JSON 采样投影现移除字符串长度边界，原冻结工具契约及 kernel 仍严格验证长度；请求 token 上限
+负责限制生成长度。没有新增解析器、补造参数或第二个执行入口。
+验证：native/text 参数边界两项通过，明确测试采样可表达长字符串而 kernel 拒绝超过原 4000 字符限制；Ruff 通过。
