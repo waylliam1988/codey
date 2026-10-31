@@ -22,7 +22,7 @@ from codey.operations.task_loop import (  # noqa: E402
     KernelExecutionDeps,
     KernelRunRequest,
     KernelTransportDeps,
-    run_task_kernel,
+    run_test_kernel,
 )
 from codey.operations.task_session import TaskSession  # noqa: E402
 from codey.policies.task_policy import TaskPolicy  # noqa: E402
@@ -78,15 +78,17 @@ def probe(directory: Path, *, native: bool, expiring: bool) -> dict:
         sources = (replace(sources[0], expires_at="2040-01-01T00:00:01Z"),)
     try:
         with patch("codey.workspace.context_admission.datetime", Clock):
-            result = run_task_kernel(
+            result = run_test_kernel(
                 TaskSession(policy=TaskPolicy(frozenset({"project.read", "control"})),
                             project=str(directory), max_turns=2, coding_context_enabled=False),
-                request=KernelRunRequest(
+                session_id=request.session_id, request=KernelRunRequest(
                     transport=KernelTransportDeps(provider=provider, user_task=request.task,
                                                   context_text=_project_context(request), ghost_sources=sources,
                                                   context_scope=request_scope(directory, request.session_id)),
-                    execution=KernelExecutionDeps(executors={"read_file": lambda call: "synthetic file"},
-                                                  project_path=directory, session_id=request.session_id),
+                    execution=KernelExecutionDeps(
+                        executors={"read_file": lambda call: "synthetic file"},
+                        project_path=directory,
+                    ),
                 ),
             )
         (directory / "requests.json").write_text(json.dumps(payloads, ensure_ascii=False, indent=2), encoding="utf-8")

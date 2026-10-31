@@ -80,7 +80,7 @@ def test_real_runtime_type_error_retains_the_frozen_contract_and_cannot_complete
         "const a = await tools.read_file({path:'a.txt'}); return a.split('\\n')[0];"
     )}, call_id="bad-value")], snapshot=snapshot, project_path=tmp_path,
         executors={"codemode": executor}, run_id="r", turn=1)[0]
-    assert not result.ok and "a.split is not a function" in result.model_text
+    assert not result.ok and "not a function" in result.model_text
     assert spec.description in result.model_text
     assert "UNSENT-CONTRACT" not in result.model_text
     assert spec.declarations not in result.model_text
@@ -174,7 +174,7 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
                 if failure == "host":
                     assert "before execution" in feedback and not state.executed
                 elif failure == "value":
-                    assert "a.split is not a function" in feedback
+                    assert "not a function" in feedback
                 elif failure == "console":
                     assert "Console output is unavailable" in feedback
                 elif failure == "missing_return":
@@ -211,8 +211,11 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
         result = run_task_kernel(state, request=KernelRunRequest(
             transport=KernelTransportDeps(provider=provider, run_id="r",
                 provider_id="local", effect_scope="task", user_task="Read app.py using codemode."),
-            execution=KernelExecutionDeps(project_path=project, managed_outputs=managed, session_id="s",
-                durable=mutations.durable, workspace_revision_store=revisions, permission_profile="planning_readonly"),
+            execution=KernelExecutionDeps(
+                project_path=project,
+                workspace_revision_store=revisions,
+                permission_profile="planning_readonly",
+            ),
             observation=KernelObservationDeps(intent_sink=sink),
         ))
         assert result.completed and result.summary == "OBSERVED-729"

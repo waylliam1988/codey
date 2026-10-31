@@ -322,6 +322,7 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
             request=KernelRunRequest(
                 transport=KernelTransportDeps(
                     provider=FakeNative(),
+                    user_task="research q",
                     run_id="r-receipt",
                     provider_id="local",
                 ),
@@ -330,7 +331,7 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
                 ),
             ),
         )
-        self.assertEqual(result.stop_reason, "provider_failure")
+        self.assertEqual(result.stop_reason, "provider_failure", result.summary)
         self.assertEqual(len(send_turns), 1)
         self.assertEqual(len(receipts), 1)
 
@@ -357,12 +358,13 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
                 return self.send_tool_results(results, [])
 
         session = TaskSession(policy=_strict_research_policy(),
-                              task_kind="research", project="", max_turns=4)
+                              task_kind="research", project="", max_turns=4, task_text="research q")
         result = run_task_kernel(
             session,
             request=KernelRunRequest(
                 transport=KernelTransportDeps(
                     provider=FakeNative(),
+                    user_task="research q",
                     run_id="r-done-receipt",
                     provider_id="local",
                 ),
@@ -371,7 +373,7 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
                 ),
             ),
         )
-        self.assertEqual(result.stop_reason, "provider_failure")
+        self.assertEqual(result.stop_reason, "provider_failure", result.summary)
         self.assertEqual(len(send_turns), 1)
         self.assertEqual(len(receipts), 1)
 
@@ -382,7 +384,8 @@ class NativeReceiptFailClosedTests(unittest.TestCase):
         session = SimpleNamespace()
         call = ToolCall("web_search", {"query": "q"}, "")
         result = ToolResult(ok=True, call=call, model_text="found")
-        self.assertEqual(transport._native_tool_results([result], session), [])
+        with self.assertRaisesRegex(ValueError, "original call id"):
+            transport._native_tool_results([result], session)
 
 
 class PromptAndTransportHygieneTests(unittest.TestCase):

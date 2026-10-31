@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codey.operations import kernel_prompt
 from codey.operations.kernel_contracts import KernelResult
@@ -10,6 +10,11 @@ from codey.providers.base import AssistantTurn, ProviderToolResult
 from codey.providers.response_record import json_value
 from codey.runtime.core import operation_state as positions
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationTransitionError
+from codey.runtime.core.operation_state import RuntimeOperationState
+
+if TYPE_CHECKING:
+    from codey.operations.kernel_context import KernelContext
+    from codey.operations.task_session import TaskSession
 
 
 def result_from_payload(payload: Any) -> KernelResult:
@@ -80,7 +85,7 @@ def validate_decision(payload: Any) -> dict[str, Any]:
     return payload
 
 
-def evaluate_completion(context: Any, state: Any) -> None:
+def evaluate_completion(context: KernelContext, state: RuntimeOperationState) -> None:
     from codey.operations.completion_gate import evaluate
     from codey.operations.project_verification import refresh_verification_candidates
 
@@ -96,7 +101,10 @@ def evaluate_completion(context: Any, state: Any) -> None:
         if context.session.task_kind == "research_review":
             from codey.research.semantic_review import submitted_review
 
-            receipt = submitted_review(context.session, completion_context["semantic_review_basis"])
+            basis = context.session.research_review_basis
+            if basis is None:
+                raise ValueError("research assessment has no frozen basis")
+            receipt = submitted_review(context.session, basis)
             context.session.last_done_text = "Research assessment recorded: " + receipt["status"]
             context.session.last_done_args = {"summary": context.session.last_done_text}
         if context.session.policy.strict_research and context.session.task_kind != "evidence_followup":
@@ -146,7 +154,7 @@ def _ids(reply: Any) -> list[str]:
     return list(dict.fromkeys(call.id for call in reply.tool_calls if call.id)) if isinstance(reply, AssistantTurn) else []
 
 
-def no_progress_result(session: Any, turn: int) -> KernelResult:
+def no_progress_result(session: TaskSession, turn: int) -> KernelResult:
     from codey.operations.explicit_execution_requirements import readonly_fix_obstruction
 
     obstruction = readonly_fix_obstruction(session)
@@ -154,7 +162,7 @@ def no_progress_result(session: Any, turn: int) -> KernelResult:
                         "blocked" if obstruction is not None else "no_progress")
 
 
-def prepare_control_delivery(context: Any, state: Any) -> None:
+def prepare_control_delivery(context: KernelContext, state: RuntimeOperationState) -> None:
     decision = context.decision(state)
     received = context.response(state)
     ids = _ids(received.reply)

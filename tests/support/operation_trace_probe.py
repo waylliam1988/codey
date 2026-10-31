@@ -179,7 +179,7 @@ def observe_trace(
         result = run_task_kernel(session, request=KernelRunRequest(
             transport=KernelTransportDeps(provider=provider, run_id="trace-run",
                 provider_id="scripted", user_task="inspect a.py", stop_flag=stop, stagnant_turns=stagnant_turns),
-            execution=KernelExecutionDeps(executors={"read_file": execute}, project_path=project, durable=durable),
+            execution=KernelExecutionDeps(executors={"read_file": execute}, project_path=project),
             observation=KernelObservationDeps(intent_sink=sink, on_event=event, on_boundary=at_boundary,
                 on_shell_request=approval if shell_approval else None),
         ))

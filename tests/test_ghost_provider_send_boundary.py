@@ -25,8 +25,8 @@ from tests.support.kernel_runtime import (
     KernelObservationDeps,
     KernelRunRequest,
     KernelTransportDeps,
-    run_task_kernel,
 )
+from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
 from tests.test_chat_workspace_tools_and_answer_completion import execute_frame, workspace_frame
 
 
@@ -114,13 +114,13 @@ def test_builder_kernel_api_wire_admission(tmp_path, capture_endpoint, native, f
         recorder.record_provider_prompt_boundary(row)
 
     trace = SimpleNamespace(record_context_sources=record_sources, record_provider_prompt_boundary=record_boundary)
-    outcome = run_task_kernel(
+    outcome = run_test_kernel(
         TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=1),
-        request=KernelRunRequest(
+        session_id="session-a", request=KernelRunRequest(
             transport=KernelTransportDeps(provider=provider, user_task=request.task, context_text=context,
                                           context_scope="" if fault == "empty_scope" else request_scope(tmp_path, "session-a"),
                                           ghost_sources=sources, admit_hints=fault != "disabled"),
-            execution=KernelExecutionDeps(project_path=tmp_path, session_id="session-a"),
+            execution=KernelExecutionDeps(project_path=tmp_path),
             observation=KernelObservationDeps(trace_recorder=trace),
         ),
     )
@@ -172,13 +172,13 @@ def test_session_scope_uses_request_session_not_candidate():
     from codey.workspace.context_admission import sources_from_values
 
     sources = sources_from_values(directive="Synthetic preference", scope=request_scope(session_id="other"))
-    result = run_task_kernel(
+    result = run_test_kernel(
         TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=1),
-        request=KernelRunRequest(
+        session_id="current", request=KernelRunRequest(
             transport=KernelTransportDeps(provider=SimpleNamespace(send=lambda prompt: sent.append(prompt)),
                                           context_scope=request_scope(session_id="current"),
                                           context_text=sources[0].text, ghost_sources=sources),
-            execution=KernelExecutionDeps(session_id="current"),
+            execution=KernelExecutionDeps(),
         ),
     )
     assert result.stop_reason == "controller_failure"

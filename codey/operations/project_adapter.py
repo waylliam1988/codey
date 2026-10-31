@@ -261,12 +261,9 @@ def run(request: AgentRequest) -> RunResult:
                 tool_fns=request.tool_fns,
                 change_tracker=request.change_tracker,
                 research_tools=request.research_tools,
-                managed_outputs=request.managed_outputs,
-                session_id=request.session_id,
                 permission_profile=request.permission_profile,
                 workspace_revision_store=request.workspace_revision_store,
                 workspace_ignored_paths=request.workspace_ignored_paths,
-                durable=request.durable,
             ),
             observation=KernelObservationDeps(
                 intent_sink=intent_sink,

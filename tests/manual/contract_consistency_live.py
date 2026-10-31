@@ -17,6 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from codey.operations.completion_gate import evaluate
+from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.recovery import record_entry_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
@@ -128,10 +129,14 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
             result = run_task_kernel(session, request=KernelRunRequest(
                 transport=KernelTransportDeps(provider=provider, run_id="r",
                     effect_scope="task", provider_id="local", user_task=task, stop_flag=stop),
-                execution=KernelExecutionDeps(project_path=project, managed_outputs=managed, session_id="s",
-                    durable=mutations.durable, workspace_revision_store=revisions,
-                    permission_profile="coding_writer" if writing else "planning_readonly"),
-                observation=KernelObservationDeps(intent_sink=sink, on_event=observe),
+                execution=KernelExecutionDeps(
+                    project_path=project,
+                    workspace_revision_store=revisions,
+                    permission_profile="coding_writer" if writing else "planning_readonly",
+                ),
+                observation=KernelObservationDeps(intent_sink=sink, on_event=observe,
+                    on_boundary=durable_generation_boundary_callback(durable=sink.durable,
+                        session_id=sink.session_id, task_id=sink.run_id, sink=sink)),
             ))
         requests = [json.loads(line)["payload"] for line in (directory / "provider.jsonl").read_text(
                     encoding="utf-8").splitlines() if json.loads(line).get("type") == "request"]

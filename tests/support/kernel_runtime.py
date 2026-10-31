@@ -37,7 +37,7 @@ def approval_notifier(durable, outputs, session_id, run_id, callback):
     return notify
 
 
-def run_task_kernel(session, *, request):
+def run_task_kernel(session, *, request, session_id="test-session"):
     from codey.durable import DurableSession, MemoryDurableStore
     from codey.operations.generation_boundary import durable_generation_boundary_callback
     from codey.operations.task_effects import KernelEffectSink
@@ -55,7 +55,6 @@ def run_task_kernel(session, *, request):
     with tempfile.TemporaryDirectory() as temporary:
         durable = DurableSession(MemoryDurableStore())
         run_id = request.transport.run_id or "test-run"
-        session_id = request.execution.session_id or "test-session"
         durable.admit_input(conversation_id=session_id, request_id="test-input", task_id=run_id,
                             text=str(request.transport.user_task or "test task"), provider_snapshot={})
         durable.claim_task(run_id)
@@ -65,7 +64,7 @@ def run_task_kernel(session, *, request):
         mutations.accept_operation(session_id=session_id, run_id=run_id, provider_id=provider_id,
             turn_budget=session.max_turns, max_repair_rounds=1, task_kind=session.task_kind)
         mutations.mark_writer_running(session_id, run_id, provider_id=provider_id)
-        outputs = request.execution.managed_outputs or ManagedOutputStore(Path(temporary))
+        outputs = ManagedOutputStore(Path(temporary))
         actual_sink = KernelEffectSink(mutations, session_id=session_id, run_id=run_id, provider_id=provider_id,
                                       durable=durable, managed_outputs=outputs)
         if sink is not None:
@@ -87,7 +86,6 @@ def run_task_kernel(session, *, request):
 
         request = replace(request,
             transport=replace(request.transport, run_id=run_id),
-            execution=replace(request.execution, durable=durable, managed_outputs=outputs, session_id=session_id),
             observation=replace(request.observation, intent_sink=actual_sink, on_boundary=on_boundary,
                 on_shell_request=approval_notifier(durable, outputs, session_id, run_id, request.observation.on_shell_request)))
         try:

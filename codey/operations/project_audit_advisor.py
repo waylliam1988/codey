@@ -207,7 +207,6 @@ def run_project_audit_advisor(
                     execution=KernelExecutionDeps(
                         executors=cast(Mapping[str, Callable[[Any], Any]], _audit_kernel_executors(project_path)),
                         project_path=project_path,
-                        session_id=run_id, durable=durable, managed_outputs=managed_outputs,
                     ),
                     observation=KernelObservationDeps(
                         intent_sink=sink,

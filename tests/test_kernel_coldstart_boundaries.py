@@ -84,7 +84,10 @@ def test_synthesis_write_failure_does_not_report_created_note(tmp_path, monkeypa
     try:
         monkeypatch.setattr(store, "publish_note", disk_full)
         tools = ResearchTools(None, store, KnowledgeChanges(tmp_path))
-        assert not _persist_synthesis(tools, "question", "summary", session_id="s", project="",
+        from codey.research.pipeline import ResearchContinuationError
+
+        with pytest.raises(ResearchContinuationError, match="publication failed: disk full"):
+            _persist_synthesis(tools, "question", "summary", session_id="s", project="",
                                       run_id="r", on_event=lambda _: None,
                                       policy=TaskPolicy(grants=frozenset({"knowledge.write"})))
         assert not tools.created_ids

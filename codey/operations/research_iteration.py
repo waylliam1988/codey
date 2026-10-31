@@ -323,10 +323,7 @@ def run_research_iteration(
             execution=KernelExecutionDeps(
                 project_path=project or None,
                 research_tools=tools,
-                managed_outputs=getattr(deps, "managed_outputs", None),
-                session_id=session_id,
                 permission_profile="coding_writer" if policy.allows("project.write") else "research",
-                durable=admitted,
             ),
             observation=KernelObservationDeps(
                 intent_sink=intent_sink,

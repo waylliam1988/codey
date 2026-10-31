@@ -16,12 +16,8 @@ from codey.providers.base import ProviderToolCall, ProviderToolDefinition, Provi
 from codey.providers.error_classification import RequestPrepError
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.workspace.context_admission import request_scope, sources_from_values
-from tests.support.kernel_runtime import (
-    KernelExecutionDeps,
-    KernelRunRequest,
-    KernelTransportDeps,
-    run_task_kernel,
-)
+from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
 
 PROTOCOLS = ("openai-completions", "openai-responses")
 READ = ProviderToolDefinition("read", "Read a file", {"type": "object"})
@@ -214,9 +210,9 @@ def test_kernel_native_followup_uses_the_same_gate(monkeypatch: pytest.MonkeyPat
     )
     provider.bind_attempt_gate(None)
     try:
-        result = run_task_kernel(
+        result = run_test_kernel(
             session,
-            request=KernelRunRequest(
+            session_id="kernel-session", request=KernelRunRequest(
                 transport=KernelTransportDeps(
                     provider=provider,
                     context_text=source.text,
@@ -229,7 +225,6 @@ def test_kernel_native_followup_uses_the_same_gate(monkeypatch: pytest.MonkeyPat
                 execution=KernelExecutionDeps(
                     executors={"read_file": read_file},
                     project_path=tmp_path,
-                    session_id="kernel-session",
                 ),
             ),
         )

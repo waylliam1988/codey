@@ -48,11 +48,10 @@ def assess_report(history: Any, result: Any, tools: Any, *, provider: Any, provi
         task_guidance="Assess only the frozen research basis. Complete the assessment even when the draft fails.",
         transport=KernelTransportDeps(provider=provider, run_id=history.run_id, provider_id=provider_id,
             user_task=prompt, effect_scope=f"research:review:{cycle}", stop_flag=stop_flag),
-        execution=KernelExecutionDeps(executors={"submit_research_review": executor},
-                                       managed_outputs=history.outputs, session_id=history.session_id,
-                                       durable=history.durable),
+        execution=KernelExecutionDeps(
+            executors={"submit_research_review": executor},
+        ),
         observation=KernelObservationDeps(intent_sink=sink, on_event=on_event,
-            completion_context={"semantic_review_basis": basis},
             on_boundary=durable_generation_boundary_callback(durable=history.durable,
                 session_id=history.session_id, task_id=history.run_id, sink=sink))))
     if outcome.stop_reason == "stopped":

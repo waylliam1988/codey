@@ -3,6 +3,7 @@
 import ast
 import hashlib
 import inspect
+import json
 from itertools import product
 
 import pytest
@@ -123,7 +124,7 @@ def test_note_reader_description_does_not_advertise_a_hidden_write_tool(native):
 
     session = TaskSession(policy=TaskPolicy(
         grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True,
-    ), task_kind="research")
+    ), task_kind="research", research_questions=("What is supported?",))
     snapshot = build_turn_snapshot(session, native=native)
     assert "knowledge_read" in snapshot.tool_names
     assert "knowledge_write" not in snapshot.tool_names
@@ -136,13 +137,11 @@ def test_note_reader_description_does_not_advertise_a_hidden_write_tool(native):
     assert "do not prepend facts/ or append .md" in description
 
 
-def test_report_headings_come_from_the_existing_report_contract(monkeypatch):
-    from codey.reviews import report_sections
-
-    monkeypatch.setattr(report_sections, "REQUIRED_SECTIONS", ("conclusion", "sources"))
+def test_report_compilation_guidance_does_not_request_model_written_sections():
     text = _guidance(TaskPolicy(grants=frozenset({"control"}), strict_research=True))
-    assert "report sections: 结论, 来源." in text
-    assert "## 关键证据" not in text
+    assert "Submit only report_sections.coverage" in text
+    assert "Do not supply answer prose" in text
+    assert "application compiles the report" in text
 
 
 def test_kernel_prompt_has_no_domain_branch_or_completion_dependencies():
@@ -159,8 +158,8 @@ def test_kernel_prompt_has_no_domain_branch_or_completion_dependencies():
 @pytest.mark.parametrize("native", [False, True])
 def test_completion_followup_preserves_submitted_report_format(native):
     text = kernel_prompt._completion_followup("Fix the unbound sentence.", native=native, structured_report=True)
-    assert "without Markdown headings" in text
-    assert "without switching formats" in text
+    assert "Preserve the submitted question answers" in text
+    assert "repair the reported coverage field" in text
     assert '"summary":"##' not in text
     ordinary = kernel_prompt._completion_followup("Fix the requested answer.", native=native)
     assert "Preserve report_sections" not in ordinary
@@ -175,10 +174,15 @@ def test_strict_report_has_one_preferred_example_without_changing_ordinary_done(
     ordinary = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
     def examples(session):
         return next(spec.json_examples for spec in build_turn_snapshot(session).frozen_specs if spec.name == "done")
-    assert examples(strict) == (STRUCTURED_REPORT_EXAMPLE,)
+    assert len(examples(strict)) == 1
+    args = json.loads(examples(strict)[0])["args"]
+    assert set(args) == {"report_sections"}
+    assert set(args["report_sections"]) == {"coverage"}
+    assert args["report_sections"]["coverage"] == [
+        {"question_ref": "q1", "state": "partial", "findings": ["f1"]}]
     assert STRUCTURED_REPORT_EXAMPLE not in examples(ordinary)
     description = next(s.description for s in build_turn_snapshot(strict).frozen_specs if s.name == "done")
-    assert "summary contains only the conclusion" in description
+    assert "exact pinned claim text" in description
     assert "summary is the complete user-facing response" not in description
     ordinary_description = next(s.description for s in build_turn_snapshot(ordinary).frozen_specs if s.name == "done")
     assert "summary is the complete user-facing response" in ordinary_description

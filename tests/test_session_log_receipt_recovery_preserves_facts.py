@@ -120,7 +120,7 @@ def _new_session(project: Path):
     return TaskSession(policy=_policy(), task_kind="project", project=str(project), max_turns=8)
 
 
-def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audits, *, forged_run_audit=None):
+def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audits, *, forged_run_audit=None, admit_provider=False):
     """Real edit + runs in one legal turn via the kernel (single settlement).
 
     One turn keeps the durable operation state machine legal
@@ -167,6 +167,19 @@ def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audit
         )
     executors = {"edit": fake_edit, "run": fake_run}
     snapshot = build_turn_snapshot(session)
+    if admit_provider:
+        import json
+
+        from codey.operations.generation_boundary import GenerationBoundaryRequest, durable_generation_boundary_callback
+        from tests.support.provider_actions import ProviderActions
+
+        sink.bind_request(snapshot, logical_turn=1)
+        sink._request_context["effect_scope"] = "task"
+        reply = json.dumps({"tool": "read_file", "args": {"path": "a.py"}})
+        ProviderActions(SimpleNamespace(send=lambda _: reply), sink).send("fix a.py")
+        boundary = durable_generation_boundary_callback(durable=sink.durable,
+            session_id=session_id, task_id=run_id, sink=sink)
+        boundary(GenerationBoundaryRequest("post_tools"))
     results = execute_turn(
         session, calls,
         executors=executors,

@@ -17,20 +17,22 @@ from codey.operations.kernel_contracts import KernelResult, KernelRunRequest
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_preparation import prepare_kernel_turn
 from codey.operations.kernel_progress import KernelProgress
+from codey.operations.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
 from codey.operations.kernel_trace import record_outbound, record_turn
 from codey.operations.task_guidance import task_working_context
+from codey.operations.task_session import TaskSession
 from codey.protocols.text_turn import decode_text_turn
-from codey.providers.base import ProviderToolResult, TurnFinish, tools_from_specs
+from codey.providers.base import AssistantTurn, ProviderToolResult, TurnFinish, tools_from_specs
 from codey.providers.response_record import json_value
 from codey.runtime.core import operation_state as positions
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
-from codey.runtime.effects.effect_records import RuntimeEffectStore
+from codey.runtime.effects.effect_records import RuntimeEffectProjection, RuntimeEffectStore
 from codey.runtime.log.session_view import driver_for_state, load_session_view, not_sent_continuation_effect
 from codey.workspace.context_admission import admit_ghost_context
 
 
 class KernelContext:
-    def __init__(self, session: Any, request: KernelRunRequest) -> None:
+    def __init__(self, session: TaskSession, request: KernelRunRequest) -> None:
         self.session, self.request = session, request
         self.transport, self.execution, self.observation = request.transport, request.execution, request.observation
         self.sink = self.observation.intent_sink
@@ -53,9 +55,9 @@ class KernelContext:
             self.completion_context.update(knowledge_store=getattr(tools, "store", None),
                                            knowledge_project=getattr(tools, "project", ""),
                                            knowledge_session_id=getattr(tools, "session_id", ""))
-        self.responses: dict[str, Any] = {}
+        self.responses: dict[str, ReceivedProviderTurn] = {}
         self.projected_provider_effects: set[str] = set()
-        self.snapshots: dict[int, Any] = {}
+        self.snapshots: dict[int, TurnSnapshot] = {}
         self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder)
 
     def restore_context(self, payload: dict[str, Any]) -> None:
@@ -183,7 +185,7 @@ class KernelContext:
         except (ValueError, TypeError, KeyError) as exc:
             raise RecoveryFailed(f"invalid committed control decision: {exc}") from exc
 
-    def response(self, state: Any) -> Any:
+    def response(self, state: Any) -> ReceivedProviderTurn:
         response_ref = self.response_reference(state)
         if response_ref not in self.responses:
             self.responses[response_ref] = self.sink.load_response(self.session, response_ref, window_ref=self.window)
@@ -250,7 +252,7 @@ class KernelContext:
             from codey.operations.research_continuation import ResearchContinuation
             ResearchContinuation.project_urls(tools)
 
-    def restore_completion_proposal(self, effect: Any) -> None:
+    def restore_completion_proposal(self, effect: RuntimeEffectProjection) -> None:
         """Rebuild proposal metadata from its original response, without a gate."""
         from codey.operations.provider_receipts import (
             REQUEST_KIND,
@@ -295,7 +297,7 @@ class KernelContext:
         batch = next(batch for batch in view.batches if batch.intent.batch_id == batch_id)
         return [self.session._memory_results[identity] for identity in batch.intent.tool_refs]
 
-    def freeze(self, state: Any, snapshot: Any, *, turn: int, prompt: str = "",
+    def freeze(self, state: Any, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None,
                text_result_spans: list[dict[str, Any]] | None = None) -> None:
@@ -398,7 +400,9 @@ class KernelContext:
                                            self.session.max_turns, "max_turns"))
             return
         kernel_events._emit_turn_event(self.observation.on_event, turn, reply)
-        if self.native and reply.finish is TurnFinish.OUTPUT_LIMIT:
+        if self.native and not isinstance(reply, AssistantTurn):
+            raise RecoveryFailed("native provider did not return a structured turn")
+        if isinstance(reply, AssistantTurn) and self.native and reply.finish is TurnFinish.OUTPUT_LIMIT:
             if state.counters.length_continuation_used:
                 self.close(state, KernelResult(False, "local provider emitted finish_reason=length twice", turn, "provider_failure"))
                 return None

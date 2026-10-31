@@ -73,7 +73,7 @@ def test_initial_result_and_repair_prompt_surfaces_have_frozen_hashes() -> None:
     assert _sha256(result) == "591c80828028a2103608e4d5a081bfd484d6d0fb755950c423cf8241b9876522"
     # Reviewed: ordinary done repair preserves its task format; structured report
     # examples are supplied only by the frozen report task contract.
-    assert _sha256(repair) == "c252b4be8436b75f7a40c18d29e368bb6c979dbcf3b5bda557a7700d0060efb2"
+    assert _sha256(repair) == "0f0816d7864c4e82b38afcaee82d2dc06a0b84e0cce993a0bddcef00a6e32d43"
 
 
 def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> None:
@@ -103,4 +103,4 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> Non
     assert "ask_user" in prompt
     assert "Calls return {ok:true, value}" in prompt
     assert "Only frozen read-only tools" not in prompt
-    assert _sha256(prompt) == "271a76c8d82cb2aae8d55e41b718028b02f39e5c3078e94fab609f72fed12c5e"
+    assert _sha256(prompt) == "da4e3ab68be0fb259ab239c0338c8fcbfefcb224b316a416b6ff91bded5a5191"

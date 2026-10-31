@@ -20,7 +20,7 @@ class WorkspaceFingerprintStaleTests(unittest.TestCase):
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
-        from tests.support.kernel_runtime import run_task_kernel
+        from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
 
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "proj"
@@ -75,9 +75,9 @@ class WorkspaceFingerprintStaleTests(unittest.TestCase):
             from codey.agents.tools import DEFAULT_TOOL_FNS
 
             with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
-                run_task_kernel(
+                run_test_kernel(
                     session,
-                    request=KernelRunRequest(
+                    session_id="s-ws", request=KernelRunRequest(
                         transport=KernelTransportDeps(
                             provider=FakeProvider(),
                             run_id="r-ws-stale",
@@ -88,7 +88,6 @@ class WorkspaceFingerprintStaleTests(unittest.TestCase):
                             executors={},
                             project_path=project,
                             tool_fns=DEFAULT_TOOL_FNS,
-                            session_id="s-ws",
                             permission_profile="coding_writer",
                             workspace_revision_store=store,
                         ),

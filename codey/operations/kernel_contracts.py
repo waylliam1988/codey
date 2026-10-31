@@ -3,11 +3,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codey.operations.generation_boundary import GenerationBoundaryRequest, GenerationBoundaryResult
 from codey.runtime.core.models import ToolCall
 from codey.workspace.context_admission import GhostContextSource
+
+if TYPE_CHECKING:
+    from codey.completion.contract import CompletionProof
 
 
 @dataclass(frozen=True)
@@ -16,7 +19,7 @@ class KernelResult:
     summary: str
     turns: int
     stop_reason: str
-    proof: Any | None = None
+    proof: CompletionProof | None = None
     delivery: str = "not_required"
     research_report: dict[str, Any] | None = None
 
@@ -50,13 +53,10 @@ class KernelExecutionDeps:
     tool_fns: Any = None
     research_tools: Any = None
     change_tracker: Any = None
-    managed_outputs: Any = None
-    session_id: str = ""
     permission_profile: str = "coding_writer"
     workspace_ignored_paths: Any = ()
     workspace_revision_store: Any = None
     ensure_workspace_writer: Callable[[], None] | None = None
-    durable: Any = None
 
 @dataclass(frozen=True)
 class KernelObservationDeps:

@@ -182,31 +182,46 @@ class ZenProvider:
             previous = self._last_text_reply
         return AssistantTurn(text=reply, reasoning=previous[1], raw={"text_protocol": True}) if previous is not None and previous[0] == reply and previous[1] else reply
 
-    def _exchange(self, method: str, data: Any, tools: list[ProviderToolDefinition] | None, timeout: float | None) -> Any:
+    def _exchange(self, method: str, data: Any, tools: list[ProviderToolDefinition] | None, timeout: float | None,
+                  **request_options: Any) -> Any:
         declared, inverse = prepare_declarations(tools)
         with self._sending() as generation:
             self._check_generation(generation)
-            turn = getattr(self.runtime, method)(data, declared, timeout=timeout)
+            turn = getattr(self.runtime, method)(data, declared, timeout=timeout, **request_options)
             self._check_generation(generation)
         if isinstance(turn, AssistantTurn):
             return replace(turn, tool_calls=tuple(replace(call, name=inverse.get(call.name, call.name)) for call in turn.tool_calls))
         return turn
 
-    def send_turn(self, prompt: str, tools: list[ProviderToolDefinition] | None = None, timeout: float | None = None) -> Any:
-        return self._exchange("send_turn", prompt, tools, timeout)
+    def send_turn(self, prompt: str, tools: list[ProviderToolDefinition] | None = None,
+                  timeout: float | None = None, *, tool_call_observations: str = "",
+                  tool_call_history_groups: int = 0, output_token_limit: int = 0) -> Any:
+        return self._exchange("send_turn", prompt, tools, timeout,
+                              tool_call_observations=tool_call_observations,
+                              tool_call_history_groups=tool_call_history_groups,
+                              output_token_limit=output_token_limit)
 
-    def send_tool_results(self, results: Any, tools: list[ProviderToolDefinition] | None = None, timeout: float | None = None) -> Any:
-        return self._exchange("send_tool_results", results, tools, timeout)
+    def send_tool_results(self, results: Any, tools: list[ProviderToolDefinition] | None = None,
+                  timeout: float | None = None, *, tool_call_observations: str = "",
+                  tool_call_history_groups: int = 0, output_token_limit: int = 0) -> Any:
+        return self._exchange("send_tool_results", results, tools, timeout,
+                              tool_call_observations=tool_call_observations,
+                              tool_call_history_groups=tool_call_history_groups,
+                              output_token_limit=output_token_limit)
 
     def send_tool_results_bound(self, results: Any, window_ref: Any,
                                 tools: list[ProviderToolDefinition] | None = None,
                                 timeout: float | None = None,
-                                delivery_commit: dict[str, Any] | None = None) -> Any:
+                                delivery_commit: dict[str, Any] | None = None,
+                                tool_call_observations: str = "", tool_call_history_groups: int = 0,
+                                output_token_limit: int = 0) -> Any:
         declared, inverse = prepare_declarations(tools)
         with self._sending() as generation:
             self._check_generation(generation)
             turn: Any = self.runtime.send_tool_results_bound(
                 results, window_ref, declared, timeout=timeout, delivery_commit=delivery_commit,
+                tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups,
+                output_token_limit=output_token_limit,
             )
             self._check_generation(generation)
         if isinstance(turn, AssistantTurn):

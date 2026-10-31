@@ -276,8 +276,10 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(tmp_
 
     def request(active_sink):
         return KernelRunRequest(transport=KernelTransportDeps(provider=Provider(), provider_id="local", run_id="r", effect_scope="outer"),
-            execution=KernelExecutionDeps(project_path=project, managed_outputs=managed, session_id="s",
-                workspace_revision_store=revs, durable=active_sink.durable),
+            execution=KernelExecutionDeps(
+                project_path=project,
+                workspace_revision_store=revs,
+            ),
             observation=KernelObservationDeps(intent_sink=active_sink, on_boundary=durable_generation_boundary_callback(
                 durable=active_sink.durable, session_id="s", task_id="r", sink=active_sink)))
 
@@ -387,10 +389,7 @@ def test_terminal_native_receipt_drain_settles_received_generation_before_writer
         ),
         execution=KernelExecutionDeps(
             project_path=project,
-            managed_outputs=managed,
-            session_id="s",
             workspace_revision_store=revs,
-            durable=m.durable,
         ),
         observation=KernelObservationDeps(
             intent_sink=sink,

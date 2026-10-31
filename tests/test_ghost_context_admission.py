@@ -15,7 +15,8 @@ from codey.workspace.context_admission import (
     admit_ghost_context,
     request_scope,
 )
-from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
+from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
 
 
 def _source(text: str = "Prefer Chinese answers.", **kwargs) -> GhostContextSource:
@@ -98,9 +99,9 @@ def test_real_kernel_send_is_blocked_before_provider_when_ghost_is_not_admitted(
         return '{"tool":"done","args":{"summary":"unexpected"}}'
 
     source = _source()
-    outcome = run_task_kernel(
+    outcome = run_test_kernel(
         TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=1),
-        request=KernelRunRequest(
+        session_id="session-a", request=KernelRunRequest(
             transport=KernelTransportDeps(
                 provider=SimpleNamespace(send=send),
                 run_id="ghost-admission-block",
@@ -108,7 +109,7 @@ def test_real_kernel_send_is_blocked_before_provider_when_ghost_is_not_admitted(
                 context_text="Task context: no memory",
                 ghost_sources=(source,),
             ),
-            execution=KernelExecutionDeps(project_path="project-a", session_id="session-a"),
+            execution=KernelExecutionDeps(project_path="project-a"),
         ),
     )
 
@@ -124,9 +125,9 @@ def test_real_kernel_send_captures_admitted_ghost_bytes() -> None:
         return '{"tool":"done","args":{"summary":"done"}}'
 
     source = _source()
-    outcome = run_task_kernel(
+    outcome = run_test_kernel(
         TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=1),
-        request=KernelRunRequest(
+        session_id="session-a", request=KernelRunRequest(
             transport=KernelTransportDeps(
                 provider=SimpleNamespace(send=send),
                 run_id="ghost-admission-capture",
@@ -134,7 +135,7 @@ def test_real_kernel_send_captures_admitted_ghost_bytes() -> None:
                 context_text=source.text,
                 ghost_sources=(source,),
             ),
-            execution=KernelExecutionDeps(project_path="project-a", session_id="session-a"),
+            execution=KernelExecutionDeps(project_path="project-a"),
         ),
     )
 
@@ -151,9 +152,9 @@ def test_real_kernel_send_respects_admit_hints_control_before_provider() -> None
         return '{"tool":"done","args":{"summary":"unexpected"}}'
 
     source = _source()
-    outcome = run_task_kernel(
+    outcome = run_test_kernel(
         TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=1),
-        request=KernelRunRequest(
+        session_id="session-a", request=KernelRunRequest(
             transport=KernelTransportDeps(
                 provider=SimpleNamespace(send=send),
                 run_id="ghost-admission-disabled",
@@ -162,7 +163,7 @@ def test_real_kernel_send_respects_admit_hints_control_before_provider() -> None
                 ghost_sources=(source,),
                 admit_hints=False,
             ),
-            execution=KernelExecutionDeps(project_path="project-a", session_id="session-a"),
+            execution=KernelExecutionDeps(project_path="project-a"),
         ),
     )
 

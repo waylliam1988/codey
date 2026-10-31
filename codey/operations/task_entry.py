@@ -462,13 +462,10 @@ def _run_entry_kernel(  # noqa: PLR0915
                     tool_fns=tool_fns,
                     change_tracker=tracker,
                     research_tools=research_tools,
-                    managed_outputs=getattr(deps, "managed_outputs", None),
-                    session_id=request.session_id,
                     permission_profile="research" if kind == "research" else "coding_writer",
                     workspace_ignored_paths=ignored,
                     workspace_revision_store=getattr(deps, "workspace_revisions", None),
                     ensure_workspace_writer=ensure_workspace_writer,
-                    durable=getattr(getattr(deps, "state", None), "durable", None),
                 ),
                 observation=KernelObservationDeps(
                     intent_sink=intent_sink,

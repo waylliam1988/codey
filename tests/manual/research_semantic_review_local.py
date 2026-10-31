@@ -228,7 +228,7 @@ def main() -> None:
             invocation=ResearchInvocation(1, "research"), request=KernelRunRequest(
                 transport=KernelTransportDeps(provider=ImportProvider(), provider_id="local", run_id=run_id,
                     user_task="Offline archive import, not model work. Frozen report:\n" + canonical_json(report.to_payload())),
-                execution=KernelExecutionDeps(managed_outputs=outputs, durable=durable, session_id=session_id),
+                execution=KernelExecutionDeps(),
                 observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
                     durable=durable, session_id=session_id, task_id=run_id, sink=sink))))
         result.completion_proof = imported.proof

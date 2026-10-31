@@ -206,9 +206,11 @@ def test_wrong_answer_is_repaired_by_original_task_loop_without_repeating_tools(
     result = run_task_kernel(runtime.state, request=KernelRunRequest(
         transport=KernelTransportDeps(provider=provider, run_id="r",
             provider_id="local", effect_scope="task", user_task="Read both files and report their first lines."),
-        execution=KernelExecutionDeps(project_path=runtime.project, managed_outputs=runtime.managed, session_id="s",
-            durable=runtime.mutations.durable, workspace_revision_store=runtime.revisions,
-            permission_profile="planning_readonly"),
+        execution=KernelExecutionDeps(
+            project_path=runtime.project,
+            workspace_revision_store=runtime.revisions,
+            permission_profile="planning_readonly",
+        ),
         observation=KernelObservationDeps(intent_sink=runtime.sink),
     ))
     assert result.completed and result.summary == correct

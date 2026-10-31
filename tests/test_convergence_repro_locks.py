@@ -192,18 +192,20 @@ class SecondRoundWebPromptTests(unittest.TestCase):
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
-        from tests.support.kernel_runtime import run_task_kernel
+        from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
 
         submission = TaskSubmission(session_id="s", project="demo", task="research web", max_turns=3, continue_task=False, provider_id="local", strict_research=True)
         policy = build_task_policy(submission, task_kind="research", strict_research=True)
-        session = TaskSession(policy=policy, task_kind="research", project="demo", max_turns=3, task_text="research web")
+        questions = ("What do the sources say?",)
+        session = TaskSession(policy=policy, task_kind="research", project="demo", max_turns=3,
+                              task_text="research web", research_questions=questions)
         sent_prompts: list[str] = []
 
         class FakeWeb:
             def send(self, prompt, timeout=None):
                 sent_prompts.append(str(prompt))
                 if len(sent_prompts) == 1:
-                    return '{"tool":"web_search","args":{"query":"hi"}}'
+                    return '{"tool":"web_search","args":{"query":"hi","question_ref":"q1"}}'
                 return '{"tool":"done","args":{"summary":"结论\n来源\nx"}}'
 
             def send_tool_results(self, messages, tools, timeout=None):
@@ -215,10 +217,11 @@ class SecondRoundWebPromptTests(unittest.TestCase):
                 from codey.research.ledger import ResearchLedger
 
                 self.ledger = ResearchLedger()
+                self.ledger.questions = questions
                 self.sources_read = set()
                 self.search_result_urls = set()
 
-            def web_search(self, q):
+            def web_search(self, q, **kwargs):
                 from codey.research.tools import ResearchToolOutput
                 self.ledger.record_search(q, [
                     {"title": "A", "url": "https://example.com/a", "snippet": "a"},
@@ -231,21 +234,21 @@ class SecondRoundWebPromptTests(unittest.TestCase):
                 return SN(model_text=f"Title: T\nBody for {url}", receipt_text=f"Body for {url}", ok=True)
 
         # Provide executors via research_tools through delegate? Use direct executors for simplicity:
-        # run_task_kernel with research_tools FakeTools will handle web_search/open via delegate.
+        # run_test_kernel with research_tools FakeTools will handle web_search/open via delegate.
         from unittest.mock import patch
 
         with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
-            run_task_kernel(
+            run_test_kernel(
                 session,
-                request=KernelRunRequest(
+                session_id="s", request=KernelRunRequest(
                     transport=KernelTransportDeps(
                         provider=FakeWeb(),
                         run_id="r-web2",
+                        user_task=session.task_text,
                     ),
                     execution=KernelExecutionDeps(
                         executors={},
                         research_tools=FakeTools(),
-                        session_id="s",
                     ),
                     observation=KernelObservationDeps(
                         completion_context=None,
@@ -258,7 +261,7 @@ class SecondRoundWebPromptTests(unittest.TestCase):
         # not just result refs. Contract JSON for open_result plus visible-tools line.
         self.assertIn('{"tool":"open_result"', second)
         self.assertTrue(("Visible tools" in second) or ("Tool contract" in second))
-        self.assertTrue(("changed" in second.lower()) or ("controller" in second.lower()))
+        self.assertNotIn('{"tool":"open_result"', sent_prompts[0])
 
 
 class DoneReceiptFailureTests(unittest.TestCase):
@@ -266,7 +269,7 @@ class DoneReceiptFailureTests(unittest.TestCase):
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.providers.base import AssistantTurn, ProviderToolCall
-        from tests.support.kernel_runtime import run_task_kernel
+        from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
 
         policy = TaskPolicy(grants=frozenset({"control"}))
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2, task_text="hi")
@@ -287,7 +290,7 @@ class DoneReceiptFailureTests(unittest.TestCase):
             patch("codey.operations.kernel_transport.provider_uses_native", return_value=True),
             patch("codey.toolchain.tool_spec.native_tools_for_snapshot", return_value=[{"type": "function", "function": {"name": "done", "description": "d", "parameters": {"type": "object", "properties": {}, "required": []}}}]),
         ):
-            result = run_task_kernel(
+            result = run_test_kernel(
                 session,
                 request=KernelRunRequest(
                     transport=KernelTransportDeps(

@@ -84,8 +84,9 @@ def probe(root, proxy, model, protocol, case):
         result = run_task_kernel(session, request=KernelRunRequest(
             transport=KernelTransportDeps(provider=provider, run_id="r",
                                           effect_scope="task", provider_id="local", user_task=prompt),
-            execution=KernelExecutionDeps(research_tools=tools, managed_outputs=managed, session_id="s",
-                                          durable=mutations.durable),
+            execution=KernelExecutionDeps(
+                research_tools=tools,
+            ),
             observation=KernelObservationDeps(intent_sink=sink, completion_context={"research_ledger": tools.ledger}),
         ))
     calls_before_recovery = list(backend.calls)

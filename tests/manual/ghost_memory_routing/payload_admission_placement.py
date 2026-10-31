@@ -26,7 +26,7 @@ from codey.operations.task_loop import (  # noqa: E402
     KernelExecutionDeps,
     KernelRunRequest,
     KernelTransportDeps,
-    run_task_kernel,
+    run_test_kernel,
 )
 from codey.operations.task_session import TaskSession  # noqa: E402
 from codey.policies.task_policy import TaskPolicy  # noqa: E402
@@ -299,14 +299,14 @@ def probe(directory, project, *, protocol, placement, case, durable_effects=Fals
                     if placement == DECLARED_PLACEMENT:
                         stack.enter_context(patch.object(ApiProvider, "fork_auxiliary", declared_fork))
                 current_request = replace(request, ghost_directive="") if case == "history_only_compaction" else request
-                result = run_task_kernel(
+                result = run_test_kernel(
                     TaskSession(policy=TaskPolicy(frozenset({"control"})), max_turns=1, coding_context_enabled=False),
-                    request=KernelRunRequest(
+                    session_id=session_id, request=KernelRunRequest(
                         transport=KernelTransportDeps(provider=runtime_provider, context_text=_project_context(current_request),
                             user_task=request.task, ghost_sources=() if case == "history_only_compaction" else sources,
                             admit_hints=enabled,
                             context_scope=request_scope(project, session_id)),
-                        execution=KernelExecutionDeps(project_path=project, session_id=session_id),
+                        execution=KernelExecutionDeps(project_path=project),
                     ),
                 )
             (directory / "result.txt").write_text(repr(result), encoding="utf-8")

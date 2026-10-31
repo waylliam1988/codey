@@ -151,7 +151,7 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     assert request.observation.intent_sink is sink_type.return_value
     assert request.observation.on_event is hooks.on_event
     assert request.observation.on_shell_request is hooks.on_shell_request
-    assert request.execution.managed_outputs is managed
+    assert sink_type.call_args.kwargs["managed_outputs"] is managed
     state.close()
 
 

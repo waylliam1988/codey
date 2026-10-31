@@ -91,9 +91,11 @@ def test_original_loop_repairs_recorded_escape_failure_then_searches_exact_quote
     result = run_task_kernel(runtime.state, request=KernelRunRequest(
         transport=KernelTransportDeps(provider=provider, run_id="r",
             provider_id="local", effect_scope="task", user_task="Search exact quoted text and return JSON."),
-        execution=KernelExecutionDeps(project_path=runtime.project, managed_outputs=runtime.managed, session_id="s",
-            durable=runtime.mutations.durable, workspace_revision_store=runtime.revisions,
-            permission_profile="planning_readonly"),
+        execution=KernelExecutionDeps(
+            project_path=runtime.project,
+            workspace_revision_store=runtime.revisions,
+            permission_profile="planning_readonly",
+        ),
         observation=KernelObservationDeps(intent_sink=runtime.sink),
     ))
     assert result.completed and result.summary == correct and provider.step == 3

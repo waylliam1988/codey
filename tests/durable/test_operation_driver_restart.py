@@ -109,8 +109,10 @@ def _run(root: Path, boundary: str = "", resume: bool = False, source_offset: in
         result = run_task_kernel(session,
             request=KernelRunRequest(transport=KernelTransportDeps(
                 provider=Provider(), run_id="r", provider_id="local"),
-                execution=KernelExecutionDeps(executors={"read_file": execute}, research_tools=research_tools,
-                    managed_outputs=sink.managed_outputs, session_id="s"),
+                execution=KernelExecutionDeps(
+                    executors={"read_file": execute},
+                    research_tools=research_tools,
+                ),
                 observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
                     durable=durable, session_id="s", task_id="r", sink=sink))))
         state = operation_from_checkpoint(durable.task("r"), "s")

@@ -190,7 +190,8 @@ class ToolContractTests(unittest.TestCase):
         policy = build_task_policy(
             TaskSubmission("s", None, "research q", 8, False, "local"),
             task_kind="research", strict_research=True)
-        session = TaskSession(policy=policy, task_kind="research", project="", max_turns=8)
+        session = TaskSession(policy=policy, task_kind="research", project="", max_turns=8,
+                              research_questions=("research q",))
         session.record_search_result("r1", "https://example.com/a")
         allowed = controller_allowed_for_session(session)
         self.assertIn("open_result", allowed)
@@ -272,18 +273,19 @@ class LoopPromptTests(unittest.TestCase):
             def send_tool_results(self, messages, tools, timeout=None):
                 calls.append("send_tool_results")
                 ids = [m.get("tool_call_id") for m in messages]
-                self.assertIn("d1", ids)
+                assert "d1" in ids
                 return AssistantTurn(text='{"tool":"done","args":{"summary":"结论 x 来源 y"}}')
 
             def acknowledge_tool_results(self, results, declared_tools, timeout=None):
                 return self.send_tool_results(results, [])
 
-        session = TaskSession(policy=policy, task_kind="research", project="", max_turns=4)
-        run_task_kernel(
+        session = TaskSession(policy=policy, task_kind="research", project="", max_turns=4, task_text="research q")
+        result = run_task_kernel(
             session,
             request=KernelRunRequest(
                 transport=KernelTransportDeps(
                     provider=FakeNative(),
+                    user_task="research q",
                     provider_id="local",
                 ),
                 execution=KernelExecutionDeps(
@@ -291,6 +293,7 @@ class LoopPromptTests(unittest.TestCase):
                 ),
             ),
         )
+        self.assertTrue(calls, result.summary)
         self.assertEqual(calls[0], "send_turn")
         self.assertEqual(calls[1], "send_tool_results")
 
@@ -404,7 +407,8 @@ class CompletionGateProdTests(unittest.TestCase):
         policy = build_task_policy(
             TaskSubmission("s", None, "q", 8, False, "local"),
             task_kind="research", strict_research=True)
-        session = TaskSession(policy=policy, task_kind="research", project="", max_turns=8)
+        session = TaskSession(policy=policy, task_kind="research", project="", max_turns=8,
+                              research_questions=("research q",))
         session.record_search("q")
         session.record_evidence("https://example.com/a", "fabricated excerpt")
         verdict = evaluate(session, "结论 x 来源 https://example.com/a")
