@@ -165,7 +165,7 @@ class KernelContext:
         if data is not None and (not state.work_ref or self.decision(state) != data):
             ref = self.sink.managed_outputs.write_json_artifact(
                 session_id=self.sink.session_id, run_id=self.sink.run_id,
-                payload={"schema_version": 1, "kind": "kernel_decision", "data": data})
+                payload={"schema_version": 2, "kind": "kernel_decision", "data": data})
             artifact = self.sink.managed_outputs.json_artifact_record(ref, owner_task_id=self.sink.run_id, owner_effect_id=None,
                                                                     metadata={"kind": "kernel_decision"})
         self.sink.mutations.advance_execution(self.sink.session_id, self.sink.run_id, expected=state,
@@ -181,13 +181,14 @@ class KernelContext:
             raise RecoveryFailed("kernel decision digest reference mismatch")
         envelope = self.sink.managed_outputs.read_json_artifact(raw)
         if (not isinstance(envelope, dict) or set(envelope) != {"schema_version", "kind", "data"}
-                or envelope["schema_version"] != 1 or envelope["kind"] != "kernel_decision"
+                or type(envelope["schema_version"]) is not int or envelope["schema_version"] not in (1, 2)
+                or envelope["kind"] != "kernel_decision"
                 or not isinstance(envelope["data"], dict)):
             raise RecoveryFailed("invalid kernel decision")
         from codey.operations.kernel_control import validate_decision
 
         try:
-            return validate_decision(envelope["data"])
+            return validate_decision(envelope["data"], schema_version=envelope["schema_version"])
         except (ValueError, TypeError, KeyError) as exc:
             raise RecoveryFailed(f"invalid committed control decision: {exc}") from exc
 
@@ -446,7 +447,7 @@ class KernelContext:
 
     def retry(self, state: Any, prompt: str, *, error: str = "", counters: RuntimeExecutionCounters | None = None) -> None:
         self.advance(state, positions.LEAF_CONTROL_READY, data=RetryDecision(
-            purpose="retry", prompt=prompt, error=error, counters=(counters or state.counters).to_payload()))
+            purpose="retry", prompt=prompt, error=error), counters=counters or state.counters)
 
     def plan(self, state: Any) -> Any:
         received = self.response(state)
@@ -569,5 +570,6 @@ class KernelContext:
             raise RecoveryFailed("an admitted provider generation requires a durable boundary callback")
         self.observation.on_boundary(GenerationBoundaryRequest(action.reason))
 
-    def close(self, state: Any, result: KernelResult) -> None:
-        self.advance(state, positions.LEAF_CLOSING, data=ClosingDecision(purpose="closing", result=result.to_payload()))
+    def close(self, state: Any, result: KernelResult, *, counters: RuntimeExecutionCounters | None = None) -> None:
+        self.advance(state, positions.LEAF_CLOSING, data=ClosingDecision(purpose="closing", result=result.to_payload()),
+                     counters=counters)

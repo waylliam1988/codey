@@ -31,7 +31,9 @@ def test_repeated_completion_rejection_records_committed_progress(tmp_path, sqli
         assert result.stop_reason == "no_progress", result
         assert len(calls) == 3
         decisions = [a for a in durable.artifacts_for_task("r") if a.metadata.get("kind") == "kernel_decision"]
-        assert len(decisions) == 4  # Three distinct progress observations and the closing result.
+        assert len(decisions) == 2  # Identical retry content shares one artifact; progress belongs to the checkpoint.
+        assert sink.counters().progress.idle == 2
+        assert len(sink.counters().progress.attempts) == 3
     finally:
         durable.close()
 

@@ -39,10 +39,9 @@ def test_native_codec_system_prompt_is_native_only() -> None:
 
 
 def test_native_codec_hash_is_native_not_json() -> None:
+    from codey.policies.task_policy import TaskPolicy
 
-    from types import SimpleNamespace
-
-    policy = SimpleNamespace(allows=lambda g: True)
+    policy = TaskPolicy(frozenset({"control", "project.read"}))
     from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
 

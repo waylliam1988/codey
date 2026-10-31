@@ -19,14 +19,18 @@ def test_native_answer_object_must_be_resent_through_declared_done(monkeypatch, 
     def generate(url, payload, *args, **kwargs):
         requests.append(copy.deepcopy(payload))
         if len(requests) == 1:
-            assert "summary string" in payload["messages"][0]["content"]
+            assert "summary string" in "\n".join(str(row.get("content", "")) for row in payload["messages"])
             calls = ([{"product": 323, "id": "malformed-answer"}] if mistake == "malformed_object" else
                      [{"id": "fenced-answer", "type": "function", "function": {"name": "done",
                        "arguments": json.dumps({"summary": "```json\n" + answer + "\n```"})}}])
         else:
             assert len(requests) == 2
-            prompt = next(message["content"] for message in reversed(payload["messages"])
-                          if not str(message.get("content", "")).startswith("<request_context>"))
+            # The per-request clock is replaced and working observations may
+            # follow feedback. Inspect newly supplied text, independent of position.
+            previous = {str(row.get("content", "")) for row in requests[0]["messages"]}
+            prompt = "\n".join(str(message.get("content", "")) for message in payload["messages"]
+                               if message.get("role") in {"user", "tool"}
+                               and str(message.get("content", "")) not in previous)
             assert "final answer" in prompt and "summary string" in prompt
             assert "requested final format" in prompt
             assert "not the outer tool-call object" in prompt

@@ -22,20 +22,23 @@ if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
 
 
-def validate_decision(payload: Any) -> KernelDecision:
+def validate_decision(payload: Any, *, schema_version: int = 2) -> KernelDecision:
     """Validate committed control facts before selecting any external action."""
+    if type(schema_version) is not int or schema_version not in (1, 2):
+        raise ValueError("unsupported control decision schema")
     if not isinstance(payload, dict):
         raise ValueError("invalid control decision")
     purpose = payload.get("purpose")
     if purpose == "retry":
-        required = {"purpose", "prompt", "error", "counters"}
+        required = {"purpose", "prompt", "error"} | ({"counters"} if schema_version == 1 else set())
         if (set(payload) not in (required, required | {"error_source", "error_type"})
                 or not all(isinstance(payload[key], str) for key in ("prompt", "error"))):
             raise ValueError("invalid retry decision")
-        try:
-            RuntimeExecutionCounters.from_payload(payload["counters"])
-        except RuntimeOperationTransitionError as exc:
-            raise ValueError(str(exc)) from exc
+        if schema_version == 1:
+            try:
+                RuntimeExecutionCounters.from_payload(payload["counters"])
+            except RuntimeOperationTransitionError as exc:
+                raise ValueError(str(exc)) from exc
         if "error_source" in payload and (not isinstance(payload["error_source"], str)
                 or not isinstance(payload["error_type"], str)):
             raise ValueError("invalid completion diagnostic")
@@ -109,7 +112,7 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         context.advance(state, positions.LEAF_CONTROL_READY, data=RetryDecision(
             purpose="retry", prompt=kernel_prompt._completion_followup(followup, native=context.native,
                 structured_report="report_sections" in context.session.last_done_args), error="",
-            counters=counters.to_payload(), error_source=error_source, error_type=error_type),
+            error_source=error_source, error_type=error_type),
             counters=counters)
 
 
@@ -136,16 +139,26 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         return
     if decision["purpose"] == "retry":
         turn = received.logical_turn
+        counters = state.counters
+        if "counters" in decision:
+            # v1 protocol/length retries deferred their observation until admission;
+            # completion rejections already committed it. Preserve both histories,
+            # permitting only the single observation the old writer could make.
+            pending = RuntimeExecutionCounters.from_payload(decision["counters"])
+            if pending not in (counters, replace(counters, invalid_turns=counters.invalid_turns + 1),
+                               replace(counters, length_continuation_used=True)):
+                raise ValueError("legacy retry counters do not describe one pending observation")
+            counters = pending
         from codey.operations.kernel_progress import KernelProgress
 
         if KernelProgress(context.transport.stagnant_turns, snapshot=state.counters.progress).stopped:
             context.close(state, KernelResult(False,
                 "Stopped after repeated rejected completion proposals without progress.\n\n"
                 + decision["prompt"] + "\n\nUnaccepted draft:\n" + context.session.last_done_text,
-                turn, "no_progress"))
+                turn, "no_progress"), counters=counters)
             return
         if turn >= context.session.max_turns and not (context.native and ids):
-            context.close(state, KernelResult(False, context.session.last_done_text or "max turns reached", turn, "max_turns"))
+            context.close(state, KernelResult(False, context.session.last_done_text or "max turns reached", turn, "max_turns"), counters=counters)
             return
         from codey.operations.task_guidance import task_working_context
 
@@ -168,7 +181,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
             from codey.operations.kernel_protocol import build_turn_snapshot
             snapshot = build_turn_snapshot(context.session, native=context.native)
         context.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages,
-                       counters=RuntimeExecutionCounters.from_payload(decision["counters"]))
+                       counters=counters)
         return
     if decision["purpose"] == "question":
         from codey.durable.questions import DurableUserQuestionStore

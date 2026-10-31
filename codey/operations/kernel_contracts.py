@@ -55,7 +55,8 @@ class RetryDecision(TypedDict):
     purpose: Literal["retry"]
     prompt: str
     error: str
-    counters: dict[str, object]
+    # Only schema v1 decisions carry a pending observation; new writes use the checkpoint.
+    counters: NotRequired[dict[str, object]]
     error_source: NotRequired[str]
     error_type: NotRequired[str]
 

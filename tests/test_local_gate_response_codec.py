@@ -1,10 +1,10 @@
 """Local live gates must use the production local response decoder."""
 
 import json
-from types import SimpleNamespace
 
 import pytest
 
+from codey.operations.completion_gate import GateVerdict
 from codey.operations.provider_session import normalize_provider_reply
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import api_transport
@@ -78,7 +78,7 @@ def test_rejected_fenced_action_is_resent_as_bare_json_before_execution(monkeypa
         calls.append(call)
         return ToolResult(call, "Ran 1 test\nOK", ok=True, audit={"exit_code": 0})
 
-    monkeypatch.setattr("codey.operations.completion_gate.evaluate", lambda *a, **kw: SimpleNamespace(
+    monkeypatch.setattr("codey.operations.completion_gate.evaluate", lambda *a, **kw: GateVerdict(
         complete=bool(calls), followup="Not done yet (verification_not_locally_observed).", proof=None, final_text=""))
     session = TaskSession(TaskPolicy(frozenset({"control", "project.verify"})), max_turns=4)
     result = run_task_kernel(session, request=KernelRunRequest(
@@ -113,7 +113,7 @@ def test_reasoned_json_action_executes_through_shared_kernel_before_done(monkeyp
         return observed_tool_result(call, "Observed search result")
 
     monkeypatch.setattr(api_transport, "open_request", reply)
-    monkeypatch.setattr("codey.operations.completion_gate.evaluate", lambda *a, **kw: SimpleNamespace(
+    monkeypatch.setattr("codey.operations.completion_gate.evaluate", lambda *a, **kw: GateVerdict(
         complete=bool(calls), followup="Search has not executed.", proof=None, final_text=""))
     provider = ApiProvider("http://fixture/v1", "local", native_tools=False, text_decoder=normalize_local_reply)
     try:

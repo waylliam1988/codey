@@ -103,10 +103,11 @@ def test_gate_records_the_actual_auto_request(monkeypatch, tmp_path):
     monkeypatch.setattr(api_transport, "open_request", reply)
     target = GateTarget("http://model.test/v1", "test", 32768, 8192, 12000)
     provider = RecordingProvider(target, tmp_path)
-    provider.send_turn("finish", TOOLS)
+    provider.send_turn("finish", TOOLS, output_token_limit=123)
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
     assert rows[0]["payload"] == wire[0]
     assert rows[0]["payload"]["tool_choice"] == "auto"
+    assert rows[0]["payload"]["max_tokens"] == 123
     provider.acknowledge_tool_results([ProviderToolResult('c1', 'OK: done accepted')], TOOLS)
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
     requests = [row["payload"] for row in rows if row["type"] == "request"]

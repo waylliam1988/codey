@@ -91,7 +91,49 @@ q2=not_investigated、q3=unanswered_after_search，正文、原 decision、answe
 本轮只确认 q8 缺口编译、发布及恢复一致，不将 done 或成功 proof 解释为语义认证。
 浏览器退出时记录了 TargetClosedError 警告，实际采集与发布已完成，原日志保留。
 
-## 第四批（待实施）
+## 第四批：retry 观察提交及版本化恢复
 
-调整 retry 观察计数的提交时机与旧决定恢复，保留冻结请求的准入预算。
-其中旧 retry 的拟更新计数可能尚未进入 checkpoint，不能作为冗余字段直接丢弃。
+新 decision envelope 为 schema_version=2，retry 不再保存 counters。协议错误、无工具调用的
+首次截断与完成拒绝都在保存控制决定时，同一 checkpoint mutation 原子提交观察计数。
+计数记录已观察的事实：invalid_turns 是连续无效响应数（合法计划重置）；
+length_continuation_used 记录已观察并使用一次截断续接额度；progress 记录已拒绝的原提案。
+因此即使没有下一请求，观察仍成立，保存决定不再借助下一请求提交已发生的错误。
+冻结请求保留 expected_counters 与 counters；新 retry 两者均为当前 checkpoint，
+请求准入继续负责 stale 检查与原有准入约束，关闭轮数等原准入语义不变。
+
+只保留明确的 v1 历史读取：旧 retry counters 可能已提交，也可能有一项未提交观察。
+必须与 checkpoint 相等，或仅 invalid_turns +1，或仅 length 标记 false→true；
+重置、跳数、替换 progress、改变关闭轮数及同时增加两种观察都在发送前拒绝。
+旧决定继续冻结原 expected 与 proposed，在原请求准入中消费一次；达到回合/无进展上限
+而不再发送时，随 closing checkpoint 提交。已经冻结的旧请求不重算、不改 intent。
+v2 禁止 counters 字段，v1 必须携带并校验它，不靠缺字段猜测提交状态；没有新双写者。
+
+测试覆盖文本/native 协议错误与截断，在 control_ready 和 provider_request_ready 中断，
+以及真实子进程 os._exit 后重开 SQLite；检查保存决定后计数存在，下一请求不重复扣减，
+重复恢复无发送。旧格式涵盖待提交、已提交、提前关闭、非法差异及预算重置拒绝。
+重复完成拒绝的相同 retry artifact 从三份去重为一份，checkpoint 仍记录三次拒绝。
+测试内同进程模拟死亡使用 force 接管原租约；不放宽生产中的存活 worker 保护。
+
+实机：artifacts/kernel-refactor-20261101/batch4-retry-02，Gemma 4 12B Q4_K_M，seed=74，
+temperature=0.3、JSON 文本协议。两次真实生成均正确返回指定 done；测试明确将第一次
+回复替换为坏 JSON，以验证实际错误路径。retry 保存后模拟退出，关闭 SQLite/provider，
+冷启动续接；已提交 invalid=1，下一请求 expected==proposed==checkpoint，最终合法计划
+将连续 invalid 重置为 0，完成且重复恢复无新增请求。该测试不宣称模型自然产生了错误。
+首次实机内核行为同样成功，观察脚本把同一冻结请求的两次 commit 通知重复计入边界，
+导致脚本的计数断言失败；按 request_ref 去重后复跑通过，两份记录都保留。
+
+Mypy（578 files）、Pyrefly、ty 生产全目录及 Ruff 通过。
+定点恢复/准入选集 106 passed（65.50 秒）；Research 评审/快照/未发送收据补充选集
+88 passed（7.55 秒）。扩大回归 139 个相关文件：初跑 1722 passed、8 failed、
+3 skipped、104 subtests passed（586.21 秒）。8 项失败全部在原始 cf276731 工作树复现：
+并发测试的 _generate 替身缺少 output_token_limit；旧 SimpleNamespace 缺少严格 policy/
+ToolResult 字段；native 提示断言绑定固定消息位置；RecordingProvider 未透传冻结请求选项。
+
+修复时不修改生产提示或放宽运行时合同：使用真实 TaskPolicy/ToolResult，替身补当前明确
+参数，断言检查本次新增修复文本而非消息下标；RecordingProvider 显式透传全部原请求选项。
+新增断言核对实际 HTTP 的 max_tokens=123，确保记录器不吞掉预算。扩展的 decoder 测试中
+两处 gate 替身也迁移为实际 GateVerdict，补上本次新结果字段合同，不增加 getattr fallback。
+相关 11 文件最终复跑 85 passed（10.28 秒），覆盖并消除主选集全部 8 项失败。
+其余主选集通过结果保留；此次修复未改变 codey 生产源码，不重复整轮近十分钟的检查。
+所有失败、基线复现、最终复跑日志和主选集文件清单保留在
+.e2e-artifacts/kernel-refactor-20261101/，各选集存在重叠，数字不作为唯一测试数相加。

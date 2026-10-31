@@ -1,17 +1,15 @@
-from types import SimpleNamespace
-
 from codey.operations.kernel_transport import _native_tool_results
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
 from codey.providers import api_chat, api_responses
 from codey.providers.base import ProviderToolResult
+from codey.runtime.core.models import ToolCall, ToolResult
 
 
 def test_native_boundary_input_is_carried_after_tool_result_in_one_message_range() -> None:
-    result = SimpleNamespace(
-        call=SimpleNamespace(call_id="call-1", name="read_file"),
-        model_text="tool output", truncated=False,
-    )
+    result = ToolResult(ToolCall("read_file", {}, call_id="call-1"), "tool output", ok=True)
     messages = _native_tool_results(
-        [result], SimpleNamespace(_memory_results={}, search_results={}), boundary_prompt="steer now",
+        [result], TaskSession(TaskPolicy(frozenset({"control"}))), boundary_prompt="steer now",
     )
 
     assert messages == [
