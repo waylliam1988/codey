@@ -57,8 +57,7 @@ def review_basis(report: FindingReport, tools: Any, task: str) -> dict[str, Any]
             "units": claim_units(item.version.value.content, item.version.value.conditions),
             "conditions": item.version.value.conditions, "kind": item.version.value.kind,
             "limitations": item.version.value.provenance.get("limitations", ""),
-            "evidence": [{"claim": row.claim.value.content, "conditions": row.claim.value.conditions,
-                "excerpt": row.evidence.value.content, "relation": row.relation,
+            "evidence": [{"excerpt": row.evidence.value.content, "relation": row.relation,
                 "source_id": row.source.value.id, "source_revision": row.source.revision,
                 "url": row.source.value.provenance["url"], "title": row.source.value.title,
                 "locator": row.evidence.value.provenance.get("locator", "")} for row in item.evidence]})

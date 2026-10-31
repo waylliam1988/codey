@@ -113,6 +113,8 @@ def test_review_uses_full_exact_excerpt_and_rejects_missing_duplicate_or_forged_
         assert report.evidence_bindings[0]["display_truncated"]
         basis = review_basis(report, tools, TASK)
         assert basis["claims"][0]["evidence"][0]["excerpt"].endswith("Only one writer at a time.")
+        assert "claim" not in basis["claims"][0]["evidence"][0]
+        assert "conditions" not in basis["claims"][0]["evidence"][0]
         raw = assessment(basis, reject=True)
         parsed = parse_review(json.dumps(raw), basis)
         assert {row["kind"] for row in review_issues(parsed)} == {"task_coverage", "claim_support", "report_scope"}

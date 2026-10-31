@@ -33,6 +33,10 @@ def test_batches_cover_each_unit_once_and_prior_claims_are_not_resubmitted():
     assert len(scopes) > 1
     for index in range(len(scopes)):
         view = batch_view(root, index, previous)
+        assert all("answer" not in row and "findings" not in row for row in view["coverage"])
+        assert all(ref in view["investigation_scope"] for row in view["coverage"] for ref in row["investigations"])
+        if view["claims"] and not any(view[key] for key in ("paragraphs", "requirements", "investigations")):
+            assert view["coverage"] == view["report_paths"] == view["report_paragraphs"] == []
         raw = assessment(view)
         parsed = parse_review(json.dumps(raw), view)
         if view["paragraphs"]:

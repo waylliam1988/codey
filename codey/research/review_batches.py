@@ -80,10 +80,16 @@ def batch_view(basis: dict[str, Any], index: int, prior: list[dict[str, Any]]) -
     selected_refs = {ref for paragraph in scope["paragraphs"] for ref in paragraph["refs"]} - {
         row["ref"] for row in scope["claims"]}
     previous = merge_assessments(prior)["claims"]
+    # Preserve coverage positions for paragraph gap paths, but never repeat
+    # authored answers or unselected references inside another batch.
+    coverage = [{"question_ref": row["question_ref"], "state": row["state"],
+                 "investigations": [ref for ref in row["investigations"] if ref in scope["investigations"]]}
+                for row in basis["coverage"]] if any(scope[key] for key in _KINDS[1:]) else []
     view = {**basis, **scope,
+        "coverage": coverage,
         "investigations": scope["investigations"] or {},
         "investigation_scope": list(scope["investigations"]),
-        "report_paths": [row["path"] for row in basis["paragraphs"]],
+        "report_paths": [row["path"] for row in basis["paragraphs"]] if scope["requirements"] else [],
         "prior_claim_judgments": [row for row in previous if row["ref"] in selected_refs],
         "supporting_findings": [row for row in basis["claims"] if row["ref"] in selected_refs],
         "report_paragraphs": basis["paragraphs"] if scope["requirements"] else [],
