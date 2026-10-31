@@ -188,6 +188,10 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
                             requires_acquisition=True)
     resolved = resolve_selected_references(proposal.selected_refs, ledger, store, project=project, session_id=session_id)
     validate_report_bindings(proposal, resolved)
+    if proposal.answers_only:
+        from codey.research.answer_focus import validate_answer_focus
+
+        validate_answer_focus(proposal, resolved, ledger.questions)
     text, sources = render_report(proposal, resolved, ledger.questions, tuple(row.query for row in ledger.searches))
     metadata = {item.label: {"id": item.version.value.id, "revision": item.version.revision,
         "claim": item.version.value.content,
