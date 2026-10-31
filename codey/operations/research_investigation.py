@@ -60,6 +60,8 @@ def investigate_plan(*, history: ResearchContinuation, plan: ResearchPlan, tools
               "Use web_search and open_url/open_result to obtain missing direct evidence or counterevidence. "
               f"Use at most {plan.max_queries} queries and {plan.max_sources} fresh sources. "
               "Save directly relevant findings with save_finding(claim, source_ref=sN, passage_ref=p...). "
+              "Select question_ref=qN from the registered parent questions for EVERY investigation and save. "
+              "Read each selected passage for that same question before saving; do not infer finding numbers. "
               "Preserve applicability conditions and contradictions; do not rewrite the final report here. "
               "First attempt a targeted investigation of a missing comparison or condition. "
               "Do not end immediately by repeating parent findings. Reuse opened sources where useful; "
@@ -79,7 +81,8 @@ def investigate_plan(*, history: ResearchContinuation, plan: ResearchPlan, tools
                             durable=history.durable)
     session = TaskSession(policy=policy, task_kind="evidence_followup", max_turns=max(3, min(12,
         plan.max_queries * 2 + plan.max_sources + 1)), task_text=prompt,
-        controller_denied=("research_plan", "save_inference", "knowledge_write", "knowledge_commit", "knowledge_link"),
+        controller_denied=(("research_plan",) if tools.ledger.questions else ())
+                          + ("save_inference", "knowledge_write", "knowledge_commit", "knowledge_link"),
         research_acquisition_limits=(plan.max_queries, plan.max_sources))
     outcome = history.kernel(session, invocation=invocation, request=KernelRunRequest(
         task_guidance="Collect missing evidence through the tools, preserving unknown conditions.",

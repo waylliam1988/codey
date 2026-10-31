@@ -30,7 +30,7 @@ PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 
 STRUCTURED_REPORT_ARGS: dict[str, Any] = {"summary": "Supported conclusion [f1]", "report_sections": {
     "evidence": ["Saved finding with its conditions [f1]"],
-    "counter": ["Observed limitation and its scope [f1]"], "source_quality": ["Study design and limits"],
+    "counter": ["Observed limitation and its scope [f1]"],
     "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Answer and remaining gap",
                   "findings": ["f1"], "investigations": []}]}}
 STRUCTURED_REPORT_EXAMPLE = json.dumps({"tool": "done", "args": STRUCTURED_REPORT_ARGS}, separators=(",", ":"))
@@ -226,7 +226,7 @@ TOOL_CONTRACTS = {
         }, 'summary'),
         example='{"tool":"done","args":{"summary":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}',
         description="For a structured research report, summary is the conclusion with citations, and "
-                    "report_sections supplies evidence, counter, source_quality as text arrays, and coverage as question records "
+                    "report_sections supplies evidence, counter as text arrays, and coverage as question records "
                     "{question_ref:q1,state:partial,answer:answer or gap,findings:[f1],investigations:[a1]}. States: evidence_found, partial, "
                     "not_investigated, unanswered_after_search. Evidence states need findings; gap states need an empty findings array. "
                     "Cite selected findings with [f...] from save_finding; the application generates source numbers, "
@@ -234,6 +234,41 @@ TOOL_CONTRACTS = {
                     "Without report_sections, summary is the complete final answer.",
     ),
 }
+
+
+def _question_contract(contract: ToolContract) -> ToolContract:
+    from codey.research.questions import QUESTION_BOUND_TOOLS
+
+    if contract.name not in QUESTION_BOUND_TOOLS:
+        return contract
+    schema = copy.deepcopy(dict(contract.input_schema))
+    schema["properties"]["question_ref"] = {"type": "string", "pattern": "^q[1-8]$"}
+    example = json.loads(contract.example)
+    example["args"]["question_ref"] = "q1"
+    return replace(contract, input_schema=schema, example=json.dumps(example, separators=(",", ":")),
+        description=contract.description + " Select question_ref=qN explicitly to bind this action to its registered question.")
+
+
+TOOL_CONTRACTS = {name: _question_contract(contract) for name, contract in TOOL_CONTRACTS.items()}
+
+
+def question_bound_spec(spec: Any, *, required: bool = False) -> Any:
+    """One question argument contract shared by ordinary and strict research."""
+    from codey.research.questions import QUESTION_BOUND_TOOLS
+
+    if spec.name not in QUESTION_BOUND_TOOLS:
+        return spec
+    if "question_ref" in dict(spec.parameters):
+        return replace(spec, required=tuple(dict.fromkeys((*spec.required, "question_ref")))) if required else spec
+    parameters = {**dict(spec.parameters), "question_ref": {"type": "string", "pattern": "^q[1-8]$"}}
+    keys = tuple(dict.fromkeys((*spec.required, "question_ref"))) if required else spec.required
+    examples = []
+    for text in spec.json_examples:
+        example = json.loads(text)
+        example["args"]["question_ref"] = "q1"
+        examples.append(json.dumps(example, separators=(",", ":")))
+    return replace(spec, parameters=tuple(parameters.items()), required=keys, json_examples=tuple(examples),
+        description=spec.description + " Select question_ref=qN explicitly to bind this action to its registered question.")
 
 
 def done_spec_for_purpose(spec: Any, purpose: str) -> Any:
@@ -249,7 +284,7 @@ def done_spec_for_purpose(spec: Any, purpose: str) -> Any:
         schema = object_schema({"summary": {"type": "string"}, "report_sections": report_sections_schema(),
                                 "open_questions": array_schema({"type": "string"})}, "summary", "report_sections")
         example = {"tool": "done", "args": STRUCTURED_REPORT_ARGS}
-        description = ("Submit conclusion in summary; evidence/counter/source_quality are text arrays. "
+        description = ("Submit conclusion in summary; evidence/counter are text arrays. Source quality is generated from pinned metadata. "
                        "coverage contains one {question_ref,state,answer,findings,investigations} per qN. "
                        "Cite adopted [fN] references. The application generates headings, source numbers and exact versions. "
                        "Do not duplicate the report in summary, supply sources, or copy long knowledge ids.")

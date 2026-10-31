@@ -21,7 +21,6 @@ def arguments():
     return {"summary": "One writer commits at a time. [1]", "report_sections": {
         "evidence": ["One writer commits at a time. [1]"],
         "counter": ["未找到强反证；本轮仅检索并打开上述来源。[1]"],
-        "source_quality": ["Original experiment; workload limits applicability. [1]"],
         "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Writer concurrency investigated", "findings": ["f1"], "investigations": []}],
     }}
 
@@ -84,7 +83,7 @@ def test_strict_research_rejects_summary_only_even_with_a_complete_markdown_repo
     from codey.reviews.report_sections import render_done_report
 
     args = arguments()
-    report = render_done_report(args["summary"], args["report_sections"])
+    report = render_done_report(args["summary"], {**args["report_sections"], "source_quality": ["Unknown source quality."]})
     state = session()
     snapshot = build_turn_snapshot(state, native=native)
     done = next(spec for spec in snapshot.frozen_specs if spec.name == "done")
@@ -161,7 +160,7 @@ def test_grouped_citations_are_compiled_but_unobserved_numbers_still_fail():
     # Numbered sources are application output, not a model-supplied wire field.
     from codey.reviews.report_sections import render_done_report
 
-    rendered = render_done_report(args["summary"], args["report_sections"]) + f"\n\n## 来源\n[1] Experiment - {URL}\n[2] Replication - {second}"
+    rendered = render_done_report(args["summary"], {**args["report_sections"], "source_quality": ["Unknown source quality."]}) + f"\n\n## 来源\n[1] Experiment - {URL}\n[2] Replication - {second}"
     finalized = finalize_done_answer(rendered, ledger)
     assert "[1][2]" in finalized.text and citation_refs(finalized.text) == {1, 2}
     assert not completion_gate.evaluate(state, finalized.text, context={"research_ledger": ledger}).complete

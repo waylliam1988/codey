@@ -64,7 +64,7 @@ def coverage_record_schema() -> dict[str, Any]:
 
 
 def report_sections_schema() -> dict[str, Any]:
-    fields = {key: array_schema(text_schema(1, 16000), 1) for key in ("evidence", "counter", "source_quality")}
+    fields = {key: array_schema(text_schema(1, 16000), 1) for key in ("evidence", "counter")}
     fields["coverage"] = array_schema(coverage_record_schema(), 1, 8)
     return object_schema(fields, *fields)
 
@@ -77,15 +77,26 @@ def research_assessment_schema() -> dict[str, Any]:
     text = {"type": "string", "minLength": 1, "maxLength": 4000}
     refs = array_schema({"type": "string"})
 
-    def judgment(key: str) -> dict[str, Any]:
-        return object_schema({key: text, "verdict": {"type": "string", "enum": [
-            "supported", "unsupported", "uncertain"]}, "reason": text}, key, "verdict", "reason")
-
-    requirement = object_schema({"task_excerpt": text, "question_refs": refs, "report_paths": refs,
-        "kind": {"type": "string", "enum": ["research", "delivery"]},
+    requirement = object_schema({"task_ref": text, "question_refs": refs, "report_paths": refs,
         "state": {"type": "string", "enum": ["addressed", "acknowledged_gap", "missing"]},
-        "reason": text}, "task_excerpt", "kind", "question_refs", "report_paths", "state", "reason")
-    return object_schema({"requirements": {**array_schema(requirement), "minItems": 1, "maxItems": 24},
-        "claims": array_schema(judgment("ref"), maximum=128),
-        "paragraphs": array_schema(judgment("path"), maximum=140)},
-        "requirements", "claims", "paragraphs")
+        "reason": text}, "task_ref", "question_refs", "report_paths", "state", "reason")
+    quote = object_schema({"evidence": {"type": "integer", "minimum": 1}, "quote": text}, "evidence", "quote")
+    unit = object_schema({"unit": {"type": "integer", "minimum": 1},
+        "verdict": {"type": "string", "enum": ["supported", "unsupported", "uncertain"]},
+        "quotes": array_schema(quote, maximum=8), "reason": text}, "unit", "verdict", "quotes", "reason")
+    claim = object_schema({"ref": text, "units": array_schema(unit, minimum=1, maximum=512)}, "ref", "units")
+    support = object_schema({"ref": text, "unit": {"type": "integer", "minimum": 1}}, "ref", "unit")
+    paragraph_unit = object_schema({"unit": {"type": "integer", "minimum": 1},
+        "verdict": {"type": "string", "enum": ["supported", "unsupported", "uncertain"]},
+        "basis": {"type": "string", "enum": ["findings", "gap"]},
+        "finding_units": array_schema(support, maximum=32), "reason": text},
+        "unit", "verdict", "basis", "finding_units", "reason")
+    paragraph = object_schema({"path": text, "units": array_schema(paragraph_unit, minimum=1, maximum=512)}, "path", "units")
+    investigation = object_schema({"ref": text, "question_ref": text,
+        "verdict": {"type": "string", "enum": ["relevant", "irrelevant", "uncertain"]}, "reason": text},
+        "ref", "question_ref", "verdict", "reason")
+    return object_schema({"requirements": array_schema(requirement, minimum=1, maximum=512),
+        "investigations": array_schema(investigation, maximum=256),
+        "claims": array_schema(claim, maximum=128),
+        "paragraphs": array_schema(paragraph, maximum=140)},
+        "requirements", "investigations", "claims", "paragraphs")

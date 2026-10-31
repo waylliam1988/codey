@@ -33,13 +33,13 @@ def read_version(store: Any, identity: str, revision: int | None = None) -> Know
 
 
 def bind_version(ledger: ResearchLedger, version: KnowledgeVersion, *, acquisition: str = "prior_knowledge",
-                 note_id: str = "", passage_ref: str = "") -> str:
+                 note_id: str = "", passage_ref: str = "", question_ref: str = "") -> str:
     for label, previous in ledger.references.items():
-        if (version.value.id, version.revision) == (previous.object_id, previous.revision):
+        if (version.value.id, version.revision, question_ref) == (previous.object_id, previous.revision, previous.question_ref):
             return label
     label = f"f{max((int(key[1:]) for key in ledger.references), default=0) + 1}"
     ledger.references[label] = ResearchReference(version.value.id, version.revision, version.value.kind,
-                                                acquisition, note_id, passage_ref)
+                                                acquisition, note_id, passage_ref, question_ref)
     return label
 
 
@@ -50,12 +50,12 @@ def restore_bindings(ledger: ResearchLedger, raw: object) -> None:
     for label, row in raw.items():
         if (not isinstance(label, str) or re.fullmatch(r"f[1-9][0-9]*", label) is None
                 or not isinstance(row, dict) or set(row) != {
-                    "object_id", "revision", "kind", "acquisition", "note_id", "passage_ref"}):
+                    "object_id", "revision", "kind", "acquisition", "note_id", "passage_ref", "question_ref"}):
             raise ValueError("invalid research reference binding")
         value = ResearchReference(**row)
         if label in pending and pending[label] != value:
             raise ValueError("conflicting research reference binding")
-        if any(key != label and (old.object_id, old.revision) == (value.object_id, value.revision)
+        if any(key != label and (old.object_id, old.revision, old.question_ref) == (value.object_id, value.revision, value.question_ref)
                for key, old in pending.items()):
             raise ValueError("duplicate research reference identity")
         pending[label] = value
@@ -74,6 +74,9 @@ def save_inference(tools: Any, args: dict[str, Any]) -> ResearchToolOutput:
     from codey.research.tools import ResearchToolOutput
 
     try:
+        from codey.research.questions import question_ref
+
+        question = question_ref(args, tools.ledger)
         statement, labels, limitations = args.get("statement"), args.get("premise_refs"), args.get("limitations")
         if (not isinstance(statement, str) or not 12 <= len(statement.strip()) <= 4000
                 or not isinstance(limitations, str) or not 1 <= len(limitations.strip()) <= 4000
@@ -83,6 +86,8 @@ def save_inference(tools: Any, args: dict[str, Any]) -> ResearchToolOutput:
         if tools.store is None:
             raise ValueError("knowledge store is unavailable")
         versions = [resolve_version(tools.ledger, tools.store, label) for label in labels]
+        if question and any(tools.ledger.references[label].question_ref != question for label in labels):
+            raise ValueError("premise belongs to another question; read it explicitly for this question before inferring")
         access = KnowledgeAccess(tools.project, tools.session_id, tools.store.owner_id)
         if any(not access.allows(version) for version in versions):
             raise ValueError("knowledge scope mismatch")
@@ -106,7 +111,7 @@ def save_inference(tools: Any, args: dict[str, Any]) -> ResearchToolOutput:
                 tools.created_ids.append(identity)
         version = read_version(tools.store, identity)
         assert version is not None
-        label = bind_version(tools.ledger, version, acquisition="current_run", note_id=identity)
+        label = bind_version(tools.ledger, version, acquisition="current_run", note_id=identity, question_ref=question)
         return ResearchToolOutput(canonical_json({"finding_ref": label, "statement": value.content,
             "kind": "inference", "status": "candidate", "interpretation_review": "unreviewed",
             "limitations": limitations, "premise_refs": labels,

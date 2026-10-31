@@ -306,11 +306,13 @@ def test_shared_driver_bounds_parallel_source_calls(tmp_path):
         native_tools = False
 
         def send(self, prompt):
-            return "\n".join(json.dumps({"tool": "web_search", "args": {"query": query}}) for query in ("first", "second"))
+            return "\n".join(json.dumps({"tool": "web_search", "args": {"query": query, "question_ref": "q1"}})
+                             for query in ("first", "second"))
 
     store = KnowledgeStore(tmp_path)
     try:
         tools = ResearchTools(Search(), store, None)
+        tools.ledger.questions = ("Which source is relevant?",)
         session = TaskSession(TaskPolicy(frozenset({"control", "web.read"})), max_turns=1,
                               research_acquisition_limits=(1, 1))
         run_task_kernel(session, request=KernelRunRequest(transport=KernelTransportDeps(provider=Provider()),

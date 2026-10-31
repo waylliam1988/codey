@@ -10,23 +10,92 @@ from types import SimpleNamespace
 import pytest
 
 from codey.research.finding_report import compile_finding_report
-from codey.research.semantic_review import parse_review, review_basis, review_issues
+from codey.research.semantic_review import parse_review, review_basis, review_issues, review_scope
 from tests.test_research_findings import URL, execute, report_args, setup
 
-TASK = "Explain writer concurrency and distinguish historical version restrictions."
+TASK = "Explain writer concurrency. Distinguish historical version restrictions."
+
+
+@pytest.mark.usefixtures("public_source_dns")
+@pytest.mark.parametrize("inline", [False, True])
+def test_compiled_coverage_findings_bind_the_rendered_answer_for_review(tmp_path, inline):
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        tools.search.text = "Only one writer at a time. Readers and writers can run concurrently."
+        execute(delegate, tools, session, "open_url", {"url": URL})
+        execute(delegate, tools, session, "save_finding", {
+            "claim": "Only one writer can write at a time.", "source_ref": "s1",
+            "passage_ref": next(iter(tools.ledger.read_passages))})
+        args = report_args("f1")
+        coverage = args["report_sections"]["coverage"][0]
+        coverage.update(state="partial", answer="Only one writer can write at a time." + (" [f1]" if inline else ""))
+        report = compile_finding_report(args, tools.ledger, store)
+        basis = review_basis(report, tools, "Explain writer concurrency.")
+        answer = next(row for row in basis["paragraphs"] if row["path"] == "report_sections.coverage[0].answer")
+        assert answer["refs"] == ["f1"] and answer["kinds"] == ["claim"]
+        raw = assessment(basis)
+        assert parse_review(json.dumps(raw), basis)["paragraphs"][-1]["units"][0]["finding_units"] == [
+            {"ref": "f1", "unit": 1}]
+        # Structured findings must still reject a conflicting inline reference.
+        coverage["answer"] += " [f2]"
+        execute(delegate, tools, session, "save_finding", {
+            "claim": "Readers and writers can run concurrently.", "source_ref": "s1",
+            "passage_ref": next(iter(tools.ledger.read_passages))})
+        with pytest.raises(ValueError, match="answer citations must also occur"):
+            compile_finding_report(args, tools.ledger, store)
+    finally:
+        store.close()
 
 
 def assessment(basis, reject=False):
-    return {"requirements": [{"task_excerpt": "writer concurrency", "kind": "research", "question_refs": ["q1"],
-                "report_paths": ["summary"], "state": "addressed", "reason": "Explicit writer limit."},
-            {"task_excerpt": "historical version restrictions", "kind": "research", "question_refs": [] if reject else ["q2"],
-                "report_paths": [] if reject else ["report_sections.counter[0]"],
-                "state": "missing" if reject else "acknowledged_gap", "reason": "Version evidence is missing."}],
-        "claims": [{"ref": row["ref"], "verdict": "unsupported" if reject else "supported",
+    requirements = []
+    for row in basis["requirements"]:
+        historical = "historical version restrictions" in row["text"]
+        requirements.append({"task_ref": row["task_ref"],
+            "question_refs": ([] if reject else ["q2"]) if historical else ["q1"],
+            "report_paths": ([] if reject else ["report_sections.counter[0]"]) if historical else ["summary"],
+            "state": ("missing" if reject else "acknowledged_gap") if historical else "addressed",
+            "reason": "Version evidence is missing." if historical else "Explicit writer limit."})
+    return {"requirements": requirements,
+        "investigations": [{"ref": ref, "question_ref": row["question_ref"], "verdict": "relevant",
+            "reason": "The investigation targets the registered question."}
+            for row in basis["coverage"] for ref in row["investigations"]],
+        "claims": [{"ref": row["ref"], "units": [{"unit": unit["unit"],
+                    "verdict": "unsupported" if reject else "supported",
+                    "quotes": [] if reject else [{"evidence": 1, "quote": "Only one writer at a time."}],
                     "reason": "The excerpt permits only one writer; concurrent writers are unsupported." if reject else
-                              "The excerpt explicitly permits only one writer."} for row in basis["claims"]],
-        "paragraphs": [{"path": row["path"], "verdict": "unsupported" if reject else "supported",
-                        "reason": "Check writer limit and stated gaps."} for row in basis["paragraphs"]]}
+                              "The excerpt explicitly permits only one writer."} for unit in row["units"]]}
+                   for row in basis["claims"]],
+        "paragraphs": [{"path": row["path"], "units": [{"unit": unit["unit"],
+            "verdict": "unsupported" if reject else "supported",
+            "basis": "findings" if row["refs"] else "gap",
+            "finding_units": [{"ref": ref, "unit": 1} for ref in row["refs"]],
+            "reason": "Check writer limit and stated gaps."} for unit in row["units"]]}
+            for row in basis["paragraphs"]]}
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_reported_conditions_cannot_disappear_from_the_frozen_review_scope(tmp_path):
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        execute(delegate, tools, session, "open_url", {"url": URL})
+        execute(delegate, tools, session, "save_finding", {
+            "claim": "Only one writer can write at a time.", "source_ref": "s1",
+            "passage_ref": next(iter(tools.ledger.read_passages)), "conditions": [
+                {"name": "host", "state": "reported", "value": "same host only"},
+                {"name": "workload", "state": "not_extracted"}]})
+        report = compile_finding_report(report_args("f1"), tools.ledger, store)
+        basis = review_basis(report, tools, "Explain writer concurrency.")
+        assert review_scope(report, basis["task"])["claims"][0]["units"] == basis["claims"][0]["units"]
+        units = basis["claims"][0]["units"]
+        assert len(units) == 2 and units[-1]["field"] == "conditions.host"
+        assert "same host only" in units[-1]["text"]
+        raw = assessment(basis, reject=True)
+        raw["claims"][0]["units"].pop()
+        with pytest.raises(ValueError, match="every frozen claim unit"):
+            parse_review(json.dumps(raw), basis)
+    finally:
+        store.close()
 
 
 @pytest.mark.usefixtures("public_source_dns")
@@ -45,12 +114,16 @@ def test_review_uses_full_exact_excerpt_and_rejects_missing_duplicate_or_forged_
         raw = assessment(basis, reject=True)
         parsed = parse_review(json.dumps(raw), basis)
         assert {row["kind"] for row in review_issues(parsed)} == {"task_coverage", "claim_support", "report_scope"}
-        assert review_issues(parsed)[0]["requirement_kind"] == "research"
+        assert review_issues(parsed)[0]["task_ref"] == "r2"
         for mutation in (lambda row: row["claims"].clear(),
                          lambda row: row["paragraphs"].append(row["paragraphs"][0]),
-                         lambda row: row["requirements"][0].update(task_excerpt="invented task requirement"),
+                         lambda row: row["requirements"][0].update(task_ref="invented task requirement"),
                          lambda row: row["requirements"][0].update(question_refs=[]),
-                         lambda row: row["claims"][0].update(verdict="probably")):
+                         lambda row: row["requirements"].pop(),
+                         lambda row: row["requirements"].__setitem__(1, row["requirements"][0]),
+                         lambda row: row["requirements"][0].update(kind="delivery"),
+                         lambda row: row["claims"][0]["units"][0].update(verdict="probably"),
+                         lambda row: row["claims"][0]["units"].clear()):
             corrupt = copy.deepcopy(raw)
             mutation(corrupt)
             with pytest.raises(ValueError):
@@ -180,6 +253,10 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
                 args["report_sections"]["counter"] = ["Historical version restrictions remain an evidence gap."]
                 args["report_sections"]["coverage"].append({"question_ref": "q2", "state": "not_investigated",
                     "answer": "Historical version restrictions remain unknown.", "findings": [], "investigations": []})
+            from codey.research.questions import QUESTION_BOUND_TOOLS
+
+            if name in QUESTION_BOUND_TOOLS:
+                args["question_ref"] = "q1"
             return json.dumps({"tool": name, "args": args})
 
     store = KnowledgeStore(root / "knowledge")
@@ -252,8 +329,7 @@ def test_shared_driver_repairs_coverage_and_support_before_publication(tmp_path,
         replace(result, completion_proof=None),
         replace(result, synthesis_id="another-answer"),
         replace(result, semantic_review={**result.semantic_review, "assessment": assessment(
-            {"claims": [{"ref": ref} for ref in result.accepted_report.reference_metadata],
-             "paragraphs": result.accepted_report.paragraph_bindings}, reject=True)}),
+            review_scope(result.accepted_report, result.question), reject=True)}),
         replace(result, semantic_review={**result.semantic_review, "result_ref": "another-result"}),
     ):
         with pytest.raises(ValueError):

@@ -42,6 +42,10 @@ def setup(tmp_path):
 
 
 def execute(delegate, tools, session, name, args):
+    from codey.research.questions import QUESTION_BOUND_TOOLS
+
+    if name in QUESTION_BOUND_TOOLS and tools.ledger.questions:
+        args = {"question_ref": "q1", **args}
     call = ToolCall(name, args)
     result, ok, _ = delegate._execute_research(call)
     if name == "open_url":
@@ -66,7 +70,7 @@ def test_real_dispatch_save_restart_and_exact_idempotency(tmp_path, claim):
         opened = execute(delegate, tools, session, "open_url", {"url": URL})
         passage = next(iter(tools.ledger.read_passages))
         assert f"passage_ref={passage}" in opened.model_text
-        args = {"claim": claim, "source_ref": "s1", "passage_ref": passage,
+        args = {"question_ref": "q1", "claim": claim, "source_ref": "s1", "passage_ref": passage,
                 "conditions": [{"name": "mode", "state": "not_extracted"}]}
         result = execute(delegate, tools, session, "save_finding", args)
         assert result.ok, result.model_text
@@ -80,6 +84,12 @@ def test_real_dispatch_save_restart_and_exact_idempotency(tmp_path, claim):
         # Reconstruct the read bindings through the committed receipt alone.
         recovered = ResearchLedger()
         restored_session = TaskSession(session.policy, task_kind="research")
+        from codey.runtime.core.models import ToolResult
+
+        plan_call = ToolCall("research_plan", {"questions": list(tools.ledger.questions)})
+        plan_result = ToolResult(ok=True, call=plan_call, model_text="Registered questions",
+            canonical={"research_observation": {"questions": list(tools.ledger.questions)}})
+        project_result_observation(restored_session, plan_call, plan_result, ok=True, research_ledger=recovered)
         project_result_observation(restored_session, opened.call, opened, ok=True, research_ledger=recovered)
         project_result_observation(restored_session, result.call, result, ok=True, research_ledger=recovered)
         assert recovered.read_passages[passage].excerpt == TEXT
@@ -171,7 +181,6 @@ def report_args(ref):
     return {"summary": f"Only one writer can write at a time. [{ref}]", "report_sections": {
         "evidence": [f"Only one writer can write at a time. [{ref}]"],
         "counter": ["本轮尚未调查反证，仍有证据缺口。"],
-        "source_quality": [f"Original documentation; interpretation remains unreviewed. [{ref}]"],
         "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Writer concurrency answered; version boundaries remain unknown.", "findings": [ref], "investigations": []}]}}
 
 
@@ -294,6 +303,10 @@ def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path
                     "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))}
             else:
                 name, args = "done", report_args(next(iter(tools.ledger.references)))
+            from codey.research.questions import QUESTION_BOUND_TOOLS
+
+            if name in QUESTION_BOUND_TOOLS:
+                args["question_ref"] = "q1"
             return (AssistantTurn(tool_calls=(ProviderToolCall(f"call-{self.turns}", name, args),)) if native else
                     json.dumps({"tool": name, "args": args}))
 

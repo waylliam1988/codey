@@ -90,7 +90,7 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
         opened = set(getattr(session, "opened_sources", set()) or set())
         evidence = list(getattr(session, "evidence", []) or [])
         if not getattr(session, "research_questions", ()):
-            base = ("research_plan", "knowledge_search", "knowledge_read", "done")
+            base = ("research_plan", "done")
         elif not results and not opened:
             base = ("knowledge_search", "knowledge_read", "web_search", "open_url", "save_inference", "done")
         elif not opened:
@@ -209,11 +209,15 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
         raise ValueError("model exposure must narrow the authorized tool inventory")
     names = tuple(name for name in authorized if exposure is None or name in exposure)
     frozen = _frozen_specs_for_names(authorized)
-    from codey.research.tool_contract import done_spec_for_purpose
+    from codey.research.tool_contract import done_spec_for_purpose, question_bound_spec
 
     purpose = ("evidence" if getattr(session, "task_kind", "") == "evidence_followup" else
                "report" if session.policy.strict_research else "ordinary")
     frozen = tuple(done_spec_for_purpose(spec, purpose) if spec.name == "done" else spec for spec in frozen)
+    from codey.research.questions import requires_question_ref
+
+    if requires_question_ref(session):
+        frozen = tuple(question_bound_spec(spec, required=True) for spec in frozen)
     nested: tuple[str, ...] = ()
     if "codemode" in names:
         from codey.codemode.catalog import build_codemode_catalog, render_declarations
@@ -381,7 +385,7 @@ def _validate_research_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, 
         value = str(args.get(id_key, "") or "").strip()
         if not value:
             return {}, f"{tool} missing required arg '{id_key}'"
-        return {id_key: value}, ""
+        return {**args, id_key: value}, ""
     if tool == "source_search" and "source_id" in args:
         # Controller alias form: source_id resolves via controller state at
         # execution time; here only require a non-empty id and query.
@@ -391,7 +395,7 @@ def _validate_research_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, 
             return {}, "source_search missing required arg 'source_id'"
         if not query:
             return {}, "source_search missing required arg 'query'"
-        return {"source_id": sid, "query": query}, ""
+        return {**args, "source_id": sid, "query": query}, ""
     try:
         from codey.research.tool_contract import validate_tool_args
     except Exception as exc:

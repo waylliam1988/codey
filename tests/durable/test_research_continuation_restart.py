@@ -58,7 +58,7 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
             attempt = state().writer_attempt
             append("request", attempt=attempt)
             if attempt == 1:
-                return json.dumps({"tool": "web_search", "args": {"query": "initial research"}})
+                return json.dumps({"tool": "research_plan", "args": {"questions": ["Which recovery evidence is durable?"]}})
             if attempt > 1 and attempt % 2:
                 return json.dumps({"tool": "done", "args": {"summary": "Synthesized saved evidence; gaps remain explicit."}})
             if attempt == 2 and failure is not None:
@@ -69,9 +69,9 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
             url = f"https://example.com/source-{round_index}"
             rows = [json.loads(row) for row in (root / "observations.jsonl").read_text(encoding="utf-8").splitlines()]
             if not any(row.get("query") == f"followup {round_index}" for row in rows):
-                return json.dumps({"tool": "web_search", "args": {"query": f"followup {round_index}"}})
+                return json.dumps({"tool": "web_search", "args": {"query": f"followup {round_index}", "question_ref": "q1"}})
             if not any(row.get("url") == url for row in rows):
-                return json.dumps({"tool": "open_url", "args": {"url": url}})
+                return json.dumps({"tool": "open_url", "args": {"url": url, "question_ref": "q1"}})
             excerpt = f"Recovery evidence number {round_index} is durable."
             if store.search_notes(excerpt):
                 return json.dumps({"tool": "done", "args": {"summary": "Evidence saved."}})
@@ -81,13 +81,11 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
 
             ref = passage_ref(url, hashlib.sha256(excerpt.encode()).hexdigest()[:16], 0, len(excerpt))
             return json.dumps({"tool": "save_finding", "args": {
-                "claim": excerpt, "source_ref": "s1", "passage_ref": ref}})
+                "claim": excerpt, "source_ref": "s1", "passage_ref": ref, "question_ref": "q1"}})
 
     class Search:
         def search(self, query, limit=8):
             append("search", query=query)
-            if query == "initial research":
-                return []
             number = query.rsplit(" ", 1)[-1]
             return [{"title": f"Source {number}", "url": f"https://example.com/source-{number}",
                      "snippet": f"Recovery evidence number {number} is durable."}]
@@ -208,7 +206,7 @@ def test_research_restart_preserves_material_invocations_and_note_ids(tmp_path, 
     assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4, 5]
     assert state.turns_used + state.logical_turn == 10
     assert [row["query"] for row in observations if row["event"] == "search"] == [
-        "initial research", "followup 1", "followup 2"]
+        "followup 1", "followup 2"]
     assert [row["url"] for row in observations if row["event"] == "fetch"] == [
         "https://example.com/source-1", "https://example.com/source-2"]
     assert set(row["identity"] for row in observations if row["event"] == "write") == set(first.final_result.notes_created)
@@ -418,7 +416,7 @@ def test_lost_continuation_commit_acknowledgement_never_reacquires_material(tmp_
     assert result.followup_rounds == 2
     observations = [json.loads(row) for row in (tmp_path / "observations.jsonl").read_bytes().splitlines()]
     assert [row["query"] for row in observations if row["event"] == "search"] == [
-        "initial research", "followup 1", "followup 2"]
+        "followup 1", "followup 2"]
     assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4, 5]
 
 
@@ -487,7 +485,7 @@ def test_failed_followup_retains_original_attempt_and_provider_diagnostic(tmp_pa
         # that bounded invocation before admitting the explicit repair.
         assert [row["attempt"] for row in observations if row["event"] == "request"] == [1, 2, 2, 2, 2, 4, 4, 4, 4, 5]
         assert [row["query"] for row in observations if row["event"] == "search"] == [
-            "initial research", "followup 1", "followup 2"]
+            "followup 1", "followup 2"]
     else:
         for _ in range(2):
             with pytest.raises(ResearchContinuationError, match="external_outcome_unknown"):

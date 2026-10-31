@@ -462,6 +462,7 @@
     "codey/research/source_search.py",
     "codey/research/source_trust.py",
     "codey/research/synthesis.py",
+    "codey/research/task_requirements.py",
     "codey/research/text_args.py",
     "codey/research/tool_contract.py",
     "codey/research/tools.py",

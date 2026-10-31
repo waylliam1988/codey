@@ -181,7 +181,9 @@ def _research_specs() -> dict[str, ToolSpec]:
             executor="source",
             replay_class="safe",
         )
-    return specs
+    from codey.research.tool_contract import question_bound_spec
+
+    return {name: question_bound_spec(spec) for name, spec in specs.items()}
 
 
 def _all_specs() -> dict[str, ToolSpec]:
@@ -772,7 +774,7 @@ def _builtin_alias_allowed_keys(tool: str) -> set[str] | None:
         return {"command", "cmd", "path", "cwd"}
     if name == "source_search":
         # Controller alias form: source_id + query without url.
-        return {"url", "query", "limit", "source_id"}
+        return {"url", "query", "limit", "source_id", "question_ref"}
     return None
 
 
@@ -788,9 +790,7 @@ def _builtin_required_satisfied(tool: str, required: tuple[str, ...], args: dict
     }
     # source_search special: source_id + query satisfies without url.
     if name == "source_search" and "source_id" in args:
-        if "query" not in args:
-            return "query"
-        return ""
+        required = tuple(key for key in required if key != "url")
     for key in required:
         candidates = groups.get(key, (key,))
         found = False

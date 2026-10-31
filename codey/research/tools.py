@@ -228,7 +228,7 @@ class ResearchTools:
             lines.append(f"[{row['type']}] {row['title']} (id={row['id']}, {status}; legacy document, verify evidence)\n   {snippet}".rstrip())
         return ResearchToolOutput("\n".join(lines), ok=True)
 
-    def knowledge_read(self, note_id: str, *, revision: int | None = None) -> ResearchToolOutput:
+    def knowledge_read(self, note_id: str, *, revision: int | None = None, question_ref: str = "") -> ResearchToolOutput:
         if self.store is None:
             return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         binding = self.ledger.references.get(note_id)
@@ -246,7 +246,9 @@ class ResearchTools:
             if version.value.kind in {"claim", "inference", "observation"} and payload["content_complete"]:
                 from codey.research.references import bind_version
 
-                payload["finding_ref"] = bind_version(self.ledger, version)
+                payload["finding_ref"] = bind_version(self.ledger, version, question_ref=question_ref,
+                    **({"acquisition": binding.acquisition, "note_id": binding.note_id,
+                        "passage_ref": binding.passage_ref} if binding else {}))
                 from codey.research.evidence_view import reference_evidence_preview
 
                 payload.update(reference_evidence_preview(self.ledger, self.store, payload["finding_ref"],

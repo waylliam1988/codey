@@ -63,7 +63,7 @@ def test_accepted_queue_validates_original_inputs_and_never_falls_back_to_legacy
     gate = ResearchCompletionGate()
     review = result.semantic_review
     corrupt_review = copy.deepcopy(review)
-    corrupt_review["assessment"]["claims"][0]["verdict"] = "unsupported"
+    corrupt_review["assessment"]["claims"][0]["units"][0]["verdict"] = "unsupported"
     corrupt_proofs = [replace(result.completion_proof, **mutation) for mutation in (
         {"proof_id": "completion_proof:other"}, {"contract_id": "completion_contract:other"},
         {"domain": "coding"}, {"subject_ref": "run:other:task:research"},

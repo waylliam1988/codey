@@ -24,13 +24,12 @@ class ResearchReportProposal:
     conclusion: ReportParagraph
     evidence: tuple[ReportParagraph, ...]
     counter: tuple[ReportParagraph, ...]
-    source_quality: tuple[ReportParagraph, ...]
     coverage: tuple[dict[str, Any], ...]
     coverage_answers: tuple[ReportParagraph, ...]
 
     @property
     def paragraphs(self) -> tuple[ReportParagraph, ...]:
-        return (self.conclusion, *self.evidence, *self.counter, *self.source_quality, *self.coverage_answers)
+        return (self.conclusion, *self.evidence, *self.counter, *self.coverage_answers)
 
     @property
     def selected_refs(self) -> tuple[str, ...]:
@@ -40,8 +39,8 @@ class ResearchReportProposal:
 
 def parse_report_proposal(args: dict[str, Any]) -> ResearchReportProposal:
     raw_sections = args.get("report_sections")
-    if not isinstance(raw_sections, dict) or set(raw_sections) != {"evidence", "counter", "source_quality", "coverage"}:
-        raise ResearchIssue("report_structure", "report_sections", "requires exactly evidence, counter, source_quality, coverage")
+    if not isinstance(raw_sections, dict) or set(raw_sections) != {"evidence", "counter", "coverage"}:
+        raise ResearchIssue("report_structure", "report_sections", "requires exactly evidence, counter, coverage; source quality is generated from pinned metadata")
 
     sections: dict[str, Any] = raw_sections
 
@@ -60,6 +59,6 @@ def parse_report_proposal(args: dict[str, Any]) -> ResearchReportProposal:
         return tuple(paragraph(f"report_sections.{key}[{index}]", text) for index, text in enumerate(sections[key]))
 
     return ResearchReportProposal(paragraph("summary", summary), paragraphs("evidence"), paragraphs("counter"),
-                                  paragraphs("source_quality"), tuple(dict(row) for row in sections["coverage"]),
+                                  tuple(dict(row) for row in sections["coverage"]),
                                   tuple(paragraph(f"report_sections.coverage[{index}].answer", row["answer"])
                                         for index, row in enumerate(sections["coverage"])))

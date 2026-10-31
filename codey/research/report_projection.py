@@ -30,13 +30,11 @@ def validate_accepted_projection(result: Any, *, run_id: str, session_id: str, p
             or not assessment.get("result_ref")):
         raise ValueError("accepted report lacks its matching completed model assessment")
     from codey.knowledge.model import canonical_json
-    from codey.research.semantic_review import parse_review, review_issues
+    from codey.research.semantic_review import parse_review_scope, review_issues, review_scope
 
-    judgments = parse_review(canonical_json(assessment["assessment"]), {
-        "task": result.question, "questions": compiled.questions,
-        "claims": [{"ref": ref} for ref in compiled.reference_metadata], "paragraphs": compiled.paragraph_bindings})
+    judgments = parse_review_scope(canonical_json(assessment["assessment"]), review_scope(compiled, result.question))
     proof = result.completion_proof
-    required = {"task_coverage_assessed", "claim_support_assessed", "report_scope_assessed"}
+    required = {"task_coverage_assessed", "investigation_relevance_assessed", "claim_support_assessed", "report_scope_assessed"}
     writer_checks = {"research_citations", "research_sources_opened", "research_evidence_saved",
                      "research_report_sections", "research_claim_bindings", "research_question_coverage"}
     if (review_issues(judgments) or not isinstance(proof, CompletionProof) or not proof.satisfied

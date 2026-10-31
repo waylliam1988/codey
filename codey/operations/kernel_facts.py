@@ -46,13 +46,17 @@ def project_result_observation(
             from codey.research.passages import restore_passages
 
             restore_passages(research_ledger, observation, result.canonical["read_passages"])
-    if research_ledger is not None and call.name in {
-        "web_search", "open_url", "open_result", "reopen_source", "open_hit", "source_search", "knowledge_read"
-    } and not denied_before_execution(result):
+    from codey.research.questions import INVESTIGATION_TOOLS
+
+    if research_ledger is not None and call.name in INVESTIGATION_TOOLS and not denied_before_execution(result):
         # Called exactly once for each settled effect by live and restart projection.
         ref = f"a{len(research_ledger.investigations) + 1}"
+        passages = result.canonical.get("read_passages", [])
+        if not isinstance(passages, list):
+            raise ValueError("investigation read passages must be an array")
         research_ledger.investigations[ref] = {"tool": call.name, "ok": ok,
-                                              "args": dict(call.args or {})}
+            "question_ref": call.args.get("question_ref", ""), "args": dict(call.args or {}),
+            "passage_refs": [row["ref"] for row in passages] if ok else []}
     record_facts_for_result(session, call, result, ok=ok, exit_code=exit_code)
 
 

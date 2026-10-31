@@ -66,7 +66,7 @@ def test_each_gap_requires_its_own_selected_real_investigation_record():
     searched = {**second, "state": "unanswered_after_search", "investigations": ["a1"]}
     with pytest.raises(ValueError, match="unknown investigation a1"):
         validate_question_coverage([first, searched], ledger)
-    ledger.investigations["a1"] = {"tool": "web_search", "ok": False, "args": {"query": "checkpoint limits"}}
+    ledger.investigations["a1"] = {"tool": "web_search", "question_ref": "q2", "ok": False, "args": {"query": "checkpoint limits"}}
     assert validate_question_coverage([first, searched], ledger)[1]["investigations"] == ["a1"]
     # Existence is mechanical; semantic relevance of a1 to q2 is not certified.
     with pytest.raises(ValueError, match="actual investigations"):
@@ -255,9 +255,9 @@ def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_
                 if self.turn == 1:
                     name, args = "research_plan", {"questions": ["What limits writer concurrency?"]}
                 elif self.turn == 2:
-                    name, args = "knowledge_read", {"id": claim_id, "revision": 1}
+                    name, args = "knowledge_read", {"id": claim_id, "revision": 1, "question_ref": "q1"}
                 elif inference and self.turn == 3:
-                    name, args = "save_inference", {"statement": hypothesis, "premise_refs": ["f1"],
+                    name, args = "save_inference", {"statement": hypothesis, "premise_refs": ["f1"], "question_ref": "q1",
                         "limitations": "No direct workload test; this is only a candidate connection."}
                 else:
                     name, args = "done", report_args("f1")

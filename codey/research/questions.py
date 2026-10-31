@@ -10,6 +10,25 @@ if TYPE_CHECKING:
     from codey.research.ledger import ResearchLedger
 
 
+INVESTIGATION_TOOLS = frozenset({"web_search", "open_url", "open_result", "reopen_source", "open_hit",
+                                 "source_search", "knowledge_search", "knowledge_read"})
+QUESTION_BOUND_TOOLS = INVESTIGATION_TOOLS | {"save_finding", "save_inference"}
+
+
+def requires_question_ref(session: Any) -> bool:
+    return bool(getattr(getattr(session, "policy", None), "strict_research", False)
+                or getattr(session, "research_acquisition_limits", None) is not None)
+
+
+def question_ref(args: dict[str, Any], ledger: ResearchLedger, *, required: bool = False) -> str:
+    ref = args.get("question_ref", "")
+    if ref == "" and not required:
+        return ""
+    if not isinstance(ref, str) or ref not in {f"q{n}" for n in range(1, len(ledger.questions) + 1)}:
+        raise ValueError("question_ref must name a registered qN; call research_plan first and select the question explicitly")
+    return ref
+
+
 def question_plan(raw: object, previous: tuple[str, ...] = ()) -> tuple[str, ...]:
     if (not isinstance(raw, list) or not 1 <= len(raw) <= 8
             or any(not isinstance(text, str) or not 1 <= len(text.strip()) <= 800 for text in raw)
@@ -51,7 +70,18 @@ def validate_question_coverage(raw: object, ledger: ResearchLedger) -> list[dict
         for attempt in row["investigations"]:
             if attempt not in ledger.investigations:
                 raise ValueError(f"report_sections.coverage[{index}].investigations: unknown investigation {attempt}")
+            if ledger.investigations[attempt].get("question_ref") != row["question_ref"]:
+                available = [label for label, receipt in ledger.investigations.items()
+                             if receipt.get("question_ref") == row["question_ref"]]
+                raise ValueError(f"{path}: investigation {attempt} belongs to another question; "
+                    "actual receipts for this question: " + ", ".join(available)
+                    + ". Select the relevant original receipt, or investigate with this question_ref.")
         for ref in row["findings"]:
             if ref not in ledger.references:
                 raise ValueError(f"report_sections.coverage[{index}].findings: unknown finding {ref}")
+            if ledger.references[ref].question_ref != row["question_ref"]:
+                available = [label for label, binding in ledger.references.items() if binding.question_ref == row["question_ref"]]
+                raise ValueError(f"{path}: finding {ref} belongs to another question ({ledger.references[ref].question_ref}); "
+                    "read it explicitly for this question. Existing findings for this question: " + ", ".join(available)
+                    + ". Use only actual successful finding_ref receipts; rejected saves allocate no fN.")
     return rows

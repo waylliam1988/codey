@@ -25,12 +25,16 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         "Keep claims no stronger than evidence: preserve objects, comparators, conditions and uncertainty. "
         "Saving or valid citations do not certify interpretation. Old answers, Ghost affinity and graph proximity are not evidence.",
         "Register 1..8 questions with research_plan. Account for every qN exactly once, with a supported answer or a specific gap. "
-        "Select actual aN investigation receipts for the question; a receipt proves an attempt, not semantic coverage.",
+        "Pass question_ref=qN on every investigation, save_finding and save_inference. Coverage may use only aN and fN "
+        "bound to that question. Read passages for that question before saving. A receipt proves an attempt, not semantic coverage.",
         "Use only explicitly adopted [fN] references from successful saves or complete knowledge reads. "
         "Historical knowledge may answer the question without new acquisition. A candidate inference remains a hypothesis.",
-        "done.summary is the cited conclusion. report_sections contains evidence, counter, source_quality paragraphs and "
+        "done.summary is the cited conclusion. report_sections contains evidence, counter paragraphs and "
         "structured coverage. The frozen tool contract defines fields; the application generates headings and sources. "
-        "In counter cite observed limits or describe actual investigation gaps. Never infer absence from an unperformed search.",
+        "Source quality is generated from pinned metadata; retrieval time does not establish release version or publication date. "
+        "In counter cite observed limits or describe actual investigation gaps. Never infer absence from an unperformed search. "
+        "A selected excerpt omitting a topic does not prove that the whole source did not discuss or evaluate it. "
+        "State the selected evidence's scope or the specific unanswered question instead.",
         "After rejection fix the specified field. Acquire new evidence only when needed; do not repeat unchanged reports or writes.",
     ]
     if policy.allows("knowledge.write"):

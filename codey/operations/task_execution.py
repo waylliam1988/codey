@@ -469,6 +469,15 @@ class ExecutionDelegate:
         tools = self._observation_tools(source_read=name in {"open_url", "open_result", "reopen_source", "open_hit"})
         args = dict(call.args or {})
         try:
+            from codey.research.questions import QUESTION_BOUND_TOOLS, question_ref, requires_question_ref
+
+            if name in QUESTION_BOUND_TOOLS:
+                try:
+                    question_ref(args, self.research_tools.ledger, required=requires_question_ref(self.session))
+                except ValueError as exc:
+                    from codey.operations.kernel_result import policy_denial_result
+
+                    return policy_denial_result(call, str(exc), reason_code="research_question_required"), False, None
             if name == "research_plan":
                 outcome = tools.research_plan(args.get("questions"))
                 canonical = {"research_observation": {"questions": list(tools.ledger.questions)}} if outcome.ok else {}
@@ -532,7 +541,8 @@ class ExecutionDelegate:
                 outcome = tools.knowledge_search(first_text_arg(args, "query"), depth=args.get("depth", 1))
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
             if name == "knowledge_read":
-                outcome = tools.knowledge_read(str(args.get("id") or ""), revision=args.get("revision"))
+                outcome = tools.knowledge_read(str(args.get("id") or ""), revision=args.get("revision"),
+                                               question_ref=question_ref(args, tools.ledger))
                 canonical = {"research_reference_bindings": {k: v.to_dict() for k, v in tools.ledger.references.items()}} if outcome.ok else {}
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
             if name == "knowledge_commit":

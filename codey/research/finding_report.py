@@ -104,6 +104,8 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
                     "acquisition": evidence.acquisition,
                     "content_hash": source.value.provenance.get("content_hash", ""),
                     "quality": source.value.provenance.get("quality", {}),
+                    "publication_date": source.value.provenance.get("publication_date", "unknown"),
+                    "release_version": source.value.provenance.get("release_version", "unknown"),
                     "retrieved_at": source.value.provenance.get("retrieved_at", source.recorded_at)}
             if sources[key]["number"] not in numbers:
                 numbers.append(sources[key]["number"])
@@ -117,7 +119,7 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
 
     sections = {"conclusion": replace(proposal.conclusion.text),
         **{key: "\n\n".join(replace(row.text) for row in getattr(proposal, key))
-           for key in ("evidence", "counter", "source_quality")},
+           for key in ("evidence", "counter")},
         "coverage": render_coverage([{**row, "answer": replace(row["answer"])} for row in proposal.coverage],
                                     questions, render_ref=lambda label: replacements[label])}
     if queries:
@@ -134,7 +136,15 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
             notes.append(f"{item.label} 当前记录状态为 {value.status}，须按其限制解读。")
         if value.kind == "inference" and value.provenance.get("limitations"):
             notes.append(f"候选推论 {item.label} 的限制：{value.provenance['limitations']}")
-    sections["source_quality"] += "\n\n" + "\n".join(notes)
+    quality_lines = []
+    for row in sources.values():
+        quality = row["quality"]
+        quality_lines.append(f"[{row['number']}] " + canonical_json({
+            "level_hint": quality.get("level", "unknown"), "kind_hint": quality.get("kind", "unknown"),
+            "freshness_hint": quality.get("freshness", "unknown"), "retrieved_at": row["retrieved_at"],
+            "publication_date": row["publication_date"], "release_version": row["release_version"], "acquisition": row["acquisition"],
+            "source_revision": row["revision"], "content_hash": row["content_hash"]}))
+    sections["source_quality"] = "\n".join(quality_lines + notes)
     source_lines = []
     for row in sources.values():
         origin = "（已保存的精确来源版本，本轮未重新获取）" if row["acquisition"] == "prior_knowledge" else ""
@@ -159,14 +169,22 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
     validate_report_bindings(proposal, resolved)
     text, sources = render_report(proposal, resolved, ledger.questions, tuple(row.query for row in ledger.searches))
     metadata = {item.label: {"id": item.version.value.id, "revision": item.version.revision,
+        "claim": item.version.value.content,
+        "question_ref": item.binding.question_ref,
         "kind": item.version.value.kind, "status": item.version.value.status,
         "interpretation_review": item.version.interpretation_review,
         "dependencies_changed": item.version.dependencies_changed, "conditions": item.version.value.conditions,
         "origin": item.version.value.origin, "acquisition": item.binding.acquisition,
         "limitations": item.version.value.provenance.get("limitations", "")}
         for item in resolved}
-    paragraphs = tuple({"path": row.path, "text": row.text, "refs": list(row.refs),
-        "kinds": [metadata[label]["kind"] for label in row.refs]} for row in proposal.paragraphs)
+    coverage_refs = {answer.path: tuple(coverage["findings"])
+                     for answer, coverage in zip(proposal.coverage_answers, proposal.coverage, strict=True)}
+    paragraphs = []
+    for row in proposal.paragraphs:
+        # Coverage renders its structured findings as citations, even without inline labels.
+        refs = coverage_refs.get(row.path, row.refs)
+        paragraphs.append({"path": row.path, "text": row.text, "refs": list(refs),
+                           "kinds": [metadata[label]["kind"] for label in refs]})
     evidence_bindings = tuple({"label": item.label, "claim_id": ev.claim.value.id,
         "claim_revision": ev.claim.revision, "evidence_id": ev.evidence.value.id,
         "evidence_revision": ev.evidence.revision, "source_id": ev.source.value.id,
@@ -177,4 +195,4 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
         for item in resolved for ev in item.evidence)
     return FindingReport(text, tuple({"id": item.version.value.id, "revision": item.version.revision} for item in resolved),
         tuple(dict.fromkeys(item.binding.note_id for item in resolved if item.binding.note_id)),
-        proposal.coverage, metadata, sources, paragraphs, _digest(args), ledger.questions, evidence_bindings, tuple(args.get("open_questions", ())))
+        proposal.coverage, metadata, sources, tuple(paragraphs), _digest(args), ledger.questions, evidence_bindings, tuple(args.get("open_questions", ())))

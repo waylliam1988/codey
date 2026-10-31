@@ -30,7 +30,7 @@ def _bounded(row: dict[str, Any], budget: int) -> dict[str, Any]:
     if len(canonical_json(row)) <= budget:
         return row
     preview = {key: value for key, value in row.items()
-               if key in {"ref", "kind", "status", "interpretation_review", "dependencies_changed", "evidence_basis"}}
+               if key in {"ref", "question_ref", "kind", "status", "interpretation_review", "dependencies_changed", "evidence_basis"}}
     preview.update(display_truncated=True, detail_available=True)
     # Give original evidence room before filling the remainder with model text.
     for key in ("excerpt", "text", "conditions", "limitations"):
@@ -60,6 +60,7 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
         **({"error": result.model_text[:400]} if not result.ok else {})}
         for result in list(session._memory_results.values())[-4:])
     attempts = tuple({"ref": label, "tool": row["tool"], "ok": row["ok"],
+        "question_ref": row.get("question_ref", ""),
         "target": str(next((row.get("args", {}).get(key) for key in
             ("query", "url", "source_ref", "result_ref") if row.get("args", {}).get(key)), ""))[:180]}
         for label, row in (list(ledger.investigations.items())[-8:] if ledger is not None else []))
@@ -89,6 +90,8 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
                     "excerpt": items[0].excerpt if items else "", "detail_available": True})
     # Questions keep their full conditions. Drop optional receipts first; if
     # even the questions exceed the hard cap, emit an explicit incomplete view.
+    for row in rows:
+        row["question_ref"] = ledger.references[row["ref"]].question_ref
     saved = len(ledger.evidence_items) if ledger is not None else len(session.evidence)
     base = ResearchContextView(questions, (), attempts, recent, saved)
     if len(base.render()) > budget:

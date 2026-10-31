@@ -16,8 +16,11 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
     from codey.research.tools import ResearchToolOutput
 
     try:
-        if set(args) - {"claim", "source_ref", "passage_ref", "additional_passage_refs", "conditions", "comparison"}:
+        if set(args) - {"claim", "source_ref", "passage_ref", "additional_passage_refs", "conditions", "comparison", "question_ref"}:
             raise ValueError("unexpected save_finding argument")
+        from codey.research.questions import question_ref
+
+        question = question_ref(args, tools.ledger)
         claim = args.get("claim")
         if not isinstance(claim, str) or not 12 <= len(claim.strip()) <= 4000:
             raise ValueError("claim requires one complete scoped finding (12..4000 characters)")
@@ -43,6 +46,7 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
                     != (passage.source.final_url, passage.source.text_hash, passage.source_text)):
                 raise ValueError("all passages must have been read from the same exact source version; nothing saved")
             passages.append(other)
+        _validate_passage_question(tools.ledger, [selected.ref for selected in passages], question)
         conditions = _conditions(args.get("conditions", []))
         comparison = args.get("comparison")
         if comparison is not None:
@@ -79,7 +83,7 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
                     tools.ledger.add_evidence_items([item])
             if identity not in tools.created_ids and identity not in tools.updated_ids:
                 tools.updated_ids.append(identity)
-            return _saved(tools, identity, claim, ref, extra)
+            return _saved(tools, identity, claim, ref, extra, question)
         # A retry reuses the same exact input identity; no fuzzy deduplication.
         lowered: dict[str, Any] = {"type": "fact", "title": claim[:160], "body": claim,
             "sources": [passage.source.final_url], "conditions": conditions,
@@ -95,12 +99,18 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
                                         evidence_context=frozen)
         if not outcome.ok:
             return outcome
-        return _saved(tools, identity, claim, ref, extra)
+        return _saved(tools, identity, claim, ref, extra, question)
     except (ValueError, TypeError, KeyError) as exc:
         return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 
 
-def _saved(tools: ResearchTools, identity: str, claim: str, ref: object, extra: list[str]) -> ResearchToolOutput:
+def _validate_passage_question(ledger: ResearchLedger, refs: list[str], question: str) -> None:
+    if question and any(not any(row.get("question_ref") == question and ref in row.get("passage_refs", [])
+                                for row in ledger.investigations.values()) for ref in refs):
+        raise ValueError("selected passages were not investigated for this question; read them with its question_ref before saving")
+
+
+def _saved(tools: ResearchTools, identity: str, claim: str, ref: object, extra: list[str], question: str) -> ResearchToolOutput:
     from codey.knowledge.archive import stable_identity
     from codey.research.references import bind_version, read_version
     from codey.research.tools import ResearchToolOutput
@@ -108,7 +118,8 @@ def _saved(tools: ResearchTools, identity: str, claim: str, ref: object, extra: 
     version = read_version(tools.store, stable_identity("claim", identity, claim))
     if version is None:
         raise ValueError("saved finding has no exact claim version")
-    label = bind_version(tools.ledger, version, acquisition="current_run", note_id=identity, passage_ref=str(ref))
+    label = bind_version(tools.ledger, version, acquisition="current_run", note_id=identity,
+                         passage_ref=str(ref), question_ref=question)
     return ResearchToolOutput(canonical_json({"finding_ref": label, "claim": claim,
         "passage_ref": ref, "additional_passage_refs": extra, "interpretation_review": "unreviewed",
         "next": "Cite [" + label + "] only where you adopt this finding. Saving is not semantic approval."}), ok=True)
