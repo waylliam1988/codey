@@ -26,6 +26,19 @@ def test_text_scope_covers_every_nonblank_character_and_keeps_original_offsets(t
     assert any("https://www.sqlite.org/wal.html" in row["text"] for row in units) == ("https://" in text)
 
 
+@pytest.mark.parametrize("text", [
+    "在 WAL 模式下，同一时刻只能有一个写者。",
+    "Before 3.22.0, read-only opening was impossible; since 3.22.0, specific conditions apply.",
+    "In mice, A beat B, but C was not evaluated.",
+])
+def test_review_sentence_keeps_conditions_subject_and_comparator_together(text):
+    from codey.research.semantic_review import claim_units
+
+    units = claim_units(text, {})
+    assert units == [{"unit": 1, "start": 0, "end": len(text), "text": text}]
+    assert len(task_requirements(text)) > 1
+
+
 def case():
     task = "Explain checkpoint defaults. Distinguish old restrictions."
     claim = "Checkpoint defaults to 1000 pages. FULL waits for readers."

@@ -25,7 +25,7 @@ from codey.research.task_requirements import task_requirements, text_units
 
 
 def claim_units(claim: str, conditions: dict[str, Any]) -> list[dict[str, Any]]:
-    units = text_units(claim)
+    units = text_units(claim, sentences=True)
     for name, condition in conditions.items():
         if condition["state"] == "reported":
             units.append({"unit": len(units) + 1, "field": f"conditions.{name}",
@@ -36,7 +36,7 @@ def claim_units(claim: str, conditions: dict[str, Any]) -> list[dict[str, Any]]:
 def review_scope(report: FindingReport, task: str) -> dict[str, Any]:
     return {"task": task, "requirements": task_requirements(task), "questions": list(report.questions),
         "coverage": list(report.coverage),
-        "paragraphs": [{**row, "units": text_units(FINDING_CITATION.sub("", row["text"]))}
+        "paragraphs": [{**row, "units": text_units(FINDING_CITATION.sub("", row["text"]), sentences=True)}
                        for row in report.paragraph_bindings],
         "claims": [{"ref": ref, "units": claim_units(metadata["claim"], metadata["conditions"])}
                    for ref, metadata in report.reference_metadata.items()]}

@@ -6,13 +6,15 @@ import re
 from typing import Any
 
 _BOUNDARY = re.compile(r"[\n,;!?\u3002\uff0c\uff1b\uff01\uff1f]+|\.(?=\s|$)")
+_SENTENCE_BOUNDARY = re.compile(r"[\n!?\u3002\uff01\uff1f]+|\.(?=\s|$)")
 
 
-def text_units(text: str) -> list[dict[str, Any]]:
+def text_units(text: str, *, sentences: bool = False) -> list[dict[str, Any]]:
     """Retain original offsets, punctuation and whitespace without semantic inference."""
     rows: list[dict[str, Any]] = []
     start = 0
-    for end in [*(match.end() for match in _BOUNDARY.finditer(text)), len(text)]:
+    boundary = _SENTENCE_BOUNDARY if sentences else _BOUNDARY
+    for end in [*(match.end() for match in boundary.finditer(text)), len(text)]:
         span = text[start:end]
         if span.strip():
             rows.append({"unit": len(rows) + 1, "start": start, "end": end, "text": span})
