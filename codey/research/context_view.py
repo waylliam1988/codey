@@ -30,7 +30,8 @@ def _bounded(row: dict[str, Any], budget: int) -> dict[str, Any]:
     if len(canonical_json(row)) <= budget:
         return row
     preview = {key: value for key, value in row.items()
-               if key in {"ref", "question_ref", "kind", "status", "interpretation_review", "dependencies_changed", "evidence_basis"}}
+               if key in {"ref", "question_ref", "kind", "status", "interpretation_review", "dependencies_changed",
+                          "evidence_basis", "passage_refs"}}
     preview.update(display_truncated=True, detail_available=True)
     # Give original evidence room before filling the remainder with model text.
     for key in ("excerpt", "text", "conditions", "limitations"):
@@ -54,7 +55,11 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
                                 budget: int = 14000, session_id: str = "") -> ResearchContextView:
     if budget < 4000:
         raise ValueError("research context budget must be at least 4000 characters")
-    questions = tuple({"question_ref": f"q{index}", "question": text}
+    questions = tuple({"question_ref": f"q{index}", "question": text,
+        "finding_refs": [ref for ref, binding in ledger.references.items() if binding.question_ref == f"q{index}"]
+                        if ledger is not None else [],
+        "investigation_refs": [ref for ref, row in ledger.investigations.items() if row.get("question_ref") == f"q{index}"]
+                              if ledger is not None else []}
         for index, text in enumerate(ledger.questions if ledger is not None else session.research_questions, 1))
     recent = tuple({"tool": result.call.name, "ok": result.ok,
         **({"error": result.model_text[:400]} if not result.ok else {})}
@@ -62,7 +67,7 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
     attempts = tuple({"ref": label, "tool": row["tool"], "ok": row["ok"],
         "question_ref": row.get("question_ref", ""),
         "target": str(next((row.get("args", {}).get(key) for key in
-            ("query", "url", "source_ref", "result_ref") if row.get("args", {}).get(key)), ""))[:180]}
+            ("query", "url", "source_ref", "result_ref", "hit_id") if row.get("args", {}).get(key)), ""))[:180]}
         for label, row in (list(ledger.investigations.items())[-8:] if ledger is not None else []))
     rows = []
     if ledger is not None:
@@ -81,6 +86,8 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
                 preview = reference_evidence_preview(ledger, store, label,
                     project=str(getattr(session, "project", "")), session_id=session_id)
                 rows[-1].update(excerpt="\n".join(row["excerpt"] for row in preview["evidence"]),
+                    passage_refs=list(dict.fromkeys(row["passage_ref"] for row in preview["evidence"]
+                                                   if "passage_ref" in row)),
                     evidence_basis=preview.get("evidence_basis", "unavailable"),
                     evidence_complete=preview["evidence_complete"])
             else:

@@ -133,6 +133,47 @@ def test_old_passage_still_archives_old_source_after_url_changes(tmp_path):
 
 
 @pytest.mark.usefixtures("public_source_dns")
+def test_repair_context_recovers_passage_and_per_question_refs_without_new_reads(tmp_path):
+    from codey.research.context_view import build_research_context_view
+    from codey.research.evidence_view import reference_evidence_preview
+    from codey.research.references import restore_bindings
+
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        tools.ledger.questions += ("What limits readers?",)
+        opened = execute(delegate, tools, session, "open_url", {"url": URL})
+        passage = next(iter(tools.ledger.read_passages))
+        saved = execute(delegate, tools, session, "save_finding", {
+            "claim": "Readers and writers run at the same time; only one writer may proceed.", "passage_ref": passage})
+        finding = json.loads(saved.model_text)["finding_ref"]
+        restored = ResearchLedger()
+        restored.questions = tools.ledger.questions
+        fresh = TaskSession(session.policy, task_kind="research")
+        for receipt in (opened, saved):
+            project_result_observation(fresh, receipt.call, receipt, ok=True, research_ledger=restored)
+        tools.ledger = restored
+        view = build_research_context_view(fresh, restored, store, session_id="first")
+        assert view.references[0]["passage_refs"] == [passage]
+        assert view.questions[0]["finding_refs"] == [finding]
+        assert view.questions[0]["investigation_refs"] == ["a1"]
+        assert view.questions[1]["finding_refs"] == view.questions[1]["investigation_refs"] == []
+        # A fresh repair session uses the already-read exact passage directly.
+        tools.search.fetch = lambda url: pytest.fail("repair must not reread this source")
+        repair = ExecutionDelegate(session=fresh, research_tools=tools)
+        corrected = execute(repair, tools, fresh, "save_finding", {
+            "claim": "Only one writer can write at a time.", "passage_ref": view.references[0]["passage_refs"][0]})
+        assert corrected.ok and len(restored.investigations) == 1
+        # Knowledge alone must not invent a read passage in another run.
+        unread = ResearchLedger()
+        unread.questions = restored.questions
+        restore_bindings(unread, saved.canonical["research_reference_bindings"])
+        preview = reference_evidence_preview(unread, store, finding, project="", session_id="first")
+        assert preview["evidence"] and all("passage_ref" not in row for row in preview["evidence"])
+    finally:
+        store.close()
+
+
+@pytest.mark.usefixtures("public_source_dns")
 def test_forged_unopened_and_cross_source_references_fail_without_writes(tmp_path):
     store, tools, session, delegate = setup(tmp_path)
     try:

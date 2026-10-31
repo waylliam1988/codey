@@ -93,11 +93,18 @@ def reference_evidence_preview(ledger: ResearchLedger, store: Any, label: str, *
         return {"evidence": [], "evidence_issue": str(exc), "evidence_complete": False}
     evidence = []
     for row in resolved.evidence[:3]:
+        locator = str(row.evidence.value.provenance.get("locator", ""))
+        passage = ledger.read_passages.get(locator.removeprefix("passage:")) if locator.startswith("passage:") else None
+        reusable = bool(passage and passage.source.final_url == row.source.value.provenance["url"]
+                        and passage.source_text == row.source.value.content
+                        and passage.excerpt.strip() == row.evidence.value.content.strip())
         evidence.append({"claim_id": row.claim.value.id, "claim_revision": row.claim.revision,
             "evidence_id": row.evidence.value.id, "evidence_revision": row.evidence.revision,
             "source_id": row.source.value.id, "source_revision": row.source.revision,
             "excerpt": row.evidence.value.content[:1200], "excerpt_complete": len(row.evidence.value.content) <= 1200,
-            "relation": row.relation, "acquisition": row.acquisition})
+            "relation": row.relation, "acquisition": row.acquisition,
+            "url": row.source.value.provenance["url"],
+            **({"passage_ref": passage.ref} if reusable and passage else {})})
     return {"evidence": evidence, "evidence_complete": len(resolved.evidence) <= 3 and
             all(row["excerpt_complete"] for row in evidence),
             "evidence_basis": "premises_only" if resolved.version.value.kind == "inference" else "direct_claim_links"}

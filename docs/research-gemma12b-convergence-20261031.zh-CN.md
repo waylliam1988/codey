@@ -414,3 +414,18 @@ passage 身份仍由同一来源快照和真实起止范围生成，恢复仍只
 验证：搜索、读取、引用和回执恢复回归 33 passed，Ruff/Mypy 通过。
 失败原文的 offset=11938 命中现在回到包含 read performance 条件的句首；尾部不再给截断的
 权限条件分配可选 passage。相同段落的多个词命中在实际阅读偏移上去重。
+
+## 32. 修复上下文保留可用的原 passage 和逐问题引用
+
+`wal-full-json-03` 修复先把 f1 当作 passage，遭拒后选择了提示末尾另一个无关 pN。
+原因之一是新 writer 的上下文只显示 claim/excerpt，遗漏了实际已经持久化的 passage 定位；
+最近八项调查之外的 aN 也无法从当前视图确定归属。
+
+原 evidence preview 现在只在 ledger 已含对应读取、且 URL/完整来源快照/片段文本均一致时，
+显示可复用 passage_ref；知识来源自身仍不伪装为本轮读取。工作视图按原 qN 列出完整 fN/aN 绑定，
+每条 finding 携带可用 passage_refs，继续保留上下文总预算和截断标记。
+这些都是原知识和回执的只读投影，不新增引用库、执行记录或保存入口。
+
+验证：真实 dispatch 修复/恢复、上下文预算及来源快照回归 23 passed，Ruff/Mypy 通过。
+新增测试从原读取/保存回执重建全新 session，直接用投影 passage 修正 finding，禁止联网仍成功；
+另一轮只有历史知识而没有读取回执时，不会获得伪造的可复用 passage。
