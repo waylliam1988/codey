@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
@@ -28,6 +30,7 @@ from codey.operations.kernel_contracts import (
     KernelRunRequest,
     KernelTransportDeps,
 )
+from codey.operations.provider_receipts import runtime_implementation_id
 from codey.operations.research_continuation import ResearchContinuation, ResearchInvocation
 from codey.operations.research_review import assess_report
 from codey.operations.task_effects import KernelEffectSink
@@ -42,32 +45,92 @@ from codey.research.semantic_review import review_basis
 from codey.research.tools import ResearchTools
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.manual.kobold_diagnostics import record_native_generation
 
 
-def archived_report(source: Path) -> FindingReport:
+def archived_report(source: Path) -> tuple[FindingReport, str]:
     delivered = (source / "research-report.txt").read_text(encoding="utf-8")
     for path in sorted((source / "state" / "managed_outputs").rglob("*.json")):
         payload = json.loads(path.read_text(encoding="utf-8"))
         report = payload.get("data", {}).get("result", {}).get("research_report")
         if report and report.get("text") == delivered:
-            return FindingReport.from_payload(report)
+            return FindingReport.from_payload(report), path.parent.name
     raise ValueError("archive has no matching frozen accepted compilation")
+
+
+def archived_investigations(source: Path, run_id: str, snapshot: Path):
+    """Replay original settled observations from a read-only archive snapshot."""
+    from codey.operations.kernel_facts import project_result_observation
+    from codey.operations.kernel_receipts import restore_result_receipt
+    from codey.research.ledger import ResearchLedger
+    from codey.research.questions import INVESTIGATION_TOOLS
+    from codey.runtime.effects.effect_records import EFFECT_CATEGORY_TOOL_CALL, RuntimeEffectStore
+
+    database = source / "state" / "durable.sqlite3"
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as original, closing(
+        sqlite3.connect(snapshot)
+    ) as copy:
+        original.backup(copy)
+    durable = DurableSession(SQLiteDurableStore(snapshot))
+    ledger = ResearchLedger()
+    session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.read"})), task_kind="research")
+    try:
+        session_id = durable.task(run_id).conversation_id
+        outputs = ManagedOutputStore(source / "state")
+        for effect in RuntimeEffectStore(durable=durable).load_effects(session_id, run_id):
+            if (effect.intent.effect_category != EFFECT_CATEGORY_TOOL_CALL or effect.settlement is None
+                    or effect.intent.tool_name not in INVESTIGATION_TOOLS):
+                continue
+            result = restore_result_receipt(effect, store=outputs, session_id=session_id, run_id=run_id)
+            project_result_observation(session, result.call, result, ok=result.ok,
+                                       exit_code=effect.settlement.exit_code, research_ledger=ledger)
+        return ledger.investigations
+    finally:
+        durable.close()
+
+
+def calibration_report(store, tools, case):
+    from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference
+    from codey.research.finding_report import compile_finding_report
+    from codey.research.references import bind_version
+
+    url = "https://example.org/synthetic-review-calibration"
+    objects = (
+        KnowledgeObject("calibration-source", "source", case["excerpt"], "source", title="Synthetic calibration",
+                        provenance={"url": url}),
+        KnowledgeObject("calibration-evidence", "evidence", case["excerpt"], "source",
+                        references=(KnowledgeReference("calibration-source", 1, "from_source"),)),
+        KnowledgeObject("calibration-claim", "claim", case["finding"], "model_extraction", status="candidate",
+                        references=(KnowledgeReference("calibration-evidence", 1, "supported_by"),)),
+    )
+    store.commit_knowledge("synthetic-calibration-input", [KnowledgeMutation(value) for value in objects])
+    tools.ledger.questions = (case["question"],)
+    ref = bind_version(tools.ledger, store.repository.read("calibration-claim"), question_ref="q1")
+    paragraph = case["paragraph"] + " [" + ref + "]"
+    args = {"summary": paragraph, "report_sections": {"evidence": [paragraph],
+        "counter": [case["finding"] + " [" + ref + "]"],
+        "coverage": [{"question_ref": "q1", "state": "evidence_found", "answer": paragraph,
+                      "findings": [ref], "investigations": []}]}}
+    return compile_finding_report(args, tools.ledger, store, session_id=tools.session_id)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, required=True)
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument("--source", type=Path)
+    input_group.add_argument("--calibration-case", type=Path,
+                             help="Synthetic controlled excerpt/finding/report JSON; never a live research result")
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--thinking", action="store_true", help="Enable local reasoning for a deployment comparison")
     parser.add_argument("--upstream", default="http://127.0.0.1:5001")
     parser.add_argument("--timeout", type=float, default=180)
     args = parser.parse_args()
-    source, directory = args.source.resolve(), args.directory.resolve()
+    source, directory = args.source.resolve() if args.source else None, args.directory.resolve()
     directory.mkdir(parents=True, exist_ok=False)
-    report = archived_report(source)
-    control = json.loads((source / "research-control.json").read_text(encoding="utf-8"))
-    shutil.copytree(source / "knowledge", directory / "knowledge")
+    case = json.loads(args.calibration_case.read_text(encoding="utf-8")) if args.calibration_case else None
+    if source:
+        shutil.copytree(source / "knowledge", directory / "knowledge")
     store = KnowledgeStore(directory / "knowledge")
     durable = None
     provider = None
@@ -78,29 +141,41 @@ def main() -> None:
     try:
         session_id, run_id = "archive-assessment", "assessment-" + uuid4().hex
         tools = ResearchTools(search=object(), store=store, changes=KnowledgeChanges(store.root), session_id=session_id)
+        if source:
+            report, source_run_id = archived_report(source)
+            control = json.loads((source / "research-control.json").read_text(encoding="utf-8"))
+            # This explicit diagnostic import is synthetic, never a new live result.
+            tools.ledger.investigations = archived_investigations(source, source_run_id, directory / "source-state.sqlite3")
+        else:
+            report = calibration_report(store, tools, case)
+            control = {"question": case["question"]}
         tools.ledger.questions = report.questions
         for label, metadata in report.reference_metadata.items():
             version = store.repository.read(metadata["id"], metadata["revision"])
             tools.ledger.references[label] = ResearchReference(metadata["id"], metadata["revision"],
-                metadata["kind"], metadata["acquisition"], note_id=version.value.provenance.get("note_id", ""))
+                metadata["kind"], metadata["acquisition"], note_id=version.value.provenance.get("note_id", ""),
+                question_ref=metadata["question_ref"])
         result = SimpleNamespace(accepted_report=report, question=control["question"], summary=report.text,
                                  completion_proof=None)
         basis = review_basis(report, tools, result.question)
         write("basis.json", basis)
         write("control.json", {"source": str(source), "upstream": args.upstream, "timeout": args.timeout,
-            "mode": "imported_frozen_report", "prepare_only": args.prepare_only,
-            "run_id": run_id, "session_id": session_id, "basis_digest": basis["basis_digest"]})
+            "mode": "synthetic_calibration" if case else "imported_frozen_report", "prepare_only": args.prepare_only,
+            "run_id": run_id, "session_id": session_id, "basis_digest": basis["basis_digest"],
+            "runtime_implementation_id": runtime_implementation_id()})
         if args.prepare_only:
             return
 
         class Observed(ApiProvider):
+            def record(self, row):
+                with (directory / "wire.jsonl").open("a", encoding="utf-8") as stream:
+                    stream.write(canonical_json(row) + "\n")
+
             def _generate(self, messages, tools=None, **kwargs):
-                with (directory / "wire.jsonl").open("a", encoding="utf-8") as stream:
-                    stream.write(canonical_json({"event": "request", "messages": messages,
-                        "tools": [tool.name for tool in tools or ()]}) + "\n")
+                self.record({"event": "request", "messages": messages, "tools": [tool.name for tool in tools or ()]})
                 response = super()._generate(messages, tools, **kwargs)
-                with (directory / "wire.jsonl").open("a", encoding="utf-8") as stream:
-                    stream.write(canonical_json({"event": "response", "body": response}) + "\n")
+                self.record({"event": "response", "body": response})
+                record_native_generation(args.upstream, self.record)
                 return response
 
         from unittest.mock import patch

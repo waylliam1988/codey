@@ -20,6 +20,8 @@ from contextlib import ExitStack
 from pathlib import Path
 from urllib.request import urlopen
 
+from tests.manual.kobold_diagnostics import record_native_generation
+
 URLS = ("https://www.sqlite.org/wal.html", "https://www.sqlite.org/isolation.html")
 
 
@@ -29,6 +31,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
     from unittest.mock import patch
 
     from codey.app import headless_runner
+    from codey.operations.provider_receipts import runtime_implementation_id
     from codey.providers import api_transport, local_config, local_connection
     from codey.providers.api_provider import ApiProvider
     from codey.providers.model_preferences import ModelPreferences
@@ -45,6 +48,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         "provider_timeout": provider_timeout,
         "constrained_text": constrained_text,
         "merge_clock": merge_clock,
+        "runtime_implementation_id": runtime_implementation_id(),
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     events = directory / f"{name}-events.jsonl"
     wire = directory / f"{name}-wire.jsonl"
@@ -92,6 +96,8 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
                         "seconds": time.monotonic() - started})
                 raise
             record({"event": "generation_response", "body": body, "seconds": time.monotonic() - started})
+            if native:
+                record_native_generation(upstream, record)
             return body
 
     class Search:
@@ -129,7 +135,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             '每项发现 conditions=[{"name":"mode","state":"reported","value":"WAL"},'
             '{"name":"workload","state":"not_extracted"}]，实际工作负载尚未测量。'
             "给不超过500字的中文报告，明确外推边界。使用done.report_sections，summary只填结论，"
-            "其余四部分各用字符串数组。逐句引用实际保存的 [f...] 发现，来源表由程序生成。"
+            "evidence和counter用字符串数组，coverage用问题覆盖记录。逐句引用实际保存的 [f...] 发现，来源质量和来源表由程序生成。"
             "不要复制知识对象的长ID和版本。"
         ),
         "recall": (
@@ -183,7 +189,8 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             max_turns=max_turns, session_id=session_id,
             state_home=directory / "state", research_store_root=directory / "knowledge",
             intent="research" if name in {"first", "research"} else "hybrid", sources_open_required=live_web,
-            required_tools=("knowledge_read", "knowledge_commit") if name in {"recall", "revise"} else (),
+            required_tools=(("knowledge_read", "knowledge_commit") if name in {"recall", "revise"}
+                            else ("web_search",) if live_web else ()),
             requested_capabilities=("knowledge.read", "knowledge.write", "web.read"))
         result = headless_runner.run_headless(request, emit_jsonl=emit,
                                              connect_reviewer=connect if name in {"recall", "revise"} else None)
