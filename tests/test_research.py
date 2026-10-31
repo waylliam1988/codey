@@ -42,6 +42,8 @@ from tests.support.research_controller import (
 from tests.support.research_iteration_adapter import ResearchIteration
 from tests.support.research_protocol import JsonToolCodec
 from tests.support.research_report import report_args
+from tests.support.research_script import answer_args as coverage_args
+from tests.support.research_script import finding_args
 
 
 def _research_policy():
@@ -2726,22 +2728,23 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_iteration_repair_for_invalid_args_names_missing_field(self) -> None:
         provider = FakeProvider(
-            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-            json.dumps({"tool": "source_search", "args": {"source_id": "s1"}}),
-            json.dumps({"tool": "knowledge_search", "args": {"query": "helium"}}),
+            json.dumps({"tool": "research_plan", "args": {"questions": ["What does the source establish?"]}}),
+            json.dumps({"tool": "web_search", "args": {"question_ref": "q1", "query": "helium"}}),
+            json.dumps({"tool": "open_result", "args": {"question_ref": "q1", "result_id": "r1"}}),
+            json.dumps({"tool": "source_search", "args": {"question_ref": "q1", "url": "https://example.com/helium"}}),
+            json.dumps({"tool": "knowledge_search", "args": {"question_ref": "q1", "query": "helium"}}),
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(provider, FakeSearch(), store, max_turns=4)
+            runner = ResearchIteration(provider, FakeSearch(), store, max_turns=5)
 
             list(runner.run("Research helium"))
             store.close()
 
         self.assertGreaterEqual(len(provider.sent), 2)
-        self.assertIn("Resend the intended call", provider.sent[3])
-        self.assertIn("source_search missing required arg 'query'", provider.sent[3])
-        self.assertNotIn("Codey", provider.sent[3])
+        self.assertIn("Resend the intended call", provider.sent[4])
+        self.assertIn("source_search missing required arg 'query'", provider.sent[4])
+        self.assertNotIn("Codey", provider.sent[4])
 
     def test_research_iteration_controller_prompt_limits_initial_tools(self) -> None:
         provider = FakeProvider(
@@ -2758,9 +2761,10 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Visible tools", provider.sent[0])
         self.assertNotIn("Codey", provider.sent[0])
         self.assertIn("Visible tools", provider.sent[0])
-        self.assertIn("knowledge_search", provider.sent[0])
+        self.assertIn("research_plan", provider.sent[0])
+        self.assertNotIn("knowledge_search", provider.sent[0])
         self.assertNotIn('{"tool":"done","args":{"summary":"<the full report>"}}', provider.sent[0])
-        self.assertIn("Not done yet", provider.sent[1])
+        self.assertIn("Protocol error", provider.sent[1])
         self.assertNotIn("Codey", provider.sent[1])
 
 
@@ -2788,43 +2792,45 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_iteration_controller_rewrites_result_id_before_dispatch(self) -> None:
         provider = FakeProvider(
-            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
+            json.dumps({"tool": "research_plan", "args": {"questions": ["What does the source establish?"]}}),
+            json.dumps({"tool": "web_search", "args": {"question_ref": "q1", "query": "helium"}}),
+            json.dumps({"tool": "open_result", "args": {"question_ref": "q1", "result_id": "r1"}}),
         )
         search = TrackingSearch()
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(provider, search, store, max_turns=2)
+            runner = ResearchIteration(provider, search, store, max_turns=3)
 
             list(runner.run("Research helium"))
             store.close()
 
         self.assertEqual(search.queries, ["helium"])
         self.assertEqual(search.fetch_urls, ["https://example.com/helium"])
-        self.assertIn("Search result references:", provider.sent[1])
-        self.assertIn("r1", provider.sent[1])
+        self.assertIn("Search result references:", provider.sent[2])
+        self.assertIn("r1", provider.sent[2])
 
     def test_research_iteration_demotes_failed_priority_connector_result(self) -> None:
         provider = FakeProvider(
-            json.dumps({"tool": "web_search", "args": {"query": "hepatotoxicity"}}),
-            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-            json.dumps({"tool": "open_result", "args": {"result_id": "r2"}}),
+            json.dumps({"tool": "research_plan", "args": {"questions": ["What does the source establish?"]}}),
+            json.dumps({"tool": "web_search", "args": {"question_ref": "q1", "query": "hepatotoxicity"}}),
+            json.dumps({"tool": "open_result", "args": {"question_ref": "q1", "result_id": "r1"}}),
+            json.dumps({"tool": "open_result", "args": {"question_ref": "q1", "result_id": "r2"}}),
         )
         search = PriorityFailSearch()
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(provider, search, store, max_turns=3)
+            runner = ResearchIteration(provider, search, store, max_turns=4)
             with mock.patch("codey.research.source_gateway.check_fetch_url", return_value=None):
                 list(runner.run("Research hepatotoxicity"))
             store.close()
 
         self.assertEqual(search.queries, ["hepatotoxicity"])
         self.assertEqual(search.fetch_urls, [PriorityFailSearch.pubmed_url, PriorityFailSearch.general_url])
-        self.assertTrue(("Visible tools" in provider.sent[1]) or ("open_result" in provider.sent[1]))
-        self.assertIn("r1", provider.sent[1])
+        self.assertTrue(("Visible tools" in provider.sent[2]) or ("open_result" in provider.sent[2]))
+        self.assertIn("r1", provider.sent[2])
         self.assertTrue(True)
         self.assertTrue(True)
-        self.assertNotIn("r1: PubMed", provider.sent[2])
+        self.assertNotIn("r1: PubMed", provider.sent[3])
 
     def test_controller_does_not_prioritize_root_pubmed_landing_result(self) -> None:
         class PubMedLandingSearch(FakeSearch):
@@ -2857,21 +2863,22 @@ class ResearchBoundaryTests(unittest.TestCase):
                 }
 
         provider = FakeProvider(
-            json.dumps({"tool": "web_search", "args": {"query": "hepatotoxicity"}}),
-            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
+            json.dumps({"tool": "research_plan", "args": {"questions": ["What does the source establish?"]}}),
+            json.dumps({"tool": "web_search", "args": {"question_ref": "q1", "query": "hepatotoxicity"}}),
+            json.dumps({"tool": "open_result", "args": {"question_ref": "q1", "result_id": "r1"}}),
         )
         search = PubMedLandingSearch()
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(provider, search, store, max_turns=2)
+            runner = ResearchIteration(provider, search, store, max_turns=3)
 
             list(runner.run("Research hepatotoxicity"))
             store.close()
 
         self.assertEqual(search.fetch_urls, [PubMedLandingSearch.article_url])
-        self.assertTrue(("Visible tools" in provider.sent[1]) or ("open_result" in provider.sent[1]))
-        self.assertIn("r1: https://pubmed.ncbi.nlm.nih.gov/41972337/", provider.sent[1])
-        self.assertNotIn("https://pubmed.ncbi.nlm.nih.gov/ - PubMed home", provider.sent[1])
+        self.assertTrue(("Visible tools" in provider.sent[2]) or ("open_result" in provider.sent[2]))
+        self.assertIn("r1: https://pubmed.ncbi.nlm.nih.gov/41972337/", provider.sent[2])
+        self.assertNotIn("https://pubmed.ncbi.nlm.nih.gov/ - PubMed home", provider.sent[2])
 
     def test_research_iteration_can_disable_controller_for_manual_baselines(self) -> None:
         provider = FakeProvider(json.dumps({"tool": "done", "args": {"summary": "done"}}))
@@ -2902,46 +2909,48 @@ class ResearchBoundaryTests(unittest.TestCase):
             list(runner.run("Research alpha"))
             store.close()
 
-        self.assertIn("Protocol error: Research completion requires done with summary and report_sections", provider.sent[1])
+        self.assertIn("Protocol error: Research completion requires done.report_sections.coverage", provider.sent[1])
         self.assertNotIn('{"tool":"done","args":{"summary":"<the full report>"}}', provider.sent[1])
         self.assertNotIn("Codey", provider.sent[1])
 
 
     def test_research_iteration_repair_for_synthesis_write_uses_done_shape(self) -> None:
         provider = FakeProvider(
-            json.dumps({"tool": "web_search", "args": {"query": "alpha"}}),
-            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
+            json.dumps({"tool": "research_plan", "args": {"questions": ["What does the source establish?"]}}),
+            json.dumps({"tool": "web_search", "args": {"question_ref": "q1", "query": "alpha"}}),
+            json.dumps({"tool": "open_result", "args": {"question_ref": "q1", "result_id": "r1"}}),
             json.dumps(
                 {
                     "tool": "knowledge_write",
                     "args": {"type": "synthesis", "title": "Alpha report", "body": "final report"},
                 }
             ),
-            json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
+            json.dumps({"tool": "knowledge_search", "args": {"question_ref": "q1", "query": "alpha"}}),
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(provider, FakeSearch(), store, max_turns=4)
+            runner = ResearchIteration(provider, FakeSearch(), store, max_turns=5)
 
             list(runner.run("Research alpha"))
             store.close()
 
-        self.assertIn("done required for final synthesis", provider.sent[3])
+        self.assertIn("knowledge_write is not allowed", provider.sent[4])
 
     def test_research_iteration_repair_for_native_search_leak_points_to_local_web_search(self) -> None:
         provider = FakeProvider(
+            json.dumps({"tool": "research_plan", "args": {"questions": ["What does the source establish?"]}}),
             "I searched the web and search results show Alpha requires notice.",
-            json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
+            json.dumps({"tool": "knowledge_search", "args": {"question_ref": "q1", "query": "alpha"}}),
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(provider, FakeSearch(), store, max_turns=2)
+            runner = ResearchIteration(provider, FakeSearch(), store, max_turns=3)
 
             list(runner.run("Research alpha"))
             store.close()
 
-        self.assertIn("Protocol error: Research completion requires done with summary and report_sections", provider.sent[1])
-        self.assertIn("web_search", provider.sent[1])
+        self.assertIn("Protocol error: Research completion requires done.report_sections.coverage", provider.sent[2])
+        self.assertIn("web_search", provider.sent[2])
 
     def test_research_iteration_unknown_tool_repair_respects_disabled_source_search(self) -> None:
         provider = FakeProvider(
@@ -2970,33 +2979,19 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertNotIn("source_search with source_id", provider.sent[1])
 
     def test_quality_review_followup_is_specific_when_done_answer_needs_revision(self) -> None:
-        url = "https://example.com/helium"
-        invalid = valid_research_report(url).replace(
-            "Helium supply depends on gas processing. [1]",
-            "Helium supply depends on gas processing. [2]",
-        )
         provider = FakeProvider(
-            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
+            json.dumps({"tool": "research_plan", "args": {"questions": ["What does the source establish?"]}}),
+            json.dumps({"tool": "web_search", "args": {"question_ref": "q1", "query": "helium"}}),
+            json.dumps({"tool": "open_result", "args": {"question_ref": "q1", "result_id": "r1"}}),
             json.dumps(
-                {
-                    "tool": "knowledge_write",
-                    "args": {
-                        "type": "fact",
-                        "title": "Helium source",
-                        "body": "Helium comes from gas processing.",
-                        "sources": ["s1"],
-                        "evidence": [{"source_url": url, "claim": "Helium supply depends on gas processing.",
-                                      "excerpt": "Helium is separated from natural gas streams."}],
-                    },
-                }
+                {"tool": "save_finding", "args": finding_args("https://example.com/helium", "Helium is separated from natural gas streams.", claim="Helium supply depends on gas processing.")}
             ),
-            json.dumps({"tool": "done", "args": report_args(invalid)}),
-            json.dumps({"tool": "done", "args": report_args(valid_research_report(url))}),
+            json.dumps({"tool": "done", "args": coverage_args("Helium supply depends on gas processing.", finding="f999")}),
+            json.dumps({"tool": "done", "args": coverage_args("Helium supply depends on gas processing.")}),
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(provider, FakeSearch(), store, max_turns=6)
+            runner = ResearchIteration(provider, FakeSearch(), store, max_turns=7)
 
             list(runner.run("Research helium"))
             result = runner.result
@@ -3005,9 +3000,9 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertEqual(result.stop_reason, "done")
-        self.assertIn("Not done yet", provider.sent[4])
-        self.assertNotIn("[no tool output]", provider.sent[4])
-        self.assertNotIn("Codey", provider.sent[4])
+        self.assertIn("unknown finding f999", provider.sent[5])
+        self.assertNotIn("[no tool output]", provider.sent[5])
+        self.assertNotIn("Codey", provider.sent[5])
 
     def test_research_advisors_get_only_the_evidence_pack(self) -> None:
         advisor = FakeAdvisorProvider("gap found")
@@ -3813,29 +3808,16 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_done_runner_uses_production_finalizer_before_quality_review(self) -> None:
         provider = FakeProvider(
-            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
+            json.dumps({"tool": "research_plan", "args": {"questions": ["What does the source establish?"]}}),
+            json.dumps({"tool": "web_search", "args": {"question_ref": "q1", "query": "helium"}}),
+            json.dumps({"tool": "open_result", "args": {"question_ref": "q1", "result_id": "r1"}}),
             json.dumps(
-                {
-                    "tool": "knowledge_write",
-                    "args": {
-                        "type": "fact",
-                        "title": "Helium supply",
-                        "body": "Helium supply depends on gas processing.",
-                        "sources": ["https://example.com/helium"],
-                        "evidence": [{
-                            "claim": "Helium supply depends on gas processing.",
-                            "source_url": "https://example.com/helium",
-                            "excerpt": "Helium is separated from natural gas streams.",
-                            "stance": "supports",
-                        }],
-                    },
-                }
+                {"tool": "save_finding", "args": finding_args("https://example.com/helium", "Helium is separated from natural gas streams.", claim="Helium supply depends on gas processing.")}
             ),
             json.dumps(
                 {
                     "tool": "done",
-                    "args": report_args(valid_research_report("https://example.com/helium")),
+                    "args": coverage_args("Helium supply depends on gas processing."),
                 }
             ),
         )
@@ -3847,7 +3829,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 search,
                 store,
                 session_id="s1",
-                max_turns=6,
+                max_turns=7,
             )
 
             list(runner.run("Research helium"))
@@ -3862,31 +3844,22 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_runner_synthesis_records_opened_sources_for_project_brief(self) -> None:
         url = "https://example.com/helium"
         provider = FakeProvider(
-            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
+            json.dumps({"tool": "research_plan", "args": {"questions": ["What does the source establish?"]}}),
+            json.dumps({"tool": "web_search", "args": {"question_ref": "q1", "query": "helium"}}),
+            json.dumps({"tool": "open_result", "args": {"question_ref": "q1", "result_id": "r1"}}),
             json.dumps(
-                {
-                    "tool": "knowledge_write",
-                    "args": {
-                        "type": "fact",
-                        "title": "Helium source",
-                        "body": "Helium comes from gas processing.",
-                        "sources": ["s1"],
-                        "evidence": [{"source_url": url, "claim": "Helium supply depends on gas processing.",
-                                      "excerpt": "Helium is separated from natural gas streams."}],
-                    },
-                }
+                {"tool": "save_finding", "args": finding_args("https://example.com/helium", "Helium is separated from natural gas streams.", claim="Helium supply depends on gas processing.")}
             ),
             json.dumps(
                 {
                     "tool": "done",
-                    "args": report_args(valid_research_report(url)),
+                    "args": coverage_args("Helium supply depends on gas processing."),
                 }
             ),
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchIteration(provider, FakeSearch(), store, session_id="s1", max_turns=6)
+            runner = ResearchIteration(provider, FakeSearch(), store, session_id="s1", max_turns=7)
 
             list(runner.run("Research helium"))
             result = runner.result

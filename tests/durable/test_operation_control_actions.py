@@ -323,7 +323,7 @@ def test_accepted_research_report_replays_without_compiler_or_knowledge_reads(tm
     import json
 
     from codey.research.ledger import ResearchLedger
-    from tests.test_research_findings import URL, execute, report_args, setup
+    from tests.test_research_findings import URL, answer_args, execute, setup
 
     store, tools, _session, delegate = setup(tmp_path / "knowledge")
     execute(delegate, tools, _session, "open_url", {"url": URL})
@@ -336,19 +336,24 @@ def test_accepted_research_report_replays_without_compiler_or_knowledge_reads(tm
 
         def send(self, prompt):
             self.calls += 1
-            return json.dumps({"tool": "done", "args": report_args("f1")})
+            args = answer_args("f1")
+            args["report_sections"]["coverage"][0]["task_refs"] = ["r1"]
+            return json.dumps({"tool": "done", "args": args})
 
     provider = Provider()
     policy = TaskPolicy(frozenset({"control"}), strict_research=True)
-    request = replace(request_for(durable, sink, provider), execution=KernelExecutionDeps(research_tools=tools))
+    request = replace(request_for(durable, sink, provider), transport=replace(request_for(durable, sink, provider).transport, user_task="Explain writer concurrency."),
+                      execution=KernelExecutionDeps(research_tools=tools))
     try:
-        first = run_task_kernel(TaskSession(policy, task_kind="research"), request=request)
+        first = run_task_kernel(TaskSession(policy, task_kind="research", task_text="Explain writer concurrency.",
+                                           research_questions=tools.ledger.questions), request=request)
         assert first.completed and first.research_report, first.summary
         monkeypatch.setattr("codey.research.finding_report.compile_finding_report",
                             lambda *a, **k: pytest.fail("accepted report was compiled again"))
         monkeypatch.setattr(store.repository, "read", lambda *a, **k: pytest.fail("accepted report read current knowledge"))
         tools.ledger = ResearchLedger()
-        second = run_task_kernel(TaskSession(policy, task_kind="research"), request=request)
+        second = run_task_kernel(TaskSession(policy, task_kind="research", task_text="Explain writer concurrency.",
+                                            research_questions=("What limits writer concurrency?",)), request=request)
         assert second == first and provider.calls == 1
     finally:
         durable.close()

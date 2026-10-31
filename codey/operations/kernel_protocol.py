@@ -709,7 +709,7 @@ def normalize_turn(
         done_spec = frozen.get("done") if frozen is not None else None
         if (items.control is not None and items.control.kind == "done" and not items.protocol_error
                 and done_spec is not None and "report_sections" in done_spec.required):
-            return _invalid_plan("Research completion requires done with summary and report_sections; "
+            return _invalid_plan("Research completion requires done.report_sections.coverage under the frozen contract; "
                                  "plain text and summary-only reports are not accepted.", tool="done")
         return items
     return _plan_from_tool_objects(

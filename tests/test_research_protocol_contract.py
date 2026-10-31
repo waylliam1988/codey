@@ -50,8 +50,9 @@ def test_unknown_args_do_not_pass_through_contract() -> None:
         },
     })
 
-    assert plan.protocol_error == ""
-    assert "invented" not in plan.calls[0].args
+    assert not plan.calls
+    assert plan.protocol_error_kind == PROTOCOL_INVALID_ARGS
+    assert "unexpected arg 'invented'" in plan.protocol_error
 
 
 def test_web_search_rejects_queries_alias() -> None:
@@ -138,12 +139,11 @@ def test_typographic_json_quotes_are_not_accepted_by_generic_protocol_codec() ->
 
 
 def test_open_url_numeric_strings_are_coerced_and_missing_optionals_default() -> None:
+    """Retain the historical node id; defaults/coercion belong to execution."""
     plan = parse({"tool": "open_url", "args": {"url": "https://example.com/a", "offset": "12"}})
 
     assert plan.protocol_error == ""
-    assert plan.calls[0].args["offset"] == 12
-    assert plan.calls[0].args["limit"] == 6000
-    assert plan.calls[0].args["pages"] == ""
+    assert plan.calls[0].args == {"url": "https://example.com/a", "offset": "12"}
 
 
 def test_open_url_invalid_optional_number_is_invalid_args() -> None:
@@ -151,7 +151,7 @@ def test_open_url_invalid_optional_number_is_invalid_args() -> None:
 
     assert not plan.calls
     assert plan.protocol_error_kind == PROTOCOL_INVALID_ARGS
-    assert "open_url.offset must be an integer" in plan.protocol_error
+    assert "open_url arg 'offset' must be integer" in plan.protocol_error
 
 
 def test_unknown_tool_is_typed_error() -> None:
@@ -237,6 +237,7 @@ def test_knowledge_write_missing_body_is_invalid_args() -> None:
 
 
 def test_knowledge_write_single_evidence_object_normalizes_to_list() -> None:
+    """Retain the historical node id; the shared schema rejects implicit wrapping."""
     evidence = {
         "claim": "Alpha requires notice.",
         "source_url": "https://agency.gov/alpha-safety/manual",
@@ -255,9 +256,8 @@ def test_knowledge_write_single_evidence_object_normalizes_to_list() -> None:
         },
     })
 
-    assert plan.protocol_error == ""
-    assert plan.calls
-    assert plan.calls[0].args["evidence"] == [evidence]
+    assert not plan.calls
+    assert "arg 'evidence' must be array" in plan.protocol_error
 
 
 def test_knowledge_write_evidence_list_requires_objects() -> None:
@@ -274,7 +274,7 @@ def test_knowledge_write_evidence_list_requires_objects() -> None:
 
     assert not plan.calls
     assert plan.protocol_error_kind == PROTOCOL_INVALID_ARGS
-    assert "knowledge_write.evidence must be a list of objects" in plan.protocol_error
+    assert "knowledge_write arg 'evidence[0]' must be object" in plan.protocol_error
 
 
 def test_knowledge_write_relations_list_requires_objects() -> None:
@@ -290,10 +290,11 @@ def test_knowledge_write_relations_list_requires_objects() -> None:
 
     assert not plan.calls
     assert plan.protocol_error_kind == PROTOCOL_INVALID_ARGS
-    assert "knowledge_write.relations must be a list of objects" in plan.protocol_error
+    assert "knowledge_write arg 'relations[0]' must be object" in plan.protocol_error
 
 
 def test_knowledge_write_single_relation_object_normalizes_to_list() -> None:
+    """Retain the historical node id; the shared schema rejects implicit wrapping."""
     relation = {"src": "war", "dst": "helium supply", "kind": "affects"}
 
     plan = parse({
@@ -306,21 +307,23 @@ def test_knowledge_write_single_relation_object_normalizes_to_list() -> None:
         },
     })
 
-    assert plan.protocol_error == ""
-    assert plan.calls
-    assert plan.calls[0].args["relations"] == [relation]
+    assert not plan.calls
+    assert "arg 'relations' must be array" in plan.protocol_error
 
 
 def test_knowledge_write_synthesis_is_reserved_for_done() -> None:
-    plan = parse({
-        "tool": "knowledge_write",
-        "args": {"type": "synthesis", "title": "Report", "body": "final report"},
-    })
+    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.protocols.text_turn import decode_text_turn
 
-    assert not plan.calls
-    assert plan.control is None
-    assert plan.protocol_error_kind == PROTOCOL_INVALID_ARGS
-    assert "done required for final synthesis" in plan.protocol_error
+    state = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"}), strict_research=True),
+                        task_kind="research", task_text="Research alpha", research_questions=("What is alpha?",))
+    state.record_open("https://example.com/a", source_id="s1")
+    plan = normalize_turn(decode_text_turn(json.dumps({"tool": "knowledge_write", "args": {
+        "type": "synthesis", "title": "Report", "body": "final report"}})), snapshot=build_turn_snapshot(state))
+    assert not plan.calls and plan.control is None
+    assert "knowledge_write" in plan.protocol_error and "not allowed" in plan.protocol_error
 
 
 def test_done_requires_summary_and_rejects_aliases() -> None:
@@ -349,4 +352,4 @@ def test_validate_tool_args_rejects_bad_optional_types_instead_of_defaulting() -
 
     assert not result.ok
     assert result.error_kind == PROTOCOL_INVALID_ARGS
-    assert "open_url.limit must be an integer" in result.error
+    assert "open_url arg 'limit' must be integer" in result.error

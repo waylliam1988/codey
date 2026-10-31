@@ -27,10 +27,13 @@ from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
-from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
+from codey.research.pdf_extract import PDF_DEFAULT_PAGES, PdfSkipped, parse_pages
 from codey.research.report_quality import review_report_quality
 from codey.research.source_document import SourceDocument, SourcePage, compact_pages
-from codey.research.source_gateway import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT, PDF_SOURCE_SEARCH_MAX_PAGES
+from codey.research.source_gateway import (
+    PDF_SOURCE_SEARCH_MAX_PAGES,
+    ResearchSourceGateway,
+)
 from codey.research.source_search import bounded_limit, render_results, search_pages, search_text
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core import cancellation
@@ -380,41 +383,14 @@ class FixtureSearchProvider:
         pass
 
 
-class ProbeResearchTools(ResearchTools):
-    def open_url(
-        self,
-        url: str,
-        offset: int = 0,
-        limit: int = OPEN_DEFAULT_LIMIT,
-        pages: str = "",
-    ) -> ResearchToolOutput:
-        url = str(url or "").strip()
-        search_doc = getattr(self.search, "document_for_url", lambda _url: None)
-        doc = search_doc(url)
-        if doc is None:
-            return super().open_url(url, offset=offset, limit=limit, pages=pages)
-        offset = max(0, _as_int(offset, 0))
-        limit = min(OPEN_MAX_LIMIT, max(500, _as_int(limit, OPEN_DEFAULT_LIMIT)))
-        document = doc.source_document(pages=pages)
-        self.sources_read.add(url)
-        if document.final_url and document.final_url != url:
-            self.sources_read.add(document.final_url)
-        self.ledger.record_open_document(document)
-        header = _fixture_document_header(document)
-        window = document.text[offset : offset + limit]
-        body = f"{header}\n\n{window}".strip()
-        if offset + limit < len(document.text):
-            body += f"\n\n[more text available: open with offset={offset + limit}]"
-        full = f"{header}\n\n{document.text}".strip()
-        return ResearchToolOutput(model_text=_clip(body, OPEN_MAX_LIMIT), receipt_text=full, ok=True)
-
+class FixtureSourceGateway(ResearchSourceGateway):
     def _source_document_from_fetch(
         self,
         requested_url: str,
         page: dict,
         *,
         pages: str = "",
-    ) -> SourceDocument:
+    ) -> SourceDocument | PdfSkipped:
         doc = page.get("source_document")
         if isinstance(doc, FixtureDocument):
             return doc.source_document(pages=pages)
@@ -423,6 +399,12 @@ class ProbeResearchTools(ResearchTools):
             page,
             pages=pages,
         )
+
+
+class ProbeResearchTools(ResearchTools):
+    @property
+    def gateway(self) -> ResearchSourceGateway:
+        return FixtureSourceGateway(search_provider=self.search, ledger=self.ledger, on_failure=self._record_failure)
 
     def source_search(
         self,
@@ -461,16 +443,6 @@ class ProbeResearchTools(ResearchTools):
         return ResearchToolOutput(render_results(hits), ok=True)
 
 
-def _fixture_document_header(document: SourceDocument) -> str:
-    lines = [document.title, document.final_url]
-    if document.content_kind == "pdf":
-        page_text = compact_pages(document.pages_read)
-        if page_text:
-            suffix = f" / {document.page_count}" if document.page_count else ""
-            lines.append(f"PDF pages {page_text}{suffix}")
-        else:
-            lines.append("PDF")
-    return "\n".join(str(line or "").strip() for line in lines if str(line or "").strip())
 
 
 def _arm_controller_denied(arm: str) -> tuple[str, ...]:

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from codey.research.ledger import OpenedSource, ResearchLedger
+    from codey.research.source_document import SourceDocument
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,11 @@ class ReadPassage:
     @property
     def excerpt(self) -> str:
         return self.source_text[self.start:self.end]
+
+    @property
+    def page(self) -> int | None:
+        return next((number for number, start, end in page_body_ranges(self.source_text, self.pages)
+                     if start <= self.start < self.end <= end), None)
 
     def descriptor(self) -> dict[str, Any]:
         return {"ref": self.ref, "start": self.start, "end": self.end}
@@ -77,6 +83,47 @@ def describe_window(url: str, text_hash: str, text: str, offset: int, limit: int
             rows.append({"ref": passage_ref(url, text_hash, start, stop), "start": start, "end": stop})
         start = stop
     return rows
+
+
+def page_body_ranges(text: str, pages: tuple[tuple[int, str], ...]) -> list[tuple[int, int, int]]:
+    """Locate ordered canonical page bodies, including repeated page text."""
+    cursor = 0
+    ranges = []
+    for number, body in pages:
+        start = text.find(body, cursor) if body else -1
+        if start >= 0:
+            cursor = start + len(body)
+            ranges.append((number, start, cursor))
+    return ranges
+
+
+def describe_document_window(document: SourceDocument, text_hash: str, offset: int, limit: int) -> list[dict[str, Any]]:
+    """PDF passages select exact page bodies, excluding generated page labels.
+
+    Keep coordinates in the original document so receipt restoration still
+    validates against the same source bytes and version. Split at page boundaries
+    even when a short document fits in one model window.
+    """
+    if document.content_kind != "pdf":
+        return describe_window(document.final_url, text_hash, document.text, offset, limit)
+    end = min(len(document.text), offset + limit)
+    rows = []
+    pages = tuple((page.number, page.text) for page in document.page_texts)
+    for _number, start, stop in page_body_ranges(document.text, pages):
+        visible_start, visible_end = max(offset, start), min(end, stop)
+        if visible_start < visible_end:
+            rows.extend(describe_window(document.final_url, text_hash, document.text,
+                                        visible_start, visible_end - visible_start))
+    return rows
+
+
+def render_passage_window(document: SourceDocument, rows: list[dict[str, Any]]) -> str:
+    """Show PDF page labels as metadata outside the selected original excerpt."""
+    ranges = page_body_ranges(document.text, tuple((page.number, page.text) for page in document.page_texts))
+    return "\n".join(
+        f"passage_ref={row['ref']}" + next((f" [page {number}]" for number, start, end in ranges
+            if start <= row["start"] < row["end"] <= end), "")
+        + "\n" + document.text[row["start"]:row["end"]] for row in rows)
 
 
 def restore_passages(ledger: ResearchLedger, observation: object, descriptors: object) -> None:

@@ -167,18 +167,18 @@ class ResearchTools:
         # Leave room for exact passage labels, metadata and source boundaries.
         limit = min(OPEN_MAX_LIMIT - 2500, max(OPEN_MIN_LIMIT, _as_int(limit, OPEN_DEFAULT_LIMIT)))
         from codey.research.ledger_receipts import ledger_observation
-        from codey.research.passages import describe_window, restore_passages
+        from codey.research.passages import describe_document_window, render_passage_window, restore_passages
 
         snapshot = ResearchLedger()
         snapshot.record_open_document(document)
         observation = ledger_observation(snapshot, "open", url=document.final_url)
         source = snapshot.source_record_for_url(document.final_url)
         assert source is not None
-        passages = describe_window(source.final_url, source.text_hash, document.text, offset, limit)
+        passages = describe_document_window(document, source.text_hash, offset, limit)
         if not passages:
             return ResearchToolOutput("ERROR: the requested source window contains no readable text; no passage was read.",
                                       ok=False)
-        window = "\n".join(f"passage_ref={row['ref']}\n{document.text[row['start']:row['end']]}" for row in passages)
+        window = render_passage_window(document, passages)
         next_offset = passages[-1]["end"]
         more = next_offset < len(document.text)
         body = render_opened_source(
@@ -192,7 +192,7 @@ class ResearchTools:
             # whole trailing passages and rerender their accurate next offset.
             while len(passages) > 1 and len(body) > OPEN_MAX_LIMIT:
                 next_offset = passages.pop()["start"]
-                window = "\n".join(f"passage_ref={row['ref']}\n{document.text[row['start']:row['end']]}" for row in passages)
+                window = render_passage_window(document, passages)
                 body = render_opened_source(document, window, more_offset=next_offset,
                     read_window=(passages[0]["start"], passages[-1]["end"]))
             if len(body) > OPEN_MAX_LIMIT:

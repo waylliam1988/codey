@@ -20,6 +20,52 @@ URL = "https://example.com/study"
 TEXT = "Writers and readers can run at the same time. There is only one writer at a time."
 
 
+@pytest.mark.usefixtures("public_source_dns")
+@pytest.mark.parametrize("page_count", [1, 2])
+def test_pdf_findings_pin_page_body_and_restore_repeated_page_text(tmp_path, monkeypatch, page_count):
+    import sys
+    from types import SimpleNamespace
+
+    from codey.research.finding_report import compile_finding_report
+
+    body = "Only one writer can write at a time."
+    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=lambda _stream: SimpleNamespace(
+        pages=[SimpleNamespace(extract_text=lambda: body, get_contents=lambda: []) for _ in range(page_count)])))
+    store, tools, session, delegate = setup(tmp_path)
+    monkeypatch.setattr(tools.search, "fetch", lambda url: {
+        "status": "ok", "url": url, "title": "PDF study", "content_kind": "pdf",
+        "mime_type": "application/pdf", "bytes": b"%PDF fixture", "truncated": False})
+    try:
+        opened = execute(delegate, tools, session, "open_url", {"url": URL, "pages": f"1-{page_count}"})
+        passages = list(tools.ledger.read_passages.values())
+        assert [row.page for row in passages] == list(range(1, page_count + 1))
+        assert all(row.excerpt == body for row in passages)
+        for number in range(1, page_count + 1):
+            assert f"[page {number}]" in opened.model_text
+        saved = []
+        for passage in passages:
+            result = execute(delegate, tools, session, "save_finding", {
+                "claim": body, "passage_ref": passage.ref})
+            assert result.ok, result.model_text
+            saved.append(result)
+        assert [item.page for item in tools.ledger.evidence_items] == list(range(1, page_count + 1))
+        ref = json.loads(saved[-1].model_text)["finding_ref"]
+        compiled = compile_finding_report(answer_args(ref), tools.ledger, store, task=session.task_text)
+        assert compiled.evidence_bindings[0]["page"] == page_count
+        recovered = ResearchLedger()
+        recovered.questions = tools.ledger.questions
+        for result in (opened, *saved):
+            project_result_observation(session, result.call, result, ok=True, research_ledger=recovered)
+        expected = list(tools.ledger.evidence_items)
+        tools.ledger = recovered
+        for passage in passages:
+            replay = execute(delegate, tools, session, "save_finding", {"claim": body, "passage_ref": passage.ref})
+            assert replay.ok, replay.model_text
+        assert tools.ledger.evidence_items == expected
+    finally:
+        store.close()
+
+
 class Search:
     text = TEXT
 

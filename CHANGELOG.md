@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+- Repair offline Research regressions against the current planning, question
+  binding, exact-passage saving and answers-only completion contract. Read the
+  shared input schema in the parity probe, retain its immutable legacy baseline,
+  and enumerate exact intentional deltas with a separate successful current
+  script. Repeated unverified project completion now hits the no-progress bound;
+  proposal observations preserve explicit defaults and numeric strings.
+- Keep PDF findings attached to exact page bodies, excluding generated labels
+  and splitting passages at page boundaries. Derive page identity from original
+  coordinates, including repeated page text, and retain it on receipt recovery.
+  Correct strict Research's repair message to request only
+  `done.report_sections.coverage`.
+
 - Make local startup materialize and validate the current immutable release before
   launching or activating the service. Serialize concurrent desktop startups,
   rebuild and publish stale source frontends, require an explicit release identity

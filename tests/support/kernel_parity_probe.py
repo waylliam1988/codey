@@ -31,7 +31,7 @@ def native_tools_mode(enabled):
             os.environ["NATIVE_TOOLS"] = previous
 
 
-def inventory(root):
+def inventory(root, *, legacy=False):
     from codey.agents.request import AgentRequest
     from codey.policies.permissions import PERMISSION_PROFILES, allowed_coding_tool_names
     from codey.providers.registry import PROVIDER_LABELS
@@ -43,7 +43,9 @@ def inventory(root):
         "research": [{"name": name, "required": list(row.required),
                       "optional": {key: {"type": arg.type.__name__, "default": arg.default}
                                    for key, arg in row.optional.items()},
-                      "example": row.example} for name, row in TOOL_CONTRACTS.items()],
+                      "example": row.example} if legacy else
+                     {"name": name, "input_schema": dict(row.input_schema), "example": row.example}
+                     for name, row in TOOL_CONTRACTS.items()],
         "profiles": {name: {"coding": sorted(allowed_coding_tool_names(row)),
                             "research": list(row.research_tools),
                             "context": list(row.context_sources)}
@@ -110,10 +112,10 @@ def protocol(case, legacy):
     for call in plan.calls:
         name = aliases.get(call.name, call.name)
         args = dict(call.args)
-        # An omitted optional default and an explicit default are equivalent.
-        # Only defaults defined by the selected research contract are removed.
+        # The historical contract normalized explicit defaults away. Current
+        # input_schema preserves proposals; omitted defaults belong to execution.
         contract = TOOL_CONTRACTS.get(name) if case["domain"] == "research" else None
-        if contract:
+        if contract and legacy:
             for key, arg in contract.optional.items():
                 if args.get(key) == arg.default:
                     args.pop(key, None)
@@ -362,7 +364,7 @@ def main():
     if Path(codey.__file__).resolve().parent != args.source.resolve() / "codey":
         raise RuntimeError("wrong source tree imported")
     if args.inventory:
-        payload = inventory(args.source)
+        payload = inventory(args.source, legacy=args.legacy)
     else:
         cases = json.load(sys.stdin)
         handlers = {"protocol": protocol, "coding_loop": coding_loop, "research_loop": research_loop}

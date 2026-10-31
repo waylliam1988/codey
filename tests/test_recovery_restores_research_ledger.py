@@ -10,97 +10,99 @@ from codey.operations.recovery import record_entry_policy
 from codey.operations.task_entry import run_entry_kernel
 from codey.operations.task_session import TaskSession
 from codey.research.ledger import ResearchLedger
-from codey.research.tools import ResearchToolOutput
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
-from tests.stress.test_completion_truthful_oracle_real_run import _real_research_gate
 from tests.support.provider_actions import ProviderActions
 from tests.support.receipt_fixtures import inspect_receipt_facts
-from tests.support.research_report import report_args
 from tests.support.workspace_conversation import TextConversation
 from tests.test_chat_workspace_tools_and_answer_completion import workspace_frame
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
 
 
 @pytest.mark.parametrize("acknowledged", [False, True])
-def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_path, monkeypatch, acknowledged):
-    monkeypatch.setenv("NATIVE_TOOLS", "0")
-    original, _, _, expected_ledger, report = _real_research_gate()
-    project, state, logdir = _dirs(tmp_path)
-    _, mutations, managed, _, deps, sink = _open_runtime(
-        logdir, state, "s", "r", project, task_kind="research"
-    )
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=original.policy, durable=sink.durable)
-    live = TaskSession(policy=original.policy, task_kind="research", project="", max_turns=8)
-    ledger = ResearchLedger()
-    url = next(iter(expected_ledger.final_url_set()))
-    calls = []
-    class Tools:
-        def __init__(self):
-            self.ledger = ledger
-            self.created_ids, self.updated_ids = [], []
-            self.sources_read, self.search_result_urls = set(), set()
-            self.links_created = 0
-
-        def web_search(self, query):
-            calls.append("search")
-            self.ledger.record_search(query, [{"title": "Helium article", "url": url, "snippet": "Helium supply."}])
-            return ResearchToolOutput(f"1. Helium article\n   {url}", ok=True)
-
-        def open_url(self, actual, **kwargs):
-            calls.append("open")
-            self.ledger.record_open(actual, url, "Helium article", expected_ledger.source_text_for_url(url))
-            return ResearchToolOutput(model_text="Helium article\nbody", ok=True)
-
-        def knowledge_write(self, args):
-            calls.append("write")
-            self.ledger.add_evidence_items(list(expected_ledger.evidence_items))
-            return ResearchToolOutput("saved note-1", ok=True)
-
-    tools = Tools()
-    for turn, call in enumerate([
-        ToolCall("web_search", {"query": "helium supply"}),
-        ToolCall("open_url", {"url": url}),
-        ToolCall("knowledge_write", {"title": "Helium supply", "body": "Evidence", "sources": [url]}),
-    ], 1):
-        result = execute_turn(live, [call], run_id="r", turn=turn, effect_scope="task",
-                              research_tools=tools, managed_outputs=managed,
-                              session_id="s", intent_sink=sink)[0]
-        assert result.ok is True, result.model_text
-        if turn < 3 or acknowledged:
-            from codey.operations.kernel_protocol import build_turn_snapshot
-
-            sink.bind_request(build_turn_snapshot(live), logical_turn=turn)
-            sink._request_context["effect_scope"] = "task"
-            ProviderActions(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
-    recovered = inspect_receipt_facts(deps, session_id="s", run_id="r", project="", task_kind="research")
-    assert recovered.ok
-    assert bool(recovered.recovered_tool_outcomes) is False
-    assert bool(recovered.settled_tool_outcomes) is True
-    restored_tools = SimpleNamespace(ledger=ResearchLedger(), created_ids=[], updated_ids=[],
-                                    sources_read=set(), search_result_urls=set())
-    monkeypatch.setattr("codey.operations.task_entry._entry_executors", lambda *args: (None, None, restored_tools))
+def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_path, monkeypatch, acknowledged, public_source_dns):
     import json
-    provider = TextConversation(*[json.dumps({"tool": "done", "args": report_args(report)})])
-    frame = workspace_frame("", provider, task="Research helium supply")
-    frame.run_id = "r"
-    frame.request = replace(frame.request, session_id="s", intent="research", max_turns=8)
-    frame.task_kind = "research"
-    frame.provider_id = "local"
-    frame.recovered_tool_outcomes = recovered.recovered_tool_outcomes
-    frame.settled_tool_outcomes = recovered.settled_tool_outcomes
-    frame.recovered_tool_result_batch_id = recovered.recovered_tool_result_batch_id
-    deps.state = SimpleNamespace(durable=deps.runtime_mutations.durable,
-                                 set_provider_session=lambda *args: None)
-    outcome = run_entry_kernel(frame, RunWork([], ExecutionEvidence()),
-                               SimpleNamespace(on_event=lambda _: None, on_shell_request=None), deps,
-                               task_kind="research")
-    assert outcome.event["stop_reason"] == "done", outcome.event
-    assert restored_tools.ledger.searches == ledger.searches
-    assert restored_tools.ledger.opened_sources == ledger.opened_sources
-    assert restored_tools.ledger.evidence_items == ledger.evidence_items
-    assert restored_tools.ledger.source_text_for_url(url) == ledger.source_text_for_url(url)
-    assert calls == ["search", "open", "write"]
+
+    from codey.knowledge.changes import KnowledgeChanges
+    from codey.knowledge.store import KnowledgeStore
+    from codey.policies.task_policy import TaskPolicy
+    from codey.research.tools import ResearchTools
+    from tests.support.research_script import answer_args
+
+    monkeypatch.setenv("NATIVE_TOOLS", "0")
+    project, state, logdir = _dirs(tmp_path)
+    _, mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project, task_kind="research")
+    policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=policy, durable=sink.durable)
+    live = TaskSession(policy, task_kind="research", task_text="Research helium supply", max_turns=8)
+    url = "https://example.com/helium"
+    calls = []
+
+    class Search:
+        def search(self, query, limit=8):
+            calls.append("search")
+            return [{"title": "Helium article", "url": url, "snippet": "Helium supply."}]
+
+        def fetch(self, target):
+            calls.append("open")
+            return {"status": "ok", "url": target, "title": "Helium article",
+                    "text": "Helium is separated from natural gas streams.", "truncated": False}
+
+    store = KnowledgeStore(tmp_path / "knowledge")
+    tools = ResearchTools(Search(), store, KnowledgeChanges(store.root), session_id="s")
+    scripted_calls = [ToolCall("research_plan", {"questions": ["How is helium obtained?"]}),
+                      ToolCall("web_search", {"query": "helium supply", "question_ref": "q1"}),
+                      ToolCall("open_url", {"url": url, "question_ref": "q1"}),
+                      ToolCall("save_finding", {})]
+    try:
+        for turn, call in enumerate(scripted_calls, 1):
+            if call.name == "save_finding":
+                call = ToolCall("save_finding", {"question_ref": "q1", "claim": "Helium supply depends on gas processing.",
+                    "passage_ref": next(iter(tools.ledger.read_passages))})
+            result = execute_turn(live, [call], run_id="r", turn=turn, effect_scope="task",
+                research_tools=tools, managed_outputs=managed, session_id="s", intent_sink=sink)[0]
+            assert result.ok, result.model_text
+            if turn < 4 or acknowledged:
+                from codey.operations.kernel_protocol import build_turn_snapshot
+
+                sink.bind_request(build_turn_snapshot(live), logical_turn=turn)
+                sink._request_context["effect_scope"] = "task"
+                ProviderActions(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
+        ledger = tools.ledger
+        assert len(ledger.references) == 1
+        recovered = inspect_receipt_facts(deps, session_id="s", run_id="r", project="", task_kind="research")
+        assert recovered.ok
+        assert not recovered.recovered_tool_outcomes
+        assert recovered.settled_tool_outcomes
+        # Reopen knowledge and use a fresh ledger. Only settled receipts may restore bindings.
+        store.close()
+        store = KnowledgeStore(tmp_path / "knowledge")
+        restored_tools = ResearchTools(Search(), store, KnowledgeChanges(store.root), session_id="s")
+        monkeypatch.setattr(restored_tools.search, "search", lambda *a, **k: pytest.fail("recovery repeated search"))
+        monkeypatch.setattr(restored_tools.search, "fetch", lambda *a, **k: pytest.fail("recovery repeated fetch"))
+        monkeypatch.setattr(restored_tools, "save_finding", lambda *a, **k: pytest.fail("recovery repeated write"))
+        monkeypatch.setattr("codey.operations.task_entry._entry_executors", lambda *a: (None, None, restored_tools))
+        provider = TextConversation(json.dumps({"tool": "done", "args": answer_args("Helium supply depends on gas processing.")}))
+        frame = workspace_frame("", provider, task="Research helium supply")
+        frame.run_id = "r"
+        frame.request = replace(frame.request, session_id="s", intent="research", max_turns=8)
+        frame.task_kind = "research"
+        frame.provider_id = "local"
+        frame.recovered_tool_outcomes = recovered.recovered_tool_outcomes
+        frame.settled_tool_outcomes = recovered.settled_tool_outcomes
+        frame.recovered_tool_result_batch_id = recovered.recovered_tool_result_batch_id
+        deps.state = SimpleNamespace(durable=deps.runtime_mutations.durable, set_provider_session=lambda *a: None)
+        deps.knowledge_store = store
+        outcome = run_entry_kernel(frame, RunWork([], ExecutionEvidence()),
+            SimpleNamespace(on_event=lambda _: None, on_shell_request=None), deps, task_kind="research")
+        assert outcome.event["stop_reason"] == "done", outcome.event
+        for field in ("questions", "searches", "opened_sources", "evidence_items", "references", "read_passages", "investigations"):
+            assert getattr(restored_tools.ledger, field) == getattr(ledger, field), field
+        assert restored_tools.ledger.source_text_for_url(url) == ledger.source_text_for_url(url)
+        assert calls == ["search", "open"]
+    finally:
+        store.close()
+        sink.durable.close()
 
 
 

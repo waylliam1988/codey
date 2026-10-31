@@ -1,17 +1,16 @@
 """普通联网来源要求与严格 Research 检查必须分离。"""
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from codey.operations import completion_gate as gate
+from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 
 _VALID_FP = "sha256:" + "a" * 64
 
 
-def _session(policy: TaskPolicy, **kw) -> SimpleNamespace:
+def _session(policy: TaskPolicy, **kw) -> TaskSession:
     base = dict(
         task_kind="project",
         task_text="",
@@ -27,7 +26,10 @@ def _session(policy: TaskPolicy, **kw) -> SimpleNamespace:
         workspace_revision=0,
     )
     base.update(kw)
-    return SimpleNamespace(**base)
+    result = TaskSession(policy, task_kind="project")
+    for key, value in base.items():
+        setattr(result, key, value)
+    return result
 
 
 def test_search_without_open_blocks_completion() -> None:

@@ -28,7 +28,7 @@ def test_project_adapter_supplies_guidance_only_when_policy_requires_it(tmp_path
     run(AgentRequest(provider=provider, project=tmp_path, task="inspect", max_turns=1,
                      strict_research=strict, on_event=lambda _event: None))
     assert len(provider.sent) == 1
-    assert ("Research evidence rules" in provider.sent[0]) is strict
+    assert ("Research rules" in provider.sent[0]) is strict
 
 
 @pytest.mark.parametrize("strict", [False, True])
@@ -57,7 +57,7 @@ def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, stri
     finally:
         state.close()
     assert len(provider.sent) == 1
-    assert ("Research evidence rules" in provider.sent[0]) is strict
+    assert ("Research rules" in provider.sent[0]) is strict
     if strict:
         assert outcome.event["stop_reason"] != "done"
 
@@ -83,6 +83,6 @@ def test_research_iteration_supplies_guidance_through_actual_shared_kernel():
         chat_handoff="", trace_recorder=None, search=object(), tools=tools,
     )
     assert len(provider.sent) == 1
-    assert "Research evidence rules" in provider.sent[0]
-    assert "Strict research completion checklist" in provider.sent[0]
+    assert "Research rules" in provider.sent[0]
+    assert "report_sections.coverage" in provider.sent[0]
     assert result.result.stop_reason != "done"

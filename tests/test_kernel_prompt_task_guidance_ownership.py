@@ -26,7 +26,7 @@ def test_full_research_guidance_reviewed_prompt_digest():
                         strict_research=True)
     assert hashlib.sha256(_guidance(policy).encode()).hexdigest() == (
         # Reviewed: structured arguments are the sole strict research completion format.
-        "fe899a7a36d1c671cdacc260a72587b00fd22d9caf5560f6e6bccca6ef6e7c76"
+        "50b3ceb174a8bd2dc97381aaeabe58acfded54a466825c0030ae9df88376b73c"
     )
 
 
@@ -76,7 +76,7 @@ def test_ordinary_web_task_has_no_strict_research_guidance():
 ])
 def test_research_guidance_does_not_direct_unauthorized_tools(grants, forbidden):
     text = _guidance(TaskPolicy(grants=frozenset(grants), strict_research=True))
-    assert "done.report_sections=" in text
+    assert "report_sections.coverage" in text
     for name in forbidden:
         assert name not in text
 

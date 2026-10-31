@@ -125,3 +125,59 @@ q8 标成 not_investigated，却在答案中写了未经本机测量的肯定性
 外部 KoboldCpp 日志阻塞也仍可能发生，不能宣称 Research 已全面解决。
 
 按用户最后指示，本轮结束后提交并停止；不再启动新的实机、追加修复或更改模型/服务配置。
+
+## 7. 原 66 个失败及 241 个错误的离线修复
+
+本节记录后续收到“修好、回测、commit”的授权后开展的独立离线修复。
+前文历史失败与实机原始记录保留；本节不把离线通过解释为 Gemma 12B 或 Qwen 27B 的实机成功。
+
+### 根因分类
+
+- **241 errors 是同一个测试夹具故障**：parity 探针还读取已删除的
+  `ToolContract.optional/required`。当前探针直接读取生产 `input_schema`；独立旧版本分支
+  仍按原定义读取，不复制旧实现、不重新导出历史基线。
+- **原 66 项主要是测试未跟上契约**：旧脚本省略 research_plan、question_ref，
+  在严格研究里调用不再开放的 knowledge_write，或给 done 提交旧 summary/完整报告。
+  另有不完整的会话假对象、没有 managed outputs 的 AppContext、旧提示快照和评审状态断言。
+  现迁移为显式规划、真实读原文、save_finding、只提交 coverage；负例仍验证实际拒绝和修正，
+  没有 skip/xfail、自动补规划、自动填答案或放宽生产契约。
+- **生产代码也有问题，不能全部归咎于测试**：纯文本完成被拒绝时，纠错文案仍要求旧的
+  `summary + report_sections`，已改成 `done.report_sections.coverage`。
+  PDF 成功保存正例还暴露了页码丢失：可选段落包含生成的 `[page N]` 标签，
+  引文无法匹配页正文，最终 page 为 null。现在按页正文切分精确段落，引用仍指向原文坐标和版本。
+  页码由段落坐标确定，重复正文的不同页也能区分；新写入与幂等恢复使用同一计算。
+  页标签作为引文外的显示元数据保留，原有 PDF 读取和页内定位测试的页码显示断言继续成立。
+
+PDF 修复没有对引文做模糊替换。UI 脚本先提交未读的段落引用并收到拒绝，
+再显式选择已读 PDF 正文段落，最终保存原始正文及页码。
+新增单页、两页相同正文、编译引用和回执恢复测试，防止只修显示而丢失归档事实。
+
+### 收敛与历史 parity
+
+固定历史 baseline 的 682 个 case 和原始 observations 保持不变。
+逐项登记 35 个新增有意差异，修正 2 个已过时的差异条目；最终 502 项行为相同、
+180 项具有精确 before/after 的有意差异，不用通配放行。
+差异覆盖显式参数投影、严格规划/问题归属/完成契约，以及原本就拒绝未验证完成的
+无进展停止时点。旧研究脚本保持原样被拒绝，另加显式现代脚本验证确实能保存证据和发布报告。
+
+离线 A/B 工具夹具也不再自行实现 open_url 的读窗口和回执：只在来源提取边界注入固定文档，
+段落生成、版本绑定和保存全部经过生产实现。恢复用例通过真实知识库与原工具回执，
+分别覆盖已确认/未确认交付；恢复后禁止重新搜索、抓取、保存，逐字段核对问题、段落和引用。
+生产没有新增运行时、事实存储或双写路径。
+
+### 验证记录
+
+- 原始 66 个 node id 原样重跑：**66 passed，48.76 秒**。
+- 完整历史 parity 与对应回归文件：**731 passed，60.78 秒**，包含原先报错的参数化用例。
+- 原扩大命令 `pytest tests --ignore=tests/manual -k 'research or text_tool_json_format'`：
+  **1539 passed、0 failed、0 errors，另 323 subtests passed**；9546 deselected，
+  404.92 秒。此为原范围的扩大选集，不宣称全仓测试通过。
+- 受影响文件回归 **116 passed**；PDF、精确段落及页码相关回归 **30 passed**；
+  最终真实完成 oracle 与协议定点回归 **34 passed**。各选集有重叠，不相加。
+- 生产 Ruff、Mypy（576 文件）、Pyrefly、ty，以及修改的 Python 测试 Ruff 均通过。
+
+本轮原始输出位于 `.e2e-artifacts/research-regression-repair-20261031/`：
+`original66-final.log/xml`、`parity.log/xml`、`pdf.log`、`affected-files.log/xml`、
+`expanded-verified.log/xml`、`network-audit.json`。扩大回归期间禁止连接常用本地模型端口，
+仅使用固定模型回复、固定网页/PDF 与临时知识库；不启动实机研究或修改 KoboldCpp。
+网络审计中的模型端口连接尝试为 0。完成上述验证后提交并停止，不追加实机实验。

@@ -4532,13 +4532,14 @@ class SessionThreadingTests(unittest.TestCase):
             self.assertFalse(hasattr(provider_controls._context, name), name)
 
     def test_research_unavailable_fallback_uses_capability_order(self) -> None:
-        state = server.AppContext()
+        state = make_app_state(self)
         state.provider_failover_order = lambda: ("deepseek", "mimo", "stepfun")
         state.providers.supervisor.record_failure(
             "deepseek",
             ProviderFailure("DeepSeek", "send", "", "", "limited", "now", "rate_limited"),
         )
         provider = mock.Mock()
+        _declare_protocol_window(provider)
         provider.name = "StepFun Chat"
         provider.location = "https://chat.stepfun.com/chats/"
 
@@ -4561,6 +4562,7 @@ class SessionThreadingTests(unittest.TestCase):
             )
 
         get_provider.assert_called_once_with("stepfun")
+        self.assertTrue(research_task.called, state.run_registry.last_terminal_event())
         self.assertEqual(research_task.call_args.kwargs["provider_id"], "stepfun")
         self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
 
@@ -4701,9 +4703,10 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
 
     def test_research_connect_failure_uses_capability_order(self) -> None:
-        state = server.AppContext()
+        state = make_app_state(self)
         state.provider_failover_order = lambda: ("deepseek", "mimo", "stepfun")
         provider = mock.Mock()
+        _declare_protocol_window(provider)
         provider.name = "StepFun Chat"
         provider.location = "https://chat.stepfun.com/chats/"
 
@@ -4733,17 +4736,19 @@ class SessionThreadingTests(unittest.TestCase):
             [call.args[0] for call in get_provider.call_args_list],
             ["deepseek", "stepfun"],
         )
+        self.assertTrue(research_task.called, state.run_registry.last_terminal_event())
         self.assertEqual(research_task.call_args.kwargs["provider_id"], "stepfun")
         self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
 
     def test_research_fallback_does_not_block_only_avoid_provider(self) -> None:
-        state = server.AppContext()
+        state = make_app_state(self)
         state.provider_failover_order = lambda: ("mimo",)
         state.providers.supervisor.record_failure(
             "deepseek",
             ProviderFailure("DeepSeek", "send", "", "", "limited", "now", "rate_limited"),
         )
         provider = mock.Mock()
+        _declare_protocol_window(provider)
         provider.name = "MiMo Chat"
         provider.location = "https://kimi.moonshot.cn/"
 
@@ -4766,6 +4771,7 @@ class SessionThreadingTests(unittest.TestCase):
             )
 
         get_provider.assert_called_once_with("mimo")
+        self.assertTrue(research_task.called, state.run_registry.last_terminal_event())
         self.assertEqual(research_task.call_args.kwargs["provider_id"], "mimo")
         self.assertEqual(state.run_registry.last_terminal_event()["provider"], "mimo")
 
@@ -5027,29 +5033,20 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = [
-                json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-                json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-                json.dumps(
-                    {
-                        "tool": "knowledge_write",
-                        "args": {
-                            "type": "fact",
-                            "title": "Helium fixture source",
-                            "body": "Helium is separated from natural gas.",
-                            "sources": ["s1"],
-                        },
-                    }
-                ),
-                json.dumps(
-                    {
-                        "tool": "done",
-                        "args": {
-                            "summary": valid_research_report(
-                                "https://example.com/helium", "Helium data are sufficient for this fixture."
-                            )
-                        },
-                    }
-                ),
+                json.dumps({'tool': 'research_plan', 'args': {'questions': ['What does the source establish?']}}),
+                json.dumps({'tool': 'web_search', 'args': {'query': 'helium', 'question_ref': 'q1'}}),
+                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1', 'question_ref': 'q1'}}),
+                json.dumps({'tool': 'save_finding',
+                            'args': {'question_ref': 'q1',
+                                     'claim': 'Helium is separated from natural gas.',
+                                     'passage_ref': 'p7c52c0df8670'}}),
+                json.dumps({'tool': 'done',
+                            'args': {'report_sections': {'coverage': [{'question_ref': 'q1',
+                                                                       'state': 'partial',
+                                                                       'answer': 'Helium is separated from natural gas.',
+                                                                       'findings': ['f1'],
+                                                                       'investigations': [],
+                                                                       'task_refs': ['r1']}]}}}),
             ]
 
             with (
@@ -5068,7 +5065,7 @@ class SessionThreadingTests(unittest.TestCase):
             tool_kinds = [event["kind"] for event in emitted if event["type"] == "tool"]
             state.knowledge_store.close()
         self.assertEqual(done["mode"], "research")
-        self.assertEqual(done["stop_reason"], "done")
+        self.assertEqual(done["stop_reason"], "done", done)
         self.assertTrue(done["research"]["synthesis_id"])
         self.assertIn("read", tool_kinds)
         self.assertIn("citation_map", done["research"])
@@ -5078,7 +5075,8 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Conversation context from this chat", research_intro)
         self.assertIn("Choose the storage layer", research_intro)
         self.assertNotIn("Local Context:", research_intro)
-        self.assertNotIn("Ghost", research_intro)
+        self.assertNotIn("Ghost style memory", research_intro)
+        self.assertIn("Ghost affinity and graph proximity are not evidence", research_intro)
         agent_run.assert_not_called()
 
     @pytest.mark.usefixtures("scripted_local_api_connection")
@@ -5126,23 +5124,6 @@ class SessionThreadingTests(unittest.TestCase):
             def close(self):
                 pass
 
-        report = (
-            "## 1. 结论\n"
-            "- PDF 来源可读时应直接作为页码级证据进入报告 [1 p.1]\n\n"
-            "## 2. 关键证据\n"
-            "- [1 p.1] PDF 页面文本提供了四种后续情景的可读材料。\n\n"
-            "## 3. 反证与限制\n"
-            "- 未找到强反证；本轮覆盖了 PDF 与 HTML 搜索结果，若官方原文或谈判公告更新，会推翻当前结论。\n\n"
-            "## 4. 来源质量\n"
-            "- [1] secondary · data · fresh · cmenaf.org\n\n"
-            "## 5. 搜索覆盖\n"
-            "- query: 2026 US Iran war predictions\n"
-            "- opened: PDF p.1\n"
-            "- skipped: HTML result after PDF answered the fixture\n"
-            "- stop: one representative readable PDF source is enough for this UX fixture\n\n"
-            "## 6. 来源\n"
-            f"[1] [PDF report]({pdf_url})"
-        )
 
         with tempfile.TemporaryDirectory() as td, contextlib.ExitStack() as cleanup:
             state = self._state(td)
@@ -5159,33 +5140,27 @@ class SessionThreadingTests(unittest.TestCase):
             provider.context_budget = ContextBudget(32768, 8192, 0, 12000)
             provider.export_work_state.return_value = ""
             provider.send.side_effect = [
-                json.dumps({"tool": "web_search", "args": {"query": "2026 US Iran war predictions"}}),
-                json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-                json.dumps(
-                    {
-                        "tool": "knowledge_write",
-                        "args": {
-                            "type": "fact",
-                            "title": "PDF report is readable",
-                            "body": "The PDF report describes four possible paths after talks stumble.",
-                            "sources": ["s1"],
-                            "evidence": [
-                                {
-                                    "claim": "The PDF report describes four possible paths after talks stumble.",
-                                    "source_url": "s1",
-                                    "excerpt": "This sentence is not present in the opened page.",
-                                    "stance": "supports",
-                                    "page": 1,
-                                }
-                            ],
-                        },
-                    }
-                ),
-                json.dumps({"tool": "done", "args": {"summary": report}}),
-                # The planner may inspect additional material. Finish that
-                # bounded invocation explicitly instead of exhausting Mock's
-                # reply list and relying on a swallowed provider failure.
-                json.dumps({"tool": "done", "args": {"summary": "No new relevant evidence in the additional material."}}),
+                json.dumps({'tool': 'research_plan', 'args': {'questions': ['What does the source establish?']}}),
+                json.dumps({'tool': 'web_search', 'args': {'query': '2026 US Iran war predictions', 'question_ref': 'q1'}}),
+                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1', 'question_ref': 'q1'}}),
+                json.dumps({'tool': 'save_finding',
+                            'args': {'question_ref': 'q1',
+                                     'claim': 'This sentence is not present in the opened page.',
+                                     'passage_ref': 'p219815a22026'}}),
+                json.dumps({'tool': 'save_finding',
+                            'args': {'question_ref': 'q1',
+                                     'claim': 'The PDF report describes four possible paths after talks stumble. It frames '
+                                              'military escalation, diplomatic reset, proxy conflict, and a managed stalemate as '
+                                              'possible scenarios.',
+                                     'passage_ref': 'pe1c4137fe37d'}}),
+                json.dumps({'tool': 'done',
+                            'args': {'report_sections': {'coverage': [{'question_ref': 'q1',
+                                                                       'state': 'partial',
+                                                                       'answer': 'The selected PDF describes four possible paths; '
+                                                                                 'their likelihood remains unestablished.',
+                                                                       'findings': ['f1'],
+                                                                       'investigations': [],
+                                                                       'task_refs': ['r1']}]}}}),
             ]
 
             with (
@@ -5224,7 +5199,10 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(done["stop_reason"], "done", done)
         tool_events = [event for event in emitted if event["type"] == "tool"]
         pdf_event = next(event for event in tool_events if event["path"] == pdf_url)
-        note_event = next(event for event in tool_events if event["kind"] == "note")
+        note_events = [event for event in tool_events if event["kind"] == "note"]
+        rejected = next(event for event in note_events if event["status"] != "ok")
+        self.assertIn("passage_ref", rejected["result"])
+        note_event = next(event for event in note_events if event["status"] == "ok")
 
         self.assertEqual(done["mode"], "research")
         self.assertEqual(done["stop_reason"], "done")
@@ -5233,9 +5211,9 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("PDF report", pdf_event["result"])
         self.assertEqual(note_event["status"], "ok")
         self.assertFalse(note_event["error"])
-        self.assertIn("WARNING:", note_event["result"])
+        self.assertNotIn("This sentence is not present", note_event["result"])
         self.assertEqual(done["research"]["citation_map"][0]["url"], pdf_url)
-        self.assertEqual(done["research"]["citation_map"][0]["pages"], [1])
+        self.assertTrue(done["research"]["citation_map"][0]["revision"])
         self.assertEqual(done["research"]["opened_sources"][0]["content_kind"], "pdf")
         self.assertEqual(done["research"]["opened_sources"][0]["pages_read"], [1])
         self.assertEqual(done["research"]["evidence_items"][0]["source_url"], pdf_url)
@@ -5276,50 +5254,36 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = [
-                json.dumps({"tool": "web_search", "args": {"query": "storage plan"}}),
-                json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-                json.dumps(
-                    {
-                        "tool": "knowledge_write",
-                        "args": {
-                            "type": "fact",
-                            "title": "Storage plan source",
-                            "body": "The storage plan source supports the SQLite-backed plan.",
-                            "sources": ["s1"],
-                        },
-                    }
-                ),
-                json.dumps(
-                    {
-                        "tool": "done",
-                        "args": {
-                            "summary": valid_research_report(
-                                "https://example.com/storage", "First research summary: prefer the SQLite-backed plan."
-                            )
-                        },
-                    }
-                ),
-                json.dumps({"tool": "web_search", "args": {"query": "storage plan followup"}}),
-                json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-                json.dumps(
-                    {
-                        "tool": "knowledge_write",
-                        "args": {
-                            "type": "fact",
-                            "title": "Storage plan followup",
-                            "body": "The storage plan source supports the SQLite-backed plan.",
-                            "sources": ["s1"],
-                        },
-                    }
-                ),
-                json.dumps(
-                    {
-                        "tool": "done",
-                        "args": {
-                            "summary": valid_research_report("https://example.com/storage", "Second research summary.")
-                        },
-                    }
-                ),
+                json.dumps({'tool': 'research_plan', 'args': {'questions': ['What does the source establish?']}}),
+                json.dumps({'tool': 'web_search', 'args': {'query': 'storage plan', 'question_ref': 'q1'}}),
+                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1', 'question_ref': 'q1'}}),
+                json.dumps({'tool': 'save_finding',
+                            'args': {'question_ref': 'q1',
+                                     'claim': 'The storage plan source supports the SQLite-backed plan.',
+                                     'passage_ref': 'p294d378fb869'}}),
+                json.dumps({'tool': 'done',
+                            'args': {'report_sections': {'coverage': [{'question_ref': 'q1',
+                                                                       'state': 'partial',
+                                                                       'answer': 'First research summary: the source supports the '
+                                                                                 'SQLite-backed plan.',
+                                                                       'findings': ['f1'],
+                                                                       'investigations': [],
+                                                                       'task_refs': ['r1']}]}}}),
+                json.dumps({'tool': 'research_plan', 'args': {'questions': ['What does the source establish?']}}),
+                json.dumps({'tool': 'web_search', 'args': {'query': 'storage plan followup', 'question_ref': 'q1'}}),
+                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1', 'question_ref': 'q1'}}),
+                json.dumps({'tool': 'save_finding',
+                            'args': {'question_ref': 'q1',
+                                     'claim': 'The storage plan source supports the SQLite-backed plan.',
+                                     'passage_ref': 'p294d378fb869'}}),
+                json.dumps({'tool': 'done',
+                            'args': {'report_sections': {'coverage': [{'question_ref': 'q1',
+                                                                       'state': 'partial',
+                                                                       'answer': 'Second research summary: the source supports the '
+                                                                                 'SQLite-backed plan.',
+                                                                       'findings': ['f1'],
+                                                                       'investigations': [],
+                                                                       'task_refs': ['r1']}]}}}),
             ]
 
             with (
@@ -5330,15 +5294,15 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 _run_task_with_ghost_wait(
-                    "session-research", None, "Research the storage plan", 4, False, "deepseek", "research"
+                    "session-research", None, "Research the storage plan", 5, False, "deepseek", "research"
                 )
                 _run_task_with_ghost_wait(
-                    "session-research", None, "Continue researching that plan", 4, False, "deepseek", "research"
+                    "session-research", None, "Continue researching that plan", 5, False, "deepseek", "research"
                 )
 
             state.knowledge_store.close()
 
-        second_intro = provider.send.call_args_list[4].args[0]
+        second_intro = provider.send.call_args_list[5].args[0]
         self.assertIn("Conversation context from this chat", second_intro)
         self.assertIn("First research summary", second_intro)
         agent_run.assert_not_called()

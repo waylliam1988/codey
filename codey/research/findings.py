@@ -77,7 +77,7 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
             for selected in passages:
                 item = EvidenceItem(claim, selected.source.final_url, selected.excerpt.strip(),
                                     note_id=identity, locator="passage:" + selected.ref,
-                                    page=next((page for page, text in selected.pages if selected.excerpt.strip() in text), None))
+                                    page=selected.page)
                 if item not in tools.ledger.evidence_items:
                     tools.ledger.add_evidence_items([item])
             if identity not in tools.created_ids and identity not in tools.updated_ids:
@@ -87,7 +87,8 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
         lowered: dict[str, Any] = {"type": "fact", "title": claim[:160], "body": claim,
             "sources": [passage.source.final_url], "conditions": conditions,
             "evidence": [{"claim": claim, "source_url": passage.source.final_url,
-                          "excerpt": selected.excerpt.strip(), "stance": "supports"} for selected in passages]}
+                          "excerpt": selected.excerpt.strip(), "stance": "supports",
+                          "page": selected.page} for selected in passages]}
         # Archive against the frozen source observation selected by the caller,
         # even when the same URL has subsequently changed. Do not change the
         # live ledger's latest source view.

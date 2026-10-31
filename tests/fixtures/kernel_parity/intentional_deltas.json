@@ -3084,7 +3084,7 @@
   "loop/create-done": {
     "status": "INTENTIONAL_DENY",
     "category": "fresh-verification",
-    "reason": "A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored.",
+    "reason": "A changed project cannot complete without fresh structured relevant verification, unless the request explicitly forbids verification; old unverified completion is not restored. Repeated unchanged rejected completion now stops at the no-progress bound (turn 4), before the total-turn budget.",
     "tests": [
       "tests/test_task_kernel_remaining.py",
       "tests/test_kernel_parity_regressions.py",
@@ -3158,8 +3158,8 @@
         "changed": true,
         "checks_passed": false,
         "checks_ran": false,
-        "stop_reason": "max_turns",
-        "turns": 5
+        "stop_reason": "no_progress",
+        "turns": 4
       },
       "snapshot": null
     }
@@ -4288,11 +4288,12 @@
   },
   "research/source-hit": {
     "status": "INTENTIONAL_DENY",
-    "category": "strict-arguments",
-    "reason": "The shared research executor reopens an explicit source-search hit through the common open_url path, so the deterministic fixture records the second bounded fetch.",
+    "category": "research-contract",
+    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
     "tests": [
-      "tests/test_kernel_parity_regressions.py",
-      "tests/test_kernel_protocol_validator_failclosed.py"
+      "tests/test_kernel_legacy_parity.py",
+      "tests/test_research_findings.py",
+      "tests/test_research_question_ownership.py"
     ],
     "changelog": "CHANGELOG.md",
     "before": {
@@ -4352,64 +4353,11 @@
       "stop_reason": "done"
     },
     "after": {
-      "evidence_count": 1,
-      "notes": [
-        {
-          "aliases": [],
-          "body": "Helium is separated from natural gas streams.",
-          "confidence": null,
-          "open_questions": [],
-          "project": "",
-          "relations": [],
-          "session_id": "s",
-          "sources": [
-            "https://example.com/helium"
-          ],
-          "status": "active",
-          "tags": [],
-          "title": "Helium production",
-          "type": "fact",
-          "valid_until": null
-        },
-        {
-          "aliases": [],
-          "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
-          "confidence": null,
-          "open_questions": [],
-          "project": "",
-          "relations": [],
-          "session_id": "s",
-          "sources": [
-            "https://example.com/helium"
-          ],
-          "status": "active",
-          "tags": [
-            "research",
-            "session:s"
-          ],
-          "title": "How is helium obtained?",
-          "type": "synthesis",
-          "valid_until": null
-        }
-      ],
-      "operations": [
-        [
-          "search",
-          "helium production"
-        ],
-        [
-          "fetch",
-          "https://example.com/helium"
-        ],
-        [
-          "fetch",
-          "https://example.com/helium"
-        ]
-      ],
-      "source_urls": [
-        "https://example.com/helium"
-      ],
-      "stop_reason": "done"
+      "evidence_count": 0,
+      "notes": [],
+      "operations": [],
+      "source_urls": [],
+      "stop_reason": "protocol"
     }
   },
   "loop/fresh-failure": {
@@ -5800,6 +5748,2223 @@
       "accepted": true,
       "calls": [],
       "done": "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium\"}}"
+    }
+  },
+  "protocol/research/research/json/open_url/example-0": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "pages": "1-5",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 6000,
+            "offset": 0,
+            "pages": "1-5",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/native/open_url/example-0": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "pages": "1-5",
+            "url": "https://..."
+          },
+          "id": "c1",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 6000,
+            "offset": 0,
+            "pages": "1-5",
+            "url": "https://..."
+          },
+          "id": "c1",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/open_url/url-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "pages": "1-5",
+            "url": "2"
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 6000,
+            "offset": 0,
+            "pages": "1-5",
+            "url": "2"
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/open_url/limit-number": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 2,
+            "pages": "1-5",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 2,
+            "offset": 0,
+            "pages": "1-5",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/open_url/limit-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 2,
+            "pages": "1-5",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": "2",
+            "offset": 0,
+            "pages": "1-5",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/open_url/offset-number": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "offset": 2,
+            "pages": "1-5",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 6000,
+            "offset": 2,
+            "pages": "1-5",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/open_url/offset-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "offset": 2,
+            "pages": "1-5",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 6000,
+            "offset": "2",
+            "pages": "1-5",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/open_url/pages-empty": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 6000,
+            "offset": 0,
+            "pages": "",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/open_url/pages-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "pages": "2",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 6000,
+            "offset": 0,
+            "pages": "2",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "open_url"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/source_search/example-0": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "query": "...",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "source_search"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 6,
+            "query": "...",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "source_search"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/native/source_search/example-0": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "query": "...",
+            "url": "https://..."
+          },
+          "id": "c1",
+          "name": "source_search"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 6,
+            "query": "...",
+            "url": "https://..."
+          },
+          "id": "c1",
+          "name": "source_search"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/source_search/url-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "query": "...",
+            "url": "2"
+          },
+          "id": "",
+          "name": "source_search"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 6,
+            "query": "...",
+            "url": "2"
+          },
+          "id": "",
+          "name": "source_search"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/source_search/query-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "query": "2",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "source_search"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 6,
+            "query": "2",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "source_search"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/source_search/limit-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": 2,
+            "query": "...",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "source_search"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "limit": "2",
+            "query": "...",
+            "url": "https://..."
+          },
+          "id": "",
+          "name": "source_search"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/example-0": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "status": "active",
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/native/knowledge_write/example-0": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "c1",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "status": "active",
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "c1",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/type-numeric-text": {
+    "status": "INTENTIONAL_DENY",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "2",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": false,
+      "calls": [],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/title-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "2",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "status": "active",
+            "tags": [
+              "..."
+            ],
+            "title": "2",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/body-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "2",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "2",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "status": "active",
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/confidence-number": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 2.0,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 2,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "status": "active",
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/confidence-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 2.0,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": "2",
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "status": "active",
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/id-empty": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "id": "",
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "status": "active",
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/id-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "id": "2",
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "id": "2",
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "status": "active",
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/retrieved_at-empty": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "retrieved_at": "",
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "retrieved_at": "",
+            "sources": [
+              "https://..."
+            ],
+            "status": "active",
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/retrieved_at-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "retrieved_at": "2",
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "retrieved_at": "2",
+            "sources": [
+              "https://..."
+            ],
+            "status": "active",
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2026-12-31"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/valid_until-empty": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": ""
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "status": "active",
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": ""
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    }
+  },
+  "protocol/research/research/json/knowledge_write/valid_until-numeric-text": {
+    "status": "INTENTIONAL_CHANGE",
+    "category": "proposal-projection",
+    "reason": "Research proposals preserve declared arguments, including explicit defaults and numeric strings; runtime supplies omitted defaults. Legacy optional/coercion projection is no longer a second schema. Unknown note types are rejected by the shared ToolSpec enum.",
+    "tests": [
+      "tests/test_research_protocol_contract.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    },
+    "after": {
+      "accepted": true,
+      "calls": [
+        {
+          "args": {
+            "body": "...",
+            "confidence": 0.6,
+            "evidence": [
+              {
+                "claim": "...",
+                "excerpt": "exact short text copied from open_url output",
+                "source_url": "https://...",
+                "stance": "supports"
+              }
+            ],
+            "relations": [
+              {
+                "dst": "helium supply",
+                "kind": "affects",
+                "src": "war"
+              }
+            ],
+            "sources": [
+              "https://..."
+            ],
+            "status": "active",
+            "tags": [
+              "..."
+            ],
+            "title": "...",
+            "type": "fact",
+            "valid_until": "2"
+          },
+          "id": "",
+          "name": "knowledge_write"
+        }
+      ],
+      "done": null
+    }
+  },
+  "research/evidence-synthesis": {
+    "status": "INTENTIONAL_DENY",
+    "category": "research-contract",
+    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
+    "tests": [
+      "tests/test_kernel_legacy_parity.py",
+      "tests/test_research_findings.py",
+      "tests/test_research_question_ownership.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "evidence_count": 1,
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [],
+          "title": "Helium production",
+          "type": "fact",
+          "valid_until": null
+        },
+        {
+          "aliases": [],
+          "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "after": {
+      "evidence_count": 0,
+      "notes": [],
+      "operations": [],
+      "source_urls": [],
+      "stop_reason": "protocol"
+    }
+  },
+  "research/synthesis-questions": {
+    "status": "INTENTIONAL_DENY",
+    "category": "research-contract",
+    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
+    "tests": [
+      "tests/test_kernel_legacy_parity.py",
+      "tests/test_research_findings.py",
+      "tests/test_research_question_ownership.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "evidence_count": 1,
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [],
+          "title": "Helium production",
+          "type": "fact",
+          "valid_until": null
+        },
+        {
+          "aliases": [],
+          "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
+          "open_questions": [
+            "Other helium sources?"
+          ],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "after": {
+      "evidence_count": 0,
+      "notes": [],
+      "operations": [],
+      "source_urls": [],
+      "stop_reason": "protocol"
+    }
+  },
+  "research/controller-open-result": {
+    "status": "INTENTIONAL_DENY",
+    "category": "research-contract",
+    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
+    "tests": [
+      "tests/test_kernel_legacy_parity.py",
+      "tests/test_research_findings.py",
+      "tests/test_research_question_ownership.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "evidence_count": 1,
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [],
+          "title": "Helium production",
+          "type": "fact",
+          "valid_until": null
+        },
+        {
+          "aliases": [],
+          "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "after": {
+      "evidence_count": 0,
+      "notes": [],
+      "operations": [],
+      "source_urls": [],
+      "stop_reason": "protocol"
+    }
+  },
+  "research/source-search": {
+    "status": "INTENTIONAL_DENY",
+    "category": "research-contract",
+    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
+    "tests": [
+      "tests/test_kernel_legacy_parity.py",
+      "tests/test_research_findings.py",
+      "tests/test_research_question_ownership.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "evidence_count": 1,
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [],
+          "title": "Helium production",
+          "type": "fact",
+          "valid_until": null
+        },
+        {
+          "aliases": [],
+          "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "after": {
+      "evidence_count": 0,
+      "notes": [],
+      "operations": [],
+      "source_urls": [],
+      "stop_reason": "protocol"
+    }
+  },
+  "research/search-only-budget": {
+    "status": "INTENTIONAL_DENY",
+    "category": "research-contract",
+    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
+    "tests": [
+      "tests/test_kernel_legacy_parity.py",
+      "tests/test_research_findings.py",
+      "tests/test_research_question_ownership.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "evidence_count": 0,
+      "notes": [],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ]
+      ],
+      "source_urls": [],
+      "stop_reason": "max_turns"
+    },
+    "after": {
+      "evidence_count": 0,
+      "notes": [],
+      "operations": [],
+      "source_urls": [],
+      "stop_reason": "max_turns"
+    }
+  },
+  "research/native-evidence-synthesis": {
+    "status": "INTENTIONAL_DENY",
+    "category": "research-contract",
+    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
+    "tests": [
+      "tests/test_kernel_legacy_parity.py",
+      "tests/test_research_findings.py",
+      "tests/test_research_question_ownership.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "evidence_count": 1,
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [],
+          "title": "Helium production",
+          "type": "fact",
+          "valid_until": null
+        },
+        {
+          "aliases": [],
+          "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "after": {
+      "evidence_count": 0,
+      "notes": [],
+      "operations": [],
+      "source_urls": [],
+      "stop_reason": "protocol"
+    }
+  },
+  "research/controller-source-references": {
+    "status": "INTENTIONAL_DENY",
+    "category": "research-contract",
+    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
+    "tests": [
+      "tests/test_kernel_legacy_parity.py",
+      "tests/test_research_findings.py",
+      "tests/test_research_question_ownership.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "evidence_count": 1,
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [],
+          "title": "Helium production",
+          "type": "fact",
+          "valid_until": null
+        },
+        {
+          "aliases": [],
+          "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "after": {
+      "evidence_count": 0,
+      "notes": [],
+      "operations": [],
+      "source_urls": [],
+      "stop_reason": "protocol"
+    }
+  },
+  "research/controller-reopen-source": {
+    "status": "INTENTIONAL_DENY",
+    "category": "research-contract",
+    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
+    "tests": [
+      "tests/test_kernel_legacy_parity.py",
+      "tests/test_research_findings.py",
+      "tests/test_research_question_ownership.py"
+    ],
+    "changelog": "CHANGELOG.md",
+    "before": {
+      "evidence_count": 1,
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams.",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [],
+          "title": "Helium production",
+          "type": "fact",
+          "valid_until": null
+        },
+        {
+          "aliases": [],
+          "body": "## 结论\n- The opened source says helium is separated from natural gas streams. [1]\n\n## 关键证据\n- [1] The opened source says helium is separated from natural gas streams.\n\n## 反证与限制\n- 未找到强反证；需要持续追踪新供应数据。\n- 未能用已保存证据确认：Helium supply depends on gas processing.\n\n## 来源质量\n- [1] secondary · web · fresh · example.com\n\n## 搜索覆盖\n- query: helium production\n- opened: Helium article\n- skipped: none representative\n\n## 来源\n[1] Helium article - https://example.com/helium\n\n## Evidence Ledger\n### Opened Sources\n- [1] Helium article - https://example.com/helium (secondary · web · undated · example.com)\n### Evidence Items\n- [supports] Helium production\n  source: https://example.com/helium\n  excerpt: Helium is separated from natural gas streams.\n### Search Coverage\n- query: helium production\n\n## Related\n[[Helium production]] (derives)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "after": {
+      "evidence_count": 0,
+      "notes": [],
+      "operations": [],
+      "source_urls": [],
+      "stop_reason": "protocol"
     }
   }
 }

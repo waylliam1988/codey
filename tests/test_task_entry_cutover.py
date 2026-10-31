@@ -11,7 +11,7 @@ import pytest
 
 from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
 from codey.storage.managed_outputs import ManagedOutputStore
-from tests.support.research_report import report_args
+from tests.support.research_script import answer_args, finding_args
 
 
 def _cutover_parent_policy():
@@ -187,35 +187,34 @@ def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
     assert kernel.call_args.kwargs["request"].execution.project_path == project.resolve()
 
 
-def test_unified_kernel_passes_authoritative_research_ledger_to_gate() -> None:
-    from codey.operations.task_session import TaskSession
-    from codey.policies.task_policy import TaskPolicy
-    from tests.support.kernel_runtime import run_task_kernel
+def test_unified_kernel_passes_authoritative_research_ledger_to_gate(tmp_path, public_source_dns) -> None:
+    from dataclasses import replace
 
-    session = TaskSession(
-        policy=TaskPolicy(grants=frozenset({"control", "web.read"}), strict_research=True),
-        task_kind="research", max_turns=1,
-    )
-    ledger = object()
+    from tests.support.kernel_runtime import run_task_kernel
+    from tests.test_research_findings import URL, execute, setup
+
+    store, tools, session, delegate = setup(tmp_path)
+    session.policy = replace(session.policy, strict_research=True)
+    session.max_turns = 1
+    execute(delegate, tools, session, "open_url", {"url": URL})
+    execute(delegate, tools, session, "save_finding", {
+        "claim": "Only one writer can write at a time.",
+        "passage_ref": next(iter(tools.ledger.read_passages))})
+
     class Provider:
         def send(self, _prompt, timeout=None):
-            return json.dumps({"tool": "done", "args": {"summary": "结论 x", "report_sections": {
-                key: ["未核实"] for key in ("evidence", "counter", "source_quality", "coverage", "sources")}}})
+            return json.dumps({"tool": "done", "args": answer_args("Only one writer can write at a time.")})
 
-    with patch("codey.operations.completion_gate.evaluate") as evaluate:
-        evaluate.return_value = SimpleNamespace(complete=False, followup="missing")
-        run_task_kernel(
-            session,
-            request=KernelRunRequest(
-                transport=KernelTransportDeps(
-                    provider=Provider(),
-                ),
-                observation=KernelObservationDeps(
-                    completion_context={"research_ledger": ledger},
-                ),
-            ),
-        )
-    assert evaluate.call_args.kwargs["context"]["research_ledger"] is ledger
+    try:
+        with patch("codey.operations.completion_gate.evaluate") as evaluate:
+            evaluate.return_value = SimpleNamespace(complete=False, followup="missing")
+            run_task_kernel(session, request=KernelRunRequest(
+                transport=KernelTransportDeps(provider=Provider(), user_task=session.task_text),
+                execution=KernelExecutionDeps(research_tools=tools),
+                observation=KernelObservationDeps(completion_context={"research_ledger": tools.ledger})))
+        assert evaluate.call_args.kwargs["context"]["research_ledger"] is tools.ledger
+    finally:
+        store.close()
 
 
 def test_explicit_research_prompt_explains_evidence_and_report_contract() -> None:
@@ -228,12 +227,12 @@ def test_explicit_research_prompt_explains_evidence_and_report_contract() -> Non
     session = TaskSession(
         policy=TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"}),
                           strict_research=True),
-        task_kind="research", task_text="question",
+        task_kind="research", task_text="question", research_questions=("What is the answer?",),
     )
     prompt = kernel_prompt_for_session(session, task_guidance=task_guidance_for_policy(session.policy),
                                        tool_names=build_turn_snapshot(session).tool_names)
-    for required in ("web_search", "open_result", "knowledge_write", "结论", "关键证据",
-                     "反证与限制", "来源质量", "搜索覆盖", "来源"):
+    for required in ("web_search", "open_url", "save_finding", "passage_ref",
+                     "report_sections.coverage", "task_refs", "[fN]"):
         assert required in prompt
 
 
@@ -255,19 +254,12 @@ def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
     prompt = kernel_prompt_for_session(session, task_guidance=task_guidance_for_policy(session.policy),
                                        tool_names=build_turn_snapshot(session).tool_names)
     for required in (
-        "Strict research completion checklist",
-        "Do not call done before knowledge_write",
-        "knowledge_read",
-        "Do not repeat knowledge_write for the same evidence",
-        "done.summary is only the conclusion",
-        "done.report_sections={evidence:[text],counter:[text],source_quality:[text],coverage:[text],sources:[text]}",
-        "[1]-style citations",
-        "describe the actual search scope and remaining limits",
-        "if it was not investigated, say so",
-        "pass the note id exactly as returned",
+        "Research rules", "research_plan", "knowledge_read", "report_sections.coverage",
+        "do not repeat unchanged reports or writes", "question_ref=qN", "actual investigation gaps",
+        "Never infer absence from an unperformed search", "After rejection fix the specified field",
+        "Do not also write summary, evidence or counter paragraphs",
     ):
         assert required in prompt
-    assert "A valid no-counter example is exactly" not in prompt
     assert "Alternatively supply" not in prompt
 
 
@@ -292,8 +284,9 @@ def test_web_research_shows_result_and_source_ids_to_model(tmp_path) -> None:
 
     prompts: list[str] = []
     replies = iter([
-        '{"tool":"web_search","args":{"query":"claim"}}',
-        '{"tool":"open_result","args":{"result_id":"r1"}}',
+        '{"tool":"research_plan","args":{"questions":["What is the claim?"]}}',
+        '{"tool":"web_search","args":{"query":"claim","question_ref":"q1"}}',
+        '{"tool":"open_result","args":{"result_id":"r1","question_ref":"q1"}}',
         '{"tool":"done","args":{"summary":"unfinished"}}',
     ])
 
@@ -306,20 +299,20 @@ def test_web_research_shows_result_and_source_ids_to_model(tmp_path) -> None:
     tools = ResearchTools(search=Search(), store=store, changes=KnowledgeChanges(root=store.root))
     policy = build_task_policy(TaskSubmission("s", None, "claim", 3, False, "deepseek"),
                                task_kind="research", strict_research=True)
-    session = TaskSession(policy=policy, task_kind="research", max_turns=3)
+    session = TaskSession(policy=policy, task_kind="research", max_turns=4, task_text="claim")
     run_task_kernel(
         session,
         request=KernelRunRequest(
             transport=KernelTransportDeps(
-                provider=Provider(),
+                provider=Provider(), user_task="claim",
             ),
             execution=KernelExecutionDeps(
                 research_tools=tools,
             ),
         ),
     )
-    assert "r1" in prompts[1] and url in prompts[1]
-    assert "s1" in prompts[2] and url in prompts[2]
+    assert "r1" in prompts[2] and url in prompts[2]
+    assert "s1" in prompts[3] and url in prompts[3]
 
 
 def test_search_result_ids_remain_stable_across_searches() -> None:
@@ -698,6 +691,7 @@ def test_default_research_iteration_uses_shared_turn_kernel() -> None:
 
 
 def test_research_done_builds_proof_record_from_current_ledger() -> None:
+    """Legacy node id: plain text cannot build a completion record anymore."""
     from codey.operations.completion_gate import evaluate
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
@@ -709,8 +703,10 @@ def test_research_done_builds_proof_record_from_current_ledger() -> None:
         task_kind="research",
     )
     with patch("codey.research.object_model.build_research_record", return_value=object()) as build:
-        evaluate(session, "结论 x 来源 y", context={"research_ledger": ledger, "question": "x"})
-    build.assert_called_once()
+        verdict = evaluate(session, "结论 x 来源 y", context={"research_ledger": ledger, "question": "x"})
+    build.assert_not_called()
+    assert not verdict.complete
+    assert "validated structured proposal and exact reference compilation" in verdict.followup
 
 
 @pytest.mark.usefixtures("public_source_dns")
@@ -719,26 +715,12 @@ def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> 
     from tests.support.kernel_runtime import run_research_iteration
 
     url = "https://example.com/pipeline"
-    answer = (
-        "## 结论\n- Pipeline answer depends on the opened source. [1]\n\n"
-        "## 关键证据\n- [1] Pipeline source text says the fact.\n\n"
-        "## 反证与限制\n- 未找到强反证；需要持续追踪新数据。\n\n"
-        "## 来源质量\n- [1] secondary · web · fresh · example.com\n\n"
-        "## 搜索覆盖\n- query: pipeline question\n- opened: Pipeline source\n"
-        "- skipped: none representative\n\n"
-        f"## 来源\n[1] Pipeline source - {url}"
-    )
     replies = iter(json.dumps(item, ensure_ascii=False) for item in (
-        {"tool": "web_search", "args": {"query": "pipeline question"}},
-        {"tool": "open_result", "args": {"result_id": "r1"}},
-        {"tool": "knowledge_write", "args": {
-            "type": "fact", "title": "Pipeline answer depends on the opened source.",
-            "body": "Pipeline source text says the fact.", "sources": [url],
-            "evidence": [{"claim": "Pipeline answer depends on the opened source.",
-                          "source_url": url, "excerpt": "Pipeline source text says the fact.",
-                          "stance": "supports"}],
-        }},
-        {"tool": "done", "args": report_args(answer)},
+        {"tool": "research_plan", "args": {"questions": ["What does the pipeline source say?"]}},
+        {"tool": "web_search", "args": {"query": "pipeline question", "question_ref": "q1"}},
+        {"tool": "open_result", "args": {"result_id": "r1", "question_ref": "q1"}},
+        {"tool": "save_finding", "args": finding_args(url, "Pipeline source text says the fact.")},
+        {"tool": "done", "args": answer_args("Pipeline source text says the fact.")},
     ))
 
     class Search:
@@ -1126,6 +1108,11 @@ def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) ->
         def search(self, query, limit=8):
             return [{"title": "Result", "url": "https://example.com", "snippet": query}]
 
+    replies = iter([
+        '{"tool":"research_plan","args":{"questions":["What is q?"]}}',
+        '{"tool":"web_search","args":{"query":"q","question_ref":"q1"}}',
+    ])
+
     class Provider:
         name = "deepseek"
 
@@ -1133,7 +1120,7 @@ def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) ->
             return None
 
         def send(self, _prompt, timeout=None):
-            return '{"tool":"web_search","args":{"query":"q"}}'
+            return next(replies)
 
     store = KnowledgeStore(tmp_path / "knowledge")
     iteration = run_research_iteration(
@@ -1146,7 +1133,7 @@ def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) ->
             ),
             knowledge_store=store, runtime_mutations=line, managed_outputs=ManagedOutputStore(tmp_path / "outputs"),
         ),
-        provider=Provider(), session_id="s", project="", task="q", max_turns=1,
+        provider=Provider(), session_id="s", project="", task="q", max_turns=2,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
         run_id="r", chat_handoff="", trace_recorder=None, search=Search(),
     )
@@ -1476,11 +1463,14 @@ def test_unified_research_externalizes_large_opened_source(tmp_path) -> None:
     )
     policy = build_task_policy(TaskSubmission("s", None, "research", 2, False, "deepseek"),
                                task_kind="research", strict_research=True)
-    session = TaskSession(policy=policy, task_kind="research")
+    session = TaskSession(policy=policy, task_kind="research", task_text="research")
     outputs = ManagedOutputStore(tmp_path / "state")
-    result = execute_turn(session, [ToolCall("open_url", {"url": url})],
+    planned = execute_turn(session, [ToolCall("research_plan", {"questions": ["What does this source say?"]})],
+        research_tools=research_tools, session_id="s", run_id="r", turn=1)[0]
+    assert planned.ok, planned.model_text
+    result = execute_turn(session, [ToolCall("open_url", {"url": url, "question_ref": "q1"})],
                           research_tools=research_tools, managed_outputs=outputs,
-                          session_id="s", run_id="r", turn=1)[0]
+                          session_id="s", run_id="r", turn=2)[0]
     assert result.audit["managed_output"]["handle"].startswith("out_")
     assert len(result.model_text) < 30_000
 

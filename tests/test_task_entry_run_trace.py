@@ -411,7 +411,7 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
                 "followup_applied": False,
                 "followup_rounds": 0,
                 "stop_reason": "done",
-                "planner_stop_reason": "proof_ok_no_required_followup",
+                "planner_stop_reason": "strict_writer_owns_followup",
                 "fresh_source_count": 0,
                 "new_evidence_count": 0,
                 "final_evidence_count": 1,
@@ -440,7 +440,7 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
         assert terminal_research_payload["followup_applied"] is False
         assert terminal_research_payload["followup_rounds"] == 0
         assert terminal_research_payload["pipeline_stop_reason"] == "done"
-        assert terminal_research_payload["planner_stop_reason"] == "proof_ok_no_required_followup"
+        assert terminal_research_payload["planner_stop_reason"] == "strict_writer_owns_followup"
         assert "research_record" not in terminal_research_payload
         assert "research_proof" not in terminal_research_payload
         assert "research_plan" not in terminal_research_payload

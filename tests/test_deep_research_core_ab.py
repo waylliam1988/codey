@@ -5,9 +5,30 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
 from tests.manual import deep_research_core_ab as ab
+
+
+@pytest.fixture(autouse=True)
+def offline_fixture_dns(monkeypatch):
+    import socket
+    from types import SimpleNamespace
+    from urllib.parse import urlsplit
+
+    from codey.policies import network
+
+    hosts = {urlsplit(doc.url).hostname for case in ab.CASES for doc in case.documents}
+    hosts.add("example.edu")
+
+    def resolve(host, port, **kwargs):
+        assert host in hosts, f"Unscripted DNS host: {host}"
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", port))]
+
+    monkeypatch.setattr(network, "socket", SimpleNamespace(getaddrinfo=resolve, IPPROTO_TCP=socket.IPPROTO_TCP))
+    monkeypatch.setattr(network, "DEFAULT_NETWORK_POLICY", network.NetworkPolicy())
 
 
 def test_deep_research_ab_prompt_arms_are_isolated() -> None:
@@ -210,11 +231,11 @@ def test_source_search_requires_opened_source_and_returns_pdf_page_locator() -> 
         store.close()
 
     assert before.startswith("NEEDS_OPEN:")
-    assert "[page 1]" in opened
+    assert "PDF - pages 1-5" in opened
     assert "p.9" in located
     assert "stratified bootstrap validation" in located
     assert coverage["source_searches"][0]["query"] == "stratified bootstrap"
-    assert "[page 9]" in page
+    assert "PDF - pages 9" in page
     assert evidence_count == 0
 
 
@@ -296,44 +317,21 @@ def test_deep_research_ab_scoring_tracks_source_search_recall() -> None:
     case = next(item for item in ab.CASES if item.name == "pdf-target-page")
     # New single entry requires Chinese report sections (结论/来源) via the
     # completion gate; behavior (source_search recall, target page 9) preserved.
-    report = (
-        "## 结论\n"
-        "- The Omega method uses stratified bootstrap validation [1 p.9].\n\n"
-        "## 关键证据\n"
-        "- [1 p.9] The method uses stratified bootstrap validation.\n\n"
-        "## 反证与限制\n"
-        "- No strong counter-evidence was found; this fixture only checks source_search.\n\n"
-        "## 来源质量\n"
-        "- [1] primary paper source.\n\n"
-        "## 搜索覆盖\n"
-        "- query: omega method validation\n\n"
-        "## 来源\n"
-        f"[1] Omega method paper - {ab.PDF_METHOD_URL}"
-    )
+    from tests.support.research_script import answer_args, finding_args
+
+    page_text = case.documents[0].source_document(pages="9").text
     provider = ab.ScriptedProvider(
-            json.dumps({"tool": "web_search", "args": {"query": "omega method validation"}}),
-        json.dumps({"tool": "open_url", "args": {"url": ab.PDF_METHOD_URL}}),
+        json.dumps({"tool": "research_plan", "args": {"questions": ["What validation method is used?"]}}),
+            json.dumps({"tool": "web_search", "args": {"query": "omega method validation", "question_ref": "q1"}}),
+        json.dumps({"tool": "open_url", "args": {"question_ref": "q1", "url": ab.PDF_METHOD_URL}}),
         json.dumps({
             "tool": "source_search",
-            "args": {"url": ab.PDF_METHOD_URL, "query": "stratified bootstrap"},
+            "args": {"question_ref": "q1", "url": ab.PDF_METHOD_URL, "query": "stratified bootstrap"},
         }),
-        json.dumps({"tool": "open_url", "args": {"url": ab.PDF_METHOD_URL, "pages": "9"}}),
-        json.dumps({
-            "tool": "knowledge_write",
-            "args": {
-                "type": "fact",
-                "title": "Omega validation method",
-                "body": "The method uses stratified bootstrap validation.",
-                "sources": [ab.PDF_METHOD_URL],
-                "evidence": [{
-                    "claim": "Omega method uses stratified bootstrap validation.",
-                    "source_url": ab.PDF_METHOD_URL,
-                    "excerpt": "stratified bootstrap validation with 5,000 resamples",
-                    "page": 9,
-                }],
-            },
-        }),
-        json.dumps({"tool": "done", "args": {"summary": report}}),
+        json.dumps({"tool": "open_url", "args": {"question_ref": "q1", "url": ab.PDF_METHOD_URL, "pages": "9"}}),
+        json.dumps({"tool": "save_finding", "args": finding_args(ab.PDF_METHOD_URL, page_text, start=len("[page 9]\n"),
+            claim="Omega method uses stratified bootstrap validation.")}),
+        json.dumps({"tool": "done", "args": answer_args("Omega method uses stratified bootstrap validation.")}),
     )
 
     row = ab.run_case(
@@ -345,7 +343,7 @@ def test_deep_research_ab_scoring_tracks_source_search_recall() -> None:
         timeout=30.0,
     )
 
-    assert row["final_done"]
+    assert row["final_done"], json.dumps(row, ensure_ascii=True)
 
 
 def test_deep_research_ab_summary_reports_deltas() -> None:

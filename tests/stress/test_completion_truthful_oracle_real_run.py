@@ -77,70 +77,42 @@ def test_tampered_verification_identity_fails_oracle(tmp_path) -> None:
 
 
 def _real_research_gate():
+    import tempfile
+    from dataclasses import replace
+    from pathlib import Path
+
     from codey.operations.completion_gate import evaluate
-    from codey.operations.task_session import TaskSession
-    from codey.policies.task_policy import TaskPolicy
-    from codey.research.ledger import ResearchLedger
+    from codey.research.finding_report import compile_finding_report
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
+    from tests.support.research_script import answer_args
+    from tests.test_research_findings import execute, setup
 
-    url = "https://example.com/helium"
-    source_text = "Helium is separated from natural gas streams. 2026 supply note."
-    summary = (
-        "## 结论\n"
-        "- Helium supply depends on gas processing. [1]\n\n"
-        "## 关键证据\n"
-        "- [1] The opened source says helium is separated from natural gas streams.\n\n"
-        "## 反证与限制\n"
-        "- 未找到强反证；需要持续追踪新供应数据。\n\n"
-        "## 来源质量\n"
-        "- [1] secondary · web · fresh · example.com\n\n"
-        "## 搜索覆盖\n"
-        "- query: helium supply\n"
-        "- opened: Helium article\n"
-        "- skipped: none representative\n\n"
-        "## 来源\n"
-        f"[1] Helium article - {url}"
-    )
-    ledger = ResearchLedger()
-    ledger.record_search("helium supply", [{"title": "Helium article", "url": url, "snippet": "Helium supply."}])
-    ledger.record_open(requested_url=url, final_url=url, title="Helium article", text=source_text)
-    prepared = ledger.prepare_evidence_items(
-        [{
-            "claim": "Helium supply depends on gas processing.",
-            "source_url": url,
-            "excerpt": "Helium is separated from natural gas streams.",
-            "stance": "supports",
-        }],
-        fallback_sources=[url],
-        fallback_claim="Helium supply depends on gas processing.",
-        fallback_body=source_text,
-        note_type="fact",
-    )
-    assert not prepared.error
-    ledger.add_evidence_items(list(prepared.items), note_id="note-1")
-    session = TaskSession(
-        policy=TaskPolicy(
-            grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
-            strict_research=True,
-        ),
-        task_kind="research",
-        project="demo",
-    )
-    session.record_open(url, source_id="s1")
-    session.record_evidence(url, "Helium is separated from natural gas streams.")
-    evidence = ExecutionEvidence()
-    context = {
-        "research_ledger": ledger,
-        "source_ids": dict(session.source_ids),
-        "question": "Research helium supply",
-        "run_id": "research-run",
-    }
-    verdict = evaluate(session, summary, context=context)
-    assert verdict.complete is True
-    return session, evidence, verdict, ledger, summary
+    with tempfile.TemporaryDirectory() as td:
+        store, tools, session, delegate = setup(Path(td))
+        try:
+            session.policy = replace(session.policy, strict_research=True)
+            session.task_text = "Research helium supply"
+            tools.ledger.questions = ("How is helium obtained?",)
+            session.research_questions = tools.ledger.questions
+            tools.search.text = "Helium is separated from natural gas streams. 2026 supply note."
+            url = "https://example.com/helium"
+            execute(delegate, tools, session, "open_url", {"url": url})
+            saved = execute(delegate, tools, session, "save_finding", {
+                "claim": "Helium supply depends on gas processing.",
+                "passage_ref": next(iter(tools.ledger.read_passages))})
+            assert saved.ok, saved.model_text
+            args = answer_args("Helium supply depends on gas processing.")
+            session.last_done_args = args
+            compiled = compile_finding_report(args, tools.ledger, store, task=session.task_text)
+            verdict = evaluate(session, compiled.text, context={
+                "research_ledger": tools.ledger, "research_report": compiled, "run_id": "research-run"})
+            assert verdict.complete, verdict.followup
+            return session, ExecutionEvidence(), verdict, tools.ledger, compiled.text
+        finally:
+            store.close()
 
 
-def test_strict_research_real_ledger_passes_and_tampered_citation_fails() -> None:
+def test_strict_research_real_ledger_passes_and_tampered_citation_fails(public_source_dns) -> None:
     session, evidence, verdict, ledger, summary = _real_research_gate()
     view = completion_view_from_gate(
         session=session, evidence=evidence, verdict=verdict,

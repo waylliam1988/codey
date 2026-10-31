@@ -317,7 +317,7 @@ def test_uncited_factual_counter_is_not_an_incomplete_search_declaration() -> No
         "counter": "An independent experiment disproved this conclusion.",
     })
     assert review is not None and not review.ok
-    assert "not investigated" in review.message
+    assert "must cite counter-evidence" in review.message
 
 
 def test_missing_ledger_record_blocks_queue_proof() -> None:

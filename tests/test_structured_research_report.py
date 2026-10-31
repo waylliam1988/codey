@@ -18,18 +18,18 @@ URL = "https://example.com/experiment"
 
 
 def arguments():
-    return {"summary": "One writer commits at a time. [1]", "report_sections": {
-        "evidence": ["One writer commits at a time. [1]"],
-        "counter": ["未找到强反证；本轮仅检索并打开上述来源。[1]"],
-        "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Writer concurrency investigated", "findings": ["f1"], "investigations": []}],
-    }}
+    from tests.test_research_findings import answer_args
+
+    return answer_args("f1")
 
 
 def session():
     return TaskSession(TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"}),
                                   strict_research=True,
                                   required_checks=("research_sources_opened", "research_evidence_saved",
-                                                   "research_report_sections")))
+                                                   "research_report_sections")),
+                       task_kind="research", task_text="Explain writer concurrency.",
+                       research_questions=("What limits writer concurrency?",))
 
 
 def plan_for(args, native):
@@ -44,7 +44,7 @@ def plan_for(args, native):
 def test_structured_report_preserves_arguments_and_passes_existing_gate_only_with_evidence(native, tmp_path):
     from codey.research.finding_report import compile_finding_report
     from tests.test_research_findings import URL as source_url
-    from tests.test_research_findings import execute, report_args, setup
+    from tests.test_research_findings import answer_args, execute, setup
 
     store, tools, execution_session, delegate = setup(tmp_path)
     execute(delegate, tools, execution_session, "open_url", {"url": source_url})
@@ -52,17 +52,17 @@ def test_structured_report_preserves_arguments_and_passes_existing_gate_only_wit
         "claim": "Only one writer can write at a time.", "source_ref": "s1",
         "passage_ref": next(iter(tools.ledger.read_passages))})
     ref = json.loads(saved.model_text)["finding_ref"]
-    args = report_args(ref)
+    args = answer_args(ref)
     before = copy.deepcopy(args)
     try:
         state, plan = plan_for(args, native)
         assert not plan.protocol_error
         assert plan.control and plan.control.kind == "done"
         assert args == before and plan.control_args == before
-        assert plan.control.body == args["summary"]  # Structure stays in arguments until completion.
+        assert plan.control.body == ""  # Structure stays in arguments until completion.
         state.last_done_args = plan.control_args
         assert not completion_gate.evaluate(state, plan.control.body, context={"research_ledger": ResearchLedger()}).complete
-        compiled = compile_finding_report(args, tools.ledger, store)
+        compiled = compile_finding_report(args, tools.ledger, store, task=state.task_text)
         verdict = completion_gate.evaluate(state, compiled.text, context={"research_ledger": tools.ledger, "research_report": compiled})
         assert verdict.complete, verdict.followup
         assert set(parse_sections(compiled.text)) == set(REQUIRED_SECTIONS)
@@ -83,11 +83,11 @@ def test_strict_research_rejects_summary_only_even_with_a_complete_markdown_repo
     from codey.reviews.report_sections import render_done_report
 
     args = arguments()
-    report = render_done_report(args["summary"], {**args["report_sections"], "source_quality": ["Unknown source quality."]})
+    report = render_done_report("One writer commits at a time. [1]", {"evidence": ["One writer commits at a time. [1]"], "counter": ["Not investigated."], "source_quality": ["Unknown source quality."], "coverage": args["report_sections"]["coverage"]})
     state = session()
     snapshot = build_turn_snapshot(state, native=native)
     done = next(spec for spec in snapshot.frozen_specs if spec.name == "done")
-    assert set(done.required) == {"summary", "report_sections"}
+    assert set(done.required) == {"report_sections"}
     assert "Alternatively" not in snapshot.contract_text
     reply = (AssistantTurn(tool_calls=(ProviderToolCall("old-format", "done", {"summary": report}),)) if native
              else decode_text_turn(json.dumps({"tool": "done", "args": {"summary": report}})))
@@ -118,7 +118,7 @@ def test_native_completion_guidance_matches_frozen_phase_schema(kind):
                              snapshot=prepared.snapshot)
     repair = _repair_prompt(invalid, snapshot=prepared.snapshot, native=True)
     for text in (prepared.prompt, repair):
-        assert ("BOTH required top-level arguments" in text) == structured
+        assert ("Call done with report_sections.coverage" in text) == structured
         assert ("summary contains the complete response" in text) != structured
         example = text.split("Native done arguments example (replace sample content with verified task facts): ", 1)[1]
         args = json.JSONDecoder().raw_decode(example)[0]
@@ -160,7 +160,7 @@ def test_grouped_citations_are_compiled_but_unobserved_numbers_still_fail():
     # Numbered sources are application output, not a model-supplied wire field.
     from codey.reviews.report_sections import render_done_report
 
-    rendered = render_done_report(args["summary"], {**args["report_sections"], "source_quality": ["Unknown source quality."]}) + f"\n\n## 来源\n[1] Experiment - {URL}\n[2] Replication - {second}"
+    rendered = render_done_report(args["summary"], {"evidence": ["One writer commits at a time. [1]"], "counter": ["Not investigated."], "source_quality": ["Unknown source quality."], "coverage": args["report_sections"]["coverage"]}) + f"\n\n## 来源\n[1] Experiment - {URL}\n[2] Replication - {second}"
     finalized = finalize_done_answer(rendered, ledger)
     assert "[1][2]" in finalized.text and citation_refs(finalized.text) == {1, 2}
     assert not completion_gate.evaluate(state, finalized.text, context={"research_ledger": ledger}).complete
@@ -172,12 +172,13 @@ def test_grouped_citations_are_compiled_but_unobserved_numbers_still_fail():
 @pytest.mark.parametrize("separator", ["\n", r"\n"])
 def test_duplicated_full_report_is_rejected_with_specific_repair(native, separator):
     args = arguments()
-    args["summary"] += separator + "## 关键证据" + separator + "One writer commits at a time. [1]"
+    args["summary"] = "One writer commits at a time. [1]" + separator + "## 关键证据" + separator + "One writer commits at a time. [1]"
+    args["report_sections"].update(evidence=["One writer commits at a time. [f1]"], counter=["Not investigated."])
     before = copy.deepcopy(args)
     _, plan = plan_for(args, native)
     from codey.research.report_proposal import parse_report_proposal
 
-    assert plan.control is not None and not plan.protocol_error
+    assert plan.control is None and plan.protocol_error
     with pytest.raises(ValueError, match="only the conclusion"):
         parse_report_proposal(args)
     assert args == before

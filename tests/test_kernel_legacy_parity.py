@@ -139,9 +139,13 @@ def test_parity_probe_restores_native_tools_environment_after_native_case(monkey
 
 def test_research_parity_observes_all_stable_note_metadata():
     from tests.support import kernel_parity_probe
+    from tests.support.research_script import helium_case
 
-    case = next(row for row in BASELINE["cases"] if row["id"] == "research/evidence-synthesis")
+    case = helium_case()
     observation = kernel_parity_probe.research_loop(case, legacy=False)
+    assert observation["stop_reason"] == "done", observation
+    assert observation["evidence_count"] == 1
+    assert any(note["type"] == "synthesis" for note in observation["notes"])
     note = observation["notes"][0]
     assert set(note) == {
         "type", "title", "body", "tags", "sources", "aliases", "relations",
