@@ -60,7 +60,8 @@ def parse_report_proposal(args: dict[str, Any]) -> ResearchReportProposal:
                         for index, row in enumerate(coverage))
         # These are views of the submitted answers, never separately authored prose.
         conclusion = ReportParagraph("summary", "\n\n".join(
-            row["answer"] + " " + "".join(f"[{ref}]" for ref in row["findings"])
+            row["answer"] + "".join(f" [{ref}]" for ref in row["findings"]
+                                   if ref not in FINDING_CITATION.findall(row["answer"]))
             for row in coverage), tuple(dict.fromkeys(ref for row in coverage for ref in row["findings"])))
         return ResearchReportProposal(conclusion, (), (), coverage, answers, answers_only=True)
     # Original expanded proposals remain readable under an already frozen old

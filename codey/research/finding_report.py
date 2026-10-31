@@ -120,11 +120,13 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
     sections = {"conclusion": replace(proposal.conclusion.text),
         **{key: "\n\n".join(replace(row.text) for row in getattr(proposal, key))
            for key in ("evidence", "counter")},
-        "coverage": render_coverage([{**row, "answer": replace(row["answer"])} for row in proposal.coverage],
+        "coverage": render_coverage([{**row, "answer": replace(row["answer"]),
+            "findings": [ref for ref in row["findings"] if ref not in FINDING_CITATION.findall(row["answer"])]}
+            for row in proposal.coverage],
                                     questions, render_ref=lambda label: replacements[label])}
     if proposal.answers_only:
         sections["evidence"] = "\n\n".join(
-            item.version.value.content + " " + replacements[item.label] for item in resolved)
+            FINDING_CITATION.sub("", item.version.value.content).rstrip() + " " + replacements[item.label] for item in resolved)
         gaps = [row["answer"] for row in proposal.coverage if row["state"] != "evidence_found"]
         sections["counter"] = "\n\n".join(replace(text) for text in gaps)
     if queries:

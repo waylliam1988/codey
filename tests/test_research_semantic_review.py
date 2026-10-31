@@ -17,6 +17,28 @@ TASK = "Explain writer concurrency. Distinguish historical version restrictions.
 
 
 @pytest.mark.usefixtures("public_source_dns")
+def test_inline_labels_do_not_duplicate_rendered_citations_or_rewrite_saved_findings(tmp_path):
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        execute(delegate, tools, session, "open_url", {"url": URL})
+        claim = "Only one writer can write at a time. [f999]"
+        execute(delegate, tools, session, "save_finding", {"claim": claim,
+            "passage_ref": next(iter(tools.ledger.read_passages))})
+        args = answer_args("f1")
+        args["report_sections"]["coverage"][0]["answer"] = "Only one writer can write at a time. [f1]"
+        report = compile_finding_report(args, tools.ledger, store)
+        assert "[f999]" not in report.text and "[1] [1]" not in report.text
+        assert report.coverage[0]["findings"] == ["f1"]
+        assert report.reference_metadata["f1"]["claim"] == claim
+        basis = review_basis(report, tools, "Explain writer concurrency.")
+        assert basis["claims"][0]["claim"] == claim
+        assert len(basis["claims"][0]["units"]) == 1
+        assert len(basis["claims"][0]["evidence"]) == 1
+    finally:
+        store.close()
+
+
+@pytest.mark.usefixtures("public_source_dns")
 @pytest.mark.parametrize("inline", [False, True])
 def test_compiled_coverage_findings_bind_the_rendered_answer_for_review(tmp_path, inline):
     store, tools, session, delegate = setup(tmp_path)

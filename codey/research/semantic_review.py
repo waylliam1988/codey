@@ -25,7 +25,9 @@ from codey.research.task_requirements import task_requirements, text_units
 
 
 def claim_units(claim: str, conditions: dict[str, Any], *, sentences: bool = True) -> list[dict[str, Any]]:
-    units = text_units(claim, sentences=sentences)
+    # Inline labels are presentation, not source statements or new evidence.
+    # Actual support remains pinned by the finding's structural references.
+    units = text_units(FINDING_CITATION.sub("", claim) if sentences else claim, sentences=sentences)
     for name, condition in conditions.items():
         if condition["state"] == "reported":
             units.append({"unit": len(units) + 1, "field": f"conditions.{name}",

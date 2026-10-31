@@ -60,6 +60,16 @@ def test_old_frozen_assessments_keep_original_clause_units_when_projected():
         parse_review_scope(original, current)
 
 
+def test_finding_labels_are_not_reviewed_as_source_statements_or_adopted_as_evidence():
+    from codey.research.semantic_review import claim_units
+
+    text = "Only one writer at a time."
+    assert claim_units(text + " [f999]", {}) == claim_units(text, {})
+    assert claim_units(text + " [f999] Multiple writers commit at once.", {})[-1]["text"].strip() == "Multiple writers commit at once."
+    # Historical frozen units are unchanged; no original claim is rewritten.
+    assert claim_units(text + " [f999]", {}, sentences=False)[-1]["text"] == " [f999]"
+
+
 def case():
     task = "Explain checkpoint defaults. Distinguish old restrictions."
     claim = "Checkpoint defaults to 1000 pages. FULL waits for readers."
