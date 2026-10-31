@@ -384,3 +384,20 @@ strict done 缺 coverage.state 全部被采样契约拒绝。服务实际编译�
 使用第 13 个失败请求的原始 prompt、同 seed=73，仅替换采样 schema 的诊断重放，1.64 秒返回
 带原官方 URL 的正确 source_search 参数；未执行工具，不计端到端成功。Ruff/Mypy 通过。
 此前完整 API payload、原搜索要求复用及四个真实恢复边界选集 7 passed。
+
+## 实机 14 与 30. 页内检索保留不同查询词的命中
+
+`wal-full-json-03`，版本 `8df8fe03`，50 请求、约 662 秒，最终 no_progress，未发布。
+多工具参数约束已生效，所有请求正常返回；初审能完整提交并进入原修复流程。
+但两次查询 `SQLITE_BUSY WAL mode vs rollback journal` 的前六条都只有 WAL/mode/rollback/journal，
+真正的 BUSY 段落被相同词组合挤掉。原文偏移 25433 处确有对应章节，故不是资料缺失。
+修复阶段还混淆 passage 引用并重复保存错误证据；评审把一些方法/上下文误当遗漏问题，
+且误放行 checkpoint 条件外推。这些均保留为失败证据，不能把协议正常视为质量通过。
+
+页内排序在保留正文优先、原匹配分数和稳定位置顺序的同时，优先补齐尚未出现在所选结果中的查询词。
+HTML 继续去除相邻重复命中；PDF 仍每页至多一条，但在选择页面时保留该页候选窗口，
+避免预先只留下常见词窗口。无需模型、主题关键词规则、外部索引或新的检索运行时。
+
+验证：页内检索、gateway 与原回执恢复回归 21 passed，Ruff/Mypy 通过。
+对本轮已保存的完整原文运行生产 search_text，同一查询的第二条已包含 SQLITE_BUSY 章节，
+重放结果保存在 `source-search-coverage-replay.json`；这是只读检索验证，不计端到端成功。

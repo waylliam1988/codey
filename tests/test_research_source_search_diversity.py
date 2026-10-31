@@ -29,6 +29,26 @@ def test_pdf_pages_with_identical_offsets_remain_separate_hits():
     assert {hit.page for hit in search_pages(pages, "outcome")} == {1, 2}
 
 
+def test_repeated_common_terms_do_not_hide_another_requested_term():
+    background = ("WAL mode compared with rollback journal. " + "background " * 40 + "\n\n") * 12
+    target = "A connection can return SQLITE_BUSY while another connection performs recovery."
+    text = background + target
+    hits = search_text(text, "SQLITE_BUSY WAL mode vs rollback journal", 6)
+    assert len(hits) == 6
+    assert any("SQLITE_BUSY" in hit.snippet for hit in hits[:2])
+    assert all(hit.snippet.replace("...", "") in " ".join(text[max(0, hit.offset - 130):].split())
+               for hit in hits)
+
+
+def test_pdf_query_coverage_selects_the_useful_window_on_a_later_page():
+    common = "WAL mode compared with rollback journal. " + "background " * 40
+    pages = {n: common for n in range(1, 8)}
+    pages[8] = common + "A connection can return SQLITE_BUSY during recovery."
+    hits = search_pages(pages, "SQLITE_BUSY WAL mode vs rollback journal", 3)
+    assert len({hit.page for hit in hits}) == len(hits) == 3
+    assert any(hit.page == 8 and "SQLITE_BUSY" in hit.snippet for hit in hits)
+
+
 def test_page_reading_guidance_does_not_route_source_offsets_into_tool_receipts():
     from codey.operations.kernel_prompt import _result_context
     from codey.operations.task_session import TaskSession

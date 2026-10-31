@@ -48,7 +48,7 @@ def search_text(text: str, query: str, limit: int = SOURCE_SEARCH_DEFAULT_LIMIT)
         if _label_match(text, offset):
             score -= len(tokens) + 1
         hits.append(SourceSearchHit(offset=offset, snippet=snippet, score=score))
-    return _rank_hits(hits, bounded_limit(limit))
+    return _rank_hits(hits, bounded_limit(limit), tokens)
 
 
 def search_pages(
@@ -65,23 +65,15 @@ def search_pages(
         offsets = _candidate_offsets(text, tokens)
         if not offsets:
             continue
-        best_for_page: SourceSearchHit | None = None
         for offset in offsets:
             snippet = snippet_at(text, offset)
-            hit = SourceSearchHit(
+            hits.append(SourceSearchHit(
                 offset=offset,
                 snippet=snippet,
                 page=page,
                 score=_score(snippet, tokens),
-            )
-            if best_for_page is None or (hit.score, -hit.offset) > (
-                best_for_page.score,
-                -best_for_page.offset,
-            ):
-                best_for_page = hit
-        if best_for_page is not None:
-            hits.append(best_for_page)
-    return _rank_hits(hits, bounded_limit(limit))
+            ))
+    return _rank_hits(hits, bounded_limit(limit), tokens)
 
 
 def render_results(hits: list[SourceSearchHit], *, hit_ids: tuple[str, ...] = ()) -> str:
@@ -162,16 +154,21 @@ def _score(snippet: str, tokens: tuple[str, ...]) -> int:
     return sum(1 for token in tokens if token in lowered)
 
 
-def _rank_hits(hits: list[SourceSearchHit], limit: int) -> list[SourceSearchHit]:
-    ranked = sorted(hits, key=lambda hit: (-hit.score, hit.page or 0, hit.offset))
+def _rank_hits(hits: list[SourceSearchHit], limit: int, tokens: tuple[str, ...]) -> list[SourceSearchHit]:
+    # Repeated combinations of common query words must not hide every match
+    # for another requested term. This is query coverage, not semantic proof.
+    remaining = [(hit, {token for token in tokens if token in hit.snippet.lower()}) for hit in hits]
+    covered: set[str] = set()
     selected: list[SourceSearchHit] = []
-    for hit in ranked:
-        if any(hit.page == previous.page and abs(hit.offset - previous.offset) < SOURCE_SEARCH_SNIPPET_CHARS // 2
-               for previous in selected):
-            continue
+    while remaining and len(selected) < limit:
+        hit, matched = max(remaining, key=lambda item: (
+            item[0].score >= 0, len(item[1] - covered), item[0].score,
+            -(item[0].page or 0), -item[0].offset))
         selected.append(hit)
-        if len(selected) >= limit:
-            break
+        covered.update(matched)
+        remaining = [(candidate, terms) for candidate, terms in remaining
+            if candidate.page != hit.page or (hit.page is None
+                and abs(candidate.offset - hit.offset) >= SOURCE_SEARCH_SNIPPET_CHARS // 2)]
     return selected
 
 
