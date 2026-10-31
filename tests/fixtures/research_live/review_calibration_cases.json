@@ -2,6 +2,38 @@
   "description": "Synthetic labeled scope checks for the production review kernel. Not live research results.",
   "cases": [
     {
+      "id": "task_context_optional_method",
+      "expected_status": "passed",
+      "question": "我们考虑使用 WAL。请说明同一时刻有几个写者，给出简短中文结论。二手解读可作为线索，最终结论以原文为准。",
+      "excerpt": "In WAL mode, there can only be one writer at a time.",
+      "finding": "在 WAL 模式下，同一时刻只能有一个写者。",
+      "paragraph": "在 WAL 模式下，同一时刻只能有一个写者。"
+    },
+    {
+      "id": "task_missing_substantive_answer",
+      "expected_status": "failed",
+      "question": "Explain how many writers may proceed and how long readers affect checkpoint progress.",
+      "excerpt": "In WAL mode, there can only be one writer at a time.",
+      "finding": "在 WAL 模式下，同一时刻只能有一个写者。",
+      "paragraph": "在 WAL 模式下，同一时刻只能有一个写者。"
+    },
+    {
+      "id": "condition_transfer",
+      "expected_status": "failed",
+      "question": "Does the excerpt establish that transferring the WAL into the database requires no active readers?",
+      "excerpt": "Whenever a write operation occurs, the writer checks how much progress the checkpointer has made, and if the entire WAL has been transferred into the database and synced and if no readers are making use of the WAL, then the writer will rewind the WAL back to the beginning and start putting new transactions at the beginning of the WAL.",
+      "finding": "只有当没有读者正在使用 WAL 文件时，Checkpointer 才能将整个 WAL 文件转移到数据库中并同步。",
+      "paragraph": "只有当没有读者正在使用 WAL 文件时，Checkpointer 才能将整个 WAL 文件转移到数据库中并同步。"
+    },
+    {
+      "id": "condition_preserved",
+      "expected_status": "passed",
+      "question": "Under which conditions does the writer rewind the WAL?",
+      "excerpt": "Whenever a write operation occurs, the writer checks how much progress the checkpointer has made, and if the entire WAL has been transferred into the database and synced and if no readers are making use of the WAL, then the writer will rewind the WAL back to the beginning and start putting new transactions at the beginning of the WAL.",
+      "finding": "当整个 WAL 已转移到数据库并同步，且没有读者使用 WAL 时，写者会将 WAL 回绕到开头并从那里写入新事务。",
+      "paragraph": "当整个 WAL 已转移到数据库并同步，且没有读者使用 WAL 时，写者会将 WAL 回绕到开头并从那里写入新事务。"
+    },
+    {
       "id": "background_finding",
       "expected_status": "failed",
       "question": "Does this excerpt establish a maximum of one writer at a time?",

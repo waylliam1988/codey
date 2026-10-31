@@ -25,6 +25,20 @@ def large_basis():
     return basis
 
 
+def test_requirements_see_original_actions_without_adding_investigation_judgments():
+    root = large_basis()
+    root["investigations"]["a1"].update(tool="open_url", ok=True, args={"url": "https://example.com/original"},
+                                       source_observation={"text": "Long source content"})
+    before = copy.deepcopy(root)
+    index = next(i for i, scope in enumerate(batch_scopes(root)) if scope["requirements"])
+    view = batch_view(root, index, [])
+    assert view["recorded_actions"] == [{"ref": "a1", "question_ref": "q1", "tool": "open_url", "ok": True,
+                                         "args": {"url": "https://example.com/original"}}]
+    assert view["investigations"] == {} and view["investigation_scope"] == []
+    assert batch_view(root, 0, [])["recorded_actions"] == []
+    assert root == before
+
+
 def test_each_finding_keeps_its_own_unit_and_evidence_ranges():
     from codey.research.review_batches import review_spec_for_batch
     from codey.toolchain.tool_spec import spec_for_tool, thaw_schema_value

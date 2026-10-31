@@ -6,6 +6,14 @@
 本地 `/v1/models` 确认部署为 `koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`。
 小模型成功是有价值的工程证据，不自动证明另一模型一定成功。
 
+当前验收状态（第 33 项后）：最小单写者真实研究有一轮 done，最终文本经人工对照原文；
+完整 WAL 最新一轮 `wal-full-json-03` 50 请求、约 662 秒，以 no_progress 失败，未发布。
+该轮后的检索覆盖、阅读边界和修复引用投影已经分别提交并通过回归，尚未重新跑完整任务。
+新四项实机校准中三项符合预期，条件转移负例仍被误放行。不能宣称复杂 Research 已解决，
+也不能据这些不同任务/版本的样本计算相对 10 月 30 日的成功率增幅。
+10 月 30 日已有网页读取、保存及固定材料的跨进程知识生命周期；本次新增证据是小任务完整验收、
+完整任务分批评审可完成并进入修复，以及上述已定位工程缺陷的修复。
+
 ## 1. 评审输入去重与完成动作收敛
 
 `task_working_context` 不再为评审重复整个 task/basis。评审提示沿用冻结工具契约，只要求提交 assessment，
@@ -429,3 +437,30 @@ passage 身份仍由同一来源快照和真实起止范围生成，恢复仍只
 验证：真实 dispatch 修复/恢复、上下文预算及来源快照回归 23 passed，Ruff/Mypy 通过。
 新增测试从原读取/保存回执重建全新 session，直接用投影 passage 修正 finding，禁止联网仍成功；
 另一轮只有历史知识而没有读取回执时，不会获得伪造的可复用 passage。
+
+## 33. 要求评审区分上下文、方法和实质问题
+
+完整任务初审把“本机读多写少”的背景、“保存证据”和“约 800 字”等判为 missing，
+理由竟是“这是上下文/方法/格式，不是单独问题”；可选的二手线索也被当成未完成义务。
+要求批现在从同一冻结 basis 展示原调查动作的 ref/tool/args/ok，供其判断实际动作；
+不新增待审 aN、不重复长网页。指导将背景/方法/格式映射到它们约束的原问题和报告段落，
+不因未另设标题而报缺项，可选建议仍按可选含义判断；真实缺失的动作和答案仍须拒绝。
+同时针对实机将 WAL 回绕条件转移为 checkpoint 完成条件的误判，明确检查条件所属动作与蕴含方向。
+
+验证：batches/scope/semantic_review 全组 78 passed（212.04 秒），含真实子进程恢复。
+生产 Ruff/Mypy（576 文件）及 ty 通过；Pyrefly 发现上一项上下文投影的两个空列表类型推断错误，
+将在下一项独立修正，不改动验证期间的生产实现。
+
+Gemma 12B、JSON、thinking=false、seed=73，四个合成案例分别经过真实评审 kernel：
+
+| 案例 | 预期 | 实际 |
+| --- | --- | --- |
+| task_context_optional_method | passed | passed |
+| task_missing_substantive_answer | failed | failed，指出遗漏长读/checkpoint 回答 |
+| condition_transfer | failed | **passed，误放行** |
+| condition_preserved | passed | passed |
+
+原始数据位于 `calibration-task-conditions-<case>-01`。条件转移负例的理由已经承认原文约束
+回绕而非转移/同步，却仍输出 supported。增加条件方向指导并未解决这一语义缺陷，
+同模型评审不能视为可靠认证；这个短输入反例也说明问题并非全部来自 Codey 长上下文。
+这四例只用于诊断，不能把三例符合预期称作一般 75% 成功率。

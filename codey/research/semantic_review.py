@@ -297,6 +297,8 @@ def review_prompt(basis: dict[str, Any]) -> str:
             "For each unit ask: could every excerpt be true while this sentence is false? If yes, it is unsupported. "
             "Support requires every clause, subject, comparator, condition and degree of certainty. "
             "A plausible explanation or a correct adjacent clause is insufficient. Reported conditions need support too. "
+            "A condition must govern the same action: 'if A is complete and B holds, do C' does not say that A "
+            "can complete only when B holds. Do not transfer a condition for C onto A, or reverse an implication. "
             "For kind=inference, judge the stated premises and explicit uncertainty/limitations; do not demand "
             "direct observation of an outcome that the inference clearly presents only as a hypothesis. "
             "For supported, quote contiguous ORIGINAL words and punctuation, using the 1-based index of the "
@@ -332,7 +334,14 @@ def review_prompt(basis: dict[str, Any]) -> str:
             "Map to real qN and report paths. A missing comparison, condition, version distinction or output constraint "
             "is missing even when adjacent material is addressed. A factual answer is not an acknowledged_gap merely "
             "because the evidence is insufficient; the answer must explicitly acknowledge that exact gap. "
-            "Map output constraints to the questions they qualify too. Do not resubmit finding or paragraph judgments.")
+            "Context, scope, formatting and research methods qualify the existing questions; they do not require "
+            "separate question headings or verbatim restatement in the answer. Judge actions from recorded_actions "
+            "and pinned sources, not from claims that an action happened. Map these constraints to the actual "
+            "questions and report paths they qualify (all relevant paths for a report-wide constraint). "
+            "An optional suggestion is not an unfulfilled obligation merely because it was not used. "
+            "If addressed, select those nonempty bindings instead of marking it missing just because it is context "
+            "or a method. Still reject genuinely unperformed required actions or omitted substantive answers. "
+            "Do not resubmit finding or paragraph judgments.")
     if basis["investigations"]:
         rules.append(
             "Judge every listed aN for relevance to its frozen question_ref, using actual tool arguments, success "
