@@ -171,6 +171,8 @@ def review_spec_for_batch(spec: Any, batch: dict[str, Any]) -> Any:
                 else:
                     supports["maxItems"] = 0
         elif kind == "requirements":
+            if not any(row["state"] != "evidence_found" for row in batch["coverage"]):
+                properties["state"]["enum"] = ["addressed", "missing"]
             for field, values in (("question_refs", [f"q{n}" for n in range(1, len(batch["questions"]) + 1)]),
                                   ("report_paths", batch["report_paths"])):
                 properties[field] = {**properties[field], "items": {"type": "string", "enum": values}}

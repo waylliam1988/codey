@@ -195,3 +195,13 @@ investigations 分批；每批提示只包含本职责规则，并用“证据�
 可执行的字段修正；有真实报告缺口时仍允许 gap，不自动改写模型输出。
 
 验证：范围、引用、缺口与批次纯投影选集 44 passed，Ruff 通过。
+
+## 实机 6 与 16. 覆盖状态只允许原报告实际存在的缺口
+
+`calibration-separated-*-01` 六例结果：两个正例 passed，比较偷换、片段缺失推全文缺失、历史条件
+遗漏三个反例 failed；工作负载过度推论的答案批已正确拒绝，但覆盖批重复选择 acknowledged_gap，
+整轮 incomplete。这轮没有误放行反例，但尚未达到六例全部正确完成。
+
+当原 coverage 没有任何显式 gap 时，冻结 requirements.state 只允许 addressed/missing，禁止把评审
+发现的问题说成报告已承认的缺口。有真实 gap 时保留原三种状态，仍由原完整校验检查对应问题。
+验证：引用与批次选集 5 passed，Ruff 通过。上一轮并行 API/提示选集 25 passed，全生产 Mypy 576 文件通过。

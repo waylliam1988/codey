@@ -72,6 +72,7 @@ def test_each_batch_schema_uses_real_report_paths_questions_and_cited_finding_un
 
     root = large_basis()
     root["requirements"] = root["requirements"][:1]
+    root["coverage"][1]["state"] = "evidence_found"
     root["paragraphs"][0]["path"] = "report_sections.coverage[0].answer"
     prior = []
     for index in range(len(batch_scopes(root))):
@@ -84,7 +85,8 @@ def test_each_batch_schema_uses_real_report_paths_questions_and_cited_finding_un
         mutations = []
         if batch["requirements"]:
             mutations.extend((lambda body: body["requirements"][0].update(report_paths=["summary"]),
-                              lambda body: body["requirements"][0].update(question_refs=["q99"])))
+                              lambda body: body["requirements"][0].update(question_refs=["q99"]),
+                              lambda body: body["requirements"][0].update(state="acknowledged_gap")))
         if batch["paragraphs"]:
             mutations.extend((lambda body: body["paragraphs"][0]["units"][0].update(finding_units=[{"ref": "f99", "unit": 1}]),
                               lambda body: body["paragraphs"][0]["units"][0].update(finding_units=[{"ref": "f1", "unit": 99}]),
