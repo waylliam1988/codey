@@ -319,7 +319,8 @@ class ApiProvider:
 
     def send(self, text: str, timeout: float | None = None, *, tool_call_json: bool = False,
              tool_call_schema: dict[str, Any] | None = None, tool_call_contract: str = "",
-             tool_call_results: list[dict[str, Any]] | None = None, tool_call_observations: str = "") -> str:
+             tool_call_results: list[dict[str, Any]] | None = None, tool_call_observations: str = "",
+             tool_call_history_groups: int = 0) -> str:
         if tool_call_json and self.text_tool_format != "json_schema":
             raise ValueError("JSON tool format is not enabled for this provider")
         if tool_call_schema is not None and not tool_call_json:
@@ -331,7 +332,8 @@ class ApiProvider:
             pending[TEXT_RESULTS_KEY] = validate_text_results(text, tool_call_results)
         return self._exchange([pending], None, timeout=timeout,
                               text_only=True, tool_call_json=tool_call_json, tool_call_schema=tool_call_schema,
-                              tool_call_contract=tool_call_contract, tool_call_observations=tool_call_observations).text
+                              tool_call_contract=tool_call_contract, tool_call_observations=tool_call_observations,
+                              tool_call_history_groups=tool_call_history_groups).text
 
     def bind_durable_context(self, durable: Any, conversation_id: str) -> None:
         if durable is None or not conversation_id:
@@ -411,24 +413,26 @@ class ApiProvider:
             self._send_lock.release()
 
     def send_turn(self, prompt: str, tools: list[ProviderToolDefinition] | None = None,
-                  timeout: float | None = None, *, tool_call_observations: str = "") -> AssistantTurn:
+                  timeout: float | None = None, *, tool_call_observations: str = "",
+                  tool_call_history_groups: int = 0) -> AssistantTurn:
         return self._exchange([{"role": "user", "content": prompt}], tools, timeout=timeout,
-                              tool_call_observations=tool_call_observations)
+                              tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups)
 
     def send_tool_results(self, results: list[ProviderToolResult], tools: list[ProviderToolDefinition] | None = None,
-                          timeout: float | None = None, *, tool_call_observations: str = "") -> AssistantTurn:
+                          timeout: float | None = None, *, tool_call_observations: str = "",
+                          tool_call_history_groups: int = 0) -> AssistantTurn:
         return self._exchange(self._codec.encode_results(results), tools, timeout=timeout,
-                              tool_call_observations=tool_call_observations)
+                              tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups)
 
     def send_tool_results_bound(self, results: list[ProviderToolResult], window_ref: ProtocolWindowRef,
                                 tools: list[ProviderToolDefinition] | None = None,
                                 timeout: float | None = None,
                                 delivery_commit: dict[str, Any] | None = None,
-                                tool_call_observations: str = "") -> AssistantTurn:
+                                tool_call_observations: str = "", tool_call_history_groups: int = 0) -> AssistantTurn:
         """Deliver native results only to the exact protocol window that created them."""
         return self._exchange(self._codec.encode_results(results), tools, timeout=timeout,
                               expected_window_ref=window_ref, delivery_commit=delivery_commit,
-                              tool_call_observations=tool_call_observations)
+                              tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups)
 
     def _prepare_exchange(self, pending: list[dict[str, Any]],
                           tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
@@ -471,10 +475,15 @@ class ApiProvider:
                    tool_call_schema: dict[str, Any] | None = None,
                    tool_call_contract: str = "",
                    tool_call_observations: str = "",
+                   tool_call_history_groups: int = 0,
                    expected_window_ref: ProtocolWindowRef | None = None,
                    delivery_commit: dict[str, Any] | None = None) -> AssistantTurn:
         """One atomic lifecycle for both codecs, with no protocol-specific commit path."""
         from codey.providers.error_classification import OutputLengthError
+
+        if (type(tool_call_history_groups) is not int or not 0 <= tool_call_history_groups <= 16
+                or tool_call_history_groups and not tool_call_observations):
+            raise ValueError("bounded request history needs 1..16 complete groups and current observations")
 
         if not self._send_lock.acquire(blocking=False):
             raise RuntimeError("API provider busy: concurrent sends are not supported")
@@ -495,7 +504,8 @@ class ApiProvider:
             if tool_call_schema is not None:
                 generation_options["tool_call_schema"] = tool_call_schema
             generation_options.update({key: value for key, value in (
-                ("tool_call_contract", tool_call_contract), ("tool_call_observations", tool_call_observations)) if value})
+                ("tool_call_contract", tool_call_contract), ("tool_call_observations", tool_call_observations),
+                ("tool_call_history_groups", tool_call_history_groups)) if value})
             body = self._generate(candidate, tools, timeout=timeout, checkpoints=checkpoints, **generation_options)
             try:
                 turn, output = self._codec.decode_exchange(body, text_only=text_only,
@@ -600,12 +610,14 @@ class ApiProvider:
     def _generate(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None = None,
                   *, timeout: float | None = None, checkpoints: list[dict[str, Any]] | None = None,
                   tool_call_json: bool = False, tool_call_schema: dict[str, Any] | None = None,
-                  tool_call_contract: str = "", tool_call_observations: str = "") -> dict[str, Any]:
+                  tool_call_contract: str = "", tool_call_observations: str = "",
+                  tool_call_history_groups: int = 0) -> dict[str, Any]:
         from codey.providers import api_transport
 
         settings = GenerationSettings(self.model, self.stream, self.temperature, self.thinking_enabled,
                                       self.reasoning_effort, self.tool_choice, self.context_budget.output_tokens,
-                                      tool_call_json, tool_call_schema, tool_call_contract, tool_call_observations)
+                                      tool_call_json, tool_call_schema, tool_call_contract, tool_call_observations,
+                                      tool_call_history_groups)
         deadline = time.monotonic() + (timeout if timeout is not None else self.timeout)
         connection_id, sink = self.connection_id, self.on_usage
         payload = self._admit_request(messages, tools, settings, deadline, checkpoints)
@@ -711,7 +723,15 @@ class ApiProvider:
                  settings: GenerationSettings, *, clock: str | None = None) -> dict[str, Any]:
         from codey.providers.request_context import clock_context
 
-        payload = self._codec.build_payload(messages, tools, settings)
+        view = messages
+        if settings.tool_history_groups:
+            from codey.providers.api_request_view import bounded_history
+
+            # Select complete protocol groups, including native call/result
+            # identities and Responses reasoning. The original history and
+            # durable receipts remain intact; only this request is projected.
+            view = bounded_history(self._codec, messages, settings.tool_history_groups, tools)
+        payload = self._codec.build_payload(view, tools, settings)
         key = "messages" if self.api_protocol == "openai-completions" else "input"
         from codey.providers.text_result_views import TEXT_RESULTS_KEY
 

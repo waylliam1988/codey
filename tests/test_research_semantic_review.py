@@ -135,7 +135,7 @@ def test_review_uses_full_exact_excerpt_and_rejects_missing_duplicate_or_forged_
 
 
 def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=22, native=False,
-         missing_done=False, bad_ack=False, absent_assessment=False, task=TASK):
+         missing_done=False, bad_ack=False, absent_assessment=False, task=TASK, provider_factory=None):
     import os
     from unittest.mock import patch
 
@@ -288,7 +288,8 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
     deps = ResearchFlowDeps(state=SimpleNamespace(durable=durable), knowledge_store=store, evidence_ledgers=None,
         search_factory=Search, run_research_advisors=None, ghost_continuity=lambda **_: None,
         managed_outputs=ManagedOutputStore(root), runtime_mutations=line)
-    frame = SimpleNamespace(provider=Provider(), provider_id="local", project_text="", trace=None, run_id="r",
+    frame = SimpleNamespace(provider=provider_factory(Provider()) if provider_factory else Provider(),
+        provider_id="local", project_text="", trace=None, run_id="r",
         research_handoff="", entry_policy=policy, request=SimpleNamespace(task=task, session_id="s", requested_capabilities=()))
     try:
         with patch("codey.operations.research_flow.ResearchPipelineConfig", return_value=ResearchPipelineConfig(enabled=False)):

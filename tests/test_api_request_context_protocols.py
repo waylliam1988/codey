@@ -20,7 +20,7 @@ def test_latest_research_context_is_ephemeral_in_real_kernel_requests(monkeypatc
 
     def generate(_url, payload, *_args, **_kwargs):
         payloads.append(payload)
-        name, args = (("web_search", {"query": "compare outcomes"}) if len(payloads) == 1
+        name, args = (("web_search", {"query": "compare outcomes", "question_ref": "q1"}) if len(payloads) == 1
                       else ("done", {"summary": "Attempted acquisition; outcome evidence remains missing."}))
         content = json.dumps({"tool": name, "args": args})
         if protocol == "openai-completions":
@@ -44,6 +44,7 @@ def test_latest_research_context_is_ephemeral_in_real_kernel_requests(monkeypatc
             return []
 
     tools = ResearchTools(search=Search(), store=None, changes=None)
+    tools.ledger.questions = session.research_questions = ("Compare outcomes",)
     try:
         result = run_task_kernel(session, request=KernelRunRequest(
             transport=KernelTransportDeps(provider=provider, provider_id="local", user_task=session.task_text),

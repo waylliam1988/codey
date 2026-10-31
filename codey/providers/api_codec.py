@@ -20,6 +20,7 @@ class GenerationSettings:
     text_tool_schema: dict[str, Any] | None = None
     text_tool_contract: str = ""
     text_tool_observations: str = ""
+    tool_history_groups: int = 0
 
 
 class ApiCodec(Protocol):

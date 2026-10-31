@@ -62,3 +62,30 @@
 后续运行期间保持生产源码冻结。
 
 全生产树 Mypy（575 文件）、Pyrefly、ty 和 Ruff 均通过。
+
+## 6. 评审请求的有界历史投影
+
+在既有冻结 provider request 中记录 `tool_call_history_groups=2`。API provider 从完整原始历史选择
+最近的完整协议组，再加入唯一当前批次观察；不写第二份历史，不删除原回执，不改变调用/返回 ID。
+Responses 的 reasoning 与关联调用一起保留。下一普通请求仍可使用完整历史，这不是新的 provider 模式。
+实际发送的投影视图仍通过原分词与准入路径检查；重启按冻结请求恢复相同选项。
+
+验证：API 协议/上下文/JSON/native 选集 42 passed，另新增两项完整 Research driver + ApiProvider
+分批、修复、发布测试通过（历史投影文件共 10 passed）。全树 Ruff、Mypy（576 文件）、Pyrefly、ty 通过。
+同时将一项旧观察测试的夹具补齐为真实父问题 q1 及其 question_ref，不放宽执行校验。
+
+## 实机 1：Gemma 原生工具协议阻塞，未完成
+
+`artifacts/research-gemma12b-20261031/single-01`，生产版本 `61f2f6ac`，固定 seed=73、temperature=0.3、
+thinking=false，实际模型是当前 Gemma 4 12B。共 8 个物理请求，搜索 2 次、打开 1 次、source_search 1 次、
+save_finding 2 次；同一原文被两个问题采用，没有强制重读。第 8 次 done 未收到有效 API 返回，整轮失败。
+
+原始生成已可从 KoboldCpp 诊断接口读取；它漏写 coverage.state、混用其他问题的 aN/fN，
+且将单写者/共享内存解释绑到不直接支持该解释的 passage，不能判为研究通过。
+py-spy 实际栈确认 KoboldCpp 卡在 `read_object → fix_unquoted_keys → parse_gemma4 → repack_toolcall_tags`，
+与旧报告的服务端解析死循环相同。请求最后在约 526.7 秒以连接重置结束，Codey 保留结果未知且没有重发。
+原始文本、栈、wire 和知识快照均保留；用户随后重启了服务，确认相同模型、idle=1、queue=0。
+
+后续将使用现有生产 JSON constrained 协议进行独立新状态验证。它沿用同一冻结工具 schema、kernel、
+effect 和知识事务，不新增解析执行循环，也不自动补 state 或替模型选择证据。
+服务端原生解析器本身尚未修复；JSON 协议是否足够可靠仍须看实际结果。

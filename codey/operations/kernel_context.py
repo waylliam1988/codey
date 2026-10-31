@@ -334,6 +334,8 @@ class KernelContext:
             context = self.transport.context_text
             options["tool_call_observations"] = "\n\n".join(part for part in (
                 context if context and context not in prompt else "", observations) if part)
+            if self.session.task_kind == "research_review":
+                options["tool_call_history_groups"] = 2
         if scoped_contract:
             options["tool_call_contract"] = kernel_prompt._text_request_prompt("", snapshot)
             if text_result_spans:
