@@ -164,10 +164,11 @@ TOOL_CONTRACTS = {
                                         'description': 'Additional read passages from the same exact source version, if needed to support the whole claim.'},
             'conditions': condition_array_schema(),
             'comparison': comparison_schema(),
-        }, 'claim', 'passage_ref', 'source_ref'),
-        example='{"tool":"save_finding","args":{"claim":"One complete scoped finding","source_ref":"s1","passage_ref":"p..."}}',
-        description="Save ONE finding supported by exact opened passages. Copy source_ref=sN and passage_ref=p... "
+        }, 'claim', 'passage_ref'),
+        example='{"tool":"save_finding","args":{"claim":"One complete scoped finding","passage_ref":"p..."}}',
+        description="Save ONE finding supported by exact opened passages. Copy passage_ref=p... "
                     "from the read result. The application saves the original excerpt and pinned source version. "
+                    "Already read passages can support another question without reopening the source. "
                     "If the full explanation spans passages, add up to 3 additional_passage_refs from that same version. "
                     "Each excerpt is saved separately; select enough evidence for every part of the claim. "
                     "Keep conditions and uncertainty in claim; do not transfer a result between comparators. "

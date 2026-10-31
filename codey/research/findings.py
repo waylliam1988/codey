@@ -33,7 +33,7 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
                                  + canonical_json({"passage_ref": ref[1:-1]}) + "; nothing was saved")
             raise ValueError("unknown passage_ref; copy an exact p reference from an opened passage, not a search preview. "
                              "Available raw ids (no square brackets): " + ", ".join(list(tools.ledger.read_passages)[-12:]))
-        if args.get("source_ref") != passage.source.final_url:
+        if "source_ref" in args and args["source_ref"] != passage.source.final_url:
             raise ValueError("source_ref and passage_ref refer to different sources; nothing saved")
         extra = args.get("additional_passage_refs", [])
         if (not isinstance(extra, list) or len(extra) > 3 or any(not isinstance(row, str) for row in extra)
@@ -46,7 +46,6 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
                     != (passage.source.final_url, passage.source.text_hash, passage.source_text)):
                 raise ValueError("all passages must have been read from the same exact source version; nothing saved")
             passages.append(other)
-        _validate_passage_question(tools.ledger, [selected.ref for selected in passages], question)
         conditions = _conditions(args.get("conditions", []))
         comparison = args.get("comparison")
         if comparison is not None:
@@ -102,12 +101,6 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
         return _saved(tools, identity, claim, ref, extra, question)
     except (ValueError, TypeError, KeyError) as exc:
         return ResearchToolOutput(f"ERROR: {exc}", ok=False)
-
-
-def _validate_passage_question(ledger: ResearchLedger, refs: list[str], question: str) -> None:
-    if question and any(not any(row.get("question_ref") == question and ref in row.get("passage_refs", [])
-                                for row in ledger.investigations.values()) for ref in refs):
-        raise ValueError("selected passages were not investigated for this question; read them with its question_ref before saving")
 
 
 def _saved(tools: ResearchTools, identity: str, claim: str, ref: object, extra: list[str], question: str) -> ResearchToolOutput:

@@ -287,7 +287,7 @@ def _review_source_table(
             ReportQualityReview(
                 False,
                 "Report quality failed: every cited source needs at least one saved evidence snippet "
-                "from opened page text. Use save_finding with source_ref and an exact "
+                "from opened page text. Use save_finding with an exact "
                 "passage_ref before done. Missing snippet-backed citation(s): "
                 + ", ".join(missing_evidence[:3]),
             ),

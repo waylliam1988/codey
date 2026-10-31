@@ -19,7 +19,7 @@ from tests.test_research_findings import URL, execute, report_args, setup
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_cross_question_receipts_passages_and_findings_are_rejected_and_recovery_keeps_ownership(tmp_path):
+def test_passage_reuse_preserves_acquisition_and_adoption_ownership_on_recovery(tmp_path):
     store, tools, session, delegate = setup(tmp_path)
     try:
         plan = execute(delegate, tools, session, "research_plan", {
@@ -27,12 +27,15 @@ def test_cross_question_receipts_passages_and_findings_are_rejected_and_recovery
         opened = execute(delegate, tools, session, "open_url", {"url": URL, "question_ref": "q1"})
         passage = next(iter(tools.ledger.read_passages))
         finding_args = {"claim": "Only one writer can write at a time.", "source_ref": "s1", "passage_ref": passage}
-        before = store.index.count()
-        refused = execute(delegate, tools, session, "save_finding", {**finding_args, "question_ref": "q2"})
-        assert not refused.ok and "not investigated for this question" in refused.model_text
-        assert store.index.count() == before
         saved = execute(delegate, tools, session, "save_finding", {**finding_args, "question_ref": "q1"})
         assert saved.ok
+        before = store.index.count()
+        reused = execute(delegate, tools, session, "save_finding", {
+            "claim": finding_args["claim"], "passage_ref": passage, "question_ref": "q2"})
+        assert reused.ok and json.loads(reused.model_text)["finding_ref"] == "f2"
+        assert store.index.count() == before
+        assert len(tools.ledger.investigations) == 1
+        assert tools.ledger.investigations["a1"]["question_ref"] == "q1"
         coverage = report_args("f1")["report_sections"]["coverage"]
         coverage.append({"question_ref": "q2", "state": "not_investigated", "answer": "Not investigated.",
                          "findings": [], "investigations": []})
@@ -47,7 +50,7 @@ def test_cross_question_receipts_passages_and_findings_are_rejected_and_recovery
         with pytest.raises(ValueError, match="finding f1 belongs to another question"):
             validate_question_coverage(corrupt, tools.ledger)
         recovered, restored_session = ResearchLedger(), TaskSession(session.policy)
-        for result in (plan, opened, saved):
+        for result in (plan, opened, saved, reused):
             project_result_observation(restored_session, result.call, result, ok=True, research_ledger=recovered)
         assert recovered.investigations == tools.ledger.investigations
         assert recovered.references == tools.ledger.references

@@ -26,7 +26,8 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         "Saving or valid citations do not certify interpretation. Old answers, Ghost affinity and graph proximity are not evidence.",
         "Register 1..8 questions with research_plan. Account for every qN exactly once, with a supported answer or a specific gap. "
         "Pass question_ref=qN on every investigation, save_finding and save_inference. Coverage may use only aN and fN "
-        "bound to that question. Read passages for that question before saving. A receipt proves an attempt, not semantic coverage.",
+        "bound to that question. Reuse already read passages across questions; save_finding records the new adoption "
+        "without rereading the page. A receipt proves an attempt, not semantic coverage.",
         "Use only explicitly adopted [fN] references from successful saves or complete knowledge reads. "
         "Historical knowledge may answer the question without new acquisition. A candidate inference remains a hypothesis.",
         "done.summary is the cited conclusion. report_sections contains evidence, counter paragraphs and "
@@ -39,7 +40,7 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         "After rejection fix the specified field. Acquire new evidence only when needed; do not repeat unchanged reports or writes.",
     ]
     if policy.allows("knowledge.write"):
-        rules.append("save_finding saves one scoped finding from its exact source_ref and passage_ref. "
+        rules.append("save_finding saves one scoped finding from its exact passage_ref; the passage determines its source. "
                      "Use save_inference for a conditional hypothesis with exact premise_refs and limitations.")
     if policy.allows("knowledge.read"):
         rules.append("knowledge_read returns an fN pinned to the read version; read truncated details before adopting conditions.")

@@ -15,7 +15,7 @@ def test_empty_counter_compiles_without_creating_an_unsupported_claim(tmp_path):
     try:
         execute(delegate, tools, session, "open_url", {"url": URL})
         execute(delegate, tools, session, "save_finding", {
-            "claim": "Only one writer can write at a time.", "source_ref": "s1",
+            "claim": "Only one writer can write at a time.",
             "passage_ref": next(iter(tools.ledger.read_passages))})
         args = report_args("f1")
         args["report_sections"]["counter"] = []

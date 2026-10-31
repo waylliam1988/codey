@@ -654,6 +654,10 @@ class ExecutionDelegate:
         return lowered, ""
 
     def _lower_finding_source(self, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        # The selected passage owns the source identity. An explicitly supplied
+        # source is only an assertion to validate, including frozen older calls.
+        if "source_ref" not in args:
+            return args, ""
         reference = args.get("source_ref")
         sources = dict(getattr(self.session, "source_ids", {}) or {})
         if not isinstance(reference, str) or reference not in sources:
