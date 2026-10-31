@@ -16,30 +16,20 @@ _KINDS = ("claims", "paragraphs", "requirements", "investigations")
 
 
 def batch_scopes(basis: dict[str, Any]) -> tuple[dict[str, Any], ...]:
-    work: list[tuple[str, dict[str, Any]]] = []
-    for kind in _KINDS:
-        rows = ([{"ref": ref}] for ref in basis["investigations"]) if kind == "investigations" else (
-            [{**row, "units": [unit]} for unit in row["units"]] if kind in {"claims", "paragraphs"} else [row]
-            for row in basis[kind])
-        work.extend((kind, row) for group in rows for row in group)
     scopes: list[dict[str, Any]] = []
     for kind in _KINDS:
-        selected = [row for category, row in work if category == kind]
-        for start in range(0, len(selected), MAX_BATCH_UNITS):
+        if kind in {"claims", "paragraphs"}:
+            # Bind one finding/paragraph identity per batch. Its exact unit
+            # count, indices and evidence bounds then fit the frozen schema.
+            groups = [[{**row, "units": row["units"][start:start + MAX_BATCH_UNITS]}]
+                      for row in basis[kind] for start in range(0, len(row["units"]), MAX_BATCH_UNITS)]
+        else:
+            items = list(basis[kind])
+            groups = [items[start:start + MAX_BATCH_UNITS] for start in range(0, len(items), MAX_BATCH_UNITS)]
+        for group in groups:
             scope: dict[str, Any] = {key: [] for key in _KINDS}
-            items = selected[start:start + MAX_BATCH_UNITS]
-            if kind == "investigations":
-                scope[kind] = {row["ref"]: basis[kind][row["ref"]] for row in items}
-            elif kind in {"claims", "paragraphs"}:
-                identity = "ref" if kind == "claims" else "path"
-                grouped: dict[str, Any] = {}
-                for row in items:
-                    if row[identity] not in grouped:
-                        grouped[row[identity]] = {**row, "units": []}
-                    grouped[row[identity]]["units"].extend(row["units"])
-                scope[kind] = list(grouped.values())
-            else:
-                scope[kind] = items
+            scope[kind] = ({ref: basis[kind][ref] for ref in group}
+                           if kind == "investigations" else copy.deepcopy(group))
             scopes.append(scope)
     return tuple(scopes)
 

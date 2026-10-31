@@ -400,11 +400,11 @@ def test_failed_or_exhausted_assessment_never_returns_prior_draft_as_done(tmp_pa
 def test_last_budget_turn_completes_the_settled_assessment(tmp_path):
     from codey.knowledge.store import KnowledgeStore
 
-    result = _run(tmp_path, budget=14)
+    result = _run(tmp_path, budget=15)
     assert result.stop_reason == "done" and result.completion_proof.satisfied
-    assert result.turns == 14
+    assert result.turns == 15
     requests = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
-    assert len([row for row in requests if "attempt" in row]) == 14
+    assert len([row for row in requests if "attempt" in row]) == 15
     store = KnowledgeStore(tmp_path / "knowledge")
     try:
         assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == 1
@@ -422,7 +422,7 @@ def test_settled_assessment_completes_without_another_model_done(tmp_path, nativ
     assert result.semantic_review["status"] == "passed" and result.synthesis_id
     requests = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
     assert [(row["attempt"], row["turn"]) for row in requests if row.get("attempt") in (8, 10, 12)] == [
-        (attempt, turn) for attempt in (8, 10) for turn in range(1, 4)]
+        (attempt, turn) for attempt, count in ((8, 3), (10, 4)) for turn in range(1, count + 1)]
     store = KnowledgeStore(tmp_path / "knowledge")
     try:
         assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == 1

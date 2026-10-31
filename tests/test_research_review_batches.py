@@ -25,6 +25,28 @@ def large_basis():
     return basis
 
 
+def test_each_finding_keeps_its_own_unit_and_evidence_ranges():
+    from codey.research.review_batches import review_spec_for_batch
+    from codey.toolchain.tool_spec import spec_for_tool, thaw_schema_value
+
+    root = large_basis()
+    root["claims"].append({**copy.deepcopy(root["claims"][0]), "ref": "f2", "units": [
+        {"unit": n, "text": f"Separate assertion {n}."} for n in range(1, 11)],
+        "evidence": [{"excerpt": "First excerpt."}, {"excerpt": "Second excerpt."}]})
+    scopes = batch_scopes(root)
+    claim_batches = [scope["claims"] for scope in scopes if scope["claims"]]
+    assert [(rows[0]["ref"], len(rows[0]["units"])) for rows in claim_batches] == [("f1", 1), ("f2", 8), ("f2", 2)]
+    for index in range(3):
+        view = batch_view(root, index, [])
+        spec = review_spec_for_batch(spec_for_tool("submit_research_review"), view)
+        schema = thaw_schema_value(dict(spec.parameters)["assessment"])["properties"]["claims"]
+        row = view["claims"][0]
+        assert schema["minItems"] == schema["maxItems"] == 1
+        units = schema["items"]["properties"]["units"]
+        assert units["minItems"] == units["maxItems"] == len(row["units"])
+        assert units["items"]["properties"]["unit"]["enum"] == [unit["unit"] for unit in row["units"]]
+
+
 @pytest.mark.parametrize("native", [False, True])
 def test_current_batch_schema_rejects_invented_refs_and_unselected_categories(native):
     from jsonschema import Draft202012Validator
