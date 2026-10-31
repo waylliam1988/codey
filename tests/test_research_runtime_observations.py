@@ -24,7 +24,7 @@ def test_failed_writes_never_become_saved_references():
     assert view["recent_results"] == [{"tool": "save_finding", "ok": False, "error": "ERROR: excerpt missing"}]
 
 
-def test_view_reserves_questions_and_early_references_and_marks_omissions():
+def test_view_reserves_questions_and_latest_references_and_marks_omissions():
     from codey.research.context_view import build_research_context_view
     from codey.research.ledger import EvidenceItem, ResearchLedger
 
@@ -36,7 +36,7 @@ def test_view_reserves_questions_and_early_references_and_marks_omissions():
             "https://example.org/", "excerpt", note_id=f"long-note-id-{n}"))
     session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True))
     view = build_research_context_view(session, ledger, budget=4000)
-    assert len(view.questions) == 8 and view.references[0]["ref"] == "f1"
+    assert len(view.questions) == 8 and view.references[0]["ref"] == "f59"
     assert view.omitted_references > 0 and view.references[0]["display_truncated"]
     assert "long-note-id" not in view.render() and len(view.render()) <= 4000
 

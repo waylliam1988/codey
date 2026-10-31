@@ -228,10 +228,10 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             raise RuntimeError(f"{name} failed: {vars(result)}")
         observed = {row.get("tool_name") for row in events_seen if row.get("type") == "tool" and row.get("ok")}
         if name == "research":
-            if (not {"web_search", "save_finding"} <= observed
-                    or not observed.intersection({"open_url", "open_result", "open_hit"})
+            if (not ({"web_search", "save_finding"} if live_web else {"save_finding"}) <= observed
+                    or live_web and not observed.intersection({"open_url", "open_result", "open_hit"})
                     or not any(any(r.relation == "supported_by" for r in v.value.references) for v in versions)):
-                raise RuntimeError("live research must actually search, open a page and persist sourced claims")
+                raise RuntimeError("research must persist sourced claims; live research must also search and open pages")
             return
         if name == "first":
             excerpts = [" ".join(ref["content"].casefold().split()) for row in snapshot for ref in row["referenced_versions"]

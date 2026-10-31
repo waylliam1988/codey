@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -51,6 +52,61 @@ def _bounded(row: dict[str, Any], budget: int) -> dict[str, Any]:
     return preview
 
 
+def _result_references(result: Any, ledger: Any) -> list[str]:
+    if not result.ok:
+        return []
+    # Consume the actual execution receipt, not fN-looking text in its display.
+    notes = result.canonical.get("knowledge_notes", {})
+    affected: list[str] = [ref for key in ("created", "updated") for ref in notes.get(key, [])
+                if isinstance(ref, str)] if isinstance(notes, Mapping) else []
+    identity = result.call.args.get("id") if result.call.name == "knowledge_read" else None
+    revision = result.call.args.get("revision") if identity else None
+    question = result.call.args.get("question_ref")
+    return [ref for ref, binding in sorted(ledger.references.items(), key=lambda item: int(item[0][1:]), reverse=True)
+            if (not question or question == binding.question_ref)
+            and (binding.note_id in affected or isinstance(identity, str)
+                 and (ref == identity if identity in ledger.references else
+                      identity in {binding.object_id, binding.note_id})
+                 and (revision is None or revision == binding.revision))]
+
+
+def _reference_order(session: Any, ledger: Any) -> list[str]:
+    """Prioritize observed work, then share detail slots across questions.
+
+    These are display priorities, never judgments that newer claims are correct.
+    All bindings remain in the question index and the immutable knowledge store.
+    """
+    labels = sorted(ledger.references, key=lambda key: int(key[1:]), reverse=True)
+    recent_refs: list[str] = []
+    active_question = ""
+    for result in reversed(list(session._memory_results.values())[-4:]):
+        question = result.call.args.get("question_ref")
+        if (not active_question and isinstance(question, str)
+                and question in {f"q{n}" for n in range(1, len(ledger.questions) + 1)}):
+            active_question = question
+        recent_refs.extend(ref for ref in _result_references(result, ledger) if ref not in recent_refs)
+    proposed: list[str] = []
+    sections = getattr(session, "last_done_args", {}).get("report_sections", {})
+    coverage: list[Any] = sections.get("coverage", []) if isinstance(sections, dict) else []
+    for row in coverage if isinstance(coverage, list) else []:
+        if isinstance(row, dict) and isinstance(row.get("findings"), list):
+            proposed.extend(ref for ref in row["findings"] if isinstance(ref, str) and ref in ledger.references)
+    groups: dict[str, list[str]] = {}
+    for label in labels:
+        groups.setdefault(ledger.references[label].question_ref, []).append(label)
+    for question, refs in groups.items():
+        groups[question] = list(dict.fromkeys([
+            *(ref for ref in recent_refs if ref in refs), refs[0],
+            *(ref for ref in proposed if ref in refs), *refs]))
+    questions = list(dict.fromkeys([active_question, *(ledger.references[ref].question_ref for ref in recent_refs),
+        *(f"q{n}" for n in range(1, len(ledger.questions) + 1)), *groups]))
+    ordered: list[str] = []
+    for index in range(max((len(refs) for refs in groups.values()), default=0)):
+        ordered.extend(groups[question][index] for question in questions
+                       if question in groups and index < len(groups[question]))
+    return ordered
+
+
 def build_research_context_view(session: Any, ledger: Any = None, store: Any = None, *,
                                 budget: int = 14000, session_id: str = "") -> ResearchContextView:
     if budget < 4000:
@@ -71,7 +127,7 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
         for label, row in (list(ledger.investigations.items())[-8:] if ledger is not None else []))
     rows = []
     if ledger is not None:
-        labels = sorted(ledger.references, key=lambda key: int(key[1:]))
+        labels = _reference_order(session, ledger)
         for label in labels:
             if store is not None:
                 from codey.research.references import resolve_version
@@ -115,9 +171,15 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
     else:
         room = budget - len(base.render()) - 100
         count = min(len(rows), max(0, room // 1000))
+        issue = ""
+        if count < len({row["question_ref"] for row in rows}):
+            issue = "Not every question has visible finding details; use knowledge_read on the indexed refs."
+            base = ResearchContextView(questions, (), attempts, recent, saved, budget_issue=issue)
+            room = budget - len(base.render()) - 100
+            count = min(len(rows), max(0, room // 1000))
         per_ref = room // count - 2 if count else 1000
         view = ResearchContextView(questions, tuple(_bounded(row, per_ref) for row in rows[:count]),
-                                  attempts, recent, saved, len(rows) - count)
+                                  attempts, recent, saved, len(rows) - count, issue)
     if len(view.render()) > budget:
         raise ValueError("research working view exceeds its serialization budget")
     return view
