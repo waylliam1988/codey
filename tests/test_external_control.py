@@ -156,6 +156,42 @@ def test_config_is_recovered_without_the_ui_cache(tmp_path: Path) -> None:
         successor.close()
 
 
+@pytest.mark.parametrize("deleted_kind", ["sessions", "projects"])
+def test_service_restarts_without_restoring_deleted_inventory(tmp_path: Path, deleted_kind: str) -> None:
+    home = tmp_path / "state"
+    project = tmp_path / "project"
+    project.mkdir()
+    runtime = start_local_service(home, allowed_roots=(project,), verify_only=True)
+    try:
+        config = create(ControlClient(home), project)
+        state = copy.deepcopy(runtime.ctx.load_ui_state())
+        if deleted_kind == "sessions":
+            runtime.ctx.ui_state_store.forget_session(config["conversation_id"])
+        else:
+            state["projects"] = []
+            runtime.ctx.ui_state_store.save(state, base_revision=state["revision"])
+        deleted = runtime.ctx.load_ui_state()["deleted_ids"]
+    finally:
+        runtime.close()
+
+    successor = start_local_service(home, allowed_roots=(project,), verify_only=True)
+    try:
+        state = successor.ctx.load_ui_state()
+        assert state[deleted_kind] == []
+        assert state["deleted_ids"] == deleted
+        client = ControlClient(home)
+        assert client.call("get_health")["status"] == "verifying"
+        assert client.call("get_control", {"conversation_id": config["conversation_id"]}) == config
+        if deleted_kind == "projects":
+            new_config = create(client, project, "create-after-project-deletion")
+            state = successor.ctx.load_ui_state()
+            item = next(item for item in state["sessions"] if item["id"] == new_config["conversation_id"])
+            assert item["projectId"] is None
+            assert state["projects"] == []
+    finally:
+        successor.close()
+
+
 def test_feed_encodes_once_and_isolates_slow_consumers() -> None:
     feed = PublicEventFeed()
     slow = feed.subscribe(max_events=1)

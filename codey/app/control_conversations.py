@@ -22,15 +22,20 @@ def publish_inventory(ctx: Any) -> None:
         state = copy.deepcopy(ctx.ui_state_store.load())
         sessions = {item["id"]: item for item in state["sessions"]}
         projects = {item["path"]: item for item in state["projects"]}
+        deleted = {kind: set(state.get("deleted_ids", {}).get(kind, [])) for kind in ("sessions", "projects")}
         for config in configs:
             key = config["conversation_id"]
+            # Retained execution history must not recreate deleted UI entries.
+            if key in deleted["sessions"]:
+                continue
             project = config.get("project") or ""
-            if project and project not in projects:
-                projects[project] = {"id": "project_" + fingerprint(project)[:20], "name": Path(project).name,
+            project_id = "project_" + fingerprint(project)[:20]
+            if project and project not in projects and project_id not in deleted["projects"]:
+                projects[project] = {"id": project_id, "name": Path(project).name,
                                      "path": project, "expanded": True, "createdAt": config["created_at"] * 1000}
             item = sessions.setdefault(key, {"id": key, "messages": [], "draft": {"text": ""},
                 "title": config["title"], "provider": config["provider"],
-                "projectId": projects[project]["id"] if project else None,
+                "projectId": projects[project]["id"] if project in projects else None,
                 "modelSelection": dict(config.get("model_selection") or {})})
             # Execution configuration seeds a missing sidebar entry. Existing
             # user preferences belong to the UI store and survive reconstruction.
