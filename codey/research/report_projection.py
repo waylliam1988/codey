@@ -32,7 +32,13 @@ def validate_accepted_projection(result: Any, *, run_id: str, session_id: str, p
     from codey.knowledge.model import canonical_json
     from codey.research.semantic_review import parse_review_scope, review_issues, review_scope
 
-    judgments = parse_review_scope(canonical_json(assessment["assessment"]), review_scope(compiled, result.question))
+    version = assessment.get("schema", 1)
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError("unsupported research assessment schema")
+    # Historical published judgments keep their original unit boundaries.
+    # This is a read projection, never a second assessment or execution path.
+    judgments = parse_review_scope(canonical_json(assessment["assessment"]),
+        review_scope(compiled, result.question, sentences=version == 2))
     proof = result.completion_proof
     required = {"task_coverage_assessed", "investigation_relevance_assessed", "claim_support_assessed", "report_scope_assessed"}
     writer_checks = {"research_citations", "research_sources_opened", "research_evidence_saved",

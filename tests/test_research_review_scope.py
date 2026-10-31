@@ -39,6 +39,27 @@ def test_review_sentence_keeps_conditions_subject_and_comparator_together(text):
     assert len(task_requirements(text)) > 1
 
 
+def test_old_frozen_assessments_keep_original_clause_units_when_projected():
+    from types import SimpleNamespace
+
+    from codey.research.semantic_review import parse_review_scope, review_scope
+    from tests.test_research_semantic_review import assessment
+
+    text = "In WAL mode, only one writer can write at a time."
+    report = SimpleNamespace(questions=["Writer limit?"],
+        coverage=[{"question_ref": "q1", "state": "evidence_found", "investigations": []}],
+        paragraph_bindings=[{"path": "report_sections.coverage[0].answer", "text": text, "refs": ["f1"]}],
+        reference_metadata={"f1": {"claim": text, "conditions": {}}})
+    legacy = review_scope(report, "Explain writer concurrency.", sentences=False)
+    current = review_scope(report, "Explain writer concurrency.")
+    assert len(legacy["claims"][0]["units"]) == len(legacy["paragraphs"][0]["units"]) == 2
+    assert len(current["claims"][0]["units"]) == len(current["paragraphs"][0]["units"]) == 1
+    original = json.dumps(assessment(legacy))
+    assert parse_review_scope(original, legacy)
+    with pytest.raises(ValueError, match="every frozen claim unit"):
+        parse_review_scope(original, current)
+
+
 def case():
     task = "Explain checkpoint defaults. Distinguish old restrictions."
     claim = "Checkpoint defaults to 1000 pages. FULL waits for readers."

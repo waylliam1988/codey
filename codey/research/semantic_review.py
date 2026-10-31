@@ -24,8 +24,8 @@ from codey.research.report_proposal import FINDING_CITATION
 from codey.research.task_requirements import task_requirements, text_units
 
 
-def claim_units(claim: str, conditions: dict[str, Any]) -> list[dict[str, Any]]:
-    units = text_units(claim, sentences=True)
+def claim_units(claim: str, conditions: dict[str, Any], *, sentences: bool = True) -> list[dict[str, Any]]:
+    units = text_units(claim, sentences=sentences)
     for name, condition in conditions.items():
         if condition["state"] == "reported":
             units.append({"unit": len(units) + 1, "field": f"conditions.{name}",
@@ -33,12 +33,12 @@ def claim_units(claim: str, conditions: dict[str, Any]) -> list[dict[str, Any]]:
     return units
 
 
-def review_scope(report: FindingReport, task: str) -> dict[str, Any]:
+def review_scope(report: FindingReport, task: str, *, sentences: bool = True) -> dict[str, Any]:
     return {"task": task, "requirements": task_requirements(task), "questions": list(report.questions),
         "coverage": list(report.coverage),
-        "paragraphs": [{**row, "units": text_units(FINDING_CITATION.sub("", row["text"]), sentences=True)}
+        "paragraphs": [{**row, "units": text_units(FINDING_CITATION.sub("", row["text"]), sentences=sentences)}
                        for row in report.paragraph_bindings],
-        "claims": [{"ref": ref, "units": claim_units(metadata["claim"], metadata["conditions"])}
+        "claims": [{"ref": ref, "units": claim_units(metadata["claim"], metadata["conditions"], sentences=sentences)}
                    for ref, metadata in report.reference_metadata.items()]}
 
 
@@ -61,7 +61,7 @@ def review_basis(report: FindingReport, tools: Any, task: str) -> dict[str, Any]
                 "source_id": row.source.value.id, "source_revision": row.source.revision,
                 "url": row.source.value.provenance["url"], "title": row.source.value.title,
                 "locator": row.evidence.value.provenance.get("locator", "")} for row in item.evidence]})
-    body = {"schema": 2, **review_scope(report, task), "claims": claims,
+    body = {"schema": 3, **review_scope(report, task), "claims": claims,
         "investigations": {ref: dict(tools.ledger.investigations[ref])
                            for row in report.coverage for ref in row["investigations"]},
         "coverage": list(report.coverage),

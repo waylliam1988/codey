@@ -205,3 +205,26 @@ investigations 分批；每批提示只包含本职责规则，并用“证据�
 当原 coverage 没有任何显式 gap 时，冻结 requirements.state 只允许 addressed/missing，禁止把评审
 发现的问题说成报告已承认的缺口。有真实 gap 时保留原三种状态，仍由原完整校验检查对应问题。
 验证：引用与批次选集 5 passed，Ruff 通过。上一轮并行 API/提示选集 25 passed，全生产 Mypy 576 文件通过。
+
+## 17. 历史已发布判断保持原单位边界
+
+新 assessment 标记 schema=2，对应完整句子单位；旧 schema=1 的已发布判断仍用原 clause 边界作只读
+投影校验。新的冻结 basis 为 schema=3。两者复用相同 scope/校验函数，不重跑旧评审，不改旧原文或回执。
+验证：旧单位不被新切分偷换，以及 native/text 完整 driver 发布/历史投影共 3 passed；Ruff 通过。
+
+## 当前校准结果（不是完整网络研究验收）
+
+Gemma 12B、JSON、thinking=false、seed=73。`calibration-separated-workload_overreach-02` 现正确 failed，
+答案批与要求批都指出机制不证明本应用性能收益。其余采用 `calibration-separated-*-01` 原结果：
+
+| 合成案例 | 预期 | 实际 |
+| --- | --- | --- |
+| writer_supported | passed | passed |
+| workload_overreach | failed | failed |
+| comparator_transfer | failed | failed |
+| excerpt_absence | failed | failed |
+| historical_supported | passed | passed |
+| historical_overreach | failed | failed |
+
+六例已各有一次完整、符合标签的实际结果，保留此前误放行与 incomplete 的原始证据。
+这是限定样本校准，不证明同模型评审可靠性，也不替代下一步真实搜索、保存、修复与发布验收。
