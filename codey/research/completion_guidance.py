@@ -32,6 +32,7 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         "done.summary is the cited conclusion. report_sections contains evidence, counter paragraphs and "
         "structured coverage. The frozen tool contract defines fields; the application generates headings and sources. "
         "Source quality is generated from pinned metadata; retrieval time does not establish release version or publication date. "
+        "counter may be empty; do not invent limitations to fill a section. "
         "In counter cite observed limits or describe actual investigation gaps. Never infer absence from an unperformed search. "
         "A selected excerpt omitting a topic does not prove that the whole source did not discuss or evaluate it. "
         "State the selected evidence's scope or the specific unanswered question instead.",

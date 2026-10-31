@@ -64,7 +64,8 @@ def coverage_record_schema() -> dict[str, Any]:
 
 
 def report_sections_schema() -> dict[str, Any]:
-    fields = {key: array_schema(text_schema(1, 16000), 1) for key in ("evidence", "counter")}
+    fields = {key: array_schema(text_schema(1, 16000), 0 if key == "counter" else 1)
+              for key in ("evidence", "counter")}
     fields["coverage"] = array_schema(coverage_record_schema(), 1, 8)
     return object_schema(fields, *fields)
 

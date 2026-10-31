@@ -125,6 +125,8 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
     if queries:
         sections["coverage"] = ("实际检索词（最多显示 12 条）：\n" + "\n".join("- " + q for q in queries[:12])
                                 + "\n\n" + sections["coverage"])
+    if not proposal.counter:
+        sections["counter"] = "本轮未记录额外反证；这不表示不存在反证。未解问题见问题覆盖。"
     notes = ["所采用的主张与推论仍未经独立语义审查；保存、引用有效不代表解释正确。"]
     for item in resolved:
         value = item.version.value
