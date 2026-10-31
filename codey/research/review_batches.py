@@ -28,8 +28,10 @@ def batch_scopes(basis: dict[str, Any]) -> tuple[dict[str, Any], ...]:
             groups = [items[start:start + MAX_BATCH_UNITS] for start in range(0, len(items), MAX_BATCH_UNITS)]
         for group in groups:
             scope: dict[str, Any] = {key: [] for key in _KINDS}
-            scope[kind] = ({ref: basis[kind][ref] for ref in group}
-                           if kind == "investigations" else copy.deepcopy(group))
+            if kind == "investigations":
+                scope[kind] = {ref: basis[kind][ref] for ref in group}
+            else:
+                scope[kind] = copy.deepcopy(group)
             scopes.append(scope)
     return tuple(scopes)
 

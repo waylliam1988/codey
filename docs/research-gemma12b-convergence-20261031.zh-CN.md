@@ -267,3 +267,10 @@ claims/paragraphs 改为每批一条 finding/一段答案（长条目仍每批�
 旧 schema=1 单位不变。报告派生证据段不暴露内部标记，答案中已有的相同引用不重复追加。
 
 验证：scope/finding 选集 50 passed，另有原文未改写、虚构标记不增加 evidence、渲染引用不重复的回归通过；Ruff 通过。
+
+## 22. 批次投影类型检查收口
+
+全生产静态检查发现第 20 项的条件表达式让 Mypy 将 deepcopy 的列表参数误推断成字典。
+拆开原有两个赋值分支，运行语义不变；没有新增状态或类型忽略。
+修改前冻结源码运行 batches/scope/semantic_review 全组选集：70 passed（200.57 秒）。
+修改后全生产 Ruff、Mypy、Pyrefly、ty 均通过。
