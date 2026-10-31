@@ -187,3 +187,11 @@ investigations 分批；每批提示只包含本职责规则，并用“证据�
 修正为该夹具的三种非空职责（调查数组原为空）后相关选集 8 passed；Ruff 通过。
 实机 workload_overreach-02 已在答案批正确指出吞吐量必然提升无证据，但选错 basis=gap，校验拒绝，
 因此结果是 incomplete 而非已通过反例验收。后续继续收敛此结构歧义。
+
+## 15. 证据不足与报告明确声明缺口分开
+
+若当前答案没有任何合法的显式 coverage gap，冻结 schema 的 basis 只允许 findings。
+拒绝缺乏支持的事实句使用 findings+unsupported，不能用 gap 表示“证据不足”。原校验反馈也给出
+可执行的字段修正；有真实报告缺口时仍允许 gap，不自动改写模型输出。
+
+验证：范围、引用、缺口与批次纯投影选集 44 passed，Ruff 通过。

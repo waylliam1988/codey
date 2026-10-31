@@ -155,6 +155,11 @@ def review_spec_for_batch(spec: Any, batch: dict[str, Any]) -> Any:
                 unit_properties["quotes"]["items"]["properties"]["evidence"]["maximum"] = max(
                     len(row["evidence"]) for row in rows)
             else:
+                gap_paths = {f"report_sections.coverage[{n}].answer" for n, row in enumerate(batch["coverage"])
+                             if row["state"] != "evidence_found"}
+                if not any(row["path"] in gap_paths or gap_paths and (
+                        row["path"] == "summary" or row["path"].startswith("report_sections.counter[")) for row in rows):
+                    unit_properties["basis"]["enum"] = ["findings"]
                 refs = sorted({ref for row in rows for ref in row["refs"]})
                 supports = unit_properties["finding_units"]
                 if refs:

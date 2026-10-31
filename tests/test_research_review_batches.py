@@ -87,7 +87,8 @@ def test_each_batch_schema_uses_real_report_paths_questions_and_cited_finding_un
                               lambda body: body["requirements"][0].update(question_refs=["q99"])))
         if batch["paragraphs"]:
             mutations.extend((lambda body: body["paragraphs"][0]["units"][0].update(finding_units=[{"ref": "f99", "unit": 1}]),
-                              lambda body: body["paragraphs"][0]["units"][0].update(finding_units=[{"ref": "f1", "unit": 99}])))
+                              lambda body: body["paragraphs"][0]["units"][0].update(finding_units=[{"ref": "f1", "unit": 99}]),
+                              lambda body: body["paragraphs"][0]["units"][0].update(basis="gap", verdict="unsupported")))
         for mutate in mutations:
             corrupt = copy.deepcopy(raw)
             mutate(corrupt["args"]["assessment"])

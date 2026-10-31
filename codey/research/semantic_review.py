@@ -216,7 +216,7 @@ def _paragraph_judgments(rows: Any, basis: dict[str, Any], judgments: list[dict[
                     row["path"] in gaps or row["path"] == "summary" or row["path"].startswith("report_sections.counter["))):
                 raise ValueError(f"review {row['path']} unit {unit['unit']}: gap judgment needs an explicit frozen "
                     "coverage gap and no finding_units; available coverage gap paths: " + canonical_json(sorted(gaps))
-                    + ". Without a matching gap or supported finding, mark this unit unsupported or uncertain.")
+                    + ". For a factual assertion without a matching gap, use basis=findings and mark it unsupported or uncertain.")
 
 
 def review_issues(assessment: dict[str, Any]) -> list[dict[str, Any]]:
@@ -292,6 +292,7 @@ def review_prompt(basis: dict[str, Any]) -> str:
             "and generalizations. Use uncertain if support cannot be established. "
             "Select finding_units only from this sentence's actual refs and frozen unit numbers. "
             "Supported requires all selected finding units to have supported judgments. "
+            "To reject an unsupported factual statement use basis=findings with verdict=unsupported, even when finding_units=[]. "
             "basis=gap with finding_units=[] is allowed only for an explicit matching frozen coverage gap, "
             "never an uncited factual assertion. Source facts come only from pinned source metadata.")
     if basis["requirements"]:
