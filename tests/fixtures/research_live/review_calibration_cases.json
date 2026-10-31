@@ -2,6 +2,14 @@
   "description": "Synthetic labeled scope checks for the production review kernel. Not live research results.",
   "cases": [
     {
+      "id": "background_finding",
+      "expected_status": "failed",
+      "question": "Does this excerpt establish a maximum of one writer at a time?",
+      "excerpt": "In WAL mode, readers do not block writers and a writer does not block readers. Reading and writing can proceed concurrently.",
+      "finding": "在 WAL 模式下，同一时刻只能有一个写者。",
+      "paragraph": "在 WAL 模式下，同一时刻只能有一个写者。"
+    },
+    {
       "id": "unadopted_source_fact",
       "expected_status": "failed",
       "question": "Does the cited finding establish reader and writer concurrency?",

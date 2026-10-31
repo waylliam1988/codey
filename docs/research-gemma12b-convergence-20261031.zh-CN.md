@@ -317,3 +317,11 @@ f2 只保存单写者结论，答案额外声称读写可并发；答案评审�
 
 验证：42 passed，包含原始判断未改写、伪造 passed 标记仍被完成 gate 拒绝、
 完整 driver 无协议重写地进入修复且只发布一次；Ruff/Mypy 通过。
+
+## 26. finding 评审先找未建立的断言
+
+finding 判断与答案判断采用同样的证据边界指导：reason 先指出 excerpt 未建立的断言，不以背景常识
+补齐来源，也不把相关词语当作支持整句话。新增来自实机的 `background_finding` 负例。
+`calibration-separated-background_finding-01` 明确拒绝从读写并发片段推出最多一个写者；
+答案批仍选择 supported，但第 25 项的原依赖校验直接将完整评审判 failed，三批完成，无协议重写。
+验证：实机负例完成且标签正确；Ruff/Mypy 通过。八例各已有一次符合预期结果，仍不代表普遍可靠。

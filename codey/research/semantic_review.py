@@ -286,6 +286,9 @@ def review_prompt(basis: dict[str, Any]) -> str:
     if basis["claims"]:
         rules.append(
             "Judge every listed finding unit against ONLY its own complete evidence excerpts. "
+            "A known true claim can still be unsupported by these excerpts. Do not fill missing assertions from "
+            "background knowledge. In reason, first identify any assertion not established by the excerpts; "
+            "if none is missing, explain the entailment. Quoting related words does not prove an extra assertion. "
             "For each unit ask: could every excerpt be true while this sentence is false? If yes, it is unsupported. "
             "Support requires every clause, subject, comparator, condition and degree of certainty. "
             "A plausible explanation or a correct adjacent clause is insufficient. Reported conditions need support too. "
