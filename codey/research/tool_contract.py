@@ -276,7 +276,7 @@ def question_bound_spec(spec: Any, *, required: bool = False) -> Any:
         description=spec.description + " Select question_ref=qN explicitly to bind this action to its registered question.")
 
 
-def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "") -> Any:
+def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "", questions: tuple[str, ...] = ()) -> Any:
     """Select one complete done contract before freezing, never patch pieces later."""
     example: dict[str, Any]
     if purpose == "ordinary":
@@ -288,6 +288,9 @@ def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "") -> Any:
                        "The parent owns final synthesis; do not write its report in this phase.")
     elif purpose == "report":
         coverage = dict(report_sections_schema()["properties"])["coverage"]
+        if questions:
+            coverage["items"]["properties"]["question_ref"]["enum"] = [
+                f"q{index}" for index in range(1, len(questions) + 1)]
         if task:
             from codey.research.task_requirements import task_requirements
 
@@ -308,6 +311,7 @@ def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "") -> Any:
                        "evidence, limitations, source table and coverage from these same answers and exact findings. "
                        "Include task_refs selecting the original rN task units answered or explicitly left unresolved. "
                        "Account for every original rN across the answers; this records your claimed coverage, not verification. "
+                       "Attach context, method and format task_refs to existing answers; do not invent another question id. "
                        "Do not supply summary, evidence, counter or source_quality prose.")
     else:
         raise ValueError("unknown done purpose")

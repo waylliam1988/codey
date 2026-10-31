@@ -38,6 +38,7 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         "Submit only report_sections.coverage to done: one answer or specific gap per question, with findings and "
         "actual investigations and task_refs for the original rN text units it addresses. Account for every original rN, "
         "including background/method/format constraints, with an answer or specific gap. "
+        "These constraints and optional leads belong with existing answers; they do not need separate questions. "
         "This is explicit accounting, not independent verification. Do not also write summary, evidence or counter paragraphs. "
         "The application compiles the report from these same answers and saved findings. "
         "Source quality is generated from pinned metadata; retrieval time does not establish release version or publication date. "

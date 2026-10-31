@@ -163,6 +163,37 @@ def test_strict_report_task_refs_bind_the_original_task_in_both_contracts():
         assert plan.control is None and "task_refs" in plan.protocol_error
 
 
+@pytest.mark.parametrize("native", [False, True])
+def test_report_question_choices_follow_registered_receipts_and_freeze_per_turn(native):
+    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
+
+    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research",
+                          task_text="Investigate the substantive questions. Write a short report.")
+    session.research_questions = tuple(f"Actual question {n}?" for n in range(1, 6))
+    snapshot = build_turn_snapshot(session, native=native)
+    validator = Draft202012Validator(text_tool_schema(tools_from_specs(snapshot.model_specs)))
+    rows = [{"question_ref": f"q{n}", "state": "not_investigated", "answer": "No evidence collected yet.",
+             "findings": [], "investigations": [], "task_refs": ["r1", "r2"] if n == 1 else []}
+            for n in range(1, 6)]
+    raw = {"tool": "done", "args": {"report_sections": {"coverage": rows}}}
+    assert validator.is_valid(raw)
+    rows.append({**rows[-1], "question_ref": "q6", "answer": "Report formatting is not a sixth question."})
+    assert not validator.is_valid(raw)
+    turn = AssistantTurn(tool_calls=(ProviderToolCall("done", "done", raw["args"]),))
+    rejected = normalize_turn(turn, snapshot=snapshot)
+    assert rejected.control is None and "question_ref" in rejected.protocol_error
+
+    # Only a newly registered question may change the next frozen contract.
+    session.research_questions += ("A newly registered substantive question?",)
+    assert not validator.is_valid(raw)
+    current = build_turn_snapshot(session, native=native)
+    assert Draft202012Validator(text_tool_schema(tools_from_specs(current.model_specs))).is_valid(raw)
+    assert normalize_turn(turn, snapshot=current).control is not None
+
+
 def test_explicit_schema_reaches_payload_but_does_not_leak_to_next_send(monkeypatch):
     payloads = []
 
