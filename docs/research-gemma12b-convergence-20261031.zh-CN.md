@@ -350,3 +350,17 @@ finding 判断与答案判断采用同样的证据边界指导：reason 先指�
 共用同一个 scope/投影校验入口，只读旧数据，不重跑或重写历史判断。
 验证：scope 与两种协议完整发布选集 47 passed，生产 Ruff/Mypy 576 文件通过。
 有限引文 schema 下的 `calibration-quote-choice-writer-01` 正例三批完成并 passed，原句支持校验保留。
+
+## 实机 11 与用户配置落地
+
+`single-json-06`，版本 `ce926dc0`，seed=74、预算 60，20 次请求，约 162 秒，最终 done。
+完整采集、8 批评审和发布均完成，无引文失控、传输卡死或 TargetClosedError。
+人工核对原知识中的完整 passage，确有单写者、读写并发及单 WAL 文件原因，结论与该原文一致。
+仍存在三个重叠问题以及重复证据展示；同模型答案评审也仍会把主结论支持泛化到附加语句，
+所以本次仅确认这份最终文本有对应原文，不宣称严格 finding-unit 语义判断全面可靠。
+
+用户实际 `C:\Users\Administrator\.codey\local-openai.json` 已通过原配置模块将 native_tools_mode
+从 auto 改为 json，thinking=false；连接身份 revision 更新，地址、模型偏好、密钥和预算保留。
+通过生产 connect_local 只读连接检查确认仍选到原 Gemma 4 12B，native_tools=false、text_tool_format=json_schema。
+这不再仅限测试 harness 配置。已有冻结对话保留其原协议；重新启动 Codey 后新建任务使用新代码/新配置。
+KoboldCpp 原生解析器本身没有被修改，解决方式仍是同一 Codey API/kernel 中已存在的 JSON 协议。
