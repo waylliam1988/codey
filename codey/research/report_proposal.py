@@ -5,16 +5,20 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codey.research.issues import ResearchIssue
 from codey.reviews.report_sections import REQUIRED_SECTIONS, heading_key
+
+if TYPE_CHECKING:
+    from codey.research.evidence_view import ResolvedReference
 
 FINDING_CITATION = re.compile(r"\[(f[1-9][0-9]*)\]")
 _GAP_ANSWERS = {
     "not_investigated": "本轮未调查该问题，无法据此给出结论。",
     "unanswered_after_search": "本轮已记录调查尝试，但该问题仍未作答，无法据此给出结论。",
 }
+_PARTIAL_NOTICE = "该问题尚未完整回答；以上仅为已保存的局部发现。"
 
 
 @dataclass(frozen=True)
@@ -40,6 +44,7 @@ class ResearchReportProposal:
     coverage: tuple[dict[str, Any], ...]
     coverage_answers: tuple[ReportParagraph, ...]
     answers_only: bool = False
+    findings_only: bool = False
 
     @property
     def paragraphs(self) -> tuple[ReportParagraph, ...]:
@@ -53,7 +58,7 @@ class ResearchReportProposal:
             + [ref for row in self.coverage for ref in row["findings"]]))
 
 
-def _answers_proposal(coverage: tuple[dict[str, Any], ...]) -> ResearchReportProposal:
+def _answers_proposal(coverage: tuple[dict[str, Any], ...], *, findings_only: bool = False) -> ResearchReportProposal:
     # Gap states authorize no factual answer. Compile their text before any
     # report views or persisted bindings are formed. Original requests remain
     # untouched in their provider/execution receipts.
@@ -65,7 +70,49 @@ def _answers_proposal(coverage: tuple[dict[str, Any], ...]) -> ResearchReportPro
         row["answer"] + "".join(f" [{ref}]" for ref in row["findings"]
                                if ref not in FINDING_CITATION.findall(row["answer"]))
         for row in coverage), tuple(dict.fromkeys(ref for row in coverage for ref in row["findings"])))
-    return ResearchReportProposal(conclusion, (), (), coverage, answers, answers_only=True)
+    return ResearchReportProposal(conclusion, (), (), coverage, answers, answers_only=True, findings_only=findings_only)
+
+
+def _selection_rows(raw: list[Any], investigations: Mapping[str, Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
+    """Normalize a selection, without granting an evidence or completion verdict."""
+    from codey.reviews.research_coverage import coverage_rows
+
+    rows = []
+    for index, row in enumerate(raw):
+        required = {"question_ref", "state", "findings"}
+        if (not isinstance(row, dict) or not required <= set(row)
+                or set(row) - required - {"task_refs", "investigations"}):
+            raise ResearchIssue("report_structure", f"report_sections.coverage[{index}]",
+                "select question_ref, state, findings and task_refs; do not rewrite answer prose")
+        attempts = row.get("investigations", [ref for ref, attempt in investigations.items()
+            if attempt.get("question_ref") == row["question_ref"]] if row["state"] != "not_investigated" else [])
+        rows.append({**row, "investigations": attempts, "answer": "待从所选发现的精确版本编译。"})
+    return tuple(coverage_rows(rows))
+
+
+def bind_selected_answers(proposal: ResearchReportProposal,
+                          resolved: tuple[ResolvedReference, ...]) -> ResearchReportProposal:
+    """Adopt exact pinned claims once; never ask a model to rewrite the report.
+
+    Claim boundaries are saved findings, not sentences or punctuation. A saved
+    conditional relationship stays intact, including multi-sentence conditions.
+    """
+    if not proposal.findings_only:
+        return proposal
+    by_label = {item.label: item for item in resolved}
+    rows = []
+    for row in proposal.coverage:
+        if row["state"] in {"evidence_found", "partial"}:
+            answer = "\n\n".join(by_label[label].version.value.content + f" [{label}]" for label in row["findings"])
+            if row["state"] == "partial":
+                answer += f"\n\n{row['question_ref']}：{_PARTIAL_NOTICE}"
+            if len(answer) > 4000:
+                raise ResearchIssue("report_selection_too_large", f"{row['question_ref']}.findings",
+                    "selected findings exceed the 4000-character question answer limit; select fewer complete findings "
+                    "or save a concise supported replacement without dropping its conditions", allowed_refs=tuple(row["findings"]))
+            row = {**row, "answer": answer}
+        rows.append(row)
+    return _answers_proposal(tuple(rows), findings_only=True)
 
 
 def bind_gap_investigations(proposal: ResearchReportProposal,
@@ -80,21 +127,27 @@ def bind_gap_investigations(proposal: ResearchReportProposal,
         return proposal
     coverage = []
     for row in proposal.coverage:
-        if row["state"] in _GAP_ANSWERS:
+        if row["state"] in _GAP_ANSWERS or proposal.findings_only:
             refs = [ref for ref, attempt in investigations.items() if attempt.get("question_ref") == row["question_ref"]]
-            row = {**row, "investigations": refs,
-                   "state": "unanswered_after_search" if refs else "not_investigated"}
+            row = {**row, "investigations": refs, "state": (
+                "unanswered_after_search" if refs else "not_investigated") if row["state"] in _GAP_ANSWERS else row["state"]}
         coverage.append(row)
-    return _answers_proposal(tuple(coverage))
+    return _answers_proposal(tuple(coverage), findings_only=proposal.findings_only)
 
 
-def parse_report_proposal(args: dict[str, Any]) -> ResearchReportProposal:
+def parse_report_proposal(args: dict[str, Any], *,
+                          investigations: Mapping[str, Mapping[str, Any]] | None = None) -> ResearchReportProposal:
     raw_sections = args.get("report_sections")
     if isinstance(raw_sections, dict) and set(raw_sections) == {"coverage"}:
         if set(args) != {"report_sections"}:
             raise ResearchIssue("report_structure", "done", "submit answers only in report_sections.coverage")
         from codey.reviews.research_coverage import coverage_rows
 
+        rows = raw_sections["coverage"]
+        if isinstance(rows, list) and any(isinstance(row, dict) and "answer" not in row for row in rows):
+            return _answers_proposal(_selection_rows(rows, investigations or {}), findings_only=True)
+        # Old frozen snapshots keep their authored answers. New strict snapshots
+        # expose the selection contract and reject answer before reaching here.
         return _answers_proposal(tuple(coverage_rows(raw_sections["coverage"])))
     # Original expanded proposals remain readable under an already frozen old
     # contract. New strict tool snapshots expose only the answers contract above.

@@ -50,7 +50,7 @@ def test_invalid_report_fields_rejected_identically(mutation):
     args = json.loads(done.json_examples[0])["args"]
     row = args["report_sections"]["coverage"][0]
     if mutation == "missing":
-        del row["investigations"]
+        del row["state"]
     elif mutation == "unknown":
         row["invented"] = True
     elif mutation == "enum":
@@ -58,7 +58,7 @@ def test_invalid_report_fields_rejected_identically(mutation):
     elif mutation == "type":
         row["findings"] = "f1"
     else:
-        row["answer"] = "x" * 4001
+        row["findings"] = [f"f{n}" for n in range(1, 18)]
     text = normalize_turn(decode_text_turn(json.dumps({"tool": "done", "args": args})), snapshot=snapshot)
     native = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("bad", "done", args),)), snapshot=snapshot)
     assert text.protocol_error == native.protocol_error and text.protocol_error

@@ -27,7 +27,7 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
     from codey.knowledge.store import KnowledgeStore
     from codey.policies.task_policy import TaskPolicy
     from codey.research.tools import ResearchTools
-    from tests.support.research_script import answer_args
+    from tests.support.research_script import selection_args
 
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     project, state, logdir = _dirs(tmp_path)
@@ -82,7 +82,7 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
         monkeypatch.setattr(restored_tools.search, "fetch", lambda *a, **k: pytest.fail("recovery repeated fetch"))
         monkeypatch.setattr(restored_tools, "save_finding", lambda *a, **k: pytest.fail("recovery repeated write"))
         monkeypatch.setattr("codey.operations.task_entry._entry_executors", lambda *a: (None, None, restored_tools))
-        provider = TextConversation(json.dumps({"tool": "done", "args": answer_args("Helium supply depends on gas processing.")}))
+        provider = TextConversation(json.dumps({"tool": "done", "args": selection_args()}))
         frame = workspace_frame("", provider, task="Research helium supply")
         frame.run_id = "r"
         frame.request = replace(frame.request, session_id="s", intent="research", max_turns=8)

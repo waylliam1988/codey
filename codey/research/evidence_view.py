@@ -92,6 +92,8 @@ def reference_evidence_preview(ledger: ResearchLedger, store: Any, label: str, *
     except ValueError as exc:
         return {"evidence": [], "evidence_issue": str(exc), "evidence_complete": False}
     evidence = []
+    from codey.research.source_literals import version_anchors, version_mentions
+
     for row in resolved.evidence[:3]:
         locator = str(row.evidence.value.provenance.get("locator", ""))
         passage = ledger.read_passages.get(locator.removeprefix("passage:")) if locator.startswith("passage:") else None
@@ -104,7 +106,10 @@ def reference_evidence_preview(ledger: ResearchLedger, store: Any, label: str, *
             "excerpt": row.evidence.value.content[:1200], "excerpt_complete": len(row.evidence.value.content) <= 1200,
             "relation": row.relation, "acquisition": row.acquisition,
             "url": row.source.value.provenance["url"],
-            **({"passage_ref": passage.ref} if reusable and passage else {})})
+            **({"passage_ref": passage.ref} if reusable and passage else {}),
+            **({"version_anchors": version_anchors(resolved.version.value.content,
+                [(passage.ref if reusable and passage else locator, row.evidence.value.content)])}
+               if version_mentions(resolved.version.value.content) else {})})
     return {"evidence": evidence, "evidence_complete": len(resolved.evidence) <= 3 and
             all(row["excerpt_complete"] for row in evidence),
             "evidence_basis": "premises_only" if resolved.version.value.kind == "inference" else "direct_claim_links"}

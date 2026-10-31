@@ -83,6 +83,12 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
             if identity not in tools.created_ids and identity not in tools.updated_ids:
                 tools.updated_ids.append(identity)
             return _saved(tools, identity, claim, ref, extra, question)
+        # New writes must not introduce version literals outside their excerpts.
+        # A previously committed transaction is recovered above without rewriting
+        # history; new report selections validate its literals again on adoption.
+        from codey.research.source_literals import validate_version_literals
+
+        validate_version_literals(claim, [selected.excerpt for selected in passages])
         # A retry reuses the same exact input identity; no fuzzy deduplication.
         lowered: dict[str, Any] = {"type": "fact", "title": claim[:160], "body": claim,
             "sources": [passage.source.final_url], "conditions": conditions,
@@ -107,6 +113,7 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
 def _saved(tools: ResearchTools, identity: str, claim: str, ref: object, extra: list[str], question: str) -> ResearchToolOutput:
     from codey.knowledge.archive import stable_identity
     from codey.research.references import bind_version, read_version
+    from codey.research.source_literals import version_anchors, version_mentions
     from codey.research.tools import ResearchToolOutput
 
     version = read_version(tools.store, stable_identity("claim", identity, claim))
@@ -114,9 +121,13 @@ def _saved(tools: ResearchTools, identity: str, claim: str, ref: object, extra: 
         raise ValueError("saved finding has no exact claim version")
     label = bind_version(tools.ledger, version, acquisition="current_run", note_id=identity,
                          passage_ref=str(ref), question_ref=question)
+    anchors = version_anchors(claim, [(str(passage_id), tools.ledger.read_passages[str(passage_id)].excerpt)
+                                    for passage_id in (ref, *extra)]) if version_mentions(claim) else None
     return ResearchToolOutput(canonical_json({"finding_ref": label, "claim": claim,
         "passage_ref": ref, "additional_passage_refs": extra, "interpretation_review": "unreviewed",
-        "next": "Cite [" + label + "] only where you adopt this finding. Saving is not semantic approval."}), ok=True)
+        **({"version_anchors": anchors} if anchors else {}),
+        "next": "Select " + label + " in done.report_sections.coverage[].findings to adopt this exact claim; do not rewrite it. "
+                "Saving and version matches are not semantic approval."}), ok=True)
 
 
 def _conditions(raw: object) -> dict[str, dict[str, str]]:

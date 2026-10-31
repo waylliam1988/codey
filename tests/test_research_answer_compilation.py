@@ -1,4 +1,4 @@
-"""One model-authored answer supplies all report views and its assessment scope."""
+"""One exact saved finding supplies report views without a final paraphrase."""
 
 import json
 from dataclasses import replace
@@ -20,8 +20,9 @@ def test_one_answer_compiles_and_restores_without_a_second_authored_report(tmp_p
         execute(delegate, tools, session, "open_url", {"url": URL})
         execute(delegate, tools, session, "save_finding", {"claim": "Only one writer can write at a time.",
             "passage_ref": next(iter(tools.ledger.read_passages))})
-        args = {"report_sections": {"coverage": report_args("f1")["report_sections"]["coverage"]}}
-        args["report_sections"]["coverage"][0].update(answer="Only one writer can write at a time.", state="evidence_found")
+        args = {"report_sections": {"coverage": [{key: value for key, value in row.items() if key != "answer"}
+            for row in report_args("f1")["report_sections"]["coverage"]]}}
+        args["report_sections"]["coverage"][0].update(state="evidence_found")
         session.policy = replace(session.policy, strict_research=True)
         snapshot = build_turn_snapshot(session)
         for reply in (decode_text_turn(json.dumps({"tool": "done", "args": args})),
@@ -35,9 +36,10 @@ def test_one_answer_compiles_and_restores_without_a_second_authored_report(tmp_p
         basis = review_basis(report, tools, "Explain the writer constraint.")
         assert [row["path"] for row in basis["paragraphs"]] == ["report_sections.coverage[0].answer"]
         assert basis["paragraphs"][0]["refs"] == ["f1"]
+        legacy = {"report_sections": {"coverage": report_args("f1")["report_sections"]["coverage"]}}
         for invalid in ("wrong [1]", "unknown [f77]"):
-            args["report_sections"]["coverage"][0]["answer"] = invalid
+            legacy["report_sections"]["coverage"][0]["answer"] = invalid
             with pytest.raises(ValueError):
-                compile_finding_report(args, tools.ledger, store)
+                compile_finding_report(legacy, tools.ledger, store)
     finally:
         store.close()

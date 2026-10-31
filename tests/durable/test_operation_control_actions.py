@@ -323,7 +323,7 @@ def test_accepted_research_report_replays_without_compiler_or_knowledge_reads(tm
     import json
 
     from codey.research.ledger import ResearchLedger
-    from tests.test_research_findings import URL, answer_args, execute, setup
+    from tests.test_research_findings import URL, execute, selection_args, setup
 
     store, tools, _session, delegate = setup(tmp_path / "knowledge")
     execute(delegate, tools, _session, "open_url", {"url": URL})
@@ -336,7 +336,7 @@ def test_accepted_research_report_replays_without_compiler_or_knowledge_reads(tm
 
         def send(self, prompt):
             self.calls += 1
-            args = answer_args("f1")
+            args = selection_args("f1")
             args["report_sections"]["coverage"][0]["task_refs"] = ["r1"]
             return json.dumps({"tool": "done", "args": args})
 

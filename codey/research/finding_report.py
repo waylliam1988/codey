@@ -15,6 +15,7 @@ from codey.research.report_proposal import (
     FINDING_CITATION,
     ResearchReportProposal,
     bind_gap_investigations,
+    bind_selected_answers,
     parse_report_proposal,
 )
 from codey.reviews.report_sections import section_title
@@ -134,6 +135,10 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
             FINDING_CITATION.sub("", item.version.value.content).rstrip() + " " + replacements[item.label] for item in resolved)
         gaps = [row["answer"] for row in proposal.coverage if row["state"] != "evidence_found"]
         sections["counter"] = "\n\n".join(replace(text) for text in gaps)
+        if proposal.findings_only:
+            sections["counter"] = "\n\n".join(
+                f"{row['question_ref']}：该问题尚未完整回答；所选发现仅构成局部证据。" if row["state"] == "partial"
+                else row["answer"] for row in proposal.coverage if row["state"] != "evidence_found")
     if queries:
         sections["coverage"] = ("实际检索词（最多显示 12 条）：\n" + "\n".join("- " + q for q in queries[:12])
                                 + "\n\n" + sections["coverage"])
@@ -169,15 +174,13 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
 
 def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: Any, *,
                            project: str = "", session_id: str = "", task: str = "") -> FindingReport:
-    proposal = parse_report_proposal(args)
+    proposal = parse_report_proposal(args, investigations=ledger.investigations)
     validate_question_coverage(list(proposal.coverage), ledger)
     proposal = bind_gap_investigations(proposal, ledger.investigations)
     if task:
-        from codey.research.task_requirements import validate_report_requirements, validate_task_accounting
+        from codey.research.task_requirements import validate_task_accounting
 
         validate_task_accounting(list(proposal.coverage), task)
-        if proposal.answers_only:
-            validate_report_requirements(proposal.conclusion.text, task)
     for row in proposal.paragraphs:
         for label in row.refs:
             if label not in ledger.references:
@@ -187,12 +190,25 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
         raise ResearchIssue("missing_evidence", "summary", "no saved or read finding is selected",
                             requires_acquisition=True)
     resolved = resolve_selected_references(proposal.selected_refs, ledger, store, project=project, session_id=session_id)
+    if proposal.findings_only:
+        from codey.research.source_literals import validate_version_literals
+
+        for item in resolved:
+            if item.version.value.kind == "claim":
+                validate_version_literals(item.version.value.content, [row.evidence.value.content for row in item.evidence])
+    proposal = bind_selected_answers(proposal, resolved)
+    if task and proposal.answers_only:
+        from codey.research.task_requirements import validate_report_requirements
+
+        validate_report_requirements(proposal.conclusion.text, task, from_findings=proposal.findings_only)
     validate_report_bindings(proposal, resolved)
     if proposal.answers_only:
         from codey.research.answer_focus import validate_answer_focus
 
         validate_answer_focus(proposal, resolved, ledger.questions)
     text, sources = render_report(proposal, resolved, ledger.questions, tuple(row.query for row in ledger.searches))
+    from codey.research.source_literals import version_mentions
+
     metadata = {item.label: {"id": item.version.value.id, "revision": item.version.revision,
         "claim": item.version.value.content,
         "question_ref": item.binding.question_ref,
@@ -200,7 +216,8 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
         "interpretation_review": item.version.interpretation_review,
         "dependencies_changed": item.version.dependencies_changed, "conditions": item.version.value.conditions,
         "origin": item.version.value.origin, "acquisition": item.binding.acquisition,
-        "limitations": item.version.value.provenance.get("limitations", "")}
+        "limitations": item.version.value.provenance.get("limitations", ""),
+        **({"version_mentions": version_mentions(item.version.value.content)} if proposal.findings_only else {})}
         for item in resolved}
     coverage_refs = {answer.path: tuple(coverage["findings"])
                      for answer, coverage in zip(proposal.coverage_answers, proposal.coverage, strict=True)}
@@ -216,7 +233,8 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
         "source_revision": ev.source.revision, "excerpt": ev.evidence.value.content[:600],
         "excerpt_digest": _digest(ev.evidence.value.content), "display_truncated": len(ev.evidence.value.content) > 600,
         "relation": ev.relation, "locator": ev.evidence.value.provenance.get("locator", ""),
-        "page": ev.evidence.value.provenance.get("page"), "acquisition": ev.acquisition}
+        "page": ev.evidence.value.provenance.get("page"), "acquisition": ev.acquisition,
+        **({"version_mentions": version_mentions(ev.evidence.value.content)} if proposal.findings_only else {})}
         for item in resolved for ev in item.evidence)
     return FindingReport(text, tuple({"id": item.version.value.id, "revision": item.version.revision} for item in resolved),
         tuple(dict.fromkeys(item.binding.note_id for item in resolved if item.binding.note_id)),

@@ -47,7 +47,10 @@ def coverage_rows(raw: object) -> list[dict[str, Any]]:
                 or len(set(findings)) != len(findings)):
             raise ValueError(path + ".findings requires exact raw finding references, e.g. [\"f1\"], without brackets in ids")
         attempts = row["investigations"]
-        if (not isinstance(attempts, list) or len(attempts) > 32
+        # The frozen model schema bounds submitted references at 32. Canonical
+        # reports can project more actual receipts from the ledger; they must
+        # still pass question ownership and existence checks before acceptance.
+        if (not isinstance(attempts, list)
                 or any(not isinstance(ref, str) or re.fullmatch(r"a[1-9][0-9]*", ref) is None for ref in attempts)
                 or len(set(attempts)) != len(attempts)):
             raise ValueError(path + ".investigations requires actual investigation references, e.g. [\"a1\"]")

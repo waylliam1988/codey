@@ -317,7 +317,7 @@ def test_deep_research_ab_scoring_tracks_source_search_recall() -> None:
     case = next(item for item in ab.CASES if item.name == "pdf-target-page")
     # New single entry requires Chinese report sections (结论/来源) via the
     # completion gate; behavior (source_search recall, target page 9) preserved.
-    from tests.support.research_script import answer_args, finding_args
+    from tests.support.research_script import finding_args, selection_args
 
     page_text = case.documents[0].source_document(pages="9").text
     provider = ab.ScriptedProvider(
@@ -331,7 +331,7 @@ def test_deep_research_ab_scoring_tracks_source_search_recall() -> None:
         json.dumps({"tool": "open_url", "args": {"question_ref": "q1", "url": ab.PDF_METHOD_URL, "pages": "9"}}),
         json.dumps({"tool": "save_finding", "args": finding_args(ab.PDF_METHOD_URL, page_text, start=len("[page 9]\n"),
             claim="Omega method uses stratified bootstrap validation.")}),
-        json.dumps({"tool": "done", "args": answer_args("Omega method uses stratified bootstrap validation.")}),
+        json.dumps({"tool": "done", "args": selection_args()}),
     )
 
     row = ab.run_case(

@@ -78,23 +78,26 @@ def task_requirement_context(task: str) -> dict[str, Any]:
             "report_requirements_checked_by_application": report_requirements(task)}
 
 
-def validate_report_requirements(conclusion: str, task: str) -> None:
+def validate_report_requirements(conclusion: str, task: str, *, from_findings: bool = False) -> None:
     """Check canonical conclusion once, before any report views are published."""
     text = re.sub(r"\[(?:f[1-9][0-9]*|[0-9]+)\]", "", conclusion)
     count = sum(not char.isspace() for char in text)
+    repair = ("Revise a local finding against its original passages or select its supported replacement; "
+              "done adopts findings verbatim and accepts no answer prose. Never pad with unsupported claims."
+              if from_findings else "Revise existing answers; do not add a question or task_refs row.")
     for row in report_requirements(task):
         constraint = row["constraints"]
         ref = row["task_ref"]
         if "min_characters" in constraint and not constraint["min_characters"] <= count <= constraint["max_characters"]:
             raise ValueError(f"Report format {ref}: conclusion has {count} non-whitespace characters; "
                 f"required {constraint['min_characters']}..{constraint['max_characters']} (citations, "
-                "headings and source tables excluded). Revise existing answers; do not add a question or task_refs row.")
+                "headings and source tables excluded). " + repair)
         if constraint.get("language") == "zh":
             han = len(re.findall(r"[\u3400-\u9fff]", text))
             latin = len(re.findall(r"[a-zA-Z]", text))
             if not han or han <= latin:
                 raise ValueError(f"Report format {ref}: conclusion must be primarily Chinese "
-                    "(Han characters must outnumber Latin letters). Revise existing answers, not task_refs.")
+                    "(Han characters must outnumber Latin letters). " + repair)
 
 
 def validate_task_accounting(coverage: list[dict[str, Any]], task: str) -> None:

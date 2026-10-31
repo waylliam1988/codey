@@ -13,6 +13,12 @@ def answer_args(answer: str, *, finding: str = "f1") -> dict:
     }]}}
 
 
+def selection_args(*, finding: str = "f1") -> dict:
+    return {"report_sections": {"coverage": [{
+        "question_ref": "q1", "state": "partial", "findings": [finding], "task_refs": ["r1"],
+    }]}}
+
+
 def finding_args(url: str, text: str, *, claim: str | None = None,
                  start: int = 0, end: int | None = None) -> dict:
     version = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
@@ -31,7 +37,7 @@ def helium_case() -> dict:
         ("web_search", {"query": "helium production", "question_ref": "q1"}),
         ("open_result", {"result_id": "r1", "question_ref": "q1"}),
         ("save_finding", finding_args(url, text)),
-        ("done", answer_args(text)),
+        ("done", selection_args()),
     ]
     return {"id": "research/current-evidence-synthesis", "boundary": "research_loop",
             "max_turns": 5, "replies": [json.dumps({"tool": name, "args": args}) for name, args in calls]}

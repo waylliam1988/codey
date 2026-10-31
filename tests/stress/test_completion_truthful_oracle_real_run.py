@@ -84,7 +84,7 @@ def _real_research_gate():
     from codey.operations.completion_gate import evaluate
     from codey.research.finding_report import compile_finding_report
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
-    from tests.support.research_script import answer_args
+    from tests.support.research_script import selection_args
     from tests.test_research_findings import execute, setup
 
     with tempfile.TemporaryDirectory() as td:
@@ -101,7 +101,7 @@ def _real_research_gate():
                 "claim": "Helium supply depends on gas processing.",
                 "passage_ref": next(iter(tools.ledger.read_passages))})
             assert saved.ok, saved.model_text
-            args = answer_args("Helium supply depends on gas processing.")
+            args = selection_args()
             session.last_done_args = args
             compiled = compile_finding_report(args, tools.ledger, store, task=session.task_text)
             verdict = evaluate(session, compiled.text, context={

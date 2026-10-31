@@ -175,7 +175,11 @@ TOOL_CONTRACTS = {
                     "Already read passages can support another question without reopening the source. "
                     "If the full explanation spans passages, add up to 3 additional_passage_refs from that same version. "
                     "Each excerpt is saved separately; select enough evidence for every part of the claim. "
+                    "Write the locally supported answer once, in the requested language; done adopts this exact text. "
+                    "Separate independently supported behaviors, such as a version boundary and a distinct defect. "
+                    "Keep one conditional relationship complete even across sentences; do not split by punctuation. "
                     "Keep conditions and uncertainty in claim; do not transfer a result between comparators. "
+                    "Copy version literals from selected passages; matching a version does not establish its behavior. "
                     "Optional conditions=[{name:...,state:reported,value:...}] (or not_reported/not_extracted/not_applicable). "
                     "For comparisons optionally supply subject, factor, comparator, endpoint, direction, uncertainty; "
                     "use unknown for absent information. A successful save remains unreviewed. "
@@ -288,6 +292,9 @@ def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "", questions:
                        "The parent owns final synthesis; do not write its report in this phase.")
     elif purpose == "report":
         coverage = dict(report_sections_schema()["properties"])["coverage"]
+        coverage["items"]["properties"].pop("answer")
+        coverage["items"]["required"] = [key for key in coverage["items"]["required"]
+                                           if key not in {"answer", "investigations"}]
         if questions:
             coverage["items"]["properties"]["question_ref"]["enum"] = [
                 f"q{index}" for index in range(1, len(questions) + 1)]
@@ -301,32 +308,32 @@ def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "", questions:
             coverage["items"]["required"].append("task_refs")
         schema = object_schema({"report_sections": object_schema({"coverage": coverage}, "coverage")}, "report_sections")
         example = {"tool": "done", "args": {"report_sections": {
-            "coverage": STRUCTURED_REPORT_ARGS["report_sections"]["coverage"]}}}
+            "coverage": [{key: value for key, value in row.items() if key not in {"answer", "investigations"}}
+                         for row in STRUCTURED_REPORT_ARGS["report_sections"]["coverage"]]}}}
         if task:
             example["args"]["report_sections"]["coverage"] = [
                 {**row, "task_refs": refs} for row in example["args"]["report_sections"]["coverage"]]
         if questions:
             example["args"]["report_sections"]["coverage"] += [
-                {"question_ref": f"q{index}", "state": "not_investigated", "answer": "Not investigated yet.",
-                 "findings": [], "investigations": [], **({"task_refs": []} if task else {})}
+                {"question_ref": f"q{index}", "state": "not_investigated", "findings": [],
+                 **({"task_refs": []} if task else {})}
                 for index in range(2, len(questions) + 1)]
-        description = ("Submit one answer per registered question in report_sections.coverage: "
-                       "{question_ref,state,answer,findings,investigations}. Use raw finding ids in findings; "
-                       "inline citations in answer are optional and must agree. Keep answers no stronger than findings. "
-                       "For not_investigated or unanswered_after_search, answer is only a placeholder: the application "
-                       "replaces it with a factual gap notice for that question; use partial with findings for a supported partial answer. "
-                       "Gap states require findings=[]; not_investigated requires investigations=[], "
-                       "unanswered_after_search selects actual question-bound investigation receipts. "
-                       "For gaps, the application includes all recorded attempts for that question; an actual attempt "
-                       "makes it unanswered_after_search even if you omitted its receipt. Attempts never establish an answer. "
-                       "The application generates the conclusion, "
-                       "evidence, limitations, source table and coverage from these same answers and exact findings. "
+        description = ("Select existing findings once per registered question in report_sections.coverage: "
+                       "{question_ref,state,findings,task_refs}. Use raw fN ids bound to that question. "
+                       "The application adopts their exact pinned claim text, with no final answer rewriting. "
+                       "Use evidence_found for an answered question, partial for a supported but incomplete answer, "
+                       "or not_investigated/unanswered_after_search with findings=[] for gaps. "
+                       "Investigations are optional; actual question-bound receipts are supplied by the application. "
+                       "Explicit investigations must still be real and belong to this question. "
+                       "Actual attempts turn not_investigated into unanswered_after_search; attempts are not evidence. "
+                       "Gap notices, limitations, citations and source metadata are compiled, not model-authored. "
+                       "If a claim is wrong, save its supported correction from the original passages and select the new fN. "
                        "Include task_refs selecting the original rN task units answered or explicitly left unresolved. "
                        "Account for every coverage_task_refs rN across the answers; this records claimed coverage, not verification. "
                        "The application checks recognized standalone report format requirements on the conclusion; "
                        "do not register them as questions or attach their rN ids. "
                        "To repair task_refs, edit existing rows; never append a duplicate question row. "
-                       "Do not supply summary, evidence, counter or source_quality prose.")
+                       "Do not supply answer, summary, evidence, counter or source_quality prose.")
     else:
         raise ValueError("unknown done purpose")
     return replace(spec, parameters=tuple(schema["properties"].items()), required=tuple(schema["required"]),

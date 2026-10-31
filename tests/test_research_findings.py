@@ -277,6 +277,11 @@ def answer_args(ref):
         "findings": [ref], "investigations": [], "task_refs": ["r1"]}]}}
 
 
+def selection_args(ref):
+    return {"report_sections": {"coverage": [{"question_ref": "q1", "state": "partial",
+        "findings": [ref], "task_refs": ["r1"]}]}}
+
+
 @pytest.mark.usefixtures("public_source_dns")
 def test_multiple_passages_pin_separate_exact_excerpts_and_survive_receipt_restore(tmp_path):
     from codey.research.evidence_view import resolve_selected_references
@@ -395,7 +400,7 @@ def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path
                 name, args = "save_finding", {"claim": "Only one writer can write at a time.",
                     "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))}
             else:
-                name, args = "done", answer_args(next(iter(tools.ledger.references)))
+                name, args = "done", selection_args(next(iter(tools.ledger.references)))
             from codey.research.questions import QUESTION_BOUND_TOOLS
 
             if name in QUESTION_BOUND_TOOLS:

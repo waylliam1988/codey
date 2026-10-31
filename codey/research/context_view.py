@@ -90,6 +90,9 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
                                                    if "passage_ref" in row)),
                     evidence_basis=preview.get("evidence_basis", "unavailable"),
                     evidence_complete=preview["evidence_complete"])
+                anchors = [row["version_anchors"] for row in preview["evidence"] if "version_anchors" in row]
+                if anchors:
+                    rows[-1]["version_anchors"] = anchors
             else:
                 items = [item for item in ledger.evidence_items if item.note_id == ledger.references[label].note_id]
                 rows.append({"ref": label, "text": items[0].claim if items else "Read details before adopting.",

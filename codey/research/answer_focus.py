@@ -49,14 +49,19 @@ def validate_answer_focus(proposal: ResearchReportProposal, resolved: tuple[Reso
         coexistence_only = bool(_COEXISTENCE.search(basis)) and not _BOUND.search(basis)
         missing_basis = answer_bound and coexistence_only
         if missing_answer or missing_basis:
-            raise ResearchIssue("count_limit_not_addressed", f"report_sections.coverage[{index}].answer",
+            field = "findings" if proposal.findings_only else "answer"
+            repair = ("Select a supported replacement finding in this existing coverage row. "
+                      if proposal.findings_only else "Edit this existing coverage row. ")
+            gap_repair = ("use partial; the application appends an unresolved-question notice. "
+                          if proposal.findings_only else
+                          "use partial and explicitly state that the requested limit remains unresolved. ")
+            raise ResearchIssue("count_limit_not_addressed", f"report_sections.coverage[{index}].{field}",
                 f"{row['question_ref']} asks: {question}\n"
                 "Coexistence or nonblocking operations do not establish an exclusive count limit. "
                 + ("The answer does not state the requested limit. " if missing_answer else
                    "The selected supporting excerpts describe concurrency but omit a direct count limit. ")
                 + ("Find and read the direct limiting statement (source_search, then open_hit); save its exact passage "
                    "for this question. " if coexistence_only else "Use the selected direct limiting statement. ")
-                + "Edit this existing coverage row. If only related evidence is available, "
-                "use partial and explicitly state that the requested limit remains unresolved. Do not add another qN. "
+                + repair + "If only related evidence is available, " + gap_repair + "Do not add another qN. "
                 "This check detects a missing cue; it does not certify a supported interpretation.",
                 allowed_refs=tuple(row["findings"]), requires_acquisition=coexistence_only)

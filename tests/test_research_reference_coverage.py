@@ -19,7 +19,7 @@ from codey.research.ledger import ResearchLedger
 from codey.research.questions import question_plan, validate_question_coverage
 from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE, openai_parameters_schema, validate_tool_args
 from codey.reviews.research_coverage import coverage_rows
-from tests.test_research_findings import URL, answer_args, execute, report_args, setup
+from tests.test_research_findings import URL, execute, report_args, selection_args, setup
 
 
 def test_actual_report_example_is_accepted_by_schema_parser_and_coverage():
@@ -76,25 +76,28 @@ def test_each_gap_requires_its_own_selected_real_investigation_record():
 
 
 def test_missing_evidence_is_a_research_completion_defect_not_a_json_repair():
+    from codey.research.report_proposal import parse_report_proposal
+
     args = json.loads(STRUCTURED_REPORT_EXAMPLE)["args"]
     args["report_sections"]["coverage"][0]["findings"] = []
     # The call is structurally valid. Resending the same prose is not the remedy.
     assert validate_tool_args("done", args).ok
+    selections = {"report_sections": {"coverage": [
+        {key: value for key, value in row.items() if key != "answer"}
+        for row in args["report_sections"]["coverage"]]}}
     state = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read"}), strict_research=True))
-    plan = normalize_turn(decode_text_turn(json.dumps({"tool": "done", "args": {
-        "report_sections": {"coverage": args["report_sections"]["coverage"]}}})),
+    plan = normalize_turn(decode_text_turn(json.dumps({"tool": "done", "args": selections})),
                           snapshot=build_turn_snapshot(state))
     assert not plan.protocol_error and plan.control is not None
     ledger = ResearchLedger()
     ledger.questions = ("What must be answered?",)
     with pytest.raises(ValueError, match="Changing evidence_found to partial alone") as failure:
-        validate_question_coverage(args["report_sections"]["coverage"], ledger)
+        validate_question_coverage(list(parse_report_proposal(selections).coverage), ledger)
     assert "q1" in str(failure.value) and "Next action: investigate" in str(failure.value)
     assert "not_investigated" in str(failure.value) and "unanswered_after_search" in str(failure.value)
     # An honestly stated gap is admissible; it is not certified as an answer.
-    args["report_sections"]["coverage"][0].update(
-        state="not_investigated", answer="No direct investigation of this question yet.")
-    assert validate_question_coverage(args["report_sections"]["coverage"], ledger)
+    selections["report_sections"]["coverage"][0]["state"] = "not_investigated"
+    assert validate_question_coverage(list(parse_report_proposal(selections).coverage), ledger)
 
 
 @pytest.mark.usefixtures("public_source_dns")
@@ -262,9 +265,9 @@ def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_
                     name, args = "save_inference", {"statement": hypothesis, "premise_refs": ["f1"], "question_ref": "q1",
                         "limitations": "No direct workload test; this is only a candidate connection."}
                 else:
-                    name, args = "done", answer_args("f1")
+                    name, args = "done", selection_args("f1")
                     if inference:
-                        args["report_sections"]["coverage"][0].update(answer=hypothesis, findings=["f1", "f2"])
+                        args["report_sections"]["coverage"][0]["findings"] = ["f1", "f2"]
                 return json.dumps({"tool": name, "args": args})
 
         result = run_task_kernel(session, request=KernelRunRequest(
@@ -276,5 +279,7 @@ def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_
         assert "本轮未重新获取" in result.summary
         if inference:
             assert "候选推论 f2，未审查" in result.summary
+            assert hypothesis in result.summary
+            assert "Only one writer can write at a time." in result.summary
     finally:
         store.close()

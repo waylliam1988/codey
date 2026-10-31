@@ -44,7 +44,7 @@ def plan_for(args, native):
 def test_structured_report_preserves_arguments_and_passes_existing_gate_only_with_evidence(native, tmp_path):
     from codey.research.finding_report import compile_finding_report
     from tests.test_research_findings import URL as source_url
-    from tests.test_research_findings import answer_args, execute, setup
+    from tests.test_research_findings import execute, selection_args, setup
 
     store, tools, execution_session, delegate = setup(tmp_path)
     execute(delegate, tools, execution_session, "open_url", {"url": source_url})
@@ -52,7 +52,7 @@ def test_structured_report_preserves_arguments_and_passes_existing_gate_only_wit
         "claim": "Only one writer can write at a time.", "source_ref": "s1",
         "passage_ref": next(iter(tools.ledger.read_passages))})
     ref = json.loads(saved.model_text)["finding_ref"]
-    args = answer_args(ref)
+    args = selection_args(ref)
     before = copy.deepcopy(args)
     try:
         state, plan = plan_for(args, native)
@@ -133,12 +133,29 @@ def test_plain_text_cannot_bypass_required_research_report_arguments(reply):
     assert plan.control is None and "report_sections" in plan.protocol_error
 
 
-def test_literal_escape_sequences_in_report_content_are_preserved():
-    args = arguments()
-    args["report_sections"]["coverage"][0]["answer"] = r"The query contained literal \n and Windows C:\data."
-    _, plan = plan_for(args, True)
-    assert plan.control
-    assert plan.control_args["report_sections"]["coverage"][0]["answer"] == args["report_sections"]["coverage"][0]["answer"]
+@pytest.mark.usefixtures("public_source_dns")
+def test_literal_escape_sequences_in_selected_report_content_are_preserved(tmp_path):
+    from codey.research.finding_report import FindingReport, compile_finding_report
+    from tests.test_research_findings import URL as source_url
+    from tests.test_research_findings import execute, selection_args, setup
+
+    store, tools, state, delegate = setup(tmp_path)
+    claim = r"The query contained literal \n and Windows C:\data."
+    tools.search.text = claim
+    try:
+        execute(delegate, tools, state, "open_url", {"url": source_url})
+        saved = execute(delegate, tools, state, "save_finding", {
+            "claim": claim, "passage_ref": next(iter(tools.ledger.read_passages))})
+        assert saved.ok, saved.model_text
+        args = selection_args(json.loads(saved.model_text)["finding_ref"])
+        args["report_sections"]["coverage"][0]["state"] = "evidence_found"
+        _, plan = plan_for(args, True)
+        assert plan.control and plan.control_args == args
+        report = compile_finding_report(plan.control_args, tools.ledger, store)
+        assert report.coverage[0]["answer"] == claim + " [f1]"
+        assert FindingReport.from_payload(report.to_payload()).coverage == report.coverage
+    finally:
+        store.close()
 
 
 def test_grouped_citations_are_compiled_but_unobserved_numbers_still_fail():

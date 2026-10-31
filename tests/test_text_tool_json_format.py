@@ -131,7 +131,7 @@ def test_multiple_strict_research_tools_require_done_coverage_state():
                           task_kind="research")
     schema = text_tool_schema(tools_from_specs(build_turn_snapshot(session, native=False).model_specs))
     validator = Draft202012Validator(schema)
-    coverage = {"question_ref": "q1", "state": "not_investigated", "answer": "Evidence remains unknown.",
+    coverage = {"question_ref": "q1", "state": "not_investigated",
                 "findings": [], "investigations": []}
     raw = {"tool": "done", "args": {"report_sections": {"coverage": [coverage]}}}
     assert validator.is_valid(raw)
@@ -149,7 +149,7 @@ def test_strict_report_task_refs_bind_the_original_task_in_both_contracts():
                           task_text="Explain writers. Identify version gaps.")
     snapshot = build_turn_snapshot(session)
     validator = Draft202012Validator(text_tool_schema(tools_from_specs(snapshot.model_specs)))
-    row = {"question_ref": "q1", "state": "not_investigated", "answer": "Both issues remain uninvestigated.",
+    row = {"question_ref": "q1", "state": "not_investigated",
            "findings": [], "investigations": [], "task_refs": ["r1", "r2"]}
     raw = {"tool": "done", "args": {"report_sections": {"coverage": [row]}}}
     assert validator.is_valid(raw)
@@ -175,12 +175,12 @@ def test_report_question_choices_follow_registered_receipts_and_freeze_per_turn(
     session.research_questions = tuple(f"Actual question {n}?" for n in range(1, 6))
     snapshot = build_turn_snapshot(session, native=native)
     validator = Draft202012Validator(text_tool_schema(tools_from_specs(snapshot.model_specs)))
-    rows = [{"question_ref": f"q{n}", "state": "not_investigated", "answer": "No evidence collected yet.",
+    rows = [{"question_ref": f"q{n}", "state": "not_investigated",
              "findings": [], "investigations": [], "task_refs": ["r1", "r2"] if n == 1 else []}
             for n in range(1, 6)]
     raw = {"tool": "done", "args": {"report_sections": {"coverage": rows}}}
     assert validator.is_valid(raw)
-    rows.append({**rows[-1], "question_ref": "q6", "answer": "Report formatting is not a sixth question."})
+    rows.append({**rows[-1], "question_ref": "q6"})
     assert not validator.is_valid(raw)
     turn = AssistantTurn(tool_calls=(ProviderToolCall("done", "done", raw["args"]),))
     rejected = normalize_turn(turn, snapshot=snapshot)
@@ -206,7 +206,7 @@ def test_format_requirement_needs_no_qn_or_task_ref_and_duplicate_repairs_are_re
     session.research_questions = ("What is the limit?", "What is still unknown?")
     snapshot = build_turn_snapshot(session, native=native)
     validator = Draft202012Validator(text_tool_schema(tools_from_specs(snapshot.model_specs)))
-    rows = [{"question_ref": f"q{n}", "state": "not_investigated", "answer": "未知。",
+    rows = [{"question_ref": f"q{n}", "state": "not_investigated",
              "findings": [], "investigations": [], "task_refs": ["r1"] if n == 1 else []} for n in (1, 2)]
     raw = {"tool": "done", "args": {"report_sections": {"coverage": rows}}}
     assert validator.is_valid(raw)
@@ -230,7 +230,7 @@ def test_format_only_task_has_valid_empty_task_refs_schema():
     schema = text_tool_schema(tools_from_specs(build_turn_snapshot(session).model_specs))
     Draft202012Validator.check_schema(schema)
     assert Draft202012Validator(schema).is_valid({"tool": "done", "args": {"report_sections": {"coverage": [{
-        "question_ref": "q1", "state": "not_investigated", "answer": "未知。", "findings": [],
+        "question_ref": "q1", "state": "not_investigated", "findings": [],
         "investigations": [], "task_refs": []}]}}})
 
 

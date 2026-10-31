@@ -11,7 +11,7 @@ import pytest
 
 from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
 from codey.storage.managed_outputs import ManagedOutputStore
-from tests.support.research_script import answer_args, finding_args
+from tests.support.research_script import finding_args, selection_args
 
 
 def _cutover_parent_policy():
@@ -203,7 +203,7 @@ def test_unified_kernel_passes_authoritative_research_ledger_to_gate(tmp_path, p
 
     class Provider:
         def send(self, _prompt, timeout=None):
-            return json.dumps({"tool": "done", "args": answer_args("Only one writer can write at a time.")})
+            return json.dumps({"tool": "done", "args": selection_args()})
 
     try:
         with patch("codey.operations.completion_gate.evaluate") as evaluate:
@@ -256,7 +256,7 @@ def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
     for required in (
         "Research rules", "research_plan", "knowledge_read", "report_sections.coverage",
         "do not repeat unchanged reports or writes", "question_ref=qN",
-        "the application generates the gap notice and does not publish your answer text",
+        "the application generates the gap notice from the question and actual attempts",
         "Never infer absence from an unperformed search", "After rejection edit the specified field in existing rows",
         "Do not also write summary, evidence or counter paragraphs",
     ):
@@ -721,7 +721,7 @@ def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> 
         {"tool": "web_search", "args": {"query": "pipeline question", "question_ref": "q1"}},
         {"tool": "open_result", "args": {"result_id": "r1", "question_ref": "q1"}},
         {"tool": "save_finding", "args": finding_args(url, "Pipeline source text says the fact.")},
-        {"tool": "done", "args": answer_args("Pipeline source text says the fact.")},
+        {"tool": "done", "args": selection_args()},
     ))
 
     class Search:

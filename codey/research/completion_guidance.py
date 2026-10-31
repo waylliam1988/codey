@@ -15,7 +15,8 @@ def render_research_observations(session: "TaskSession", ledger: "ResearchLedger
     view = build_research_context_view(session, ledger, store, session_id=session_id)
     instruction = ("Evidence acquisition only: done.summary briefly states new findings and specific remaining gaps."
                    if session.task_kind == "evidence_followup" else
-                   "Use these persisted references directly; do not save them again to prepare a report. "
+                   "Select these persisted references directly; done adopts their exact text, so do not rewrite answers. "
+                   "Do not save findings again merely to prepare a report. "
                    "Question finding_refs/investigation_refs are exact bindings, not proof of an answer. "
                    "To correct a finding, select its verified passage_refs or read the source for more evidence; "
                    "an fN finding is not a passage_ref.")
@@ -37,17 +38,23 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         "without rereading the page. A receipt proves an attempt, not semantic coverage.",
         "Use only explicitly adopted [fN] references from successful saves or complete knowledge reads. "
         "Historical knowledge may answer the question without new acquisition. A candidate inference remains a hypothesis.",
-        "Submit only report_sections.coverage to done: one answer or specific gap per question, with findings and "
-        "actual investigations and task_refs for the coverage_task_refs rN units it addresses. Account for every such rN, "
+        "Write each locally supported claim once in save_finding, in the requested answer language. "
+        "Keep a complete conditional relationship together across sentences; punctuation is not a claim boundary. "
+        "Separate independently supported behaviors and select their own passages. "
+        "Submit only report_sections.coverage to done: select findings and state per question, "
+        "with task_refs for the coverage_task_refs rN units it addresses. Do not supply answer prose. "
+        "The application adopts exact saved/read claim versions and fills actual investigation receipts. "
+        "If the local claim needs correction, save a supported replacement and select its new fN; "
+        "do not rewrite or add assertions during completion. Account for every coverage rN, "
         "including background and method obligations, with an answer or specific gap. "
         "Standalone recognized report format requirements are checked by the application on the conclusion; "
         "follow them without attaching their rN ids or registering questions for them. "
         "These constraints and optional leads belong with existing answers; they do not need separate questions. "
         "This is explicit accounting, not independent verification. Do not also write summary, evidence or counter paragraphs. "
-        "The application compiles the report from these same answers and saved findings. "
+        "The application compiles the report from these same pinned findings. "
         "Source quality is generated from pinned metadata; retrieval time does not establish release version or publication date. "
         "Do not invent limitations to fill a section. For not_investigated and unanswered_after_search, "
-        "the application generates the gap notice and does not publish your answer text. "
+        "the application generates the gap notice from the question and actual attempts. "
         "Use partial with findings to retain a supported partial answer. "
         "Never infer absence from an unperformed search. "
         "A selected excerpt omitting a topic does not prove that the whole source did not discuss or evaluate it. "

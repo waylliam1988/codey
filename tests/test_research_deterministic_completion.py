@@ -109,14 +109,17 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
             else:
                 refs = [row["task_ref"] for row in task_requirements(task)]
                 coverage = [
-                    {"question_ref": "q1", "state": "evidence_found", "answer": claim,
+                    {"question_ref": "q1", "state": "evidence_found",
                      "findings": ["f99" if bad_reference else "f1"],
                      "investigations": ["a1"] if gap_investigation else ["a1", "a2"],
                      "task_refs": refs[:-1]},
                     {"question_ref": "q2", "state": "not_investigated",
-                     "answer": gap_answer or "Historical version restrictions remain unknown; they were not investigated.",
                      "findings": [], "investigations": [], "task_refs": [] if omit_requirement else refs[-1:]},
                 ]
+                if gap_answer and turn == 5:
+                    # Exercise a rejected extra prose field, then repair the
+                    # existing proposal on the next turn using only selections.
+                    coverage[1]["answer"] = gap_answer
                 name, args = "done", {"report_sections": {"coverage": coverage}}
             return json.dumps({"tool": name, "args": args})
 
@@ -140,7 +143,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
             if publications and ((boundary == "publication_admitted" and publications[-1].settlement is None)
                                  or (boundary == "publication_receipt" and publications[-1].settlement is not None)):
                 os._exit(74)
-            if position.logical_turn == 5 and position.leaf == boundary:
+            if position.logical_turn == (6 if gap_answer else 5) and position.leaf == boundary:
                 os._exit(74)
         durable.subscribe_commits(committed)
     policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True,
@@ -240,7 +243,7 @@ def test_real_process_restart_reuses_writer_and_publication_receipts(tmp_path, b
     rows = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
     assert sum("publication" in row for row in rows) == 1
     assert sum("fetch" in row for row in rows) == 1
-    assert sum("attempt" in row for row in rows) == 5
+    assert sum("attempt" in row for row in rows) == 6
 
 
 @pytest.mark.usefixtures("public_source_dns")
@@ -254,7 +257,7 @@ def test_gap_text_is_canonical_in_publication_knowledge_and_replay(tmp_path, nat
     assert UNSUPPORTED_GAP_ANSWER not in json.dumps(result.accepted_report.to_payload())
     assert any(UNSUPPORTED_GAP_ANSWER in path.read_text(encoding="utf-8")
                for path in (tmp_path / "managed_outputs").rglob("*.json"))
-    assert result.accepted_report.coverage[0]["answer"] == "Only one writer can write at a time."
+    assert result.accepted_report.coverage[0]["answer"] == "Only one writer can write at a time. [f1]"
     assert result.accepted_report.coverage[1]["state"] == (
         "unanswered_after_search" if gap_investigation else "not_investigated")
     assert result.accepted_report.coverage[1]["investigations"] == (["a2"] if gap_investigation else [])

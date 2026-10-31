@@ -42,8 +42,8 @@ from tests.support.research_controller import (
 from tests.support.research_iteration_adapter import ResearchIteration
 from tests.support.research_protocol import JsonToolCodec
 from tests.support.research_report import report_args
-from tests.support.research_script import answer_args as coverage_args
 from tests.support.research_script import finding_args
+from tests.support.research_script import selection_args as coverage_args
 
 
 def _research_policy():
@@ -2986,8 +2986,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             json.dumps(
                 {"tool": "save_finding", "args": finding_args("https://example.com/helium", "Helium is separated from natural gas streams.", claim="Helium supply depends on gas processing.")}
             ),
-            json.dumps({"tool": "done", "args": coverage_args("Helium supply depends on gas processing.", finding="f999")}),
-            json.dumps({"tool": "done", "args": coverage_args("Helium supply depends on gas processing.")}),
+            json.dumps({"tool": "done", "args": coverage_args(finding="f999")}),
+            json.dumps({"tool": "done", "args": coverage_args()}),
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -3817,7 +3817,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             json.dumps(
                 {
                     "tool": "done",
-                    "args": coverage_args("Helium supply depends on gas processing."),
+                    "args": coverage_args(),
                 }
             ),
         )
@@ -3853,7 +3853,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             json.dumps(
                 {
                     "tool": "done",
-                    "args": coverage_args("Helium supply depends on gas processing."),
+                    "args": coverage_args(),
                 }
             ),
         )
