@@ -30,7 +30,6 @@ from codey.completion.contract import (
 from codey.operations.project_completion_checks import project_completion_checks
 from codey.operations.research_completion_checks import (
     citation_requirement_checks,
-    finalize_research_text,
     research_completion_feedback,
     source_requirement_checks,
     strict_research_checks,
@@ -380,7 +379,6 @@ def _required_tool_checks(
 def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
     text = str(done_text or "").strip()
     citation_checks = citation_requirement_checks(session, text, context)
-    text = finalize_research_text(session, text, context)
     checks: list[CompletionCheck] = []
     checks.extend(project_completion_checks(session, context))
     checks.extend(source_requirement_checks(session, context))

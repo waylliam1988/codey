@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, cast
 
 from codey.operations.generation_boundary import GenerationBoundaryRequest, GenerationBoundaryResult
 from codey.runtime.core.models import ToolCall
@@ -22,6 +22,65 @@ class KernelResult:
     proof: CompletionProof | None = None
     delivery: str = "not_required"
     research_report: dict[str, Any] | None = None
+
+    def to_payload(self) -> dict[str, Any]:
+        from codey.providers.response_record import json_value
+
+        return cast(dict[str, Any], json_value(self))
+
+def result_from_payload(payload: Any) -> KernelResult:
+    from codey.completion.contract import _proof_from_payload
+
+    if (not isinstance(payload, dict) or set(payload) != {"completed", "summary", "turns", "stop_reason", "proof", "delivery", "research_report"}
+            or type(payload["completed"]) is not bool or not isinstance(payload["summary"], str)
+            or type(payload["turns"]) is not int or payload["turns"] < 0
+            or not isinstance(payload["stop_reason"], str)
+            or payload["delivery"] not in {"not_required", "success", "failed", "unknown"}):
+        raise ValueError("invalid persisted kernel result")
+    proof = _proof_from_payload(payload["proof"]) if isinstance(payload["proof"], dict) else None
+    if payload["proof"] is not None and proof is None:
+        raise ValueError("invalid persisted completion proof")
+    report = payload["research_report"]
+    if report is not None:
+        from codey.research.finding_report import FindingReport
+
+        compiled = FindingReport.from_payload(report)
+        if not payload["completed"] or compiled.text != payload["summary"]:
+            raise ValueError("accepted research report differs from kernel delivery")
+    return KernelResult(payload["completed"], payload["summary"], payload["turns"], payload["stop_reason"],
+                        proof=proof, delivery=payload["delivery"], research_report=report)
+
+
+class RetryDecision(TypedDict):
+    purpose: Literal["retry"]
+    prompt: str
+    error: str
+    counters: dict[str, object]
+    error_source: NotRequired[str]
+    error_type: NotRequired[str]
+
+
+class DoneDecision(TypedDict):
+    purpose: Literal["done"]
+    result: dict[str, Any]
+    workspace_revision: int
+    workspace_fingerprint: str
+
+
+class QuestionDecision(TypedDict):
+    purpose: Literal["question"]
+    question: dict[str, Any]
+    question_id: str
+    result: dict[str, Any]
+
+
+class ClosingDecision(TypedDict):
+    purpose: Literal["closing"]
+    result: dict[str, Any]
+
+
+KernelDecision = RetryDecision | DoneDecision | QuestionDecision | ClosingDecision
+
 
 @dataclass(frozen=True)
 class KernelTransportDeps:

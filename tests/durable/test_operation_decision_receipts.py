@@ -15,7 +15,7 @@ from tests.support.kernel_restart import SimulatedExit
 
 
 @pytest.mark.parametrize("sqlite", [False, True])
-def test_repeated_completion_rejection_reuses_the_registered_decision(tmp_path, sqlite):
+def test_repeated_completion_rejection_records_committed_progress(tmp_path, sqlite):
     durable, _, _, sink = runtime(tmp_path, sqlite=sqlite)
     calls = []
 
@@ -28,10 +28,10 @@ def test_repeated_completion_rejection_reuses_the_registered_decision(tmp_path, 
         session = TaskSession(TaskPolicy(frozenset({"control", "project.read"}),
                                         required_checks=("project_changes_required",)), max_turns=3)
         result = run_task_kernel(session, request=request_for(durable, sink, Provider()))
-        assert result.stop_reason == "max_turns", result
+        assert result.stop_reason == "no_progress", result
         assert len(calls) == 3
         decisions = [a for a in durable.artifacts_for_task("r") if a.metadata.get("kind") == "kernel_decision"]
-        assert len(decisions) == 2  # One shared rejection and the final closing result.
+        assert len(decisions) == 4  # Three distinct progress observations and the closing result.
     finally:
         durable.close()
 

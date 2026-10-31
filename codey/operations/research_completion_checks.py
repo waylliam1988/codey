@@ -1,7 +1,7 @@
 """Research completion checks for the unified gate (operations layer).
 
-Owns source-open, ledger, and strict-report checks plus research text
-finalization. Never mints a completion proof and never imports the gate.
+Owns source-open, ledger, and strict-report checks. Never mints a completion
+proof and never imports the gate.
 """
 
 from __future__ import annotations
@@ -159,10 +159,5 @@ def _ledger_checks(session: Any, done_text: str, context: Any) -> list[Completio
     return rows
 
 
-def finalize_research_text(session: Any, text: str, context: Any) -> str:
-    # Strict reports are already rendered from the accepted structured proposal.
-    # Ordinary text/import finalizers remain available to their own callers.
-    return text
 
-
-__all__ = ["finalize_research_text", "source_requirement_checks", "strict_research_checks"]
+__all__ = ["source_requirement_checks", "strict_research_checks"]

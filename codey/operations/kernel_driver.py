@@ -14,7 +14,7 @@ from typing import Any, cast
 
 from codey.durable.checkpoint import checkpoint_entries, operation_from_checkpoint
 from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_contracts import KernelResult, KernelRunRequest
+from codey.operations.kernel_contracts import KernelDecision, KernelResult, KernelRunRequest, result_from_payload
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact, write_provider_artifact
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
@@ -258,7 +258,6 @@ def _execute_provider(sink: Any, provider: Any, intent: RuntimeEffectIntent,
 
 def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
     """Run normal work and restart work through one operation decision loop."""
-    from codey.operations import kernel_control
     from codey.operations.kernel_actions import _provider_failure
     from codey.operations.kernel_context import KernelContext
     from codey.operations.kernel_contracts import KernelResult
@@ -268,20 +267,22 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
         context = KernelContext(session, request)
     except Exception as exc:
         return KernelResult(False, f"controller configuration error: {exc}", 0, "controller_failure")
-    last_decision: dict[str, Any] = {}
+    last_decision: KernelDecision | None = None
     last_action = ""
     window_restored = False
     try:
         while True:
             view = context.load_view()
             state = view.state
-            last_decision = context.decision(state) if state.work_ref else {}
+            last_decision = context.decision(state) if state.work_ref else None
             action = rules.next_runtime_action(view, context.decision_inputs(view))
             last_action = action.kind
             if action.kind == rules.ACTION_RETURN_KERNEL_RESULT:
                 context.restore_facts()
                 decision = context.decision(state)
-                result = kernel_control.result_from_payload(decision["result"])
+                if decision["purpose"] == "retry":
+                    raise RecoveryFailed("settled kernel has a retry decision")
+                result = result_from_payload(decision["result"])
                 if context.native and decision["purpose"] in {"done", "question"}:
                     result = replace(result, delivery="success")
                 return result
@@ -304,8 +305,8 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
     except Exception as exc:
         # Reporting a failed commit must not read the failed store again or
         # mask its error. This is diagnostic data, never an execution fallback.
-        if last_decision.get("purpose") in {"done", "question"}:
-            original = kernel_control.result_from_payload(last_decision["result"])
+        if last_decision is not None and (last_decision["purpose"] == "done" or last_decision["purpose"] == "question"):
+            original = result_from_payload(last_decision["result"])
             return KernelResult(False, f"protocol delivery failed [{type(exc).__name__}]: {exc}",
                 original.turns, "delivery_pending", proof=original.proof,
                 delivery="unknown" if getattr(exc, "provider_failure_kind", "") == "submission_uncertain" else "failed")

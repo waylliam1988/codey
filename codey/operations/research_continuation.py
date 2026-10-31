@@ -15,7 +15,7 @@ from typing import Any, Literal, cast
 
 from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.model import thaw_json
-from codey.operations.kernel_contracts import KernelResult, KernelRunRequest
+from codey.operations.kernel_contracts import KernelResult, KernelRunRequest, result_from_payload
 from codey.providers.response_record import json_value
 from codey.research.ledger_receipts import ledger_observation, restore_ledger_observation
 from codey.research.pipeline import ResearchContinuationError
@@ -272,7 +272,6 @@ class ResearchContinuation:
     def kernel(self, session: Any, request: KernelRunRequest, *, invocation: ResearchInvocation) -> KernelResult:
         """Restore a completed output or enter the sole driver for active work."""
         from codey.operations.kernel_context import KernelContext
-        from codey.operations.kernel_control import result_from_payload
         from codey.operations.task_loop import run_task_kernel
 
         state = self.state()
@@ -287,6 +286,8 @@ class ResearchContinuation:
             context = KernelContext(session, request)
             context.restore_facts()
             decision = context.decision(replace(state, work_ref=reference))
+            if decision["purpose"] == "retry":
+                raise ResearchContinuationError("completed research invocation has a retry decision")
             return result_from_payload(decision["result"])
         if attempt > state.writer_attempt:
             self.commit(state, index, attempt=attempt)

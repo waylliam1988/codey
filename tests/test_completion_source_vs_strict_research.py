@@ -91,7 +91,7 @@ def test_same_facts_strict_research_still_blocks_without_evidence_report() -> No
 
 
 def test_strict_report_does_not_parse_or_rewrite_markdown_even_with_saved_evidence():
-    from codey.operations.research_completion_checks import finalize_research_text, strict_research_checks
+    from codey.operations.research_completion_checks import strict_research_checks
     from codey.research.ledger import ResearchLedger
 
     url = "https://example.com/a"
@@ -105,7 +105,6 @@ def test_strict_report_does_not_parse_or_rewrite_markdown_even_with_saved_eviden
     session = _session(policy, task_kind="research", opened_sources={url})
     for text in (r"## Conclusion\nOne writer commits at a time. [1]", "## Conclusion\nOne writer commits at a time. [1]"):
         context = {"research_ledger": ledger}
-        assert finalize_research_text(session, text, context) == text
         rows = strict_research_checks(session, text, context)
         assert [(row.check_id, row.reason_code) for row in rows] == [
             ("research_report_sections", "structured_report_missing")]

@@ -2,12 +2,17 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from codey.operations import kernel_prompt
-from codey.operations.kernel_contracts import KernelResult
+from codey.operations.kernel_contracts import (
+    DoneDecision,
+    KernelDecision,
+    KernelResult,
+    RetryDecision,
+    result_from_payload,
+)
 from codey.providers.base import AssistantTurn, ProviderToolResult
-from codey.providers.response_record import json_value
 from codey.runtime.core import operation_state as positions
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationTransitionError
 from codey.runtime.core.operation_state import RuntimeOperationState
@@ -17,30 +22,7 @@ if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
 
 
-def result_from_payload(payload: Any) -> KernelResult:
-    from codey.completion.contract import _proof_from_payload
-
-    if (not isinstance(payload, dict) or set(payload) != {"completed", "summary", "turns", "stop_reason", "proof", "delivery", "research_report"}
-            or type(payload["completed"]) is not bool or not isinstance(payload["summary"], str)
-            or type(payload["turns"]) is not int or payload["turns"] < 0
-            or not isinstance(payload["stop_reason"], str)
-            or payload["delivery"] not in {"not_required", "success", "failed", "unknown"}):
-        raise ValueError("invalid persisted kernel result")
-    proof = _proof_from_payload(payload["proof"]) if isinstance(payload["proof"], dict) else None
-    if payload["proof"] is not None and proof is None:
-        raise ValueError("invalid persisted completion proof")
-    report = payload["research_report"]
-    if report is not None:
-        from codey.research.finding_report import FindingReport
-
-        compiled = FindingReport.from_payload(report)
-        if not payload["completed"] or compiled.text != payload["summary"]:
-            raise ValueError("accepted research report differs from kernel delivery")
-    return KernelResult(payload["completed"], payload["summary"], payload["turns"], payload["stop_reason"],
-                        proof=proof, delivery=payload["delivery"], research_report=report)
-
-
-def validate_decision(payload: Any) -> dict[str, Any]:
+def validate_decision(payload: Any) -> KernelDecision:
     """Validate committed control facts before selecting any external action."""
     if not isinstance(payload, dict):
         raise ValueError("invalid control decision")
@@ -82,7 +64,7 @@ def validate_decision(payload: Any) -> dict[str, Any]:
         result_from_payload(payload["result"])
     else:
         raise ValueError("unknown control decision purpose")
-    return payload
+    return cast(KernelDecision, payload)
 
 
 def evaluate_completion(context: KernelContext, state: RuntimeOperationState) -> None:
@@ -135,18 +117,19 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     if complete:
         result = KernelResult(True, final_text, context.session.turn, "done", proof=proof,
                               research_report=compiled.to_payload() if compiled else None)
-        context.advance(state, positions.LEAF_CONTROL_READY, data={"purpose": "done", "result": json_value(result),
-            "workspace_revision": context.session.workspace_revision, "workspace_fingerprint": context.session.workspace_fingerprint})
+        context.advance(state, positions.LEAF_CONTROL_READY, data=DoneDecision(
+            purpose="done", result=result.to_payload(), workspace_revision=context.session.workspace_revision,
+            workspace_fingerprint=context.session.workspace_fingerprint))
     else:
         from codey.operations.kernel_progress import KernelProgress
 
         progress = KernelProgress(context.transport.stagnant_turns, snapshot=state.counters.progress)
         progress.reject_completion(context.session.last_done_args, followup, context.session)
         counters = replace(state.counters, progress=progress.snapshot())
-        context.advance(state, positions.LEAF_CONTROL_READY, data={"purpose": "retry",
-            "prompt": kernel_prompt._completion_followup(followup, native=context.native,
-                structured_report="report_sections" in context.session.last_done_args), "error": "",
-            "counters": counters.to_payload(), "error_source": error_source, "error_type": error_type},
+        context.advance(state, positions.LEAF_CONTROL_READY, data=RetryDecision(
+            purpose="retry", prompt=kernel_prompt._completion_followup(followup, native=context.native,
+                structured_report="report_sections" in context.session.last_done_args), error="",
+            counters=counters.to_payload(), error_source=error_source, error_type=error_type),
             counters=counters)
 
 
@@ -166,13 +149,12 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
     decision = context.decision(state)
     received = context.response(state)
     ids = _ids(received.reply)
-    purpose = decision["purpose"]
-    if purpose == "done" and context.session.task_kind == "research_review":
+    if decision["purpose"] == "done" and context.session.task_kind == "research_review":
         # Closure delivers the original submission receipt. There is no
         # synthetic model done call and no substituted tool-success message.
         context.advance(state, positions.LEAF_CLOSING)
         return
-    if purpose == "retry":
+    if decision["purpose"] == "retry":
         turn = received.logical_turn
         from codey.operations.kernel_progress import KernelProgress
 
@@ -208,7 +190,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         context.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages,
                        counters=RuntimeExecutionCounters.from_payload(decision["counters"]))
         return
-    if purpose == "question":
+    if decision["purpose"] == "question":
         from codey.durable.questions import DurableUserQuestionStore
         from codey.runtime.observe.events import RunEvent
         if context.observation.on_event is None:
@@ -222,7 +204,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         context.observation.on_event(RunEvent("user_question", turn=received.logical_turn,
             message=decision["question"]["question"], metadata={"id": decision["question_id"], **decision["question"]}))
         text = "Question recorded; waiting for the user. No execution authorized."
-    elif purpose == "done":
+    elif decision["purpose"] == "done":
         store = context.execution.workspace_revision_store
         project = context.execution.project_path
         if store is not None and project is not None:
@@ -245,6 +227,8 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
 def close_protocol(context: Any, view: Any) -> None:
     state = view.state
     decision = context.decision(state)
+    if decision["purpose"] == "retry":
+        raise ValueError("protocol close requires a result decision")
     result = result_from_payload(decision["result"])
     received = context.response(state) if state.response_ref else None
     messages: list[ProviderToolResult] = []

@@ -7,8 +7,7 @@ from dataclasses import replace
 import pytest
 
 from codey.knowledge.model import KnowledgeMutation
-from codey.operations.kernel_contracts import KernelResult
-from codey.operations.kernel_control import result_from_payload
+from codey.operations.kernel_contracts import KernelResult, result_from_payload
 from codey.providers.response_record import json_value
 from codey.research.finding_report import FindingReport, compile_finding_report
 from codey.research.issues import ResearchIssue

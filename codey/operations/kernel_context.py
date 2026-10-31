@@ -13,7 +13,14 @@ from codey.durable.checkpoint import checkpoint_entries
 from codey.durable.model import thaw_json
 from codey.operations import kernel_actions as wiring
 from codey.operations import kernel_events, kernel_prompt, kernel_protocol, kernel_transport
-from codey.operations.kernel_contracts import KernelResult, KernelRunRequest
+from codey.operations.kernel_contracts import (
+    ClosingDecision,
+    KernelDecision,
+    KernelResult,
+    KernelRunRequest,
+    QuestionDecision,
+    RetryDecision,
+)
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_preparation import prepare_kernel_turn
 from codey.operations.kernel_progress import KernelProgress
@@ -23,7 +30,6 @@ from codey.operations.task_guidance import task_working_context
 from codey.operations.task_session import TaskSession
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolResult, TurnFinish, tools_from_specs
-from codey.providers.response_record import json_value
 from codey.runtime.core import operation_state as positions
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.runtime.effects.effect_records import RuntimeEffectProjection, RuntimeEffectStore
@@ -94,7 +100,7 @@ class KernelContext:
         task = self.durable.task(self.sink.run_id)
         state = view.state
         question = task.state.get("question", {})
-        decision = self.decision(state) if state.work_ref else {}
+        decision = self.decision(state) if state.work_ref else None
         approval = None
         if state.leaf == positions.LEAF_TOOL_EFFECT_PENDING:
             for identity in task.state.get("approvals", {}):
@@ -110,8 +116,8 @@ class KernelContext:
                     if approval is not None or len(matching) != 1:
                         raise RecoveryFailed("ambiguous approval continuation")
                     approval = record
-        return RuntimeDecisionInputs(cancel_requested=self.cancelled(), closing_intent=decision.get("purpose") == "closing",
-            question_answered=decision.get("purpose") == "question" and question.get("id") == decision.get("question_id")
+        return RuntimeDecisionInputs(cancel_requested=self.cancelled(), closing_intent=decision is not None and decision["purpose"] == "closing",
+            question_answered=decision is not None and decision["purpose"] == "question" and question.get("id") == decision["question_id"]
                 and question.get("state") == "answered",
             approval_ref=approval.approval_id if approval is not None else "",
             approval_ready=approval is not None and str(approval.status) in {"execution_settled", "denied", "expired", "cancelled"},
@@ -153,7 +159,7 @@ class KernelContext:
                 session_id=self.sink.session_id, run_id=self.sink.run_id, effect_id=effect.intent.effect_id))
         self.sink.mutations.settle_tool_effect(self.sink.session_id, self.sink.run_id, receipt)
 
-    def advance(self, state: Any, leaf: str, *, data: dict[str, Any] | None = None,
+    def advance(self, state: Any, leaf: str, *, data: KernelDecision | None = None,
                 logical_turn: int | None = None, counters: RuntimeExecutionCounters | None = None) -> None:
         artifact = None
         if data is not None and (not state.work_ref or self.decision(state) != data):
@@ -165,7 +171,7 @@ class KernelContext:
         self.sink.mutations.advance_execution(self.sink.session_id, self.sink.run_id, expected=state,
             leaf=leaf, artifact=artifact, logical_turn=logical_turn, counters=counters)
 
-    def decision(self, state: Any) -> dict[str, Any]:
+    def decision(self, state: Any) -> KernelDecision:
         artifact = self.durable.artifact(state.work_ref)
         if (artifact.owner_task_id != self.sink.run_id or artifact.owner_effect_id is not None
                 or artifact.metadata.get("kind") != "kernel_decision"):
@@ -419,8 +425,8 @@ class KernelContext:
             threshold = self.transport.stagnant_turns
             if threshold is not None and invalid >= max(1, threshold):
                 self.advance(state, positions.LEAF_CLOSING, counters=replace(state.counters, invalid_turns=invalid),
-                    data={"purpose": "closing", "result": json_value(KernelResult(False,
-                        f"stopped after {invalid} invalid tool requests: {plan.protocol_error}", turn, "protocol"))})
+                    data=ClosingDecision(purpose="closing", result=KernelResult(False,
+                        f"stopped after {invalid} invalid tool requests: {plan.protocol_error}", turn, "protocol").to_payload()))
                 return
             prompt = kernel_prompt._repair_prompt(plan, snapshot=snapshot, native=self.native)
             self.retry(state, prompt, error=plan.protocol_error, counters=replace(state.counters, invalid_turns=invalid))
@@ -431,15 +437,16 @@ class KernelContext:
             question = question_args(dict(plan.control_args))
             identity = f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id
             question_id = "question_" + hashlib.sha256(f"{identity}:{turn}".encode()).hexdigest()[:24]
-            self.advance(state, positions.LEAF_CONTROL_READY, data={"purpose": "question", "question": question,
-                "question_id": question_id, "result": json_value(KernelResult(False, question["question"], turn, "question"))})
+            self.advance(state, positions.LEAF_CONTROL_READY, data=QuestionDecision(
+                purpose="question", question=question, question_id=question_id,
+                result=KernelResult(False, question["question"], turn, "question").to_payload()))
             return
         self.advance(state, positions.LEAF_COMPLETION_PENDING if kind == "done" else positions.LEAF_PLAN_READY,
                      counters=replace(state.counters, invalid_turns=0))
 
     def retry(self, state: Any, prompt: str, *, error: str = "", counters: RuntimeExecutionCounters | None = None) -> None:
-        self.advance(state, positions.LEAF_CONTROL_READY, data={"purpose": "retry", "prompt": prompt,
-            "error": error, "counters": (counters or state.counters).to_payload()})
+        self.advance(state, positions.LEAF_CONTROL_READY, data=RetryDecision(
+            purpose="retry", prompt=prompt, error=error, counters=(counters or state.counters).to_payload()))
 
     def plan(self, state: Any) -> Any:
         received = self.response(state)
@@ -563,4 +570,4 @@ class KernelContext:
         self.observation.on_boundary(GenerationBoundaryRequest(action.reason))
 
     def close(self, state: Any, result: KernelResult) -> None:
-        self.advance(state, positions.LEAF_CLOSING, data={"purpose": "closing", "result": json_value(result)})
+        self.advance(state, positions.LEAF_CLOSING, data=ClosingDecision(purpose="closing", result=result.to_payload()))
