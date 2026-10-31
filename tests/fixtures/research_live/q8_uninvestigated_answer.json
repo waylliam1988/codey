@@ -1,0 +1,12 @@
+{
+  "origin": "artifacts/research-gemma12b-20261031/deterministic-wal-full-03/research-wire.jsonl",
+  "question": "How does the 'read-heavy, write-light' nature of the user's application specifically benefit from WAL compared to other modes?",
+  "coverage": {
+    "answer": "对于“读多写少”的应用，WAL 模式提供了显著优势：它允许读取操作与写入操作高度并发，避免了传统回滚日志模式中“读写互斥”的瓶颈。由于写入是顺序追加到 WAL 文件，写入速度极快，非常适合在保持高读取吞吐量的同时，异步地处理少量写入操作。",
+    "findings": [],
+    "investigations": [],
+    "question_ref": "q8",
+    "state": "not_investigated",
+    "task_refs": ["r1"]
+  }
+}

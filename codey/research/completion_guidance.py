@@ -42,7 +42,9 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         "This is explicit accounting, not independent verification. Do not also write summary, evidence or counter paragraphs. "
         "The application compiles the report from these same answers and saved findings. "
         "Source quality is generated from pinned metadata; retrieval time does not establish release version or publication date. "
-        "Do not invent limitations to fill a section. Record actual investigation gaps in the question answer. "
+        "Do not invent limitations to fill a section. For not_investigated and unanswered_after_search, "
+        "the application generates the gap notice and does not publish your answer text. "
+        "Use partial with findings to retain a supported partial answer. "
         "Never infer absence from an unperformed search. "
         "A selected excerpt omitting a topic does not prove that the whole source did not discuss or evaluate it. "
         "State the selected evidence's scope or the specific unanswered question instead.",

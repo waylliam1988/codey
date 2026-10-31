@@ -11,7 +11,12 @@ from codey.research.evidence_view import ResolvedReference, resolve_selected_ref
 from codey.research.issues import ResearchIssue
 from codey.research.ledger import ResearchLedger
 from codey.research.questions import validate_question_coverage
-from codey.research.report_proposal import FINDING_CITATION, ResearchReportProposal, parse_report_proposal
+from codey.research.report_proposal import (
+    FINDING_CITATION,
+    ResearchReportProposal,
+    bind_gap_investigations,
+    parse_report_proposal,
+)
 from codey.reviews.report_sections import section_title
 from codey.reviews.research_coverage import coverage_rows, render_coverage
 
@@ -166,6 +171,7 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
                            project: str = "", session_id: str = "", task: str = "") -> FindingReport:
     proposal = parse_report_proposal(args)
     validate_question_coverage(list(proposal.coverage), ledger)
+    proposal = bind_gap_investigations(proposal, ledger.investigations)
     if task:
         from codey.research.task_requirements import validate_task_accounting
 

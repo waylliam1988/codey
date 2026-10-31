@@ -255,7 +255,8 @@ def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
                                        tool_names=build_turn_snapshot(session).tool_names)
     for required in (
         "Research rules", "research_plan", "knowledge_read", "report_sections.coverage",
-        "do not repeat unchanged reports or writes", "question_ref=qN", "actual investigation gaps",
+        "do not repeat unchanged reports or writes", "question_ref=qN",
+        "the application generates the gap notice and does not publish your answer text",
         "Never infer absence from an unperformed search", "After rejection fix the specified field",
         "Do not also write summary, evidence or counter paragraphs",
     ):

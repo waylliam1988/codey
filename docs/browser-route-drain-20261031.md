@@ -23,3 +23,14 @@ resource lifecycle, not content acceptance or all future browser behavior.
 The broader relevant test selection passed 307 tests, including browser recovery
 and route teardown; a separate browser selection passed 29 tests. Ruff, mypy,
 Pyrefly, ty and the runtime resource manifest passed. No full pytest or push.
+
+## Recurrence during the later q8 validation
+
+`artifacts/research-q8-gap-20261031/live-01-console.log` again captured an
+unobserved TargetClosedError future at shutdown after a completed real Research
+run. The route-wait implementation was present and was not changed by the q8
+work. The later `live-03` shutdown did not reproduce the warning, which does not
+close the intermittent lifecycle issue. The earlier located race and its test
+remain valid evidence, but browser teardown is not fully resolved; further
+creation-stack diagnostics are needed. The q8 change does not filter or suppress
+this warning. See [the q8 validation report](research-q8-gap-20261031.zh-CN.md).

@@ -59,7 +59,7 @@ def validate_question_coverage(raw: object, ledger: ResearchLedger) -> list[dict
             + " claim an answer without any saved/read finding. Next action: investigate the first missing question "
             "and save its direct evidence with save_finding, or state its specific unresolved gap with "
             "not_investigated (investigations=[]) / unanswered_after_search (select actual aN receipts). "
-            "Gap states require findings=[] and an answer explaining what remains unknown. "
+            "Gap states require findings=[]; the application generates their gap notice instead of publishing answer text. "
             "Changing evidence_found to partial alone does not fix missing evidence; do not repeat the same report.")
     for index, row in enumerate(rows):
         path = f"report_sections.coverage[{index}] ({row['question_ref']})"

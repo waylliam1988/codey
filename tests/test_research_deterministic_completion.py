@@ -12,11 +12,12 @@ from codey.research.task_requirements import task_requirements
 from tests.test_research_findings import URL
 
 TASK = "Explain writer concurrency. Distinguish historical version restrictions."
+UNSUPPORTED_GAP_ANSWER = "We measured WAL on this machine: it is always 10x faster."
 
 
 def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task=TASK,
          provider_factory=None, planner_enabled=False, required_checks=(), omit_requirement=False,
-         unsupported_claim=False, bad_reference=False):
+         unsupported_claim=False, bad_reference=False, gap_answer=None, gap_investigation=False):
     import hashlib
     import os
     from unittest.mock import patch
@@ -101,7 +102,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
             elif turn == 2:
                 name, args = "web_search", {"query": "official writer concurrency", "question_ref": "q1"}
             elif turn == 3:
-                name, args = "open_url", {"url": URL, "question_ref": "q1"}
+                name, args = "open_url", {"url": URL, "question_ref": "q2" if gap_investigation else "q1"}
             elif turn == 4:
                 name, args = "save_finding", {"claim": claim, "source_ref": "s1", "question_ref": "q1",
                     "passage_ref": passage_ref(URL, hashlib.sha256(text.encode()).hexdigest()[:16], 0, len(text))}
@@ -109,10 +110,11 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
                 refs = [row["task_ref"] for row in task_requirements(task)]
                 coverage = [
                     {"question_ref": "q1", "state": "evidence_found", "answer": claim,
-                     "findings": ["f99" if bad_reference else "f1"], "investigations": ["a1", "a2"],
+                     "findings": ["f99" if bad_reference else "f1"],
+                     "investigations": ["a1"] if gap_investigation else ["a1", "a2"],
                      "task_refs": refs[:-1]},
                     {"question_ref": "q2", "state": "not_investigated",
-                     "answer": "Historical version restrictions remain unknown; they were not investigated.",
+                     "answer": gap_answer or "Historical version restrictions remain unknown; they were not investigated.",
                      "findings": [], "investigations": [], "task_refs": [] if omit_requirement else refs[-1:]},
                 ]
                 name, args = "done", {"report_sections": {"coverage": coverage}}
@@ -226,15 +228,52 @@ def test_original_required_search_receipt_remains_the_completion_evidence(tmp_pa
                                        "publication_committed", "publication_receipt"])
 def test_real_process_restart_reuses_writer_and_publication_receipts(tmp_path, boundary):
     source = ("from pathlib import Path; from tests.test_research_deterministic_completion import _run; import sys; "
-              "_run(Path(sys.argv[1]), boundary=sys.argv[2])")
+              f"_run(Path(sys.argv[1]), boundary=sys.argv[2], gap_answer={UNSUPPORTED_GAP_ANSWER!r}, gap_investigation=True)")
     child = subprocess.run([sys.executable, "-c", source, str(tmp_path), boundary], capture_output=True, timeout=50)
     assert child.returncode == 74, child.stderr.decode(errors="replace")
-    result = _run(tmp_path, resume=True)
+    result = _run(tmp_path, resume=True, gap_answer=UNSUPPORTED_GAP_ANSWER, gap_investigation=True)
     assert result.stop_reason == "done", result.summary
+    assert UNSUPPORTED_GAP_ANSWER not in result.summary
+    assert "无法据此给出结论" in result.accepted_report.coverage[1]["answer"]
+    assert result.accepted_report.coverage[1]["state"] == "unanswered_after_search"
+    assert result.accepted_report.coverage[1]["investigations"] == ["a2"]
     rows = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
     assert sum("publication" in row for row in rows) == 1
     assert sum("fetch" in row for row in rows) == 1
     assert sum("attempt" in row for row in rows) == 5
+
+
+@pytest.mark.usefixtures("public_source_dns")
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("gap_investigation", [False, True])
+def test_gap_text_is_canonical_in_publication_knowledge_and_replay(tmp_path, native, gap_investigation):
+    from codey.knowledge.store import KnowledgeStore
+
+    result = _run(tmp_path, native=native, gap_answer=UNSUPPORTED_GAP_ANSWER, gap_investigation=gap_investigation)
+    assert result.stop_reason == "done" and result.completion_proof.satisfied
+    assert UNSUPPORTED_GAP_ANSWER not in json.dumps(result.accepted_report.to_payload())
+    assert any(UNSUPPORTED_GAP_ANSWER in path.read_text(encoding="utf-8")
+               for path in (tmp_path / "managed_outputs").rglob("*.json"))
+    assert result.accepted_report.coverage[0]["answer"] == "Only one writer can write at a time."
+    assert result.accepted_report.coverage[1]["state"] == (
+        "unanswered_after_search" if gap_investigation else "not_investigated")
+    assert result.accepted_report.coverage[1]["investigations"] == (["a2"] if gap_investigation else [])
+    calls = (tmp_path / "calls.jsonl").read_bytes()
+    assert _run(tmp_path, native=native, resume=True, gap_answer=UNSUPPORTED_GAP_ANSWER,
+                gap_investigation=gap_investigation) == result
+    assert (tmp_path / "calls.jsonl").read_bytes() == calls
+    store = KnowledgeStore(tmp_path / "knowledge")
+    try:
+        rows = store.index._read_conn().execute("SELECT payload FROM knowledge_versions WHERE kind='answer'").fetchall()
+        assert len(rows) == 1
+        answer = json.loads(rows[0][0])
+        assert UNSUPPORTED_GAP_ANSWER not in rows[0][0]
+        assert answer["content"] == result.summary
+        assert answer["provenance"]["accepted_report"] == result.accepted_report.to_payload()
+        assert answer["provenance"]["question_coverage"] == list(result.accepted_report.coverage)
+        assert store.read_note(result.synthesis_id).body == result.summary
+    finally:
+        store.close()
 
 
 def test_original_task_accounting_rejects_deleted_unknown_and_duplicate_refs():
