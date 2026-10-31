@@ -89,3 +89,22 @@ py-spy 实际栈确认 KoboldCpp 卡在 `read_object → fix_unquoted_keys → p
 后续将使用现有生产 JSON constrained 协议进行独立新状态验证。它沿用同一冻结工具 schema、kernel、
 effect 和知识事务，不新增解析执行循环，也不自动补 state 或替模型选择证据。
 服务端原生解析器本身尚未修复；JSON 协议是否足够可靠仍须看实际结果。
+
+## 实机 2：JSON 已返回 done，评审越界后生成失控，未完成
+
+`artifacts/research-gemma12b-20261031/single-json-01`，生产版本 `404dc0d5`。
+JSON 请求沿用当前单一 kernel；done 的 state 字段齐全，未再进入原生工具解析器。
+模型把单一问题拆成三个重叠问题，修复跨问题 finding 采用后，旧规划器仍启动无目标补查和再次合成。
+合成还因只检查本 invocation 的 required_tools 而重复搜索。第 18 个请求进入评审，实际输入 3859 tokens，
+但模型越过当前批、把自己的中文 claim 当作原文引文，提交被拒绝。
+第 19 个请求在协议修复中持续虚构 fN；180 秒客户端超时后服务仍在生成，未发布研究结果。
+确认队列为零、仅本次遗留请求运行后，通过 KoboldCpp abort 终止，服务恢复 idle=1。
+请求、响应、原始失控输出均保留。结构上收到 done 不代表评审或研究通过。
+
+## 7. 严格 Research 补查收敛到语义评审
+
+严格 Research 不再运行旧 source-count/反证启发式通用补查；由现有冻结语义评审提出具体缺口，
+通过原 repair invocation 补证或收窄答案。非严格流程保留原行为，没有新增调度器或运行状态。
+新增完整 driver 回归开启旧 planner 配置，验证仅出现初始研究、评审、修复、复评，且只搜索/打开/发布一次。
+
+验证：语义评审及真实子进程续跑选集 44 passed，Ruff 通过；生产源码在测试期间冻结。

@@ -135,7 +135,8 @@ def test_review_uses_full_exact_excerpt_and_rejects_missing_duplicate_or_forged_
 
 
 def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=22, native=False,
-         missing_done=False, bad_ack=False, absent_assessment=False, task=TASK, provider_factory=None):
+         missing_done=False, bad_ack=False, absent_assessment=False, task=TASK, provider_factory=None,
+         planner_enabled=False):
     import os
     from unittest.mock import patch
 
@@ -292,13 +293,24 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
         provider_id="local", project_text="", trace=None, run_id="r",
         research_handoff="", entry_policy=policy, request=SimpleNamespace(task=task, session_id="s", requested_capabilities=()))
     try:
-        with patch("codey.operations.research_flow.ResearchPipelineConfig", return_value=ResearchPipelineConfig(enabled=False)):
+        with patch("codey.operations.research_flow.ResearchPipelineConfig", return_value=ResearchPipelineConfig(enabled=planner_enabled)):
             result = run_research_pipeline(deps, frame, SimpleNamespace(on_event=lambda _: None), max_turns=budget,
                 build_context=lambda *a, **kw: ResearchContext(question=task, session_id="s", run_id="r", max_turns=budget))
         return result.final_result
     finally:
         store.close()
         durable.close()
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_strict_research_uses_semantic_gaps_as_its_only_followup_owner(tmp_path):
+    result = _run(tmp_path, planner_enabled=True)
+    assert result.stop_reason == "done" and result.semantic_review["status"] == "passed"
+    calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert {row["attempt"] for row in calls if "attempt" in row} == {1, 8, 9, 10}
+    assert len([row for row in calls if "search" in row]) == 1
+    assert len([row for row in calls if "fetch" in row]) == 1
+    assert len([row for row in calls if "publication" in row]) == 1
 
 
 @pytest.mark.usefixtures("public_source_dns")

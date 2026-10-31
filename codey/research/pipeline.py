@@ -414,6 +414,10 @@ class ResearchPipeline:
         review: ResearchProofReview | None,
         plan: ResearchPlan,
     ) -> str:
+        if getattr(self.policy, "strict_research", False):
+            # Frozen answer review owns evidence gaps and targeted repair.
+            # The legacy source-count planner must not run a second followup.
+            return "semantic_review_owns_followup"
         if result.stop_reason in {"max_turns", "protocol"} and not result.queries and not result.opened_sources:
             return "initial_no_research_progress"
         if not self.config.enabled:
