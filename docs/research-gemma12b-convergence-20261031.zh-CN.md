@@ -31,3 +31,14 @@
 验证：相关选集 48 项通过，Ruff 通过。另有 evidence_split 的两项旧夹具失败，已在独立
 `e4334c24` 基线 checkout 复现相同失败（原文不含所写引文、未提供显式 evidence）；没有放宽来源校验。
 跨问题测试实际执行一次读取、两次采用、回执恢复，确认没有新增知识修订或伪造读取。
+
+## 4. 单份问题答案编译报告
+
+新的 strict Research 冻结工具只接受 `done.report_sections.coverage`，不再要求 summary/evidence/counter 各写一遍。
+结论、证据段和问题覆盖从相同 answer 与已选 finding 编译；语义评审只检查模型实际写的答案一次。
+已有 FindingReport 的保存/恢复格式继续使用同一编译器与 digest。旧冻结的 expanded proposal 仍可被同一
+纯编译器读取，但新 strict 工具契约拒绝提交该旧形状；没有新增运行模式或第二个写入入口。
+
+验证：答案编译、原生/文本调用、历史精确版本、报告归档、语义评审和协议 profile 共 84 项通过；
+额外 native/prompt/protocol 选集 31 项通过、9 项为已记载的旧 protocol fixture 失败；Ruff 通过。
+测试已将当前 shared-driver 提交夹具迁移到当前答案契约，旧报告的只读编译覆盖仍保留。

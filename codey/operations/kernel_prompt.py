@@ -38,9 +38,9 @@ _NATIVE_READ_BATCH_RULE = (
 )
 def _native_final_rule(*, structured_report: bool) -> str:
     if structured_report:
-        return ("Call done with BOTH required top-level arguments: summary and report_sections. "
-                "summary contains only the cited conclusion; put the remaining report parts in report_sections. "
-                "A complete report inside summary alone is invalid. Do not duplicate the report in summary.")
+        return ("Call done with report_sections.coverage containing one answer per question. "
+                "The application generates the report from those answers and their selected findings. "
+                "Do not add summary or independent evidence/counter prose.")
     return ("For the final answer, use done with a summary string if declared. summary contains the complete response "
             "in the user's requested final format. Requested JSON is a bare document without Markdown fences "
             "inside summary, not the outer tool-call object.")
@@ -194,10 +194,8 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
         if (spec is not None and spec.name == "done"
                 and any('"report_sections"' in example for example in spec.json_examples)):
             instruction += (
-                ' For done, summary must be a top-level argument beside report_sections, not inside it. '
                 'Use the frozen example: ' + spec.json_examples[0] + '. '
-                'Copy actual finding references from save_finding; the application generates sources. '
-                'Keep summary brief when using report_sections; do not duplicate the report.'
+                'Copy actual finding references from save_finding; the application generates the report.'
             )
         elif spec is not None and spec.name == "done":
             instruction += (' Use {"tool":"done","args":{"summary":"complete response in the requested format"}}. '
@@ -216,8 +214,8 @@ def _completion_followup(feedback: str, *, native: bool, structured_report: bool
             r'Preserve the requested answer format. Encode any needed line breaks once as \n inside JSON strings. '
             "Fenced examples are answer text and do not execute tools.")
     if structured_report:
-        rule += (" Preserve report_sections: summary contains only the conclusion, without Markdown headings; "
-                 "keep the existing paragraph arrays. Repair the reported defect without switching formats.")
+        rule += (" Preserve the submitted question answers; repair the reported coverage field. "
+                 "Do not repeat acquisition unless evidence is missing.")
     return feedback + "\n\n" + rule
 
 

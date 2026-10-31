@@ -282,13 +282,16 @@ def done_spec_for_purpose(spec: Any, purpose: str) -> Any:
         description = ("End evidence investigation with a brief receipt of saved findings and specific remaining gaps. "
                        "The parent owns final synthesis; do not write its report in this phase.")
     elif purpose == "report":
-        schema = object_schema({"summary": {"type": "string"}, "report_sections": report_sections_schema(),
-                                "open_questions": array_schema({"type": "string"})}, "summary", "report_sections")
-        example = {"tool": "done", "args": STRUCTURED_REPORT_ARGS}
-        description = ("Submit conclusion in summary; evidence/counter are text arrays. Source quality is generated from pinned metadata. "
-                       "coverage contains one {question_ref,state,answer,findings,investigations} per qN. "
-                       "Cite adopted [fN] references. The application generates headings, source numbers and exact versions. "
-                       "Do not duplicate the report in summary, supply sources, or copy long knowledge ids.")
+        coverage = dict(report_sections_schema()["properties"])["coverage"]
+        schema = object_schema({"report_sections": object_schema({"coverage": coverage}, "coverage")}, "report_sections")
+        example = {"tool": "done", "args": {"report_sections": {
+            "coverage": STRUCTURED_REPORT_ARGS["report_sections"]["coverage"]}}}
+        description = ("Submit one answer per registered question in report_sections.coverage: "
+                       "{question_ref,state,answer,findings,investigations}. Use raw finding ids in findings; "
+                       "inline citations in answer are optional and must agree. Keep answers no stronger than findings. "
+                       "State unanswered obligations as specific gaps. The application generates the conclusion, "
+                       "evidence, limitations, source table and coverage from these same answers and exact findings. "
+                       "Do not supply summary, evidence, counter or source_quality prose.")
     else:
         raise ValueError("unknown done purpose")
     return replace(spec, parameters=tuple(schema["properties"].items()), required=tuple(schema["required"]),

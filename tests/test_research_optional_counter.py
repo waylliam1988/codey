@@ -19,7 +19,8 @@ def test_empty_counter_compiles_without_creating_an_unsupported_claim(tmp_path):
             "passage_ref": next(iter(tools.ledger.read_passages))})
         args = report_args("f1")
         args["report_sections"]["counter"] = []
-        assert not validate_args_with_spec(done_spec_for_purpose(spec_for_tool("done"), "report"), args)
+        assert not validate_args_with_spec(done_spec_for_purpose(spec_for_tool("done"), "report"), {
+            "report_sections": {"coverage": args["report_sections"]["coverage"]}})
         report = compile_finding_report(args, tools.ledger, store)
         assert "本轮未记录额外反证" in report.text
         basis = review_basis(report, tools, "Explain writer concurrency.")

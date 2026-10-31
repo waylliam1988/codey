@@ -69,7 +69,7 @@ def validate_report_bindings(proposal: ResearchReportProposal, resolved: tuple[R
         if not set(answer.refs) <= set(coverage["findings"]):
             issues.append(ResearchIssue("coverage_reference_mismatch", answer.path,
                 "answer citations must also occur in this question's findings", allowed_refs=tuple(coverage["findings"])))
-    for row in (proposal.conclusion, *proposal.evidence):
+    for row in (() if proposal.answers_only else (proposal.conclusion, *proposal.evidence)):
         if not row.refs:
             issues.append(ResearchIssue("missing_citation", row.path, "cite the exact finding adopted in this paragraph",
                                         allowed_refs=tuple(by_label)))
@@ -122,10 +122,15 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
            for key in ("evidence", "counter")},
         "coverage": render_coverage([{**row, "answer": replace(row["answer"])} for row in proposal.coverage],
                                     questions, render_ref=lambda label: replacements[label])}
+    if proposal.answers_only:
+        sections["evidence"] = "\n\n".join(
+            item.version.value.content + " " + replacements[item.label] for item in resolved)
+        gaps = [row["answer"] for row in proposal.coverage if row["state"] != "evidence_found"]
+        sections["counter"] = "\n\n".join(replace(text) for text in gaps)
     if queries:
         sections["coverage"] = ("实际检索词（最多显示 12 条）：\n" + "\n".join("- " + q for q in queries[:12])
                                 + "\n\n" + sections["coverage"])
-    if not proposal.counter:
+    if not sections["counter"]:
         sections["counter"] = "本轮未记录额外反证；这不表示不存在反证。未解问题见问题覆盖。"
     notes = ["所采用的主张与推论仍未经独立语义审查；保存、引用有效不代表解释正确。"]
     for item in resolved:

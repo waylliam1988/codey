@@ -30,11 +30,12 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         "without rereading the page. A receipt proves an attempt, not semantic coverage.",
         "Use only explicitly adopted [fN] references from successful saves or complete knowledge reads. "
         "Historical knowledge may answer the question without new acquisition. A candidate inference remains a hypothesis.",
-        "done.summary is the cited conclusion. report_sections contains evidence, counter paragraphs and "
-        "structured coverage. The frozen tool contract defines fields; the application generates headings and sources. "
+        "Submit only report_sections.coverage to done: one answer or specific gap per question, with findings and "
+        "actual investigations. Do not also write summary, evidence or counter paragraphs. "
+        "The application compiles the report from these same answers and saved findings. "
         "Source quality is generated from pinned metadata; retrieval time does not establish release version or publication date. "
-        "counter may be empty; do not invent limitations to fill a section. "
-        "In counter cite observed limits or describe actual investigation gaps. Never infer absence from an unperformed search. "
+        "Do not invent limitations to fill a section. Record actual investigation gaps in the question answer. "
+        "Never infer absence from an unperformed search. "
         "A selected excerpt omitting a topic does not prove that the whole source did not discuss or evaluate it. "
         "State the selected evidence's scope or the specific unanswered question instead.",
         "After rejection fix the specified field. Acquire new evidence only when needed; do not repeat unchanged reports or writes.",

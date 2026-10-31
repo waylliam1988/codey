@@ -11,7 +11,7 @@ import pytest
 
 from codey.research.finding_report import compile_finding_report
 from codey.research.semantic_review import parse_review, review_basis, review_issues, review_scope
-from tests.test_research_findings import URL, execute, report_args, setup
+from tests.test_research_findings import URL, answer_args, execute, report_args, setup
 
 TASK = "Explain writer concurrency. Distinguish historical version restrictions."
 
@@ -53,7 +53,7 @@ def assessment(basis, reject=False):
         historical = "historical version restrictions" in row["text"]
         requirements.append({"task_ref": row["task_ref"],
             "question_refs": ([] if reject else ["q2"]) if historical else ["q1"],
-            "report_paths": ([] if reject else ["report_sections.counter[0]"]) if historical else ["summary"],
+            "report_paths": ([] if reject else [basis["paragraphs"][-1]["path"]]) if historical else [basis["paragraphs"][0]["path"]],
             "state": ("missing" if reject else "acknowledged_gap") if historical else "addressed",
             "reason": "Version evidence is missing." if historical else "Explicit writer limit."})
     return {"requirements": requirements,
@@ -235,8 +235,8 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
                     name, args = "save_finding", {"claim": "The database allows multiple concurrent writers.",
                         "source_ref": "s1", "passage_ref": passage_ref(URL, hashlib.sha256(text.encode()).hexdigest()[:16], 0, len(text))}
                 else:
-                    name, args = "done", report_args("f1")
-                    args["summary"] = "The database allows multiple concurrent writers. [f1]"
+                    name, args = "done", answer_args("f1")
+                    args["report_sections"]["coverage"][0]["answer"] = "The database allows multiple concurrent writers."
             elif turn == 1:
                 name, args = "research_plan", {"questions": ["What limits writer concurrency?", "Which restrictions are historical?"]}
             elif turn == 2:
@@ -249,8 +249,7 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
                 name, args = "save_finding", {"claim": "Only one writer can write at a time.",
                     "source_ref": "s1", "passage_ref": passage_ref(URL, hashlib.sha256(text.encode()).hexdigest()[:16], 0, len(text))}
             else:
-                name, args = "done", report_args("f2")
-                args["report_sections"]["counter"] = ["Historical version restrictions remain an evidence gap."]
+                name, args = "done", answer_args("f2")
                 args["report_sections"]["coverage"].append({"question_ref": "q2", "state": "not_investigated",
                     "answer": "Historical version restrictions remain unknown.", "findings": [], "investigations": []})
             from codey.research.questions import QUESTION_BOUND_TOOLS

@@ -19,7 +19,7 @@ from codey.research.ledger import ResearchLedger
 from codey.research.questions import question_plan, validate_question_coverage
 from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE, openai_parameters_schema, validate_tool_args
 from codey.reviews.research_coverage import coverage_rows
-from tests.test_research_findings import URL, execute, report_args, setup
+from tests.test_research_findings import URL, answer_args, execute, report_args, setup
 
 
 def test_actual_report_example_is_accepted_by_schema_parser_and_coverage():
@@ -30,8 +30,8 @@ def test_actual_report_example_is_accepted_by_schema_parser_and_coverage():
     session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read"}), strict_research=True))
     snapshot = build_turn_snapshot(session)
     done = next(spec for spec in snapshot.frozen_specs if spec.name == "done")
-    assert done.json_examples == (STRUCTURED_REPORT_EXAMPLE,)
-    assert not normalize_turn(decode_text_turn(STRUCTURED_REPORT_EXAMPLE), snapshot=snapshot).protocol_error
+    assert set(json.loads(done.json_examples[0])["args"]) == {"report_sections"}
+    assert not normalize_turn(decode_text_turn(done.json_examples[0]), snapshot=snapshot).protocol_error
 
 
 def test_question_identity_is_append_only_and_plan_receipt_restores_both_projections(tmp_path):
@@ -81,7 +81,8 @@ def test_missing_evidence_is_a_research_completion_defect_not_a_json_repair():
     # The call is structurally valid. Resending the same prose is not the remedy.
     assert validate_tool_args("done", args).ok
     state = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read"}), strict_research=True))
-    plan = normalize_turn(decode_text_turn(json.dumps({"tool": "done", "args": args})),
+    plan = normalize_turn(decode_text_turn(json.dumps({"tool": "done", "args": {
+        "report_sections": {"coverage": args["report_sections"]["coverage"]}}})),
                           snapshot=build_turn_snapshot(state))
     assert not plan.protocol_error and plan.control is not None
     ledger = ResearchLedger()
@@ -260,10 +261,9 @@ def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_
                     name, args = "save_inference", {"statement": hypothesis, "premise_refs": ["f1"], "question_ref": "q1",
                         "limitations": "No direct workload test; this is only a candidate connection."}
                 else:
-                    name, args = "done", report_args("f1")
+                    name, args = "done", answer_args("f1")
                     if inference:
-                        args["summary"] = hypothesis + " [f2]"
-                        args["report_sections"]["evidence"].append(hypothesis + " [f2]")
+                        args["report_sections"]["coverage"][0].update(answer=hypothesis, findings=["f1", "f2"])
                 return json.dumps({"tool": name, "args": args})
 
         result = run_task_kernel(session, request=KernelRunRequest(
