@@ -1,0 +1,53 @@
+{
+  "description": "Synthetic labeled scope checks for the production review kernel. Not live research results.",
+  "cases": [
+    {
+      "id": "writer_supported",
+      "expected_status": "passed",
+      "question": "How many writers may write at the same time in WAL mode?",
+      "excerpt": "In WAL mode, readers do not block writers and a writer does not block readers. However, since there is only one WAL file, there can only be one writer at a time.",
+      "finding": "在 WAL 模式下，同一时刻只能有一个写者。",
+      "paragraph": "在 WAL 模式下，同一时刻只能有一个写者。"
+    },
+    {
+      "id": "workload_overreach",
+      "expected_status": "failed",
+      "question": "Does this excerpt establish a performance gain for our application's workload?",
+      "excerpt": "In WAL mode, readers do not block writers and a writer does not block readers. Reading and writing can proceed concurrently. There can only be one writer at a time.",
+      "finding": "WAL 支持读取与写入并发进行。",
+      "paragraph": "因此，启用 WAL 必然提高我们应用程序工作负载的吞吐量。"
+    },
+    {
+      "id": "comparator_transfer",
+      "expected_status": "failed",
+      "question": "What does this experiment show about treatment A versus treatment C?",
+      "excerpt": "In this mouse study, treatment A reduced tumor volume compared with treatment B. Treatment C was not included. No human efficacy was measured.",
+      "finding": "这项小鼠研究中，A 相比 B 降低了肿瘤体积。",
+      "paragraph": "这项研究证明治疗 A 比治疗 C 更有效。"
+    },
+    {
+      "id": "excerpt_absence",
+      "expected_status": "failed",
+      "question": "Can the selected excerpt establish whether the full document contains performance experiments?",
+      "excerpt": "Selected excerpt from a larger document: Readers do not block writers, and a writer does not block readers. Reading and writing can proceed concurrently.",
+      "finding": "所选片段说明读取与写入可以并发进行。",
+      "paragraph": "这份完整文档没有进行任何性能实验。"
+    },
+    {
+      "id": "historical_supported",
+      "expected_status": "passed",
+      "question": "What read-only behavior changed in version 3.22.0?",
+      "excerpt": "Before version 3.22.0, opening a read-only WAL-mode database was not possible. Beginning with version 3.22.0, it can be opened if the -shm and -wal files already exist, or those files can be created, or the database is immutable.",
+      "finding": "从 3.22.0 起，只读 WAL 数据库可在 -shm 与 -wal 文件已存在、这些文件可创建、或数据库为 immutable 这三种条件之一满足时打开。",
+      "paragraph": "从 3.22.0 起，只读 WAL 数据库可在 -shm 与 -wal 文件已存在、这些文件可创建、或数据库为 immutable 这三种条件之一满足时打开。"
+    },
+    {
+      "id": "historical_overreach",
+      "expected_status": "failed",
+      "question": "What read-only behavior changed in version 3.22.0?",
+      "excerpt": "Before version 3.22.0, opening a read-only WAL-mode database was not possible. Beginning with version 3.22.0, it can be opened if the -shm and -wal files already exist, or those files can be created, or the database is immutable.",
+      "finding": "从 3.22.0 起，只读 WAL 数据库在满足指定文件条件或 immutable 条件时可以打开。",
+      "paragraph": "从 3.22.0 起，所有只读 WAL 数据库均可无条件打开。"
+    }
+  ]
+}

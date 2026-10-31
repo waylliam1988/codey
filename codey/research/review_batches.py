@@ -126,3 +126,32 @@ def next_batch(session: Any, basis: dict[str, Any]) -> dict[str, Any] | None:
     if len(receipts) == len(batch_scopes(basis)):
         return None
     return batch_view(basis, len(receipts), [row["assessment"] for row in receipts])
+
+
+def review_spec_for_batch(spec: Any, batch: dict[str, Any]) -> Any:
+    """Narrow the same frozen tool schema used by prompts and execution."""
+    from dataclasses import replace
+
+    from codey.research.knowledge_schema import research_assessment_schema
+    from codey.toolchain.tool_spec import freeze_spec_parameters
+
+    schema = research_assessment_schema()
+    for kind in _KINDS:
+        rows = batch[kind]
+        array = schema["properties"][kind]
+        array.update(minItems=len(rows), maxItems=len(rows))
+        if not rows:
+            continue
+        properties = array["items"]["properties"]
+        key = "path" if kind == "paragraphs" else "task_ref" if kind == "requirements" else "ref"
+        properties[key] = {**properties[key], "enum": (
+            list(rows) if kind == "investigations" else [row[key] for row in rows])}
+        if kind in {"claims", "paragraphs"}:
+            lengths = [len(row["units"]) for row in rows]
+            units = properties["units"]
+            units.update(minItems=min(lengths), maxItems=max(lengths))
+            units["items"]["properties"]["unit"]["enum"] = sorted({
+                unit["unit"] for row in rows for unit in row["units"]})
+    return freeze_spec_parameters(replace(spec, parameters=(
+        ("basis_digest", {"type": "string", "enum": [batch["basis_digest"]]}),
+        ("assessment", schema))))

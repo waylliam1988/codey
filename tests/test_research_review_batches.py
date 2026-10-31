@@ -25,6 +25,36 @@ def large_basis():
     return basis
 
 
+@pytest.mark.parametrize("native", [False, True])
+def test_current_batch_schema_rejects_invented_refs_and_unselected_categories(native):
+    from jsonschema import Draft202012Validator
+
+    from codey.operations.kernel_protocol import build_turn_snapshot, decode_text_turn, normalize_turn
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
+    from codey.providers.text_tool_schema import text_tool_schema
+
+    root = large_basis()
+    session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.write"})),
+                          task_kind="research_review", research_review_basis=root)
+    snapshot = build_turn_snapshot(session, native=native)
+    tools = tools_from_specs(snapshot.model_specs)
+    validator = Draft202012Validator(text_tool_schema(tools))
+    raw = {"tool": "submit_research_review", "args": {"assessment": assessment(next_batch(session, root))}}
+    assert validator.is_valid(raw)
+    for mutate in (lambda body: body["claims"][0].update(ref="f999"),
+                   lambda body: body["claims"][0].update(reason="extra"),
+                   lambda body: body["requirements"].append({}),
+                   lambda body: body["claims"][0]["units"].clear()):
+        corrupt = copy.deepcopy(raw)
+        mutate(corrupt["args"]["assessment"])
+        assert not validator.is_valid(corrupt)
+        reply = (AssistantTurn(tool_calls=(ProviderToolCall("call", corrupt["tool"], corrupt["args"]),))
+                 if native else decode_text_turn(json.dumps(corrupt)))
+        assert normalize_turn(reply, snapshot=snapshot).protocol_error
+
+
 def test_batches_cover_each_unit_once_and_prior_claims_are_not_resubmitted():
     root = large_basis()
     pristine = copy.deepcopy(root)

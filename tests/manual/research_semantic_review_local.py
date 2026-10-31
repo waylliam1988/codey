@@ -12,6 +12,7 @@ import argparse
 import json
 import shutil
 import sqlite3
+import time
 from contextlib import closing
 from pathlib import Path
 from threading import Event
@@ -107,8 +108,7 @@ def calibration_report(store, tools, case):
     tools.ledger.questions = (case["question"],)
     ref = bind_version(tools.ledger, store.repository.read("calibration-claim"), question_ref="q1")
     paragraph = case["paragraph"] + " [" + ref + "]"
-    args = {"summary": paragraph, "report_sections": {"evidence": [paragraph],
-        "counter": [case["finding"] + " [" + ref + "]"],
+    args = {"report_sections": {
         "coverage": [{"question_ref": "q1", "state": "evidence_found", "answer": paragraph,
                       "findings": [ref], "investigations": []}]}}
     return compile_finding_report(args, tools.ledger, store, session_id=tools.session_id)
@@ -125,6 +125,8 @@ def main() -> None:
     parser.add_argument("--thinking", action="store_true", help="Enable local reasoning for a deployment comparison")
     parser.add_argument("--upstream", default="http://127.0.0.1:5001")
     parser.add_argument("--timeout", type=float, default=180)
+    parser.add_argument("--protocol", choices=("native", "json", "text"), default="native")
+    parser.add_argument("--seed", type=int, default=73)
     args = parser.parse_args()
     source, directory = args.source.resolve() if args.source else None, args.directory.resolve()
     directory.mkdir(parents=True, exist_ok=False)
@@ -167,15 +169,28 @@ def main() -> None:
             return
 
         class Observed(ApiProvider):
+            def __init__(self, *positional, **keywords):
+                super().__init__(*positional, **keywords)
+                configure = self.configure_request
+
+                def configured(payload):
+                    configure(payload)
+                    payload["seed"] = args.seed
+                    self.record({"event": "admitted_payload", "payload": payload})
+
+                self.configure_request = configured
+
             def record(self, row):
                 with (directory / "wire.jsonl").open("a", encoding="utf-8") as stream:
                     stream.write(canonical_json(row) + "\n")
 
             def _generate(self, messages, tools=None, **kwargs):
                 self.record({"event": "request", "messages": messages, "tools": [tool.name for tool in tools or ()]})
+                started = time.monotonic()
                 response = super()._generate(messages, tools, **kwargs)
-                self.record({"event": "response", "body": response})
-                record_native_generation(args.upstream, self.record)
+                self.record({"event": "response", "body": response, "seconds": time.monotonic() - started})
+                if args.protocol == "native":
+                    record_native_generation(args.upstream, self.record)
                 return response
 
         from unittest.mock import patch
@@ -184,17 +199,19 @@ def main() -> None:
             model = json.load(response)["data"][0]["id"]
         with patch.object(local_connection, "ApiProvider", Observed):
             provider = local_connection.connect_local(config=LocalProviderConfig(
-                base_url=args.upstream + "/v1", model=model, native_tools_mode="on", thinking_enabled=args.thinking))
+                base_url=args.upstream + "/v1", model=model,
+                native_tools_mode={"native": "on", "json": "json", "text": "off"}[args.protocol],
+                thinking_enabled=args.thinking))
         provider.timeout = args.timeout
         write("deployment.json", {"model": model, "context_budget": vars(provider.context_budget),
-                                  "thinking": args.thinking, "native": True})
+                                  "thinking": args.thinking, "protocol": args.protocol, "seed": args.seed})
         durable = DurableSession(SQLiteDurableStore(directory / "state.sqlite"))
         durable.admit_input(conversation_id=session_id, request_id="archive-import", task_id=run_id,
                             text=result.question, provider_snapshot={"provider_id": "local"})
         durable.claim_task(run_id)
         durable.start_task(run_id, state=dict(durable.task(run_id).state))
         mutations = RuntimeMutationLine(durable=durable)
-        mutations.accept_operation(session_id=session_id, run_id=run_id, provider_id="local", turn_budget=8,
+        mutations.accept_operation(session_id=session_id, run_id=run_id, provider_id="local", turn_budget=80,
                                     max_repair_rounds=0, task_kind="research")
         outputs = ManagedOutputStore(directory)
         history = ResearchContinuation(mutations, outputs, session_id=session_id, run_id=run_id)
