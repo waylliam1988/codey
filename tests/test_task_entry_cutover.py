@@ -257,7 +257,7 @@ def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
         "Research rules", "research_plan", "knowledge_read", "report_sections.coverage",
         "do not repeat unchanged reports or writes", "question_ref=qN",
         "the application generates the gap notice and does not publish your answer text",
-        "Never infer absence from an unperformed search", "After rejection fix the specified field",
+        "Never infer absence from an unperformed search", "After rejection edit the specified field in existing rows",
         "Do not also write summary, evidence or counter paragraphs",
     ):
         assert required in prompt

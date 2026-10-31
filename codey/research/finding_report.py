@@ -173,9 +173,11 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
     validate_question_coverage(list(proposal.coverage), ledger)
     proposal = bind_gap_investigations(proposal, ledger.investigations)
     if task:
-        from codey.research.task_requirements import validate_task_accounting
+        from codey.research.task_requirements import validate_report_requirements, validate_task_accounting
 
         validate_task_accounting(list(proposal.coverage), task)
+        if proposal.answers_only:
+            validate_report_requirements(proposal.conclusion.text, task)
     for row in proposal.paragraphs:
         for label in row.refs:
             if label not in ledger.references:

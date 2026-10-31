@@ -184,7 +184,7 @@ def test_report_question_choices_follow_registered_receipts_and_freeze_per_turn(
     assert not validator.is_valid(raw)
     turn = AssistantTurn(tool_calls=(ProviderToolCall("done", "done", raw["args"]),))
     rejected = normalize_turn(turn, snapshot=snapshot)
-    assert rejected.control is None and "question_ref" in rejected.protocol_error
+    assert rejected.control is None and "coverage" in rejected.protocol_error
 
     # Only a newly registered question may change the next frozen contract.
     session.research_questions += ("A newly registered substantive question?",)
@@ -192,6 +192,46 @@ def test_report_question_choices_follow_registered_receipts_and_freeze_per_turn(
     current = build_turn_snapshot(session, native=native)
     assert Draft202012Validator(text_tool_schema(tools_from_specs(current.model_specs))).is_valid(raw)
     assert normalize_turn(turn, snapshot=current).control is not None
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_format_requirement_needs_no_qn_or_task_ref_and_duplicate_repairs_are_rejected(native):
+    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
+
+    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research",
+                          task_text="Explain concurrency. 给出约800字的中文研究结论。")
+    session.research_questions = ("What is the limit?", "What is still unknown?")
+    snapshot = build_turn_snapshot(session, native=native)
+    validator = Draft202012Validator(text_tool_schema(tools_from_specs(snapshot.model_specs)))
+    rows = [{"question_ref": f"q{n}", "state": "not_investigated", "answer": "未知。",
+             "findings": [], "investigations": [], "task_refs": ["r1"] if n == 1 else []} for n in (1, 2)]
+    raw = {"tool": "done", "args": {"report_sections": {"coverage": rows}}}
+    assert validator.is_valid(raw)
+    rows[0]["task_refs"] = ["r2"]
+    assert not validator.is_valid(raw)
+    rows[0]["task_refs"] = ["r1"]
+    rows.append({**rows[0], "task_refs": ["r1"]})
+    assert not validator.is_valid(raw)
+    result = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("done", "done", raw["args"]),)), snapshot=snapshot)
+    assert result.control is None
+
+
+def test_format_only_task_has_valid_empty_task_refs_schema():
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.providers.base import tools_from_specs
+
+    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research",
+                          task_text="请用中文回答。")
+    schema = text_tool_schema(tools_from_specs(build_turn_snapshot(session).model_specs))
+    Draft202012Validator.check_schema(schema)
+    assert Draft202012Validator(schema).is_valid({"tool": "done", "args": {"report_sections": {"coverage": [{
+        "question_ref": "q1", "state": "not_investigated", "answer": "未知。", "findings": [],
+        "investigations": [], "task_refs": []}]}}})
 
 
 def test_explicit_schema_reaches_payload_but_does_not_leak_to_next_send(monkeypatch):

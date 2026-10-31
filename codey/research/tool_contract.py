@@ -291,12 +291,13 @@ def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "", questions:
         if questions:
             coverage["items"]["properties"]["question_ref"]["enum"] = [
                 f"q{index}" for index in range(1, len(questions) + 1)]
+            coverage.update(minItems=len(questions), maxItems=len(questions))
         if task:
-            from codey.research.task_requirements import task_requirements
+            from codey.research.task_requirements import coverage_requirements
 
-            refs = [row["task_ref"] for row in task_requirements(task)]
+            refs = [row["task_ref"] for row in coverage_requirements(task)]
             coverage["items"]["properties"]["task_refs"].update(
-                items={"type": "string", "enum": refs}, maxItems=len(refs))
+                items={"type": "string", **({"enum": refs} if refs else {})}, maxItems=len(refs))
             coverage["items"]["required"].append("task_refs")
         schema = object_schema({"report_sections": object_schema({"coverage": coverage}, "coverage")}, "report_sections")
         example = {"tool": "done", "args": {"report_sections": {
@@ -304,6 +305,11 @@ def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "", questions:
         if task:
             example["args"]["report_sections"]["coverage"] = [
                 {**row, "task_refs": refs} for row in example["args"]["report_sections"]["coverage"]]
+        if questions:
+            example["args"]["report_sections"]["coverage"] += [
+                {"question_ref": f"q{index}", "state": "not_investigated", "answer": "Not investigated yet.",
+                 "findings": [], "investigations": [], **({"task_refs": []} if task else {})}
+                for index in range(2, len(questions) + 1)]
         description = ("Submit one answer per registered question in report_sections.coverage: "
                        "{question_ref,state,answer,findings,investigations}. Use raw finding ids in findings; "
                        "inline citations in answer are optional and must agree. Keep answers no stronger than findings. "
@@ -316,8 +322,10 @@ def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "", questions:
                        "The application generates the conclusion, "
                        "evidence, limitations, source table and coverage from these same answers and exact findings. "
                        "Include task_refs selecting the original rN task units answered or explicitly left unresolved. "
-                       "Account for every original rN across the answers; this records your claimed coverage, not verification. "
-                       "Attach context, method and format task_refs to existing answers; do not invent another question id. "
+                       "Account for every coverage_task_refs rN across the answers; this records claimed coverage, not verification. "
+                       "The application checks recognized standalone report format requirements on the conclusion; "
+                       "do not register them as questions or attach their rN ids. "
+                       "To repair task_refs, edit existing rows; never append a duplicate question row. "
                        "Do not supply summary, evidence, counter or source_quality prose.")
     else:
         raise ValueError("unknown done purpose")

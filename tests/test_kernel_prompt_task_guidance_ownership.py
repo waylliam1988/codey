@@ -25,8 +25,8 @@ def test_full_research_guidance_reviewed_prompt_digest():
     policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
                         strict_research=True)
     assert hashlib.sha256(_guidance(policy).encode()).hexdigest() == (
-        # Reviewed: the application compiles gap notices; supported partial answers retain findings.
-        "150f4eb85729e6f6395043c58558d07c7ca34ce469dce247e06abe4b38595a19"
+        # Reviewed: format checks stay in the report; count limits need direct evidence, not coexistence.
+        "d8a8eb1efee7eda3860d0e54897f87dd3637fd194cab42fea62a1e20e36dae51"
     )
 
 

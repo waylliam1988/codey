@@ -29,6 +29,8 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         "Saving or valid citations do not certify interpretation. Old answers, Ghost affinity and graph proximity are not evidence.",
         "Register 1..8 questions with research_plan. Account for every qN exactly once, with a supported answer or a specific gap. "
         "Finish one concrete question using a few directly relevant passages before moving to the next. "
+        "Answer the exact distinction asked: coexistence/nonblocking operations do not establish a maximum count. "
+        "For a count limit, search and read its direct limiting statement, not just a general concurrency overview. "
         "Keep the source's actor, action, conditions and comparator together; split unrelated claims. "
         "Pass question_ref=qN on every investigation, save_finding and save_inference. Coverage may use only aN and fN "
         "bound to that question. Reuse already read passages across questions; save_finding records the new adoption "
@@ -36,8 +38,10 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         "Use only explicitly adopted [fN] references from successful saves or complete knowledge reads. "
         "Historical knowledge may answer the question without new acquisition. A candidate inference remains a hypothesis.",
         "Submit only report_sections.coverage to done: one answer or specific gap per question, with findings and "
-        "actual investigations and task_refs for the original rN text units it addresses. Account for every original rN, "
-        "including background/method/format constraints, with an answer or specific gap. "
+        "actual investigations and task_refs for the coverage_task_refs rN units it addresses. Account for every such rN, "
+        "including background and method obligations, with an answer or specific gap. "
+        "Standalone recognized report format requirements are checked by the application on the conclusion; "
+        "follow them without attaching their rN ids or registering questions for them. "
         "These constraints and optional leads belong with existing answers; they do not need separate questions. "
         "This is explicit accounting, not independent verification. Do not also write summary, evidence or counter paragraphs. "
         "The application compiles the report from these same answers and saved findings. "
@@ -48,7 +52,8 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         "Never infer absence from an unperformed search. "
         "A selected excerpt omitting a topic does not prove that the whole source did not discuss or evaluate it. "
         "State the selected evidence's scope or the specific unanswered question instead.",
-        "After rejection fix the specified field. Acquire new evidence only when needed; do not repeat unchanged reports or writes.",
+        "After rejection edit the specified field in existing rows; never append a duplicate qN to repair task_refs. "
+        "Acquire new evidence only when needed; do not repeat unchanged reports or writes.",
     ]
     if policy.allows("knowledge.write"):
         rules.append("save_finding saves one scoped finding from its exact passage_ref; the passage determines its source. "

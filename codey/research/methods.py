@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from codey.knowledge.model import canonical_json
-from codey.research.task_requirements import task_requirements
+from codey.research.task_requirements import task_requirement_context
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ def research_method_guidance(question: str, *, evidence_only: bool = False, find
     selected = [method for method in METHODS if any(term in text for term in method.terms)]
     lines = ["Relevant domain checks:"]
     if finding_report:
-        lines.append("Frozen original task text units (not semantic decomposition): " + canonical_json(task_requirements(question)))
+        lines.append("Frozen original task requirements (not semantic decomposition): " + canonical_json(task_requirement_context(question)))
         lines.append("Plan and answer every obligation in these units, including version comparisons and workload "
                      "unknowns. Register a question and explicit coverage gap for any research obligation you cannot answer.")
     if not evidence_only and not finding_report:

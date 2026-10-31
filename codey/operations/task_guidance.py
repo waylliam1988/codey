@@ -33,10 +33,10 @@ def task_working_context(session: "TaskSession", research_ledger: "ResearchLedge
         parts.append(render_research_observations(session, research_ledger, knowledge_store, session_id=knowledge_session_id))
         if session.policy.strict_research and session.task_text.strip():
             from codey.knowledge.model import canonical_json
-            from codey.research.task_requirements import task_requirements
+            from codey.research.task_requirements import task_requirement_context
 
-            parts.append("Original task units for done.coverage.task_refs (text accounting, not semantic verification):\n"
-                         + canonical_json(task_requirements(session.task_text)))
+            parts.append("Original task requirements (text accounting, not semantic verification):\n"
+                         + canonical_json(task_requirement_context(session.task_text)))
     return "\n\n".join(parts)
 
 

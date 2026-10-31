@@ -50,7 +50,7 @@ def validate_question_coverage(raw: object, ledger: ResearchLedger) -> list[dict
         raise ValueError("report_sections.coverage must account for every registered question exactly once. Missing: "
                          + ", ".join(sorted(expected - observed)) + "; unknown: " + ", ".join(sorted(observed - expected))
                          + ". Use exactly these registered question ids: " + ", ".join(sorted(expected))
-                         + ". Attach context, method and format task_refs to existing answers; "
+                         + ". Attach coverage task_refs to existing answers; "
                          "do not invent a question id in done.")
     missing = [row["question_ref"] for row in rows
                if row["state"] in {"evidence_found", "partial"} and not row["findings"]]
