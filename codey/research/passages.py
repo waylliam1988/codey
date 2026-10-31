@@ -33,9 +33,31 @@ def passage_ref(url: str, text_hash: str, start: int, end: int) -> str:
     return "p" + digest[:12]
 
 
+_SENTENCE_END = re.compile(r'''[.!?。！？]["'’”）)\]】]*[ \t\r\n]+''')
+
+
+def preceding_context_offset(text: str, offset: int) -> int:
+    """A search locator opens the preceding paragraph/sentence, within 600 chars."""
+    lower = max(0, offset - 600)
+    prefix = text[lower:offset]
+    paragraphs = list(re.finditer(r"\n[ \t\r]*\n", prefix))
+    if paragraphs:
+        return lower + paragraphs[-1].end()
+    sentences = list(_SENTENCE_END.finditer(prefix))
+    if sentences:
+        return lower + sentences[-1].end()
+    return 0 if lower == 0 else offset
+
+
 def describe_window(url: str, text_hash: str, text: str, offset: int, limit: int) -> list[dict[str, Any]]:
     """Split a visible window at paragraph boundaries, preserving exact substrings."""
     end = min(len(text), offset + limit)
+    if end < len(text):
+        # Do not offer a final, clipped clause as a complete selectable passage
+        # when a complete sentence fits. The caller resumes at the actual end.
+        boundaries = list(_SENTENCE_END.finditer(text, offset, end))
+        if boundaries:
+            end = boundaries[-1].end()
     rows = []
     start = min(offset, len(text))
     while start < end:

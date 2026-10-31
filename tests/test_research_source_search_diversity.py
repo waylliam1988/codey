@@ -14,14 +14,21 @@ def test_common_query_words_and_repeated_toc_hits_do_not_hide_body():
     assert any("active reader" in hit.snippet for hit in hits)
     assert any("exclusive connection" in hit.snippet for hit in hits)
     assert hits[0].offset > len(navigation)
-    assert all(abs(a.offset - b.offset) >= 160 for i, a in enumerate(hits) for b in hits[i + 1:])
-    assert all(text[hit.offset:].lower().startswith(("checkpoint", "sqlite_busy")) for hit in hits)
+    assert len({hit.offset for hit in hits}) == len(hits)
+    assert all(any(token in text[hit.offset:hit.offset + 640].lower() for token in ("checkpoint", "sqlite_busy"))
+               for hit in hits)
 
 
 def test_labels_remain_discoverable_when_there_is_no_body_match():
     text = "Table Of Contents\n9. Queries Return SQLITE_BUSY\n\n## Overview\nUnrelated body."
     assert any("SQLITE_BUSY" in hit.snippet for hit in search_text(text, "SQLITE_BUSY"))
     assert query_tokens("AND") == ("and",)
+
+
+def test_multiple_matches_that_open_the_same_paragraph_are_not_repeated():
+    text = "\n\n".join("Target " + "words " * 40 + "target " + "words " * 30 for _ in range(6))
+    hits = search_text(text, "target", 6)
+    assert len({hit.offset for hit in hits}) == len(hits) == 6
 
 
 def test_pdf_pages_with_identical_offsets_remain_separate_hits():

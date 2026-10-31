@@ -179,11 +179,12 @@ class ResearchTools:
             return ResearchToolOutput("ERROR: the requested source window contains no readable text; no passage was read.",
                                       ok=False)
         window = "\n".join(f"passage_ref={row['ref']}\n{document.text[row['start']:row['end']]}" for row in passages)
-        more = offset + limit < len(document.text)
+        next_offset = passages[-1]["end"]
+        more = next_offset < len(document.text)
         body = render_opened_source(
             document,
             window,
-            more_offset=(offset + limit) if more else None,
+            more_offset=next_offset if more else None,
             read_window=(passages[0]["start"], passages[-1]["end"]),
         )
         if len(body) > OPEN_MAX_LIMIT:

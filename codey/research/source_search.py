@@ -6,6 +6,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from codey.research.passages import preceding_context_offset
 from codey.utils.refs import coerce_int
 
 SOURCE_SEARCH_DEFAULT_LIMIT = 6
@@ -47,7 +48,7 @@ def search_text(text: str, query: str, limit: int = SOURCE_SEARCH_DEFAULT_LIMIT)
         score = _score(snippet, tokens)
         if _label_match(text, offset):
             score -= len(tokens) + 1
-        hits.append(SourceSearchHit(offset=offset, snippet=snippet, score=score))
+        hits.append(SourceSearchHit(offset=preceding_context_offset(text, offset), snippet=snippet, score=score))
     return _rank_hits(hits, bounded_limit(limit), tokens)
 
 
@@ -68,7 +69,7 @@ def search_pages(
         for offset in offsets:
             snippet = snippet_at(text, offset)
             hits.append(SourceSearchHit(
-                offset=offset,
+                offset=preceding_context_offset(text, offset),
                 snippet=snippet,
                 page=page,
                 score=_score(snippet, tokens),

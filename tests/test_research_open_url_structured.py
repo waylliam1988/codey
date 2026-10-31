@@ -123,6 +123,35 @@ def test_research_tool_output_is_window_plus_receipt_only() -> None:
 
 
 @pytest.mark.usefixtures("public_source_dns")
+def test_search_read_keeps_leading_condition_and_resumes_before_clipped_tail():
+    from codey.research.passages import restore_passages
+    from codey.research.ledger import ResearchLedger
+    from codey.research.source_search import search_text
+
+    prefix = "Background material. " * 60 + "\n\n"
+    statement = "Only after the active reader finishes can the rare_operation resume.\n\n"
+    middle = "Another complete sentence. " * 14
+    tail = "This final condition is long enough to exceed the selected reading window. " * 8
+    full = prefix + statement + middle + tail
+    url = "https://example.com/conditions"
+    hit = search_text(full, "rare_operation")[0]
+    assert hit.offset == len(prefix)
+    tools = ResearchTools(_LongSearch(full, url), None, None)
+    opened = tools.open_url(url, offset=hit.offset, limit=500)
+    assert opened.ok and statement.strip() in opened.model_text
+    end = opened.read_passages[-1]["end"]
+    assert end < hit.offset + 500
+    assert full[hit.offset:end].rstrip().endswith(".")
+    assert f"open with offset={end}" in opened.model_text
+    restored = ResearchLedger()
+    restore_passages(restored, opened.read_observation, opened.read_passages)
+    assert all(p.excerpt == full[p.start:p.end] and p.end <= end for p in restored.read_passages.values())
+    continued = tools.open_url(url, offset=end, limit=500)
+    assert continued.read_passages[0]["start"] == end
+    assert full[end:continued.read_passages[-1]["end"]].strip() in continued.model_text
+
+
+@pytest.mark.usefixtures("public_source_dns")
 def test_source_eof_is_explicit_and_out_of_range_reads_do_not_commit_observations(tmp_path):
     from codey.runtime.core.models import ToolCall
     from tests.test_research_findings import URL, execute, setup

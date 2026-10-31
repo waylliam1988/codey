@@ -401,3 +401,16 @@ HTML 继续去除相邻重复命中；PDF 仍每页至多一条，但在选择�
 验证：页内检索、gateway 与原回执恢复回归 21 passed，Ruff/Mypy 通过。
 对本轮已保存的完整原文运行生产 search_text，同一查询的第二条已包含 SQLITE_BUSY 章节，
 重放结果保存在 `source-search-coverage-replay.json`；这是只读检索验证，不计端到端成功。
+
+## 31. 搜索命中从完整上下文开始，阅读窗口不留下可避免的残句
+
+实机命中直接从 `checkpoints frequently` 开始，丢失前面的读性能条件；另一个窗口尾部只剩
+`There is write permission ... -shm a`，模型却将该残句保存为版本结论的证据。
+新的 source_search 定位在命中前 600 字符内回到段首或句首，显式 open_url 偏移仍保持原义。
+当窗口中已有完整句子时，尾端停在最后完整句边界，下一次读取使用真实结束偏移，
+不跳过被收回的残句。没有句界的长文本仍有界显示；不凭空补全源文。
+passage 身份仍由同一来源快照和真实起止范围生成，恢复仍只读原回执。
+
+验证：搜索、读取、引用和回执恢复回归 33 passed，Ruff/Mypy 通过。
+失败原文的 offset=11938 命中现在回到包含 read performance 条件的句首；尾部不再给截断的
+权限条件分配可选 passage。相同段落的多个词命中在实际阅读偏移上去重。
