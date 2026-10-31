@@ -53,7 +53,7 @@ def test_canonical_split_preserves_valid_ledger() -> None:
         [{
             "claim": "PLR B4 claim.",
             "source_url": url,
-            "excerpt": "PLR B4 verified fact text.",
+            "excerpt": "PLR B4 verified fact text 2026.",
             "stance": "supports",
         }],
         fallback_sources=[url],
@@ -170,6 +170,8 @@ def test_knowledge_write_split_preserves_save() -> None:
                 "title": "PLR B4 Write Fact",
                 "body": "PLR B4 write verified fact.",
                 "sources": [url],
+                "evidence": [{"claim": "PLR B4 write verified fact.", "source_url": url,
+                              "excerpt": "PLR B4 write verified fact.", "stance": "supports"}],
             }).model_text
             assert out.startswith("saved fact note id=")
         finally:

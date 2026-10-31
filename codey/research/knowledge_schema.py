@@ -39,7 +39,7 @@ def mutation_schema() -> dict[str, Any]:
                                "relation": text}, "target", "revision", "relation")
     value = object_schema({"id": text, "kind": {"type": "string", "enum": sorted(KINDS)},
         "content": {"type": "string", "minLength": 1}, "origin": {"type": "string", "enum": sorted(ORIGINS)},
-        "title": text, "status": {"type": "string", "enum": sorted(STATUSES)},
+        "title": text_schema(0), "status": {"type": "string", "enum": sorted(STATUSES)},
         "scope": {"type": "string", "enum": sorted(SCOPES)}, "scope_id": {"type": "string"},
         "aliases": array_schema(text), "conditions": condition_map_schema(), "provenance": {"type": "object"},
         "references": array_schema(reference)}, "id", "kind", "content", "origin")

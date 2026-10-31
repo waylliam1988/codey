@@ -9,7 +9,8 @@ from tests.test_research_findings import report_args
 
 def test_manual_knowledge_refs_are_rejected_by_the_frozen_report_contract():
     session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research")
-    args = {**report_args("f1"), "knowledge_refs": [{"id": "note-id", "revision": 99}]}
+    args = {"report_sections": {"coverage": report_args("f1")["report_sections"]["coverage"]},
+            "knowledge_refs": [{"id": "note-id", "revision": 99}]}
     plan = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("done", "done", args),)),
                           snapshot=build_turn_snapshot(session, native=True))
     assert plan.control is None and "knowledge_refs" in plan.protocol_error

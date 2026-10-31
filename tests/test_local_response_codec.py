@@ -87,8 +87,9 @@ def test_incomplete_done_frame_gets_specific_repair_without_executing():
     assert rejected.protocol_tool_name == "done"
     feedback = _repair_prompt(rejected, snapshot=snapshot, native=False)
     assert "missing the closing" in feedback
-    assert "summary must be a top-level argument" in feedback
-    assert '"coverage":["search scope"]' in feedback
+    assert '"tool":"done","args":{"summary":"complete response in the requested format"}' in feedback
+    assert "Do not add a structured research report" in feedback
+    assert "bare JSON" in feedback
 
 
 def test_local_gemma_invalid_literal_cannot_complete_as_plain_text() -> None:
