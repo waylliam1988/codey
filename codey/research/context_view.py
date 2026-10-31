@@ -57,9 +57,9 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
         raise ValueError("research context budget must be at least 4000 characters")
     questions = tuple({"question_ref": f"q{index}", "question": text,
         "finding_refs": [ref for ref, binding in ledger.references.items() if binding.question_ref == f"q{index}"]
-                        if ledger is not None else [],
+                        if ledger is not None else list[str](),
         "investigation_refs": [ref for ref, row in ledger.investigations.items() if row.get("question_ref") == f"q{index}"]
-                              if ledger is not None else []}
+                              if ledger is not None else list[str]()}
         for index, text in enumerate(ledger.questions if ledger is not None else session.research_questions, 1))
     recent = tuple({"tool": result.call.name, "ok": result.ok,
         **({"error": result.model_text[:400]} if not result.ok else {})}
