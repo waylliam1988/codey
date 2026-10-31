@@ -274,6 +274,8 @@ def review_prompt(basis: dict[str, Any]) -> str:
             "For each unit ask: could every excerpt be true while this sentence is false? If yes, it is unsupported. "
             "Support requires every clause, subject, comparator, condition and degree of certainty. "
             "A plausible explanation or a correct adjacent clause is insufficient. Reported conditions need support too. "
+            "For kind=inference, judge the stated premises and explicit uncertainty/limitations; do not demand "
+            "direct observation of an outcome that the inference clearly presents only as a hypothesis. "
             "For supported, quote contiguous ORIGINAL words and punctuation, using the 1-based index of the "
             "evidence array (not sentence or quote number). Layout whitespace may differ. "
             "Do not quote the finding itself. Use unsupported or uncertain with quotes=[] if evidence is absent. "

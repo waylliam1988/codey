@@ -67,6 +67,8 @@ TOOL_CONTRACTS = {
         }, 'questions'),
         example='{"tool":"research_plan","args":{"questions":["What must be answered?","What limits applicability?"]}}',
         description="Register 1..8 questions covering the user request before investigation. Returns stable q1, q2, etc. "
+                    "Register distinct factual questions, not workflow steps such as finding sources, quoting evidence "
+                    "or writing a report. A single factual question normally needs just one registered question. "
                     "Keep questions concise. Later calls may append questions, never replace or reorder them. "
                     "The final report accounts for every question with evidence or a specific gap; planning is not completion.",
     ),

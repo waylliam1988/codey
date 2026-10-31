@@ -238,3 +238,12 @@ Gemma 12B、JSON、thinking=false、seed=73。`calibration-separated-workload_ov
 
 验证：带精确 query 约束的真实 driver 修复/重入测试通过，整个 run 只搜索一次且保留原搜索 effect ID。
 另有参数、父子调用和答案观察要求选集 53 passed；Ruff、改动文件 Mypy 通过。
+
+## 19. 研究提示限定实质问题，保留推论的显式不确定性
+
+research_plan 明确注册不同的事实问题，搜索/引用/撰写作为执行要求，不单独膨胀成重叠问题；
+一个事实问题通常只需一个 qN。这是规划指导，不用关键词替模型裁剪问题。
+精简后的 claim 提示同时保留原有 inference 规则：评审其前提、条件与显式不确定性，
+不把明确标注为假设的推论误当成已观察事实，也不要求它伪造直接实验。
+
+验证：scope/提示选集 44 passed，Ruff 通过。下一轮开始完整真实网络研究，源码冻结。
