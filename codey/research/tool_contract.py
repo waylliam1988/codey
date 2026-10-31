@@ -65,10 +65,12 @@ TOOL_CONTRACTS = {
         name="research_plan", input_schema=object_schema({
             'questions': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 8},
         }, 'questions'),
-        example='{"tool":"research_plan","args":{"questions":["What must be answered?","What limits applicability?"]}}',
+        example='{"tool":"research_plan","args":{"questions":["What is the answer and its evidence scope?"]}}',
         description="Register 1..8 questions covering the user request before investigation. Returns stable q1, q2, etc. "
                     "Register distinct factual questions, not workflow steps such as finding sources, quoting evidence "
-                    "or writing a report. A single factual question normally needs just one registered question. "
+                    "or writing a report. A single factual question normally needs just one registered question, "
+                    "including its evidence and applicability conditions. Do not restate it as another question about "
+                    "what the documentation says. Split only independently answerable topics requested by the user. "
                     "Keep questions concise. Later calls may append questions, never replace or reorder them. "
                     "The final report accounts for every question with evidence or a specific gap; planning is not completion.",
     ),
