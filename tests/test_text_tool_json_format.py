@@ -107,6 +107,38 @@ def test_frozen_schema_leaves_argument_order_and_validation_to_kernel():
         text_tool_schema([])
 
 
+def test_multiple_tools_bind_their_own_required_arguments_and_bounds():
+    from codey.providers.base import tools_from_specs
+    from codey.toolchain.tool_spec import spec_for_tool
+
+    tools = tools_from_specs(tuple(spec_for_tool(name) for name in ("source_search", "open_hit", "research_plan")))
+    validator = Draft202012Validator(text_tool_schema(tools))
+    assert validator.is_valid({"tool": "source_search", "args": {"url": "https://sqlite.org/wal.html", "query": "writer"}})
+    assert validator.is_valid({"tool": "open_hit", "args": {"hit_id": "h1"}})
+    assert validator.is_valid({"tool": "research_plan", "args": {"questions": ["Writer limit?"]}})
+    assert not validator.is_valid({"tool": "source_search", "args": {"query": "writer"}})
+    assert not validator.is_valid({"tool": "open_hit", "args": {"url": "https://sqlite.org/wal.html", "query": "writer"}})
+    assert not validator.is_valid({"tool": "research_plan", "args": {"questions": [str(n) for n in range(9)]}})
+
+
+def test_multiple_strict_research_tools_require_done_coverage_state():
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.providers.base import tools_from_specs
+
+    session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"}), strict_research=True),
+                          task_kind="research")
+    schema = text_tool_schema(tools_from_specs(build_turn_snapshot(session, native=False).model_specs))
+    validator = Draft202012Validator(schema)
+    coverage = {"question_ref": "q1", "state": "not_investigated", "answer": "Evidence remains unknown.",
+                "findings": [], "investigations": []}
+    raw = {"tool": "done", "args": {"report_sections": {"coverage": [coverage]}}}
+    assert validator.is_valid(raw)
+    del coverage["state"]
+    assert not validator.is_valid(raw)
+
+
 def test_explicit_schema_reaches_payload_but_does_not_leak_to_next_send(monkeypatch):
     payloads = []
 

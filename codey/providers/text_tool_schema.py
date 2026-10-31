@@ -1,9 +1,8 @@
 """Constrain compatibility output using the task's already frozen tool contract.
 
-The grammar assists tool selection; the kernel still validates arguments and
-authorizes every proposal. No native declarations or mutable registry enter
-this path. Argument objects stay unordered: grammar samplers commonly reorder
-required and optional properties, which can prevent a later evidence field.
+The grammar binds each selected tool to its frozen argument schema; the kernel
+still validates and authorizes every proposal. No mutable registry enters this
+path and ordinary prose requests are unaffected.
 """
 from __future__ import annotations
 
@@ -29,13 +28,12 @@ def _sampling_schema(value: Any) -> Any:
 def text_tool_schema(tools: list[ProviderToolDefinition]) -> dict[str, Any]:
     if not tools:
         raise ValueError("a constrained tool request requires declared tools")
-    # A single tool has no selection ambiguity. Its complete frozen contract
-    # also constrains arguments, notably the bounded research assessment.
-    args = _sampling_schema(thaw_schema_value(tools[0].parameters)) if len(tools) == 1 else {"type": "object"}
     # Separate allOf components preserve tool-before-args order even in servers
     # that sort object keys before compiling JSON Schema into a grammar.
-    return {"allOf": [
-        {"type": "object", "properties": {"tool": {"type": "string", "enum": [tool.name for tool in tools]}},
+    variants = [{"allOf": [
+        {"type": "object", "properties": {"tool": {"type": "string", "enum": [tool.name]}},
          "required": ["tool"]},
-        {"type": "object", "properties": {"args": args}, "required": ["args"]},
-    ], "unevaluatedProperties": False}
+        {"type": "object", "properties": {"args": _sampling_schema(thaw_schema_value(tool.parameters))},
+         "required": ["args"]},
+    ], "unevaluatedProperties": False} for tool in tools]
+    return variants[0] if len(variants) == 1 else {"oneOf": variants}

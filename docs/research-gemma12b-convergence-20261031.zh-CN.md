@@ -364,3 +364,23 @@ finding 判断与答案判断采用同样的证据边界指导：reason 先指�
 通过生产 connect_local 只读连接检查确认仍选到原 Gemma 4 12B，native_tools=false、text_tool_format=json_schema。
 这不再仅限测试 harness 配置。已有冻结对话保留其原协议；重新启动 Codey 后新建任务使用新代码/新配置。
 KoboldCpp 原生解析器本身没有被修改，解决方式仍是同一 Codey API/kernel 中已存在的 JSON 协议。
+
+## 实机 12～13 与 29. 多工具 JSON 也绑定完整参数契约
+
+`wal-full-json-01` 在第一个请求超时，服务诊断仍显示上一轮结果；py-spy 确认请求线程阻塞在
+`utfprint -> print`（服务输出输入日志，尚未 transform/generate）。这是外部服务日志输出阻塞，
+不是本轮工具解析或模型推理失败。栈已保存；用户随后主动重启服务，模型不变。
+
+重启后的 `wal-full-json-02` 已正常搜索/打开官方 WAL 页，但第 9～13 个响应连续漏掉 source_search.url，
+五次相同纠错后 protocol 停止（13 请求、73.1 秒）。原多工具采样 schema 只限制 tool，args 无字段约束；
+这个缺口使模型可一直提交明确缺字段的 JSON。
+
+text_tool_schema 现在将每个可见工具与其同一冻结参数 schema 绑定为 oneOf 分支，保留 tool-before-args 顺序。
+单工具评审格式不变；多工具也约束必填字段、状态 enum、数组边界；原字符串长度仍由 kernel 校验。
+没有引入独立工具清单、第二个解析器或重试执行入口。普通 prose 请求不变。
+
+验证：JSON/provider 测试 10 passed，含 source_search 缺 URL、工具/参数错配、规划超过 8 项、
+strict done 缺 coverage.state 全部被采样契约拒绝。服务实际编译规划 4 工具、采集 11 工具 schema 成功。
+使用第 13 个失败请求的原始 prompt、同 seed=73，仅替换采样 schema 的诊断重放，1.64 秒返回
+带原官方 URL 的正确 source_search 参数；未执行工具，不计端到端成功。Ruff/Mypy 通过。
+此前完整 API payload、原搜索要求复用及四个真实恢复边界选集 7 passed。
