@@ -336,6 +336,9 @@ class KernelContext:
                 context if context and context not in prompt else "", observations) if part)
             if self.session.task_kind == "research_review":
                 options["tool_call_history_groups"] = 2
+                options["output_token_limit"] = 2048
+            elif self.session.task_kind == "research" and self.session.policy.strict_research:
+                options["output_token_limit"] = 4096
         if scoped_contract:
             options["tool_call_contract"] = kernel_prompt._text_request_prompt("", snapshot)
             if text_result_spans:

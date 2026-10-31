@@ -112,9 +112,64 @@ def test_production_review_freezes_bounded_requests_and_completes_all_batches(tm
         for payload in review:
             assert json.dumps(payload).count("FROZEN BASIS:") == 1
             assert len(payload["messages"]) <= 6
+            assert payload["max_tokens"] == 2048
         frozen = [json.loads(path.read_text(encoding="utf-8")) for path in (tmp_path / "managed_outputs").rglob("*.json")
                   if not path.name.endswith(".meta.json")]
         assert any('"tool_call_history_groups": 2' in json.dumps(row) for row in frozen)
+        assert any('"output_token_limit": 2048' in json.dumps(row) for row in frozen)
     finally:
         for provider in providers:
             provider.close()
+
+
+@pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
+def test_output_limit_is_counted_sent_and_never_raises_or_mutates_provider_budget(monkeypatch, protocol):
+    sent, counted = [], []
+
+    def count(payload, *, deadline):
+        counted.append(copy.deepcopy(payload))
+        return RequestContextCount(100, "tokenizer")
+
+    def generate(_url, payload, *_args, **_kwargs):
+        sent.append(copy.deepcopy(payload))
+        if protocol == "openai-completions":
+            return {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+        return {"output": [{"type": "message", "role": "assistant",
+                            "content": [{"type": "output_text", "text": "ok"}]}], "status": "completed"}
+
+    monkeypatch.setattr(api_transport, "generate", generate)
+    provider = ApiProvider("http://fixture/v1", "fixture", api_protocol=protocol,
+                           request_counter=count, output_tokens=4096, stream=False)
+    try:
+        provider.send("bounded", output_token_limit=2048)
+        provider.send("cannot raise", output_token_limit=8192)
+        provider.send("ordinary")
+        key = "max_tokens" if protocol == "openai-completions" else "max_output_tokens"
+        assert [row[key] for row in sent] == [2048, 4096, 4096]
+        assert counted == sent
+        assert provider.context_budget.output_tokens == 4096
+        for invalid in (True, False, 0.0, -1, "2048"):
+            with pytest.raises(ValueError, match="output token limit"):
+                provider.send("invalid", output_token_limit=invalid)
+        assert len(sent) == 3
+    finally:
+        provider.close()
+
+
+def test_truncated_json_is_not_executed_or_resent(monkeypatch):
+    from codey.providers.error_classification import OutputLengthError
+
+    sent = []
+
+    def generate(_url, payload, *_args, **_kwargs):
+        sent.append(payload)
+        return {"choices": [{"message": {"content": '{"tool":"done","args":{'}, "finish_reason": "length"}]}
+
+    monkeypatch.setattr(api_transport, "generate", generate)
+    provider = ApiProvider("http://fixture/v1", "fixture", stream=False)
+    try:
+        with pytest.raises(OutputLengthError):
+            provider.send("research", output_token_limit=2048)
+        assert len(sent) == 1 and sent[0]["max_tokens"] == 2048
+    finally:
+        provider.close()

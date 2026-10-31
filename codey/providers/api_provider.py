@@ -320,7 +320,7 @@ class ApiProvider:
     def send(self, text: str, timeout: float | None = None, *, tool_call_json: bool = False,
              tool_call_schema: dict[str, Any] | None = None, tool_call_contract: str = "",
              tool_call_results: list[dict[str, Any]] | None = None, tool_call_observations: str = "",
-             tool_call_history_groups: int = 0) -> str:
+             tool_call_history_groups: int = 0, output_token_limit: int = 0) -> str:
         if tool_call_json and self.text_tool_format != "json_schema":
             raise ValueError("JSON tool format is not enabled for this provider")
         if tool_call_schema is not None and not tool_call_json:
@@ -333,7 +333,7 @@ class ApiProvider:
         return self._exchange([pending], None, timeout=timeout,
                               text_only=True, tool_call_json=tool_call_json, tool_call_schema=tool_call_schema,
                               tool_call_contract=tool_call_contract, tool_call_observations=tool_call_observations,
-                              tool_call_history_groups=tool_call_history_groups).text
+                              tool_call_history_groups=tool_call_history_groups, output_token_limit=output_token_limit).text
 
     def bind_durable_context(self, durable: Any, conversation_id: str) -> None:
         if durable is None or not conversation_id:
@@ -414,25 +414,29 @@ class ApiProvider:
 
     def send_turn(self, prompt: str, tools: list[ProviderToolDefinition] | None = None,
                   timeout: float | None = None, *, tool_call_observations: str = "",
-                  tool_call_history_groups: int = 0) -> AssistantTurn:
+                  tool_call_history_groups: int = 0, output_token_limit: int = 0) -> AssistantTurn:
         return self._exchange([{"role": "user", "content": prompt}], tools, timeout=timeout,
-                              tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups)
+                              tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups,
+                              output_token_limit=output_token_limit)
 
     def send_tool_results(self, results: list[ProviderToolResult], tools: list[ProviderToolDefinition] | None = None,
                           timeout: float | None = None, *, tool_call_observations: str = "",
-                          tool_call_history_groups: int = 0) -> AssistantTurn:
+                          tool_call_history_groups: int = 0, output_token_limit: int = 0) -> AssistantTurn:
         return self._exchange(self._codec.encode_results(results), tools, timeout=timeout,
-                              tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups)
+                              tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups,
+                              output_token_limit=output_token_limit)
 
     def send_tool_results_bound(self, results: list[ProviderToolResult], window_ref: ProtocolWindowRef,
                                 tools: list[ProviderToolDefinition] | None = None,
                                 timeout: float | None = None,
                                 delivery_commit: dict[str, Any] | None = None,
-                                tool_call_observations: str = "", tool_call_history_groups: int = 0) -> AssistantTurn:
+                                tool_call_observations: str = "", tool_call_history_groups: int = 0,
+                                output_token_limit: int = 0) -> AssistantTurn:
         """Deliver native results only to the exact protocol window that created them."""
         return self._exchange(self._codec.encode_results(results), tools, timeout=timeout,
                               expected_window_ref=window_ref, delivery_commit=delivery_commit,
-                              tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups)
+                              tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups,
+                              output_token_limit=output_token_limit)
 
     def _prepare_exchange(self, pending: list[dict[str, Any]],
                           tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
@@ -476,6 +480,7 @@ class ApiProvider:
                    tool_call_contract: str = "",
                    tool_call_observations: str = "",
                    tool_call_history_groups: int = 0,
+                   output_token_limit: int = 0,
                    expected_window_ref: ProtocolWindowRef | None = None,
                    delivery_commit: dict[str, Any] | None = None) -> AssistantTurn:
         """One atomic lifecycle for both codecs, with no protocol-specific commit path."""
@@ -500,7 +505,8 @@ class ApiProvider:
                 base_revision = self._history_revision
                 candidate = self._prepare_exchange(pending, tools)
             checkpoints: list[dict[str, Any]] = []
-            generation_options: dict[str, Any] = {"tool_call_json": True} if tool_call_json else {}
+            generation_options: dict[str, Any] = {"output_token_limit": output_token_limit,
+                                                  **({"tool_call_json": True} if tool_call_json else {})}
             if tool_call_schema is not None:
                 generation_options["tool_call_schema"] = tool_call_schema
             generation_options.update({key: value for key, value in (
@@ -611,11 +617,16 @@ class ApiProvider:
                   *, timeout: float | None = None, checkpoints: list[dict[str, Any]] | None = None,
                   tool_call_json: bool = False, tool_call_schema: dict[str, Any] | None = None,
                   tool_call_contract: str = "", tool_call_observations: str = "",
-                  tool_call_history_groups: int = 0) -> dict[str, Any]:
+                  tool_call_history_groups: int = 0, output_token_limit: int = 0) -> dict[str, Any]:
         from codey.providers import api_transport
 
+        if type(output_token_limit) is not int or output_token_limit < 0:
+            raise ValueError("request output token limit must be a nonnegative integer")
+        output = self.context_budget.output_tokens
+        if output_token_limit:
+            output = min(output, output_token_limit)
         settings = GenerationSettings(self.model, self.stream, self.temperature, self.thinking_enabled,
-                                      self.reasoning_effort, self.tool_choice, self.context_budget.output_tokens,
+                                      self.reasoning_effort, self.tool_choice, output,
                                       tool_call_json, tool_call_schema, tool_call_contract, tool_call_observations,
                                       tool_call_history_groups)
         deadline = time.monotonic() + (timeout if timeout is not None else self.timeout)

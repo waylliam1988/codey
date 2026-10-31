@@ -132,3 +132,13 @@ JSON 请求沿用当前单一 kernel；done 的 state 字段齐全，未再进�
 验证：JSON/批次原生与文本/真实进程恢复选集 15 passed；修改文件 Ruff、生产改动 Mypy 通过。
 开发中发现并修正 schema 共用 text 字典被 enum 修改及 mappingproxy 不可 deepcopy 两个问题，
 最终冻结源码重跑通过，未把失败测试计为通过。实机 grammar 兼容性仍待下一轮验证。
+
+## 10. 请求级生成长度上限
+
+冻结 provider request 增加 `output_token_limit`：评审 2048，严格研究工具轮次 4096 tokens；
+实际取该上限与用户 provider 输出预算的较小值。选项经原 send/result-delivery/恢复路径进入实际 API
+payload，计数与发送一致，不修改持久配置或后续普通请求预算。原有截断/结果未知保护保留：
+截断 JSON 不执行、不自动重发。上限只防止失控无限生成，不把截断输出补成成功结果。
+
+验证：API/history/JSON 选集 21 passed，参数校验位置调整后边界与截断 3 passed；Ruff、改动文件 Mypy 通过。
+完整 driver 测试同时验证冻结请求中保存上限，原生及文本评审 payload 都使用 2048。
