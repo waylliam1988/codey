@@ -1,5 +1,8 @@
 # Research q8 缺口文本编译修复，2026-10-31
 
+后续 r6/q1/浏览器修复、验证及仍未解决的边界见
+[最新收敛报告](research-r6-q1-browser-20261031.zh-CN.md)。以下保留 q8 轮次的历史结果。
+
 ## 问题与范围
 
 完整 WAL 历史运行 `deterministic-wal-full-03` 的 q8 被模型标为

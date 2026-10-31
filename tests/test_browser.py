@@ -543,11 +543,48 @@ class BrowserProviderWrapperTests(unittest.TestCase):
 
     def test_non_isolated_session_close_does_not_terminate_browser_process(self) -> None:
         pw = mock.Mock()
-        session = browser.Session(pw=pw, browser=mock.Mock(), page=mock.Mock())
+        context = mock.Mock()
+        browser_obj = mock.Mock(contexts=[context])
+        session = browser.Session(pw=pw, browser=browser_obj, page=mock.Mock())
 
         session.close()
 
         pw.stop.assert_called_once()
+        context.close.assert_not_called()
+        session.page.close.assert_not_called()
+
+    def test_owned_session_finishes_pending_context_work_before_transport_disconnect(self) -> None:
+        pending = {"request_interception_reply"}
+        events = []
+
+        def close_context():
+            events.append("context")
+            pending.clear()
+
+        def stop_transport():
+            self.assertFalse(pending, "disconnect would orphan pending protocol futures")
+            events.append("transport")
+
+        process = mock.Mock()
+        process.poll.return_value = None
+        process.terminate.side_effect = lambda: events.append("process")
+        context = mock.Mock()
+        context.close.side_effect = close_context
+        pw = mock.Mock()
+        pw.stop.side_effect = stop_transport
+        session = browser.Session(pw=pw, browser=mock.Mock(contexts=[context]), page=mock.Mock(), process=process)
+        session.close()
+        self.assertEqual(events, ["context", "transport", "process"])
+
+    def test_owned_session_cleanup_continues_after_one_context_is_already_closed(self) -> None:
+        first, second, pw, process = (mock.Mock() for _ in range(4))
+        process.poll.return_value = None
+        first.close.side_effect = RuntimeError("Target context has been closed")
+        session = browser.Session(pw=pw, browser=mock.Mock(contexts=[first, second]), page=mock.Mock(), process=process)
+        session.close()
+        second.close.assert_called_once()
+        pw.stop.assert_called_once()
+        process.terminate.assert_called_once()
 
     def test_isolated_launch_failure_terminates_process(self) -> None:
         process = mock.Mock()

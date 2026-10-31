@@ -534,7 +534,14 @@ class Session:
 
     def close(self) -> None:
         try:
-            if self.close_page_on_close:
+            if self.process is not None:
+                # An owned isolated browser must finish its context lifecycle
+                # while the Playwright transport can still acknowledge routes.
+                # pw.stop() alone disconnects with pending interception calls.
+                for context in self.browser.contexts:
+                    with contextlib.suppress(Exception):
+                        context.close()
+            elif self.close_page_on_close:
                 with contextlib.suppress(Exception):
                     self.page.close()
             self.pw.stop()

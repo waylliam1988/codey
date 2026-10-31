@@ -34,3 +34,22 @@ close the intermittent lifecycle issue. The earlier located race and its test
 remain valid evidence, but browser teardown is not fully resolved; further
 creation-stack diagnostics are needed. The q8 change does not filter or suppress
 this warning. See [the q8 validation report](research-q8-gap-20261031.zh-CN.md).
+
+## Later owned-context teardown repair
+
+The r6/q1 follow-up reproduced the residual race with a real isolated browser:
+12 cycles, each routing 100 blocked resource requests before closing, produced
+288 unretrieved TargetClosedError futures under the old close sequence. Asyncio
+debug located the pending protocol callbacks. Waiting route handlers alone did
+not end all context work before pw.stop() disconnected.
+
+Session.close now closes contexts only when it owns the browser process, before
+disconnecting Playwright and terminating that process. Shared contexts/tabs keep
+their prior lifecycle. No exception filter, dependency patch or fixed delay was
+added. The same 12-cycle probe then produced zero warnings; the committed
+`tests.manual.research_browser_teardown_local` parent also verifies all 12 child
+cycles and checks the preserved raw debug log for orphaned tasks and futures.
+Three real Research browser shutdowns in this follow-up produced no such errors.
+This closes the reproduced lifecycle race, not every possible browser failure.
+See [the follow-up report](research-r6-q1-browser-20261031.zh-CN.md) for tests and
+the separate content and model-service failures.
