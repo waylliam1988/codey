@@ -73,39 +73,19 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
 
     context.restore_facts()
     plan = context.plan(state)
-    context.session.last_done_text = plan.control.body or ""
-    context.session.last_done_args = dict(plan.control_args)
+    if plan.control is not None and plan.control.kind == "done":
+        context.session.last_done_text = plan.control.body or ""
+        context.session.last_done_args = dict(plan.control_args)
     error_source = ""
     error_type = ""
     compiled = None
     try:
-        completion_context = context.completion_context
-        if context.session.task_kind == "research_review":
-            from codey.research.semantic_review import submitted_review
-
-            basis = context.session.research_review_basis
-            if basis is None:
-                raise ValueError("research assessment has no frozen basis")
-            receipt = submitted_review(context.session, basis)
-            context.session.last_done_text = "Research assessment recorded: " + receipt["status"]
-            context.session.last_done_args = {"summary": context.session.last_done_text}
-        if context.session.policy.strict_research and context.session.task_kind != "evidence_followup":
-            from codey.research.finding_report import compile_finding_report
-
-            tools = context.execution.research_tools
-            try:
-                compiled = compile_finding_report(context.session.last_done_args, tools.ledger, tools.store,
-                    project=tools.project, session_id=tools.session_id, task=context.session.task_text)
-            except ValueError as exc:
-                # Keep the repair field-local and the original proposal intact.
-                raise ValueError(f"Report reference fields: {exc}") from exc
-            context.session.last_done_text = compiled.text
-            completion_context = {**context.completion_context, "research_report": compiled}
         refresh_verification_candidates(context.session)
-        verdict = evaluate(context.session, context.session.last_done_text, context=completion_context)
+        verdict = evaluate(context.session, context.session.last_done_text, context=context.completion_context)
         if type(verdict.complete) is not bool:
             raise ValueError("completion gate returned an invalid verdict")
         complete, followup, proof = verdict.complete, verdict.followup, verdict.proof
+        compiled = verdict.research_report
         error_source = getattr(verdict, "error_source", "")
         error_type = getattr(verdict, "error_type", "")
         final_text = verdict.final_text or context.session.last_done_text

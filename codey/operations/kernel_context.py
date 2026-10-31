@@ -58,7 +58,7 @@ class KernelContext:
             self.observation.completion_context, self.execution.workspace_ignored_paths)
         if self.execution.research_tools is not None and isinstance(self.completion_context, dict):
             tools = self.execution.research_tools
-            self.completion_context.update(knowledge_store=getattr(tools, "store", None),
+            self.completion_context.update(research_ledger=getattr(tools, "ledger", None), knowledge_store=getattr(tools, "store", None),
                                            knowledge_project=getattr(tools, "project", ""),
                                            knowledge_session_id=getattr(tools, "session_id", ""))
         self.responses: dict[str, ReceivedProviderTurn] = {}

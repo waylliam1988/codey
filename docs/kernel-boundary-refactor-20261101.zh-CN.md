@@ -58,8 +58,40 @@ KernelResult 编解码集中到 kernel_contracts，所有原调用直接迁移�
 最终实机：batch2-write-02，2 次生成，真实创建 created.txt，完成与重复恢复通过。
 Mypy、Pyrefly、ty 通过。扩大测试 82 个相关文件：1319 passed、104 subtests passed（326.97 秒）。
 
-## 后续批次
+## 第三批：Research 准备进入原 completion gate
 
-第三批将研究完成准备收回原 gate，保留字段纠错、原始提案和原接受报告快照。
-第四批调整 retry 观察计数的提交时机与旧决定恢复，保留冻结请求的准入预算。
+研究报告编译及已提交评审收据的检查移入 research_completion_checks，gate 在
+引用、正文、必需工具检查及 proof 引用收集之前调用准备。各检查显式消费本次
+FindingReport；不再接受 context 中外部传入的 research_report 作为另一入口。
+GateVerdict.research_report 仅是本次返回值，接受后进入原 decision artifact。
+资源来自原 completion context 的 ledger、store 与作用域，不传递 KernelContext。
+KernelContext 将已有 ResearchTools 的资源接入该 context，不新增资源所有者。
+
+准备错误单独保留 ValueError/ResearchIssue 的完整字段信息，包括可用引用及补证提示；
+其他 gate 异常仍保留原处理。原 last_done_args、模型正文与 proposal 进度记录不被编译
+结果覆盖。只有 done 控制提案更新这些字段；评审工具计划不再把占位正文当成模型提案。
+保留 research_review 的真实成功收据、完整批次及关闭分支，未引入另一套完成流程。
+evidence_followup 继续只报告采集结果，显式评审只记录诊断，不编译或发布研究报告。
+
+新增集成回归覆盖：字段纠错前不进行引用检查；修复后 proof 引用绑定本次报告；
+两种 q8 缺口状态；接受后进程中断，恢复既不编译也不读取知识；原始 coverage 不变；
+实际发布、重复发布与原快照一致；评审多批次通过 gate 关闭，无伪造 done、无发布。
+定点选集 57 passed，完成合同/评审选集 40 passed。Mypy、Pyrefly、ty 通过。
+扩大回归 107 个相关文件：1141 passed、64 subtests passed（339.01 秒）。
+
+实机目录：artifacts/kernel-refactor-20261101/batch3-research。
+Gemma 4 12B Q4_K_M、seed=74、temperature=0.3、JSON 文本协议、真实网页、9 轮后 done。
+q2=not_investigated、q3=unanswered_after_search，正文、原 decision、answer 版本和 note
+逐字一致。按 publication effect 的冻结 result_ref 两次打开实际数据库恢复，禁用编译器
+仍通过，结果完全相同（batch3-live-replay-final.log）。终态会清空 work_ref，回放需沿
+原 publication envelope 读取，不能从终态位置猜测另一个结果。
+
+**该实机回答的语义内容未通过。** q1 模型把读写不互相阻塞误推成官方未保证单写者，
+系统忠实采用了它保存的错误解释；此次整理没有修复选证和语义推理能力。
+本轮只确认 q8 缺口编译、发布及恢复一致，不将 done 或成功 proof 解释为语义认证。
+浏览器退出时记录了 TargetClosedError 警告，实际采集与发布已完成，原日志保留。
+
+## 第四批（待实施）
+
+调整 retry 观察计数的提交时机与旧决定恢复，保留冻结请求的准入预算。
 其中旧 retry 的拟更新计数可能尚未进入 checkpoint，不能作为冗余字段直接丢弃。

@@ -130,7 +130,9 @@ def test_recalled_claim_pins_old_version_without_new_fetch_or_duplicate_archive(
 
         check_session = TaskSession(TaskPolicy(session.policy.grants, strict_research=True,
             required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research", task_text="Explain writer concurrency.")
-        verdict = evaluate(check_session, compiled.text, context={"research_ledger": tools.ledger, "research_report": compiled})
+        check_session.last_done_args = report_args(adopted)
+        verdict = evaluate(check_session, "", context={"research_ledger": tools.ledger, "knowledge_store": store,
+                                                      "knowledge_session_id": tools.session_id})
         assert verdict.complete, verdict.followup
         restored = ResearchLedger()
         project_result_observation(TaskSession(session.policy), read.call, read, ok=True, research_ledger=restored)
@@ -180,7 +182,9 @@ def test_inference_pins_premises_keeps_candidate_identity_and_replays(tmp_path):
 
         check_session = TaskSession(TaskPolicy(session.policy.grants, strict_research=True,
             required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research", task_text="Explain writer concurrency.")
-        verdict = evaluate(check_session, compiled.text, context={"research_ledger": tools.ledger, "research_report": compiled})
+        check_session.last_done_args = report
+        verdict = evaluate(check_session, "", context={"research_ledger": tools.ledger, "knowledge_store": store,
+                                                      "knowledge_session_id": tools.session_id})
         assert verdict.complete, verdict.followup
         forged = copy.deepcopy(saved_inference)
         forged.canonical["research_reference_bindings"]["f1"] = binding.to_dict()

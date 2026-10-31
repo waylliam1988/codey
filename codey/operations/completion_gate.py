@@ -30,11 +30,13 @@ from codey.completion.contract import (
 from codey.operations.project_completion_checks import project_completion_checks
 from codey.operations.research_completion_checks import (
     citation_requirement_checks,
+    prepare_research_completion,
     research_completion_feedback,
     source_requirement_checks,
     strict_research_checks,
 )
 from codey.policies.requirement import RequirementEvaluation
+from codey.research.finding_report import FindingReport
 from codey.utils.refs import stable_ref
 
 
@@ -90,7 +92,7 @@ def _session_profile(session: Any) -> str:
     return str(getattr(session, "task_kind", "") or "").strip().lower() or "project"
 
 
-def _proof_evidence_refs(session: Any, context: Any) -> tuple[str, ...]:
+def _proof_evidence_refs(session: Any, context: Any, report: FindingReport | None = None) -> tuple[str, ...]:
     """最终收据绑定的实际任务引用：run 身份 + 结果收据引用（refs only）。
 
     edit 引用携带工作区 revision，verification 引用携带 workspace 身份，
@@ -125,9 +127,8 @@ def _proof_evidence_refs(session: Any, context: Any) -> tuple[str, ...]:
             refs.append(stable_ref("source", source.final_url, source.text_hash, source.retrieved_at))
     except Exception:
         pass
-    compiled = _context_get(context, "research_report")
-    if compiled is not None:
-        refs.extend(f"knowledge-source:{row['id']}@{row['revision']}" for row in compiled.source_versions[:8])
+    if report is not None:
+        refs.extend(f"knowledge-source:{row['id']}@{row['revision']}" for row in report.source_versions[:8])
     try:
         verifs = list(getattr(session, "verifications", ()) or [])[-4:]
         for item in verifs:
@@ -170,6 +171,7 @@ class GateVerdict:
     final_text: str = ""
     error_source: str = ""
     error_type: str = ""
+    research_report: FindingReport | None = None
 
 
 def evaluate(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
@@ -378,7 +380,14 @@ def _required_tool_checks(
 
 def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
     text = str(done_text or "").strip()
-    citation_checks = citation_requirement_checks(session, text, context)
+    try:
+        text, report = prepare_research_completion(session, text, context)
+    except ValueError as exc:
+        # Field paths, allowed references and acquisition guidance belong to
+        # the domain preparation error; the generic exception handler hides them.
+        return GateVerdict(False, f"Completion check failed ({exc}); cannot complete yet. Continue the task.",
+                           None, error_source="completion_check", error_type=type(exc).__name__)
+    citation_checks = citation_requirement_checks(session, text, context, report=report)
     checks: list[CompletionCheck] = []
     checks.extend(project_completion_checks(session, context))
     checks.extend(source_requirement_checks(session, context))
@@ -387,7 +396,7 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     checks.extend(knowledge_reference_checks(session, context))
     checks.extend(investigation_attempt_checks(session))
     checks.extend(citation_checks)
-    checks.extend(strict_research_checks(session, text, context))
+    checks.extend(strict_research_checks(session, text, context, report=report))
     tool_checks, tool_evaluations = _required_tool_checks(session, text, context)
     checks.extend(tool_checks)
     profile = _session_profile(session)
@@ -401,7 +410,7 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
         return replace(required_block, followup=required_block.followup + ("\n\n" + feedback if feedback else ""))
     domain = _domain_for_session(session)
     subject = _contract_subject(session, profile, context)
-    evidence_refs = _proof_evidence_refs(session, context)
+    evidence_refs = _proof_evidence_refs(session, context, report)
     def get(key: str) -> Any:
         return _context_get(context, key)
     coding_evaluation = get("project_evaluation")
@@ -439,7 +448,7 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
             proof=None,
         )
     if proof is not None and proof.satisfied:
-        return GateVerdict(complete=True, followup="", proof=proof, final_text=text)
+        return GateVerdict(complete=True, followup="", proof=proof, final_text=text, research_report=report)
     reason = ""
     if proof is not None and proof.blocked_reason:
         reason = proof.blocked_reason
