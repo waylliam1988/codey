@@ -22,8 +22,6 @@ def batch_scopes(basis: dict[str, Any]) -> tuple[dict[str, Any], ...]:
             [{**row, "units": [unit]} for unit in row["units"]] if kind in {"claims", "paragraphs"} else [row]
             for row in basis[kind])
         work.extend((kind, row) for group in rows for row in group)
-    if len(work) <= MAX_BATCH_UNITS:
-        return ({kind: copy.deepcopy(basis[kind]) for kind in _KINDS},)
     scopes: list[dict[str, Any]] = []
     for kind in _KINDS:
         selected = [row for category, row in work if category == kind]

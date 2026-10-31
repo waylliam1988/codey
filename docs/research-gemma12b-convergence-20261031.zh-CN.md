@@ -171,3 +171,19 @@ finding 和报告答案按完整句子切分，避免把“在 WAL 模式下，�
 schema。它们都是现有事实的可选范围，不替模型做语义判断；精确匹配关系仍由原 parse_review 校验。
 
 验证：引用越界、混合批及完整集合校验 5 passed，Ruff/Mypy 通过。
+
+## 实机 5 与 14. 所有规模都拆开语义职责
+
+`calibration-json-writer-03` 正例通过，随后另外五例中，比较对象偷换被拒绝、版本条件正例通过；
+但 workload_overreach、excerpt_absence、historical_overreach 三个反例被误放行。
+这些只在显式 synthetic 校准存储中发布，不能算生产研究质量通过；尤其版本反例的 reason 已指出
+“无条件”与原文有条件不符，verdict 却仍为 supported，显示混合职责下的宽松批准问题。
+
+删除“小于 8 单位合并四种职责”的分支。任何规模都按 claims、paragraphs、requirements、
+investigations 分批；每批提示只包含本职责规则，并用“证据全真而答案仍可能为假”的检查约束蕴含关系。
+仍使用原单一 review invocation 和原工具回执，完整聚合后才可发布。
+
+验证：选集首次 23 passed / 7 failed，七项均为夹具轮次数预期仍按旧混合批，实际已完成且无重复发布。
+修正为该夹具的三种非空职责（调查数组原为空）后相关选集 8 passed；Ruff 通过。
+实机 workload_overreach-02 已在答案批正确指出吞吐量必然提升无证据，但选错 basis=gap，校验拒绝，
+因此结果是 incomplete 而非已通过反例验收。后续继续收敛此结构歧义。

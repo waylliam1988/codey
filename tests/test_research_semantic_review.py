@@ -382,11 +382,11 @@ def test_failed_or_exhausted_assessment_never_returns_prior_draft_as_done(tmp_pa
 def test_last_budget_turn_completes_the_settled_assessment(tmp_path):
     from codey.knowledge.store import KnowledgeStore
 
-    result = _run(tmp_path, budget=10)
+    result = _run(tmp_path, budget=14)
     assert result.stop_reason == "done" and result.completion_proof.satisfied
-    assert result.turns == 10
+    assert result.turns == 14
     requests = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
-    assert len([row for row in requests if "attempt" in row]) == 10
+    assert len([row for row in requests if "attempt" in row]) == 14
     store = KnowledgeStore(tmp_path / "knowledge")
     try:
         assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == 1
@@ -403,7 +403,8 @@ def test_settled_assessment_completes_without_another_model_done(tmp_path, nativ
     assert result.stop_reason == "done", result.semantic_review
     assert result.semantic_review["status"] == "passed" and result.synthesis_id
     requests = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
-    assert [(row["attempt"], row["turn"]) for row in requests if row.get("attempt") in (8, 10, 12)] == [(8, 1), (10, 1)]
+    assert [(row["attempt"], row["turn"]) for row in requests if row.get("attempt") in (8, 10, 12)] == [
+        (attempt, turn) for attempt in (8, 10) for turn in range(1, 4)]
     store = KnowledgeStore(tmp_path / "knowledge")
     try:
         assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions WHERE kind='answer'").fetchone()[0] == 1
@@ -456,6 +457,6 @@ def test_real_subprocess_review_restart_reuses_original_assessment(tmp_path, bou
     result = _run(tmp_path, resume=True)
     assert result.stop_reason == "done", result.summary
     calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
-    assert len([row for row in calls if row.get("attempt") == 8]) == 1
+    assert len([row for row in calls if row.get("attempt") == 8]) == 3
     assert len([row for row in calls if "publication" in row]) == 1
     assert len([row for row in calls if "fetch" in row]) == 1
