@@ -17,9 +17,10 @@ def test_text_resume_reconstructs_result_after_typed_input_discards_legacy_promp
                                          input=ResolveShellApproval("approval-1"))
     assert request.task == "Resolve the shell approval"
     work = SimpleNamespace(operation=None)
+    original_task = "Check the Python version and report its result."
     monkeypatch.setattr(task_run, "build_run_work", lambda *_args, **_kwargs: (work, None))
     setup = SimpleNamespace(request=request, state=SimpleNamespace(
-        durable=SimpleNamespace(task=lambda _: (_ for _ in ()).throw(KeyError("not admitted"))),
+        durable=SimpleNamespace(task=lambda _: SimpleNamespace(state={"task": original_task})),
         resolve_shell_approval=lambda _: payload,
     ),
         session_id="s", run_id="source-1", project=None, provider_id="mimo", max_turns=3, task_kind="chat",
@@ -27,6 +28,6 @@ def test_text_resume_reconstructs_result_after_typed_input_discards_legacy_promp
         project_config_result=SimpleNamespace(config=SimpleNamespace(ignored_paths=())))
     phase, failure = task_run._build_workload(SimpleNamespace(), setup)
     assert failure is None and phase is not None
-    assert setup.task == setup.request.task == "Resolve the shell approval"
+    assert setup.task == setup.request.task == original_task
     assert not hasattr(phase, "recovered_tool_outcomes")
     assert setup.request.previous_run_id == ""

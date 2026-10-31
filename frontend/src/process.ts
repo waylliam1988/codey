@@ -32,6 +32,7 @@ export interface ProcessToolRecord {
   contentRole?: 'commentary' | 'final';
   preview?: ToolPreview;
   result?: string;
+  output?: string;
   elapsedMs?: number;
   streamId?: string;
   streamState?: string;
@@ -276,6 +277,15 @@ export interface ProcessToolRecord {
   }
 
   function tool(block: ProcessBlock, m: ToolRecord): void {
+    // Approved shell executions also publish a command card. Match the
+    // original call identity so its generic tool projection stays singular.
+    if (
+      m.callId &&
+      [...block._process.tools.values()].some(
+        (record) => record.type === 'shell_result' && record.runId === m.runId && record.callId === m.callId,
+      )
+    )
+      return;
     const key = m.toolKey || JSON.stringify(m);
     const previous = block._process.tools.get(key);
     if (previous && !previous.pending && m.pending) return;
@@ -398,10 +408,27 @@ export interface ProcessToolRecord {
       );
       const open = existing?.querySelector<HTMLDetailsElement>('details')?.open;
       const outputReading = captureCommandOutput(existing);
+      let children = existing?.querySelector(':scope > .tool-children');
+      if (m.callId) {
+        for (const [toolKey, record] of block._process.tools) {
+          if (record.type === 'shell_result' || record.runId !== m.runId || record.callId !== m.callId) continue;
+          const node = Array.from(block.querySelectorAll<HTMLElement>('[data-tool-key]')).find(
+            (element) => element.dataset.toolKey === toolKey,
+          );
+          children ||= node?.querySelector(':scope > .tool-children');
+          node?.remove();
+          block._process.tools.delete(toolKey);
+        }
+      }
       const fragment = document.createElement('div');
       render(fragment, m);
       const card = fragment.firstElementChild;
       if (card) {
+        if (m.callId && card instanceof HTMLElement) {
+          card.dataset.callId = m.callId;
+          card.dataset.callScope = m.runId || '';
+        }
+        if (children) card.append(children);
         const details = card.querySelector<HTMLDetailsElement>('details');
         if (details && open !== undefined) details.open = open;
         if (existing) existing.replaceWith(card);
@@ -415,6 +442,7 @@ export interface ProcessToolRecord {
         pending: ['queued', 'running'].includes(m.shellStatus || ''),
         error: m.approved !== true || (m.shellStatus === 'exit' && m.exitCode !== 0),
       });
+      syncToolTree(block);
       // Results end the approval wait; late results never restart a terminal run.
       if (block._process.state === 'approval') state(block, 'running', false);
       if (

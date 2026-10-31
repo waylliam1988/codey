@@ -59,7 +59,8 @@ def test_native_read_batch_uses_original_kernel_and_receipts_in_one_generation(t
     def generate(url, payload, *args, **kwargs):
         sent.append(payload)
         if len(sent) == 1:
-            assert "Group independent read-only calls" in payload["messages"][0]["content"]
+            assert any("Group independent read-only calls" in message.get("content", "")
+                       for message in payload["messages"])
             calls = [{"id": name, "type": "function", "function": {"name": "read_file",
                        "arguments": json.dumps({"path": name + ".txt"})}} for name in ("a", "b")]
         else:

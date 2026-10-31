@@ -28,6 +28,7 @@ PUBLIC_FIELDS = {
     "ghost_post_turn_warning": frozenset({"type", "session_id", "run_id", "text", "error"}),
 }
 PUBLIC_FIELDS["durable_commit"] |= {"edited_entry_id", "replaced_run_ids"}
+PUBLIC_FIELDS["shell_result"] |= {"call_id"}
 
 
 class PrivateEvent(Exception):

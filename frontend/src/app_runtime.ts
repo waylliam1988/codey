@@ -1610,6 +1610,7 @@ function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' =
     addToSession(sid, {
       type: 'shell_result',
       id: data.id,
+      callId: data.call_id || '',
       approved: !!data.approved,
       shellStatus: data.status || '',
       command: data.command,

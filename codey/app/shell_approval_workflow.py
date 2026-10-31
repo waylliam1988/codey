@@ -561,6 +561,7 @@ class ShellApprovalWorkflow:
                 {
                     "type": "shell_result",
                     "id": approval_id,
+                    "call_id": str(pending.get("call_id") or ""),
                     "session_id": first.session_id,
                     "run_id": first.source_run_id,
                     "approved": True,
@@ -592,6 +593,7 @@ class ShellApprovalWorkflow:
             {
                 "type": "shell_result",
                 "id": approval_id,
+                "call_id": str(pending.get("call_id") or ""),
                 "session_id": first.session_id,
                 "run_id": first.source_run_id,
                 "approved": approved,

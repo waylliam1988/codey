@@ -519,6 +519,14 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
                 deps, setup, "ERROR: durable shell approval continuation does not match this task.",
                 current_work=work,
             )
+        # Resolving an approval is a control action, not a new user task.
+        # The typed input's placeholder must never replace the admitted goal
+        # in runtime observations or completion checks after reconstruction.
+        original_task = durable.task(setup.run_id).state.get("task")
+        if not isinstance(original_task, str) or not original_task.strip():
+            raise ValueError("durable shell approval continuation has no original task")
+        setup.request = replace(setup.request, task=original_task)
+        setup.task = original_task
     return _PhaseWork(work=work), None
 
 

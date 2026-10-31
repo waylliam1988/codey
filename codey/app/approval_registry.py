@@ -112,6 +112,7 @@ class ApprovalRegistry:
                     "run_id": pending.get("run_id") or "",
                     "session_id": pending.get("session_id") or "",
                     "id": pending.get("id") or "",
+                    "call_id": pending.get("call_id") or "",
                     "approved": False,
                     **command_fields,
                     "cwd": pending.get("cwd") or "",
