@@ -1,6 +1,5 @@
 """Accepted durable research keeps its completion authority at the real queue boundary."""
 
-import copy
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -13,7 +12,7 @@ from codey.ghost.work_queue_sources import new_item
 from codey.operations.ghost_post_turn import GhostTaskPolicyDeps, complete_or_block_work_item
 from codey.research.completion_gate import ResearchCompletionGate
 from tests.ghost_fixtures import seed_events
-from tests.test_research_semantic_review import TASK, _run
+from tests.test_research_deterministic_completion import TASK, _run
 
 
 @pytest.mark.usefixtures("public_source_dns")
@@ -61,18 +60,13 @@ def test_accepted_queue_validates_original_inputs_and_never_falls_back_to_legacy
     event = {"run_id": "r", "stop_reason": "done"}
     item = SimpleNamespace(kind="research", title=TASK, started_run_id="r")
     gate = ResearchCompletionGate()
-    review = result.semantic_review
-    corrupt_review = copy.deepcopy(review)
-    corrupt_review["assessment"]["claims"][0]["units"][0]["verdict"] = "unsupported"
     corrupt_proofs = [replace(result.completion_proof, **mutation) for mutation in (
         {"proof_id": "completion_proof:other"}, {"contract_id": "completion_contract:other"},
         {"domain": "coding"}, {"subject_ref": "run:other:task:research"},
         {"checks": result.completion_proof.checks[1:]})]
     corrupt_results = [
         replace(result, summary="Another report."), replace(result, synthesis_id="other"),
-        replace(result, semantic_review=corrupt_review),
-        replace(result, semantic_review={**review, "completion_status": "incomplete"}),
-        replace(result, semantic_review={**review, "result_ref": "other"}),
+        replace(result, accepted_report=replace(result.accepted_report, questions=("Another question",))),
         replace(result, accepted_report=None),
         replace(result, completion_proof=None),
         *(replace(result, completion_proof=proof) for proof in corrupt_proofs),

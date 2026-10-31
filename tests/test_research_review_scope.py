@@ -193,7 +193,7 @@ def test_inconsistent_support_records_original_judgment_but_cannot_pass(mutation
     assert parsed == original
     issues = review_issues(parsed)
     assert any(row["kind"] == "report_scope" and row["unit"] == 1 for row in issues)
-    with pytest.raises(ValueError, match="failed model assessment"):
+    with pytest.raises(ValueError, match="cannot certify"):
         reviewed_completion(SimpleNamespace(), {"status": "passed", "assessment": parsed})
     assert parsed == original
 

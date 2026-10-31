@@ -28,13 +28,17 @@ def render_completion_guidance(policy: TaskPolicy) -> str:
         "Keep claims no stronger than evidence: preserve objects, comparators, conditions and uncertainty. "
         "Saving or valid citations do not certify interpretation. Old answers, Ghost affinity and graph proximity are not evidence.",
         "Register 1..8 questions with research_plan. Account for every qN exactly once, with a supported answer or a specific gap. "
+        "Finish one concrete question using a few directly relevant passages before moving to the next. "
+        "Keep the source's actor, action, conditions and comparator together; split unrelated claims. "
         "Pass question_ref=qN on every investigation, save_finding and save_inference. Coverage may use only aN and fN "
         "bound to that question. Reuse already read passages across questions; save_finding records the new adoption "
         "without rereading the page. A receipt proves an attempt, not semantic coverage.",
         "Use only explicitly adopted [fN] references from successful saves or complete knowledge reads. "
         "Historical knowledge may answer the question without new acquisition. A candidate inference remains a hypothesis.",
         "Submit only report_sections.coverage to done: one answer or specific gap per question, with findings and "
-        "actual investigations. Do not also write summary, evidence or counter paragraphs. "
+        "actual investigations and task_refs for the original rN text units it addresses. Account for every original rN, "
+        "including background/method/format constraints, with an answer or specific gap. "
+        "This is explicit accounting, not independent verification. Do not also write summary, evidence or counter paragraphs. "
         "The application compiles the report from these same answers and saved findings. "
         "Source quality is generated from pinned metadata; retrieval time does not establish release version or publication date. "
         "Do not invent limitations to fill a section. Record actual investigation gaps in the question answer. "

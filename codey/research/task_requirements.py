@@ -32,3 +32,20 @@ def task_requirements(task: str) -> list[dict[str, Any]]:
     """Freeze every nonblank span; text segmentation is not semantic interpretation."""
     return [{"task_ref": f"r{row['unit']}", **{key: row[key] for key in ("start", "end", "text")}}
             for row in text_units(task)]
+
+
+def validate_task_accounting(coverage: list[dict[str, Any]], task: str) -> None:
+    """Check explicit accounting, never whether an answer means what it claims."""
+    expected = {row["task_ref"] for row in task_requirements(task)}
+    observed: set[str] = set()
+    for index, row in enumerate(coverage):
+        refs = row.get("task_refs")
+        if (not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs)
+                or len(refs) != len(set(refs)) or not set(refs) <= expected):
+            raise ValueError(f"report_sections.coverage[{index}].task_refs must select original task rN ids: "
+                             + ", ".join(sorted(expected)))
+        observed.update(refs)
+    if observed != expected:
+        raise ValueError("report_sections.coverage must account for every original task unit in task_refs; missing: "
+                         + ", ".join(sorted(expected - observed))
+                         + ". Give its answer or specific unresolved gap; do not drop the obligation.")

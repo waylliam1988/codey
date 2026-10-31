@@ -163,6 +163,14 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
     return note.id
 
 
+def _publication_proof(outcome: Any, compiled: Any, history: Any, synthesis_id: str, publish: bool) -> Any:
+    if compiled is None or not publish:
+        return outcome.proof
+    from codey.research.report_projection import published_completion
+
+    return published_completion(outcome.proof, compiled, synthesis_id=synthesis_id, result_ref=history.state().work_ref)
+
+
 def run_research_iteration(
     deps: Any,
     *,
@@ -417,7 +425,7 @@ def run_research_iteration(
         synthesis_id=synthesis_id,
         research_record=record,
         max_turns_used=max_turns,
-        completion_proof=outcome.proof,
+        completion_proof=_publication_proof(outcome, compiled, history, synthesis_id, publish_synthesis),
         accepted_report=compiled,
     )
     return ResearchIterationRun(result=result, tools=tools)

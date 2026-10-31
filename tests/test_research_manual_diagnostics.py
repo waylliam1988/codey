@@ -11,7 +11,7 @@ from urllib.error import HTTPError
 
 import pytest
 
-from tests import test_research_semantic_review as scenario
+from tests import test_research_deterministic_completion as scenario
 from tests.manual import kobold_diagnostics
 from tests.manual.research_semantic_review_local import archived_investigations, archived_report, main
 
@@ -44,14 +44,6 @@ def test_native_diagnostic_preserves_the_raw_generation(monkeypatch):
 
 @pytest.mark.usefixtures("public_source_dns")
 def test_archive_review_restores_real_question_bound_investigations_without_acquisition(tmp_path, monkeypatch):
-    original_args = scenario.report_args
-
-    def select_investigations(ref):
-        args = original_args(ref)
-        args["report_sections"]["coverage"][0]["investigations"] = ["a1", "a2"]
-        return args
-
-    monkeypatch.setattr(scenario, "report_args", select_investigations)
     source = tmp_path / "archive"
     state = source / "state"
     state.mkdir(parents=True)

@@ -276,8 +276,9 @@ def question_bound_spec(spec: Any, *, required: bool = False) -> Any:
         description=spec.description + " Select question_ref=qN explicitly to bind this action to its registered question.")
 
 
-def done_spec_for_purpose(spec: Any, purpose: str) -> Any:
+def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "") -> Any:
     """Select one complete done contract before freezing, never patch pieces later."""
+    example: dict[str, Any]
     if purpose == "ordinary":
         return spec
     if purpose == "evidence":
@@ -287,14 +288,26 @@ def done_spec_for_purpose(spec: Any, purpose: str) -> Any:
                        "The parent owns final synthesis; do not write its report in this phase.")
     elif purpose == "report":
         coverage = dict(report_sections_schema()["properties"])["coverage"]
+        if task:
+            from codey.research.task_requirements import task_requirements
+
+            refs = [row["task_ref"] for row in task_requirements(task)]
+            coverage["items"]["properties"]["task_refs"].update(
+                items={"type": "string", "enum": refs}, maxItems=len(refs))
+            coverage["items"]["required"].append("task_refs")
         schema = object_schema({"report_sections": object_schema({"coverage": coverage}, "coverage")}, "report_sections")
         example = {"tool": "done", "args": {"report_sections": {
             "coverage": STRUCTURED_REPORT_ARGS["report_sections"]["coverage"]}}}
+        if task:
+            example["args"]["report_sections"]["coverage"] = [
+                {**row, "task_refs": refs} for row in example["args"]["report_sections"]["coverage"]]
         description = ("Submit one answer per registered question in report_sections.coverage: "
                        "{question_ref,state,answer,findings,investigations}. Use raw finding ids in findings; "
                        "inline citations in answer are optional and must agree. Keep answers no stronger than findings. "
                        "State unanswered obligations as specific gaps. The application generates the conclusion, "
                        "evidence, limitations, source table and coverage from these same answers and exact findings. "
+                       "Include task_refs selecting the original rN task units answered or explicitly left unresolved. "
+                       "Account for every original rN across the answers; this records your claimed coverage, not verification. "
                        "Do not supply summary, evidence, counter or source_quality prose.")
     else:
         raise ValueError("unknown done purpose")

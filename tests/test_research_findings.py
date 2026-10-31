@@ -34,7 +34,7 @@ def setup(tmp_path):
     store = KnowledgeStore(tmp_path)
     tools = ResearchTools(Search(), store, KnowledgeChanges(tmp_path), session_id="first")
     session = TaskSession(TaskPolicy(frozenset({"web.read", "knowledge.write", "knowledge.read", "control"})),
-                          task_kind="research")
+                          task_kind="research", task_text="Explain writer concurrency.")
     tools.ledger.questions = ("What limits writer concurrency?",)
     session.research_questions = tools.ledger.questions
     delegate = ExecutionDelegate(session=session, research_tools=tools)
@@ -222,13 +222,13 @@ def report_args(ref):
     return {"summary": f"Only one writer can write at a time. [{ref}]", "report_sections": {
         "evidence": [f"Only one writer can write at a time. [{ref}]"],
         "counter": ["本轮尚未调查反证，仍有证据缺口。"],
-        "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Writer concurrency answered; version boundaries remain unknown.", "findings": [ref], "investigations": []}]}}
+        "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Writer concurrency answered; version boundaries remain unknown.", "findings": [ref], "investigations": [], "task_refs": ["r1"]}]}}
 
 
 def answer_args(ref):
     return {"report_sections": {"coverage": [{"question_ref": "q1", "state": "partial",
         "answer": "Only one writer can write at a time. Version boundaries remain unknown.",
-        "findings": [ref], "investigations": []}]}}
+        "findings": [ref], "investigations": [], "task_refs": ["r1"]}]}}
 
 
 @pytest.mark.usefixtures("public_source_dns")

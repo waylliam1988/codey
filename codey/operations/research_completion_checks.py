@@ -145,9 +145,18 @@ def _ledger_checks(session: Any, done_text: str, context: Any) -> list[Completio
         return [CompletionCheck("research_report_sections", CHECK_FAIL, "structured_report_missing")]
     # These checks confirm structure and exact evidence chains, not semantics.
     # Historical evidence does not become a fresh source-open execution receipt.
-    return [CompletionCheck(check, CHECK_PASS) for check in (
+    rows = [CompletionCheck(check, CHECK_PASS) for check in (
         "research_sources_opened", "research_evidence_saved", "research_report_sections",
         "research_claim_bindings", "research_question_coverage")]
+    from codey.research.task_requirements import validate_task_accounting
+
+    try:
+        validate_task_accounting(list(compiled.coverage), session.task_text)
+    except ValueError:
+        rows.append(CompletionCheck("research_task_accounting", CHECK_FAIL, "task_accounting_missing"))
+    else:
+        rows.append(CompletionCheck("research_task_accounting", CHECK_PASS, "model_reported_not_semantically_verified"))
+    return rows
 
 
 def finalize_research_text(session: Any, text: str, context: Any) -> str:

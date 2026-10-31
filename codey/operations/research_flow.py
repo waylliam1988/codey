@@ -331,7 +331,7 @@ def run_research_pipeline(
             topic_continuity_payload=topic_continuity_payload,
             requested_capabilities=request.requested_capabilities,
             task_policy=getattr(frame, "entry_policy", None),
-            publish_synthesis=not bool(getattr(getattr(frame, "entry_policy", None), "strict_research", False)),
+            publish_synthesis=True,
         )
 
     investigation_index = 0
@@ -371,8 +371,6 @@ def run_research_pipeline(
         from codey.operations.research_iteration import run_research_iteration
         from codey.operations.research_synthesis import synthesis_context
 
-        strict = bool(getattr(frame.entry_policy, "strict_research", False))
-
         def synthesize(invocation: ResearchInvocation, feedback: str = "") -> Any:
             return run_research_iteration(
                 deps, provider=frame.provider, session_id=request.session_id, project=frame.project_text,
@@ -380,24 +378,10 @@ def run_research_pipeline(
                 stop_flag=stop_flag_for(deps.state, frame.run_id), provider_id=frame.provider_id,
                 run_id=frame.run_id, chat_handoff="", trace_recorder=frame.trace, search=tools.search,
                 tools=tools, iteration_context=synthesis_context(tools) + ("\n" + feedback if feedback else ""),
-                task_policy=frame.entry_policy, invocation=invocation, publish_synthesis=not strict,
+                task_policy=frame.entry_policy, invocation=invocation, publish_synthesis=True,
             ).result
 
         final = synthesize(ResearchInvocation.synthesis(investigation_index)) if investigation_index else result
-        if strict:
-            from codey.operations.research_review import review_and_repair
-            from codey.research.report_projection import project_accepted_report
-
-            final = review_and_repair(final, tools, history=continuation, provider=frame.provider,
-                provider_id=frame.provider_id, on_event=hooks.on_event,
-                stop_flag=stop_flag_for(deps.state, frame.run_id), repair=synthesize, parent_policy=frame.entry_policy)
-            if final.stop_reason == "done" and final.semantic_review is not None:
-                identity = final.semantic_review["synthesis_id"]
-                if identity not in tools.created_ids:
-                    tools.created_ids.append(identity)
-                final = replace(final, synthesis_id=identity, notes_created=list(tools.created_ids),
-                    research_record=project_accepted_report(final.accepted_report, question=request.task,
-                        run_id=frame.run_id, session_id=request.session_id, project=frame.project_text, synthesis_id=identity))
         # The result/proof belong to the new parent invocation. Even when it
         # exhausts its budget, never return the older draft as successful.
         return final

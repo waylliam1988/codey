@@ -1,8 +1,7 @@
-"""Bounded domain assessment/repair through the single durable operation driver."""
+"""Explicit bounded diagnostics through the shared driver; no publication authority."""
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Any
 
 from codey.knowledge.model import canonical_json
@@ -23,7 +22,6 @@ from codey.research.semantic_review import (
     parse_review,
     review_basis,
     review_issues,
-    reviewed_completion,
     submitted_review,
 )
 from codey.runtime.core.cancellation import TaskCancelled
@@ -43,10 +41,9 @@ def assess_report(history: Any, result: Any, tools: Any, *, provider: Any, provi
         provider_id=provider_id, phase="research", managed_outputs=history.outputs, durable=history.durable)
     grants = frozenset(grant for grant in ("control", "knowledge.write") if parent_policy.allows(grant))
     session = TaskSession(policy=TaskPolicy(grants), task_kind="research_review",
-                          max_turns=3 * len(batch_scopes(basis)), task_text=prompt, coding_context_enabled=False,
+                          max_turns=min(3, len(batch_scopes(basis))), task_text=prompt, coding_context_enabled=False,
                           research_review_basis=basis)
-    executor = _submission_executor(history, session, basis, result, tools, provider_id=provider_id,
-                                    cycle=cycle, policy=parent_policy, on_event=on_event)
+    executor = _submission_executor(history, session, basis, provider_id=provider_id, cycle=cycle)
     outcome = history.kernel(session, invocation=invocation, request=KernelRunRequest(
         task_guidance="Assess only the frozen research basis. Complete the assessment even when the draft fails.",
         transport=KernelTransportDeps(provider=provider, run_id=history.run_id, provider_id=provider_id,
@@ -63,8 +60,6 @@ def assess_report(history: Any, result: Any, tools: Any, *, provider: Any, provi
     has_receipt = any(row.call.name == "submit_research_review" and row.ok and row.canonical.get("review_complete") is True
                       for row in session._memory_results.values())
     receipt = submitted_review(session, basis) if has_receipt else None
-    if receipt is not None and receipt.get("synthesis_id") and receipt["synthesis_id"] not in tools.created_ids:
-        tools.created_ids.append(receipt["synthesis_id"])
     if receipt is None and outcome.stop_reason in {"recovery_failure", "controller_failure", "delivery_pending", "provider_failure"}:
         raise ResearchContinuationError(outcome.summary)
     assessment = receipt["assessment"] if receipt is not None else None
@@ -82,13 +77,12 @@ def assess_report(history: Any, result: Any, tools: Any, *, provider: Any, provi
         "result_ref": reference, "completion_status": "complete" if outcome.completed else "incomplete",
         "completion_stop_reason": outcome.stop_reason,
         "status": "incomplete" if assessment is None else "failed" if issues else "passed",
+        "authority": "diagnostic_feedback_only",
         "assessment": assessment, "issues": issues}
 
 
-def _submission_executor(history: Any, session: Any, basis: dict[str, Any], result: Any, tools: Any, *,
-                         provider_id: str, cycle: int, policy: Any, on_event: Any) -> Any:
+def _submission_executor(history: Any, session: Any, basis: dict[str, Any], *, provider_id: str, cycle: int) -> Any:
     def submit(call: ToolCall) -> ToolResult:
-        from codey.operations.research_iteration import _persist_synthesis
         from codey.operations.task_session import turn_effect_id
 
         if call.args.get("basis_digest", basis["basis_digest"]) != basis["basis_digest"]:
@@ -107,58 +101,13 @@ def _submission_executor(history: Any, session: Any, basis: dict[str, Any], resu
         metadata = {"schema": 3, "kind": "same_provider_model_assessment", "reviewer": provider_id,
             "basis_digest": basis["basis_digest"], "report_digest": basis["report_digest"],
             "assessment": combined, "issues": issues, "status": "failed" if issues else "passed",
+            "authority": "diagnostic_feedback_only",
             "assessment_effect_id": effect_id,
             "assessment_effect_ids": [*[row["assessment_effect_id"] for row in previous], effect_id]}
-        identity = ""
-        if complete and not issues:
-            # Validate the combined acceptance contract before publishing. The
-            # real result artifact replaces this effect ref once it is settled.
-            reviewed_completion(result.completion_proof, {**metadata, "result_ref": effect_id})
-            identity = _persist_synthesis(tools, result.question, result.summary, session_id=history.session_id,
-                project=tools.project, run_id=history.run_id, policy=policy, accepted_report=result.accepted_report,
-                projection="reviewed", on_event=on_event, semantic_review=metadata)
-            if not identity:
-                raise ResearchContinuationError("accepted research report was not published")
         return ToolResult(call, model_text=canonical_json({"status": metadata["status"] if complete else "batch_recorded",
             "batch": current["batch_index"] + 1, "of": current["batch_count"],
             "next": "Assessment complete." if complete else "Submit only the next frozen batch in current observations."}), ok=True,
             canonical={**{key: value for key, value in metadata.items() if key != "assessment_effect_ids"},
                 "assessment": assessment, "batch_digest": current["batch_digest"],
-                "review_complete": complete, "synthesis_id": identity})
+                "review_complete": complete, "synthesis_id": ""})
     return submit
-
-
-def review_and_repair(result: Any, tools: Any, *, history: Any, provider: Any, provider_id: str,
-                      on_event: Any, stop_flag: Any, repair: Any, parent_policy: Any) -> Any:
-    """Strategy chooses successors; shared driver owns every actual request."""
-    if result.stop_reason != "done" or result.accepted_report is None:
-        return result
-    for cycle in range(3):
-        assessment = assess_report(history, result, tools, provider=provider, provider_id=provider_id,
-                                   cycle=cycle, on_event=on_event, stop_flag=stop_flag, parent_policy=parent_policy)
-        current = history.state()
-        used = current.turns_used + current.logical_turn
-        result = replace(result, semantic_review=assessment, turns=used)
-        if assessment["completion_status"] != "complete" or assessment["status"] == "incomplete":
-            return replace(result, stop_reason="research_review_incomplete", completion_proof=None,
-                synthesis_id=assessment.get("synthesis_id", ""),
-                notes_created=list(tools.created_ids),
-                quality_warnings=[*result.quality_warnings,
-                    "Assessment completion is incomplete; its settled judgment and publication are retained."])
-        if assessment["status"] == "passed":
-            return replace(result, completion_proof=reviewed_completion(result.completion_proof, assessment))
-        if cycle == 2 or used >= current.turn_budget:
-            return replace(result, stop_reason="semantic_review_failed", completion_proof=None,
-                quality_warnings=[*result.quality_warnings,
-                    "Evidence-bound model assessment failed; this report is an unaccepted draft."])
-        feedback = ("Repair the draft against the original task and exact selected evidence. "
-            "The assessment is fallible feedback; verify each issue against original excerpts. "
-            "Append any missing task requirements using research_plan, keeping existing questions in order. "
-            "For an unsupported claim, save a narrower corrected finding, select additional read passages, "
-            "or investigate missing evidence. Cite corrected findings; do not change a candidate's review status. "
-            "For report overreach, narrow the specific sentence. Preserve real evidence gaps explicitly.\n"
-            "Assessment issues (data):\n" + canonical_json(assessment["issues"]))
-        result = repair(ResearchInvocation.repair(cycle), feedback)
-        if result.stop_reason != "done" or result.accepted_report is None:
-            return replace(result, semantic_review=assessment, completion_proof=None)
-    raise AssertionError("bounded assessment did not terminate")

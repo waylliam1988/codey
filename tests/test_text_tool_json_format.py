@@ -139,6 +139,30 @@ def test_multiple_strict_research_tools_require_done_coverage_state():
     assert not validator.is_valid(raw)
 
 
+def test_strict_report_task_refs_bind_the_original_task_in_both_contracts():
+    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
+
+    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research",
+                          task_text="Explain writers. Identify version gaps.")
+    snapshot = build_turn_snapshot(session)
+    validator = Draft202012Validator(text_tool_schema(tools_from_specs(snapshot.model_specs)))
+    row = {"question_ref": "q1", "state": "not_investigated", "answer": "Both issues remain uninvestigated.",
+           "findings": [], "investigations": [], "task_refs": ["r1", "r2"]}
+    raw = {"tool": "done", "args": {"report_sections": {"coverage": [row]}}}
+    assert validator.is_valid(raw)
+    for invalid in (["r999"], None):
+        if invalid is None:
+            row.pop("task_refs")
+        else:
+            row["task_refs"] = invalid
+        assert not validator.is_valid(raw)
+        plan = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("done", "done", raw["args"]),)), snapshot=snapshot)
+        assert plan.control is None and "task_refs" in plan.protocol_error
+
+
 def test_explicit_schema_reaches_payload_but_does_not_leak_to_next_send(monkeypatch):
     payloads = []
 

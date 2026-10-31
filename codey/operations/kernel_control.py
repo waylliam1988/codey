@@ -105,7 +105,7 @@ def evaluate_completion(context: Any, state: Any) -> None:
             tools = context.execution.research_tools
             try:
                 compiled = compile_finding_report(context.session.last_done_args, tools.ledger, tools.store,
-                    project=tools.project, session_id=tools.session_id)
+                    project=tools.project, session_id=tools.session_id, task=context.session.task_text)
             except ValueError as exc:
                 # Keep the repair field-local and the original proposal intact.
                 raise ValueError(f"Report reference fields: {exc}") from exc

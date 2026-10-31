@@ -163,9 +163,13 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
 
 
 def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: Any, *,
-                           project: str = "", session_id: str = "") -> FindingReport:
+                           project: str = "", session_id: str = "", task: str = "") -> FindingReport:
     proposal = parse_report_proposal(args)
     validate_question_coverage(list(proposal.coverage), ledger)
+    if task:
+        from codey.research.task_requirements import validate_task_accounting
+
+        validate_task_accounting(list(proposal.coverage), task)
     for row in proposal.paragraphs:
         for label in row.refs:
             if label not in ledger.references:

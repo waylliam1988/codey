@@ -126,7 +126,7 @@ def test_recalled_claim_pins_old_version_without_new_fetch_or_duplicate_archive(
         from codey.policies.task_policy import STRICT_RESEARCH_REQUIRED_CHECKS
 
         check_session = TaskSession(TaskPolicy(session.policy.grants, strict_research=True,
-            required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research")
+            required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research", task_text="Explain writer concurrency.")
         verdict = evaluate(check_session, compiled.text, context={"research_ledger": tools.ledger, "research_report": compiled})
         assert verdict.complete, verdict.followup
         restored = ResearchLedger()
@@ -176,7 +176,7 @@ def test_inference_pins_premises_keeps_candidate_identity_and_replays(tmp_path):
         from codey.policies.task_policy import STRICT_RESEARCH_REQUIRED_CHECKS
 
         check_session = TaskSession(TaskPolicy(session.policy.grants, strict_research=True,
-            required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research")
+            required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research", task_text="Explain writer concurrency.")
         verdict = evaluate(check_session, compiled.text, context={"research_ledger": tools.ledger, "research_report": compiled})
         assert verdict.complete, verdict.followup
         forged = copy.deepcopy(saved_inference)
@@ -245,7 +245,8 @@ def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_
         tools.ledger = ResearchLedger()
         tools.session_id = "later-session"
         session = TaskSession(TaskPolicy(session.policy.grants, strict_research=True,
-            required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research", max_turns=7)
+            required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research", max_turns=7,
+            task_text="Use prior research without fetching webpages again")
         hypothesis = "A single application writer queue may reduce lock contention; workload validation is needed."
 
         class Provider:
@@ -267,7 +268,7 @@ def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_
                 return json.dumps({"tool": name, "args": args})
 
         result = run_task_kernel(session, request=KernelRunRequest(
-            transport=KernelTransportDeps(Provider(), user_task="Use prior research, without fetching webpages again"),
+            transport=KernelTransportDeps(Provider(), user_task=session.task_text),
             execution=KernelExecutionDeps(research_tools=tools, permission_profile="research"),
             observation=KernelObservationDeps(completion_context={"research_ledger": tools.ledger})))
         assert result.completed, result.summary

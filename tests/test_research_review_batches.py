@@ -1,9 +1,7 @@
-"""Bounded review scopes preserve exact coverage, dependencies, and one publisher."""
+"""Bounded diagnostic scopes preserve original judgments without publication authority."""
 
 import copy
 import json
-import subprocess
-import sys
 from types import SimpleNamespace
 
 import pytest
@@ -12,12 +10,13 @@ from codey.research.review_batches import batch_receipts, batch_scopes, batch_vi
 from codey.research.semantic_review import parse_review, review_issues, submitted_review
 from codey.runtime.core.models import ToolCall, ToolResult
 from tests.test_research_review_scope import case
-from tests.test_research_semantic_review import _run, assessment
+from tests.test_research_semantic_review import assessment
 
 
 def large_basis():
     basis, _ = case()
-    basis.update(basis_digest="frozen-root", investigations={"a1": {"question_ref": "q1"}})
+    basis.update(basis_digest="frozen-root", report_digest="frozen-report",
+                 investigations={"a1": {"question_ref": "q1"}})
     basis["claims"][0]["units"] = basis["claims"][0]["units"][:1]
     basis["claims"][0]["evidence"] = [{"excerpt": "Only one writer at a time."}]
     basis["requirements"] = [{"task_ref": f"r{n}", "text": "Explain the writer limit."} for n in range(1, 21)]
@@ -240,33 +239,23 @@ def test_receipts_bind_original_batches_and_dependencies_and_require_complete_sc
         batch_receipts(session, root)
 
 
-@pytest.mark.parametrize("native", [False, True])
-@pytest.mark.usefixtures("public_source_dns")
-def test_shared_driver_batches_repair_and_publishes_once(tmp_path, native):
-    task = "Explain writer concurrency. " * 12 + "Distinguish historical version restrictions."
-    result = _run(tmp_path, task=task, budget=60, native=native)
-    assert result.stop_reason == "done", result.summary
-    rows = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
-    assert sum("publication" in row for row in rows) == 1
-    assert sum(row.get("attempt") == 8 for row in rows) > 1
-    assert sum(row.get("attempt") == 10 for row in rows) > 1
+def test_positive_diagnostic_submissions_cannot_publish_or_certify_a_report(monkeypatch):
+    from unittest.mock import Mock
 
+    from codey.operations.research_review import _submission_executor
 
-@pytest.mark.usefixtures("public_source_dns")
-def test_real_restart_between_batches_reuses_settled_judgment(tmp_path):
-    task = "Explain writer concurrency. " * 12 + "Distinguish historical version restrictions."
-    source = ("from pathlib import Path; from tests.test_research_semantic_review import _run; import sys; "
-              "_run(Path(sys.argv[1]), task=sys.argv[2], budget=60, boundary='review_batch_committed')")
-    child = subprocess.run([sys.executable, "-c", source, str(tmp_path), task], capture_output=True, timeout=50)
-    assert child.returncode == 74, child.stderr.decode(errors="replace")
-    before = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
-    assert not any("publication" in row for row in before)
-    result = _run(tmp_path, task=task, budget=60, resume=True)
-    assert result.stop_reason == "done", result.summary
-    rows = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
-    assert sum(row.get("attempt") == 8 and row.get("turn") == 1 for row in rows) == 1
-    assert sum("fetch" in row for row in rows) == 1
-    assert sum("publication" in row for row in rows) == 1
-    original = (tmp_path / "calls.jsonl").read_bytes()
-    assert _run(tmp_path, task=task, budget=60, resume=True) == result
-    assert (tmp_path / "calls.jsonl").read_bytes() == original
+    publish = Mock(side_effect=AssertionError("model feedback cannot publish"))
+    monkeypatch.setattr("codey.operations.research_iteration._persist_synthesis", publish)
+    root = large_basis()
+    session = SimpleNamespace(_memory_results={}, turn=0)
+    submit = _submission_executor(SimpleNamespace(run_id="r"), session, root, provider_id="local", cycle=0)
+    for index in range(len(batch_scopes(root))):
+        current = next_batch(session, root)
+        session.turn = index + 1
+        result = submit(ToolCall("submit_research_review", {"assessment": assessment(current)}))
+        session._memory_results[str(index)] = result
+        assert result.ok and not result.canonical["synthesis_id"]
+        assert result.canonical["authority"] == "diagnostic_feedback_only"
+    assert result.canonical["review_complete"]
+    assert submitted_review(session, root)["assessment"]
+    publish.assert_not_called()

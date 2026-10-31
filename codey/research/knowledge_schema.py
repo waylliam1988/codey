@@ -59,7 +59,8 @@ def coverage_record_schema() -> dict[str, Any]:
     return object_schema({"question_ref": {"type": "string", "pattern": "^q[1-8]$"},
         "state": {"type": "string", "enum": list(QUESTION_STATES)}, "answer": text_schema(),
         "findings": array_schema({"type": "string", "pattern": "^f[1-9][0-9]*$"}, 0, 16),
-        "investigations": array_schema({"type": "string", "pattern": "^a[1-9][0-9]*$"})},
+        "investigations": array_schema({"type": "string", "pattern": "^a[1-9][0-9]*$"}),
+        "task_refs": array_schema({"type": "string", "pattern": "^r[1-9][0-9]*$"}, 0, 512)},
         "question_ref", "state", "answer", "findings", "investigations")
 
 

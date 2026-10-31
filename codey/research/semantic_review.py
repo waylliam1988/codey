@@ -10,13 +10,7 @@ import hashlib
 import json
 from typing import Any
 
-from codey.completion.contract import (
-    CHECK_PASS,
-    CompletionCheck,
-    CompletionProof,
-    build_completion_contract,
-    project_completion_proof,
-)
+from codey.completion.contract import CompletionProof
 from codey.knowledge.model import canonical_json
 from codey.research.evidence_view import resolve_selected_references
 from codey.research.finding_report import FindingReport
@@ -262,20 +256,8 @@ def submitted_review(session: Any, basis: dict[str, Any]) -> dict[str, Any]:
 
 
 def reviewed_completion(proof: CompletionProof, assessment: dict[str, Any]) -> CompletionProof:
-    """Project writer facts plus the committed model assessment; no fresh judgment."""
-    if assessment["status"] != "passed" or review_issues(assessment["assessment"]):
-        raise ValueError("failed model assessment cannot complete research")
-    refs = {name: getattr(proof, name) for name in (
-        "limitation_refs", "finding_refs", "analysis_run_refs", "external_refs", "diagnostic_refs")}
-    contract = build_completion_contract(domain=proof.domain, subject_ref=proof.subject_ref,
-        checks=(*proof.checks, *(CompletionCheck(name, CHECK_PASS, "same_provider_model_assessment") for name in (
-            "task_coverage_assessed", "investigation_relevance_assessed", "claim_support_assessed", "report_scope_assessed"))),
-        evidence_refs=(*assessment.get("assessment_effect_ids", [assessment["assessment_effect_id"]]), *proof.evidence_refs),
-        artifact_refs=(assessment["result_ref"], *proof.artifact_refs), **refs)
-    combined = project_completion_proof(contract) if contract is not None else None
-    if combined is None or not combined.satisfied:
-        raise ValueError("combined research completion proof is incomplete")
-    return combined
+    """A model judgment cannot add completion authority, including positive feedback."""
+    raise ValueError("same-model feedback cannot certify research completion")
 
 
 def _reason(value: object) -> bool:

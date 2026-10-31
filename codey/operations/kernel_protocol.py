@@ -213,7 +213,8 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
 
     purpose = ("evidence" if getattr(session, "task_kind", "") == "evidence_followup" else
                "report" if session.policy.strict_research else "ordinary")
-    frozen = tuple(done_spec_for_purpose(spec, purpose) if spec.name == "done" else spec for spec in frozen)
+    frozen = tuple(done_spec_for_purpose(spec, purpose, task=session.task_text) if spec.name == "done" else spec
+                   for spec in frozen)
     if getattr(session, "research_review_basis", None) is not None:
         from codey.research.review_batches import next_batch, review_spec_for_batch
 

@@ -69,7 +69,10 @@ class ResearchCompletionGate:
             )
         record = getattr(research_result, "research_record", None)
         accepted = getattr(research_result, "accepted_report", None)
-        if accepted is not None or getattr(research_result, "semantic_review", None) is not None:
+        proof = getattr(research_result, "completion_proof", None)
+        compiled_publication = isinstance(proof, CompletionProof) and any(
+            row.check_id == "research_publication" for row in proof.checks)
+        if accepted is not None or compiled_publication or getattr(research_result, "semantic_review", None) is not None:
             from codey.research.report_projection import validate_accepted_projection
 
             try:

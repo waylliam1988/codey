@@ -147,7 +147,8 @@ def _proof_evidence_refs(session: Any, context: Any) -> tuple[str, ...]:
         pass
     parent = _context_get(context, "research_prerequisites")
     original = tuple(parent.executed) if parent is not None and _session_profile(session) == "research" else ()
-    return tuple(dict.fromkeys((*original, *refs)))[:12]
+    current = tuple(session.executed) if _session_profile(session) == "research" else ()
+    return tuple(dict.fromkeys((*original, *current, *refs)))[:12]
 
 
 def _domain_for_session(session: Any) -> str:

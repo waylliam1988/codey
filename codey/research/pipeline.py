@@ -415,9 +415,9 @@ class ResearchPipeline:
         plan: ResearchPlan,
     ) -> str:
         if getattr(self.policy, "strict_research", False):
-            # Frozen answer review owns evidence gaps and targeted repair.
+            # The shared writer handles explicit gaps and deterministic repair.
             # The legacy source-count planner must not run a second followup.
-            return "semantic_review_owns_followup"
+            return "strict_writer_owns_followup"
         if result.stop_reason in {"max_turns", "protocol"} and not result.queries and not result.opened_sources:
             return "initial_no_research_progress"
         if not self.config.enabled:
@@ -505,7 +505,7 @@ class ResearchPipeline:
             return
 
     def _append_final_record(self, result: ResearchRunResult) -> EvidenceLedgerWriteResult | None:
-        if result.accepted_report is not None and result.semantic_review is not None and result.stop_reason != "done":
+        if result.accepted_report is not None and result.stop_reason != "done":
             return None
         if self.evidence_ledgers is None:
             return None

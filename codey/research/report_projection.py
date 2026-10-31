@@ -17,52 +17,53 @@ from codey.research.object_model import (
 from codey.utils.refs import digest_json, digest_text, stable_ref
 
 
+def published_completion(proof: CompletionProof, compiled: FindingReport, *,
+                         synthesis_id: str, result_ref: str) -> CompletionProof:
+    """Bind deterministic writer checks to its settled publication, never a model verdict."""
+    from codey.completion.contract import CHECK_PASS, CompletionCheck
+
+    if not isinstance(proof, CompletionProof) or not proof.satisfied or not synthesis_id or not result_ref:
+        raise ValueError("research publication requires its completed writer and original result")
+    refs = {name: getattr(proof, name) for name in ("limitation_refs", "finding_refs", "analysis_run_refs",
+                                                  "external_refs", "diagnostic_refs")}
+    contract = build_completion_contract(domain=proof.domain, subject_ref=proof.subject_ref,
+        checks=(*proof.checks, CompletionCheck("research_publication", CHECK_PASS, "settled_publication")),
+        evidence_refs=(stable_ref("research_publication", synthesis_id), *proof.evidence_refs),
+        artifact_refs=("research-report:" + compiled.to_payload()["compilation_digest"], result_ref, *proof.artifact_refs),
+        **refs)
+    combined = project_completion_proof(contract) if contract is not None else None
+    if combined is None or not combined.satisfied:
+        raise ValueError("research publication proof is incomplete")
+    return combined
+
+
 def validate_accepted_projection(result: Any, *, run_id: str, session_id: str, project: str) -> None:
     compiled = result.accepted_report
-    # Validate the frozen payload before any downstream queue decision.
     FindingReport.from_payload(compiled.to_payload())
-    assessment = result.semantic_review
-    if (result.summary != compiled.text or result.stop_reason != "done" or not isinstance(assessment, dict)
-            or assessment.get("status") != "passed" or assessment.get("issues")
-            or assessment.get("completion_status") != "complete"
-            or assessment.get("kind") != "same_provider_model_assessment"
-            or assessment.get("report_digest") != compiled.to_payload()["compilation_digest"]
-            or not assessment.get("result_ref")):
-        raise ValueError("accepted report lacks its matching completed model assessment")
-    from codey.knowledge.model import canonical_json
-    from codey.research.semantic_review import parse_review_scope, review_issues, review_scope
+    from codey.research.task_requirements import validate_task_accounting
 
-    version = assessment.get("schema", 1)
-    if type(version) is not int or version not in (1, 2, 3):
-        raise ValueError("unsupported research assessment schema")
-    # Historical published judgments keep their original unit boundaries.
-    # This is a read projection, never a second assessment or execution path.
-    judgments = parse_review_scope(canonical_json(assessment["assessment"]),
-        review_scope(compiled, result.question, sentences=version >= 2, legacy_sentence_boundaries=version == 2))
+    validate_task_accounting(list(compiled.coverage), result.question)
     proof = result.completion_proof
-    required = {"task_coverage_assessed", "investigation_relevance_assessed", "claim_support_assessed", "report_scope_assessed"}
-    writer_checks = {"research_citations", "research_sources_opened", "research_evidence_saved",
-                     "research_report_sections", "research_claim_bindings", "research_question_coverage"}
-    if (review_issues(judgments) or not isinstance(proof, CompletionProof) or not proof.satisfied
+    required = {"research_citations", "research_sources_opened", "research_evidence_saved",
+                "research_report_sections", "research_claim_bindings", "research_question_coverage",
+                "research_task_accounting", "research_publication"}
+    if (result.summary != compiled.text or result.stop_reason != "done"
+            or not isinstance(proof, CompletionProof) or not proof.satisfied
             or proof.domain != "research" or proof.subject_ref != f"run:{run_id[:80]}:task:research"
-            or not writer_checks <= {row.check_id for row in proof.checks if row.status == "pass"}
-            or not required <= {row.check_id for row in proof.checks
-                                if row.status == "pass" and row.reason_code == "same_provider_model_assessment"}
-            or assessment.get("assessment_effect_id") not in proof.evidence_refs
-            or assessment["result_ref"] not in proof.artifact_refs
-            or not result.synthesis_id or result.synthesis_id != assessment.get("synthesis_id")):
-        raise ValueError("accepted report differs from its assessed completion proof")
-    # Check the original proof's content-addressed identity, without reviewing
-    # the ResearchRecord again or adding a stricter queue completion contract.
+            or not required <= {row.check_id for row in proof.checks if row.status == "pass"}
+            or any(row.reason_code == "same_provider_model_assessment" for row in proof.checks)
+            or not result.synthesis_id or stable_ref("research_publication", result.synthesis_id) not in proof.evidence_refs
+            or "research-report:" + compiled.to_payload()["compilation_digest"] not in proof.artifact_refs):
+        raise ValueError("compiled report differs from its deterministic publication proof")
     contract = build_completion_contract(domain=proof.domain, subject_ref=proof.subject_ref, checks=proof.checks,
         **{name: getattr(proof, name) for name in ("evidence_refs", "limitation_refs", "finding_refs",
             "analysis_run_refs", "artifact_refs", "external_refs", "diagnostic_refs")})
     if project_completion_proof(contract) != proof:
-        raise ValueError("accepted completion proof identity differs from its original inputs")
+        raise ValueError("completion proof identity differs from its original inputs")
     expected = project_accepted_report(compiled, question=result.question, run_id=run_id, session_id=session_id,
                                        project=project, synthesis_id=result.synthesis_id)
     if expected != result.research_record:
-        raise ValueError("research history differs from its original accepted compilation")
+        raise ValueError("research history differs from its original compilation")
 
 
 def project_accepted_report(compiled: FindingReport, *, question: str, run_id: str, session_id: str,
