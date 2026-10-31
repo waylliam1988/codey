@@ -96,7 +96,7 @@ def research_assessment_schema() -> dict[str, Any]:
     investigation = object_schema({"ref": text, "question_ref": text,
         "verdict": {"type": "string", "enum": ["relevant", "irrelevant", "uncertain"]}, "reason": text},
         "ref", "question_ref", "verdict", "reason")
-    return object_schema({"requirements": array_schema(requirement, minimum=1, maximum=512),
+    return object_schema({"requirements": array_schema(requirement, maximum=512),
         "investigations": array_schema(investigation, maximum=256),
         "claims": array_schema(claim, maximum=128),
         "paragraphs": array_schema(paragraph, maximum=140)},

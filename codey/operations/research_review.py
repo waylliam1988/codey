@@ -18,11 +18,11 @@ from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.pipeline import ResearchContinuationError
+from codey.research.review_batches import batch_receipts, batch_scopes, merge_assessments, next_batch
 from codey.research.semantic_review import (
     parse_review,
     review_basis,
     review_issues,
-    review_prompt,
     reviewed_completion,
     submitted_review,
 )
@@ -33,7 +33,8 @@ from codey.runtime.core.models import ToolCall, ToolResult
 def assess_report(history: Any, result: Any, tools: Any, *, provider: Any, provider_id: str,
                   cycle: int, on_event: Any, stop_flag: Any, parent_policy: Any) -> dict[str, Any]:
     basis = review_basis(result.accepted_report, tools, result.question)
-    prompt = review_prompt(basis)
+    prompt = ("Assess the frozen research report using the current batch supplied by the driver. "
+              "Original assessment identity: " + basis["basis_digest"])
     invocation = ResearchInvocation.assessment(cycle)
     state = history.state()
     if state.writer_attempt < invocation.attempt:
@@ -42,7 +43,8 @@ def assess_report(history: Any, result: Any, tools: Any, *, provider: Any, provi
         provider_id=provider_id, phase="research", managed_outputs=history.outputs, durable=history.durable)
     grants = frozenset(grant for grant in ("control", "knowledge.write") if parent_policy.allows(grant))
     session = TaskSession(policy=TaskPolicy(grants), task_kind="research_review",
-                          max_turns=3, task_text=prompt, coding_context_enabled=False)
+                          max_turns=3 * len(batch_scopes(basis)), task_text=prompt, coding_context_enabled=False,
+                          research_review_basis=basis)
     executor = _submission_executor(history, session, basis, result, tools, provider_id=provider_id,
                                     cycle=cycle, policy=parent_policy, on_event=on_event)
     outcome = history.kernel(session, invocation=invocation, request=KernelRunRequest(
@@ -58,7 +60,7 @@ def assess_report(history: Any, result: Any, tools: Any, *, provider: Any, provi
                 session_id=history.session_id, task_id=history.run_id, sink=sink))))
     if outcome.stop_reason == "stopped":
         raise TaskCancelled("research assessment stopped")
-    has_receipt = any(row.call.name == "submit_research_review" and row.ok
+    has_receipt = any(row.call.name == "submit_research_review" and row.ok and row.canonical.get("review_complete") is True
                       for row in session._memory_results.values())
     receipt = submitted_review(session, basis) if has_receipt else None
     if receipt is not None and receipt.get("synthesis_id") and receipt["synthesis_id"] not in tools.created_ids:
@@ -73,7 +75,8 @@ def assess_report(history: Any, result: Any, tools: Any, *, provider: Any, provi
     current = history.state()
     index = history.index(current)
     reference = current.work_ref if current.writer_attempt == invocation.attempt else index["results"][str(invocation.attempt)]
-    return {**({key: receipt[key] for key in ("synthesis_id", "assessment_effect_id")} if receipt is not None else {}),
+    return {**({key: receipt[key] for key in ("synthesis_id", "assessment_effect_id", "assessment_effect_ids")}
+               if receipt is not None else {}),
         "schema": 1, "kind": "same_provider_model_assessment", "reviewer": provider_id,
         "basis_digest": basis["basis_digest"], "report_digest": basis["report_digest"],
         "result_ref": reference, "completion_status": "complete" if outcome.completed else "incomplete",
@@ -88,17 +91,26 @@ def _submission_executor(history: Any, session: Any, basis: dict[str, Any], resu
         from codey.operations.research_iteration import _persist_synthesis
         from codey.operations.task_session import turn_effect_id
 
-        if call.args["basis_digest"] != basis["basis_digest"]:
+        if call.args.get("basis_digest", basis["basis_digest"]) != basis["basis_digest"]:
             raise ValueError("assessment basis digest differs from the frozen report")
-        assessment = parse_review(canonical_json(call.args["assessment"]), basis)
-        issues = review_issues(assessment)
+        current = next_batch(session, basis)
+        if current is None:
+            raise ValueError("all assessment batches are already submitted")
+        assessment = parse_review(canonical_json(call.args["assessment"]), current)
+        previous = batch_receipts(session, basis)
+        complete = len(previous) + 1 == len(batch_scopes(basis))
+        combined = merge_assessments([*[row["assessment"] for row in previous], assessment])
+        if complete:
+            combined = parse_review(canonical_json(combined), basis)
+        issues = review_issues(combined)
         effect_id = turn_effect_id(f"{history.run_id}:research:review:{cycle}", session.turn, 0)
         metadata = {"schema": 1, "kind": "same_provider_model_assessment", "reviewer": provider_id,
             "basis_digest": basis["basis_digest"], "report_digest": basis["report_digest"],
-            "assessment": assessment, "issues": issues, "status": "failed" if issues else "passed",
-            "assessment_effect_id": effect_id}
+            "assessment": combined, "issues": issues, "status": "failed" if issues else "passed",
+            "assessment_effect_id": effect_id,
+            "assessment_effect_ids": [*[row["assessment_effect_id"] for row in previous], effect_id]}
         identity = ""
-        if not issues:
+        if complete and not issues:
             # Validate the combined acceptance contract before publishing. The
             # real result artifact replaces this effect ref once it is settled.
             reviewed_completion(result.completion_proof, {**metadata, "result_ref": effect_id})
@@ -107,9 +119,12 @@ def _submission_executor(history: Any, session: Any, basis: dict[str, Any], resu
                 projection="reviewed", on_event=on_event, semantic_review=metadata)
             if not identity:
                 raise ResearchContinuationError("accepted research report was not published")
-        return ToolResult(call, model_text=canonical_json({"status": metadata["status"],
-            "issues": issues, "next": "The driver closes this assessment using this original receipt."}), ok=True,
-            canonical={**metadata, "synthesis_id": identity})
+        return ToolResult(call, model_text=canonical_json({"status": metadata["status"] if complete else "batch_recorded",
+            "batch": current["batch_index"] + 1, "of": current["batch_count"],
+            "next": "Assessment complete." if complete else "Submit only the next frozen batch in current observations."}), ok=True,
+            canonical={**{key: value for key, value in metadata.items() if key != "assessment_effect_ids"},
+                "assessment": assessment, "batch_digest": current["batch_digest"],
+                "review_complete": complete, "synthesis_id": identity})
     return submit
 
 

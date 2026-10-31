@@ -49,17 +49,19 @@ def test_compiled_coverage_findings_bind_the_rendered_answer_for_review(tmp_path
 
 def assessment(basis, reject=False):
     requirements = []
+    paths = basis.get("report_paths", [row["path"] for row in basis["paragraphs"]])
     for row in basis["requirements"]:
         historical = "historical version restrictions" in row["text"]
         requirements.append({"task_ref": row["task_ref"],
             "question_refs": ([] if reject else ["q2"]) if historical else ["q1"],
-            "report_paths": ([] if reject else [basis["paragraphs"][-1]["path"]]) if historical else [basis["paragraphs"][0]["path"]],
+            "report_paths": ([] if reject else [paths[-1]]) if historical else [paths[0]],
             "state": ("missing" if reject else "acknowledged_gap") if historical else "addressed",
             "reason": "Version evidence is missing." if historical else "Explicit writer limit."})
     return {"requirements": requirements,
         "investigations": [{"ref": ref, "question_ref": row["question_ref"], "verdict": "relevant",
             "reason": "The investigation targets the registered question."}
-            for row in basis["coverage"] for ref in row["investigations"]],
+            for row in basis["coverage"] for ref in row["investigations"]
+            if ref in basis.get("investigation_scope", [ref])],
         "claims": [{"ref": row["ref"], "units": [{"unit": unit["unit"],
                     "verdict": "unsupported" if reject else "supported",
                     "quotes": [] if reject else [{"evidence": 1, "quote": "Only one writer at a time."}],
@@ -195,7 +197,7 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
                 f"call-{state().writer_attempt}-{state().logical_turn}", row["tool"], row["args"]),))
 
         def send_tool_results(self, results, tools):
-            return self.send_turn("", tools)
+            return self.send_turn("\n".join(row.user_content for row in results), tools)
 
         def acknowledge_tool_results(self, results, tools, timeout=None):
             from codey.providers.base import AssistantTurn, ProviderToolCall
@@ -212,7 +214,7 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
             if attempt in (8, 10, 12):
                 if absent_assessment:
                     return json.dumps({"tool": "unavailable_tool", "args": {}})
-                if turn == 1:
+                if "FROZEN BASIS:\n" in prompt:
                     basis = json.JSONDecoder().raw_decode(prompt.split("FROZEN BASIS:\n", 1)[1])[0]
                     return json.dumps({"tool": "submit_research_review", "args": {
                         "basis_digest": basis["basis_digest"],
@@ -277,6 +279,9 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
                 os._exit(74)
             if (boundary == "publication_receipt" and position.writer_attempt == 10
                     and position.leaf == "tool_delivery_pending"):
+                os._exit(74)
+            if (boundary == "review_batch_committed" and position.writer_attempt == 8
+                    and position.leaf == "tool_delivery_pending" and position.logical_turn == 1):
                 os._exit(74)
         durable.subscribe_commits(committed)
     policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True)

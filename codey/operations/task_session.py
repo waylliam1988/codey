@@ -82,6 +82,7 @@ class TaskSession:
     workspace_fingerprint: str = ""
     searches: list[str] = field(default_factory=list)
     research_questions: tuple[str, ...] = ()
+    research_review_basis: dict[str, Any] | None = None
     search_results: dict[str, str] = field(default_factory=dict)
     opened_sources: set[str] = field(default_factory=set)
     source_ids: dict[str, str] = field(default_factory=dict)

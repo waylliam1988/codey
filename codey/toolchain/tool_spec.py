@@ -194,9 +194,10 @@ def _all_specs() -> dict[str, ToolSpec]:
         executor="research_review", replay_class="safe",
         parameters=(("basis_digest", {"type": "string"}),
                     ("assessment", research_assessment_schema())),
-        required=("basis_digest", "assessment"),
-        description="Submit the complete assessment of the frozen research basis. Records failures for repair; "
-                    "a passing assessment publishes only that exact frozen report. Submission completes this assessment.")
+        required=("assessment",),
+        description="Submit exactly the current frozen assessment batch. Leave arrays empty for categories without "
+                    "current items. The driver binds its original basis identity and supplies the next batch. "
+                    "Only a complete passing aggregate may publish the exact frozen report.")
     codemode_example = (
         "const result = await tools.read_file({path:inputs.path}); "
         "if (!result.ok) throw new Error(result.error); return result.value.text;"

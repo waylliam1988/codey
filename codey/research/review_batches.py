@@ -1,0 +1,122 @@
+"""Pure bounded assessment projections over original settled tool receipts.
+
+No scheduler, cursor, provider, or store: the shared kernel advances tool turns.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+from typing import Any
+
+from codey.knowledge.model import canonical_json
+
+MAX_BATCH_UNITS = 8
+_KINDS = ("claims", "paragraphs", "requirements", "investigations")
+
+
+def batch_scopes(basis: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+    work: list[tuple[str, dict[str, Any]]] = []
+    for kind in _KINDS:
+        rows = ([{"ref": ref}] for ref in basis["investigations"]) if kind == "investigations" else (
+            [{**row, "units": [unit]} for unit in row["units"]] if kind in {"claims", "paragraphs"} else [row]
+            for row in basis[kind])
+        work.extend((kind, row) for group in rows for row in group)
+    if len(work) <= MAX_BATCH_UNITS:
+        return ({kind: copy.deepcopy(basis[kind]) for kind in _KINDS},)
+    scopes: list[dict[str, Any]] = []
+    for kind in _KINDS:
+        selected = [row for category, row in work if category == kind]
+        for start in range(0, len(selected), MAX_BATCH_UNITS):
+            scope: dict[str, Any] = {key: [] for key in _KINDS}
+            items = selected[start:start + MAX_BATCH_UNITS]
+            if kind == "investigations":
+                scope[kind] = {row["ref"]: basis[kind][row["ref"]] for row in items}
+            elif kind in {"claims", "paragraphs"}:
+                identity = "ref" if kind == "claims" else "path"
+                grouped: dict[str, Any] = {}
+                for row in items:
+                    if row[identity] not in grouped:
+                        grouped[row[identity]] = {**row, "units": []}
+                    grouped[row[identity]]["units"].extend(row["units"])
+                scope[kind] = list(grouped.values())
+            else:
+                scope[kind] = items
+            scopes.append(scope)
+    return tuple(scopes)
+
+
+def merge_assessments(assessments: list[dict[str, Any]]) -> dict[str, Any]:
+    merged: dict[str, Any] = {key: [] for key in _KINDS}
+    seen: set[tuple[Any, ...]] = set()
+    for assessment in assessments:
+        for kind in _KINDS:
+            identity = "path" if kind == "paragraphs" else "task_ref" if kind == "requirements" else "ref"
+            for row in assessment[kind]:
+                if kind in {"claims", "paragraphs"}:
+                    target: dict[str, Any] | None = next(
+                        (item for item in merged[kind] if item[identity] == row[identity]), None)
+                    if target is None:
+                        target = {identity: row[identity], "units": []}
+                        merged[kind].append(target)
+                    for unit in row["units"]:
+                        key = kind, row[identity], unit["unit"]
+                        if key in seen:
+                            raise ValueError("duplicate assessment unit across batch receipts")
+                        seen.add(key)
+                        target["units"].append(copy.deepcopy(unit))
+                else:
+                    row_key = kind, row[identity]
+                    if row_key in seen:
+                        raise ValueError("duplicate assessment row across batch receipts")
+                    seen.add(row_key)
+                    merged[kind].append(copy.deepcopy(row))
+    return merged
+
+
+def batch_view(basis: dict[str, Any], index: int, prior: list[dict[str, Any]]) -> dict[str, Any]:
+    scopes = batch_scopes(basis)
+    scope = scopes[index]
+    selected_refs = {ref for paragraph in scope["paragraphs"] for ref in paragraph["refs"]} - {
+        row["ref"] for row in scope["claims"]}
+    previous = merge_assessments(prior)["claims"]
+    view = {**basis, **scope,
+        "investigations": scope["investigations"] or {},
+        "investigation_scope": list(scope["investigations"]),
+        "report_paths": [row["path"] for row in basis["paragraphs"]],
+        "prior_claim_judgments": [row for row in previous if row["ref"] in selected_refs],
+        "supporting_findings": [row for row in basis["claims"] if row["ref"] in selected_refs],
+        "report_paragraphs": basis["paragraphs"] if scope["requirements"] else [],
+        "batch_index": index, "batch_count": len(scopes)}
+    view["batch_digest"] = hashlib.sha256(canonical_json(view).encode()).hexdigest()
+    return view
+
+
+def batch_receipts(session: Any, basis: dict[str, Any]) -> list[dict[str, Any]]:
+    from codey.research.semantic_review import parse_review
+
+    receipts: list[dict[str, Any]] = []
+    prior: list[dict[str, Any]] = []
+    for result in session._memory_results.values():
+        if result.call.name != "submit_research_review" or not result.ok:
+            continue
+        receipt = dict(result.canonical)
+        if len(receipts) >= len(batch_scopes(basis)):
+            raise ValueError("extra assessment submission after the frozen scope was complete")
+        view = batch_view(basis, len(receipts), prior)
+        if (receipt.get("basis_digest") != basis["basis_digest"]
+                or receipt.get("batch_digest") != view["batch_digest"]):
+            raise ValueError("assessment batch differs from its frozen scope or dependencies")
+        assessment = parse_review(canonical_json(result.call.args["assessment"]), view)
+        if receipt.get("assessment") != assessment:
+            raise ValueError("assessment receipt differs from its original submission")
+        receipts.append(receipt)
+        prior.append(assessment)
+    return receipts
+
+
+def next_batch(session: Any, basis: dict[str, Any]) -> dict[str, Any] | None:
+    receipts = batch_receipts(session, basis)
+    if len(receipts) == len(batch_scopes(basis)):
+        return None
+    return batch_view(basis, len(receipts), [row["assessment"] for row in receipts])

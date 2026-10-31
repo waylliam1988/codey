@@ -71,7 +71,7 @@ class ReceivedProviderTurn:
 
 def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
     if getattr(session, "task_kind", "") == "research_review":
-        submitted = any(row.call.name == "submit_research_review" and row.ok
+        submitted = any(row.call.name == "submit_research_review" and row.ok and row.canonical.get("review_complete") is True
                         for row in session._memory_results.values())
         return () if submitted else ("submit_research_review",)
     policy = getattr(session, "policy", None)

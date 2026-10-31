@@ -499,7 +499,8 @@ class KernelContext:
             run_id=f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id,
             turn=turn)
         if (not self.cancelled() and self.session.task_kind == "research_review" and len(results) == 1
-                and results[0].call.name == "submit_research_review" and results[0].ok):
+                and results[0].call.name == "submit_research_review" and results[0].ok
+                and results[0].canonical.get("review_complete") is True):
             # A settled domain submission is the completion proposal. Reuse
             # the ordinary completion and protocol-close actions, not another
             # model decision that could discard a committed publication.
