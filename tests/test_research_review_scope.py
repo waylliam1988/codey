@@ -70,6 +70,34 @@ def test_finding_labels_are_not_reviewed_as_source_statements_or_adopted_as_evid
     assert claim_units(text + " [f999]", {}, sentences=False)[-1]["text"] == " [f999]"
 
 
+@pytest.mark.parametrize("text", [
+    "原文说明：‘There can only be one writer at a time.’（同一时刻只有一个写者。）",
+    'The documentation says "Only one writer."',
+    "说明：“一个写者。”",
+])
+def test_closing_punctuation_stays_with_its_sentence_and_original_offsets(text):
+    from codey.research.semantic_review import claim_units
+
+    units = claim_units(text, {})
+    assert units == [{"unit": 1, "start": 0, "end": len(text), "text": text}]
+
+
+def test_schema_two_read_projection_keeps_original_closing_punctuation_unit():
+    from types import SimpleNamespace
+
+    from codey.research.semantic_review import review_scope
+
+    text = "原文如此。（只有一个写者。）"
+    report = SimpleNamespace(questions=["Writer limit?"], coverage=[],
+        paragraph_bindings=[{"path": "summary", "text": text, "refs": ["f1"]}],
+        reference_metadata={"f1": {"claim": text, "conditions": {}}})
+    old = review_scope(report, "Writer limit?", legacy_sentence_boundaries=True)
+    current = review_scope(report, "Writer limit?")
+    assert old["claims"][0]["units"][-1]["text"] == "）"
+    assert len(current["claims"][0]["units"]) == 2
+    assert current["claims"][0]["units"][-1]["text"] == "（只有一个写者。）"
+
+
 def case():
     task = "Explain checkpoint defaults. Distinguish old restrictions."
     claim = "Checkpoint defaults to 1000 pages. FULL waits for readers."

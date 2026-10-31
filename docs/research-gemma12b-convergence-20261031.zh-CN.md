@@ -342,3 +342,11 @@ finding 判断与答案判断采用同样的证据边界指导：reason 先指�
 `calibration-quote-choice-01` 使用失败请求的原 claim/excerpt 作显式合成重放；三批完成且无重复生成，
 但评审 failed：末尾右括号被句子切分器独立切成事实，且任务范围说明不足。此重放只验证生成收敛，
 不计正例验收通过；括号问题下一项修复。
+
+## 28. 句子边界保留闭合括号和引号
+
+完整句子切分把句末闭合标点保留在前一句中，不把 `）`、引号等作为额外事实；保留真实起止偏移。
+新 basis=4、assessment=3。历史 schema=2 用原句子边界，schema=1 用原 clause 边界，
+共用同一个 scope/投影校验入口，只读旧数据，不重跑或重写历史判断。
+验证：scope 与两种协议完整发布选集 47 passed，生产 Ruff/Mypy 576 文件通过。
+有限引文 schema 下的 `calibration-quote-choice-writer-01` 正例三批完成并 passed，原句支持校验保留。

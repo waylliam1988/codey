@@ -77,7 +77,7 @@ def assess_report(history: Any, result: Any, tools: Any, *, provider: Any, provi
     reference = current.work_ref if current.writer_attempt == invocation.attempt else index["results"][str(invocation.attempt)]
     return {**({key: receipt[key] for key in ("synthesis_id", "assessment_effect_id", "assessment_effect_ids")}
                if receipt is not None else {}),
-        "schema": 2, "kind": "same_provider_model_assessment", "reviewer": provider_id,
+        "schema": 3, "kind": "same_provider_model_assessment", "reviewer": provider_id,
         "basis_digest": basis["basis_digest"], "report_digest": basis["report_digest"],
         "result_ref": reference, "completion_status": "complete" if outcome.completed else "incomplete",
         "completion_stop_reason": outcome.stop_reason,
@@ -104,7 +104,7 @@ def _submission_executor(history: Any, session: Any, basis: dict[str, Any], resu
             combined = parse_review(canonical_json(combined), basis)
         issues = review_issues(combined)
         effect_id = turn_effect_id(f"{history.run_id}:research:review:{cycle}", session.turn, 0)
-        metadata = {"schema": 2, "kind": "same_provider_model_assessment", "reviewer": provider_id,
+        metadata = {"schema": 3, "kind": "same_provider_model_assessment", "reviewer": provider_id,
             "basis_digest": basis["basis_digest"], "report_digest": basis["report_digest"],
             "assessment": combined, "issues": issues, "status": "failed" if issues else "passed",
             "assessment_effect_id": effect_id,

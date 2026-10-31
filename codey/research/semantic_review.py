@@ -24,10 +24,12 @@ from codey.research.report_proposal import FINDING_CITATION
 from codey.research.task_requirements import task_requirements, text_units
 
 
-def claim_units(claim: str, conditions: dict[str, Any], *, sentences: bool = True) -> list[dict[str, Any]]:
+def claim_units(claim: str, conditions: dict[str, Any], *, sentences: bool = True,
+                legacy_sentence_boundaries: bool = False) -> list[dict[str, Any]]:
     # Inline labels are presentation, not source statements or new evidence.
     # Actual support remains pinned by the finding's structural references.
-    units = text_units(FINDING_CITATION.sub("", claim) if sentences else claim, sentences=sentences)
+    units = text_units(FINDING_CITATION.sub("", claim) if sentences else claim, sentences=sentences,
+                       legacy_sentence_boundaries=legacy_sentence_boundaries)
     for name, condition in conditions.items():
         if condition["state"] == "reported":
             units.append({"unit": len(units) + 1, "field": f"conditions.{name}",
@@ -35,12 +37,15 @@ def claim_units(claim: str, conditions: dict[str, Any], *, sentences: bool = Tru
     return units
 
 
-def review_scope(report: FindingReport, task: str, *, sentences: bool = True) -> dict[str, Any]:
+def review_scope(report: FindingReport, task: str, *, sentences: bool = True,
+                 legacy_sentence_boundaries: bool = False) -> dict[str, Any]:
     return {"task": task, "requirements": task_requirements(task), "questions": list(report.questions),
         "coverage": list(report.coverage),
-        "paragraphs": [{**row, "units": text_units(FINDING_CITATION.sub("", row["text"]), sentences=sentences)}
+        "paragraphs": [{**row, "units": text_units(FINDING_CITATION.sub("", row["text"]), sentences=sentences,
+                                                   legacy_sentence_boundaries=legacy_sentence_boundaries)}
                        for row in report.paragraph_bindings],
-        "claims": [{"ref": ref, "units": claim_units(metadata["claim"], metadata["conditions"], sentences=sentences)}
+        "claims": [{"ref": ref, "units": claim_units(metadata["claim"], metadata["conditions"], sentences=sentences,
+                                                      legacy_sentence_boundaries=legacy_sentence_boundaries)}
                    for ref, metadata in report.reference_metadata.items()]}
 
 
@@ -63,7 +68,7 @@ def review_basis(report: FindingReport, tools: Any, task: str) -> dict[str, Any]
                 "source_id": row.source.value.id, "source_revision": row.source.revision,
                 "url": row.source.value.provenance["url"], "title": row.source.value.title,
                 "locator": row.evidence.value.provenance.get("locator", "")} for row in item.evidence]})
-    body = {"schema": 3, **review_scope(report, task), "claims": claims,
+    body = {"schema": 4, **review_scope(report, task), "claims": claims,
         "investigations": {ref: dict(tools.ledger.investigations[ref])
                            for row in report.coverage for ref in row["investigations"]},
         "coverage": list(report.coverage),
