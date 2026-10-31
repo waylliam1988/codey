@@ -287,6 +287,10 @@ def review_prompt(basis: dict[str, Any]) -> str:
         rules.append(
             "Judge every listed answer sentence against ONLY its cited finding units. supporting_findings and "
             "prior_claim_judgments are reference context. A supported finding does not automatically support the answer. "
+            "Treat the cited unit texts as ALL available factual premises. A true answer can still be unsupported: "
+            "do not fill missing statements with your own knowledge or facts remembered from an earlier batch. "
+            "In reason, first identify any assertion in the answer that the cited units do not establish; "
+            "only if none is missing, explain how those units entail the entire answer. Topic overlap is insufficient. "
             "For each answer, try to describe a situation where all cited findings remain true but the answer is false. "
             "If such a situation is possible, mark unsupported and explain the precise extra assertion. "
             "A mechanism or capability does not establish an observed outcome for a specific application or population. "

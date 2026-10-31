@@ -150,6 +150,28 @@ def test_batches_cover_each_unit_once_and_prior_claims_are_not_resubmitted():
         parse_review(json.dumps(merge_assessments(previous[:-1])), root)
 
 
+def test_answer_batch_cannot_borrow_unadopted_source_facts_or_reviewer_prose():
+    root = large_basis()
+    root["claims"][0]["evidence"][0]["excerpt"] += " Readers and writers can run concurrently."
+    pristine = copy.deepcopy(root)
+    prior = []
+    for index, scope in enumerate(batch_scopes(root)):
+        view = batch_view(root, index, prior)
+        if scope["claims"]:
+            assert view["claims"][0]["evidence"] == pristine["claims"][0]["evidence"]
+        if scope["paragraphs"]:
+            support = view["supporting_findings"][0]
+            assert support["units"] == root["claims"][0]["units"]
+            assert not set(support).difference({"ref", "kind", "units"})
+            assert view["prior_claim_judgments"] == [{"ref": "f1", "units": [
+                {"unit": 1, "verdict": "supported"}]}]
+            assert "Readers and writers can run concurrently." not in json.dumps(view)
+        raw = assessment(view)
+        prior.append(parse_review(json.dumps(raw), view))
+    assert not review_issues(parse_review(json.dumps(merge_assessments(prior)), root))
+    assert root == pristine
+
+
 def test_receipts_bind_original_batches_and_dependencies_and_require_complete_scope():
     root = large_basis()
     session = SimpleNamespace(_memory_results={})

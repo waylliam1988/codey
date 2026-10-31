@@ -274,3 +274,22 @@ claims/paragraphs 改为每批一条 finding/一段答案（长条目仍每批�
 拆开原有两个赋值分支，运行语义不变；没有新增状态或类型忽略。
 修改前冻结源码运行 batches/scope/semantic_review 全组选集：70 passed（200.57 秒）。
 修改后全生产 Ruff、Mypy、Pyrefly、ty 均通过。
+
+## 实机 8 与 23. 答案只能采用实际保存并审查的 finding 单位
+
+`single-json-03`，版本 `8bdd29fc`，真实网络 19 个请求、约 158 秒，8 批评审一次全部提交，最终 done。
+无 API 卡死或 coverage 缺失字段；发现和答案分批后没有再出现单位串号。但人工审查发现：
+f2 只保存单写者结论，答案额外声称读写可并发；答案评审从 supporting_findings 内的原始 excerpt
+借用了未被 f2 采用的另一句话，错误宣称 f2 支持该句。因此只记录机械完成，不记为质量验收通过。
+结束时仍有 Playwright 未观察 TargetClosedError，需下一轮开启诊断定位，不能声称清理问题完全解决。
+
+答案批的 supporting_findings 现在只投影真实 ref/kind/units，先前判断只投影 unit/verdict。
+完整原文、判断理由和引文仍在冻结根 basis、finding 评审批次和原回执中，根聚合校验不变；
+不复制新事实，不让答案绕过 finding 扩大来源采用范围。增加相应输入隔离回归和合成负例。
+
+仅隔离输入的 `calibration-separated-unadopted_source_fact-01` 仍误放行：模型以背景知识补全了读写并发。
+继续要求答案判断的 reason 先列出未被 cited units 建立的命题，明确“已知为真”不等于本次引用支持，
+不得借用记忆中前一批或领域常识。`*-02` 已明确指出 finding 只约束写者数，未建立读写并发，返回 failed。
+此前错误原样保留，新的结果仅是一个负例通过，不能证明一般语义可靠性。
+批次依赖仍以原始完整 assessment 的摘要绑定，防止精简显示后丢失回执依赖校验。
+验证：投影/范围/回执 6 passed、native/text driver 2 passed、真实批间重启 1 passed；Ruff/Mypy 通过。

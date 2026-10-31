@@ -2,6 +2,14 @@
   "description": "Synthetic labeled scope checks for the production review kernel. Not live research results.",
   "cases": [
     {
+      "id": "unadopted_source_fact",
+      "expected_status": "failed",
+      "question": "Does the cited finding establish reader and writer concurrency?",
+      "excerpt": "In WAL mode, readers and writers can run at the same time. However, since there is only one WAL file, there can only be one writer at a time.",
+      "finding": "在 WAL 模式下，同一时刻只能有一个写者。",
+      "paragraph": "WAL 模式允许读取和写入同时进行。"
+    },
+    {
       "id": "writer_supported",
       "expected_status": "passed",
       "question": "How many writers may write at the same time in WAL mode?",

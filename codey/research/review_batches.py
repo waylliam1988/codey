@@ -80,9 +80,15 @@ def batch_view(basis: dict[str, Any], index: int, prior: list[dict[str, Any]]) -
         "investigations": scope["investigations"] or {},
         "investigation_scope": list(scope["investigations"]),
         "report_paths": [row["path"] for row in basis["paragraphs"]] if scope["requirements"] else [],
-        "prior_claim_judgments": [row for row in previous if row["ref"] in selected_refs],
-        "supporting_findings": [row for row in basis["claims"] if row["ref"] in selected_refs],
+        # Answer support is the adopted finding, not everything mentioned in
+        # its source. Excerpts and review prose belong to claim assessment.
+        "prior_claim_judgments": [{"ref": row["ref"], "units": [
+            {"unit": unit["unit"], "verdict": unit["verdict"]} for unit in row["units"]]}
+            for row in previous if row["ref"] in selected_refs],
+        "supporting_findings": [{key: row[key] for key in ("ref", "kind", "units") if key in row}
+                                for row in basis["claims"] if row["ref"] in selected_refs],
         "report_paragraphs": basis["paragraphs"] if scope["requirements"] else [],
+        "prior_assessments_digest": hashlib.sha256(canonical_json(prior).encode()).hexdigest(),
         "batch_index": index, "batch_count": len(scopes)}
     view["batch_digest"] = hashlib.sha256(canonical_json(view).encode()).hexdigest()
     return view
