@@ -4,6 +4,20 @@ import type { Message, Session } from './types/domain';
 
 afterEach(() => vi.unstubAllGlobals());
 
+it('replaces live thinking with the committed turn without losing newer thinking', () => {
+  const committed = [{ id: 'saved', type: 'turn', runId: 'run', n: 1, reasoning: 'Inspect first.' }];
+  for (const live of [
+    { type: 'turn', runId: 'run', n: 1, reasoning: 'Inspect first.' },
+    { type: 'thinking', runId: 'run', turn: 1, text: 'Inspect first.' },
+  ]) {
+    const newer = { type: 'turn', runId: 'run', n: 2, reasoning: 'Now verify.' };
+    const rows = reconcileHistory([live, newer] as Message[], committed);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].entryId).toBe('saved');
+    expect(rows[1].reasoning).toBe('Now verify.');
+  }
+});
+
 function page(items: object[], inactive: string[], revision = 5) {
   return new Response(
     JSON.stringify({

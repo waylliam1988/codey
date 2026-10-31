@@ -17,6 +17,14 @@ void renderTypeContract;
 describe('render boundaries', () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it('labels successful tools that have neither a path nor a command', () => {
+    for (const name of ['research_plan', 'knowledge_search', 'read_tool_result']) {
+      const row = window.Render.toolRowEl({ kind: name, toolName: name, result: '{"questions":[]}' }, false);
+      expect(row.querySelector('.tl-path')?.textContent).toBe(name.replaceAll('_', ' '));
+      expect(row.textContent).not.toContain('{"questions"');
+    }
+  });
+
   it('renders receipt basis from proof without changing the final answer', () => {
     const answer = '{"ok":true}';
     expect(window.Render.receiptSummary({ display: { summary: answer } })).toBe(answer);

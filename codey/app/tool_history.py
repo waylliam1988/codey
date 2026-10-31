@@ -6,6 +6,24 @@ from typing import Any
 from codey.app.event_payloads import browser_event_payload
 
 
+def record_reasoning_display(ctx: Any, event: dict[str, Any]) -> None:
+    """Keep accepted reasoning visible after history refresh and restart."""
+    if event.get("type") not in {"turn", "reasoning"}:
+        return
+    session, run = str(event.get("session_id") or ""), str(event.get("run_id") or "")
+    if not session or not run or not ctx.durable.has_conversation(session):
+        return
+    bounded = browser_event_payload(event)
+    if bounded is None:
+        return
+    reasoning = bounded.get("reasoning") if event["type"] == "turn" else bounded.get("text")
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        return
+    turn = bounded.get("turn", 0)
+    payload = {"type": "turn", "runId": run, "n": turn, "reasoning": reasoning}
+    ctx.durable.record_display_message(session, run_id=run, identity=f"reasoning:{turn}", payload=payload)
+
+
 def record_tool_display(ctx: Any, event: dict[str, Any]) -> None:
     if event.get('type') not in {'tool_started', 'tool'} or not event.get('call_id'):
         return

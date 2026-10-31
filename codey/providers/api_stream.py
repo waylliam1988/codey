@@ -98,9 +98,10 @@ def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool],
         for choice in event.get("choices", []):
             delta = choice.get("delta") or {}
             chat["content"] += delta.get("content") or ""
-            for name in ["reasoning_content", "reasoning"]:
-                if delta.get(name):
-                    chat[name] = chat.get(name, "") + delta[name]
+            for name in ("reasoning_content", "reasoning", "thinking"):
+                fragment = delta.get(name)
+                if isinstance(fragment, str):
+                    chat[name] = chat.get(name, "") + fragment
             for call in delta.get("tool_calls") or []:
                 try:
                     _merge_call(calls, call)

@@ -31,6 +31,22 @@ class KernelProgress:
     def stopped(self) -> bool:
         return self.idle > 0 and (self.idle >= self.limit or should_block_or_remind(self.attempts).block)
 
+    def repeat_feedback(self) -> str:
+        """Give the model a correction before the existing repeat limit wins."""
+        if not self.idle or self.stopped or len(self.attempts) < 2:
+            return ""
+        previous, latest = list(self.attempts)[-2:]
+        if (previous.call_fp != latest.call_fp or previous.result_fp != latest.result_fp
+                or previous.changed or latest.changed or previous.edit_epoch != latest.edit_epoch):
+            return ""
+        status = "already succeeded" if latest.ok else "already failed"
+        reminder = (f"The {latest.tool} call {status}; you repeated the same arguments and received the same result. "
+                "Do not call it again with identical arguments. Continue from the recorded result with the next "
+                "required action, change the request to address the observed problem, or explain the specific blocker.")
+        if latest.tool == "research_plan":
+            reminder += " Recording a plan is not completed investigation. Repeating it is not progress."
+        return reminder
+
     def observe(self, results: Any, session: Any, *, batch_id: str = "") -> bool:
         """Stop only after unchanged observations; successful mutations reset it.
 

@@ -285,7 +285,7 @@ const renderApi = (function () {
     const path = document.createElement('span');
     path.className = 'tl-path';
     if (toolKind(m) === 'read') row.classList.add('file-read');
-    path.textContent = m.path || m.command || '';
+    path.textContent = m.path || m.command || (m.toolName || m.kind || '').replaceAll('_', ' ');
     path.title = path.textContent;
     const arrow = document.createElement('span');
     arrow.className = 'tl-arrow';

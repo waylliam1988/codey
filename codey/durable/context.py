@@ -89,7 +89,11 @@ def _message_for(entry: EntryDraft) -> Mapping[str, object]:
     if entry.kind == "assistant_message":
         return {"role": "assistant", "content": str(payload.get("text") or "")}
     if entry.kind == "tool_call":
-        return {"role": "assistant", "tool_calls": payload.get("tool_calls", [payload])}
+        assistant_message = {"role": "assistant", "tool_calls": payload.get("tool_calls", [payload])}
+        for key in ("content", "reasoning_content"):
+            if isinstance(payload.get(key), str):
+                assistant_message[key] = payload[key]
+        return assistant_message
     if entry.kind == "tool_result":
         message: dict[str, object] = {
             "role": "tool",

@@ -33,6 +33,14 @@ export function reconcileHistory(current: Message[], items: HistoryResult['items
   );
   const live = current.filter((message) => {
     if (message.entryId || (message.id && ids.has(message.id))) return false;
+    if ((message.type === 'turn' || message.type === 'thinking') && message.runId)
+      return !committed.some(
+        (row) =>
+          row.type === 'turn' &&
+          row.runId === message.runId &&
+          row.n === (message.n ?? message.turn) &&
+          row.reasoning === (message.reasoning || message.text),
+      );
     if (message.type === 'user')
       return ![message.runId, ...(message.attempts || []).map((attempt) => attempt.runId)].some(
         (runId) => runId && turns.has(`user:${runId}`),

@@ -39,11 +39,14 @@ def tool_call_message(payload: object) -> dict[str, object]:
     reply = validate_response(payload)
     if reply["protocol"] != "native" or not reply["tool_calls"]:
         raise ValueError("provider history reference has no tool calls")
-    return {"content": reply["text"], "tool_calls": [
+    message: dict[str, object] = {"content": reply["text"], "tool_calls": [
         {"id": call["id"], "type": "function", "function": {
             "name": call["name"], "arguments": json.dumps(call["arguments"], ensure_ascii=False),
         }} for call in reply["tool_calls"]
     ]}
+    if reply["reasoning"].strip():
+        message["reasoning_content"] = reply["reasoning"]
+    return message
 
 
 def read_response_artifact(record: ArtifactRecord) -> object:

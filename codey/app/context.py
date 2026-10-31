@@ -870,6 +870,9 @@ class AppContext(GhostStoreAccessors):
         if payload.get('type') in {'tool_started', 'tool'}:
             from codey.app.tool_history import record_tool_display
             record_tool_display(self, payload)
+        elif payload.get('type') in {'turn', 'reasoning'}:
+            from codey.app.tool_history import record_reasoning_display
+            record_reasoning_display(self, payload)
         self.event_bus.emit(payload)
         if payload.get("type") == "task_done":
             self.input_queue.completed(str(payload.get("run_id") or ""), payload)

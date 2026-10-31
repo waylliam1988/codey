@@ -525,15 +525,18 @@ class KernelContext:
             self.session, getattr(self.execution.research_tools, "ledger", None),
                 getattr(self.execution.research_tools, "store", None),
                 str(getattr(self.execution.research_tools, "session_id", "")))
+        reminder = progress.repeat_feedback()
         if self.native and messages:
             messages[-1] = replace(messages[-1], user_content="\n\n".join(
-                part for part in (observations, messages[-1].user_content) if part))
+                part for part in (observations, messages[-1].user_content, reminder) if part))
         else:
             # Keep the latest result after historical observations: previous
             # findings must not displace the passage currently being inspected.
             prompt = "\n\n".join(part for part in (observations, prompt) if part)
             shift = len(observations) + 2 if observations else 0
             spans = [{**span, "start": span["start"] + shift, "end": span["end"] + shift} for span in spans]
+            if reminder:
+                prompt += "\n\n" + reminder
         snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native)
         self.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages, text_result_spans=spans)
 
