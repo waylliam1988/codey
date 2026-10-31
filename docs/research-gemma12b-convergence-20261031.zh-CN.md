@@ -228,3 +228,13 @@ Gemma 12B、JSON、thinking=false、seed=73。`calibration-separated-workload_ov
 
 六例已各有一次完整、符合标签的实际结果，保留此前误放行与 incomplete 的原始证据。
 这是限定样本校准，不证明同模型评审可靠性，也不替代下一步真实搜索、保存、修复与发布验收。
+
+## 18. 根任务 required_tools 复用原提交回执
+
+后续合成/修复从同一 run、此前已完成 writer invocation 的原工具效果恢复只读 prerequisite 投影。
+只选择当前 required_checks 对应工具及其原父子调用；使用原 receipt 校验摘要、参数、成功状态。
+完成 gate 合并该投影进行原有精确参数/结果判断，proof 引用原 effect ID；当前 session.executed 不伪造
+早期行动。模型提示也明确这些是前一阶段实际完成的要求。没有第二份持久执行日志或双写。
+
+验证：带精确 query 约束的真实 driver 修复/重入测试通过，整个 run 只搜索一次且保留原搜索 effect ID。
+另有参数、父子调用和答案观察要求选集 53 passed；Ruff、改动文件 Mypy 通过。

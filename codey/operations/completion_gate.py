@@ -145,7 +145,9 @@ def _proof_evidence_refs(session: Any, context: Any) -> tuple[str, ...]:
                 refs.append(f"verify:{command}{identity}:{exit_code}")
     except Exception:
         pass
-    return tuple(refs[:12])
+    parent = _context_get(context, "research_prerequisites")
+    original = tuple(parent.executed) if parent is not None and _session_profile(session) == "research" else ()
+    return tuple(dict.fromkeys((*original, *refs)))[:12]
 
 
 def _domain_for_session(session: Any) -> str:
@@ -336,7 +338,7 @@ def _contract_subject(session: Any, profile: str, context: Any) -> str:
 
 
 def _required_tool_checks(
-    session: Any, final_text: str,
+    session: Any, final_text: str, context: Any = None,
 ) -> tuple[list[CompletionCheck], dict[str, RequirementEvaluation]]:
     """Explicit entry requirements consume the committed execution projection.
 
@@ -350,6 +352,9 @@ def _required_tool_checks(
 
     rows: list[CompletionCheck] = []
     evaluations: dict[str, RequirementEvaluation] = {}
+    parent = _context_get(context, "research_prerequisites") if _session_profile(session) == "research" else None
+    records = {**(parent.executed if parent is not None else {}), **session.executed}
+    results = {**(parent._memory_results if parent is not None else {}), **session._memory_results}
     for check_id in getattr(session.policy, "required_checks", ()):
         if is_output_check(check_id):
             passed, reason, feedback = evaluate_output(check_id, final_text)
@@ -364,7 +369,7 @@ def _required_tool_checks(
             continue
         if requirement is None:
             continue
-        outcome = requirement.evaluate(session.executed, final_text=final_text, results=session._memory_results)
+        outcome = requirement.evaluate(records, final_text=final_text, results=results)
         evaluations[requirement.check_id] = outcome
         rows.append(CompletionCheck(requirement.check_id, CHECK_PASS if outcome.passed else CHECK_FAIL,
                                     outcome.reason_code))
@@ -384,7 +389,7 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     checks.extend(investigation_attempt_checks(session))
     checks.extend(citation_checks)
     checks.extend(strict_research_checks(session, text, context))
-    tool_checks, tool_evaluations = _required_tool_checks(session, text)
+    tool_checks, tool_evaluations = _required_tool_checks(session, text, context)
     checks.extend(tool_checks)
     profile = _session_profile(session)
     _collect_provider_checks(session, profile, checks)

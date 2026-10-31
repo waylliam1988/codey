@@ -272,6 +272,8 @@ def run_research_iteration(
 
     history = ResearchContinuation(mutations, getattr(deps, "managed_outputs", None),
                                    session_id=session_id, run_id=run_id)
+    prerequisites = history.prerequisite_facts(before_attempt=writer_attempt, policy=policy)
+    session.handoff += prerequisites.handoff
     if ((stop_flag is not None and stop_flag.is_set())
             or history.durable.task(run_id).state.get("cancel_requested")):
         from codey.operations.research_publication import settle_cancelled_publications
@@ -334,6 +336,7 @@ def run_research_iteration(
                     "project": project,
                     "research_ledger": tools.ledger,
                     "source_ids": session.source_ids,
+                    "research_prerequisites": prerequisites,
                 },
             ),
         ),

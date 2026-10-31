@@ -201,6 +201,59 @@ class ResearchContinuation:
         return self.outputs.json_artifact_record(ref, owner_task_id=self.run_id, owner_effect_id=None,
                                                  metadata={"kind": payload["kind"]})
 
+    def prerequisite_facts(self, *, before_attempt: int, policy: Any) -> Any:
+        """Read original completed writer receipts for root task requirements.
+
+        This in-memory projection never records actions in the current session
+        or creates another execution log. Recovery reads the same original IDs.
+        """
+        from codey.operations.kernel_facts import project_execution_record
+        from codey.operations.kernel_receipts import restore_result_receipt
+        from codey.operations.task_session import TaskSession, turn_effect_id
+        from codey.policies.tool_requirement import parse_tool_success_check
+        from codey.runtime.effects.effect_records import RuntimeEffectStore
+        from codey.toolchain.tool_spec import canonical_tool_name
+
+        facts = TaskSession(policy=policy, task_kind="research")
+        requirements = [requirement for check in policy.required_checks
+                        if (requirement := parse_tool_success_check(check)) is not None]
+        if before_attempt <= 1 or not requirements:
+            return facts
+        names = {name for item in requirements for name in (item.tool, item.via) if name}
+        index = self.index(self.state())
+        attempts = [int(key) for key in index["results"] if int(key) < before_attempt
+                    and (key == "1" or index["invocations"].get(key, {}).get("purpose") == "synthesize")]
+        effects = RuntimeEffectStore(durable=self.durable).load_effects(self.session_id, self.run_id)
+        owned = {effect.intent.effect_id for effect in effects
+                 if effect.intent.run_id == self.run_id and effect.intent.session_id == self.session_id
+                 and effect.intent.effect_category == "tool_call" and any(effect.intent.effect_id == turn_effect_id(
+                     f"{self.run_id}:research:{attempt}", effect.intent.turn, effect.intent.tool_index) for attempt in attempts)}
+        # Include committed nested children only through their original parent.
+        for _ in range(len(effects)):
+            children = {effect.intent.effect_id for effect in effects
+                        if effect.intent.run_id == self.run_id and effect.intent.session_id == self.session_id
+                        and effect.intent.effect_category == "tool_call" and effect.intent.parent_effect_id in owned}
+            if children <= owned:
+                break
+            owned.update(children)
+        for effect in effects:
+            identity = effect.intent.effect_id
+            if (identity not in owned or effect.settlement is None
+                    or canonical_tool_name(effect.intent.tool_name) not in names):
+                continue
+            result = restore_result_receipt(effect, store=self.outputs, session_id=self.session_id, run_id=self.run_id)
+            project_execution_record(facts, identity, result.call, result, ok=result.ok, exit_code=effect.settlement.exit_code)
+            facts._memory_results[identity] = result
+        if facts.executed:
+            from codey.knowledge.model import canonical_json
+
+            facts.handoff = ("\nOriginal task execution receipts from earlier completed research invocations "
+                "(data, not actions in this invocation). Reuse these observations; do not repeat execution solely "
+                "to satisfy the same root requirement:\n" + canonical_json([
+                    {"result_ref": ref, "tool": result.call.name, "args": result.call.args, "ok": result.ok}
+                    for ref, result in facts._memory_results.items()]))
+        return facts
+
     def commit(self, state: Any, index: dict[str, Any], *, attempt: int | None = None,
                material: Any = None) -> None:
         if state.leaf != "kernel_settled" or not state.work_ref:

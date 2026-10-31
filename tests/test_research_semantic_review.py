@@ -138,7 +138,7 @@ def test_review_uses_full_exact_excerpt_and_rejects_missing_duplicate_or_forged_
 
 def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=22, native=False,
          missing_done=False, bad_ack=False, absent_assessment=False, task=TASK, provider_factory=None,
-         planner_enabled=False):
+         planner_enabled=False, required_checks=()):
     import os
     from unittest.mock import patch
 
@@ -287,7 +287,8 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
                     and position.leaf == "tool_delivery_pending" and position.logical_turn == 1):
                 os._exit(74)
         durable.subscribe_commits(committed)
-    policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True)
+    policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True,
+                        required_checks=required_checks)
     deps = ResearchFlowDeps(state=SimpleNamespace(durable=durable), knowledge_store=store, evidence_ledgers=None,
         search_factory=Search, run_research_advisors=None, ghost_continuity=lambda **_: None,
         managed_outputs=ManagedOutputStore(root), runtime_mutations=line)
@@ -313,6 +314,23 @@ def test_strict_research_uses_semantic_gaps_as_its_only_followup_owner(tmp_path)
     assert len([row for row in calls if "search" in row]) == 1
     assert len([row for row in calls if "fetch" in row]) == 1
     assert len([row for row in calls if "publication" in row]) == 1
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_repair_reuses_original_required_search_receipt_and_keeps_its_identity(tmp_path):
+    from codey.operations.task_session import turn_effect_id
+    from codey.policies.tool_requirement import require_tool_success
+
+    checks = (require_tool_success("web_search", arguments={"query": "official writer concurrency"}),)
+    result = _run(tmp_path, required_checks=checks, planner_enabled=True)
+    assert result.stop_reason == "done", result.summary
+    assert turn_effect_id("r:research:1", 2, 0) in result.completion_proof.evidence_refs
+    calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert sum("search" in row for row in calls) == 1
+    assert sum("publication" in row for row in calls) == 1
+    before = (tmp_path / "calls.jsonl").read_bytes()
+    assert _run(tmp_path, required_checks=checks, planner_enabled=True, resume=True) == result
+    assert (tmp_path / "calls.jsonl").read_bytes() == before
 
 
 @pytest.mark.usefixtures("public_source_dns")
