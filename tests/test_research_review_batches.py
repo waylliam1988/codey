@@ -47,6 +47,29 @@ def test_each_finding_keeps_its_own_unit_and_evidence_ranges():
         assert units["items"]["properties"]["unit"]["enum"] == [unit["unit"] for unit in row["units"]]
 
 
+def test_quote_choices_bound_repetition_without_changing_original_evidence():
+    from jsonschema import Draft202012Validator
+
+    from codey.research.review_batches import quote_options, review_spec_for_batch
+    from codey.toolchain.tool_spec import spec_for_tool, thaw_schema_value
+
+    root = large_basis()
+    original = "Only one writer\n at a time. " + "A long source statement " * 150 + "."
+    root["claims"][0]["evidence"][0]["excerpt"] = original
+    choices = quote_options(root["claims"])
+    assert "Only one writer at a time." in choices
+    normalized = " ".join(original.split())
+    assert all(0 < len(quote) <= 1000 and quote in normalized for quote in choices)
+    spec = review_spec_for_batch(spec_for_tool("submit_research_review"), batch_view(root, 0, []))
+    schema = thaw_schema_value(dict(spec.parameters)["assessment"])
+    quote_schema = schema["properties"]["claims"]["items"]["properties"]["units"]["items"]["properties"][
+        "quotes"]["items"]["properties"]["quote"]
+    validator = Draft202012Validator(quote_schema)
+    assert validator.is_valid(choices[0])
+    assert not validator.is_valid("Only one writer at a time. " * 30)
+    assert root["claims"][0]["evidence"][0]["excerpt"] == original
+
+
 @pytest.mark.parametrize("native", [False, True])
 def test_current_batch_schema_rejects_invented_refs_and_unselected_categories(native):
     from jsonschema import Draft202012Validator

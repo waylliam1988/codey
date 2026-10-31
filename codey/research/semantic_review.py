@@ -296,6 +296,7 @@ def review_prompt(basis: dict[str, Any]) -> str:
             "direct observation of an outcome that the inference clearly presents only as a hypothesis. "
             "For supported, quote contiguous ORIGINAL words and punctuation, using the 1-based index of the "
             "evidence array (not sentence or quote number). Layout whitespace may differ. "
+            "Select the exact quote options in the frozen tool schema; use only the passages needed for this unit. "
             "Do not quote the finding itself. Use unsupported or uncertain with quotes=[] if evidence is absent. "
             "Absence from the selected excerpt does not establish absence from the full document. "
             "Keep historical version restrictions and conditional permissions intact.")

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import textwrap
 from typing import Any
 
 from codey.knowledge.model import canonical_json
@@ -124,6 +125,23 @@ def next_batch(session: Any, basis: dict[str, Any]) -> dict[str, Any] | None:
     return batch_view(basis, len(receipts), [row["assessment"] for row in receipts])
 
 
+def quote_options(claims: list[dict[str, Any]]) -> list[str]:
+    """Finite verbatim choices; full source excerpts remain in the basis."""
+    from codey.research.task_requirements import text_units
+
+    choices: list[str] = []
+    for claim in claims:
+        for evidence in claim["evidence"]:
+            text = " ".join(evidence["excerpt"].split())
+            if not text:
+                continue
+            if len(text) <= 1000:
+                choices.append(text)
+            for unit in text_units(text, sentences=True):
+                choices.extend(textwrap.wrap(unit["text"].strip(), width=1000, break_on_hyphens=False))
+    return list(dict.fromkeys(choices))
+
+
 def review_spec_for_batch(spec: Any, batch: dict[str, Any]) -> Any:
     """Narrow the same frozen tool schema used by prompts and execution."""
     from dataclasses import replace
@@ -152,6 +170,12 @@ def review_spec_for_batch(spec: Any, batch: dict[str, Any]) -> Any:
             if kind == "claims":
                 unit_properties["quotes"]["items"]["properties"]["evidence"]["maximum"] = max(
                     len(row["evidence"]) for row in rows)
+                choices = quote_options(rows)
+                if choices:
+                    quote = unit_properties["quotes"]["items"]["properties"]
+                    quote["quote"] = {**quote["quote"], "enum": choices}
+                else:
+                    unit_properties["quotes"]["maxItems"] = 0
             else:
                 gap_paths = {f"report_sections.coverage[{n}].answer" for n, row in enumerate(batch["coverage"])
                              if row["state"] != "evidence_found"}

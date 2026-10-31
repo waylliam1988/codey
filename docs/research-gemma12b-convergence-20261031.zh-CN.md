@@ -325,3 +325,20 @@ finding 判断与答案判断采用同样的证据边界指导：reason 先指�
 `calibration-separated-background_finding-01` 明确拒绝从读写并发片段推出最多一个写者；
 答案批仍选择 supported，但第 25 项的原依赖校验直接将完整评审判 failed，三批完成，无协议重写。
 验证：实机负例完成且标签正确；Ruff/Mypy 通过。八例各已有一次符合预期结果，仍不代表普遍可靠。
+
+## 实机 10 与 27. 引文使用原文有限选项
+
+`single-json-05`，版本 `3fb9f8bb`，34 请求、380.1 秒。初审正确拒绝错误的 passage 绑定，
+进入补证后实际找到单写者原句，并保存新 finding。复评第三批复制引文时重复生成同一段，
+2048 token 上限使 API 正常返回 length，Codey 以 OutputLengthError 停止，未发布；不是原生解析线程卡死。
+最新 batches/semantic_review 回归 31 passed，含实际恢复测试；本轮 debug 未复现浏览器清理异常。
+
+评审工具的 quote enum 直接从本批完整 excerpt 的原句/连续片段生成，每个选项最多 1000 字符；
+只归一化原先校验已允许的排版空白。全部原文仍在 basis 中，选择不能引入原文以外的字句，
+原 quote 与 evidence 索引对应校验继续执行。同一冻结 schema 约束 native、JSON 采样及 kernel，
+没有新增引用写入口或解析器。这样避免一个自由字符串里无限续写引文。
+
+验证：batch 全组 11 passed（含两种协议、实际重启），Ruff/Mypy 通过。
+`calibration-quote-choice-01` 使用失败请求的原 claim/excerpt 作显式合成重放；三批完成且无重复生成，
+但评审 failed：末尾右括号被句子切分器独立切成事实，且任务范围说明不足。此重放只验证生成收敛，
+不计正例验收通过；括号问题下一项修复。
