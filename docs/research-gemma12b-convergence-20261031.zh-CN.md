@@ -162,3 +162,12 @@ finding 和报告答案按完整句子切分，避免把“在 WAL 模式下，�
 每句仍要求所有子句都有支持，不以主结论正确替额外推论背书。
 
 验证：单位覆盖、比较对象、原文引用和条件选集 43 passed；Ruff 通过。
+
+## 实机 4 与 13. 评审引用范围由真实批次确定
+
+`calibration-json-writer-02` 已稳定返回 JSON，完整句子也得到正确单写者判断；但连续虚构 evidence=2
+（实际只有一个 excerpt），并曾引用不存在的 summary 路径，三轮后 max_turns，未通过。
+进一步将实际 evidence 索引上界、问题编号、报告路径、已引用 finding 与 unit 范围投影到同一冻结
+schema。它们都是现有事实的可选范围，不替模型做语义判断；精确匹配关系仍由原 parse_review 校验。
+
+验证：引用越界、混合批及完整集合校验 5 passed，Ruff/Mypy 通过。

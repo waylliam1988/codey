@@ -51,6 +51,7 @@ def test_current_batch_schema_rejects_invented_refs_and_unselected_categories(na
     assert normalize_turn(decode_text_turn(json.dumps(long_reason)), snapshot=snapshot).protocol_error
     for mutate in (lambda body: body["claims"][0].update(ref="f999"),
                    lambda body: body["claims"][0].update(reason="extra"),
+                   lambda body: body["claims"][0]["units"][0]["quotes"][0].update(evidence=2),
                    lambda body: body["requirements"].append({}),
                    lambda body: body["claims"][0]["units"].clear()):
         corrupt = copy.deepcopy(raw)
@@ -59,6 +60,31 @@ def test_current_batch_schema_rejects_invented_refs_and_unselected_categories(na
         reply = (AssistantTurn(tool_calls=(ProviderToolCall("call", corrupt["tool"], corrupt["args"]),))
                  if native else decode_text_turn(json.dumps(corrupt)))
         assert normalize_turn(reply, snapshot=snapshot).protocol_error
+
+
+def test_mixed_batch_schema_uses_real_report_paths_questions_and_cited_finding_units():
+    from jsonschema import Draft202012Validator
+
+    from codey.providers.base import tools_from_specs
+    from codey.providers.text_tool_schema import text_tool_schema
+    from codey.research.review_batches import review_spec_for_batch
+    from codey.toolchain.tool_spec import spec_for_tool
+
+    root = large_basis()
+    root["requirements"] = root["requirements"][:1]
+    root["paragraphs"][0]["path"] = "report_sections.coverage[0].answer"
+    batch = batch_view(root, 0, [])
+    spec = review_spec_for_batch(spec_for_tool("submit_research_review"), batch)
+    validator = Draft202012Validator(text_tool_schema(tools_from_specs((spec,))))
+    raw = {"tool": "submit_research_review", "args": {"assessment": assessment(batch)}}
+    assert validator.is_valid(raw)
+    for mutate in (lambda body: body["requirements"][0].update(report_paths=["summary"]),
+                   lambda body: body["requirements"][0].update(question_refs=["q99"]),
+                   lambda body: body["paragraphs"][0]["units"][0].update(finding_units=[{"ref": "f99", "unit": 1}]),
+                   lambda body: body["paragraphs"][0]["units"][0].update(finding_units=[{"ref": "f1", "unit": 99}])):
+        corrupt = copy.deepcopy(raw)
+        mutate(corrupt["args"]["assessment"])
+        assert not validator.is_valid(corrupt)
 
 
 def test_batches_cover_each_unit_once_and_prior_claims_are_not_resubmitted():

@@ -152,6 +152,28 @@ def review_spec_for_batch(spec: Any, batch: dict[str, Any]) -> Any:
             units.update(minItems=min(lengths), maxItems=max(lengths))
             units["items"]["properties"]["unit"]["enum"] = sorted({
                 unit["unit"] for row in rows for unit in row["units"]})
+            unit_properties = units["items"]["properties"]
+            if kind == "claims":
+                unit_properties["quotes"]["items"]["properties"]["evidence"]["maximum"] = max(
+                    len(row["evidence"]) for row in rows)
+            else:
+                refs = sorted({ref for row in rows for ref in row["refs"]})
+                supports = unit_properties["finding_units"]
+                if refs:
+                    support = supports["items"]["properties"]
+                    support["ref"] = {**support["ref"], "enum": refs}
+                    support["unit"]["enum"] = sorted({unit["unit"]
+                        for row in [*batch["claims"], *batch["supporting_findings"]] if row["ref"] in refs
+                        for unit in row["units"]})
+                else:
+                    supports["maxItems"] = 0
+        elif kind == "requirements":
+            for field, values in (("question_refs", [f"q{n}" for n in range(1, len(batch["questions"]) + 1)]),
+                                  ("report_paths", batch["report_paths"])):
+                properties[field] = {**properties[field], "items": {"type": "string", "enum": values}}
+        elif kind == "investigations":
+            properties["question_ref"] = {**properties["question_ref"], "enum": sorted({
+                row["question_ref"] for row in rows.values()})}
     return freeze_spec_parameters(replace(spec, parameters=(
         ("basis_digest", {"type": "string", "enum": [batch["basis_digest"]]}),
         ("assessment", schema))))
