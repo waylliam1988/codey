@@ -300,3 +300,20 @@ f2 只保存单写者结论，答案额外声称读写可并发；答案评审�
 却示范两个问题，抵消了先前的一问指导。示例改为一个包含证据范围的问题，描述只在用户请求独立主题时
 拆分，避免把同一问题的依据另列为问题。原 1..8 问契约和完整覆盖校验不变，不自动合并模型问题。
 这属于提示修正，实际效果由下一轮验证；Ruff 通过。
+
+## 实机 9 与 25. 已确定的支持关系失败直接进入原修复流程
+
+`single-json-04`，版本 `739ab5f4`，21 个请求、250.6 秒，最终 research_review_incomplete。
+规划仍拆成三问，提示修正尚未解决重复规划；保存时选中的首段讲读写并发，却用背景知识补出单写者。
+初审曾误放行该 finding，复评判为 uncertain；随后答案持续 supported 并引用该 uncertain unit，
+卡在“supported paragraph cannot adopt a rejected finding unit”，未能完成失败评审并进入下一次补证。
+开启 asyncio debug 后本轮没有复现 TargetClosedError，尚未找到偶发清理异常的可靠原因。
+
+支持关系的确定性失败（supported finding 无引文、supported 答案无支持单位或引用已拒绝/无引文单位）
+从格式重提条件移到原 review_issues。原模型 verdict/reason 仍完整保存，issues 说明 host 的失败依据；
+完整评审返回 failed，由同一 review_and_repair 补证。错引用、越界、伪造引文、缺字段仍是协议错误。
+发布前以及历史展示投影均重查 review_issues，故这些情况依然绝不能发布成成功报告。
+没有自动把模型结论改成 supported，也没有新评审器、调度器或状态表。
+
+验证：42 passed，包含原始判断未改写、伪造 passed 标记仍被完成 gate 拒绝、
+完整 driver 无协议重写地进入修复且只发布一次；Ruff/Mypy 通过。

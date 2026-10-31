@@ -133,15 +133,12 @@ def test_quote_matching_does_not_accept_changed_words_case_or_omitted_material(q
     lambda value: value["investigations"][0].update(question_ref="q2"),
     lambda value: value["claims"][0]["units"].pop(),
     lambda value: value["claims"][0]["units"].append(value["claims"][0]["units"][0]),
-    lambda value: value["claims"][0]["units"][0].update(quotes=[]),
     lambda value: value["claims"][0]["units"][0]["quotes"][0].update(quote="FULL waits for readers"),
     lambda value: value["claims"][0]["units"][0]["quotes"][0].update(evidence=2),
     lambda value: value["claims"][0]["units"][0]["quotes"][0].update(evidence=True),
     lambda value: value["paragraphs"][0]["units"].pop(),
-    lambda value: value["paragraphs"][0]["units"][0].update(finding_units=[]),
     lambda value: value["paragraphs"][0]["units"][0].update(finding_units=[{"ref": "f2", "unit": 1}]),
     lambda value: value["paragraphs"][0]["units"][0].update(finding_units=[{"ref": "f1", "unit": 99}]),
-    lambda value: value["paragraphs"][0]["units"][0].update(finding_units=[{"ref": "f1", "unit": 2}]),
 ])
 def test_omission_reclassification_and_forged_support_are_rejected(mutation):
     basis, assessment = case()
@@ -149,6 +146,28 @@ def test_omission_reclassification_and_forged_support_are_rejected(mutation):
     mutation(corrupt)
     with pytest.raises(ValueError):
         parse_review(json.dumps(corrupt), basis)
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda value: value["claims"][0]["units"][0].update(quotes=[]),
+    lambda value: value["paragraphs"][0]["units"][0].update(finding_units=[]),
+    lambda value: value["paragraphs"][0]["units"][0].update(finding_units=[{"ref": "f1", "unit": 2}]),
+])
+def test_inconsistent_support_records_original_judgment_but_cannot_pass(mutation):
+    from types import SimpleNamespace
+
+    from codey.research.semantic_review import reviewed_completion
+
+    basis, assessment = case()
+    mutation(assessment)
+    original = copy.deepcopy(assessment)
+    parsed = parse_review(json.dumps(assessment), basis)
+    assert parsed == original
+    issues = review_issues(parsed)
+    assert any(row["kind"] == "report_scope" and row["unit"] == 1 for row in issues)
+    with pytest.raises(ValueError, match="failed model assessment"):
+        reviewed_completion(SimpleNamespace(), {"status": "passed", "assessment": parsed})
+    assert parsed == original
 
 
 def test_report_comparator_swap_is_an_explicit_rejected_unit_even_with_valid_citation():

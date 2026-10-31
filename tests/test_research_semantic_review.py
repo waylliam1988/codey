@@ -328,6 +328,37 @@ def _run(root: Path, *, reject_forever=False, boundary="", resume=False, budget=
 
 
 @pytest.mark.usefixtures("public_source_dns")
+def test_inconsistent_support_advances_to_repair_without_protocol_rewrites(tmp_path):
+    def factory(provider):
+        original_send = provider.send
+
+        def send(prompt):
+            raw = json.loads(original_send(prompt))
+            if raw["tool"] == "submit_research_review":
+                value = raw["args"]["assessment"]
+                for row in value["claims"]:
+                    for unit in row["units"]:
+                        if unit["verdict"] != "supported":
+                            unit["verdict"] = "supported"  # Leave missing quotes intact.
+                for row in value["paragraphs"]:
+                    for unit in row["units"]:
+                        if unit["verdict"] != "supported":
+                            unit.update(verdict="supported", finding_units=[{"ref": "f1", "unit": 1}])
+            return json.dumps(raw)
+
+        provider.send = send
+        return provider
+
+    result = _run(tmp_path, provider_factory=factory)
+    assert result.stop_reason == "done" and result.semantic_review["status"] == "passed"
+    calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert len([row for row in calls if row.get("attempt") == 8]) == 3
+    assert {row["attempt"] for row in calls if "attempt" in row} == {1, 8, 9, 10}
+    assert len([row for row in calls if "publication" in row]) == 1
+    assert len([row for row in calls if "fetch" in row]) == 1
+
+
+@pytest.mark.usefixtures("public_source_dns")
 def test_strict_research_uses_semantic_gaps_as_its_only_followup_owner(tmp_path):
     result = _run(tmp_path, planner_enabled=True)
     assert result.stop_reason == "done" and result.semantic_review["status"] == "passed"

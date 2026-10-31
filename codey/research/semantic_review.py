@@ -166,10 +166,8 @@ def _claim_judgments(rows: Any, claims: list[dict[str, Any]]) -> None:
                     or not isinstance(quotes, list) or len(quotes) > 8
                     or any(not isinstance(quote, dict) or set(quote) != {"evidence", "quote"}
                            or type(quote["evidence"]) is not int or quote["evidence"] < 1
-                           or not _reason(quote["quote"]) for quote in quotes)
-                    or unit["verdict"] == "supported" and not quotes):
-                raise ValueError("review claim units need a verdict, specific reason and exact evidence quotes; "
-                                 "supported requires at least one quote")
+                           or not _reason(quote["quote"]) for quote in quotes)):
+                raise ValueError("review claim units need a verdict, specific reason and exact evidence quotes")
 
 
 def _paragraph_judgments(rows: Any, basis: dict[str, Any], judgments: list[dict[str, Any]]) -> None:
@@ -210,10 +208,6 @@ def _paragraph_judgments(rows: Any, basis: dict[str, Any], judgments: list[dict[
                 if identity in seen:
                     raise ValueError("paragraph support contains a duplicate finding unit")
                 seen.add(identity)
-                if unit["verdict"] == "supported" and claims[identity[0]][identity[1]]["verdict"] != "supported":
-                    raise ValueError("supported paragraph cannot adopt a rejected finding unit")
-            if unit["basis"] == "findings" and unit["verdict"] == "supported" and not supports:
-                raise ValueError("supported paragraph unit needs cited finding_units")
             if unit["basis"] == "gap" and (supports or not gaps or not (
                     row["path"] in gaps or row["path"] == "summary" or row["path"].startswith("report_sections.counter["))):
                 raise ValueError(f"review {row['path']} unit {unit['unit']}: gap judgment needs an explicit frozen "
@@ -222,7 +216,7 @@ def _paragraph_judgments(rows: Any, basis: dict[str, Any], judgments: list[dict[
 
 
 def review_issues(assessment: dict[str, Any]) -> list[dict[str, Any]]:
-    return ([{**row, "kind": "task_coverage"}
+    issues = ([{**row, "kind": "task_coverage"}
              for row in assessment["requirements"] if row["state"] == "missing"]
         + [{**row, "kind": "investigation_relevance"}
            for row in assessment["investigations"] if row["verdict"] != "relevant"]
@@ -230,6 +224,25 @@ def review_issues(assessment: dict[str, Any]) -> list[dict[str, Any]]:
            for row in assessment["claims"] for unit in row["units"] if unit["verdict"] != "supported"]
         + [{"kind": "report_scope", "path": row["path"], **unit}
            for row in assessment["paragraphs"] for unit in row["units"] if unit["verdict"] != "supported"])
+    # Record the model's original judgments even when they contradict their
+    # support. These are failed assessments, not malformed submissions that
+    # must be reauthored before the existing evidence-repair stage can run.
+    supported = {(row["ref"], unit["unit"]) for row in assessment["claims"] for unit in row["units"]
+                 if unit["verdict"] == "supported" and unit["quotes"]}
+    for row in assessment["claims"]:
+        for unit in row["units"]:
+            if unit["verdict"] == "supported" and not unit["quotes"]:
+                issues.append({"kind": "claim_support", "ref": row["ref"], **unit,
+                    "model_reason": unit["reason"], "reason": "Supported finding has no supporting evidence quote."})
+    for row in assessment["paragraphs"]:
+        for unit in row["units"]:
+            refs = unit["finding_units"]
+            if unit["verdict"] == "supported" and unit["basis"] == "findings" and (
+                    not refs or any((ref["ref"], ref["unit"]) not in supported for ref in refs)):
+                issues.append({"kind": "report_scope", "path": row["path"], **unit,
+                    "model_reason": unit["reason"],
+                    "reason": "Answer lacks supported finding units: selected units were rejected or lack evidence quotes."})
+    return issues
 
 
 def submitted_review(session: Any, basis: dict[str, Any]) -> dict[str, Any]:
