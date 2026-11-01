@@ -1,0 +1,69 @@
+"""Prepare exact source/evidence mutations for the original answer publication."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from typing import Any
+
+from codey.knowledge.archive import stable_identity
+from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference
+from codey.research.answer_contract import digest
+from codey.research.passages import passage_ref
+
+
+def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, project: str,
+                     session_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """No writes. Every object is selected by an explicit inline citation.
+
+    Use each immutable ReadPassage, never the ledger's latest view of its URL.
+    Whole answers use evidence directly; no model claims are manufactured here.
+    """
+    scope, owner = ("project", project) if project else ("session", session_id) if session_id else ("global", "")
+    mutations: dict[str, KnowledgeMutation] = {}
+    sources: dict[str, dict[str, Any]] = {}
+    bindings = []
+
+    def pinned(value: KnowledgeObject) -> KnowledgeReference:
+        old = store.repository.read(value.id)
+        if old is not None:
+            if value.kind == "source":
+                value = replace(value, provenance={**value.provenance,
+                    "retrieved_at": old.value.provenance.get("retrieved_at")})
+            if old.value != value:
+                raise ValueError("selected immutable evidence differs from its stored version")
+            return KnowledgeReference(value.id, old.revision, "uses")
+        mutations[value.id] = KnowledgeMutation(value)
+        return KnowledgeReference(value.id, 1, "uses")
+
+    selected = {row["label"]: row["passage_ref"] for row in submission["citations"]}
+    for label, ref in selected.items():
+        passage = ledger.read_passages.get(ref)
+        if passage is None or ref != passage_ref(passage.source.final_url, passage.source.text_hash, passage.start, passage.end):
+            raise ValueError("selected evidence lost its original read passage")
+        source = passage.source
+        source_id = stable_identity("source", scope, owner, source.final_url, source.text_hash)
+        value = KnowledgeObject(source_id, "source", passage.source_text, "source", title=source.title,
+            status="active", scope=scope, scope_id=owner,
+            provenance={"url": source.final_url, "content_hash": source.text_hash, "retrieved_at": source.retrieved_at,
+                        "quality": source.quality.to_dict(), "independence": "unknown",
+                        "content_kind": source.content_kind, "truncated": source.truncated})
+        source_ref = pinned(value)
+        old = store.repository.read(source_id, source_ref.revision)
+        sources[source_id] = {"id": source_id, "revision": source_ref.revision, "url": source.final_url,
+            "title": source.title, "content_hash": source.text_hash,
+            "retrieved_at": old.value.provenance["retrieved_at"] if old else source.retrieved_at,
+            "quality": source.quality.to_dict()}
+        locator = "passage:" + ref
+        evidence_id = stable_identity("evidence", source_id, passage.excerpt, str(passage.page), locator)
+        evidence = KnowledgeObject(evidence_id, "evidence", passage.excerpt, "observed_result", title=source.title,
+            status="active", scope=scope, scope_id=owner,
+            references=(replace(source_ref, relation="from_source"),), provenance={"page": passage.page, "locator": locator})
+        evidence_ref = pinned(evidence)
+        bindings.append({"label": label, "passage_ref": ref, "evidence_id": evidence_id,
+            "evidence_revision": evidence_ref.revision, "source_id": source_id, "source_revision": source_ref.revision,
+            "excerpt": passage.excerpt, "excerpt_digest": digest(passage.excerpt), "page": passage.page,
+            "locator": locator, "start": passage.start, "end": passage.end, "relation": "uses"})
+    if len(mutations) >= 128:
+        raise ValueError("selected evidence exceeds the original publication transaction budget")
+    return ([{"value": row.value.to_dict(), "expected_revision": row.expected_revision} for row in mutations.values()],
+            list(sources.values()), bindings)
