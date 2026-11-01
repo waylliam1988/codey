@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "queue-direct",
+      "question": "Queue.join() 依靠什么计数决定何时解除阻塞？说明 put/task_done 的作用以及返回条件。",
+      "documents": [
+        {
+          "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/queue.rst",
+          "title": "Python 3.12.7 queue documentation (frozen official excerpt)",
+          "text": ".. method:: Queue.task_done()\n\n   Indicate that a formerly enqueued task is complete.  Used by queue consumer\n   threads.  For each :meth:`get` used to fetch a task, a subsequent call to\n   :meth:`task_done` tells the queue that the processing on the task is complete.\n\n   If a :meth:`join` is currently blocking, it will resume when all items have been\n   processed (meaning that a :meth:`task_done` call was received for every item\n   that had been :meth:`put` into the queue).\n\n   Raises a :exc:`ValueError` if called more times than there were items placed in\n   the queue.\n\n\n.. method:: Queue.join()\n\n   Blocks until all items in the queue have been gotten and processed.\n\n   The count of unfinished tasks goes up whenever an item is added to the queue.\n   The count goes down whenever a consumer thread calls :meth:`task_done` to\n   indicate that the item was retrieved and all work on it is complete.  When the\n   count of unfinished tasks drops to zero, :meth:`join` unblocks.\n\n\n",
+          "selection": {
+            "start": 6324,
+            "end": 7311,
+            "full_source_sha256": "214e2de5aa7196e02a2534266ffa9f9a3ff04121757201a66c9a88d0751ee9b5"
+          }
+        }
+      ]
+    },
+    {
+      "id": "queue-adjacent",
+      "question": "Queue.join() 依靠什么计数决定何时解除阻塞？说明 put/task_done 的作用以及返回条件。",
+      "documents": [
+        {
+          "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/queue.rst",
+          "title": "Python 3.12.7 queue documentation (frozen official excerpt)",
+          "text": ".. method:: Queue.empty()\n\n   Return ``True`` if the queue is empty, ``False`` otherwise.  If empty()\n   returns ``True`` it doesn't guarantee that a subsequent call to put()\n   will not block.  Similarly, if empty() returns ``False`` it doesn't\n   guarantee that a subsequent call to get() will not block.\n\n\n",
+          "selection": {
+            "start": 4033,
+            "end": 4342,
+            "full_source_sha256": "214e2de5aa7196e02a2534266ffa9f9a3ff04121757201a66c9a88d0751ee9b5"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tempfile-direct",
+      "question": "在 Windows 上，NamedTemporaryFile 保持打开时，按名称再次打开它需要满足哪些替代条件？保留完整 OR 关系，并说明 delete_on_close=False 方案对额外打开句柄关闭时机的要求。",
+      "documents": [
+        {
+          "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/tempfile.rst",
+          "title": "Python 3.12.7 tempfile documentation (frozen official excerpt)",
+          "text": ".. function:: NamedTemporaryFile(mode='w+b', buffering=-1, encoding=None, newline=None, suffix=None, prefix=None, dir=None, delete=True, *, errors=None, delete_on_close=True)\n\n   This function operates exactly as :func:`TemporaryFile` does, except the\n   following differences:\n\n   * This function returns a file that is guaranteed to have a visible name in\n     the file system.\n   * To manage the named file, it extends the parameters of\n     :func:`TemporaryFile` with *delete* and *delete_on_close* parameters that\n     determine whether and how the named file should be automatically deleted.\n\n   The returned object is always a :term:`file-like object` whose :attr:`!file`\n   attribute is the underlying true file object. This file-like object\n   can be used in a :keyword:`with` statement, just like a normal file.  The\n   name of the temporary file can be retrieved from the :attr:`!name` attribute\n   of the returned file-like object. On Unix, unlike with the\n   :func:`TemporaryFile`, the directory entry does not get unlinked immediately\n   after the file creation.\n\n   If *delete* is true (the default) and *delete_on_close* is true (the\n   default), the file is deleted as soon as it is closed. If *delete* is true\n   and *delete_on_close* is false, the file is deleted on context manager exit\n   only, or else when the :term:`file-like object` is finalized. Deletion is not\n   always guaranteed in this case (see :meth:`object.__del__`). If *delete* is\n   false, the value of *delete_on_close* is ignored.\n\n   Therefore to use the name of the temporary file to reopen the file after\n   closing it, either make sure not to delete the file upon closure (set the\n   *delete* parameter to be false) or, in case the temporary file is created in\n   a :keyword:`with` statement, set the *delete_on_close* parameter to be false.\n   The latter approach is recommended as it provides assistance in automatic\n   cleaning of the temporary file upon the context manager exit.\n\n   Opening the temporary file again by its name while it is still open works as\n   follows:\n\n   * On POSIX the file can always be opened again.\n   * On Windows, make sure that at least one of the following conditions are\n     fulfilled:\n\n     * *delete* is false\n     * additional open shares delete access (e.g. by calling :func:`os.open`\n       with the flag ``O_TEMPORARY``)\n     * *delete* is true but *delete_on_close* is false. Note, that in this\n       case the additional opens that do not share delete access (e.g.\n       created via builtin :func:`open`) must be closed before exiting the\n       context manager, else the :func:`os.unlink` call on context manager\n       exit will fail with a :exc:`PermissionError`.\n\n   On Windows, if *delete_on_close* is false, and the file is created in a\n   directory for which the user lacks delete access, then the :func:`os.unlink`\n   call on exit of the context manager will fail with a :exc:`PermissionError`.\n   This cannot happen when *delete_on_close* is true because delete access is\n   requested by the open, which fails immediately if the requested access is not\n   granted.\n\n   On POSIX (only), a process that is terminated abruptly with SIGKILL\n   cannot automatically delete any NamedTemporaryFiles it created.\n\n   .. audit-event:: tempfile.mkstemp fullpath tempfile.NamedTemporaryFile\n\n   .. versionchanged:: 3.8\n      Added *errors* parameter.\n\n   .. versionchanged:: 3.12\n      Added *delete_on_close* parameter.\n\n\n",
+          "selection": {
+            "start": 3343,
+            "end": 6801,
+            "full_source_sha256": "487aeabf01be281fd1e2534b326c33cca4d9fab4db1c04d32e58439c9f6346bc"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tempfile-adjacent",
+      "question": "在 Windows 上，NamedTemporaryFile 保持打开时，按名称再次打开它需要满足哪些替代条件？保留完整 OR 关系，并说明 delete_on_close=False 方案对额外打开句柄关闭时机的要求。",
+      "documents": [
+        {
+          "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/tempfile.rst",
+          "title": "Python 3.12.7 tempfile documentation (frozen official excerpt)",
+          "text": ".. function:: TemporaryFile(mode='w+b', buffering=-1, encoding=None, newline=None, suffix=None, prefix=None, dir=None, *, errors=None)\n\n   Return a :term:`file-like object` that can be used as a temporary storage area.\n   The file is created securely, using the same rules as :func:`mkstemp`. It will be destroyed as soon\n   as it is closed (including an implicit close when the object is garbage\n   collected).  Under Unix, the directory entry for the file is either not created at all or is removed\n   immediately after the file is created.  Other platforms do not support\n   this; your code should not rely on a temporary file created using this\n   function having or not having a visible name in the file system.\n\n   The resulting object can be used as a :term:`context manager` (see\n   :ref:`tempfile-examples`).  On completion of the context or\n   destruction of the file object the temporary file will be removed\n   from the filesystem.\n\n   The *mode* parameter defaults to ``'w+b'`` so that the file created can\n   be read and written without being closed.  Binary mode is used so that it\n   behaves consistently on all platforms without regard for the data that is\n   stored.  *buffering*, *encoding*, *errors* and *newline* are interpreted as for\n   :func:`open`.\n\n   The *dir*, *prefix* and *suffix* parameters have the same meaning and\n   defaults as with :func:`mkstemp`.\n\n   The returned object is a true file object on POSIX platforms.  On other\n   platforms, it is a file-like object whose :attr:`!file` attribute is the\n   underlying true file object.\n\n   The :py:const:`os.O_TMPFILE` flag is used if it is available and works\n   (Linux-specific, requires Linux kernel 3.11 or later).\n\n   On platforms that are neither Posix nor Cygwin, TemporaryFile is an alias\n   for NamedTemporaryFile.\n\n   .. audit-event:: tempfile.mkstemp fullpath tempfile.TemporaryFile\n\n   .. versionchanged:: 3.5\n\n      The :py:const:`os.O_TMPFILE` flag is now used if available.\n\n   .. versionchanged:: 3.8\n      Added *errors* parameter.\n\n\n",
+          "selection": {
+            "start": 1309,
+            "end": 3343,
+            "full_source_sha256": "487aeabf01be281fd1e2534b326c33cca4d9fab4db1c04d32e58439c9f6346bc"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rlock-direct",
+      "question": "当 Condition.wait() 使用多次重入的 RLock 时，它如何真正释放锁，并在等待结束重新获得锁时恢复递归层级？",
+      "documents": [
+        {
+          "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/threading.rst",
+          "title": "Python 3.12.7 threading documentation (frozen official excerpt)",
+          "text": "   .. method:: wait(timeout=None)\n\n      Wait until notified or until a timeout occurs. If the calling thread has\n      not acquired the lock when this method is called, a :exc:`RuntimeError` is\n      raised.\n\n      This method releases the underlying lock, and then blocks until it is\n      awakened by a :meth:`notify` or :meth:`notify_all` call for the same\n      condition variable in another thread, or until the optional timeout\n      occurs.  Once awakened or timed out, it re-acquires the lock and returns.\n\n      When the *timeout* argument is present and not ``None``, it should be a\n      floating-point number specifying a timeout for the operation in seconds\n      (or fractions thereof).\n\n      When the underlying lock is an :class:`RLock`, it is not released using\n      its :meth:`release` method, since this may not actually unlock the lock\n      when it was acquired multiple times recursively.  Instead, an internal\n      interface of the :class:`RLock` class is used, which really unlocks it\n      even when it has been recursively acquired several times. Another internal\n      interface is then used to restore the recursion level when the lock is\n      reacquired.\n\n      The return value is ``True`` unless a given *timeout* expired, in which\n      case it is ``False``.\n\n      .. versionchanged:: 3.2\n         Previously, the method always returned ``None``.\n\n",
+          "selection": {
+            "start": 30146,
+            "end": 31532,
+            "full_source_sha256": "0153766e1692460a569d539ade6824df5f87865e500bcecf6fd826095187c292"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rlock-adjacent",
+      "question": "当 Condition.wait() 使用多次重入的 RLock 时，它如何真正释放锁，并在等待结束重新获得锁时恢复递归层级？",
+      "documents": [
+        {
+          "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/threading.rst",
+          "title": "Python 3.12.7 threading documentation (frozen official excerpt)",
+          "text": "   .. method:: release()\n\n      Release a lock, decrementing the recursion level.  If after the decrement it is\n      zero, reset the lock to unlocked (not owned by any thread), and if any other\n      threads are blocked waiting for the lock to become unlocked, allow exactly one\n      of them to proceed.  If after the decrement the recursion level is still\n      nonzero, the lock remains locked and owned by the calling thread.\n\n      Only call this method when the calling thread owns the lock. A\n      :exc:`RuntimeError` is raised if this method is called when the lock is\n      not acquired.\n\n      There is no return value.\n\n\n",
+          "selection": {
+            "start": 25467,
+            "end": 26101,
+            "full_source_sha256": "0153766e1692460a569d539ade6824df5f87865e500bcecf6fd826095187c292"
+          }
+        }
+      ]
+    }
+  ]
+}

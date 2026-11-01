@@ -1,0 +1,88 @@
+{
+  "fixture_sha256": "c0fecec3486ebcfa7352610625b84ba68bbe84f85bc847daf020740bbc9a39ed",
+  "frozen_before_inference": true,
+  "labels_not_model_input": true,
+  "cases": {
+    "queue-direct": {
+      "label": "sufficient",
+      "required": [
+        "unfinished-task count",
+        "put increments",
+        "task_done decrements after processing",
+        "zero unblocks join"
+      ],
+      "also_check": [
+        "no erroneous additions",
+        "no positive refusal",
+        "precise citation support",
+        "first judgment/action/clean gap and final publication separately"
+      ]
+    },
+    "queue-adjacent": {
+      "label": "insufficient",
+      "required": [
+        "explicit evidence gap; do not infer the asked mechanism from adjacent facts"
+      ],
+      "also_check": [
+        "no erroneous additions",
+        "no positive refusal",
+        "precise citation support",
+        "first judgment/action/clean gap and final publication separately"
+      ]
+    },
+    "tempfile-direct": {
+      "label": "sufficient",
+      "required": [
+        "Windows while original file remains open",
+        "delete=False OR sharing delete access OR delete=True and delete_on_close=False",
+        "non-sharing additional handles closed before context exit in third alternative",
+        "otherwise unlink may raise PermissionError"
+      ],
+      "also_check": [
+        "no erroneous additions",
+        "no positive refusal",
+        "precise citation support",
+        "first judgment/action/clean gap and final publication separately"
+      ]
+    },
+    "tempfile-adjacent": {
+      "label": "insufficient",
+      "required": [
+        "explicit evidence gap; do not infer the asked mechanism from adjacent facts"
+      ],
+      "also_check": [
+        "no erroneous additions",
+        "no positive refusal",
+        "precise citation support",
+        "first judgment/action/clean gap and final publication separately"
+      ]
+    },
+    "rlock-direct": {
+      "label": "sufficient",
+      "required": [
+        "ordinary release may leave recursive lock owned",
+        "internal interface fully unlocks",
+        "reacquire on wake or timeout",
+        "another internal interface restores recursion level"
+      ],
+      "also_check": [
+        "no erroneous additions",
+        "no positive refusal",
+        "precise citation support",
+        "first judgment/action/clean gap and final publication separately"
+      ]
+    },
+    "rlock-adjacent": {
+      "label": "insufficient",
+      "required": [
+        "explicit evidence gap; do not infer the asked mechanism from adjacent facts"
+      ],
+      "also_check": [
+        "no erroneous additions",
+        "no positive refusal",
+        "precise citation support",
+        "first judgment/action/clean gap and final publication separately"
+      ]
+    }
+  }
+}
