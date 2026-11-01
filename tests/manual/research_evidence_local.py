@@ -26,6 +26,8 @@ QUESTIONS = {
     "measurement": "这些文档片段能否证明本机使用 WAL 比回滚日志更快，或者证明整页没有本机测量？",
     "readonly_conditions": "SQLite 的 WAL 数据库在只读媒体或缺乏数据库写权限时，什么条件下仍可读取？",
     "checkpoint_constraints": "SQLite WAL 的 checkpoint 与读事务并行时，何时必须停止，之后如何继续？",
+    "checkpoint_stop": "SQLite WAL 的 checkpoint 与读事务并行时，何时必须停止，为什么？",
+    "checkpoint_resume": "SQLite WAL 的 checkpoint 暂停后，如何记录进度，并在之后继续转移数据？",
 }
 PASSAGES = {
     "overview": ("There are advantages and disadvantages", "Transactions that involve"),
@@ -40,6 +42,7 @@ INPUTS = {
         "coexistence_only": ("overview",), "writer_limit": ("writer",),
         "versions": ("introduced", "readonly"), "conditions": ("conditions",), "measurement": ("overview",),
         "readonly_conditions": ("readonly",), "checkpoint_constraints": ("conditions",),
+        "checkpoint_stop": ("conditions",), "checkpoint_resume": ("conditions",),
     },
     "candidates": {
         "coexistence_only": ("overview", "readonly"), "writer_limit": ("overview", "conditions", "writer"),
@@ -47,8 +50,26 @@ INPUTS = {
         "conditions": ("readonly", "conditions", "writer"), "measurement": ("overview", "readonly"),
         "readonly_conditions": ("introduced", "readonly"),
         "checkpoint_constraints": ("readonly", "conditions", "writer"),
+        "checkpoint_stop": ("readonly", "conditions", "writer"),
+        "checkpoint_resume": ("readonly", "conditions", "writer"),
     },
 }
+
+
+def fixture_windows(text, case, layer, order_seed):
+    """Candidate order is independent of the model sampling seed."""
+    selectors = list(INPUTS[layer][case])
+    random.Random(order_seed).shuffle(selectors)
+    windows = []
+    for name in selectors:
+        start_text, end_text = PASSAGES[name]
+        start = text.index(start_text)
+        end = text.index(end_text, start)
+        if end - start < 500:
+            raise ValueError("fixture window must exceed the production minimum read size")
+        windows.append({"selector": name, "offset": start, "limit": end - start,
+                        "sha256": hashlib.sha256(text[start:end].encode()).hexdigest()})
+    return windows
 
 
 def main():
@@ -65,6 +86,7 @@ def main():
     parser.add_argument("--case", choices=QUESTIONS, required=True)
     parser.add_argument("--layer", choices=INPUTS, required=True)
     parser.add_argument("--seed", type=int, default=74)
+    parser.add_argument("--order-seed", type=int, default=0)
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument("--provider-timeout", type=float, default=120)
     args = parser.parse_args()
@@ -75,17 +97,9 @@ def main():
     source = next(row for row in documents if row["url"] == "https://www.sqlite.org/wal.html")
     if hashlib.sha256(source["text"].encode()).hexdigest() != source["sha256"]:
         raise ValueError("frozen source hash mismatch")
-    selectors = list(INPUTS[args.layer][args.case])
-    random.Random(args.seed).shuffle(selectors)
-    windows = []
-    for name in selectors:
-        start_text, end_text = PASSAGES[name]
-        start = source["text"].index(start_text)
-        end = source["text"].index(end_text, start)
-        if end - start < 500:
-            raise ValueError("fixture window must exceed the production minimum read size")
-        windows.append({"selector": name, "offset": start, "limit": end - start})
+    windows = fixture_windows(source["text"], args.case, args.layer, args.order_seed)
     manifest = {"layer": args.layer, "case": args.case, "seed": args.seed,
+                "order_seed": args.order_seed,
                 "source_sha256": source["sha256"], "windows": windows,
                 "setup_is_model_generated": False, "semantic_grading": "manual_required"}
     (directory / "fixture-control.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")

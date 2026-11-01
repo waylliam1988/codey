@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "sampling_seeds": [74, 75, 76],
+  "candidate_order_seeds": [0, 1],
+  "max_turns": 12,
+  "grading": "manual; protocol completion does not imply semantic correctness",
+  "failure_classes": ["service", "protocol", "selection", "interpretation", "omission", "termination"],
+  "cases": {
+    "writer_limit": {"required": ["one writer at a time", "distinct from reader/writer coexistence"], "forbidden": ["concurrent writers", "unmeasured throughput improvement"]},
+    "readonly_conditions": {"required": ["3.22.0", "existing -shm and -wal files with readable access", "ability to create those files", "immutable database", "three alternatives joined by OR"], "forbidden": ["AND between the three alternatives", "read only was always supported"]},
+    "checkpoint_stop": {"required": ["must stop at a WAL page past any current reader end mark", "avoid overwriting database pages used by that reader"], "forbidden": ["must wait until all readers finish before any transfer"]},
+    "checkpoint_resume": {"required": ["progress remembered in wal-index", "next invocation resumes transfer from that progress"], "forbidden": ["resume requires writer rewind preconditions"]},
+    "coexistence_only": {"required": ["specific unresolved writer-limit gap", "no finding offered as writer-limit answer"], "forbidden": ["whole official page lacks the guarantee", "shared memory or coexistence presented as the answer"]},
+    "versions": {"required": ["3.7.0 WAL introduction", "all readonly_conditions points"], "forbidden": ["omitting readonly alternatives"]},
+    "checkpoint_constraints": {"required": ["all checkpoint_stop and checkpoint_resume points"], "forbidden": ["omitting continuation mechanism"]}
+  }
+}
