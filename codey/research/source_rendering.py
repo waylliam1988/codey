@@ -53,14 +53,21 @@ def render_opened_source(
 
 def _section_locators(document: SourceDocument) -> list[str]:
     """Expose bounded HTML heading offsets without summarizing unseen findings."""
-    if document.content_kind != "html":
+    rows = section_locators(document.text, content_kind=document.content_kind)
+    return ["", "Source section locators (labels only):", *[
+        f"offset={row['offset']}: {row['label']}" for row in rows]] if rows else []
+
+
+def section_locators(text: str, *, content_kind: str = "html") -> list[dict[str, object]]:
+    """Shared pure locator projection; headings never become read evidence."""
+    if content_kind != "html":
         return []
     rows = []
-    for match in re.finditer(r"(?m)^[ \t]{0,3}#{1,6}[ \t]+([^\n]+)", document.text):
-        rows.append(f"offset={match.start()}: {match.group(1).strip()[:120]}")
+    for match in re.finditer(r"(?m)^[ \t]{0,3}#{1,6}[ \t]+([^\n]+)", text):
+        rows.append({"offset": match.start(), "label": match.group(1).strip()[:120]})
         if len(rows) == 16:
             break
-    return ["", "Source section locators (labels only):", *rows] if rows else []
+    return rows
 
 
 def _metadata_lines(document: SourceDocument) -> list[str]:

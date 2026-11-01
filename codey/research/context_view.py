@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from codey.knowledge.model import canonical_json
@@ -18,12 +18,70 @@ class ResearchContextView:
     saved_evidence_count: int
     omitted_references: int = 0
     budget_issue: str = ""
+    read_evidence: tuple[dict[str, Any], ...] = ()
+    evidence_index: tuple[dict[str, Any], ...] = ()
+    locators: tuple[dict[str, Any], ...] = ()
 
     def render(self) -> str:
         return canonical_json({"questions": self.questions, "references": self.references,
             "investigations": self.investigations, "recent_results": self.recent_results,
             "saved_evidence_count": self.saved_evidence_count,
-            "omitted_references": self.omitted_references, "budget_issue": self.budget_issue})
+            "omitted_references": self.omitted_references, "budget_issue": self.budget_issue,
+            "read_evidence": self.read_evidence, "evidence_index": self.evidence_index, "locators": self.locators})
+
+
+def read_evidence_projection(session: Any, ledger: Any, *, question_ref: str = "",
+                             passage_refs: tuple[str, ...] | None = None) -> dict[str, Any]:
+    """Reconstruct before-save evidence from receipt projections, without I/O.
+
+    Each packet is one observed read window. Keep all its passages together:
+    a passage boundary alone cannot establish semantic completeness.
+    """
+    from codey.research.source_rendering import section_locators
+
+    if ledger is None:
+        return {"packets": [], "locators": []}
+    groups = []
+    seen: set[str] = set()
+    eligible = set(passage_refs) if passage_refs is not None else set(ledger.read_passages)
+    for label, receipt in reversed(list(ledger.investigations.items())):
+        if question_ref and receipt.get("question_ref") != question_ref:
+            continue
+        refs = [ref for ref in receipt.get("passage_refs", []) if ref in eligible]
+        if refs and not set(refs) <= seen:
+            groups.append((label, refs))
+            seen.update(refs)
+    # Direct callers can restore passage observations without an investigation.
+    remaining = [ref for ref in ledger.read_passages if ref in eligible and ref not in seen]
+    if remaining:
+        groups.append(("", remaining))
+    packets = []
+    for label, refs in groups:
+        rows = []
+        for ref in refs:
+            passage = ledger.read_passages[ref]
+            rows.append({**passage.descriptor(), "url": passage.source.final_url,
+                "source_hash": passage.source.text_hash, "page": passage.page, "text": passage.excerpt,
+                "available_length": len(passage.source_text), "acquisition_truncated": passage.source.truncated})
+        packets.append({"investigation_ref": label, "passages": rows, "complete_observed_window": True,
+                        "semantic_completeness": "not_verified"})
+    locators: list[dict[str, Any]] = []
+    for identity, url in getattr(session, "search_results", {}).items():
+        locators.append({"result_id": identity, "url": url, "kind": "search_lead_not_evidence"})
+    for identity, target in getattr(session, "hit_targets", {}).items():
+        locators.append({"hit_id": identity, **target, "kind": "locator_not_evidence"})
+    for identity, url in getattr(session, "source_ids", {}).items():
+        source = ledger.source_record_for_url(url)
+        if source is None:
+            continue
+        text = ledger.source_text_for_url(url)
+        ends = [p.end for p in ledger.read_passages.values()
+                if (p.source.final_url, p.source.text_hash) == (source.final_url, source.text_hash)]
+        locators.append({"source_id": identity, "url": url, "source_hash": source.text_hash,
+            "available_length": len(text), "next_offset": max(ends, default=0),
+            "sections": section_locators(text, content_kind=source.content_kind),
+            "kind": "locator_not_evidence"})
+    return {"packets": packets, "locators": locators}
 
 
 def _bounded(row: dict[str, Any], budget: int) -> dict[str, Any]:
@@ -180,6 +238,25 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
         per_ref = room // count - 2 if count else 1000
         view = ResearchContextView(questions, tuple(_bounded(row, per_ref) for row in rows[:count]),
                                   attempts, recent, saved, len(rows) - count, issue)
+    projection = read_evidence_projection(session, ledger)
+    # Optional whole packets use only remaining room. Never clip an OR list or
+    # silently call a preview complete. Detailed local scopes allocate first.
+    for packet in projection["packets"]:
+        candidate = replace(view, read_evidence=(*view.read_evidence, packet))
+        if len(candidate.render()) <= budget:
+            view = candidate
+        else:
+            index = {"investigation_ref": packet["investigation_ref"], "display_omitted": True,
+                "passages": [{key: value for key, value in row.items() if key != "text"}
+                             for row in packet["passages"]],
+                "next": "Recover the original read receipt with read_tool_result, or explicitly open the source range."}
+            candidate = replace(view, evidence_index=(*view.evidence_index, index))
+            if len(candidate.render()) <= budget:
+                view = candidate
+    for locator in projection["locators"]:
+        candidate = replace(view, locators=(*view.locators, locator))
+        if len(candidate.render()) <= budget:
+            view = candidate
     if len(view.render()) > budget:
         raise ValueError("research working view exceeds its serialization budget")
     return view
