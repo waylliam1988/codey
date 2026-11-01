@@ -378,12 +378,13 @@ class ResearchTools:
         from codey.research.questions import question_plan
 
         try:
-            if schema_version in {2, 3}:
+            if schema_version in {2, 3, 4}:
                 from codey.research.plan_contract import compact_plan
 
                 if question_details is not None or self.ledger.questions:
                     raise ValueError("compact plans register once and do not accept question_details")
-                observation = compact_plan(questions, task, submission_mode="inline" if schema_version == 3 else "select")
+                observation = compact_plan(questions, task, submission_mode="inline" if schema_version >= 3 else "select",
+                                           schema_version=3 if schema_version == 4 else 2)
                 planned = question_plan([row["text"] for row in observation["questions"]])
                 self.ledger.questions = planned
                 return ResearchToolOutput(canonical_json({"questions": [

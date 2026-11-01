@@ -240,7 +240,7 @@ def record_facts_for_result(
         from codey.research.questions import question_plan
 
         observation = result.canonical.get("research_observation")
-        if isinstance(observation, dict) and observation.get("schema_version") == 2:
+        if isinstance(observation, dict) and observation.get("schema_version") in (2, 3):
             from codey.research.plan_contract import validate_compact_plan
 
             planned = validate_compact_plan(observation, session.task_text)

@@ -161,11 +161,11 @@ def restore_ledger_observation(ledger: ResearchLedger, observation: dict[str, An
     if not isinstance(observation, dict):
         raise ValueError("research observation must be an object")
     keys = set(observation)
-    if keys in ({"questions"}, {"questions", "question_details"}) or observation.get("schema_version") == 2:
+    if keys in ({"questions"}, {"questions", "question_details"}) or observation.get("schema_version") in (2, 3):
         from codey.research.questions import question_plan
 
         questions = ([row["text"] for row in observation["questions"]]
-                     if observation.get("schema_version") == 2 else observation["questions"])
+                     if observation.get("schema_version") in (2, 3) else observation["questions"])
         ledger.questions = question_plan(questions, ledger.questions)
     elif keys == {"search"}:
         ledger.searches.append(search_observation(observation))

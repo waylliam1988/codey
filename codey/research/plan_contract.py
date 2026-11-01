@@ -58,7 +58,7 @@ def compact_plan_spec(spec: Any, task: str) -> Any:
                        "description": "Optional only when necessary; keep full OR conditions, negations and exceptions together."}},
         "text", "task_refs")
     schema = object_schema({"questions": {"type": "array", "minItems": 1, "maxItems": 8, "items": question},
-                            "contract_version": {"type": "integer", "enum": [3],
+                            "contract_version": {"type": "integer", "enum": [4],
                                                  "description": "Fixed by the application; may be omitted."}})
     defaults = task_layout(task)["task_questions"]
     example_args = {} if all(1 <= len(row["text"].strip()) <= 800 for row in defaults) else {
@@ -81,12 +81,30 @@ def is_compact_plan_spec(spec: Any) -> bool:
 
 def frozen_plan_version(spec: Any) -> int:
     version = dict(spec.parameters).get("contract_version", {}).get("enum", [2])
-    if tuple(version) not in ((2,), (3,)):
+    if tuple(version) not in ((2,), (3,), (4,)):
         raise ValueError("invalid frozen plan entry version")
     return version[0]
 
 
-def compact_plan(raw: object, task: str, *, submission_mode: str = "select") -> dict[str, Any]:
+def _accounting_ranges(layout: dict[str, Any], task: str, refs: list[str]) -> list[dict[str, int]]:
+    """Own numbering locally; only nonblank global text binds every question."""
+    prefixes = {match.start(2): match.start() for match in _NUMBERED.finditer(task)}
+    questions = [{"start": prefixes.get(row["start"], row["start"]), "end": row["end"],
+                  "task_ref": row["task_ref"]} for row in layout["task_questions"]]
+    ranges = [{"start": row["start"], "end": row["end"]} for row in questions if row["task_ref"] in refs]
+    start = 0
+    for row in [*questions, {"start": len(task), "end": len(task)}]:
+        text = task[start:row["start"]]
+        if text.strip():
+            ranges.append({"start": start + len(text) - len(text.lstrip()),
+                           "end": row["start"] - len(text) + len(text.rstrip())})
+        start = row["end"]
+    return ranges
+
+
+def compact_plan(raw: object, task: str, *, submission_mode: str = "select", schema_version: int = 3) -> dict[str, Any]:
+    if type(schema_version) is not int or schema_version not in (2, 3):
+        raise ValueError("invalid compact plan accounting version")
     layout = task_layout(task)
     original = {row["task_ref"]: row for row in layout["task_questions"]}
     if raw is None:
@@ -107,7 +125,8 @@ def compact_plan(raw: object, task: str, *, submission_mode: str = "select") -> 
         spans = [original[ref] for ref in refs]
         # Retain all non-question context as binding provenance. This is not a
         # claim that the model has answered a source-interface or format rule.
-        ranges = [*spans, *layout["other_task_context"]]
+        ranges = ([*spans, *layout["other_task_context"]] if schema_version == 2
+                  else _accounting_ranges(layout, task, refs))
         task_refs = [unit["task_ref"] for unit in accounting
                      if any(unit["start"] < span["end"] and span["start"] < unit["end"] for span in ranges)]
         item = {"text": row["text"], "task_spans": refs, "task_refs": task_refs}
@@ -123,12 +142,13 @@ def compact_plan(raw: object, task: str, *, submission_mode: str = "select") -> 
     question_plan([row["text"] for row in rows])
     if seen != original.keys():
         raise ValueError("questions must retain every original task span; missing: " + ", ".join(sorted(original.keys() - seen)))
-    return {"schema_version": 2, "questions": rows, "task_layout": layout,
+    return {"schema_version": schema_version, "questions": rows, "task_layout": layout,
             "task_sha256": hashlib.sha256(task.encode()).hexdigest(), "submission_mode": submission_mode}
 
 
 def validate_compact_plan(plan: dict[str, Any], task: str) -> tuple[str, ...]:
-    if set(plan) != {"schema_version", "questions", "task_layout", "task_sha256", "submission_mode"} or plan["schema_version"] != 2:
+    if (set(plan) != {"schema_version", "questions", "task_layout", "task_sha256", "submission_mode"}
+            or type(plan["schema_version"]) is not int or plan["schema_version"] not in (2, 3)):
         raise ValueError("invalid compact plan observation")
     if plan["submission_mode"] not in {"select", "inline"}:
         raise ValueError("invalid frozen submission contract")
@@ -138,6 +158,6 @@ def validate_compact_plan(plan: dict[str, Any], task: str) -> tuple[str, ...]:
         raise ValueError("invalid compact plan question objects")
     raw = [{"text": row["text"], "task_refs": row["task_spans"],
             **({"work_units": row["work_units"]} if "work_units" in row else {})} for row in plan["questions"]]
-    if compact_plan(raw, task, submission_mode=plan["submission_mode"]) != plan:
+    if compact_plan(raw, task, submission_mode=plan["submission_mode"], schema_version=plan["schema_version"]) != plan:
         raise ValueError("compact plan differs from its original task spans")
     return question_plan([row["text"] for row in plan["questions"]])

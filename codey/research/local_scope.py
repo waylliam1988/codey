@@ -89,7 +89,7 @@ def registered_plan(session: Any) -> dict[str, Any] | None:
     for result in getattr(session, "_memory_results", {}).values():
         if result.ok and result.call.name == "research_plan":
             observation = result.canonical.get("research_observation", {})
-            if observation.get("schema_version") == 2:
+            if observation.get("schema_version") in (2, 3):
                 from codey.research.plan_contract import validate_compact_plan
 
                 validate_compact_plan(observation, session.task_text)
@@ -100,7 +100,7 @@ def registered_plan(session: Any) -> dict[str, Any] | None:
 
 
 def plan_units(plan: dict[str, Any]) -> list[dict[str, Any]]:
-    if plan.get("schema_version") == 2:
+    if plan.get("schema_version") in (2, 3):
         return [{"question_ref": f"q{index}", "unit_ref": f"q{index}.u{unit_index}", "target": target,
                  "question": row["text"], "task_refs": row["task_refs"], "submission_mode": plan["submission_mode"]}
                 for index, row in enumerate(plan["questions"], 1)
@@ -282,7 +282,7 @@ def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None
             if result.call.name == "knowledge_read" and result.call.args.get("id") in {ref, binding["object_id"], binding["note_id"]}:
                 observed_at[ref] = index
             bindings[ref] = binding
-    passages = projected_passages(windows, lengths, unit["question_ref"], reuse=plan.get("schema_version") == 2)
+    passages = projected_passages(windows, lengths, unit["question_ref"], reuse=plan.get("schema_version") in (2, 3))
     adopted = {row["ref"] for row in answers.get(unit["unit_ref"], {}).get("findings", [])} if replaces else set()
     eligible = [ref for ref, row in bindings.items()
                 if row["question_ref"] == unit["question_ref"] and observed_at[ref] > unit_start]

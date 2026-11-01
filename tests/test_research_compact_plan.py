@@ -62,6 +62,27 @@ def test_unstructured_task_and_unassigned_continuations_are_not_silently_discard
         validate_compact_plan(corrupt, multiline)
 
 
+@pytest.mark.parametrize("separator", ["\n", "\r\n", "\n\n"])
+def test_numbering_and_whitespace_do_not_assign_other_questions(separator):
+    task = "1. 为什么 A？" + separator + "2. 为什么 B？"
+    plan = compact_plan(None, task)
+    assert [row["task_refs"] for row in plan["questions"]] == [["r1", "r2"], ["r3", "r4"]]
+    legacy = compact_plan(None, task, schema_version=2)
+    assert all(row["task_refs"] == ["r1", "r2", "r3", "r4"] for row in legacy["questions"])
+    assert validate_compact_plan(legacy, task) == validate_compact_plan(plan, task)
+    legacy["schema_version"] = 3
+    with pytest.raises(ValueError, match="original task spans"):
+        validate_compact_plan(legacy, task)
+
+
+def test_global_constraints_bind_both_questions_without_cross_assigning_question_text():
+    task = "全局限制：不能猜测。\n1. 为什么 A？\n2. 为什么 B？\n保留缺口。"
+    plan = compact_plan(None, task)
+    assert [row["task_refs"] for row in plan["questions"]] == [
+        ["r1", "r2", "r3", "r6"], ["r1", "r4", "r5", "r6"]]
+    validate_task_accounting(plan["questions"], task)
+
+
 @pytest.mark.parametrize("native", [False, True])
 def test_new_entry_one_object_array_and_old_frozen_plan_remains_legacy(tmp_path, native):
     store, tools, session, _ = setup(tmp_path)
@@ -90,7 +111,7 @@ def test_new_entry_one_object_array_and_old_frozen_plan_remains_legacy(tmp_path,
         assert current_scope(session).submission_mode == "inline"
         context = task_working_context(session, tools.ledger, store)
         assert '"task_ref":"t1"' in context and "不得猜测" in context
-        assert registered_plan(session)["schema_version"] == 2
+        assert registered_plan(session)["schema_version"] == 3
         # Direct legacy facade calls and old receipts keep their input contract.
         old_store, old_tools, old_session, old_delegate = setup(tmp_path / "old")
         try:
@@ -177,7 +198,8 @@ def test_compact_plan_survives_cold_restart_without_duplicate_write_or_publicati
     assert sum("publication" in row for row in rows) == sum("fetch" in row for row in rows) == 1
 
 
-def test_old_compact_frozen_entry_keeps_select_and_new_entry_cannot_choose_it(tmp_path):
+@pytest.mark.parametrize("version, mode", [(2, "select"), (3, "inline")])
+def test_old_compact_frozen_entry_keeps_its_accounting_and_submission_mode(tmp_path, version, mode):
     from codey.operations.kernel_protocol import build_turn_snapshot
 
     store, tools, session, _ = setup(tmp_path)
@@ -186,10 +208,10 @@ def test_old_compact_frozen_entry_keeps_select_and_new_entry_cannot_choose_it(tm
     session.policy = TaskPolicy(session.policy.grants, strict_research=True)
     try:
         new = build_turn_snapshot(session)
-        invalid = normalize_turn(decode_text_turn('{"tool":"research_plan","args":{"contract_version":2}}'), snapshot=new)
+        invalid = normalize_turn(decode_text_turn(json.dumps({"tool": "research_plan", "args": {"contract_version": version}})), snapshot=new)
         assert invalid.protocol_error
         specs = tuple(replace(spec, parameters=tuple({**dict(spec.parameters),
-            "contract_version": {"type": "integer", "enum": [2]}}.items()))
+            "contract_version": {"type": "integer", "enum": [version]}}.items()))
             if spec.name == "research_plan" else spec for spec in new.frozen_specs)
         old = restore_snapshot(snapshot_description(replace(new, frozen_specs=specs)))
         delegate = ExecutionDelegate(session=session, research_tools=tools,
@@ -198,7 +220,8 @@ def test_old_compact_frozen_entry_keeps_select_and_new_entry_cannot_choose_it(tm
         assert ok, result.model_text
         project_result_observation(session, result.call, result, ok=ok, research_ledger=tools.ledger)
         session._memory_results["plan"] = result
-        assert registered_plan(session)["submission_mode"] == "select"
-        assert current_scope(session).submission_mode == "select"
+        assert registered_plan(session)["schema_version"] == 2
+        assert registered_plan(session)["submission_mode"] == mode
+        assert current_scope(session).submission_mode == mode
     finally:
         store.close()
