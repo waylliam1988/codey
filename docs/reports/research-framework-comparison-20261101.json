@@ -1,0 +1,1794 @@
+{
+  "schema_version": 1,
+  "reviewed_at_utc": "2026-11-01T10:02:39.255324+00:00",
+  "scope": "Closed official-text extraction and reasoning diagnostics, not autonomous research-depth ranking.",
+  "method": "Manual evidence-based review by coding assistant; no tested-model judge, no independent blind-review claim. Scores are multidimensional; no new opaque weighted aggregate.",
+  "source_root": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101",
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "codey_commit": "c346b9e2",
+  "openscience_version": "2.0.153",
+  "openscience_commit": "a08e0ad0ad3d6448123039ee4659163eb2e35d99",
+  "protocol_sha256": "e176c3d6e378756627177582413481e5408ebfdeea571c18e8018678b0e3afae",
+  "limitations": [
+    "Diagnostic Codey plan/read is scripted; OpenScience evidence is preprovided. Neither series establishes autonomous search quality.",
+    "Codey uses production constrained JSON; OpenScience uses native tools. Framework and protocol effects are not causally separated.",
+    "Protocol planned equal 32768-token windows; observed Codey admission followed server 262144/32768 reserve, while actual proxy output cap was4096 and observed inputs were below8691. Later harness fixes configuration; original samples are not relabelled.",
+    "Codey sees a frozen timestamp; OpenScience retains its native current-date system text. Topics are not relative-date tasks.",
+    "Only three seeds per task, the same seed does not imply paired identical random trajectories across different prompts/tools.",
+    "Resume task distinguishes requested-fact correctness from incorrect unsolicited additions. Contradictory location is retained as ambiguous/error, not silently accepted.",
+    "An eventual correct unresolved outcome counts as final gap success even if earlier protocol choices were poor; immediate clean gap is separately0/3.",
+    "Perf costs use only completed nonempty-response diagnostic requests with matching seed and globally unique generation counters; interrupted/stale counters are excluded.",
+    "Wall time includes CLI/startup and different fixture preparation; KV cache/order are not controlled. Timing is descriptive, not a framework speed ranking."
+  ],
+  "diagnostics_summary": {
+    "codey": {
+      "runs": 15,
+      "requests": 48,
+      "auxiliary_title_requests": 0,
+      "total_input_tokens": 148273,
+      "total_output_tokens": 2186,
+      "median_elapsed_seconds": 12.23,
+      "primary_input_tokens": 148273,
+      "auxiliary_input_tokens": 0,
+      "max_single_input_tokens": 3761,
+      "final_supported_answers": 9,
+      "eventual_correct_empty_gap": 1
+    },
+    "openscience": {
+      "runs": 15,
+      "requests": 30,
+      "auxiliary_title_requests": 15,
+      "total_input_tokens": 142802,
+      "total_output_tokens": 2573,
+      "median_elapsed_seconds": 23.66,
+      "primary_input_tokens": 129521,
+      "auxiliary_input_tokens": 13281,
+      "max_single_input_tokens": 8690,
+      "final_supported_answers": 8,
+      "eventual_correct_empty_gap": 0
+    }
+  },
+  "diagnostics": [
+    {
+      "case": "writer_limit",
+      "seed": 74,
+      "framework": "codey",
+      "question": "SQLite WAL 为什么仍存在单写者限制？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\writer_limit-74-codey\\research-report.txt",
+      "report_sha256": "ad0b91b01dadde378fb94cc147aae271af810a69af812a1e8f4e7457f82b8175",
+      "report_quote": "由于只有一个 WAL 文件，因此在同一时间只能有一个写入者。 [1]",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\writer_limit-74-codey.jsonl",
+      "result": {
+        "exit_code": 0,
+        "run_id": "run_e828985959aa4e509690281a90335067",
+        "session_id": "research-research",
+        "stop_reason": "done",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\writer_limit-74-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_e828985959aa4e509690281a90335067.jsonl"
+      },
+      "elapsed_seconds": 10.42,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 452,
+          "input_tokens": 2881,
+          "output_tokens": 49,
+          "proxy_elapsed_seconds": 3.953
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 453,
+          "input_tokens": 2771,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.11
+        }
+      ]
+    },
+    {
+      "case": "writer_limit",
+      "seed": 74,
+      "framework": "openscience",
+      "question": "SQLite WAL 为什么仍存在单写者限制？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [
+          "多个写者同时操作会导致内容冲突：合理的机制推测，但选段未直接给出且未标注为推论；不据此直接判定为事实错误。"
+        ],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\writer_limit-74-openscience\\research-report-final.txt",
+      "report_sha256": "a2eb3a6fa9a8854cfd16284090a5e1cdc04bc5d1ef1a2ae1879b52d63dd74236",
+      "report_quote": "SQLite WAL 模式仍存在单写者限制，主要原因如下：\n\n*   **单一 WAL 文件限制**：由于所有写入操作都只是在同一个 WAL 文件末尾追加新内容，而目前只有一个 WAL 文件，因此同一时间只能有一个写者。\n*   **写操作的独立性**：虽然写者和读者可以同时运行（因为写者不会干扰读者的操作），但由于写者共享同一个 WAL 文件，多个写者同时操作会导致内容冲突。\n\n**结论依据：**\n*   [材料 1] 明确指出“since there is only one WAL file, there can only be one writer at a time.”（由于只有一个 WAL 文件，一次只能有一个写者）。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\writer_limit-74-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525271539,
+        "sessionID": "ses_e69908bb2ffeh3fAFHK2VsKOeH",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8590,
+          "output": 151,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 24.2,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 454,
+          "input_tokens": 8590,
+          "output_tokens": 151,
+          "proxy_elapsed_seconds": 12.25
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 455,
+          "input_tokens": 846,
+          "output_tokens": 9,
+          "proxy_elapsed_seconds": 1.125
+        }
+      ]
+    },
+    {
+      "case": "writer_limit",
+      "seed": 75,
+      "framework": "codey",
+      "question": "SQLite WAL 为什么仍存在单写者限制？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\writer_limit-75-codey\\research-report.txt",
+      "report_sha256": "41b4b395b1b4008939f1b698ba1d92278d7b44c6feec66f41ea54e6c2c1a797f",
+      "report_quote": "由于 SQLite 只有一个 WAL 文件，因此在任何给定时刻只能有一个写入者。 [1]",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\writer_limit-75-codey.jsonl",
+      "result": {
+        "exit_code": 0,
+        "run_id": "run_d8f1a72e47f343dea9eefd1967b3dc7e",
+        "session_id": "research-research",
+        "stop_reason": "done",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\writer_limit-75-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_d8f1a72e47f343dea9eefd1967b3dc7e.jsonl"
+      },
+      "elapsed_seconds": 10.7,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 458,
+          "input_tokens": 2881,
+          "output_tokens": 52,
+          "proxy_elapsed_seconds": 4.25
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 459,
+          "input_tokens": 2779,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.079
+        }
+      ]
+    },
+    {
+      "case": "writer_limit",
+      "seed": 75,
+      "framework": "openscience",
+      "question": "SQLite WAL 为什么仍存在单写者限制？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\writer_limit-75-openscience\\research-report-final.txt",
+      "report_sha256": "5f8a09f75481cb2c34ae05707b1a2c1dd5ccbf77564deb3b662dcd4b5286e8d6",
+      "report_quote": "SQLite WAL 模式仍存在单写者限制的主要原因是：**由于所有写入操作都共用同一个 WAL 文件，因此同一时间只能有一个写入者。**\n\n根据提供的证据，结论如下：\n*   **读写并行性：** 写入者只是在 WAL 文件的末尾追加新内容，这不会干扰读取者的操作，因此读写可以同时进行。\n*   **单写者瓶颈：** 因为只有一个 WAL 文件，所以同一时刻只能有一个写入者在工作。\n*   **检查点（Checkpoint）的协同：** 虽然检查点操作可以与读取者并行，但它必须在遇到任何当前读取者所达到的“末尾标记”之后的页面时停止，以避免覆盖读取者正在使用的数据库文件部分。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\writer_limit-75-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525375331,
+        "sessionID": "ses_e698ef676ffeiQkqXPoNQA9YyC",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8591,
+          "output": 163,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 24.5,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 456,
+          "input_tokens": 8591,
+          "output_tokens": 163,
+          "proxy_elapsed_seconds": 12.594
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 457,
+          "input_tokens": 846,
+          "output_tokens": 9,
+          "proxy_elapsed_seconds": 1.156
+        }
+      ]
+    },
+    {
+      "case": "writer_limit",
+      "seed": 76,
+      "framework": "codey",
+      "question": "SQLite WAL 为什么仍存在单写者限制？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\writer_limit-76-codey\\research-report.txt",
+      "report_sha256": "dce49b3bbf4636dfd63c225421a806540f50c41c657c3c196eabd0bb15ab43db",
+      "report_quote": "由于只有一个 WAL 文件，因此在同一时间只能有一个写入者。 [1]",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\writer_limit-76-codey.jsonl",
+      "result": {
+        "exit_code": 0,
+        "run_id": "run_c8e3b400cb714c1f9ccc77fc69662dd0",
+        "session_id": "research-research",
+        "stop_reason": "done",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\writer_limit-76-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_c8e3b400cb714c1f9ccc77fc69662dd0.jsonl"
+      },
+      "elapsed_seconds": 9.55,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 460,
+          "input_tokens": 2881,
+          "output_tokens": 49,
+          "proxy_elapsed_seconds": 3.204
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 461,
+          "input_tokens": 2769,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.125
+        }
+      ]
+    },
+    {
+      "case": "writer_limit",
+      "seed": 76,
+      "framework": "openscience",
+      "question": "SQLite WAL 为什么仍存在单写者限制？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [
+          "Checkpoint 在遇到读者正在使用的页面时停止，遗漏 past end mark 的实际边界。"
+        ],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\writer_limit-76-openscience\\research-report-final.txt",
+      "report_sha256": "47db7dba34856a410ebe6f43a3876491ddfc042de01f0c23ea698f8dcc5fde61",
+      "report_quote": "SQLite WAL 模式仍存在单写者限制，主要是因为**所有写入操作都共享同一个 WAL 文件**。\n\n根据提供的证据：\n1. **共享机制**：虽然写入者（Writers）只需将新内容追加到 WAL 文件的末尾，且不会干扰读取者（Readers）的操作，但由于**只有一个 WAL 文件**，导致同一时刻只能有一个写入者在工作。\n2. **Checkpoint 的影响**：虽然 Checkpoint 操作（将内容从 WAL 转移回原数据库文件）可以与读取者并发运行，但它必须在遇到任何当前读取者正在使用的页面时停止，以避免覆盖正在被使用的部分。\n\n**结论**：WAL 模式通过分离读写路径实现了“读写并发”，但由于“写”操作在物理上是串行的（共享同一个 WAL 文件），因此仍保留了单写者限制。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\writer_limit-76-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525418446,
+        "sessionID": "ses_e698e47adffel26G2oPNsTGaPt",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8587,
+          "output": 186,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 22.48,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 462,
+          "input_tokens": 8587,
+          "output_tokens": 186,
+          "proxy_elapsed_seconds": 13.265
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 463,
+          "input_tokens": 846,
+          "output_tokens": 9,
+          "proxy_elapsed_seconds": 1.094
+        }
+      ]
+    },
+    {
+      "case": "readonly_conditions",
+      "seed": 74,
+      "framework": "codey",
+      "question": "SQLite 的 WAL 数据库在只读媒体或缺乏数据库写权限时，什么条件下仍可读取？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\readonly_conditions-74-codey\\research-report.txt",
+      "report_sha256": "f7a31d05cc59c7b6f5afb22a824b2ee882fd25de73f7dd6ebde39ed8e7761d4d",
+      "report_quote": "在 SQLite 版本 3.22.0 及更高版本中，即使在只读媒体上或缺乏数据库写权限的情况下，WAL 模式的数据库仍可读取，只要满足以下任一条件：\n1. -shm 和 -wal 文件已经存在且可读。\n2. 数据库所在的目录具有写权限，以便可以创建 -shm 和 -wal 文件。\n3. 使用 immutable 查询参数打开数据库连接。 [1]",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\readonly_conditions-74-codey.jsonl",
+      "result": {
+        "exit_code": 0,
+        "run_id": "run_6b8c9a7d3c6d4685ab98639936bbb4d2",
+        "session_id": "research-research",
+        "stop_reason": "done",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\readonly_conditions-74-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_6b8c9a7d3c6d4685ab98639936bbb4d2.jsonl"
+      },
+      "elapsed_seconds": 13.86,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 466,
+          "input_tokens": 3029,
+          "output_tokens": 132,
+          "proxy_elapsed_seconds": 6.968
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 467,
+          "input_tokens": 3256,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.5
+        }
+      ]
+    },
+    {
+      "case": "readonly_conditions",
+      "seed": 74,
+      "framework": "openscience",
+      "question": "SQLite 的 WAL 数据库在只读媒体或缺乏数据库写权限时，什么条件下仍可读取？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\readonly_conditions-74-openscience\\research-report-final.txt",
+      "report_sha256": "e324bf702b70421af4080d345277e052044bdb579565dc4ae997e51c3a9f33b3",
+      "report_quote": "在 SQLite 版本 3.22.0 及更高版本中，即使在只读媒体或缺乏数据库写权限的情况下，只要满足以下任一条件，仍可读取 WAL 模式的数据库：\n\n1.  **文件已存在且可读**：`-shm` 和 `-wal` 文件已经存在且具备读取权限。\n2.  **目录具备写权限**：包含数据库的目录具有写权限，从而允许创建 `-shm` 和 `-wal` 文件。\n3.  **使用 immutable 参数**：在打开数据库连接时使用了 `immutable` 查询参数。\n\n**证据来源**：[材料 1] Write-Ahead Logging (SQLite 官方文档)",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\readonly_conditions-74-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525441835,
+        "sessionID": "ses_e698def2bffeC1GBTvA0OLKUPb",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8690,
+          "output": 148,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 23.66,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 464,
+          "input_tokens": 8690,
+          "output_tokens": 148,
+          "proxy_elapsed_seconds": 12.266
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 465,
+          "input_tokens": 916,
+          "output_tokens": 11,
+          "proxy_elapsed_seconds": 1.25
+        }
+      ]
+    },
+    {
+      "case": "readonly_conditions",
+      "seed": 75,
+      "framework": "codey",
+      "question": "SQLite 的 WAL 数据库在只读媒体或缺乏数据库写权限时，什么条件下仍可读取？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\readonly_conditions-75-codey\\research-report.txt",
+      "report_sha256": "d5c824b691d8ea8e3fea6a4f4e0fc358f50a359fc6a8437efe5bdec31d65051a",
+      "report_quote": "在 SQLite 版本 3.22.0 及更高版本中，即使在只读媒体上或缺乏数据库写权限的情况下，WAL 模式的数据库仍可读取，只要满足以下任一条件：\n1. -shm 和 -wal 文件已经存在且可读。\n2. 数据库所在的目录具有写权限，以便可以创建 -shm 和 -wal 文件。\n3. 使用 immutable 查询参数打开数据库连接。 [1]",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\readonly_conditions-75-codey.jsonl",
+      "result": {
+        "exit_code": 0,
+        "run_id": "run_ded86098bc354ae3884e8b2cd8366210",
+        "session_id": "research-research",
+        "stop_reason": "done",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\readonly_conditions-75-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_ded86098bc354ae3884e8b2cd8366210.jsonl"
+      },
+      "elapsed_seconds": 12.8,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 468,
+          "input_tokens": 3029,
+          "output_tokens": 132,
+          "proxy_elapsed_seconds": 6.406
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 469,
+          "input_tokens": 3258,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.484
+        }
+      ]
+    },
+    {
+      "case": "readonly_conditions",
+      "seed": 75,
+      "framework": "openscience",
+      "question": "SQLite 的 WAL 数据库在只读媒体或缺乏数据库写权限时，什么条件下仍可读取？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\readonly_conditions-75-openscience\\research-report-final.txt",
+      "report_sha256": "f13d8dfcf4a8f2005dc6038ac1fadc2cf19c2895ec8b263959f27a583b1221b1",
+      "report_quote": "在 SQLite 版本 3.22.0 及更高版本中，即使在只读媒体或缺乏数据库写权限的情况下，只要满足以下任一条件，仍可读取 WAL 模式数据库：\n\n1.  **文件已存在**：`-shm` 和 `-wal` 文件已经存在且可读。\n2.  **目录可写**：包含数据库的目录具有写权限，使得 `-shm` 和 `-wal` 文件可以被创建。\n3.  **使用不可变参数**：数据库连接是使用 `immutable` 查询参数打开的。\n\n**证据来源**：[材料 1] Write-Ahead Logging (SQLite 官方文档)",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\readonly_conditions-75-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525490231,
+        "sessionID": "ses_e698d2b34ffecwgbelKJuv3WMS",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8688,
+          "output": 144,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 21.48,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 470,
+          "input_tokens": 8688,
+          "output_tokens": 144,
+          "proxy_elapsed_seconds": 11.813
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 471,
+          "input_tokens": 916,
+          "output_tokens": 11,
+          "proxy_elapsed_seconds": 1.297
+        }
+      ]
+    },
+    {
+      "case": "readonly_conditions",
+      "seed": 76,
+      "framework": "codey",
+      "question": "SQLite 的 WAL 数据库在只读媒体或缺乏数据库写权限时，什么条件下仍可读取？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\readonly_conditions-76-codey\\research-report.txt",
+      "report_sha256": "e1ba7f5ba85e9e57fa37cc355367b29dc077454edeac32eabf43863774590441",
+      "report_quote": "在 SQLite 版本 3.22.0 及更高版本中，即使在只读媒体上或缺乏数据库写权限的情况下，仍可读取 WAL 模式的数据库，只要满足以下任一条件：\n1. -shm 和 -wal 文件已经存在且可读。\n2. 数据库所在的目录具有写权限，以便可以创建 -shm 和 -wal 文件。\n3. 使用 immutable 查询参数打开数据库连接。 [1]",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\readonly_conditions-76-codey.jsonl",
+      "result": {
+        "exit_code": 0,
+        "run_id": "run_3aaec9834a0a44129b17518fb7939db8",
+        "session_id": "research-research",
+        "stop_reason": "done",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\readonly_conditions-76-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_3aaec9834a0a44129b17518fb7939db8.jsonl"
+      },
+      "elapsed_seconds": 13.5,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 474,
+          "input_tokens": 3029,
+          "output_tokens": 132,
+          "proxy_elapsed_seconds": 7.094
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 475,
+          "input_tokens": 3256,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.484
+        }
+      ]
+    },
+    {
+      "case": "readonly_conditions",
+      "seed": 76,
+      "framework": "openscience",
+      "question": "SQLite 的 WAL 数据库在只读媒体或缺乏数据库写权限时，什么条件下仍可读取？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\readonly_conditions-76-openscience\\research-report-final.txt",
+      "report_sha256": "3307aa3843421b85af2620dba76871a9ace7ea68f1f2041c1caf1eba3199cdd1",
+      "report_quote": "在 SQLite 版本 3.22.0 及更高版本中，即使在只读媒体或缺乏数据库写权限的情况下，只要满足以下任一条件，仍可读取 WAL 模式的数据库：\n\n1. **文件已存在**：`-shm` 和 `-wal` 文件已经存在且可读。\n2. **目录有写权限**：包含数据库的目录具有写权限，从而允许创建 `-shm` 和 `-wal` 文件。\n3. **使用不可变参数**：在打开数据库连接时使用了 `immutable` 查询参数。\n\n**结论依据：** [材料 1] 5. Read-Only Databases",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\readonly_conditions-76-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525512814,
+        "sessionID": "ses_e698cd73bffeLCGq9PQXVoMN3Q",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8688,
+          "output": 139,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 23.0,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 472,
+          "input_tokens": 8688,
+          "output_tokens": 139,
+          "proxy_elapsed_seconds": 11.641
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 473,
+          "input_tokens": 916,
+          "output_tokens": 11,
+          "proxy_elapsed_seconds": 1.313
+        }
+      ]
+    },
+    {
+      "case": "checkpoint_stop",
+      "seed": 74,
+      "framework": "codey",
+      "question": "SQLite WAL 的 checkpoint 与读事务并行时，何时必须停止，为什么？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_stop-74-codey\\research-report.txt",
+      "report_sha256": "4efe5d63bb8d23fa3b7406df28c6e2a90d72928d1eb4884d961f5e9a74d3dd92",
+      "report_quote": "当 checkpoint 操作到达 WAL 文件中任何当前读事务（reader）结束标记（end mark）之后的页面时，必须停止。这是因为如果 checkpoint 继续进行，它可能会覆盖读事务正在使用的数据库文件中的部分内容。 [1]",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\checkpoint_stop-74-codey.jsonl",
+      "result": {
+        "exit_code": 0,
+        "run_id": "run_8ebf3b177e4a4e1f97569323aab11c1b",
+        "session_id": "research-research",
+        "stop_reason": "done",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_stop-74-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_8ebf3b177e4a4e1f97569323aab11c1b.jsonl"
+      },
+      "elapsed_seconds": 11.55,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 476,
+          "input_tokens": 3149,
+          "output_tokens": 85,
+          "proxy_elapsed_seconds": 5.125
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 477,
+          "input_tokens": 3111,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.359
+        }
+      ]
+    },
+    {
+      "case": "checkpoint_stop",
+      "seed": 74,
+      "framework": "openscience",
+      "question": "SQLite WAL 的 checkpoint 与读事务并行时，何时必须停止，为什么？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_stop-74-openscience\\research-report-final.txt",
+      "report_sha256": "9ba385bf0d278070d2ed04fbdd5c0c9a72ad796176170a116b02c0a5eaf07764",
+      "report_quote": "SQLite WAL 的 checkpoint 操作在遇到**任何当前读事务（current reader）的结束标记（end mark）之后**的页面时，必须停止。\n\n**原因如下：**\n*   **防止覆盖：** 如果 checkpoint 继续运行，可能会覆盖掉读事务正在使用的数据库文件中的部分内容。\n*   **机制：** Checkpoint 会记录已处理到的位置（在 wal-index 中），并在下次调用时从该位置继续。\n\n**结论：**\n长时运行的读事务可能会阻碍 checkpointer 的进度，但由于每个读事务最终都会结束，checkpointer 最终能够继续运行。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\checkpoint_stop-74-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525560419,
+        "sessionID": "ses_e698c1b93ffev42RPJJwoXuhCF",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8656,
+          "output": 133,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 22.34,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 478,
+          "input_tokens": 8656,
+          "output_tokens": 133,
+          "proxy_elapsed_seconds": 11.484
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 479,
+          "input_tokens": 914,
+          "output_tokens": 10,
+          "proxy_elapsed_seconds": 1.204
+        }
+      ]
+    },
+    {
+      "case": "checkpoint_stop",
+      "seed": 75,
+      "framework": "codey",
+      "question": "SQLite WAL 的 checkpoint 与读事务并行时，何时必须停止，为什么？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_stop-75-codey\\research-report.txt",
+      "report_sha256": "c6d5262fd38c9f0a75ce032fafb67bf9a7481f4bd93e83640b7ad4da3000aaa6",
+      "report_quote": "当 checkpoint 达到任何当前读事务（reader）末尾标记（end mark）之后的 WAL 页面时，必须停止。这是因为否则 checkpoint 可能会覆盖读事务正在使用的数据库文件部分。 [1]",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\checkpoint_stop-75-codey.jsonl",
+      "result": {
+        "exit_code": 0,
+        "run_id": "run_9aebeb8354da48b290731a71282c65c9",
+        "session_id": "research-research",
+        "stop_reason": "done",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_stop-75-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_9aebeb8354da48b290731a71282c65c9.jsonl"
+      },
+      "elapsed_seconds": 11.84,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 482,
+          "input_tokens": 3149,
+          "output_tokens": 80,
+          "proxy_elapsed_seconds": 5.391
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 483,
+          "input_tokens": 3093,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.312
+        }
+      ]
+    },
+    {
+      "case": "checkpoint_stop",
+      "seed": 75,
+      "framework": "openscience",
+      "question": "SQLite WAL 的 checkpoint 与读事务并行时，何时必须停止，为什么？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_stop-75-openscience\\research-report-final.txt",
+      "report_sha256": "3c94bb71a397fe71bc3ef8eab1b76bb82148f69bfb01d0e40396ad5c0db38fdd",
+      "report_quote": "在 SQLite WAL 模式下，checkpoint（检查点）操作与读事务并行时，必须在**遇到任何当前读事务“结束标记”（end mark）之后的 WAL 页**时停止。\n\n**原因如下：**\n*   **防止覆盖：** 如果 checkpoint 继续运行，它可能会覆盖掉读事务正在使用的数据库文件中的部分内容。\n*   **机制：** checkpoint 会记录当前进展（在 wal-index 中），并在下一个 checkpoint 周期从停止的位置继续传输。\n\n**结论：**\n长时运行的读事务可能会阻止 checkpoint 的进度，但只要读事务最终结束，checkpoint 就能继续进行。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\checkpoint_stop-75-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525581907,
+        "sessionID": "ses_e698bc422ffegULwTYt9ciERpd",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8657,
+          "output": 136,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 21.47,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 480,
+          "input_tokens": 8657,
+          "output_tokens": 136,
+          "proxy_elapsed_seconds": 11.765
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 481,
+          "input_tokens": 914,
+          "output_tokens": 10,
+          "proxy_elapsed_seconds": 1.219
+        }
+      ]
+    },
+    {
+      "case": "checkpoint_stop",
+      "seed": 76,
+      "framework": "codey",
+      "question": "SQLite WAL 的 checkpoint 与读事务并行时，何时必须停止，为什么？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_stop-76-codey\\research-report.txt",
+      "report_sha256": "02bb276850e4f4a801c3ea7092af9dcd21b9bc72c9f65494cce61d022a5962db",
+      "report_quote": "当 checkpoint 操作遇到任何当前读事务（reader）末尾标记（end mark）之后的 WAL 页面时，必须停止。这是因为如果不停止，checkpoint 可能会覆盖读事务正在使用的数据库文件部分。 [1]",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\checkpoint_stop-76-codey.jsonl",
+      "result": {
+        "exit_code": 0,
+        "run_id": "run_2c6e561fb66b492dae4a17d448c496f6",
+        "session_id": "research-research",
+        "stop_reason": "done",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_stop-76-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_2c6e561fb66b492dae4a17d448c496f6.jsonl"
+      },
+      "elapsed_seconds": 10.97,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 484,
+          "input_tokens": 3149,
+          "output_tokens": 82,
+          "proxy_elapsed_seconds": 4.562
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 485,
+          "input_tokens": 3103,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.344
+        }
+      ]
+    },
+    {
+      "case": "checkpoint_stop",
+      "seed": 76,
+      "framework": "openscience",
+      "question": "SQLite WAL 的 checkpoint 与读事务并行时，何时必须停止，为什么？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": true
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_stop-76-openscience\\research-report-final.txt",
+      "report_sha256": "ac7e0797ab2846eb12a2fb1247da088e8be528ca79e2854bdc37502cc0d01dad",
+      "report_quote": "SQLite WAL 的 checkpoint 与读事务并行时，必须在**遇到任何当前读事务“结束标记”（end mark）之后的 WAL 页**时停止。\n\n**原因如下：**\n*   **防止覆盖：** 如果 checkpoint 继续运行，它可能会覆盖掉读事务正在活跃使用的数据库文件部分。\n*   **机制：** Checkpoint 会记住它停止的位置（记录在 `wal-index` 中），并在下一次调用时从该位置继续转移内容。\n\n**结论：**\n长时运行的读事务可能会阻碍 checkpointer 的进度，但一旦读事务结束，checkpointer 即可继续。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\checkpoint_stop-76-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525628970,
+        "sessionID": "ses_e698b171cffepRQ4cVkaulhaue",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8656,
+          "output": 133,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 24.24,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 486,
+          "input_tokens": 8656,
+          "output_tokens": 133,
+          "proxy_elapsed_seconds": 12.094
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 487,
+          "input_tokens": 914,
+          "output_tokens": 10,
+          "proxy_elapsed_seconds": 1.281
+        }
+      ]
+    },
+    {
+      "case": "checkpoint_resume",
+      "seed": 74,
+      "framework": "codey",
+      "question": "SQLite WAL 的 checkpoint 暂停后，如何记录进度，并在之后继续转移数据？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [
+          "主动附加的停止边界未保留“超过任一当前 reader end mark 的 WAL 页”，改变了条件。"
+        ],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_resume-74-codey\\research-report.txt",
+      "report_sha256": "37b66a1d7f59b5eeb33870bc7b0c04b31cbcaf2fcb3540cd58cb4bf469fb6575",
+      "report_quote": "当 checkpoint 操作遇到任何当前读取者正在使用的 WAL 文件末尾之后的页面时，它会暂停。checkpoint 会在 wal-index 中记录其达到的进度，并在下一次调用时从该位置继续将 WAL 文件中的内容转移到原始数据库文件中。 [1]",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\checkpoint_resume-74-codey.jsonl",
+      "result": {
+        "exit_code": 0,
+        "run_id": "run_a88055d576c34ec2abdc0400c4de97a9",
+        "session_id": "research-research",
+        "stop_reason": "done",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_resume-74-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_a88055d576c34ec2abdc0400c4de97a9.jsonl"
+      },
+      "elapsed_seconds": 12.51,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 490,
+          "input_tokens": 3159,
+          "output_tokens": 93,
+          "proxy_elapsed_seconds": 6.156
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 491,
+          "input_tokens": 3131,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.437
+        }
+      ]
+    },
+    {
+      "case": "checkpoint_resume",
+      "seed": 74,
+      "framework": "openscience",
+      "question": "SQLite WAL 的 checkpoint 暂停后，如何记录进度，并在之后继续转移数据？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [
+          "主动附加的停止边界未保留“超过任一当前 reader end mark 的 WAL 页”，改变了条件。"
+        ],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_resume-74-openscience\\research-report-final.txt",
+      "report_sha256": "d1550ac7690d248c92fe99d3554c3c3158d42bb500d92200797080ef934230ac",
+      "report_quote": "根据提供的证据，SQLite WAL 的 checkpoint 暂停后通过以下方式记录进度并继续转移数据：\n\n1.  **进度记录**：Checkpoint 操作会记录它在 WAL 文件中进展到的位置（即记录到 WAL 中有多少内容已转移到原始数据库文件）。\n2.  **记录位置**：这个进度信息保存在 **wal-index** 中。\n3.  **继续转移**：在下一次调用 checkpoint 时，它会从上次离开的位置继续将 WAL 中的内容转移到数据库文件中。\n\n**结论补充：**\n*   **暂停原因**：Checkpoint 必须在遇到任何当前读取器（reader）尚未到达的“结束标记（end mark）”所在的页面时停止，以避免覆盖正在使用的数据库部分。\n*   **最终重置**：当所有内容转移完毕且没有读取器在使用 WAL 时，写入器（writer）会将 WAL 回退到开头，开始记录新的事务。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\checkpoint_resume-74-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525653975,
+        "sessionID": "ses_e698ab883ffeHvP29iNoVOUB6S",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8661,
+          "output": 200,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 25.11,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 488,
+          "input_tokens": 8661,
+          "output_tokens": 200,
+          "proxy_elapsed_seconds": 13.859
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 489,
+          "input_tokens": 916,
+          "output_tokens": 11,
+          "proxy_elapsed_seconds": 1.266
+        }
+      ]
+    },
+    {
+      "case": "checkpoint_resume",
+      "seed": 75,
+      "framework": "codey",
+      "question": "SQLite WAL 的 checkpoint 暂停后，如何记录进度，并在之后继续转移数据？",
+      "manual_grade": {
+        "required_answer": "contradictory_location",
+        "false_additions": [],
+        "grounding_notes": [
+          "同时写“在 WAL 文件中记录进度（在 wal-index 中）”；正确名称与错误位置并列，不能视为无歧义正确。"
+        ],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_resume-75-codey\\research-report.txt",
+      "report_sha256": "3e5f8d0a2dc0284a224a530a4c4e180deba606615964eee18d94d1be19826a90",
+      "report_quote": "Checkpoint 操作会在 WAL 文件中记录进度（在 wal-index 中），并在下一次调用时从上次停止的地方继续将内容从 WAL 转移到数据库文件中。 [1]",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\checkpoint_resume-75-codey.jsonl",
+      "result": {
+        "exit_code": 0,
+        "run_id": "run_a1e1ff870a414dfdb6077e521171505a",
+        "session_id": "research-research",
+        "stop_reason": "done",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_resume-75-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_a1e1ff870a414dfdb6077e521171505a.jsonl"
+      },
+      "elapsed_seconds": 10.89,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 492,
+          "input_tokens": 3159,
+          "output_tokens": 73,
+          "proxy_elapsed_seconds": 4.531
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 493,
+          "input_tokens": 3083,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.391
+        }
+      ]
+    },
+    {
+      "case": "checkpoint_resume",
+      "seed": 75,
+      "framework": "openscience",
+      "question": "SQLite WAL 的 checkpoint 暂停后，如何记录进度，并在之后继续转移数据？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [
+          "主动附加的停止边界未保留“超过任一当前 reader end mark 的 WAL 页”，改变了条件。"
+        ],
+        "grounding_notes": [
+          "“在读取器释放 WAL 页面后”是额外恢复条件表述，选段只明确下一次 invocation 从记录进度继续；不另判定为必然错误。"
+        ],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_resume-75-openscience\\research-report-final.txt",
+      "report_sha256": "c2896eb8371cb79cdbfdbc460f18cd5f2896a00cc06fda2e121d0a5b82bc3e67",
+      "report_quote": "根据提供的证据，SQLite WAL 的 checkpoint 暂停后记录进度并继续转移数据的机制如下：\n\n1.  **进度记录**：Checkpoint 操作会在 **wal-index** 中记录当前传输到的位置。\n2.  **暂停原因**：当 Checkpoint 遇到任何当前读取器（reader）尚未到达的 WAL 页面时，必须停止，以避免覆盖正在使用的数据库文件部分。\n3.  **继续转移**：在下一次调用时，Checkpoint 会从 wal-index 中记录的断点处继续将 WAL 内容转移到原始数据库文件中。\n\n**结论：**\nCheckpoint 通过 **wal-index** 记录进度，并在读取器释放 WAL 页面后，从上次中断的位置继续转移数据。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\checkpoint_resume-75-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525700198,
+        "sessionID": "ses_e6989fae0ffeg78dpxit2TAEwq",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8662,
+          "output": 157,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 22.81,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 494,
+          "input_tokens": 8662,
+          "output_tokens": 157,
+          "proxy_elapsed_seconds": 12.891
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 495,
+          "input_tokens": 916,
+          "output_tokens": 11,
+          "proxy_elapsed_seconds": 1.266
+        }
+      ]
+    },
+    {
+      "case": "checkpoint_resume",
+      "seed": 76,
+      "framework": "codey",
+      "question": "SQLite WAL 的 checkpoint 暂停后，如何记录进度，并在之后继续转移数据？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [
+          "主动附加的停止边界未保留“超过任一当前 reader end mark 的 WAL 页”，改变了条件。"
+        ],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_resume-76-codey\\research-report.txt",
+      "report_sha256": "67232858454fa7c3dd669165da8f50ce5918b7a268f370b5fe1eedee3760566c",
+      "report_quote": "当 checkpoint 操作遇到任何当前读取者（reader）正在使用的 WAL 页面时，它会暂停。Checkpoint 会在 wal-index 中记录其达到的进度，并在下一次调用时从该位置继续将内容从 WAL 文件转移到原始数据库文件中。 [1]",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\checkpoint_resume-76-codey.jsonl",
+      "result": {
+        "exit_code": 0,
+        "run_id": "run_7170b14ac9bd40eeb7c5554be550b9a4",
+        "session_id": "research-research",
+        "stop_reason": "done",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_resume-76-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_7170b14ac9bd40eeb7c5554be550b9a4.jsonl"
+      },
+      "elapsed_seconds": 12.23,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 498,
+          "input_tokens": 3159,
+          "output_tokens": 93,
+          "proxy_elapsed_seconds": 5.797
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 499,
+          "input_tokens": 3135,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.391
+        }
+      ]
+    },
+    {
+      "case": "checkpoint_resume",
+      "seed": 76,
+      "framework": "openscience",
+      "question": "SQLite WAL 的 checkpoint 暂停后，如何记录进度，并在之后继续转移数据？",
+      "manual_grade": {
+        "required_answer": "complete",
+        "false_additions": [
+          "主动附加的停止边界未保留“超过任一当前 reader end mark 的 WAL 页”，改变了条件。"
+        ],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "answer_delivered",
+        "gap_recovery": null,
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\checkpoint_resume-76-openscience\\research-report-final.txt",
+      "report_sha256": "4f526d337eeac38085f03491ad03299fb7cda9ee905dea75bf6ab3d556e1bb30",
+      "report_quote": "根据提供的证据，SQLite WAL 的 checkpoint 暂停及继续机制如下：\n\n1.  **记录进度**：Checkpoint 操作会在 **wal-index** 中记录当前已转移到的 WAL 文件位置。\n2.  **暂停原因**：当 Checkpoint 遇到任何当前读取器（reader）尚未到达的页面时，必须停止，以防止覆盖正在被使用的数据库文件部分。\n3.  **继续转移**：在下一次调用时，Checkpoint 会从 wal-index 中记录的进度位置继续将 WAL 内容转移到原始数据库文件中。\n4.  **最终重置**：当所有 WAL 内容已转移并同步，且没有任何读取器在使用 WAL 时，写入器（writer）会将 WAL 回退到开头，开始记录新的事务。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\checkpoint_resume-76-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525724305,
+        "sessionID": "ses_e6989a1a1ffenCgse2ZaZR5Yay",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8659,
+          "output": 163,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 24.06,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 496,
+          "input_tokens": 8659,
+          "output_tokens": 163,
+          "proxy_elapsed_seconds": 12.39
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 497,
+          "input_tokens": 916,
+          "output_tokens": 11,
+          "proxy_elapsed_seconds": 1.282
+        }
+      ]
+    },
+    {
+      "case": "coexistence_only",
+      "seed": 74,
+      "framework": "codey",
+      "question": "SQLite WAL 为什么仍存在单写者限制？",
+      "manual_grade": {
+        "required_answer": "no_supported_reason_available",
+        "false_additions": [],
+        "grounding_notes": [
+          "候选复述仍有单写者限制，未回答原因；模型提交 answered，被门槛拒绝，不应记为编造共享内存原因。"
+        ],
+        "status_error": true,
+        "termination": "no_progress",
+        "gap_recovery": "none",
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\coexistence_only-74-codey\\research-report.txt",
+      "report_sha256": "06fe9deab5ba612943d2597efe62f72eacdc70ebcb102c1800d0a965b48f343c",
+      "report_quote": "stopped after repeated tool results without progress",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\coexistence_only-74-codey.jsonl",
+      "result": {
+        "exit_code": 1,
+        "run_id": "run_f77a0d630a5148c49861627c95052af9",
+        "session_id": "research-research",
+        "stop_reason": "no_progress",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\coexistence_only-74-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_f77a0d630a5148c49861627c95052af9.jsonl"
+      },
+      "elapsed_seconds": 30.0,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 500,
+          "input_tokens": 2871,
+          "output_tokens": 30,
+          "proxy_elapsed_seconds": 3.172
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 501,
+          "input_tokens": 2762,
+          "output_tokens": 24,
+          "proxy_elapsed_seconds": 2.11
+        },
+        {
+          "request_index": 3,
+          "auxiliary_title": false,
+          "backend_generation": 502,
+          "input_tokens": 3415,
+          "output_tokens": 68,
+          "proxy_elapsed_seconds": 3.938
+        },
+        {
+          "request_index": 4,
+          "auxiliary_title": false,
+          "backend_generation": 503,
+          "input_tokens": 2799,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.172
+        },
+        {
+          "request_index": 5,
+          "auxiliary_title": false,
+          "backend_generation": 504,
+          "input_tokens": 3079,
+          "output_tokens": 22,
+          "proxy_elapsed_seconds": 2.14
+        },
+        {
+          "request_index": 6,
+          "auxiliary_title": false,
+          "backend_generation": 505,
+          "input_tokens": 3099,
+          "output_tokens": 24,
+          "proxy_elapsed_seconds": 2.187
+        },
+        {
+          "request_index": 7,
+          "auxiliary_title": false,
+          "backend_generation": 506,
+          "input_tokens": 3740,
+          "output_tokens": 30,
+          "proxy_elapsed_seconds": 2.922
+        },
+        {
+          "request_index": 8,
+          "auxiliary_title": false,
+          "backend_generation": 507,
+          "input_tokens": 3083,
+          "output_tokens": 24,
+          "proxy_elapsed_seconds": 2.203
+        }
+      ]
+    },
+    {
+      "case": "coexistence_only",
+      "seed": 74,
+      "framework": "openscience",
+      "question": "SQLite WAL 为什么仍存在单写者限制？",
+      "manual_grade": {
+        "required_answer": "no_supported_reason_available",
+        "false_additions": [
+          "把共享内存/同主机约束说成单写者限制的原因，材料不支持这一因果关系。"
+        ],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "unsupported_answer_delivered",
+        "gap_recovery": "none",
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\coexistence_only-74-openscience\\research-report-final.txt",
+      "report_sha256": "47c851fb2abf97de06da1b061231c8d30fd6f05c5875fd4d364215e36cf7313e",
+      "report_quote": "根据提供的证据，SQLite WAL 模式仍存在单写者限制的主要原因如下：\n\n**结论：**\n虽然 WAL 模式显著提高了并发性（读与写可以同时进行，且读不阻塞写，写不阻塞读），但它仍受限于**内存共享**的物理约束。\n\n**证据支持：**\n*   **内存共享限制：** 证据指出 WAL 要求所有使用数据库的进程必须处于同一台主机上，因为 WAL 需要所有进程共享一小部分内存。\n*   **网络文件系统限制：** 由于不同主机的进程显然无法共享内存，因此 WAL 模式无法在网络文件系统上工作。\n\n**未明确说明的部分：**\n提供的证据中并未详细解释 WAL 内部机制（如“写操作如何在共享内存中排他性地更新”）是如何导致多个写者同时操作时产生冲突的，仅明确了它在**空间/架构上**对内存共享的依赖。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\coexistence_only-74-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525790797,
+        "sessionID": "ses_e69889e90ffegnPxMj1Cv7RnWz",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8578,
+          "output": 204,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 24.2,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 508,
+          "input_tokens": 8578,
+          "output_tokens": 204,
+          "proxy_elapsed_seconds": 13.844
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 509,
+          "input_tokens": 835,
+          "output_tokens": 9,
+          "proxy_elapsed_seconds": 1.156
+        }
+      ]
+    },
+    {
+      "case": "coexistence_only",
+      "seed": 75,
+      "framework": "codey",
+      "question": "SQLite WAL 为什么仍存在单写者限制？",
+      "manual_grade": {
+        "required_answer": "no_supported_reason_available",
+        "false_additions": [
+          "候选把共享内存/同主机约束说成单写者原因；提交 answered 被拒绝，未形成接受报告。"
+        ],
+        "grounding_notes": [],
+        "status_error": true,
+        "termination": "no_progress",
+        "gap_recovery": "none",
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\coexistence_only-75-codey\\research-report.txt",
+      "report_sha256": "a7674399819f1ed751b6debe8ef6c6f1133e6ddd3901497aa41671278be34b66",
+      "report_quote": "Stopped after repeated rejected completion proposals without progress.\n\nCompletion check failed (report_sections.coverage[0].findings: q1 asks: SQLite WAL 为什么仍存在单写者限制？\nCoexistence or nonblocking operations do not establish an exclusive count limit. The selected supporting excerpts describe concurrency but omit a direct count limit. Read the direct limiting statement using an available reading action, if one can be found. Select a supported replacement only if direct evidence is available. If only related evidence is available, submit_research_answer with state=unresolved and findings=[] for this target. This needs no new finding. Changing an unsupported selection to partial does not supply the missing direct evidence. Do not add another qN. This check detects a missing cue; it does not certify a supported interpretation.; available citations: [f3]. Allowed repairs: read direct limiting evidence, save supported replacement, submit unresolved with findings=[].); cannot complete yet. Continue the task.\n\nPreserve the requested answer format. Encode any needed line breaks once as \\n inside JSON strings. Fenced examples are answer text and do not execute tools. Repair only the reported problem using the allowed actions above. Keep complete conditions in any supported replacement; never pad with unsupported claims. Do not repeat an unchanged selection.\n\nUnaccepted draft:",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\coexistence_only-75-codey.jsonl",
+      "result": {
+        "exit_code": 1,
+        "run_id": "run_6cc0957fa2c7414182f4eaa7fc58737c",
+        "session_id": "research-research",
+        "stop_reason": "no_progress",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\coexistence_only-75-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_6cc0957fa2c7414182f4eaa7fc58737c.jsonl"
+      },
+      "elapsed_seconds": 43.92,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 512,
+          "input_tokens": 2871,
+          "output_tokens": 86,
+          "proxy_elapsed_seconds": 5.578
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 513,
+          "input_tokens": 2835,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.172
+        },
+        {
+          "request_index": 3,
+          "auxiliary_title": false,
+          "backend_generation": 514,
+          "input_tokens": 3100,
+          "output_tokens": 24,
+          "proxy_elapsed_seconds": 2.203
+        },
+        {
+          "request_index": 4,
+          "auxiliary_title": false,
+          "backend_generation": 515,
+          "input_tokens": 3761,
+          "output_tokens": 87,
+          "proxy_elapsed_seconds": 5.172
+        },
+        {
+          "request_index": 5,
+          "auxiliary_title": false,
+          "backend_generation": 516,
+          "input_tokens": 3175,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.359
+        },
+        {
+          "request_index": 6,
+          "auxiliary_title": false,
+          "backend_generation": 517,
+          "input_tokens": 3106,
+          "output_tokens": 22,
+          "proxy_elapsed_seconds": 2.344
+        },
+        {
+          "request_index": 7,
+          "auxiliary_title": false,
+          "backend_generation": 518,
+          "input_tokens": 3126,
+          "output_tokens": 71,
+          "proxy_elapsed_seconds": 3.828
+        },
+        {
+          "request_index": 8,
+          "auxiliary_title": false,
+          "backend_generation": 519,
+          "input_tokens": 3149,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.406
+        },
+        {
+          "request_index": 9,
+          "auxiliary_title": false,
+          "backend_generation": 520,
+          "input_tokens": 3087,
+          "output_tokens": 71,
+          "proxy_elapsed_seconds": 4.281
+        },
+        {
+          "request_index": 10,
+          "auxiliary_title": false,
+          "backend_generation": 521,
+          "input_tokens": 3061,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.109
+        }
+      ]
+    },
+    {
+      "case": "coexistence_only",
+      "seed": 75,
+      "framework": "openscience",
+      "question": "SQLite WAL 为什么仍存在单写者限制？",
+      "manual_grade": {
+        "required_answer": "no_supported_reason_available",
+        "false_additions": [
+          "把共享内存/同主机约束说成单写者限制的原因，材料不支持这一因果关系。"
+        ],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "unsupported_answer_delivered",
+        "gap_recovery": "none",
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\coexistence_only-75-openscience\\research-report-final.txt",
+      "report_sha256": "9b4f338822c256b50438f3b4366c173cae56f1b20bb472cc30f52a28bb3d3ca4",
+      "report_quote": "根据提供的证据，SQLite WAL 模式仍存在单写者限制的原因如下：\n\n1.  **内存共享的局限性**：证据指出，WAL 模式要求所有使用数据库的进程必须处于**同一台主机计算机**上。\n2.  **网络文件系统的限制**：由于 WAL 模式需要所有进程**共享一小部分内存**，而位于不同主机的进程显然无法互相共享内存，因此 WAL 模式无法在网络文件系统上工作。\n\n**结论**：虽然 WAL 模式实现了“读者不阻塞写入者、写入者不阻塞读者”的并发性，但由于其核心机制依赖于**内存共享**，导致它在处理多个并发写入时仍受限于单写者。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\coexistence_only-75-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525814060,
+        "sessionID": "ses_e69883fcdffeRtfNQ1dLe19uDS",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8580,
+          "output": 157,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 23.0,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 510,
+          "input_tokens": 8580,
+          "output_tokens": 157,
+          "proxy_elapsed_seconds": 12.031
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 511,
+          "input_tokens": 835,
+          "output_tokens": 9,
+          "proxy_elapsed_seconds": 1.172
+        }
+      ]
+    },
+    {
+      "case": "coexistence_only",
+      "seed": 76,
+      "framework": "codey",
+      "question": "SQLite WAL 为什么仍存在单写者限制？",
+      "manual_grade": {
+        "required_answer": "no_supported_reason_available",
+        "false_additions": [],
+        "grounding_notes": [
+          "先保存“材料没有直接说明原因”的缺口占位 finding 并提交 partial；受拒后最终以 findings=[]、unresolved 结束。最终缺口行为正确，但不是直接空缺口结束。"
+        ],
+        "status_error": false,
+        "termination": "research_unresolved",
+        "gap_recovery": "eventual_empty_unresolved_after_repair",
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\coexistence_only-76-codey\\research-report.txt",
+      "report_sha256": "24a52ddf61dc982c98bb345e8bea245556bc93c4ea5dd3dfa3fef7210ff14203",
+      "report_quote": "Research investigation ended without supported findings.\nq1: SQLite WAL 为什么仍存在单写者限制？",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\coexistence_only-76-codey.jsonl",
+      "result": {
+        "exit_code": 1,
+        "run_id": "run_3fe9dd22a5584de58aa273da27264db4",
+        "session_id": "research-research",
+        "stop_reason": "research_unresolved",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\coexistence_only-76-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_3fe9dd22a5584de58aa273da27264db4.jsonl"
+      },
+      "elapsed_seconds": 23.39,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 522,
+          "input_tokens": 2871,
+          "output_tokens": 77,
+          "proxy_elapsed_seconds": 4.625
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": false,
+          "backend_generation": 523,
+          "input_tokens": 2823,
+          "output_tokens": 21,
+          "proxy_elapsed_seconds": 2.172
+        },
+        {
+          "request_index": 3,
+          "auxiliary_title": false,
+          "backend_generation": 524,
+          "input_tokens": 3093,
+          "output_tokens": 22,
+          "proxy_elapsed_seconds": 2.188
+        },
+        {
+          "request_index": 4,
+          "auxiliary_title": false,
+          "backend_generation": 525,
+          "input_tokens": 3113,
+          "output_tokens": 24,
+          "proxy_elapsed_seconds": 2.219
+        },
+        {
+          "request_index": 5,
+          "auxiliary_title": false,
+          "backend_generation": 526,
+          "input_tokens": 3752,
+          "output_tokens": 30,
+          "proxy_elapsed_seconds": 2.969
+        },
+        {
+          "request_index": 6,
+          "auxiliary_title": false,
+          "backend_generation": 527,
+          "input_tokens": 3103,
+          "output_tokens": 20,
+          "proxy_elapsed_seconds": 2.094
+        }
+      ]
+    },
+    {
+      "case": "coexistence_only",
+      "seed": 76,
+      "framework": "openscience",
+      "question": "SQLite WAL 为什么仍存在单写者限制？",
+      "manual_grade": {
+        "required_answer": "no_supported_reason_available",
+        "false_additions": [
+          "把共享内存/同主机约束说成单写者限制的原因，材料不支持这一因果关系。"
+        ],
+        "grounding_notes": [],
+        "status_error": false,
+        "termination": "unsupported_answer_delivered",
+        "gap_recovery": "none",
+        "clean_supported_final_answer": false
+      },
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\runs\\coexistence_only-76-openscience\\research-report-final.txt",
+      "report_sha256": "56bf9452a691a711917fc109c691e292662f7e50bb0809a2a00c1d4c22bf6a8c",
+      "report_quote": "根据提供的证据，SQLite WAL 模式仍存在单写者限制的主要原因如下：\n\n1.  **内存共享的局限性**：证据指出，WAL 模式要求所有使用数据库的进程必须位于**同一台主机计算机**上。\n2.  **网络文件系统的限制**：由于 WAL 需要所有进程共享一小块**内存**，而处于不同主机的进程显然无法共享内存，因此 WAL 在网络文件系统上无法工作。\n\n**结论**：\n虽然 WAL 显著提高了并发性（读者不阻塞写者，写者不阻塞读者），但它仍受限于**单写者**，主要是因为其核心机制依赖于**共享内存**。\n\n**不确定部分**：\n提供的证据中并未详细解释“为什么”共享内存会导致多个写者冲突（例如是由于写操作的原子性要求，还是因为多个写者同时修改同一块内存导致的竞争），仅说明了共享内存是 WAL 能够工作的必要条件。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\wire\\coexistence_only-76-openscience.jsonl",
+      "result": {
+        "type": "done",
+        "timestamp": 1793525905199,
+        "sessionID": "ses_e6986df28ffeAsmmXIK7Okq122",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 8578,
+          "output": 209,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 23.88,
+      "requests": [
+        {
+          "request_index": 1,
+          "auxiliary_title": false,
+          "backend_generation": 528,
+          "input_tokens": 8578,
+          "output_tokens": 209,
+          "proxy_elapsed_seconds": 13.937
+        },
+        {
+          "request_index": 2,
+          "auxiliary_title": true,
+          "backend_generation": 529,
+          "input_tokens": 835,
+          "output_tokens": 9,
+          "proxy_elapsed_seconds": 1.188
+        }
+      ]
+    }
+  ],
+  "synthesis": {
+    "status": "incomplete_service_blocked",
+    "balanced_completed_matrix": false,
+    "inline_pilot": [
+      {
+        "framework": "openscience",
+        "case": "wal_synthesis",
+        "seed": 74,
+        "status": "delivered_single_pilot",
+        "included_in_aggregate": false
+      },
+      {
+        "framework": "codey",
+        "case": "wal_synthesis",
+        "seed": 74,
+        "status": "provider_timeout",
+        "included_in_aggregate": false
+      },
+      {
+        "framework": "codey",
+        "case": "wal_synthesis",
+        "seed": 75,
+        "status": "three_completed_invalid_plans_then_no_progress",
+        "included_in_aggregate": false
+      },
+      {
+        "framework": "openscience",
+        "case": "wal_synthesis",
+        "seed": 75,
+        "status": "evaluator_interrupted",
+        "included_in_aggregate": false
+      }
+    ],
+    "read_channel_status": "Stopped: native Codey timeout, queued OpenScience timeout; no valid balanced synthesis results.",
+    "task_requirement_counts": {
+      "wal_synthesis": {
+        "inline": 117,
+        "read_channel": 28
+      },
+      "asyncio_synthesis": {
+        "inline": 151,
+        "read_channel": 29
+      }
+    },
+    "service_observation_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\service-final-observation.json",
+    "untested": [
+      "balanced ordinary-entry synthesis",
+      "candidate interference",
+      "autonomous retrieval",
+      "scientific experimental research"
+    ]
+  }
+}
