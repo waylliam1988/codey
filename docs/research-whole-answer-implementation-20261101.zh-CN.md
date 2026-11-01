@@ -53,6 +53,14 @@
 
 验证：整篇合同、实际 API payload、恢复、旧 inline 与阅读复用 **95 passed**；Ruff 通过。实际 payload 测试验证原文只出现一次，未知/未呈现引用仍拒绝。
 
+## 第六批：直接调用提交工具与正文权威保护
+
+- `ff6cba12` 原始请求显示六例均先产生普通文本，再因合同要求重写成提交调用。新整篇 native 请求通过冻结的 `require_tool_call` 使用已有 API 的 `tool_choice=required`；模型仍自由选择读取、搜索、询问或提交，程序不替它指定答案或证据。选项仅作用于本次请求，不修改共享 provider；历史请求按原冻结参数恢复。
+- 原 synthesis 展示快照绑定精确 answer 版本后，不允许通过 note 写入独立修改其正文。修改标题等元数据仍保持原版本绑定；显式知识修订产生同一 answer 的新版本，原交付快照保持原内容。首次发布也验证 note 正文与唯一 answer 一致。
+- 第三批完整内容评阅保存到 `docs/reports/research-whole-batch3-20261101.json`：双方均交付 6/6，Codey 内容 1/6、OpenScience 6/6；双方各 18 次实际推理（OpenScience 含标题生成）。这是中间开发版本，不冒称已达到目标。第五批单例只证明章节引用改善，仍有错误扩写。
+
+验证：原工具协议、整篇发布/恢复、请求选项和投影保护初轮 **61 passed**；校验位置整理后的相关组 **64 passed**；知识 authority/repository **8 passed**；新增冻结 native 选项恢复 **1 passed**。Ruff 通过。未运行全量 pytest。
+
 ## 后续批次
 
 1. 固定源码与材料，复测 WAL/asyncio；扩大至跨来源、冲突、缺证据和长材料。实际模型调用与内容评阅另记，不用离线测试代替内容通过。

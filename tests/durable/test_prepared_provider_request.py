@@ -300,3 +300,19 @@ def test_request_scoped_json_contract_and_schema_restore_from_original_receipt(t
             tool_call_contract="FROZEN ORIGINAL DECLARATIONS", tool_call_observations="ORIGINAL RECEIPT SNAPSHOT")
     finally:
         durable.close()
+
+
+def test_required_native_choice_is_replayed_from_its_frozen_request(tmp_path):
+    from codey.providers.base import AssistantTurn
+
+    durable, _, _, sink = runtime(tmp_path)
+    reply = AssistantTurn(text="original response")
+    provider = Mock(send_turn=Mock(return_value=reply))
+    options = {"require_tool_call": True}
+    try:
+        ref = prepare_provider_request(sink, "send_turn", ("original task", []), options, counters=None)
+        options["require_tool_call"] = False
+        assert drive_provider_request(sink, provider, ref) == reply
+        provider.send_turn.assert_called_once_with("original task", [], require_tool_call=True)
+    finally:
+        durable.close()

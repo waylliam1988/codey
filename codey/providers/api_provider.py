@@ -414,29 +414,31 @@ class ApiProvider:
 
     def send_turn(self, prompt: str, tools: list[ProviderToolDefinition] | None = None,
                   timeout: float | None = None, *, tool_call_observations: str = "",
-                  tool_call_history_groups: int = 0, output_token_limit: int = 0) -> AssistantTurn:
+                  tool_call_history_groups: int = 0, output_token_limit: int = 0,
+                  require_tool_call: bool = False) -> AssistantTurn:
         return self._exchange([{"role": "user", "content": prompt}], tools, timeout=timeout,
                               tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups,
-                              output_token_limit=output_token_limit)
+                              output_token_limit=output_token_limit, require_tool_call=require_tool_call)
 
     def send_tool_results(self, results: list[ProviderToolResult], tools: list[ProviderToolDefinition] | None = None,
                           timeout: float | None = None, *, tool_call_observations: str = "",
-                          tool_call_history_groups: int = 0, output_token_limit: int = 0) -> AssistantTurn:
+                          tool_call_history_groups: int = 0, output_token_limit: int = 0,
+                          require_tool_call: bool = False) -> AssistantTurn:
         return self._exchange(self._codec.encode_results(results), tools, timeout=timeout,
                               tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups,
-                              output_token_limit=output_token_limit)
+                              output_token_limit=output_token_limit, require_tool_call=require_tool_call)
 
     def send_tool_results_bound(self, results: list[ProviderToolResult], window_ref: ProtocolWindowRef,
                                 tools: list[ProviderToolDefinition] | None = None,
                                 timeout: float | None = None,
                                 delivery_commit: dict[str, Any] | None = None,
                                 tool_call_observations: str = "", tool_call_history_groups: int = 0,
-                                output_token_limit: int = 0) -> AssistantTurn:
+                                output_token_limit: int = 0, require_tool_call: bool = False) -> AssistantTurn:
         """Deliver native results only to the exact protocol window that created them."""
         return self._exchange(self._codec.encode_results(results), tools, timeout=timeout,
                               expected_window_ref=window_ref, delivery_commit=delivery_commit,
                               tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups,
-                              output_token_limit=output_token_limit)
+                              output_token_limit=output_token_limit, require_tool_call=require_tool_call)
 
     def _prepare_exchange(self, pending: list[dict[str, Any]],
                           tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
@@ -481,6 +483,7 @@ class ApiProvider:
                    tool_call_observations: str = "",
                    tool_call_history_groups: int = 0,
                    output_token_limit: int = 0,
+                   require_tool_call: bool = False,
                    expected_window_ref: ProtocolWindowRef | None = None,
                    delivery_commit: dict[str, Any] | None = None) -> AssistantTurn:
         """One atomic lifecycle for both codecs, with no protocol-specific commit path."""
@@ -506,6 +509,7 @@ class ApiProvider:
                 candidate = self._prepare_exchange(pending, tools)
             checkpoints: list[dict[str, Any]] = []
             generation_options: dict[str, Any] = {"output_token_limit": output_token_limit,
+                                                  **({"require_tool_call": True} if require_tool_call else {}),
                                                   **({"tool_call_json": True} if tool_call_json else {})}
             if tool_call_schema is not None:
                 generation_options["tool_call_schema"] = tool_call_schema
@@ -617,16 +621,19 @@ class ApiProvider:
                   *, timeout: float | None = None, checkpoints: list[dict[str, Any]] | None = None,
                   tool_call_json: bool = False, tool_call_schema: dict[str, Any] | None = None,
                   tool_call_contract: str = "", tool_call_observations: str = "",
-                  tool_call_history_groups: int = 0, output_token_limit: int = 0) -> dict[str, Any]:
+                  tool_call_history_groups: int = 0, output_token_limit: int = 0,
+                  require_tool_call: bool = False) -> dict[str, Any]:
         from codey.providers import api_transport
 
+        if type(require_tool_call) is not bool or require_tool_call and not tools:
+            raise ValueError("required native call needs a declared tool inventory")
         if type(output_token_limit) is not int or output_token_limit < 0:
             raise ValueError("request output token limit must be a nonnegative integer")
         output = self.context_budget.output_tokens
         if output_token_limit:
             output = min(output, output_token_limit)
         settings = GenerationSettings(self.model, self.stream, self.temperature, self.thinking_enabled,
-                                      self.reasoning_effort, self.tool_choice, output,
+                                      self.reasoning_effort, "required" if require_tool_call else self.tool_choice, output,
                                       tool_call_json, tool_call_schema, tool_call_contract, tool_call_observations,
                                       tool_call_history_groups)
         deadline = time.monotonic() + (timeout if timeout is not None else self.timeout)

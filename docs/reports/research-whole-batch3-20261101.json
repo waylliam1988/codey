@@ -1,0 +1,192 @@
+{
+  "implementation": "ff6cba12",
+  "stage": "development before coherent passages / required native calls",
+  "manual_review": "Reviewed against the frozen SYNTHESIS facts and relation requirements; not blind or model graded. OpenScience WAL OR side comments not deducted where actual alternatives are explicit.",
+  "rows": [
+    {
+      "case": "asyncio_synthesis",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "content_pass": true,
+      "necessary_facts": 12,
+      "fact_total": 12,
+      "issues": [],
+      "requests": 3,
+      "report_sha256": "f3c62d3481e8dafc822e141ca8b6c03ec7fb6e159342c80c8593d76f56e0e738",
+      "artifact": ".e2e-artifacts\\research-whole-20261101\\batch3-native\\runs\\asyncio_synthesis-74-codey",
+      "notes": "Content pass excludes precise-citation scoring; common wording about cancelling tasks together is not read as an atomic timing guarantee."
+    },
+    {
+      "case": "asyncio_synthesis",
+      "seed": 74,
+      "framework": "openscience",
+      "delivery": true,
+      "content_pass": true,
+      "necessary_facts": 12,
+      "fact_total": 12,
+      "issues": [],
+      "requests": 3,
+      "report_sha256": "8acb125039bfa6d6225e737f00e05beb8ca22dd68b7dd1fc4f9cd868da8f06ed",
+      "artifact": ".e2e-artifacts\\research-whole-20261101\\batch3-native\\runs\\asyncio_synthesis-74-openscience",
+      "notes": "Content pass excludes precise-citation scoring; common wording about cancelling tasks together is not read as an atomic timing guarantee."
+    },
+    {
+      "case": "asyncio_synthesis",
+      "seed": 75,
+      "framework": "codey",
+      "delivery": true,
+      "content_pass": false,
+      "necessary_facts": 11,
+      "fact_total": 12,
+      "issues": [
+        "遗漏父gather取消传播不受return_exceptions影响。",
+        "补充unless return_exceptions=False and gather itself cancelled，错误限制了取消传播条件。",
+        "未遵守中文要求。"
+      ],
+      "requests": 3,
+      "report_sha256": "95ea38cc7887c0b5376d82997d4c002e1c74970df08ecd1a0acbb15d1681db25",
+      "artifact": ".e2e-artifacts\\research-whole-20261101\\batch3-native\\runs\\asyncio_synthesis-75-codey",
+      "notes": "Content pass excludes precise-citation scoring; common wording about cancelling tasks together is not read as an atomic timing guarantee."
+    },
+    {
+      "case": "asyncio_synthesis",
+      "seed": 75,
+      "framework": "openscience",
+      "delivery": true,
+      "content_pass": true,
+      "necessary_facts": 12,
+      "fact_total": 12,
+      "issues": [],
+      "requests": 3,
+      "report_sha256": "f5a7d0b342e193614515be0270cc614cd43c83924a60acea429413179175c9ba",
+      "artifact": ".e2e-artifacts\\research-whole-20261101\\batch3-native\\runs\\asyncio_synthesis-75-openscience",
+      "notes": "Content pass excludes precise-citation scoring; common wording about cancelling tasks together is not read as an atomic timing guarantee."
+    },
+    {
+      "case": "asyncio_synthesis",
+      "seed": 76,
+      "framework": "codey",
+      "delivery": true,
+      "content_pass": false,
+      "necessary_facts": 11,
+      "fact_total": 12,
+      "issues": [
+        "遗漏父gather取消传播不受return_exceptions影响。"
+      ],
+      "requests": 3,
+      "report_sha256": "6fece408d316b5090f3fd6c43c36c4c0498508b157abf7f05c396ebf114821dc",
+      "artifact": ".e2e-artifacts\\research-whole-20261101\\batch3-native\\runs\\asyncio_synthesis-76-codey",
+      "notes": "Content pass excludes precise-citation scoring; common wording about cancelling tasks together is not read as an atomic timing guarantee."
+    },
+    {
+      "case": "asyncio_synthesis",
+      "seed": 76,
+      "framework": "openscience",
+      "delivery": true,
+      "content_pass": true,
+      "necessary_facts": 12,
+      "fact_total": 12,
+      "issues": [],
+      "requests": 3,
+      "report_sha256": "cf82e8c4935cfb27c0c301ad82412e26377adc6a36d4aa3ce8404e2b8a78f055",
+      "artifact": ".e2e-artifacts\\research-whole-20261101\\batch3-native\\runs\\asyncio_synthesis-76-openscience",
+      "notes": "Content pass excludes precise-citation scoring; common wording about cancelling tasks together is not read as an atomic timing guarantee."
+    },
+    {
+      "case": "wal_synthesis",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "content_pass": false,
+      "necessary_facts": 16,
+      "fact_total": 16,
+      "issues": [
+        "正文称读者只在数据库页中读取，超出固定材料，且WAL读取并非这种简单空间分离。",
+        "把每次写入是否检查checkpoint列成缺口，但材料明确Whenever a write operation occurs。",
+        "3.22.0和已有shm/wal引用[e5]，实际位于[e4]。"
+      ],
+      "requests": 3,
+      "report_sha256": "096dd32e0db6cfb6954a6b212b656d0335506fbe8f784227919e5a1afb278778",
+      "artifact": ".e2e-artifacts\\research-whole-20261101\\batch3-native\\runs\\wal_synthesis-74-codey",
+      "notes": "Content pass excludes precise-citation scoring; common wording about cancelling tasks together is not read as an atomic timing guarantee."
+    },
+    {
+      "case": "wal_synthesis",
+      "seed": 74,
+      "framework": "openscience",
+      "delivery": true,
+      "content_pass": true,
+      "necessary_facts": 16,
+      "fact_total": 16,
+      "issues": [],
+      "requests": 3,
+      "report_sha256": "031b9e25776a5e41e598f9c7e381a0ced61765b6cccd96c23e3d20f953180e13",
+      "artifact": ".e2e-artifacts\\research-whole-20261101\\batch3-native\\runs\\wal_synthesis-74-openscience",
+      "notes": "Content pass excludes precise-citation scoring; common wording about cancelling tasks together is not read as an atomic timing guarantee."
+    },
+    {
+      "case": "wal_synthesis",
+      "seed": 75,
+      "framework": "codey",
+      "delivery": true,
+      "content_pass": false,
+      "necessary_facts": 15,
+      "fact_total": 16,
+      "issues": [
+        "未回答选段不足以推出整份页面没有测量。",
+        "把每次写入检查和checkpoint并行部分转移列成缺口，材料已有说明。",
+        "版本和已有shm/wal错误引用[e5]。"
+      ],
+      "requests": 3,
+      "report_sha256": "b41f6facb24ac3dd34d5d51679f0225505ca617db61afacccd1ddc66d9bdca3c",
+      "artifact": ".e2e-artifacts\\research-whole-20261101\\batch3-native\\runs\\wal_synthesis-75-codey",
+      "notes": "Content pass excludes precise-citation scoring; common wording about cancelling tasks together is not read as an atomic timing guarantee."
+    },
+    {
+      "case": "wal_synthesis",
+      "seed": 75,
+      "framework": "openscience",
+      "delivery": true,
+      "content_pass": true,
+      "necessary_facts": 16,
+      "fact_total": 16,
+      "issues": [],
+      "requests": 3,
+      "report_sha256": "94225ec6f68b03b79482774e43119fe64d71df0b86e13103bf481c05d2aa39cf",
+      "artifact": ".e2e-artifacts\\research-whole-20261101\\batch3-native\\runs\\wal_synthesis-75-openscience",
+      "notes": "Content pass excludes precise-citation scoring; common wording about cancelling tasks together is not read as an atomic timing guarantee."
+    },
+    {
+      "case": "wal_synthesis",
+      "seed": 76,
+      "framework": "codey",
+      "delivery": true,
+      "content_pass": false,
+      "necessary_facts": 15,
+      "fact_total": 16,
+      "issues": [
+        "未明确回答无法从选段断言整页从未测量。",
+        "版本和已有shm/wal错误引用[e5]。"
+      ],
+      "requests": 3,
+      "report_sha256": "9896f61667bbca0e07c3e177a67385e66d5a4bd903b4ae78364fb8b07256a1a1",
+      "artifact": ".e2e-artifacts\\research-whole-20261101\\batch3-native\\runs\\wal_synthesis-76-codey",
+      "notes": "Content pass excludes precise-citation scoring; common wording about cancelling tasks together is not read as an atomic timing guarantee."
+    },
+    {
+      "case": "wal_synthesis",
+      "seed": 76,
+      "framework": "openscience",
+      "delivery": true,
+      "content_pass": true,
+      "necessary_facts": 16,
+      "fact_total": 16,
+      "issues": [],
+      "requests": 3,
+      "report_sha256": "bb7a1a8e82521755cc199ae47ee16e1346c92f7afa6b10b4929a46d0f1b78b54",
+      "artifact": ".e2e-artifacts\\research-whole-20261101\\batch3-native\\runs\\wal_synthesis-76-openscience",
+      "notes": "Content pass excludes precise-citation scoring; common wording about cancelling tasks together is not read as an atomic timing guarantee."
+    }
+  ]
+}

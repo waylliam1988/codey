@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -94,3 +95,28 @@ def test_whole_answer_cold_restart_keeps_one_publication(tmp_path, boundary):
     rows = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
     assert sum("whole_request" in row for row in rows) == 2
     assert sum("publication" in row for row in rows) == 1
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_published_note_cannot_become_a_second_writable_answer(tmp_path):
+    from codey.knowledge.model import KnowledgeMutation
+
+    result = run_whole(tmp_path)
+    store = KnowledgeStore(tmp_path / "knowledge")
+    try:
+        note = store.read_note(result.synthesis_id)
+        refs = store.note_references(note.id)
+        answer = next(store.repository.read(row["target"], row["revision"]) for row in refs
+                      if store.repository.read(row["target"], row["revision"]).value.kind == "answer")
+        with pytest.raises(ValueError, match="read-only projection"):
+            store.write_note(replace(note, body="Independent second answer"))
+        store.write_note(replace(note, title="Updated display title"))
+        assert store.note_references(note.id) == refs
+        with pytest.raises(ValueError, match="read-only projection"):
+            store.write_note(replace(note, body="Another bypass after metadata edit"))
+        changed = replace(answer.value, content="Explicitly revised knowledge answer.")
+        store.commit_knowledge("user-revision", [KnowledgeMutation(changed, answer.revision)])
+        assert store.repository.read(answer.value.id).revision == answer.revision + 1
+        assert store.read_note(note.id).body == result.summary  # original delivery remains frozen
+    finally:
+        store.close()

@@ -78,6 +78,7 @@ class KnowledgeStore:
     ) -> str:
         rel = self.rel(self.path_for(note))
         previous = self.documents.get(note.id)
+        projection_refs = self._answer_projection_refs(note)
         if previous is not None:
             from dataclasses import replace
 
@@ -91,12 +92,28 @@ class KnowledgeStore:
                 if previous and previous[1] != rel:
                     changes.capture_content(previous[1], previous[0].to_markdown())
             self.documents.write(note, rel)
+            if projection_refs:
+                revision = self.documents.get(note.id)[2]
+                self.index._read_conn().executemany("INSERT OR IGNORE INTO note_knowledge_refs VALUES(?,?,?,?)",
+                    [(note.id, revision, row["target"], row["revision"]) for row in projection_refs])
             self._index_body_links(note)
             if changes is not None:
                 changes.record_content(rel, note.to_markdown())
                 if previous and previous[1] != rel:
                     changes.record_content(previous[1], None)
         return rel
+
+    def _answer_projection_refs(self, note: KnowledgeNote) -> list[dict[str, Any]]:
+        references = self.note_references(note.id)
+        answers = [version.value for row in references
+                   if (version := self.repository.read(row["target"], row["revision"])) is not None
+                   and version.value.kind == "answer"
+                   and version.value.provenance.get("basis") == "settled_whole_answer_submission"]
+        if not answers:
+            return []
+        if len(answers) != 1 or answers[0].content != note.body:
+            raise ValueError("published answer text is a read-only projection; revise its knowledge answer version")
+        return references
 
     def link(
         self,
@@ -135,6 +152,11 @@ class KnowledgeStore:
 
     def publish_note(self, note: KnowledgeNote, commit_id: str, mutations: list[KnowledgeMutation],
                      *, changes: KnowledgeChanges | None = None, shared_staged: bool = False) -> str:
+        answers = [row.value for row in mutations if row.value.kind == "answer"
+                   and row.value.provenance.get("basis") == "settled_whole_answer_submission"]
+        if answers and (len(answers) != 1 or answers[0].content != note.body
+                        or answers[0].provenance.get("synthesis_id") != note.id):
+            raise ValueError("answer publication must project its one exact knowledge answer")
         snapshot = changes.snapshot() if changes is not None else None
         try:
             with self.index.transaction():

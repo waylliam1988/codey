@@ -40,6 +40,8 @@ def test_whole_task_survives_actual_provider_history_trimming_and_repair(tmp_pat
             actual = "\n".join(str(row.get("content", "")) for row in payload["messages"])
             assert TASK in actual and "Preserve every requested distinction" in actual
             assert "submit_research_answer" in actual
+            if native:
+                assert payload["tool_choice"] == "required"
         assert "[e1]" in json.dumps(sent[1]) and "e99" in json.dumps(sent[2])
         actual_read = "\n".join(str(row.get("content", "")) for row in sent[1]["messages"])
         assert actual_read.count("Readers and a writer may run concurrently. Only one writer at a time.") == 1

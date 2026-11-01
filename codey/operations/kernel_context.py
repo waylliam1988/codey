@@ -349,6 +349,10 @@ class KernelContext:
                 options["output_token_limit"] = 2048
             elif self.session.task_kind == "research" and self.session.policy.strict_research:
                 options["output_token_limit"] = 4096
+                from codey.research.answer_contract import AnswerScope
+
+                if self.native and isinstance(snapshot.research_scope, AnswerScope):
+                    options["require_tool_call"] = True
                 if snapshot.research_scope is not None:
                     options["tool_call_history_groups"] = 1
         if scoped_contract:

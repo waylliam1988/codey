@@ -11,6 +11,34 @@ from codey.providers.base import ProviderToolResult
 from codey.providers.token_accounting import RequestContextCount
 
 
+@pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
+def test_required_native_choice_is_request_scoped_and_does_not_mutate_provider(monkeypatch, protocol):
+    from codey.providers.base import ProviderToolDefinition
+
+    sent = []
+
+    def generate(_url, payload, *_args, **_kwargs):
+        sent.append(copy.deepcopy(payload))
+        return ({"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+                if protocol == "openai-completions" else {"output": [{"type": "message", "role": "assistant",
+                    "content": [{"type": "output_text", "text": "ok"}]}], "status": "completed"})
+
+    monkeypatch.setattr(api_transport, "generate", generate)
+    provider = ApiProvider("http://fixture/v1", "fixture", native_tools=True, api_protocol=protocol,
+                           stream=False, request_counter=lambda *a, **kw: RequestContextCount(100, "tokenizer"))
+    tools = [ProviderToolDefinition("submit", "Submit an answer", {"type": "object", "properties": {}})]
+    try:
+        provider.send_turn("Use a declared tool", tools, require_tool_call=True)
+        provider.send_turn("Ordinary continuation", tools)
+        assert [row["tool_choice"] for row in sent] == ["required", "auto"]
+        assert provider.tool_choice == "auto"
+        with pytest.raises(ValueError, match="declared tool inventory"):
+            provider.send_turn("Invalid", [], require_tool_call=True)
+        assert len(sent) == 2
+    finally:
+        provider.close()
+
+
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
 def test_bounded_payload_preserves_protocol_pairs_counts_actual_view_and_keeps_history(monkeypatch, native, protocol):
