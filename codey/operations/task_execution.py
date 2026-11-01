@@ -437,6 +437,10 @@ class ExecutionDelegate:
         if hasattr(tools, "finding_report"):
             tools.finding_report = (self.session is not None and self.session.task_kind == "research"
                                            and self.session.policy.strict_research)
+        if hasattr(tools, "local_submission"):
+            # Presentation follows the admitted request, including replay. Do
+            # not infer a new contract from the mutable current plan here.
+            tools.local_submission = self._research_scope is not None
         ledger = getattr(tools, "ledger", None)
         if isinstance(ledger, ResearchLedger):
             # A read receipt contains this acquisition alone, not stale pages

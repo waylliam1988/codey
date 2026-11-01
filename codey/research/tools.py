@@ -66,6 +66,7 @@ class ResearchTools:
     ledger: ResearchLedger = field(default_factory=ResearchLedger)
     evidence_only: bool = False
     finding_report: bool = False
+    local_submission: bool = False
 
     def create_staged(self) -> ResearchTools:
         staged_store = StagedKnowledgeStore(self.store) if self.store is not None else None
@@ -87,6 +88,7 @@ class ResearchTools:
             ledger=self.ledger.clone(),
             evidence_only=self.evidence_only,
             finding_report=self.finding_report,
+            local_submission=self.local_submission,
         )
 
     def commit_staged(self, staged: ResearchTools) -> None:
@@ -218,7 +220,7 @@ class ResearchTools:
         if not query:
             return ResearchToolOutput("ERROR: knowledge_search needs a query", ok=False)
         hits = self.store.search(query, project=self.project, session_id=self.session_id, depth=depth)
-        recalled = render_recall(hits, include_answer_refs=not self.evidence_only)
+        recalled = render_recall(hits, include_answer_refs=not (self.evidence_only or self.local_submission))
         rows = self.store.search_notes(query, project=self.project, session_id=self.session_id)
         if not rows:
             return ResearchToolOutput(recalled or "no local notes yet on this topic", ok=True)
@@ -280,13 +282,16 @@ class ResearchTools:
         preface = ("Document note; its note_id is not a done.knowledge_refs object id.\n"
                    "Answer reference candidates (use only versions actually adopted):\n"
                    + canonical_json({"knowledge_refs": answer_refs[:6]}) + "\n\n"
-                   ) if answer_refs and not self.evidence_only and not automatic_refs else ""
+                   ) if answer_refs and not self.evidence_only and not automatic_refs and not self.local_submission else ""
+        if self.local_submission and answer_refs:
+            preface = ("Document note; read a linked knowledge object by its exact id and revision to obtain an fN "
+                       "before explicitly selecting it with submit_research_answer.\n\n")
         if automatic_refs and not self.evidence_only:
             preface = "Cite this saved finding by [finding_ref] only if adopted; the application resolves its exact versions.\n\n"
         preface += ("Document status describes the saved note, not semantic approval of its summary. "
                     "Inspect the linked claim and its exact evidence before adopting the wording.\n"
                     "Claim interpretation state:\n" + canonical_json(claim_states[:12]) + "\n\n")
-        version_label = ("Structured knowledge versions:" if self.evidence_only or automatic_refs else
+        version_label = ("Structured knowledge versions:" if self.evidence_only or automatic_refs or self.local_submission else
                          "Structured knowledge versions (use these for knowledge_refs):")
         return ResearchToolOutput(preface + note.to_markdown() + "\n\n" + version_label + "\n"
                                   + canonical_json(references), ok=True)

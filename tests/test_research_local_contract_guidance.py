@@ -9,10 +9,11 @@ from codey.operations import kernel_prompt
 from codey.operations.kernel_preparation import prepare_kernel_turn
 from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.policies.task_policy import TaskPolicy
 from codey.research.methods import research_method_guidance
-from codey.runtime.core.models import ToolPlan
+from codey.runtime.core.models import ToolCall, ToolPlan
 from tests.test_research_findings import URL, execute
 from tests.test_research_local_scope import local_setup, run_local
 
@@ -92,4 +93,35 @@ def test_actual_local_payloads_do_not_reintroduce_global_save_instructions(tmp_p
 def test_domain_transfer_is_not_a_clinical_signal():
     assert "clinical:" not in research_method_guidance("如何继续转移数据？", finding_report=True)
     assert "clinical:" in research_method_guidance("癌症转移患者的治疗研究", finding_report=True)
+
+
+@pytest.mark.usefixtures("public_source_dns")
+@pytest.mark.parametrize("native", [False, True])
+def test_recall_guidance_follows_frozen_scope_without_changing_ordinary_or_source_text(tmp_path, native):
+    store, tools, session, ordinary = local_setup(tmp_path)
+    try:
+        execute(ordinary, tools, session, "open_url", {"url": URL})
+        saved = execute(ordinary, tools, session, "save_finding", {
+            "claim": "Only one writer can write at a time. The source mentions done.",
+            "passage_ref": next(iter(tools.ledger.read_passages))})
+        assert saved.ok
+        session.policy = TaskPolicy(session.policy.grants, strict_research=True)
+        snapshot = restore_snapshot(snapshot_description(build_turn_snapshot(session, native=native)))
+        local = ExecutionDelegate(session=session, research_tools=tools, research_scope=snapshot.research_scope)
+        search = ToolCall("knowledge_search", {"query": "writer", "question_ref": "q1"})
+        recalled, ok, _ = local._execute_research(search)
+        assert ok and "Previously saved knowledge" in recalled.model_text
+        assert "in done " not in recalled.model_text
+        assert "source mentions done" in recalled.model_text  # Quoted data is untouched.
+        normal, ok, _ = ordinary._execute_research(search)
+        assert ok and "in done " in normal.model_text
+        note_id = saved.canonical["knowledge_notes"]["created"][0]
+        # Old document notes must not introduce a second completion contract.
+        tools.created_ids.clear()
+        read, ok, _ = local._execute_research(ToolCall("knowledge_read", {"id": note_id, "question_ref": "q1"}))
+        assert ok and "done.knowledge_refs" not in read.model_text
+        assert "submit_research_answer" in read.model_text
+        assert not tools.local_submission  # The per-call facade does not leak.
+    finally:
+        store.close()
 
