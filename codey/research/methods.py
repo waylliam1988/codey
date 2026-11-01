@@ -26,7 +26,7 @@ METHODS = (
                    ("population_or_model", "design", "comparator", "endpoint", "measurement"),
                    "original studies, datasets, systematic reviews and replication attempts",
                    "compare design, bias, independent datasets, uncertainty and contrary findings"),
-    ResearchMethod("clinical", ("treatment", "cancer", "患者", "治疗", "癌", "用药", "转移"),
+    ResearchMethod("clinical", ("treatment", "cancer", "metastasis", "患者", "治疗", "癌", "用药", "肿瘤"),
                    ("population", "disease_or_subtype", "intervention", "comparator", "endpoint", "study_design"),
                    "clinical trials, trial registries, current guidelines, systematic reviews; mechanisms as background",
                    "retain in vitro/animal/human distinctions and applicability; never infer individual treatment "

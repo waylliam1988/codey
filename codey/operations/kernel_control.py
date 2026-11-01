@@ -131,7 +131,8 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         counters = replace(state.counters, progress=progress.snapshot())
         decision = RetryDecision(
             purpose="retry", prompt=kernel_prompt._completion_followup(followup, native=context.native,
-                structured_report=local or "report_sections" in context.session.last_done_args), error="",
+                structured_report=local or "report_sections" in context.session.last_done_args,
+                local_submission=local), error="",
             error_source=error_source, error_type=error_type)
         if repair is not None:
             decision["research_repair"] = repair.to_payload()

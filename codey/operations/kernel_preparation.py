@@ -19,8 +19,13 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
                         task_guidance: str, native: bool, completion_context: Any = None,
                         request_scoped_contract: bool = False) -> PreparedKernelTurn:
     snapshot = kernel_protocol.build_turn_snapshot(session, native=native)
+    if snapshot.research_scope is not None:
+        from codey.research.completion_guidance import render_completion_guidance
+
+        task_guidance = task_guidance.replace(render_completion_guidance(snapshot.policy),
+                                             render_completion_guidance(snapshot.policy, local=True))
     guidance = [task_guidance] if task_guidance else []
-    if snapshot.policy.strict_research:
+    if snapshot.policy.strict_research and snapshot.research_scope is None:
         from codey.research.methods import research_method_guidance
 
         guidance.append(research_method_guidance(user_task, evidence_only=session.task_kind == "evidence_followup",
@@ -36,5 +41,6 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
         coding_context=prepare_coding_context(session, completion_context=completion_context),
         request_scoped_contract=request_scoped_contract,
         done_spec=next((spec for spec in snapshot.model_specs if spec.name == "done"), None),
+        local_submission=snapshot.research_scope is not None,
     )
     return PreparedKernelTurn(snapshot, prompt)

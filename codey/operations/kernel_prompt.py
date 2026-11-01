@@ -85,6 +85,7 @@ def kernel_prompt_for_session(
     coding_context: CodingContext | None = None,
     request_scoped_contract: bool = False,
     done_spec: ToolSpec | None = None,
+    local_submission: bool = False,
 ) -> str:
     task_text = str(user_task or getattr(session, "task_text", "") or "").strip()
     handoff = str(getattr(session, "handoff", "") or "").strip()
@@ -106,6 +107,12 @@ def kernel_prompt_for_session(
         parts.append(task_guidance)
     if not request_scoped_contract:
         parts.extend(_tool_contract_parts(visible_names, contract_text, native=native))
+    if local_submission:
+        parts.append(("Use native tool calls. " + _NATIVE_ARGUMENTS_RULE) if native else _TEXT_ACTION_RULE)
+        parts.append("End only the current target with submit_research_answer. "
+                     "Use only authorized tools and report specific observed failures. "
+                     "The kernel advances the original plan from the settled selection receipt.")
+        return "\n\n".join(parts)
     if session.task_kind == "research_review":
         # The frozen submission is this task's completion action. Workspace
         # verification and ordinary done instructions do not apply to it.
@@ -180,7 +187,9 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
                 " Every text value, including enum choices, must be a quoted string; "
                 "do not emit bare words such as state:reported. Use booleans only for boolean parameters."
             )
-        if spec is None or spec.name == "done":
+        if snapshot.research_scope is not None:
+            instruction += " End this target with submit_research_answer using the frozen selection contract."
+        elif spec is None or spec.name == "done":
             done = next((item for item in snapshot.model_specs if item.name == "done"), None)
             instruction += " " + _native_done_guidance(done)
     else:
@@ -208,9 +217,12 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
     return f"Protocol error: {detail}\n\n{instruction} Resend the intended call. {ARGUMENT_CONTENT_GUIDANCE} Keep other valid fields."
 
 
-def _completion_followup(feedback: str, *, native: bool, structured_report: bool = False) -> str:
+def _completion_followup(feedback: str, *, native: bool, structured_report: bool = False,
+                         local_submission: bool = False) -> str:
     """Render completion feedback for its transport without changing the verdict."""
-    rule = (_NATIVE_ARGUMENTS_RULE + " " + _native_final_rule(structured_report=structured_report) if native else
+    final_rule = ("Repair this target with submit_research_answer under its frozen contract." if local_submission else
+                  _native_final_rule(structured_report=structured_report))
+    rule = (_NATIVE_ARGUMENTS_RULE + " " + final_rule if native else
             r'Preserve the requested answer format. Encode any needed line breaks once as \n inside JSON strings. '
             "Fenced examples are answer text and do not execute tools.")
     if structured_report:

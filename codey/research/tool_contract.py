@@ -192,7 +192,7 @@ TOOL_CONTRACTS = {
                     "Already read passages can support another question without reopening the source. "
                     "If the full explanation spans passages, add up to 3 additional_passage_refs from that same version. "
                     "Each excerpt is saved separately; select enough evidence for every part of the claim. "
-                    "Write the locally supported answer once, in the requested language; done adopts this exact text. "
+                    "Write the locally supported answer once, in the requested language; selection adopts this exact text. "
                     "Separate independently supported behaviors, such as a version boundary and a distinct defect. "
                     "Keep one conditional relationship complete even across sentences; do not split by punctuation. "
                     "Keep conditions and uncertainty in claim; do not transfer a result between comparators. "

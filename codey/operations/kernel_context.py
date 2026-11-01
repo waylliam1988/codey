@@ -417,7 +417,10 @@ class KernelContext:
                 self.close(state, KernelResult(False, "local provider emitted finish_reason=length twice", turn, "provider_failure"))
                 return None
             if not reply.tool_calls:
-                self.retry(state, "Your previous response was truncated before a tool call. Continue the task with the next required tool call, or call done(summary) if the verified task is complete. Do not output ordinary explanation.",
+                completion = ("submit_research_answer for this target" if snapshot.research_scope is not None else
+                              "done(summary) if the verified task is complete")
+                self.retry(state, "Your previous response was truncated before a tool call. Continue with the next "
+                           "required tool call, or call " + completion + ". Do not output ordinary explanation.",
                            counters=replace(state.counters, length_continuation_used=True))
                 return
         decoded = decode_text_turn(reply) if isinstance(reply, str) else reply

@@ -127,5 +127,7 @@ def test_local_feedback_explains_empty_gap_exit_without_relaxing_the_check(tmp_p
         assert "state=unresolved and findings=[]" in issue.message
         assert "Changing an unsupported selection to partial" in issue.message
         assert "source_search" not in issue.message and "open_hit" not in issue.message
+        assert "select partial or unresolved" not in issue.allowed_actions
+        assert "submit unresolved with findings=[]" in issue.allowed_actions
     finally:
         store.close()
