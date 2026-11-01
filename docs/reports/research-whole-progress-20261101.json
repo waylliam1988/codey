@@ -1,0 +1,539 @@
+{
+  "review_method": "Manual comparison with frozen source and pre-existing rubric, not blind and not tested-model grading. Required facts are explicit; delivery, model state and content are separate.",
+  "limits": [
+    "Development batches are not independent held-out validation.",
+    "Strict synthetic cross-source rubric includes 24h TTL although the task asks expiry consequences rather than explicitly asking duration; neither framework receives a post-hoc exemption.",
+    "OpenScience retry cases replace only zero-inference bundled-skills EPERM startups; original environment failures remain preserved. cross-source retry emitted completed delivery but process exit was 3.",
+    "OpenScience title generation counts as inference. Exact passage citation scoring is separate from content pass."
+  ],
+  "implementations": {
+    "batch7-native": "a32f8ced",
+    "batch8-native": "913571ad",
+    "batch8-expanded": "913571ad",
+    "expanded-openscience": "c89bba02 harness + frozen executable",
+    "openscience-environment-retry": "c89bba02 harness + same executable"
+  },
+  "rows": [
+    {
+      "batch": "batch7-native",
+      "case": "wal_synthesis",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "第5问没有明确回答选段不能推出整页从未测量。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "29621f3221ca5bbf078bdbceaead7c67582a0f44977c0af0ecf453a5aa919efb",
+      "wire_sha256": "d2495b73f2dd4c9094b02c3fc66aab10f02f335b38133e8fdab56296d2a8c527",
+      "source_identity_sha256": "019bed2abc17672ec796b1279623ee419064e2b8baae6f65ec04734155389fc3",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch7-native/runs/wal_synthesis-74-codey"
+    },
+    {
+      "batch": "batch7-native",
+      "case": "wal_synthesis",
+      "seed": 75,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "把只读打开的替代条件误解为 WAL 和 rollback 的替代关系，遗漏三个只读条件。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "77c1e0d903522561d15a50f2f5896cc34db999afa800567336b51a058267a7a0",
+      "wire_sha256": "4928fb63223c474973c996891a5df90948fe1360e55f0b11bfc5420499261d50",
+      "source_identity_sha256": "019bed2abc17672ec796b1279623ee419064e2b8baae6f65ec04734155389fc3",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch7-native/runs/wal_synthesis-75-codey"
+    },
+    {
+      "batch": "batch7-native",
+      "case": "wal_synthesis",
+      "seed": 76,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "未明确区分 writer 回绕条件与 checkpoint 转移必要条件；第5问边界不完整。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "5abaf8b67edc9b62b4173e5ef0f39354456fb1edda4f6a3d601619422c9722a0",
+      "wire_sha256": "729384ab1b32be2d62e546825e323a32a0240c207384d382038df87b8903b851",
+      "source_identity_sha256": "019bed2abc17672ec796b1279623ee419064e2b8baae6f65ec04734155389fc3",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch7-native/runs/wal_synthesis-76-codey"
+    },
+    {
+      "batch": "batch7-native",
+      "case": "asyncio_synthesis",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "遗漏父 gather 取消传播不受 return_exceptions 影响。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "06bde56eebe2d3eab77ac1085993d4ad9209d588838857d15684290a3a81fea4",
+      "wire_sha256": "59fde594f4c3792671c6d6530e00d98e897310eea17c48270898860cfb50a0dd",
+      "source_identity_sha256": "019bed2abc17672ec796b1279623ee419064e2b8baae6f65ec04734155389fc3",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch7-native/runs/asyncio_synthesis-74-codey"
+    },
+    {
+      "batch": "batch7-native",
+      "case": "asyncio_synthesis",
+      "seed": 75,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "遗漏父 gather 取消传播不受 return_exceptions 影响。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "1e59a875b10f9cdda267fee2ded0d615973627bb17cbdd1164b823e096acbc1a",
+      "wire_sha256": "143c70bac7f6596e392ce78c32f5c091ed374ea6e1ecd4a9d67f7e1ac487a5bb",
+      "source_identity_sha256": "019bed2abc17672ec796b1279623ee419064e2b8baae6f65ec04734155389fc3",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch7-native/runs/asyncio_synthesis-75-codey"
+    },
+    {
+      "batch": "batch7-native",
+      "case": "asyncio_synthesis",
+      "seed": 76,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "遗漏父 gather 取消传播不受 return_exceptions 影响。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "b9bf01308200c50a5a830f4084e32256b9650df74d0a1911c7bd6b4e76d53e60",
+      "wire_sha256": "ceaead89bc23908b2c395b8ae8e7d663bf21f4ac7bbcf10a74786ad398ddb87d",
+      "source_identity_sha256": "019bed2abc17672ec796b1279623ee419064e2b8baae6f65ec04734155389fc3",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch7-native/runs/asyncio_synthesis-76-codey"
+    },
+    {
+      "batch": "batch8-native",
+      "case": "wal_synthesis",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "把多数场景更快错误外推为可以证明本机更快。",
+        "误解替代条件，遗漏只读打开的完整三个 OR 条件。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "16583121ab4a7b64d7fa9fec415a8f155ec15644e61bed146e653434ab360027",
+      "wire_sha256": "08d62d60aaffeaf567ec713342e00d7718912793545a58d0d8fa522f0cb267c9",
+      "source_identity_sha256": "425869680094b1d602c36e6c38604f4b0a2402abef226a82ddc5042acc83a5ff",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-native/runs/wal_synthesis-74-codey"
+    },
+    {
+      "batch": "batch8-native",
+      "case": "wal_synthesis",
+      "seed": 75,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "把多数场景更快错误外推为可以证明本机更快。",
+        "误解替代条件，遗漏只读打开的完整三个 OR 条件。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "132dc264d9d60267a1bc5c1437a84e29a2d763368e4aee138e744421eccea1f9",
+      "wire_sha256": "c366e8e8852302a139fd833386c572c7d974872a3a3d532ebf614f17f778a7ed",
+      "source_identity_sha256": "425869680094b1d602c36e6c38604f4b0a2402abef226a82ddc5042acc83a5ff",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-native/runs/wal_synthesis-75-codey"
+    },
+    {
+      "batch": "batch8-native",
+      "case": "wal_synthesis",
+      "seed": 76,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "把多数场景更快错误外推为可以证明本机更快。",
+        "将保留 OR 关系另解为替代 rollback，增加无关缺口。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "ae458bb80dfbb0b1e6c4a7301260b98bcca49b071104de3f512ec45a76ae6543",
+      "wire_sha256": "6f4890ca60f0b87cf7261400147c250f9446c25d69264e90801fe683a48d6c87",
+      "source_identity_sha256": "425869680094b1d602c36e6c38604f4b0a2402abef226a82ddc5042acc83a5ff",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-native/runs/wal_synthesis-76-codey"
+    },
+    {
+      "batch": "batch8-native",
+      "case": "asyncio_synthesis",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "取消传播与 return_exceptions 已保留，但未明确写出单个子任务取消不会连带取消其他子任务。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "a1ba025c2b49cc3ecbe229224d88805fcdc449caeff642fb517e29c7af9921eb",
+      "wire_sha256": "46b8408a1e032a35b2cff588ee12e9c8788eb0d56186b512e1497935a846d3dd",
+      "source_identity_sha256": "425869680094b1d602c36e6c38604f4b0a2402abef226a82ddc5042acc83a5ff",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-native/runs/asyncio_synthesis-74-codey"
+    },
+    {
+      "batch": "batch8-native",
+      "case": "asyncio_synthesis",
+      "seed": 75,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "取消传播与 return_exceptions 已保留，但未明确写出单个子任务取消不会连带取消其他子任务。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "d34149916b4503670ee8c19bce72fc1e2f705182b4d7dd4a50cbe4dad774ce2d",
+      "wire_sha256": "ea4aa36061cbed410778115b9ec125519656322e294c3521413ea0f12a77201d",
+      "source_identity_sha256": "425869680094b1d602c36e6c38604f4b0a2402abef226a82ddc5042acc83a5ff",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-native/runs/asyncio_synthesis-75-codey"
+    },
+    {
+      "batch": "batch8-native",
+      "case": "asyncio_synthesis",
+      "seed": 76,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "取消传播与 return_exceptions 已保留，但未明确写出单个子任务取消不会连带取消其他子任务。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "580eb3ebd434a4c3e6ff488a24462685ab3210a0ba01c6440ca955262a7a95a0",
+      "wire_sha256": "5e78fdd32e9e3314fe5ed2f0baf08b71f32651cb52ade83de0837a5fec3d2b9f",
+      "source_identity_sha256": "425869680094b1d602c36e6c38604f4b0a2402abef226a82ddc5042acc83a5ff",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-native/runs/asyncio_synthesis-76-codey"
+    },
+    {
+      "batch": "batch8-expanded",
+      "case": "queue-direct",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": true,
+      "issues": [],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "7827d3b9c6eec8a1e2183cfd1b5c53ef0bc2517301c05467f9d24de7a0218e0e",
+      "wire_sha256": "dc4b1464766a9e03587cf51f7e07d69fee47a1ac24971d36fbeaa02eb3ae2bba",
+      "source_identity_sha256": "b8c9312e582a194750527dc4fad207f00e5b5669e379cd8af85e671e4668b466",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-expanded/runs/queue-direct-74-codey"
+    },
+    {
+      "batch": "batch8-expanded",
+      "case": "queue-adjacent",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": false,
+      "declared_state": null,
+      "content_pass": false,
+      "issues": [
+        "反复搜索后 no_progress 停止，没有交付正式缺口报告。"
+      ],
+      "requests": 9,
+      "process_exit_code": 1,
+      "report_sha256": "06fe9deab5ba612943d2597efe62f72eacdc70ebcb102c1800d0a965b48f343c",
+      "wire_sha256": "24cbf500a7e075c98946ecf6c7a6b1d77be96967635676f2a42b6ab337042550",
+      "source_identity_sha256": "b8c9312e582a194750527dc4fad207f00e5b5669e379cd8af85e671e4668b466",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-expanded/runs/queue-adjacent-74-codey"
+    },
+    {
+      "batch": "batch8-expanded",
+      "case": "tempfile-direct",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": true,
+      "issues": [],
+      "requests": 3,
+      "process_exit_code": 0,
+      "report_sha256": "2c074988c3614e25b1a671a881df4269d6bba24f33af132071b2f7ea903fe36c",
+      "wire_sha256": "15c6a464aa507559759b29ac5af21fac7888096588e0c137efde2f914e6a8637",
+      "source_identity_sha256": "b8c9312e582a194750527dc4fad207f00e5b5669e379cd8af85e671e4668b466",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-expanded/runs/tempfile-direct-74-codey"
+    },
+    {
+      "batch": "batch8-expanded",
+      "case": "tempfile-adjacent",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "partial",
+      "content_pass": true,
+      "issues": [],
+      "requests": 4,
+      "process_exit_code": 0,
+      "report_sha256": "4110baa0d6280831c5bf95e499d6ec4cb3b96c1ce0ad1f79d5fad448f6ca660f",
+      "wire_sha256": "66bad29570c21d5b0b85ccde8f71aa9139723c72ddb3c3978d3bd96532040654",
+      "source_identity_sha256": "b8c9312e582a194750527dc4fad207f00e5b5669e379cd8af85e671e4668b466",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-expanded/runs/tempfile-adjacent-74-codey"
+    },
+    {
+      "batch": "batch8-expanded",
+      "case": "rlock-direct",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": true,
+      "issues": [],
+      "requests": 3,
+      "process_exit_code": 0,
+      "report_sha256": "b013a75184e8b22be01d8a4358ed793f723c28e111b477ebcd6a08f685c039e8",
+      "wire_sha256": "5624cfe72d7176f14349dc72a412dbba55b659c26889f0432bc625d930aede9f",
+      "source_identity_sha256": "b8c9312e582a194750527dc4fad207f00e5b5669e379cd8af85e671e4668b466",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-expanded/runs/rlock-direct-74-codey"
+    },
+    {
+      "batch": "batch8-expanded",
+      "case": "rlock-adjacent",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "partial",
+      "content_pass": false,
+      "issues": [
+        "把普通 RLock.release 的相邻机制错误当作 Condition.wait 的完全解锁机制。"
+      ],
+      "requests": 2,
+      "process_exit_code": 0,
+      "report_sha256": "29bf6460947c654a1c138c8536630a4aab18bd5190330ab18473f60817289663",
+      "wire_sha256": "e58d2f29c796c384341c05392b8c6a55a8b371bce1b8006175802054da62325f",
+      "source_identity_sha256": "b8c9312e582a194750527dc4fad207f00e5b5669e379cd8af85e671e4668b466",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-expanded/runs/rlock-adjacent-74-codey"
+    },
+    {
+      "batch": "batch8-expanded",
+      "case": "cross-source-export",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "遗漏冻结评分要求的 ticket 24 小时 TTL；其余条件及跨来源关系已明确。"
+      ],
+      "requests": 3,
+      "process_exit_code": 0,
+      "report_sha256": "0b588c3fc16093ab173dcaded6e9f46b9559816e0540115e9ff96c3b0beced57",
+      "wire_sha256": "410cffa066afbbe25bbfcc0ac4d43297594cd3ac776f166394a9ceeee2c96e76",
+      "source_identity_sha256": "b8c9312e582a194750527dc4fad207f00e5b5669e379cd8af85e671e4668b466",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-expanded/runs/cross-source-export-74-codey"
+    },
+    {
+      "batch": "batch8-expanded",
+      "case": "conflicting-replicas",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": true,
+      "issues": [],
+      "requests": 3,
+      "process_exit_code": 0,
+      "report_sha256": "5461335c56f60ffad44fe3745260ebbe674b6a1114b565b3bdbb79ac46edb4a1",
+      "wire_sha256": "775ffde15087aabd0f23e2729e0a9b768850c74c8e4edaba1a6fe356107e26df",
+      "source_identity_sha256": "b8c9312e582a194750527dc4fad207f00e5b5669e379cd8af85e671e4668b466",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-expanded/runs/conflicting-replicas-74-codey"
+    },
+    {
+      "batch": "batch8-expanded",
+      "case": "long-recovery-manual",
+      "seed": 74,
+      "framework": "codey",
+      "delivery": true,
+      "declared_state": "answered",
+      "content_pass": false,
+      "issues": [
+        "未读取第44节，把可取得的完成、7天到期及产物边界写成缺口。"
+      ],
+      "requests": 7,
+      "process_exit_code": 0,
+      "report_sha256": "41bcc09697f15bff6a22f159aad4ecb6b462550c93db622cb2482608e9514b53",
+      "wire_sha256": "0d9a7e0697860d47e07d80cc39a2848c0d6b656a387817fd3354603adb656320",
+      "source_identity_sha256": "b8c9312e582a194750527dc4fad207f00e5b5669e379cd8af85e671e4668b466",
+      "artifact": ".e2e-artifacts/research-whole-20261101/batch8-expanded/runs/long-recovery-manual-74-codey"
+    },
+    {
+      "batch": "expanded-openscience",
+      "case": "queue-adjacent",
+      "seed": 74,
+      "framework": "openscience",
+      "delivery": true,
+      "declared_state": null,
+      "content_pass": true,
+      "issues": [],
+      "requests": 4,
+      "process_exit_code": 0,
+      "report_sha256": "68a0839a3d97e9e2cea42896b05b479a60dc4bf373b60ebef3c11d88686f7171",
+      "wire_sha256": "e9c4fa7cc12f7c3c0736e7751163da6b8322e3d7ac2b6cb033272534d23caa1e",
+      "source_identity_sha256": "89c96b4ead2b9837ea73b40feac0346139d9046c7c53fc07cecceb15abbd08ab",
+      "artifact": ".e2e-artifacts/research-whole-20261101/expanded-openscience/runs/queue-adjacent-74-openscience"
+    },
+    {
+      "batch": "expanded-openscience",
+      "case": "tempfile-direct",
+      "seed": 74,
+      "framework": "openscience",
+      "delivery": true,
+      "declared_state": null,
+      "content_pass": true,
+      "issues": [],
+      "requests": 4,
+      "process_exit_code": 0,
+      "report_sha256": "6c6cb53df303d758ed445f7d08001489ad7b2a1d751f3bb17f43cfe600e24ec9",
+      "wire_sha256": "330241a5f7dceeee1608b7a5277352e8a7f3352363435ddc193816807baf7b9d",
+      "source_identity_sha256": "89c96b4ead2b9837ea73b40feac0346139d9046c7c53fc07cecceb15abbd08ab",
+      "artifact": ".e2e-artifacts/research-whole-20261101/expanded-openscience/runs/tempfile-direct-74-openscience"
+    },
+    {
+      "batch": "expanded-openscience",
+      "case": "tempfile-adjacent",
+      "seed": 74,
+      "framework": "openscience",
+      "delivery": true,
+      "declared_state": null,
+      "content_pass": false,
+      "issues": [
+        "缺证据仍编造 OR 条件及 delete_on_close 机制。"
+      ],
+      "requests": 5,
+      "process_exit_code": 0,
+      "report_sha256": "3c94c9c602312ece6e9812b31e80bdfb0d4fd463653d755afa57c43c7e7a85b2",
+      "wire_sha256": "acbc0e3271e34be7606bfa5d59907fce069100e350ac66d83448fef787c9e753",
+      "source_identity_sha256": "89c96b4ead2b9837ea73b40feac0346139d9046c7c53fc07cecceb15abbd08ab",
+      "artifact": ".e2e-artifacts/research-whole-20261101/expanded-openscience/runs/tempfile-adjacent-74-openscience"
+    },
+    {
+      "batch": "expanded-openscience",
+      "case": "rlock-direct",
+      "seed": 74,
+      "framework": "openscience",
+      "delivery": true,
+      "declared_state": null,
+      "content_pass": true,
+      "issues": [],
+      "requests": 4,
+      "process_exit_code": 0,
+      "report_sha256": "755cfc927c26030e1b5464e7fdac9c02e98b6ae4b5bb9c56edd8031e0539ae41",
+      "wire_sha256": "dc6986e748945f3ffbeaf7de86a9672cc87faaaceca03cd08ee5c9028d8742b3",
+      "source_identity_sha256": "89c96b4ead2b9837ea73b40feac0346139d9046c7c53fc07cecceb15abbd08ab",
+      "artifact": ".e2e-artifacts/research-whole-20261101/expanded-openscience/runs/rlock-direct-74-openscience"
+    },
+    {
+      "batch": "expanded-openscience",
+      "case": "rlock-adjacent",
+      "seed": 74,
+      "framework": "openscience",
+      "delivery": true,
+      "declared_state": null,
+      "content_pass": false,
+      "issues": [
+        "把普通 release 递减递归层级当成 Condition.wait 的完全解锁机制。"
+      ],
+      "requests": 4,
+      "process_exit_code": 0,
+      "report_sha256": "2469b3ec885a2c9f3198f98dd8f42b53ab51e98374eaa0a104841a456131a818",
+      "wire_sha256": "7fc7991ac2718eb6b3623af65b9b245030d86289c5069dd04c6c6c3c0dfb5727",
+      "source_identity_sha256": "89c96b4ead2b9837ea73b40feac0346139d9046c7c53fc07cecceb15abbd08ab",
+      "artifact": ".e2e-artifacts/research-whole-20261101/expanded-openscience/runs/rlock-adjacent-74-openscience"
+    },
+    {
+      "batch": "expanded-openscience",
+      "case": "conflicting-replicas",
+      "seed": 74,
+      "framework": "openscience",
+      "delivery": true,
+      "declared_state": null,
+      "content_pass": true,
+      "issues": [],
+      "requests": 3,
+      "process_exit_code": 0,
+      "report_sha256": "356c53053dadeec77f747fa70a894e574d6e060310c07ae808d645cb596f861e",
+      "wire_sha256": "5c2e4849f6c28c57b0c602db22201d0f35484852f7579618f01f374eed781b40",
+      "source_identity_sha256": "89c96b4ead2b9837ea73b40feac0346139d9046c7c53fc07cecceb15abbd08ab",
+      "artifact": ".e2e-artifacts/research-whole-20261101/expanded-openscience/runs/conflicting-replicas-74-openscience"
+    },
+    {
+      "batch": "expanded-openscience",
+      "case": "long-recovery-manual",
+      "seed": 74,
+      "framework": "openscience",
+      "delivery": true,
+      "declared_state": null,
+      "content_pass": true,
+      "issues": [],
+      "requests": 3,
+      "process_exit_code": 0,
+      "report_sha256": "9cff66c7e4c6dc2e93de6bb852ff0f67c51c016580ceeee7d8de49580fa7d541",
+      "wire_sha256": "1fd6cd86e63290ee8ed4782c111e8760cf7b38e60fa50994a0024c7bd4ca26a4",
+      "source_identity_sha256": "89c96b4ead2b9837ea73b40feac0346139d9046c7c53fc07cecceb15abbd08ab",
+      "artifact": ".e2e-artifacts/research-whole-20261101/expanded-openscience/runs/long-recovery-manual-74-openscience"
+    },
+    {
+      "batch": "openscience-environment-retry",
+      "case": "queue-direct",
+      "seed": 74,
+      "framework": "openscience",
+      "delivery": true,
+      "declared_state": null,
+      "content_pass": true,
+      "issues": [],
+      "requests": 3,
+      "process_exit_code": 0,
+      "report_sha256": "82cf53d94b909d33c860137301f949f8937c0fdf11e35ff71dc3df4580672ac5",
+      "wire_sha256": "c806420c124ef0f6417b86d276b87821592494f61f5fb2e24c72eaf27299bad9",
+      "source_identity_sha256": "89c96b4ead2b9837ea73b40feac0346139d9046c7c53fc07cecceb15abbd08ab",
+      "artifact": ".e2e-artifacts/rw-os-retry/runs/queue-direct-74-openscience"
+    },
+    {
+      "batch": "openscience-environment-retry",
+      "case": "cross-source-export",
+      "seed": 74,
+      "framework": "openscience",
+      "delivery": true,
+      "declared_state": null,
+      "content_pass": false,
+      "issues": [
+        "遗漏项目所有者权限仅适用于具体项目；遗漏冻结评分要求的 ticket 24 小时 TTL。"
+      ],
+      "requests": 5,
+      "process_exit_code": 3,
+      "report_sha256": "848e40de6b3f76045cf5f182d0ac83d1a8bdfb591059986d14ea687c203a22d8",
+      "wire_sha256": "01d6d3218367d1588a8fbaa07f2077a9cd08ae7a97d7ddfe4e5682ff5fdd501e",
+      "source_identity_sha256": "89c96b4ead2b9837ea73b40feac0346139d9046c7c53fc07cecceb15abbd08ab",
+      "artifact": ".e2e-artifacts/rw-os-retry/runs/cross-source-export-74-openscience"
+    }
+  ]
+}

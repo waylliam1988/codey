@@ -98,6 +98,28 @@ def test_failed_investigation_can_publish_gap_without_fabricated_source(tmp_path
         store.close()
 
 
+def test_work_view_retains_bounded_failed_and_repeated_investigation_receipts(tmp_path):
+    from codey.research.answer_context import investigation_history
+
+    store, _, session, _ = setup(tmp_path)
+    try:
+        for index in range(12):
+            session._memory_results[f"search-{index}"] = ToolResult(
+                ToolCall("web_search", {"query": "missing mechanism"}), "No new source found", ok=True)
+        session._memory_results["failed-read"] = ToolResult(
+            ToolCall("open_url", {"url": URL}), "Read timed out", ok=False)
+        history = investigation_history(session)
+        assert len(history) == 8 and history[0]["result_ref"] == "search-5"
+        assert history[-2]["identical_observations"] == 12
+        assert history[-1]["ok"] is False and history[-1]["error"] == "Read timed out"
+        # This observation cannot create evidence or claim that the topic is absent.
+        scope = answer_scope(session)
+        assert not scope.aliases and len(scope.attempt_refs) == 13
+        assert all("evidence" not in row and "conclusion" not in row for row in history)
+    finally:
+        store.close()
+
+
 @pytest.mark.parametrize("markdown", ["Only a code example: `[e1]`.", "Only a fenced example:\n```text\n[e1]\n```"])
 def test_code_examples_do_not_count_as_adopted_evidence(markdown):
     scope = AnswerScope("a" * 64, (("e1", "p" + "b" * 12),), ("read",))

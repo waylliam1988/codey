@@ -55,15 +55,17 @@ def test_render_opened_pdf_source_keeps_page_metadata_and_more_hint() -> None:
 
 
 def test_truncated_html_exposes_bounded_section_offsets_inside_untrusted_data():
-    text = "中文🙂 introduction.\n\n" + "\n".join(f"## {i}. Section {i}\nActual finding {i}." for i in range(20))
+    text = "中文🙂 introduction.\n\n" + "\n".join(f"## {i}. Section {i}\nActual finding {i}." for i in range(80))
     document = SourceDocument.html(requested_url="https://example.test/paper", final_url="https://example.test/paper",
                                    title="Paper", text=text)
     rendered = render_opened_source(document, text[:10], more_offset=10)
     assert f"offset={text.index('## 0.')}: 0. Section 0" in rendered
     assert "15. Section 15" in rendered and "16. Section 16" not in rendered
+    assert f"offset={text.index('## 79.')}: 79. Section 79" in rendered
+    assert rendered.count("offset=") == 33  # 32 headings and the ordinary continuation locator.
     assert "Actual finding 0" not in rendered
     assert rendered.index("Source section locators") < rendered.index(UNTRUSTED_SOURCE_END)
-    assert "Section labels are locators, not evidence" in rendered
+    assert "Section labels are locators, not evidence" in rendered and "may omit middle sections" in rendered
     assert "Source section locators" not in render_opened_source(document, text)
 
 

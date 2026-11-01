@@ -46,8 +46,8 @@ def render_opened_source(
     if more_offset is not None:
         lines.extend(("", f"[more text available: open with offset={max(0, more_offset)}]"))
         if outline:
-            lines.append("Section labels are locators, not evidence. Use open_url with the section offset "
-                         "or source_search to read its actual findings before quoting them.")
+            lines.append("Section labels are locators, not evidence. This bounded outline may omit middle sections. "
+                         "Use open_url with the section offset or source_search to read actual findings before quoting them.")
     return "\n".join(lines)
 
 
@@ -65,9 +65,9 @@ def section_locators(text: str, *, content_kind: str = "html") -> list[dict[str,
     rows = []
     for match in re.finditer(r"(?m)^[ \t]{0,3}#{1,6}[ \t]+([^\n]+)", text):
         rows.append({"offset": match.start(), "label": match.group(1).strip()[:120]})
-        if len(rows) == 16:
-            break
-    return rows
+    # Keep a bounded outline without systematically hiding every late chapter.
+    # This selects navigation labels only, never evidence or supported claims.
+    return rows if len(rows) <= 32 else [*rows[:16], *rows[-16:]]
 
 
 def _metadata_lines(document: SourceDocument) -> list[str]:
