@@ -103,7 +103,7 @@ def test_new_entry_one_object_array_and_old_frozen_plan_remains_legacy(tmp_path,
         store.close()
 
 
-def run_compact(root, *, native=False, resume=False, boundary=""):
+def run_compact(root, *, native=False, resume=False, boundary="", task=TASK, reuse_answer=False):
     def factory(provider):
         original = provider.send
 
@@ -116,12 +116,13 @@ def run_compact(root, *, native=False, resume=False, boundary=""):
                 row = {"tool": "research_plan", "args": {}}
             elif turn == 2:
                 row = {"tool": "open_url", "args": {"question_ref": "q1", "url": URL}}
-            elif turn == 3:
+            elif turn == 3 or turn == 4 and reuse_answer:
                 from codey.research.passages import passage_ref
 
                 text = "Readers and a writer may run concurrently. Only one writer at a time."
                 row = {"tool": "submit_research_answer", "args": {"state": "answered", "finding": {
-                    "claim": "根据当前材料，同一时刻只有一个写者。",
+                    "claim": ("根据当前材料，同一时刻只有一个写者。" if turn == 3 else
+                              "根据当前材料，读者与一个写者可以并发运行。"),
                     "passage_ref": passage_ref(URL, hashlib.sha256(text.encode()).hexdigest()[:16], 0, len(text))}}}
             elif turn == 4:
                 row = {"tool": "submit_research_answer", "args": {"state": "unresolved", "findings": []}}
@@ -143,7 +144,7 @@ def run_compact(root, *, native=False, resume=False, boundary=""):
     interruption = (patch.object(ExecutionDelegate, "_execute_research_write", interrupted_write)
                     if boundary == "inline_written_before_receipt" else nullcontext())
     with interruption:
-        return _run(root, native=native, resume=resume, boundary=boundary, task=TASK, compact_planning=True,
+        return _run(root, native=native, resume=resume, boundary=boundary, task=task, compact_planning=True,
                     provider_factory=factory, boundary_turn=3 if boundary in {
                         "provider_request_ready", "provider_response_ready", "tool_effect_pending"} else 4)
 

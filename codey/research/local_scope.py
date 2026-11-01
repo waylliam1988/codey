@@ -21,6 +21,32 @@ def digest(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode()).hexdigest()
 
 
+SHARED_READ_CHAR_BUDGET = 12000
+
+
+def projected_passages(windows: list[tuple[str, list[str]]], lengths: dict[str, int], question: str, *, reuse: bool) -> tuple[str, ...]:
+    """Prefer current reads, then recent whole prior windows within a budget.
+
+    Only actual read descriptors participate. No fetched-but-unshown body is
+    promoted to evidence. A window is either retained whole or left recoverable;
+    exact repeated references consume no additional presentation budget.
+    """
+    current = [refs for owner, refs in windows if owner == question][-3:]
+    selected = list(dict.fromkeys(ref for refs in current for ref in refs))
+    if not reuse:
+        return tuple(selected)
+    size = sum(lengths.get(ref, SHARED_READ_CHAR_BUDGET + 1) for ref in selected)
+    seen = set(selected)
+    for _owner, refs in reversed(windows):
+        extra = list(dict.fromkeys(ref for ref in refs if ref not in seen))
+        cost = sum(lengths.get(ref, SHARED_READ_CHAR_BUDGET + 1) for ref in extra)
+        if size + cost <= SHARED_READ_CHAR_BUDGET:
+            selected.extend(extra)
+            seen.update(extra)
+            size += cost
+    return tuple(selected)
+
+
 def question_details(raw: Any, questions: tuple[str, ...], task: str) -> list[dict[str, Any]]:
     """Assign requirements once within the original plan, without inferring meaning."""
     if not isinstance(raw, list) or len(raw) != len(questions):
@@ -220,6 +246,7 @@ def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None
     if unit is None:
         return None
     windows: list[tuple[str, list[str]]] = []
+    lengths: dict[str, int] = {}
     bindings: dict[str, Any] = {}
     observed_at: dict[str, int] = {}
     unit_start = -1
@@ -230,6 +257,9 @@ def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None
         if result.call.name == "submit_research_answer":
             unit_start = index
         refs = [row["ref"] for row in result.canonical.get("read_passages", [])]
+        for row in result.canonical.get("read_passages", []):
+            if type(row.get("start")) is int and type(row.get("end")) is int and row["end"] > row["start"]:
+                lengths[row["ref"]] = row["end"] - row["start"]
         if refs:
             windows.append((result.call.args.get("question_ref", ""), refs))
         if result.call.name == "read_tool_result":
@@ -244,8 +274,7 @@ def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None
             if result.call.name == "knowledge_read" and result.call.args.get("id") in {ref, binding["object_id"], binding["note_id"]}:
                 observed_at[ref] = index
             bindings[ref] = binding
-    active_windows = [refs for question, refs in windows if question == unit["question_ref"]][-3:]
-    passages = list(dict.fromkeys(ref for refs in active_windows for ref in refs))
+    passages = projected_passages(windows, lengths, unit["question_ref"], reuse=plan.get("schema_version") == 2)
     adopted = {row["ref"] for row in answers.get(unit["unit_ref"], {}).get("findings", [])} if replaces else set()
     eligible = [ref for ref, row in bindings.items()
                 if row["question_ref"] == unit["question_ref"] and observed_at[ref] > unit_start]
