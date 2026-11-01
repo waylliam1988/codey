@@ -24,6 +24,15 @@ def test_rubric_covers_all_five_minimal_and_two_composite_cases():
                for case, row in rubric["cases"].items())
 
 
+def test_candidate_refresh_probe_rereads_the_oldest_of_six_scripted_candidates():
+    from tests.manual.research_evidence_local import candidate_refresh_calls
+
+    calls = candidate_refresh_calls("p_frozen")
+    assert [call.name for call in calls] == ["save_finding"] * 6 + ["knowledge_read"]
+    assert all(call.args["question_ref"] == "q1" for call in calls)
+    assert calls[-1].args["id"] == "f1"
+
+
 
 def test_factorial_matrix_holds_completion_sampling_and_candidate_order_constant():
     from tests.manual.research_local_matrix import matrix

@@ -61,6 +61,18 @@ RELATION_TARGETS = {
 }
 
 
+def candidate_refresh_calls(passage):
+    """Scripted setup for the old-finding reread boundary, not model work."""
+    from codey.runtime.core.models import ToolCall
+
+    claims = ["由于只有一个 WAL 文件，因此同一时刻只能有一个写者。",
+        "写者将新内容追加到 WAL 文件末尾。", "检查点将 WAL 文件中的内容转移到原数据库文件。",
+        "检查点遇到越过当前读者 end mark 的页面时必须停止。",
+        "检查点进度记录在 wal-index 中。", "后续检查点调用可以从记录的进度继续转移数据。"]
+    return [*[ToolCall("save_finding", {"question_ref": "q1", "passage_ref": passage, "claim": claim})
+              for claim in claims], ToolCall("knowledge_read", {"question_ref": "q1", "id": "f1"})]
+
+
 def fixture_windows(text, case, layer, order_seed):
     """Candidate order is independent of the model sampling seed."""
     selectors = list(INPUTS[layer][case])
@@ -96,9 +108,13 @@ def main():
     parser.add_argument("--split", action="store_true")
     parser.add_argument("--full-history", action="store_true",
                         help="Experiment only: retain full request history with the same local completion contract")
+    parser.add_argument("--candidate-refresh-probe", action="store_true",
+                        help="Script six candidate findings then reread f1 before real model selection")
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument("--provider-timeout", type=float, default=120)
     args = parser.parse_args()
+    if args.candidate_refresh_probe and (args.case != "writer_limit" or args.layer != "given" or args.split):
+        parser.error("candidate refresh probe requires unsplit writer_limit with given evidence")
     directory = args.directory.resolve()
     directory.mkdir(parents=True, exist_ok=False)
     shutil.copyfile(args.source_file, directory / "sources.json")
@@ -111,6 +127,7 @@ def main():
                 "order_seed": args.order_seed,
                 "split": args.split,
                 "full_history": args.full_history,
+                "candidate_refresh_probe": args.candidate_refresh_probe,
                 "source_sha256": source["sha256"], "windows": windows,
                 "setup_is_model_generated": False, "semantic_grading": "manual_required"}
     (directory / "fixture-control.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -136,6 +153,18 @@ def main():
             receipts.append({"origin": "fixture_setup", "tool": call.name, "args": call.args,
                              "ok": result.ok, "model_text": result.model_text, "canonical": dict(result.canonical)})
         (directory / "fixture-receipts.json").write_text(json.dumps(receipts, ensure_ascii=False, indent=2), encoding="utf-8")
+        if args.candidate_refresh_probe:
+            probe_receipts = []
+            for index, call in enumerate(candidate_refresh_calls(next(iter(tools.ledger.read_passages)))):
+                result, ok, _ = delegate._execute_research(call)
+                if not ok:
+                    raise RuntimeError("candidate refresh setup failed: " + result.model_text)
+                project_result_observation(session, call, result, ok=ok, research_ledger=tools.ledger)
+                session._memory_results[f"candidate-refresh-{index}"] = result
+                probe_receipts.append({"origin": "scripted_probe_setup", "tool": call.name, "args": call.args,
+                                       "ok": ok, "canonical": dict(result.canonical)})
+            (directory / "candidate-refresh-setup.json").write_text(
+                json.dumps(probe_receipts, ensure_ascii=False, indent=2), encoding="utf-8")
         session.model_tool_names = ("save_finding", "submit_research_answer", "knowledge_read", "read_tool_result")
         return original(history, session, request, invocation=invocation)
 

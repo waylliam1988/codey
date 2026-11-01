@@ -324,6 +324,57 @@ def test_previous_target_findings_require_explicit_read_and_repair_retains_selec
         store.close()
 
 
+@pytest.mark.usefixtures("public_source_dns")
+@pytest.mark.parametrize("identity_kind", ["ref", "object_id", "note_id"])
+@pytest.mark.parametrize("native", [False, True])
+def test_reread_old_finding_displaces_recent_candidate_and_survives_request_restore(tmp_path, identity_kind, native):
+    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+    from codey.operations.task_execution import ExecutionDelegate
+    from codey.policies.task_policy import TaskPolicy
+    from codey.protocols.text_turn import decode_text_turn
+    from tests.test_research_findings import execute
+
+    store, tools, session, delegate = local_setup(tmp_path)
+    session.policy = TaskPolicy(session.policy.grants, strict_research=True)
+    try:
+        session._memory_results["read"] = execute(delegate, tools, session, "open_url", {"url": URL})
+        passage = next(iter(tools.ledger.read_passages))
+        for number in range(6):
+            saved = execute(delegate, tools, session, "save_finding", {
+                "claim": f"Only one writer can write at a time; variant {number}.", "passage_ref": passage})
+            assert saved.ok, saved.model_text
+            session._memory_results[f"save-{number}"] = saved
+        assert current_scope(session).finding_refs == ("f3", "f4", "f5", "f6")
+        binding = tools.ledger.references["f1"]
+        identity = "f1" if identity_kind == "ref" else getattr(binding, identity_kind)
+        reread = execute(delegate, tools, session, "knowledge_read", {"id": identity})
+        assert reread.ok, reread.model_text
+        session._memory_results["reread"] = reread
+        snapshot = build_turn_snapshot(session, native=native)
+        restored = restore_snapshot(snapshot_description(snapshot))
+        assert restored.research_scope == snapshot.research_scope
+        assert set(restored.research_scope.finding_refs) == {"f1", "f4", "f5", "f6"}
+        from codey.research.context_view import local_research_context
+
+        view = local_research_context(session, tools.ledger, store, restored.research_scope)
+        assert "submit_research_answer directly with its fN" in view
+        args = {"state": "answered", "findings": ["f1"]}
+        # Both protocol forms consume this same restored frozen declaration;
+        # execution must accept the same exact version, without another save.
+        proposal = normalize_turn(decode_text_turn(json.dumps({"tool": "submit_research_answer", "args": args})),
+                                  snapshot=restored)
+        assert not proposal.protocol_error
+        executor = ExecutionDelegate(session=session, research_tools=tools, research_scope=restored.research_scope)
+        result, ok, _ = executor._execute_research(proposal.calls[0])
+        assert ok, result.model_text
+        assert result.canonical["research_answer"]["findings"] == [{
+            "ref": "f1", "object_id": binding.object_id, "revision": binding.revision}]
+        assert len(tools.ledger.references) == 6
+    finally:
+        store.close()
+
+
 
 def test_scope_v1_roundtrip_keeps_original_fields_and_v2_validates_repair_issue():
     from dataclasses import replace

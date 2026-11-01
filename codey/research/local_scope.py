@@ -224,8 +224,11 @@ def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None
     active_windows = [refs for question, refs in windows if question == unit["question_ref"]][-3:]
     passages = list(dict.fromkeys(ref for refs in active_windows for ref in refs))
     adopted = {row["ref"] for row in answers.get(unit["unit_ref"], {}).get("findings", [])} if replaces else set()
-    candidates = [ref for ref, row in bindings.items()
-                  if row["question_ref"] == unit["question_ref"] and observed_at[ref] > unit_start][-4:]
+    eligible = [ref for ref, row in bindings.items()
+                if row["question_ref"] == unit["question_ref"] and observed_at[ref] > unit_start]
+    # Explicit rereads refresh eligibility, not the binding dictionary's first
+    # insertion order. Keep the most recently observed versions selectable.
+    candidates = sorted(eligible, key=observed_at.__getitem__)[-4:]
     versions = tuple((ref, row["object_id"], row["revision"]) for ref, row in bindings.items()
                      if ref in adopted or ref in candidates)
     return ResearchScope(2, digest(plan), unit["question_ref"], unit["unit_ref"], unit["question"],
