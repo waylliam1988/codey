@@ -51,6 +51,19 @@ def test_factorial_matrix_holds_completion_sampling_and_candidate_order_constant
         assert all(row["split"] == split and row["full_history"] == full_history for row in cells)
 
 
+def test_narrow_relations_keep_original_question_evidence_and_complete_or_list():
+    from tests.manual.research_evidence_local import QUESTIONS, RELATION_TARGETS
+    from tests.manual.research_local_matrix import matrix
+
+    runs = matrix("relations")
+    assert len(runs) == 6
+    assert {row["case"] for row in runs} == {"checkpoint_stop", "checkpoint_resume"}
+    assert all(row["split"] and not row["full_history"] and row["layer"] == "given" for row in runs)
+    for case in {row["case"] for row in runs}:
+        assert len(RELATION_TARGETS[case]) == 2 and case in QUESTIONS and case in INPUTS["given"]
+    assert "readonly_conditions" not in RELATION_TARGETS
+
+
 
 def test_wire_statistics_use_admitted_payload_and_report_missing_usage(tmp_path):
     from tests.manual.research_local_matrix import wire_stats

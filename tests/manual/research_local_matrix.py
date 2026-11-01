@@ -26,9 +26,12 @@ def pending_review():
 
 
 def matrix(suite: str) -> list[dict]:
-    cases = ("versions", "checkpoint_constraints") if suite == "factorial" else (
-        "writer_limit", "readonly_conditions", "checkpoint_stop", "checkpoint_resume", "coexistence_only")
+    cases = ("checkpoint_stop", "checkpoint_resume") if suite == "relations" else (
+        ("versions", "checkpoint_constraints") if suite == "factorial" else (
+        "writer_limit", "readonly_conditions", "checkpoint_stop", "checkpoint_resume", "coexistence_only"))
     configurations = (("A", False, True), ("B", True, True), ("C", False, False), ("D", True, False)) if suite == "factorial" else (("local", False, False),)
+    if suite == "relations":
+        configurations = (("split", True, False),)
     return [{"case": case, "seed": seed, "order_seed": 0, "configuration": label,
              "split": split, "full_history": full_history,
              "layer": "candidates" if suite == "candidates" else "given"}
@@ -108,7 +111,7 @@ def main():
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--source-file", type=Path, required=True)
     parser.add_argument("--clock-file", type=Path, default=DEFAULT_CLOCK_FILE)
-    parser.add_argument("--suite", choices=("minimal", "factorial", "candidates"), required=True)
+    parser.add_argument("--suite", choices=("minimal", "factorial", "candidates", "relations"), required=True)
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=False)
     clock = fixture_clock(args.clock_file)

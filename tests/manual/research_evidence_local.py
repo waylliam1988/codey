@@ -76,6 +76,10 @@ INPUTS = {
 RELATION_TARGETS = {
     "versions": ["SQLite WAL 从哪个版本引入？", "SQLite 何时支持只读打开 WAL 数据库？保留支持版本、全部三个替代条件、或的关系和例外。"],
     "checkpoint_constraints": ["checkpoint 与读事务并行时何时必须停止，为什么？", "checkpoint 暂停后如何记录进度并在之后继续转移？"],
+    "checkpoint_stop": ["checkpoint 与读事务并行时，遇到什么页面边界必须停止？只回答停止边界。",
+                        "checkpoint 为什么必须在该边界停止？只回答原因，保留被保护的对象。"],
+    "checkpoint_resume": ["checkpoint 将转移进度记录在哪里？只回答记录位置。",
+                          "后续 checkpoint 调用如何使用已记录的进度继续转移数据？只回答继续机制。"],
 }
 
 
@@ -132,6 +136,8 @@ def main():
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument("--provider-timeout", type=float, default=120)
     args = parser.parse_args()
+    if args.split and args.case not in RELATION_TARGETS:
+        parser.error("this case has no controlled relationship split; complete alternative lists stay together")
     if args.candidate_refresh_probe and (args.case != "writer_limit" or args.layer != "given" or args.split):
         parser.error("candidate refresh probe requires unsplit writer_limit with given evidence")
     directory = args.directory.resolve()
