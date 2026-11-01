@@ -16,6 +16,7 @@ from codey.research.report_proposal import (
     ResearchReportProposal,
     bind_gap_investigations,
     bind_selected_answers,
+    bind_unresolved_targets,
     parse_report_proposal,
 )
 from codey.reviews.report_sections import section_title
@@ -177,7 +178,8 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
 
 def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: Any, *,
                            project: str = "", session_id: str = "", task: str = "",
-                           selection_receipts: tuple[str, ...] = ()) -> FindingReport:
+                           selection_receipts: tuple[str, ...] = (),
+                           unresolved_targets: dict[str, tuple[str, ...]] | None = None) -> FindingReport:
     proposal = parse_report_proposal(args, investigations=ledger.investigations)
     validate_question_coverage(list(proposal.coverage), ledger)
     proposal = bind_gap_investigations(proposal, ledger.investigations)
@@ -201,6 +203,7 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
             if item.version.value.kind == "claim":
                 validate_version_literals(item.version.value.content, [row.evidence.value.content for row in item.evidence])
     proposal = bind_selected_answers(proposal, resolved)
+    proposal = bind_unresolved_targets(proposal, unresolved_targets or {})
     if task and proposal.answers_only:
         from codey.research.task_requirements import conclusion_characters, validate_report_requirements
 

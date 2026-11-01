@@ -28,14 +28,22 @@ def question_details(raw: Any, questions: tuple[str, ...], task: str) -> list[di
     observed: set[str] = set()
     result = []
     for row in raw:
-        if not isinstance(row, dict) or set(row) != {"task_refs"}:
-            raise ValueError("question_details records require task_refs only")
+        if not isinstance(row, dict) or set(row) not in ({"task_refs"}, {"task_refs", "work_units"}):
+            raise ValueError("question_details records require task_refs and optional work_units")
         refs = row["task_refs"]
         if (not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs)
                 or len(set(refs)) != len(refs) or not set(refs) <= original):
             raise ValueError("question_details.task_refs must select original rN requirements")
         observed.update(refs)
-        result.append({"task_refs": list(refs)})
+        detail = {"task_refs": list(refs)}
+        if "work_units" in row:
+            units = row["work_units"]
+            if (not isinstance(units, list) or not 1 <= len(units) <= 4
+                    or any(not isinstance(text, str) or not 1 <= len(text.strip()) <= 800 for text in units)
+                    or len(set(units)) != len(units)):
+                raise ValueError("work_units requires 1..4 distinct complete relationship targets, up to 800 characters each")
+            detail["work_units"] = list(units)
+        result.append(detail)
     if not expected <= observed:
         raise ValueError("question_details must assign every substantive original requirement; missing: "
                          + ", ".join(sorted(expected - observed)))
@@ -54,9 +62,10 @@ def registered_plan(session: Any) -> dict[str, Any] | None:
 
 
 def plan_units(plan: dict[str, Any]) -> list[dict[str, Any]]:
-    return [{"question_ref": f"q{index}", "unit_ref": f"q{index}.u1", "target": text,
+    return [{"question_ref": f"q{index}", "unit_ref": f"q{index}.u{unit_index}", "target": target,
              "question": text, "task_refs": detail["task_refs"]}
-            for index, (text, detail) in enumerate(zip(plan["questions"], plan["question_details"], strict=True), 1)]
+            for index, (text, detail) in enumerate(zip(plan["questions"], plan["question_details"], strict=True), 1)
+            for unit_index, target in enumerate(detail.get("work_units", [text]), 1)]
 
 
 def effective_answers(session: Any, plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -240,7 +249,7 @@ def assembled_report(session: Any, ledger: Any) -> tuple[dict[str, Any], tuple[s
     if plan is None:
         raise ValueError("no local research plan")
     answers = effective_answers(session, plan)
-    rows = []
+    rows: dict[str, dict[str, Any]] = {}
     origins = []
     for unit in plan_units(plan):
         answer = answers.get(unit["unit_ref"])
@@ -255,10 +264,28 @@ def assembled_report(session: Any, ledger: Any) -> tuple[dict[str, Any], tuple[s
         attempts = [ref for ref, receipt in ledger.investigations.items() if receipt.get("question_ref") == unit["question_ref"]]
         state = {"answered": "evidence_found", "partial": "partial", "unresolved": (
             "unanswered_after_search" if attempts else "not_investigated")}[answer["state"]]
-        rows.append({"question_ref": unit["question_ref"], "state": state, "findings": refs,
-                     "investigations": attempts, "task_refs": unit["task_refs"]})
+        previous = rows.get(unit["question_ref"])
+        if previous is None:
+            rows[unit["question_ref"]] = {"question_ref": unit["question_ref"], "state": state, "findings": refs,
+                                          "investigations": attempts, "task_refs": unit["task_refs"]}
+        else:
+            selected = list(dict.fromkeys([*previous["findings"], *refs]))
+            combined = "evidence_found" if previous["state"] == state == "evidence_found" else "partial" if selected else state
+            rows[unit["question_ref"]] = {**previous, "state": combined, "findings": selected}
         origins.append(answer["submission_id"])
-    return {"report_sections": {"coverage": rows}}, tuple(origins)
+    return {"report_sections": {"coverage": list(rows.values())}}, tuple(origins)
+
+
+def unresolved_targets(session: Any) -> dict[str, tuple[str, ...]]:
+    plan = registered_plan(session)
+    if plan is None:
+        return {}
+    answers = effective_answers(session, plan)
+    gaps: dict[str, list[str]] = {}
+    for unit in plan_units(plan):
+        if answers.get(unit["unit_ref"], {}).get("state") != "answered":
+            gaps.setdefault(unit["question_ref"], []).append(unit["target"])
+    return {ref: tuple(targets) for ref, targets in gaps.items()}
 
 
 def repair_scope(session: Any, ledger: Any, store: Any, issue: dict[str, Any] | None) -> ResearchScope | None:

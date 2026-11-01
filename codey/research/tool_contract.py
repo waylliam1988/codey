@@ -65,7 +65,10 @@ TOOL_CONTRACTS = {
         name="research_plan", input_schema=object_schema({
             'questions': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 8},
             'question_details': {'type': 'array', 'minItems': 1, 'maxItems': 8,
-                'items': object_schema({'task_refs': array_schema({'type': 'string'})}, 'task_refs'),
+                'items': object_schema({'task_refs': array_schema({'type': 'string'}),
+                    'work_units': {'type': 'array', 'minItems': 1, 'maxItems': 4,
+                                   'items': {'type': 'string', 'minLength': 1, 'maxLength': 800},
+                                   'description': 'Optional ordered relationship targets under the SAME parent question. Keep each full OR list and its exceptions together.'}}, 'task_refs'),
                 'description': 'One record per question in order. Assign original coverage rN requirements once to enable local submissions.'},
         }, 'questions'),
         example='{"tool":"research_plan","args":{"questions":["What is the answer and its evidence scope?"]}}',

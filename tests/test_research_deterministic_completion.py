@@ -17,7 +17,8 @@ UNSUPPORTED_GAP_ANSWER = "We measured WAL on this machine: it is always 10x fast
 
 def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task=TASK,
          provider_factory=None, planner_enabled=False, required_checks=(), omit_requirement=False,
-         unsupported_claim=False, bad_reference=False, gap_answer=None, gap_investigation=False, boundary_turn=None):
+         unsupported_claim=False, bad_reference=False, gap_answer=None, gap_investigation=False, boundary_turn=None,
+         source_text=None):
     import hashlib
     import os
     from unittest.mock import patch
@@ -54,7 +55,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
         with (root / "calls.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row) + "\n")
 
-    text = "Readers and a writer may run concurrently. Only one writer at a time."
+    text = source_text or "Readers and a writer may run concurrently. Only one writer at a time."
     claim = "Multiple writers commit concurrently." if unsupported_claim else "Only one writer can write at a time."
 
     class Search:

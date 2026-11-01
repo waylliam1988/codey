@@ -55,6 +55,11 @@ INPUTS = {
     },
 }
 
+RELATION_TARGETS = {
+    "versions": ["SQLite WAL 从哪个版本引入？", "SQLite 何时支持只读打开 WAL 数据库？保留支持版本、全部三个替代条件、或的关系和例外。"],
+    "checkpoint_constraints": ["checkpoint 与读事务并行时何时必须停止，为什么？", "checkpoint 暂停后如何记录进度并在之后继续转移？"],
+}
+
 
 def fixture_windows(text, case, layer, order_seed):
     """Candidate order is independent of the model sampling seed."""
@@ -88,6 +93,7 @@ def main():
     parser.add_argument("--layer", choices=INPUTS, required=True)
     parser.add_argument("--seed", type=int, default=74)
     parser.add_argument("--order-seed", type=int, default=0)
+    parser.add_argument("--split", action="store_true")
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument("--provider-timeout", type=float, default=120)
     args = parser.parse_args()
@@ -101,6 +107,7 @@ def main():
     windows = fixture_windows(source["text"], args.case, args.layer, args.order_seed)
     manifest = {"layer": args.layer, "case": args.case, "seed": args.seed,
                 "order_seed": args.order_seed,
+                "split": args.split,
                 "source_sha256": source["sha256"], "windows": windows,
                 "setup_is_model_generated": False, "semantic_grading": "manual_required"}
     (directory / "fixture-control.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -111,8 +118,10 @@ def main():
         delegate = ExecutionDelegate(session=session, research_tools=tools)
         context = []
         receipts = []
-        calls = [ToolCall("research_plan", {"questions": [QUESTIONS[args.case]], "question_details": [
-            {"task_refs": [row["task_ref"] for row in coverage_requirements(session.task_text)]}]}), *[
+        detail = {"task_refs": [row["task_ref"] for row in coverage_requirements(session.task_text)]}
+        if args.split:
+            detail["work_units"] = RELATION_TARGETS[args.case]
+        calls = [ToolCall("research_plan", {"questions": [QUESTIONS[args.case]], "question_details": [detail]}), *[
             ToolCall("open_url", {"question_ref": "q1", "url": source["url"],
                                   "offset": row["offset"], "limit": row["limit"]}) for row in windows]]
         for index, call in enumerate(calls):
