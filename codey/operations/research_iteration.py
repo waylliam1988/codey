@@ -65,6 +65,16 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         except Exception:
             pass
         return ""
+    from codey.research.answer_report import AnswerReport
+
+    if isinstance(accepted_report, AnswerReport):
+        from codey.research.answer_archive import publication_command
+
+        if accepted_report.text != summary or publisher is None:
+            raise ValueError("whole answers require their original frozen publication effect")
+        note_id = _stable_synthesis_id(run_id if projection == "initial" else run_id + ":" + projection)
+        return publisher(publication_command(accepted_report, task=task, run_id=run_id, projection=projection,
+            note_id=note_id, session_id=session_id, project=project))
     import hashlib
 
     from codey.knowledge.archive import stable_identity
@@ -146,29 +156,37 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
     if note_id not in tools.created_ids:
         tools.created_ids.append(note_id)
     tools.synthesis_id = note_id
-    can_link = True
+    if accepted_report is None:
+        _link_synthesis(tools, note.id, note_ids, policy)
+    on_event(RunEvent.info("saved synthesis", names=note.id))
+    return note.id
+
+
+def _link_synthesis(tools: Any, note_id: str, note_ids: list[str], policy: Any) -> None:
     allows_link = getattr(policy, "allows", None)
     try:
         can_link = bool(allows_link("knowledge.link")) if callable(allows_link) else False
     except Exception:
         can_link = False
-    if can_link and accepted_report is None:
+    if can_link:
         for related_id in note_ids:
-            if related_id and related_id != note.id:
+            if related_id and related_id != note_id:
                 try:
-                    tools.store.link(note.id, related_id, "derives", changes=tools.changes)
+                    tools.store.link(note_id, related_id, "derives", changes=tools.changes)
                 except OSError:
                     break
-    on_event(RunEvent.info("saved synthesis", names=note.id))
-    return note.id
 
 
 def _publication_proof(outcome: Any, compiled: Any, history: Any, synthesis_id: str, publish: bool) -> Any:
     if compiled is None or not publish:
         return outcome.proof
+    from codey.operations.research_publication import published_answer_version
+    from codey.research.answer_report import AnswerReport
     from codey.research.report_projection import published_completion
 
-    return published_completion(outcome.proof, compiled, synthesis_id=synthesis_id, result_ref=history.state().work_ref)
+    version = published_answer_version(history, synthesis_id) if isinstance(compiled, AnswerReport) else None
+    return published_completion(outcome.proof, compiled, synthesis_id=synthesis_id, result_ref=history.state().work_ref,
+                                answer_version=version)
 
 
 def run_research_iteration(

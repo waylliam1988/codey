@@ -29,6 +29,13 @@ STRICT_RESEARCH_REQUIRED_CHECKS = (
     "research_citations",
 )
 
+# Frozen entry requirements distinguish new whole-answer tasks from historical
+# finding reports. Old policies retain their original checks on replay.
+RESEARCH_ANSWER_REQUIRED_CHECKS = (
+    "research_submission", "research_investigation_attempted", "research_citations",
+    "research_source_bindings", "research_report_sections",
+)
+
 
 def _normalize_grant(value: object) -> str:
     text = str(value or "").strip().lower()
@@ -243,7 +250,8 @@ def build_task_policy(
     denied = _denied_grants(submission)
     grants -= denied
 
-    required_checks = STRICT_RESEARCH_REQUIRED_CHECKS if strict else (("research_sources_opened",) if sources_open_required else ())
+    strict_checks = RESEARCH_ANSWER_REQUIRED_CHECKS if kind == "research" else STRICT_RESEARCH_REQUIRED_CHECKS
+    required_checks = strict_checks if strict else (("research_sources_opened",) if sources_open_required else ())
     if getattr(submission, "project_changes_required", False) is True:
         required_checks = (*required_checks, "project_changes_required")
     from codey.policies.output_requirement import declaration

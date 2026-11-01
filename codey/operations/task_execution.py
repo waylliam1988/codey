@@ -477,11 +477,17 @@ class ExecutionDelegate:
 
         try:
             if self._research_scope is not None:
+                from codey.research.answer_contract import AnswerScope, digest
+
                 scope = self._research_scope
-                actual = current_scope(self.session, repair=scope if scope.replaces else None)
-                if actual is None or (actual.plan_digest, actual.unit_ref, actual.replaces) != (scope.plan_digest, scope.unit_ref, scope.replaces):
-                    raise ValueError("research scope is stale")
-                validate_scope_call(scope, call.name, call.args)
+                if isinstance(scope, AnswerScope):
+                    if scope.task_digest != digest(self.session.task_text):
+                        raise ValueError("research scope belongs to another task")
+                else:
+                    actual = current_scope(self.session, repair=scope if scope.replaces else None)
+                    if actual is None or (actual.plan_digest, actual.unit_ref, actual.replaces) != (scope.plan_digest, scope.unit_ref, scope.replaces):
+                        raise ValueError("research scope is stale")
+                    validate_scope_call(scope, call.name, call.args)
             if call.name in QUESTION_BOUND_TOOLS:
                 question_ref(call.args, self.research_tools.ledger, required=requires_question_ref(self.session))
         except ValueError as exc:
@@ -611,7 +617,13 @@ class ExecutionDelegate:
 
     def _submit_research_answer(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
         from codey.knowledge.model import canonical_json
+        from codey.research.answer_contract import AnswerScope, submit_answer
         from codey.research.local_scope import selection_budget, submission, submission_finding
+
+        if isinstance(self._research_scope, AnswerScope):
+            declared = submit_answer(self._research_scope, call.args)
+            return ToolResult(call, "Whole answer recorded. The application will validate and publish this submission.",
+                              ok=True, canonical={"research_submission": declared}), True, None
 
         canonical: dict[str, Any] = {}
         created_finding = None

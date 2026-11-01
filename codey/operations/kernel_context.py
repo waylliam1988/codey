@@ -533,10 +533,12 @@ class KernelContext:
             # model decision that could discard a committed publication.
             self.advance(state, positions.LEAF_COMPLETION_PENDING)
             return
+        from codey.research.answer_contract import submitted_answer, whole_research
         from codey.research.local_scope import current_scope
 
         if (not self.cancelled() and len(results) == 1 and results[0].ok
-                and results[0].call.name == "submit_research_answer" and current_scope(self.session) is None):
+                and results[0].call.name == "submit_research_answer"
+                and (submitted_answer(self.session) is not None if whole_research(self.session) else current_scope(self.session) is None)):
             self.advance(state, positions.LEAF_COMPLETION_PENDING)
             return
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)

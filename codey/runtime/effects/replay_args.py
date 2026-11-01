@@ -101,7 +101,10 @@ def _validate_research_answer(args: Mapping[str, object]) -> dict[str, object]:
     state = args.get("state")
     if not isinstance(state, str) or state not in {"answered", "partial", "unresolved"}:
         raise ValueError("research answer replay requires its explicit original state")
-    if set(args) == {"state", "findings"}:
+    if set(args) == {"state", "markdown"}:
+        if not isinstance(args["markdown"], str) or not 12 <= len(args["markdown"].strip()) <= 64000:
+            raise ValueError("invalid original whole-answer declaration")
+    elif set(args) == {"state", "findings"}:
         refs = args["findings"]
         if (not isinstance(refs, list) or len(refs) > 16 or any(not isinstance(ref, str) for ref in refs)
                 or len(set(refs)) != len(refs) or bool(refs) != (state != "unresolved")):

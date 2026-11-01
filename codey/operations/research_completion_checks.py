@@ -37,6 +37,15 @@ def prepare_research_completion(session: TaskSession, text: str, context: Any) -
     store = _context_get(context, "knowledge_store")
     if ledger is None or store is None:
         raise ValueError("strict report preparation requires its research ledger and knowledge store")
+    from codey.research.answer_contract import whole_research
+
+    if whole_research(session):
+        from codey.research.answer_report import compile_answer_report
+
+        report = compile_answer_report(session, ledger, store,
+            project=str(_context_get(context, "knowledge_project") or ""),
+            session_id=str(_context_get(context, "knowledge_session_id") or ""))
+        return report.text, report
     try:
         from codey.research.local_scope import assembled_report, registered_plan, unresolved_targets
 
@@ -178,6 +187,14 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
 
 
 def _ledger_checks(session: Any, done_text: str, compiled: FindingReport | None) -> list[CompletionCheck]:
+    from codey.research.answer_report import DELIVERY_CHECKS, AnswerReport
+
+    if isinstance(compiled, AnswerReport):
+        AnswerReport.from_payload(compiled.to_payload())
+        if done_text != compiled.text:
+            return [CompletionCheck("research_report_sections", CHECK_FAIL, "answer_text_changed")]
+        return [CompletionCheck(check, CHECK_PASS, "whole_answer_delivery_not_semantic_verification")
+                for check in DELIVERY_CHECKS]
     if compiled is None or compiled.text != done_text:
         return [CompletionCheck("research_report_sections", CHECK_FAIL, "structured_report_missing")]
     # These checks confirm structure and exact evidence chains, not semantics.

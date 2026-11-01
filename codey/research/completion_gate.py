@@ -86,6 +86,11 @@ class ResearchCompletionGate:
             except (ValueError, TypeError, AttributeError, KeyError):
                 return ResearchCompletionDecision("block", blocked_reason="accepted_report_projection_invalid")
             proof = research_result.completion_proof
+            from codey.research.answer_report import AnswerReport
+
+            if (kind == "open_question" and isinstance(accepted, AnswerReport) and accepted.state != "answered"):
+                return ResearchCompletionDecision("block", blocked_reason="research_delivered_question_unresolved", proof=proof,
+                    proof_refs=(proof.proof_id, f"research:{research_result.synthesis_id}"))
             return ResearchCompletionDecision("complete", proof=proof,
                 proof_refs=(proof.proof_id, f"research:{research_result.synthesis_id}",
                             *research_external_refs(event=event)))

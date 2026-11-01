@@ -55,6 +55,10 @@ class FindingReport:
 
     @classmethod
     def from_payload(cls, raw: Any) -> FindingReport:
+        from codey.research.answer_report import REPORT_SCHEMA, AnswerReport
+
+        if isinstance(raw, dict) and raw.get("schema") == REPORT_SCHEMA:
+            return AnswerReport.from_payload(raw)
         fields = {"text", "knowledge_refs", "finding_ids", "coverage", "reference_metadata",
                   "source_versions", "paragraph_bindings", "proposal_digest", "questions", "evidence_bindings", "open_questions", "selection_receipts"}
         if not isinstance(raw, dict) or set(raw) not in (fields | {"compilation_digest"}, (fields - {"selection_receipts"}) | {"compilation_digest"}):

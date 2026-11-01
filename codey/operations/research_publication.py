@@ -139,3 +139,20 @@ def _project(tools: Any, identity: str) -> str:
     if identity not in tools.created_ids:
         tools.created_ids.append(identity)
     return str(identity)
+
+
+def published_answer_version(history: Any, synthesis_id: str) -> tuple[str, int]:
+    """Read the settled command/receipt, never a mutable knowledge head."""
+    effects = RuntimeEffectStore(durable=history.durable).load_effects(history.session_id, history.run_id)
+    for effect in reversed(effects):
+        if effect.intent.tool_name != PUBLICATION_TOOL or effect.settlement is None:
+            continue
+        envelope = _envelope(history, effect)
+        receipt = restore_result_receipt(effect, store=history.outputs,
+                                         session_id=history.session_id, run_id=history.run_id)
+        if not receipt.ok or receipt.canonical.get("synthesis_id") != synthesis_id:
+            continue
+        answers = [row["value"]["id"] for row in envelope["command"]["mutations"] if row["value"]["kind"] == "answer"]
+        if len(answers) == 1:
+            return answers[0], receipt.canonical["versions"][answers[0]]
+    raise ResearchContinuationError("publication has no settled exact answer version")

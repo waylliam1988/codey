@@ -126,6 +126,10 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         repair = repair_scope(context.session, ledger, getattr(context.execution.research_tools, "store", None), domain_issue) if local else None
         progress = KernelProgress(context.transport.stagnant_turns, snapshot=state.counters.progress)
         proposal = assembled_report(context.session, ledger)[0] if local else context.session.last_done_args
+        from codey.research.answer_contract import submitted_answer, whole_research
+
+        if whole_research(context.session):
+            proposal = submitted_answer(context.session) or {}
         progress.reject_completion(proposal, followup, context.session,
             failure_key=(domain_issue["code"] + ":" + domain_issue["path"]) if local and domain_issue else "")
         counters = replace(state.counters, progress=progress.snapshot())

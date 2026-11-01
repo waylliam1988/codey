@@ -33,6 +33,12 @@ def task_working_context(session: "TaskSession", research_ledger: "ResearchLedge
     from codey.research.local_scope import current_scope
 
     scope = research_scope or (current_scope(session) if session.policy.strict_research else None)
+    from codey.research.answer_contract import AnswerScope
+
+    if isinstance(scope, AnswerScope):
+        from codey.research.answer_context import answer_context
+
+        return answer_context(session, research_ledger, scope)
     if scope is not None:
         from codey.research.context_view import local_research_context
 

@@ -87,6 +87,7 @@ def kernel_prompt_for_session(
     done_spec: ToolSpec | None = None,
     local_submission: bool = False,
     research_planning: bool = False,
+    whole_submission: bool = False,
 ) -> str:
     task_text = str(user_task or getattr(session, "task_text", "") or "").strip()
     handoff = str(getattr(session, "handoff", "") or "").strip()
@@ -108,6 +109,11 @@ def kernel_prompt_for_session(
         parts.append(task_guidance)
     if not request_scoped_contract:
         parts.extend(_tool_contract_parts(visible_names, contract_text, native=native))
+    if whole_submission:
+        parts.append(("Use native tool calls. " + _NATIVE_ARGUMENTS_RULE) if native else _TEXT_ACTION_RULE)
+        parts.append("Submit the whole answer with submit_research_answer. After its receipt, the application checks "
+                     "and publishes the same answer; no further model rewrite is needed.")
+        return "\n\n".join(parts)
     if research_planning:
         parts.append(("Use native tool calls. " + _NATIVE_ARGUMENTS_RULE) if native else _TEXT_ACTION_RULE)
         parts.append("Register the complete questions with research_plan; {} accepts the original task questions.")
@@ -193,7 +199,7 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
                 "do not emit bare words such as state:reported. Use booleans only for boolean parameters."
             )
         if snapshot.research_scope is not None:
-            instruction += " End this target with submit_research_answer using the frozen selection contract."
+            instruction += " Submit the answer with submit_research_answer using the frozen contract."
         elif "research_plan" in snapshot.tool_names and "done" not in snapshot.tool_names:
             entry = next(item for item in snapshot.model_specs if item.name == "research_plan")
             instruction += " " + entry.description

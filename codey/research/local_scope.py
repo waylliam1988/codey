@@ -180,6 +180,10 @@ class ResearchScope:
 
     @classmethod
     def from_payload(cls, raw: Any) -> ResearchScope:
+        from codey.research.answer_contract import ANSWER_SCOPE_VERSION, AnswerScope
+
+        if isinstance(raw, dict) and raw.get("schema_version") == ANSWER_SCOPE_VERSION:
+            return AnswerScope.from_payload(raw)
         if not isinstance(raw, dict) or type(raw.get("schema_version")) is not int or raw["schema_version"] not in (1, 2, 3):
             raise ValueError("invalid frozen research scope")
         expected = set(cls.__dataclass_fields__) - ({"repair_issue_json"} if raw["schema_version"] == 1 else set())
@@ -225,6 +229,10 @@ class ResearchScope:
 
 
 def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None = None) -> ResearchScope | None:
+    from codey.research.answer_contract import answer_scope, whole_research
+
+    if whole_research(session):
+        return answer_scope(session)
     plan = registered_plan(session)
     if plan is None:
         return None

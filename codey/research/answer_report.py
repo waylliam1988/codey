@@ -7,11 +7,11 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference, canonical_json
+from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS
 from codey.research.answer_contract import ANSWER_STATES, citation_occurrences, digest, validate_submission
 
 REPORT_SCHEMA = "research_answer_v1"
-DELIVERY_CHECKS = ("research_submission", "research_investigation_attempted", "research_citations",
-                   "research_source_bindings", "research_report_sections")
+DELIVERY_CHECKS = RESEARCH_ANSWER_REQUIRED_CHECKS
 
 
 @dataclass(frozen=True)
@@ -100,6 +100,9 @@ def compile_answer_report(session: Any, ledger: Any, store: Any, *, project: str
         raise ValueError("whole research answer has not been submitted")
     receipt, result = found[-1]
     submission = validate_submission(result.canonical["research_submission"], session.task_text)
+    if (result.call.args.get("markdown", "").strip() != submission["markdown"]
+            or result.call.args.get("state") != submission["state"]):
+        raise ValueError("settled submission differs from the original tool arguments")
     scope = submission["scope"]
     # A receipt may never invent investigations just by carrying a matching digest.
     from codey.research.questions import INVESTIGATION_TOOLS

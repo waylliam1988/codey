@@ -16,6 +16,10 @@ QUESTION_BOUND_TOOLS = INVESTIGATION_TOOLS | {"save_finding", "save_inference"}
 
 
 def requires_question_ref(session: Any) -> bool:
+    from codey.research.answer_contract import whole_research
+
+    if whole_research(session):
+        return False
     return bool(getattr(getattr(session, "policy", None), "strict_research", False)
                 or getattr(session, "research_acquisition_limits", None) is not None)
 

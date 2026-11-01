@@ -86,6 +86,12 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
         denied.add("submit_research_answer")
         base: tuple[str, ...] | None = None
     else:
+        from codey.research.answer_contract import ANSWER_TOOLS, whole_research
+
+        if whole_research(session):
+            return tuple(name for name in ANSWER_TOOLS if name not in denied and (
+                name not in {"open_result", "reopen_source", "open_hit"} or getattr(session,
+                {"open_result": "search_results", "reopen_source": "source_ids", "open_hit": "hit_targets"}[name], None)))
         # Research exposes one simple acquisition write, keeping complex
         # knowledge revision tools available to ordinary/hybrid tasks.
         denied.update({"knowledge_write", "knowledge_commit", "knowledge_link"})
@@ -208,13 +214,16 @@ def build_turn_snapshot(session: Any, *, native: bool = False, research_repair: 
     # Fail closed: a snapshot computation failure never encodes as None
     # (unlimited). Callers must treat the exception as a per-turn config
     # error and stop.
+    from codey.research.answer_contract import AnswerScope, answer_spec, whole_research
+
+    whole = whole_research(session)
     allowed = controller_allowed_for_session(session)
-    if session.policy.strict_research and session.task_kind == "research" and not session.research_questions:
+    if not whole and session.policy.strict_research and session.task_kind == "research" and not session.research_questions:
         allowed = tuple(name for name in (allowed or ()) if name != "done")
     from codey.research.local_scope import current_scope, registered_plan
 
     scope = current_scope(session, repair=research_repair) if session.policy.strict_research and session.task_kind == "research" else None
-    if registered_plan(session) is not None and session.policy.strict_research and session.task_kind == "research":
+    if not whole and registered_plan(session) is not None and session.policy.strict_research and session.task_kind == "research":
         domain_tools = {"knowledge_search", "knowledge_read", "web_search", "open_url", "open_result", "reopen_source",
                         "open_hit", "source_search", "save_finding", "save_inference", "submit_research_answer",
                         "read_tool_result", "ask_user"} if scope else set()
@@ -236,7 +245,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False, research_repair: 
         raise ValueError("model exposure must narrow the authorized tool inventory")
     names = tuple(name for name in authorized if exposure is None or name in exposure)
     frozen = _frozen_specs_for_names(authorized)
-    if session.policy.strict_research and session.task_kind == "research" and not session.research_questions:
+    if not whole and session.policy.strict_research and session.task_kind == "research" and not session.research_questions:
         from codey.research.plan_contract import compact_plan_spec
 
         frozen = tuple(compact_plan_spec(spec, session.task_text) if spec.name == "research_plan" else spec for spec in frozen)
@@ -258,7 +267,9 @@ def build_turn_snapshot(session: Any, *, native: bool = False, research_repair: 
 
     if requires_question_ref(session):
         frozen = tuple(question_bound_spec(spec, required=True) for spec in frozen)
-    if scope is not None:
+    if isinstance(scope, AnswerScope):
+        frozen = tuple(answer_spec(spec, scope) for spec in frozen)
+    elif scope is not None:
         from codey.research.local_scope import scoped_spec
 
         frozen = tuple(scoped_spec(spec, scope) for spec in frozen)
@@ -743,7 +754,7 @@ def normalize_turn(
     items = _response_objects(reply)
     if isinstance(items, ToolPlan):
         if snapshot is not None and snapshot.research_scope is not None and items.control is not None and items.control.kind == "done":
-            return _invalid_plan("End the current target with submit_research_answer; global done is not allowed in this scope")
+            return _invalid_plan("Submit the answer with submit_research_answer under the frozen contract; global done is not allowed")
         done_spec = frozen.get("done") if frozen is not None else None
         if (items.control is not None and items.control.kind == "done" and not items.protocol_error
                 and done_spec is not None and "report_sections" in done_spec.required):

@@ -67,3 +67,35 @@ def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, pro
         raise ValueError("selected evidence exceeds the original publication transaction budget")
     return ([{"value": row.value.to_dict(), "expected_revision": row.expected_revision} for row in mutations.values()],
             list(sources.values()), bindings)
+
+
+def publication_command(report: Any, *, task: str, run_id: str, projection: str,
+                        note_id: str, session_id: str, project: str) -> dict[str, Any]:
+    """The original publication command owns all writes, including its one answer."""
+    from dataclasses import asdict
+
+    from codey.knowledge.note import KnowledgeNote
+    from codey.research.answer_report import AnswerReport
+    from codey.research.synthesis import synthesis_title
+
+    report = AnswerReport.from_payload(report.to_payload())
+    if report.task_digest != digest(task):
+        raise ValueError("publication task differs from the submitted answer")
+    scope, owner = ("project", project) if project else ("session", session_id) if session_id else ("global", "")
+    references = tuple(KnowledgeReference(row["id"], row["revision"], "uses") for row in report.knowledge_refs)
+    note = KnowledgeNote.create(type="synthesis", title=synthesis_title(task), body=report.text,
+        tags=["research", *([f"session:{session_id}"] if session_id else [])],
+        sources=sorted({row["url"] for row in report.source_versions}), session_id=session_id, project=project,
+        open_questions=list(report.open_questions), id=note_id)
+    answer_id = stable_identity("answer", run_id, projection)
+    answer = KnowledgeObject(answer_id, "answer", report.text, "model_inference", title=note.title,
+        status="active", scope=scope, scope_id=owner, references=references,
+        provenance={"run_id": run_id, "session_id": session_id, "project": project, "task": task,
+            "synthesis_id": note_id, "basis": "settled_whole_answer_submission", "publication_schema": 2,
+            "projection": projection, "answer_state": report.state, "semantic_review": None,
+            "submission_digest": report.proposal_digest, "compilation_digest": report.to_payload()["compilation_digest"],
+            "citation_bindings": list(report.citation_bindings), "evidence_bindings": list(report.evidence_bindings),
+            "source_versions": list(report.source_versions), "attempt_refs": list(report.attempt_refs),
+            "selection_receipts": list(report.selection_receipts)})
+    return {"schema": 1, "note": asdict(note), "commit_id": stable_identity("answer-commit", run_id, projection),
+            "mutations": [*report.knowledge_mutations, {"value": answer.to_dict(), "expected_revision": 0}]}
