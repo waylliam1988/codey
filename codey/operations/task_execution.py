@@ -498,8 +498,11 @@ class ExecutionDelegate:
             if denied is not None:
                 return denied
             if name == "research_plan":
+                from codey.research.plan_contract import is_compact_plan_spec
+
+                compact = self._frozen_specs is not None and is_compact_plan_spec(self._frozen_specs.get(name))
                 outcome = tools.research_plan(args.get("questions"), question_details=args.get("question_details"),
-                                              task=str(getattr(self.session, "task_text", "")))
+                                              task=str(getattr(self.session, "task_text", "")), schema_version=2 if compact else 1)
                 canonical = {"research_observation": outcome.read_observation} if outcome.ok else {}
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
             if name == "submit_research_answer":

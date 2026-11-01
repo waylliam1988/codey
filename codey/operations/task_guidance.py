@@ -36,6 +36,11 @@ def task_working_context(session: "TaskSession", research_ledger: "ResearchLedge
         from codey.research.context_view import local_research_context
 
         return local_research_context(session, research_ledger, knowledge_store, scope)
+    if session.policy.strict_research and session.task_kind == "research" and not session.research_questions:
+        from codey.knowledge.model import canonical_json
+        from codey.research.plan_contract import task_layout
+
+        return "Original complete task questions and binding context:\n" + canonical_json(task_layout(session.task_text))
     if session.policy.strict_research or session.task_kind == "evidence_followup":
         parts.append(render_research_observations(session, research_ledger, knowledge_store, session_id=knowledge_session_id))
         if session.policy.strict_research and session.task_text.strip():

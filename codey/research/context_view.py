@@ -119,10 +119,14 @@ def local_research_context(session: Any, ledger: Any, store: Any, scope: Any) ->
     # Retain the original task verbatim as the constraint anchor. The actual
     # working instruction and original parent question are separate fields.
     # No semantic heuristic guesses which unclassified prohibition is safe to drop.
+    assigned = [row for row in task_requirements(session.task_text) if row["task_ref"] in scope.task_refs]
+    if plan.get("schema_version") == 2:
+        question = next(row for row in plan["questions"] if row["text"] == scope.question)
+        assigned = [row for row in plan["task_layout"]["task_questions"] if row["task_ref"] in question["task_spans"]]
     data = {"current_target": scope.target, "parent_question": scope.question,
         "question_ref": scope.question_ref, "unit_ref": scope.unit_ref,
         "original_task_constraint_anchor": session.task_text,
-        "assigned_requirements": [row for row in task_requirements(session.task_text) if row["task_ref"] in scope.task_refs],
+        "assigned_requirements": assigned,
         "report_constraints": report_requirements(session.task_text),
         "selection_budget": selection_budget(session, ledger, store),
         "read_evidence": evidence["packets"], "candidate_findings": candidates, "other_target_progress": progress,

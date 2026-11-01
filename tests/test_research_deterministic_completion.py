@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,7 +19,7 @@ UNSUPPORTED_GAP_ANSWER = "We measured WAL on this machine: it is always 10x fast
 def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task=TASK,
          provider_factory=None, planner_enabled=False, required_checks=(), omit_requirement=False,
          unsupported_claim=False, bad_reference=False, gap_answer=None, gap_investigation=False, boundary_turn=None,
-         source_text=None):
+         source_text=None, compact_planning=False):
     import hashlib
     import os
     from unittest.mock import patch
@@ -156,7 +157,11 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
         provider_id="local", project_text="", trace=None, run_id="r", research_handoff="", entry_policy=policy,
         request=SimpleNamespace(task=task, session_id="s", requested_capabilities=()))
     try:
-        with patch("codey.operations.research_flow.ResearchPipelineConfig", return_value=ResearchPipelineConfig(enabled=planner_enabled)):
+        # This fixture archives the version-1 plan/report contract. New-plan
+        # scenarios opt in below; legacy crash/replay tests keep their inputs.
+        legacy = (patch("codey.research.plan_contract.compact_plan_spec", side_effect=lambda spec, task: spec)
+                  if not compact_planning else nullcontext())
+        with legacy, patch("codey.operations.research_flow.ResearchPipelineConfig", return_value=ResearchPipelineConfig(enabled=planner_enabled)):
             result = run_research_pipeline(deps, frame, SimpleNamespace(on_event=lambda _: None), max_turns=budget,
                 build_context=lambda *a, **kw: ResearchContext(question=task, session_id="s", run_id="r", max_turns=budget))
         return result.final_result

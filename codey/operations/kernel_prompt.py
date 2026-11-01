@@ -86,6 +86,7 @@ def kernel_prompt_for_session(
     request_scoped_contract: bool = False,
     done_spec: ToolSpec | None = None,
     local_submission: bool = False,
+    research_planning: bool = False,
 ) -> str:
     task_text = str(user_task or getattr(session, "task_text", "") or "").strip()
     handoff = str(getattr(session, "handoff", "") or "").strip()
@@ -107,6 +108,10 @@ def kernel_prompt_for_session(
         parts.append(task_guidance)
     if not request_scoped_contract:
         parts.extend(_tool_contract_parts(visible_names, contract_text, native=native))
+    if research_planning:
+        parts.append(("Use native tool calls. " + _NATIVE_ARGUMENTS_RULE) if native else _TEXT_ACTION_RULE)
+        parts.append("Register the complete questions with research_plan; {} accepts the original task questions.")
+        return "\n\n".join(parts)
     if local_submission:
         parts.append(("Use native tool calls. " + _NATIVE_ARGUMENTS_RULE) if native else _TEXT_ACTION_RULE)
         parts.append("End only the current target with submit_research_answer. "
@@ -173,6 +178,7 @@ def kernel_prompt_for_session(
 
 
 def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> str:
+    from codey.research.plan_contract import is_compact_plan_spec
     from codey.toolchain.constants import ARGUMENT_CONTENT_GUIDANCE
     from codey.toolchain.tool_prompt import tool_repair_text, tool_signature
 
@@ -189,6 +195,8 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
             )
         if snapshot.research_scope is not None:
             instruction += " End this target with submit_research_answer using the frozen selection contract."
+        elif any(item.name == "research_plan" and is_compact_plan_spec(item) for item in snapshot.model_specs):
+            instruction += " Register the original complete questions with research_plan({})."
         elif spec is None or spec.name == "done":
             done = next((item for item in snapshot.model_specs if item.name == "done"), None)
             instruction += " " + _native_done_guidance(done)

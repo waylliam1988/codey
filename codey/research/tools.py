@@ -371,10 +371,23 @@ class ResearchTools:
 
         return save_inference(self, args)
 
-    def research_plan(self, questions: object, *, question_details: object = None, task: str = "") -> ResearchToolOutput:
+    def research_plan(self, questions: object, *, question_details: object = None, task: str = "",
+                      schema_version: int = 1) -> ResearchToolOutput:
         from codey.research.questions import question_plan
 
         try:
+            if schema_version == 2:
+                from codey.research.plan_contract import compact_plan
+
+                if question_details is not None or self.ledger.questions:
+                    raise ValueError("compact plans register once and do not accept question_details")
+                observation = compact_plan(questions, task)
+                planned = question_plan([row["text"] for row in observation["questions"]])
+                self.ledger.questions = planned
+                return ResearchToolOutput(canonical_json({"questions": [
+                    {"question_ref": f"q{index}", "question": text} for index, text in enumerate(planned, 1)],
+                    "next": "Read the original sources for the current question, then explicitly submit its supported answer or gap."}),
+                    read_observation=observation, ok=True)
             planned = question_plan(questions, self.ledger.questions)
             observation: dict[str, Any] = {"questions": list(planned)}
             if question_details is not None:

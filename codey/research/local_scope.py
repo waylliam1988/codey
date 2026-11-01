@@ -63,12 +63,22 @@ def registered_plan(session: Any) -> dict[str, Any] | None:
     for result in getattr(session, "_memory_results", {}).values():
         if result.ok and result.call.name == "research_plan":
             observation = result.canonical.get("research_observation", {})
-            if "question_details" in observation:
+            if observation.get("schema_version") == 2:
+                from codey.research.plan_contract import validate_compact_plan
+
+                validate_compact_plan(observation, session.task_text)
+                plan = observation
+            elif "question_details" in observation:
                 plan = {"questions": observation["questions"], "question_details": observation["question_details"]}
     return plan
 
 
 def plan_units(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    if plan.get("schema_version") == 2:
+        return [{"question_ref": f"q{index}", "unit_ref": f"q{index}.u{unit_index}", "target": target,
+                 "question": row["text"], "task_refs": row["task_refs"], "submission_mode": plan["submission_mode"]}
+                for index, row in enumerate(plan["questions"], 1)
+                for unit_index, target in enumerate(row.get("work_units", [row["text"]]), 1)]
     return [{"question_ref": f"q{index}", "unit_ref": f"q{index}.u{unit_index}", "target": target,
              "question": text, "task_refs": detail["task_refs"], "submission_mode": detail.get("submission_mode", "select")}
             for index, (text, detail) in enumerate(zip(plan["questions"], plan["question_details"], strict=True), 1)

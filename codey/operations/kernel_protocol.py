@@ -209,6 +209,8 @@ def build_turn_snapshot(session: Any, *, native: bool = False, research_repair: 
     # (unlimited). Callers must treat the exception as a per-turn config
     # error and stop.
     allowed = controller_allowed_for_session(session)
+    if session.policy.strict_research and session.task_kind == "research" and not session.research_questions:
+        allowed = tuple(name for name in (allowed or ()) if name != "done")
     from codey.research.local_scope import current_scope, registered_plan
 
     scope = current_scope(session, repair=research_repair) if session.policy.strict_research and session.task_kind == "research" else None
@@ -226,13 +228,18 @@ def build_turn_snapshot(session: Any, *, native: bool = False, research_repair: 
     from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
 
     authorized = tuple(visible_tool_names_for_snapshot(session.policy, allowed, native=native))
-    if getattr(session, "task_kind", "") == "research_review" or scope is not None:
+    if (getattr(session, "task_kind", "") == "research_review" or scope is not None
+            or session.policy.strict_research and session.task_kind == "research" and not session.research_questions):
         authorized = tuple(name for name in authorized if name in (allowed or ()))
     exposure = getattr(session, "model_tool_names", None)
     if exposure is not None and (len(set(exposure)) != len(exposure) or not set(exposure) <= set(authorized)):
         raise ValueError("model exposure must narrow the authorized tool inventory")
     names = tuple(name for name in authorized if exposure is None or name in exposure)
     frozen = _frozen_specs_for_names(authorized)
+    if session.policy.strict_research and session.task_kind == "research" and not session.research_questions:
+        from codey.research.plan_contract import compact_plan_spec
+
+        frozen = tuple(compact_plan_spec(spec, session.task_text) if spec.name == "research_plan" else spec for spec in frozen)
     from codey.research.tool_contract import done_spec_for_purpose, question_bound_spec
 
     purpose = ("evidence" if getattr(session, "task_kind", "") == "evidence_followup" else
