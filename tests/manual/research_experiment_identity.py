@@ -24,7 +24,7 @@ def source_identity():
 def verify_experiment(root):
     path = Path(root) / "experiment-source.json"
     expected = json.loads(path.read_text(encoding="utf-8"))
-    if source_identity() != expected:
+    if {**source_identity(), "materials": material_identity(root)} != expected:
         raise RuntimeError("Evaluation source changed; stop this matrix before further inference and use a new frozen directory.")
 
 
@@ -34,4 +34,11 @@ def freeze_experiment(root):
         verify_experiment(root)
     else:
         with path.open("x", encoding="utf-8") as stream:
-            json.dump(source_identity(), stream, indent=2)
+            json.dump({**source_identity(), "materials": material_identity(root)}, stream, indent=2)
+
+
+def material_identity(root):
+    names = ("fixtures.json", "wal-material.json", "asyncio-material.json", "sqlite-sources.json",
+             "material-channel.json", "limits.json")
+    return {name: hashlib.sha256(path.read_bytes()).hexdigest() for name in names
+            if (path := Path(root) / name).exists()}

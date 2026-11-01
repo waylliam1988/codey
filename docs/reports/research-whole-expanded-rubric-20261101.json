@@ -1,0 +1,53 @@
+{
+  "fixture_sha256": "12c36dc056d8c6044488a24b3375e05b4fdfcd2e1e9e258a9a7454f6fb418b96",
+  "grading": "Manual source comparison, not tested-model grading. Separately track delivery, declared state, necessary facts/relations, unsupported additions, citation support and actual inference requests.",
+  "official_rubric": "research-reduction-heldout-rubric-20261101.json",
+  "synthetic": {
+    "cross-source-export": {
+      "required": [
+        "authenticated AND (auditor OR project owner)",
+        "owner scoped to specific project",
+        "outside maintenance window",
+        "202 queued not completed",
+        "ready AND verified checksum before use",
+        "ticket TTL 24h",
+        "expiry alone implies neither success nor failure"
+      ],
+      "relations": [
+        "API requirements combined with deployment restriction",
+        "queue admission distinct from use authorization",
+        "record retention distinct from outcome"
+      ],
+      "expected_citations": "both API and deployment source; scope and maintenance require deployment"
+    },
+    "conflicting-replicas": {
+      "required": [
+        "A says two confirmations",
+        "B says three confirmations",
+        "same R2/date, no stated precedence",
+        "cannot infer unique production requirement",
+        "both say timeout not proof of rollback",
+        "need authoritative release/configuration or clarification"
+      ],
+      "forbidden": [
+        "choose larger count as fact without evidence",
+        "invent different versions/dates to remove conflict",
+        "declare timeout rollback"
+      ],
+      "expected_citations": "both conflicting sources"
+    },
+    "long-recovery-manual": {
+      "required": [
+        "authenticated operator AND paused job",
+        "202 queued not completed",
+        "RESTORED AND verified artifact checksum",
+        "edition4 seven days replaces edition3 24h",
+        "expiry only removes receipt",
+        "expiry does not delete artifact",
+        "expiry proves neither success nor failure"
+      ],
+      "expected_citations": "actual section1 and section44 read evidence; initial window alone insufficient"
+    }
+  },
+  "long_material_characters": 18858
+}

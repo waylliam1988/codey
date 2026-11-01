@@ -38,3 +38,24 @@ def test_fixture_ids_cannot_escape_or_reuse_run_directories(tmp_path, identifier
     path.write_text(json.dumps({"cases": rows}), encoding="utf-8")
     with pytest.raises(ValueError):
         load_cases(path)
+
+
+def test_expanded_cases_use_the_same_frozen_material_for_both_frameworks(tmp_path):
+    from tests.manual.research_framework_comparison import documents, material_text, task_text
+
+    source = ROOT / "tests/fixtures/research_whole_expanded_cases.json"
+    rubric = json.loads((ROOT / "docs/reports/research-whole-expanded-rubric-20261101.json").read_text(encoding="utf-8"))
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == rubric["fixture_sha256"]
+    (tmp_path / "fixtures.json").write_bytes(source.read_bytes())
+    (tmp_path / "material-channel.json").write_text('{"mode":"read","protocol":"native"}')
+    cases = load_cases(source)
+    assert len(cases) == 9
+    for case in cases.values():
+        assert documents(tmp_path, case["id"]) == case["documents"]
+        task = task_text(tmp_path, case["id"])
+        assert case["question"] in task and "required" not in task
+        for doc in case["documents"]:
+            assert doc["text"] not in task
+            assert doc["text"] in material_text(tmp_path, case["id"])
+    long = cases["long-recovery-manual"]["documents"][0]["text"]
+    assert long.index("## 44.") > 18000 and "seven days" in long

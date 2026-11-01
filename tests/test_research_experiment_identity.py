@@ -39,3 +39,13 @@ def test_gap_delivery_requires_the_single_original_answer_and_real_receipts():
     assert not whole_answer_observed({"submit_research_answer"}, versions, "changed", None)
     answer.provenance["answer_state"] = "answered"
     assert not whole_answer_observed({"submit_research_answer"}, versions, answer.content, None)
+
+
+def test_frozen_material_changes_stop_the_existing_matrix(tmp_path, monkeypatch):
+    monkeypatch.setattr(identity, "source_identity", lambda: {"runtime_id": "unchanged"})
+    fixture = tmp_path / "fixtures.json"
+    fixture.write_text('{"original":true}')
+    identity.freeze_experiment(tmp_path)
+    fixture.write_text('{"original":false}')
+    with pytest.raises(RuntimeError, match="source changed"):
+        identity.verify_experiment(tmp_path)

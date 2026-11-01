@@ -123,9 +123,9 @@ def main():
     root.mkdir(parents=True, exist_ok=False)
     (root / "logs").mkdir()
     (root / "runs").mkdir()
-    freeze_experiment(root)
     source = args.fixtures.read_bytes()
     (root / "fixtures.json").write_bytes(source)
+    freeze_experiment(root)
     write_json(root / "implementation.json", {"commit": subprocess.check_output(["git", "rev-parse", "HEAD"],
         encoding="utf-8").strip(), "runtime_id": runtime_implementation_id(), "fixtures_sha256": hashlib.sha256(source).hexdigest(),
         "diff": subprocess.check_output(["git", "diff", "HEAD", "--", "codey"], encoding="utf-8"), "command": sys.argv})

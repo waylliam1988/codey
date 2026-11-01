@@ -227,11 +227,23 @@ class InferenceProxy:
 
 
 def documents(root, case):
+    custom = custom_cases(root)
+    if case in custom:
+        return custom[case]["documents"]
     if case in DIAGNOSTIC:
         full = next(doc for doc in read_json(root / "sqlite-sources.json") if doc["url"] == "https://www.sqlite.org/wal.html")
         return [{**full, "text": full["text"][row["offset"]:row["offset"] + row["limit"]],
                  "selection": row} for row in fixture_windows(full["text"], case, "given", 0)]
     return read_json(root / ("wal-material.json" if case == "wal_synthesis" else "asyncio-material.json"))
+
+
+def custom_cases(root):
+    path = root / "fixtures.json"
+    if not path.exists():
+        return {}
+    from tests.manual.research_reduction_local import load_cases
+
+    return load_cases(path)
 
 
 def material_text(root, case):
@@ -240,7 +252,8 @@ def material_text(root, case):
 
 
 def task_text(root, case):
-    question = QUESTIONS[case] if case in DIAGNOSTIC else SYNTHESIS[case]["question"]
+    custom = custom_cases(root)
+    question = custom[case]["question"] if case in custom else QUESTIONS[case] if case in DIAGNOSTIC else SYNTHESIS[case]["question"]
     channel = root / "material-channel.json"
     if channel.exists() and read_json(channel)["mode"] == "read":
         urls = "\n".join(doc["url"] for doc in documents(root, case))
@@ -399,8 +412,10 @@ def main():
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--base-url")
-    parser.add_argument("--case", choices=[*DIAGNOSTIC, *SYNTHESIS])
+    parser.add_argument("--case")
+    parser.add_argument("--fixtures", type=Path, help="Additional frozen cases, run through both original products")
     parser.add_argument("--seed", type=int, default=74)
+    parser.add_argument("--seeds", nargs="+", type=int, help="Explicit seeds for an entire frozen suite")
     parser.add_argument("--framework", choices=["codey", "openscience"])
     parser.add_argument("--suite", choices=["all", "diagnostic", "synthesis"], default="all")
     args = parser.parse_args()
@@ -408,14 +423,24 @@ def main():
     if args.action == "worker":
         codey_worker(root, args.directory, args.base_url, args.case, args.seed)
         return
+    if args.fixtures:
+        target = root / "fixtures.json"
+        raw = args.fixtures.read_bytes()
+        if target.exists() and target.read_bytes() != raw:
+            raise ValueError("frozen materials changed; start a new experiment directory")
+        if not target.exists():
+            target.write_bytes(raw)
     (root / "runs").mkdir(exist_ok=True)
     freeze_experiment(root)
     index_path = root / "matrix.json"
     previous = read_json(index_path) if index_path.exists() else []
-    cases = [args.case] if args.case else (list(DIAGNOSTIC) if args.suite == "diagnostic" else
+    custom = custom_cases(root)
+    if args.case and args.case not in {*custom, *DIAGNOSTIC, *SYNTHESIS}:
+        parser.error("unknown frozen case")
+    cases = [args.case] if args.case else list(custom) if custom else (list(DIAGNOSTIC) if args.suite == "diagnostic" else
             list(SYNTHESIS) if args.suite == "synthesis" else [*DIAGNOSTIC, *SYNTHESIS])
     for case_index, case in enumerate(cases):
-        for seed in ([args.seed] if args.case else SEEDS):
+        for seed in (args.seeds or ([args.seed] if args.case else SEEDS)):
             frameworks = [args.framework] if args.framework else (
                 ["codey", "openscience"] if (case_index + seed) % 2 == 0 else ["openscience", "codey"])
             for framework in frameworks:
