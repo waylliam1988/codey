@@ -163,3 +163,22 @@ def test_generation_owner_key_is_forwarded_without_becoming_a_model_message(tmp_
             response.read()
         assert seen[0]["genkey"] == "evaluation-owned"
         assert seen[0]["messages"] == payload["messages"]
+
+
+@pytest.mark.parametrize("invalid", [{"turns": True}, {"requests": 0}, {"unknown": 24}, [24]])
+def test_exploratory_budget_cannot_silently_use_invalid_or_unknown_limits(tmp_path, invalid):
+    from tests.manual.research_framework_comparison import experiment_limits, write_json
+
+    write_json(tmp_path / "limits.json", invalid)
+    with pytest.raises(ValueError, match="positive integer"):
+        experiment_limits(tmp_path)
+
+
+def test_budget_extension_reaches_the_real_agent_configuration_and_preserves_main_defaults(tmp_path):
+    from tests.manual.research_framework_comparison import experiment_limits, openscience_environment, write_json
+
+    assert experiment_limits(tmp_path) == {"turns": 12, "requests": 12, "process_seconds": 360, "agent_seconds": 300}
+    write_json(tmp_path / "limits.json", {"turns": 24, "requests": 24, "process_seconds": 660, "agent_seconds": 600})
+    openscience_environment(tmp_path, tmp_path, "http://localhost:5001", "fixture")
+    assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))["agent"]["research"]["steps"] == 24
+    assert experiment_limits(tmp_path)["requests"] == 24

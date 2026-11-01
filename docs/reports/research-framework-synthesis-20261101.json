@@ -1,0 +1,2102 @@
+{
+  "schema_version": 1,
+  "reviewed_at_utc": "2026-11-01T10:46:51.010017+00:00",
+  "scope": "Same deployed model, closed official-source technical research synthesis; no autonomous web ranking or experimental-science claim.",
+  "method": "Manual evidence-based review by coding assistant; tested model is not a judge; no independent blind-review claim. No final substantive answer => semantic score null, not0; delivery separately fails.",
+  "production_code_unchanged_from": "c346b9e2",
+  "harness_start_commit": "0cac0a27",
+  "openscience_version": "2.0.153",
+  "openscience_commit": "a08e0ad0ad3d6448123039ee4659163eb2e35d99",
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "primary_protocol_sha256": "e44346988b92acbc70bb6fd6f95a0d3e6986904abf46806f467bf57c661a953d",
+  "exploratory_protocol_sha256": "65058d1dd8df75ac924bfba6912b41152224c3251d6651467b3ca2f1115a1bac",
+  "rubrics": {
+    "wal_synthesis": {
+      "question": "基于所给 SQLite 官方材料，用中文逐项研究：\n1. WAL 的读写并发和单写者限制是否矛盾？分别解释机制。\n2. WAL 引入版本、只读打开支持版本及完整替代条件是什么？保留或的关系。\n3. checkpoint 与读者并行时何时停止、为什么、进度保存在哪里、以后如何继续？\n4. writer 回绕复用 WAL 的条件是什么？这些条件是否也是 checkpoint 转移数据的必要条件？区分两个动作。\n5. 这些材料能否证明本机 WAL 比回滚日志更快，或证明整份官方页面从未做过本机测量？说明证据边界。",
+      "required": [
+        "读者与写者互不阻塞",
+        "单写者：一个 WAL 文件",
+        "WAL 引入 3.7.0",
+        "只读从 3.22.0 支持",
+        "已有可读 shm/wal",
+        "有权创建 shm/wal",
+        "immutable",
+        "三个只读替代条件是 OR",
+        "checkpoint 越过任一当前 reader end mark 停止",
+        "防止覆盖 reader 使用的数据库页",
+        "进度在 wal-index",
+        "下次调用从记录进度继续",
+        "writer 回绕：WAL 已全部 checkpoint 且没有 reader 仍在使用 WAL",
+        "回绕和 checkpoint 条件不同，checkpoint 可以与读者并行并部分转移",
+        "不能从一般优点证明本机性能",
+        "不能从选段缺少测量推断整页没有测量"
+      ],
+      "relations": [
+        "读写并发与单写者并存",
+        "只读 OR 的适用版本",
+        "停止原因与继续机制",
+        "writer 回绕与 checkpoint 转移的不同前提",
+        "片段到本机性能/全文断言的外推边界"
+      ]
+    },
+    "asyncio_synthesis": {
+      "question": "基于所给 Python 3.12 官方材料，用中文逐项研究 asyncio.gather：\n1. 默认 return_exceptions=False 时，一个子任务抛异常会怎样？其余任务是否自动取消？\n2. return_exceptions=True 改变什么？成功结果的排列按输入顺序还是完成顺序？\n3. 取消 gather 本身与取消其中一个 Task/Future 有什么不同？保留未完成任务、CancelledError 及 return_exceptions 的边界。\n4. 捕获 gather 传播的异常之后再调用 gather.cancel()，是否必然取消其余任务？为什么？\n5. TaskGroup 对普通子任务异常的取消保证与 gather 有什么区别？这些材料是否足以证明 TaskGroup 总是更快？",
+      "required": [
+        "默认首个异常立即传播给 await gather 的任务",
+        "其余 awaitables 不自动取消并继续运行",
+        "True 把异常作为结果汇总",
+        "成功结果按输入顺序",
+        "取消 gather 本身会取消尚未完成的 awaitables",
+        "取消 gather 的传播不受 return_exceptions 影响",
+        "单个子 Task/Future 取消按 CancelledError 处理",
+        "单个子取消不使 gather 本身取消",
+        "不因此连带取消其他子任务",
+        "gather 传播异常后可能已 done，此时 cancel 不取消剩余任务",
+        "TaskGroup 普通任务异常取消剩余任务而 gather 不会",
+        "取消保证不证明 TaskGroup 总是更快"
+      ],
+      "relations": [
+        "默认异常传播与剩余任务的不同命运",
+        "异常作为值与结果顺序",
+        "父 gather 取消与单个子任务取消",
+        "done 状态约束后续 cancel 的效果",
+        "TaskGroup 安全保证与性能结论的区别"
+      ]
+    }
+  },
+  "summary": {
+    "primary": {
+      "codey": {
+        "runs": 6,
+        "substantive_deliveries": 0,
+        "full_passes": 0,
+        "requests": 63,
+        "auxiliary_title_requests": 0,
+        "input_tokens": 325390,
+        "output_tokens": 12134,
+        "max_single_input_tokens": 10747,
+        "median_elapsed_seconds": 98.345,
+        "terminal_reasons": {
+          "no_progress": 3,
+          "max_turns": 2,
+          "protocol": 1
+        }
+      },
+      "openscience": {
+        "runs": 6,
+        "substantive_deliveries": 5,
+        "full_passes": 4,
+        "requests": 17,
+        "auxiliary_title_requests": 6,
+        "input_tokens": 107081,
+        "output_tokens": 3990,
+        "max_single_input_tokens": 10299,
+        "median_elapsed_seconds": 54.34,
+        "terminal_reasons": {
+          "completed": 6
+        }
+      }
+    },
+    "exploratory_24": {
+      "codey": {
+        "runs": 2,
+        "substantive_deliveries": 0,
+        "full_passes": 0,
+        "requests": 23,
+        "auxiliary_title_requests": 0,
+        "input_tokens": 94142,
+        "output_tokens": 1741,
+        "max_single_input_tokens": 6310,
+        "median_elapsed_seconds": 70.5,
+        "terminal_reasons": {
+          "no_progress": 2
+        }
+      },
+      "openscience": {
+        "runs": 2,
+        "substantive_deliveries": 1,
+        "full_passes": 1,
+        "requests": 5,
+        "auxiliary_title_requests": 2,
+        "input_tokens": 29228,
+        "output_tokens": 769,
+        "max_single_input_tokens": 10359,
+        "median_elapsed_seconds": 37.045,
+        "terminal_reasons": {
+          "completed": 2
+        }
+      }
+    }
+  },
+  "runs": [
+    {
+      "series": "primary",
+      "framework": "codey",
+      "case": "wal_synthesis",
+      "seed": 74,
+      "process_exit_code": 1,
+      "framework_result": {
+        "exit_code": 1,
+        "run_id": "run_b924abf729f240cd81a6189c11b895a9",
+        "session_id": "research-research",
+        "stop_reason": "no_progress",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\wal_synthesis-74-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_b924abf729f240cd81a6189c11b895a9.jsonl"
+      },
+      "elapsed_seconds": 67.86,
+      "grade": {
+        "delivery": "no_accepted_report",
+        "required_atom_scores": null,
+        "relation_scores": null,
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [
+          "q1 selected; q2 repeats knowledge_search six times; no_progress."
+        ],
+        "full_pass": false
+      },
+      "tool_names": [],
+      "candidate_findings": [
+        {
+          "id": "claim-926988d662b812d0a4f2d5b2ff79ea57ce92b18cde3807a21e7aad96d3076c08",
+          "revision": 1,
+          "status": "candidate",
+          "content": "WAL 的读写并发和单写者限制并不矛盾。其机制如下：\n1. 读写并发：由于写入操作只是简单地将新内容追加到 WAL 文件的末尾，且写入操作不会干扰读取操作，因此读取者和写入者可以同时运行。\n2. 单写者限制：由于只有一个 WAL 文件，因此在同一时间只能有一个写入者。",
+          "pinned_evidence": [
+            {
+              "id": "evidence-97ea1bb6abcd78f62857a032dc6407cbc66e36a5aea57eeefc7e2a890fc99009",
+              "revision": 1,
+              "excerpt": "## 1. Overview\n\nThe default method by which SQLite implementsatomic commit and rollback is a rollback journal.\nBeginning with version 3.7.0 (2010-07-21), a new \"Write-Ahead Log\" option\n(hereafter referred to as \"WAL\") is available.\n\nThere are advantages and disadvantages to using WAL instead of\na rollback journal. Advantages include:\n\nWAL is significantly faster in most scenarios.\n\nWAL provides more concurrency as readers do not block writers and\na writer does not block readers. Reading and writing can proceed\nconcurrently.\n\nDisk I/O operations tends to be more sequential using WAL.\n\n\n\nWriters merely append new content to the end of the WAL file.\nBecause writers do nothing that would interfere with the actions of\nreaders, writers and readers can run at the same time. However,\nsince there is only one WAL file, there can only be one writer at\na time."
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\wal_synthesis-74-codey\\research-report.txt",
+      "report_sha256": "06fe9deab5ba612943d2597efe62f72eacdc70ebcb102c1800d0a965b48f343c",
+      "report_text": "stopped after repeated tool results without progress",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\wire\\wal_synthesis-74-codey.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 5160,
+          "output_tokens": 436,
+          "backend_generation": 4,
+          "proxy_elapsed_seconds": 17.297
+        },
+        {
+          "index": 2,
+          "auxiliary_title": false,
+          "input_tokens": 3153,
+          "output_tokens": 30,
+          "backend_generation": 5,
+          "proxy_elapsed_seconds": 3.344
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 2596,
+          "output_tokens": 34,
+          "backend_generation": 6,
+          "proxy_elapsed_seconds": 2.843
+        },
+        {
+          "index": 4,
+          "auxiliary_title": false,
+          "input_tokens": 5839,
+          "output_tokens": 134,
+          "backend_generation": 7,
+          "proxy_elapsed_seconds": 7.984
+        },
+        {
+          "index": 5,
+          "auxiliary_title": false,
+          "input_tokens": 5352,
+          "output_tokens": 24,
+          "backend_generation": 8,
+          "proxy_elapsed_seconds": 3.797
+        },
+        {
+          "index": 6,
+          "auxiliary_title": false,
+          "input_tokens": 2880,
+          "output_tokens": 35,
+          "backend_generation": 9,
+          "proxy_elapsed_seconds": 3.235
+        },
+        {
+          "index": 7,
+          "auxiliary_title": false,
+          "input_tokens": 4297,
+          "output_tokens": 38,
+          "backend_generation": 10,
+          "proxy_elapsed_seconds": 3.641
+        },
+        {
+          "index": 8,
+          "auxiliary_title": false,
+          "input_tokens": 4302,
+          "output_tokens": 38,
+          "backend_generation": 11,
+          "proxy_elapsed_seconds": 3.64
+        },
+        {
+          "index": 9,
+          "auxiliary_title": false,
+          "input_tokens": 2618,
+          "output_tokens": 37,
+          "backend_generation": 12,
+          "proxy_elapsed_seconds": 2.594
+        },
+        {
+          "index": 10,
+          "auxiliary_title": false,
+          "input_tokens": 4293,
+          "output_tokens": 37,
+          "backend_generation": 13,
+          "proxy_elapsed_seconds": 3.656
+        },
+        {
+          "index": 11,
+          "auxiliary_title": false,
+          "input_tokens": 2618,
+          "output_tokens": 37,
+          "backend_generation": 14,
+          "proxy_elapsed_seconds": 2.594
+        }
+      ]
+    },
+    {
+      "series": "primary",
+      "framework": "openscience",
+      "case": "wal_synthesis",
+      "seed": 74,
+      "process_exit_code": 0,
+      "framework_result": {
+        "type": "done",
+        "timestamp": 1793528424889,
+        "sessionID": "ses_e6960ebe6ffevNfaQBSlQeYbyJ",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 9983,
+          "output": 805,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 56.56,
+      "grade": {
+        "delivery": "substantive_answer",
+        "required_atom_scores": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "relation_scores": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [
+          "The separate 保留或的关系 bullet is misinterpreted/irrelevant; the actual condition list explicitly says any one and preserves OR, so OR is credited from the whole answer."
+        ],
+        "full_pass": true
+      },
+      "tool_names": [
+        "read"
+      ],
+      "candidate_findings": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\wal_synthesis-74-openscience\\research-report.txt",
+      "report_sha256": "7e097f11dc1dbbdaaf40edb5189cf52cceb5c4804aded1212a4c4ab88cd335ae",
+      "report_text": "根据提供的 SQLite 官方材料（`evidence.md`），研究结果如下：\n\n### 1. WAL 的读写并发和单写者限制是否矛盾？\n**不矛盾。** 它们描述的是不同维度的并发能力：\n*   **读写并发机制：** 因为写操作只是将新内容追加到 WAL 文件的末尾，且不会干扰读操作的动作，所以**读者不会阻塞写者，写者也不会阻塞读者**。它们可以同时进行。\n*   **单写者限制机制：** 因为只有一个 WAL 文件，所以**同一时间只能有一个写者**。\n\n### 2. WAL 引入版本、只读打开支持版本及完整替代条件是什么？保留或的关系。\n*   **引入版本：** 从版本 3.7.0 (2010-07-21) 开始可用。\n*   **只读打开支持版本：** 从版本 3.22.0 (2018-01-22) 开始支持。\n*   **只读打开的完整条件（满足其一即可）：**\n    1. `-shm` 和 `-wal` 文件已存在且可读。\n    2. 数据库所在目录具有写权限，以便创建 `-shm` 和 `-wal` 文件。\n    3. 使用 `immutable` 查询参数打开数据库连接。\n*   **保留或的关系：** 材料中并未明确说明 WAL 是否完全替代了回滚日志（Rollback Journal），仅提到 WAL 是另一种可选方案，并列举了其相对于回滚日志的优缺点。\n\n### 3. Checkpoint 与读者并行时何时停止、为什么、进度保存在哪里、以后如何继续？\n*   **何时停止：** 当 Checkpoint 达到 WAL 文件中任何当前读者“结束标记”（end mark）之后的页面时，必须停止。\n*   **为什么：** 为了防止 Checkpoint 覆盖掉读者正在使用的数据库文件部分。\n*   **进度保存在哪里：** 保存在 `wal-index` 中。\n*   **以后如何继续：** 在下一次调用时，Checkpoint 会从上次中断的地方继续将内容从 WAL 转移到数据库中。\n\n### 4. Writer 回绕（Rewind）复用 WAL 的条件是什么？这些条件是否也是 checkpoint 转移数据的必要条件？区分两个动作。\n*   **Writer 回绕复用 WAL 的条件：**\n    1. 整个 WAL 已转移到数据库中并同步（synced）。\n    2. 当前没有读者正在使用 WAL。\n*   **是否为 Checkpoint 转移数据的必要条件：** **不是。**\n*   **区分两个动作：**\n    *   **Checkpoint** 是将 WAL 内容转移到数据库文件的过程（受读者进度限制，可部分完成）。\n    *   **Rewind** 是在满足特定条件（全部转移且无读者占用）时，将 WAL 回绕到开头，以便新的事务可以从 WAL 的开头开始放入。\n\n### 5. 这些材料能否证明本机 WAL 比回滚日志更快，或证明整份官方页面从未做过本机测量？\n*   **结论：** 材料**不能**证明本机 WAL 比回滚日志更快，也**不能**证明整份页面从未做过本机测量。\n*   **证据边界：**\n    *   材料中提到“WAL 在大多数情况下显著更快”（WAL is significantly faster in most scenarios），这是一个**结论性陈述**，而非基于特定实验数据的**测量证明**。\n    *   材料中没有提供具体的测速数据（如毫秒数或吞吐量），也没有说明这些“更快”的结论是基于特定硬件的本机测量还是通用的性能趋势。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\wire\\wal_synthesis-74-openscience.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 8568,
+          "output_tokens": 15,
+          "backend_generation": 15,
+          "proxy_elapsed_seconds": 7.375
+        },
+        {
+          "index": 2,
+          "auxiliary_title": true,
+          "input_tokens": 811,
+          "output_tokens": 7,
+          "backend_generation": 16,
+          "proxy_elapsed_seconds": 1.078
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 9983,
+          "output_tokens": 805,
+          "backend_generation": 17,
+          "proxy_elapsed_seconds": 32.344
+        }
+      ]
+    },
+    {
+      "series": "primary",
+      "framework": "openscience",
+      "case": "wal_synthesis",
+      "seed": 75,
+      "process_exit_code": 0,
+      "framework_result": {
+        "type": "done",
+        "timestamp": 1793528487612,
+        "sessionID": "ses_e69600f91ffe3jHNbgDkOjxGcV",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 9983,
+          "output": 1018,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 62.98,
+      "grade": {
+        "delivery": "substantive_answer",
+        "required_atom_scores": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "relation_scores": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "false_additions": [
+          {
+            "quote": "3.22.0（2018-07-22）",
+            "source": "3.22.0 (2018-01-22)",
+            "type": "incorrect_extra_date",
+            "required_version_atom_remains_correct": true
+          }
+        ],
+        "omissions": [],
+        "citation_notes": [
+          "Readonly conditions cite70-79 but immutable is80-81.",
+          "wal-index location cites35 while the name occurs34. These are incomplete exact spans, not nonexistent sources."
+        ],
+        "notes": [
+          "The separate 保留或的关系 bullet is misinterpreted/irrelevant; the actual condition list explicitly says any one and preserves OR, so OR is credited from the whole answer."
+        ],
+        "full_pass": false
+      },
+      "tool_names": [
+        "read"
+      ],
+      "candidate_findings": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\wal_synthesis-75-openscience\\research-report.txt",
+      "report_sha256": "efc2ada5921d686bb206de2b5c624188e1388c39f5096d8776af9643189fe8b9",
+      "report_text": "根据提供的 SQLite 官方材料（`evidence.md`），研究结果如下：\n\n### 1. WAL 的读写并发和单写者限制是否矛盾？\n**不矛盾。** 它们描述的是不同维度的并发能力：\n*   **读写并发机制：** 读操作不阻塞写操作，写操作也不阻塞读操作。这是因为写操作只是将新内容追加到 WAL 文件的末尾，且写操作不会干扰读操作的动作，因此读写可以同时进行（lines 00014-00024）。\n*   **单写者限制机制：** 由于只有一个 WAL 文件，因此在任何给定的时刻只能有一个写者（line 00025）。\n\n### 2. WAL 引入版本、只读打开支持版本及完整替代条件是什么？保留或的关系。\n*   **引入版本：** SQLite 版本 3.7.0（2010-07-21）（line 0006）。\n*   **只读打开支持版本：** SQLite 版本 3.22.0（2018-07-22）（line 00068）。\n*   **只读打开的完整条件：** 在新版本中，即使在只读介质或缺乏写权限的情况下，只要满足以下任一条件即可读取 WAL 模式数据库（lines 00070-00079）：\n    1. `-shm` 和 `-wal` 文件已存在且可读。\n    2. 数据库所在的目录具有写权限，以便创建 `-shm` 和 `-wal` 文件。\n    3. 使用 `immutable` 查询参数打开数据库连接。\n*   **保留或的关系：** 材料提到，虽然可以打开只读的 WAL 模式数据库，但将数据库转换为 `PRAGMA journal_mode=DELETE` 后再烧录到只读介质上是更好的做法（lines 00083-00085）。\n\n### 3. Checkpoint 与读者并行时何时停止、为什么、进度保存在哪里、以后如何继续？\n*   **何时停止：** 当 checkpoint 到达 WAL 文件中任何当前读者“结束标记”（end mark）之后的页面时，必须停止（lines 00030-00031）。\n*   **为什么：** 为了防止 checkpoint 覆盖读者正在使用的数据库文件部分（lines 00032-00034）。\n*   **进度保存在哪里：** 保存在 `wal-index` 中（line 00035）。\n*   **以后如何继续：** 在下一次调用时，从上次离开的位置继续将内容从 WAL 传输到数据库中（lines 00035-00036）。\n\n### 4. Writer 回绕（Rewind）复用 WAL 的条件是什么？这些条件是否也是 checkpoint 转移数据的必要条件？区分两个动作。\n*   **Writer 回绕条件：** 只有当“整个 WAL 已传输到数据库并同步”且“没有读者正在使用 WAL”时，写者才会将 WAL 回绕到开头并从开头开始放置新事务（lines 00054-00058）。\n*   **是否为 Checkpoint 转移数据的必要条件：** **不是。**\n*   **区分两个动作：**\n    *   **Checkpoint** 是将内容从 WAL 传输到数据库的动作。它可以在有读者的情况下并行运行，只是会因读者而“暂停”而非完全“停止”。\n    *   **Rewind** 是写者在 checkpoint 完成后，为了防止 WAL 文件无限制增长而进行的“重置”动作。它要求必须没有读者在占用 WAL 才能发生。\n\n### 5. 这些材料能否证明本机 WAL 比回滚日志更快，或证明整份官方页面从未做过本机测量？说明证据边界。\n*   **能否证明更快：** 材料**不能**直接证明“本机”WAL 比回滚日志更快。它仅声明“WAL 在大多数场景下显著快于回滚日志”（line 00012），这是一个通用的结论而非具体的本机测量数据。\n*   **是否从未做过本机测量：** 材料也**不能**证明官方从未做过本机测量。它只是在描述结论（\"significantly faster\"），并没有明确说明这个结论是基于特定的本机实验还是基于广泛的综合测试。\n*   **证据边界：** 材料提供了结论（WAL 快、并发性高、I/O 更顺序），但未提供具体的量化数据（如具体的百分比或秒数）或具体的实验环境参数。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\wire\\wal_synthesis-75-openscience.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 8568,
+          "output_tokens": 15,
+          "backend_generation": 18,
+          "proxy_elapsed_seconds": 7.422
+        },
+        {
+          "index": 2,
+          "auxiliary_title": true,
+          "input_tokens": 811,
+          "output_tokens": 7,
+          "backend_generation": 19,
+          "proxy_elapsed_seconds": 1.047
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 9983,
+          "output_tokens": 1018,
+          "backend_generation": 20,
+          "proxy_elapsed_seconds": 38.906
+        }
+      ]
+    },
+    {
+      "series": "primary",
+      "framework": "codey",
+      "case": "wal_synthesis",
+      "seed": 75,
+      "process_exit_code": 1,
+      "framework_result": {
+        "exit_code": 1,
+        "run_id": "run_72ed186cae904018be35f3d6ad487b05",
+        "session_id": "research-research",
+        "stop_reason": "max_turns",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\wal_synthesis-75-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_72ed186cae904018be35f3d6ad487b05.jsonl"
+      },
+      "elapsed_seconds": 110.94,
+      "grade": {
+        "delivery": "no_accepted_report",
+        "required_atom_scores": null,
+        "relation_scores": null,
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [
+          "One selected q1 answer; q2 includes nonexistent save_research_answer, invalid passage lists, missing version support and AND/OR repairs; max_turns."
+        ],
+        "full_pass": false
+      },
+      "tool_names": [],
+      "candidate_findings": [
+        {
+          "id": "claim-09eba198a07d5b7632e2397f6122e98945b4888b17a5cc1366ca0a0a25d3561a",
+          "revision": 1,
+          "status": "candidate",
+          "content": "WAL 的读写并发和单写者限制并不矛盾。WAL 机制允许读者和写入者同时运行，因为写入操作只是将新内容追加到 WAL 文件的末尾，且不会干扰读者的操作；然而，由于只有一个 WAL 文件，因此在同一时间只能有一个写入者。",
+          "pinned_evidence": [
+            {
+              "id": "evidence-97ea1bb6abcd78f62857a032dc6407cbc66e36a5aea57eeefc7e2a890fc99009",
+              "revision": 1,
+              "excerpt": "## 1. Overview\n\nThe default method by which SQLite implementsatomic commit and rollback is a rollback journal.\nBeginning with version 3.7.0 (2010-07-21), a new \"Write-Ahead Log\" option\n(hereafter referred to as \"WAL\") is available.\n\nThere are advantages and disadvantages to using WAL instead of\na rollback journal. Advantages include:\n\nWAL is significantly faster in most scenarios.\n\nWAL provides more concurrency as readers do not block writers and\na writer does not block readers. Reading and writing can proceed\nconcurrently.\n\nDisk I/O operations tends to be more sequential using WAL.\n\n\n\nWriters merely append new content to the end of the WAL file.\nBecause writers do nothing that would interfere with the actions of\nreaders, writers and readers can run at the same time. However,\nsince there is only one WAL file, there can only be one writer at\na time."
+            }
+          ]
+        },
+        {
+          "id": "claim-7a5bd85c9d62c568ede8d09c5077d1c1aa86ceb2b21919c641c5485f1fc48d66",
+          "revision": 1,
+          "status": "candidate",
+          "content": "WAL 引入版本为 3.7.0 (2010-07-21)；支持在只读媒体或缺乏写入权限的数据库上打开 WAL 模式的限制从版本 3.22.0 (2018-01-22) 开始放宽。在这些版本下，只要满足以下任一条件即可在只读状态下读取 WAL 模式数据库：1. -shm 和 -wal 文件已存在且可读；2. 数据库所在目录具有写入权限以创建 -shm 和 -wal 文件；3. 使用 immutable 参数打开数据库连接。",
+          "pinned_evidence": [
+            {
+              "id": "evidence-97ea1bb6abcd78f62857a032dc6407cbc66e36a5aea57eeefc7e2a890fc99009",
+              "revision": 1,
+              "excerpt": "## 1. Overview\n\nThe default method by which SQLite implementsatomic commit and rollback is a rollback journal.\nBeginning with version 3.7.0 (2010-07-21), a new \"Write-Ahead Log\" option\n(hereafter referred to as \"WAL\") is available.\n\nThere are advantages and disadvantages to using WAL instead of\na rollback journal. Advantages include:\n\nWAL is significantly faster in most scenarios.\n\nWAL provides more concurrency as readers do not block writers and\na writer does not block readers. Reading and writing can proceed\nconcurrently.\n\nDisk I/O operations tends to be more sequential using WAL.\n\n\n\nWriters merely append new content to the end of the WAL file.\nBecause writers do nothing that would interfere with the actions of\nreaders, writers and readers can run at the same time. However,\nsince there is only one WAL file, there can only be one writer at\na time."
+            },
+            {
+              "id": "evidence-efcb78595b9dbda23a9bd3782bd15c6f13877d0d96be36bfcd8b02fe7638520e",
+              "revision": 1,
+              "excerpt": "Whenever a write operation occurs, the writer checks how much progress\nthe checkpointer has made, and if the entire WAL has been transferred into\nthe database and synced and if no readers are making use of the WAL, then\nthe writer will rewind the WAL back to the beginning and start putting new\ntransactions at the beginning of the WAL. This mechanism prevents a WAL\nfile from growing without bound.\n\n\n\n## 5. Read-Only Databases\n\nOlder versions of SQLite could not read a WAL-mode database that was\nread-only. In other words, write access was required in order to read a\nWAL-mode database. This constraint was relaxed beginning with\nSQLite version 3.22.0 (2018-01-22).\n\nOn newer versions of SQLite,\na WAL-mode database on read-only media, or a WAL-mode database that lacks\nwrite permission, can still be read as long as one or more of the following\nconditions are met:\n\nThe -shm and -wal files already exist and are readable."
+            },
+            {
+              "id": "evidence-2769db204b1323ddd026693016a383d9fcc51d18d66d1df00766faa67eac96ca",
+              "revision": 1,
+              "excerpt": "There is write permission on the directory containing the database so\nthat the -shm and -wal files can be created.\n\nThe database connection is opened using the\nimmutable query parameter.\n\nEven though it is possible to open a read-only WAL-mode database,\nit is good practice to convert the database to PRAGMA journal_mode=DELETE prior to burning an\nSQLite database image onto read-only media."
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\wal_synthesis-75-codey\\research-report.txt",
+      "report_sha256": "b9d354e4b0f0ab875b151ec40f2025c679e8e4f72ecc3eb2c19fe09d90fa3eb5",
+      "report_text": "max turns reached",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\wire\\wal_synthesis-75-codey.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 5160,
+          "output_tokens": 430,
+          "backend_generation": 21,
+          "proxy_elapsed_seconds": 17.297
+        },
+        {
+          "index": 2,
+          "auxiliary_title": false,
+          "input_tokens": 3139,
+          "output_tokens": 34,
+          "backend_generation": 22,
+          "proxy_elapsed_seconds": 3.484
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 5679,
+          "output_tokens": 114,
+          "backend_generation": 23,
+          "proxy_elapsed_seconds": 7.453
+        },
+        {
+          "index": 4,
+          "auxiliary_title": false,
+          "input_tokens": 5138,
+          "output_tokens": 24,
+          "backend_generation": 24,
+          "proxy_elapsed_seconds": 3.765
+        },
+        {
+          "index": 5,
+          "auxiliary_title": false,
+          "input_tokens": 2724,
+          "output_tokens": 36,
+          "backend_generation": 25,
+          "proxy_elapsed_seconds": 3.187
+        },
+        {
+          "index": 6,
+          "auxiliary_title": false,
+          "input_tokens": 2835,
+          "output_tokens": 34,
+          "backend_generation": 26,
+          "proxy_elapsed_seconds": 3.062
+        },
+        {
+          "index": 7,
+          "auxiliary_title": false,
+          "input_tokens": 5872,
+          "output_tokens": 222,
+          "backend_generation": 27,
+          "proxy_elapsed_seconds": 10.641
+        },
+        {
+          "index": 8,
+          "auxiliary_title": false,
+          "input_tokens": 4837,
+          "output_tokens": 290,
+          "backend_generation": 28,
+          "proxy_elapsed_seconds": 11.094
+        },
+        {
+          "index": 9,
+          "auxiliary_title": false,
+          "input_tokens": 4832,
+          "output_tokens": 149,
+          "backend_generation": 29,
+          "proxy_elapsed_seconds": 5.094
+        },
+        {
+          "index": 10,
+          "auxiliary_title": false,
+          "input_tokens": 5057,
+          "output_tokens": 328,
+          "backend_generation": 30,
+          "proxy_elapsed_seconds": 12.36
+        },
+        {
+          "index": 11,
+          "auxiliary_title": false,
+          "input_tokens": 5162,
+          "output_tokens": 173,
+          "backend_generation": 31,
+          "proxy_elapsed_seconds": 7.922
+        },
+        {
+          "index": 12,
+          "auxiliary_title": false,
+          "input_tokens": 5081,
+          "output_tokens": 320,
+          "backend_generation": 32,
+          "proxy_elapsed_seconds": 12.172
+        }
+      ]
+    },
+    {
+      "series": "primary",
+      "framework": "codey",
+      "case": "wal_synthesis",
+      "seed": 76,
+      "process_exit_code": 1,
+      "framework_result": {
+        "exit_code": 1,
+        "run_id": "run_a2a4203a2ac1483f9c9c0efbc4f2378a",
+        "session_id": "research-research",
+        "stop_reason": "protocol",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\wal_synthesis-76-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_a2a4203a2ac1483f9c9c0efbc4f2378a.jsonl"
+      },
+      "elapsed_seconds": 112.16,
+      "grade": {
+        "delivery": "no_accepted_report",
+        "required_atom_scores": null,
+        "relation_scores": null,
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [
+          "Plan requirement mapping fails, repairs omit required questions; repeated invalid requests stop protocol."
+        ],
+        "full_pass": false
+      },
+      "tool_names": [],
+      "candidate_findings": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\wal_synthesis-76-codey\\research-report.txt",
+      "report_sha256": "5ca0b663db1897772205e72847efd8d9a4edf5e8e7e61c59da7106002f8901cd",
+      "report_text": "stopped after 5 invalid tool requests: research_plan missing required arg 'questions'",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\wire\\wal_synthesis-76-codey.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 5160,
+          "output_tokens": 432,
+          "backend_generation": 33,
+          "proxy_elapsed_seconds": 17.109
+        },
+        {
+          "index": 2,
+          "auxiliary_title": false,
+          "input_tokens": 5898,
+          "output_tokens": 651,
+          "backend_generation": 34,
+          "proxy_elapsed_seconds": 23.141
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 6685,
+          "output_tokens": 486,
+          "backend_generation": 35,
+          "proxy_elapsed_seconds": 16.266
+        },
+        {
+          "index": 4,
+          "auxiliary_title": false,
+          "input_tokens": 7310,
+          "output_tokens": 486,
+          "backend_generation": 36,
+          "proxy_elapsed_seconds": 16.453
+        },
+        {
+          "index": 5,
+          "auxiliary_title": false,
+          "input_tokens": 7935,
+          "output_tokens": 486,
+          "backend_generation": 37,
+          "proxy_elapsed_seconds": 16.344
+        },
+        {
+          "index": 6,
+          "auxiliary_title": false,
+          "input_tokens": 8560,
+          "output_tokens": 486,
+          "backend_generation": 38,
+          "proxy_elapsed_seconds": 16.594
+        }
+      ]
+    },
+    {
+      "series": "primary",
+      "framework": "openscience",
+      "case": "wal_synthesis",
+      "seed": 76,
+      "process_exit_code": 0,
+      "framework_result": {
+        "type": "done",
+        "timestamp": 1793528766772,
+        "sessionID": "ses_e695bb1eaffefJG2E726Q0gPsC",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 9981,
+          "output": 819,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 56.06,
+      "grade": {
+        "delivery": "substantive_answer",
+        "required_atom_scores": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "relation_scores": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [
+          "The separate 保留或的关系 bullet is misinterpreted/irrelevant; the actual condition list explicitly says any one and preserves OR, so OR is credited from the whole answer.",
+          "Checkpoint partial/concurrent progress is expressed through reader end-mark stopping, continuing and the explicit 不是 comparison; credit is based on the whole answer, not exact keyword matching."
+        ],
+        "full_pass": true
+      },
+      "tool_names": [
+        "read"
+      ],
+      "candidate_findings": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\wal_synthesis-76-openscience\\research-report.txt",
+      "report_sha256": "7909ea6084733428f5c34bd36fe16c52f545b153ccee27123443b9351ea9bc25",
+      "report_text": "根据提供的 SQLite 官方材料（`evidence.md`），研究结果如下：\n\n### 1. WAL 的读写并发和单写者限制是否矛盾？\n**不矛盾。** 它们描述的是不同维度的并发能力：\n*   **读写并发机制：** 因为写操作只是将新内容追加到 WAL 文件的末尾，且写操作不会干扰读操作的动作，所以**读者不会阻塞写入者，写入者也不会阻塞读者**。它们可以同时进行。\n*   **单写者限制机制：** 因为只有一个 WAL 文件，所以**同一时间只能有一个写入者**。\n\n### 2. WAL 引入版本、只读打开支持版本及完整替代条件是什么？保留或的关系。\n*   **引入版本：** 从 SQLite 版本 3.7.0 (2010-07-21) 开始可用。\n*   **只读打开支持版本：** 从 SQLite 版本 3.22.0 (2018-01-22) 开始支持。\n*   **只读打开的完整条件（满足其一即可）：**\n    1. `-shm` 和 `-wal` 文件已经存在且可读。\n    2. 数据库所在的目录具有写入权限，以便创建 `-shm` 和 `-wal` 文件。\n    3. 使用 `immutable` 查询参数打开数据库连接。\n*   **保留或的关系：** 材料中提到，虽然可以打开只读的 WAL 数据库，但良好的做法是在将数据库镜像烧录到只读介质前，先将其转换为 `PRAGMA journal_mode=DELETE`。\n\n### 3. Checkpoint 与读者并行时何时停止、为什么、进度保存在哪里、以后如何继续？\n*   **何时停止：** 当 Checkpoint 达到 WAL 文件中任何当前读者“结束标记”（end mark）之后的页面时，必须停止。\n*   **为什么：** 为了防止 Checkpoint 覆盖掉读者正在使用的数据库文件部分。\n*   **进度保存在哪里：** 保存在 `wal-index` 中。\n*   **以后如何继续：** 在下一次调用时，Checkpoint 会从上次离开的地方继续将内容从 WAL 转移到数据库中。\n\n### 4. Writer 回绕（Rewind）复用 WAL 的条件是什么？这些条件是否也是 checkpoint 转移数据的必要条件？区分两个动作。\n*   **Writer 回绕的条件：** 必须同时满足以下三个条件：\n    1. 整个 WAL 已转移到数据库中并同步（synced）。\n    2. 没有读者正在使用 WAL。\n    3. 发生写操作时触发。\n*   **是否为 Checkpoint 的必要条件：** **不是**。\n*   **区分两个动作：**\n    *   **Checkpoint** 是将内容从 WAL 转移到原始数据库文件的过程（受读者进度限制）。\n    *   **Rewind** 是在满足特定条件时，将 WAL 回绕到开头并从开头开始放置新事务的机制，目的是防止 WAL 文件无限增长。\n\n### 5. 这些材料能否证明本机 WAL 比回滚日志更快，或证明整份官方页面从未做过本机测量？说明证据边界。\n*   **结论：** 材料**不能**证明本机 WAL 比回滚日志更快，也**不能**证明整份页面从未做过本机测量。\n*   **证据边界：**\n    *   材料仅提到“WAL 在大多数场景下显著快于回滚日志”（WAL is significantly faster in most scenarios），这是一个**定性描述**而非具体的**定量测量数据**。\n    *   材料并未提供具体的基准测试（Benchmark）数据，也没有明确说明这些结论是基于特定机器的测量还是通用的理论推导。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\wire\\wal_synthesis-76-openscience.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 8566,
+          "output_tokens": 15,
+          "backend_generation": 39,
+          "proxy_elapsed_seconds": 7.594
+        },
+        {
+          "index": 2,
+          "auxiliary_title": true,
+          "input_tokens": 811,
+          "output_tokens": 7,
+          "backend_generation": 40,
+          "proxy_elapsed_seconds": 1.062
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 9981,
+          "output_tokens": 819,
+          "backend_generation": 41,
+          "proxy_elapsed_seconds": 32.735
+        }
+      ]
+    },
+    {
+      "series": "primary",
+      "framework": "openscience",
+      "case": "asyncio_synthesis",
+      "seed": 74,
+      "process_exit_code": 0,
+      "framework_result": {
+        "type": "done",
+        "timestamp": 1793528819449,
+        "sessionID": "ses_e695ad6e1fferiFeZ9PUgKFWJl",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 10298,
+          "output": 599,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 52.62,
+      "grade": {
+        "delivery": "substantive_answer",
+        "required_atom_scores": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "relation_scores": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [],
+        "full_pass": true
+      },
+      "tool_names": [
+        "read"
+      ],
+      "candidate_findings": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-74-openscience\\research-report.txt",
+      "report_sha256": "bb9007efd170795f14f5e88952b225415983b01c9ab1ecaa847c9462dbc6111f",
+      "report_text": "根据 Python 3.12.7 官方材料，对 `asyncio.gather` 的研究结果如下：\n\n1.  **默认 `return_exceptions=False` 时的异常行为**：\n    *   **异常传播**：第一个抛出的异常会立即传播给等待 `gather()` 的任务。\n    *   **其余任务状态**：其余的 awaitable 对象**不会被自动取消**，它们会继续运行。\n\n2.  **`return_exceptions=True` 的变化与结果排列**：\n    *   **变化**：异常被视为与成功结果相同，它们会被聚合到结果列表中。\n    *   **排列顺序**：结果列表中的值顺序与输入 `aws` 序列中的 awaitable 对象顺序**对应**（即按输入顺序排列，而非完成顺序）。\n\n3.  **取消 `gather` 本身与取消其中一个 Task/Future 的区别**：\n    *   **取消 `gather` 本身**：如果 `gather()` 被取消，所有尚未完成的提交 awaitable 对象也会被**取消**。\n    *   **取消其中一个 Task/Future**：如果 `aws` 序列中的某个 Task 或 Future 被取消，它被视为抛出了 `CancelledError`，但此时 `gather()` 调用本身**不会被取消**。这是为了防止单个子任务的取消导致其他子任务也被取消。\n    *   **边界情况**：\n        *   **保留未完成任务**：当 `return_exceptions=False` 且 `gather` 传播了第一个异常后，未完成的任务仍会继续运行（除非手动取消）。\n        *   **CancelledError**：取消的子任务被视为抛出 `CancelledError`。\n        *   **return_exceptions 的影响**：当 `gather` 被取消时，取消操作会传播，无论 `return_exceptions` 是什么值。\n\n4.  **捕获异常后调用 `gather.cancel()` 是否必然取消其余任务？**：\n    *   **不一定**。\n    *   **原因**：如果 `gather` 在传播异常后已经被标记为“完成”（done），此时再调用 `gather.cancel()` 就不会取消任何提交的 awaitable 对象。\n\n5.  **TaskGroup 与 gather 的取消保证区别**：\n    *   **区别**：当一个任务（或子任务）抛出异常时，`TaskGroup` 会自动取消剩余的已调度任务，而 `gather` 则不会。\n    *   **是否足以证明 TaskGroup 总是更快？**：**不足以证明**。材料仅说明 `TaskGroup` 提供了“更强的安全保证”（stronger safety guarantees），并未明确指出它在所有情况下都比 `gather` 更快。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\wire\\asyncio_synthesis-74-openscience.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 8612,
+          "output_tokens": 15,
+          "backend_generation": 42,
+          "proxy_elapsed_seconds": 7.531
+        },
+        {
+          "index": 2,
+          "auxiliary_title": true,
+          "input_tokens": 855,
+          "output_tokens": 8,
+          "backend_generation": 43,
+          "proxy_elapsed_seconds": 1.141
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 10298,
+          "output_tokens": 599,
+          "backend_generation": 44,
+          "proxy_elapsed_seconds": 26.766
+        }
+      ]
+    },
+    {
+      "series": "primary",
+      "framework": "codey",
+      "case": "asyncio_synthesis",
+      "seed": 74,
+      "process_exit_code": 1,
+      "framework_result": {
+        "exit_code": 1,
+        "run_id": "run_24a9f9f2bbf644b3b69405f29e14547c",
+        "session_id": "research-research",
+        "stop_reason": "max_turns",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-74-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_24a9f9f2bbf644b3b69405f29e14547c.jsonl"
+      },
+      "elapsed_seconds": 85.75,
+      "grade": {
+        "delivery": "no_accepted_report",
+        "required_atom_scores": null,
+        "relation_scores": null,
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [
+          "Saved q3 claim includes child cancellation/CancelledError and3.7 regardless-return_exceptions cancellation, but its sole pinned passage ends after gather-parent cancellation and lacks those facts. Full corpus supports the facts; attached exact excerpt is incomplete. No final report was published."
+        ],
+        "notes": [
+          "q1-q3 selected within12 turns; q4-q5 remain; max_turns. One saved q3 finding cites an incomplete passage."
+        ],
+        "full_pass": false
+      },
+      "tool_names": [],
+      "candidate_findings": [
+        {
+          "id": "claim-f3647895757e05d989e38bc800ceaf3a833fa02f83986da2354114b72720e6d7",
+          "revision": 1,
+          "status": "candidate",
+          "content": "当 return_exceptions=False（默认值）时，如果其中一个子任务抛出异常，该异常会立即传播到等待 gather() 的任务中。此时，序列中的其他可等待对象（awaitables）并不会被自动取消，它们将继续运行。",
+          "pinned_evidence": [
+            {
+              "id": "evidence-646f39c6319ae5b9db3f13486ef8501c2d57da29aa1782d1fe338b54655f7670",
+              "revision": 1,
+              "excerpt": ".. awaitablefunction:: gather(*aws, return_exceptions=False)\n\n   Run :ref:`awaitable objects <asyncio-awaitables>` in the *aws*\n   sequence *concurrently*.\n\n   If any awaitable in *aws* is a coroutine, it is automatically\n   scheduled as a Task.\n\n   If all awaitables are completed successfully, the result is an\n   aggregate list of returned values.  The order of result values\n   corresponds to the order of awaitables in *aws*.\n\n   If *return_exceptions* is ``False`` (default), the first\n   raised exception is immediately propagated to the task that\n   awaits on ``gather()``.  Other awaitables in the *aws* sequence\n   **won't be cancelled** and will continue to run.\n\n   If *return_exceptions* is ``True``, exceptions are treated the\n   same as successful results, and aggregated in the result list.\n\n   If ``gather()`` is *cancelled*, all submitted awaitables\n   (that have not completed yet) are also *cancelled*."
+            }
+          ]
+        },
+        {
+          "id": "claim-070dea2f25adc99be003cc441e26e6af8e0d439ca9508591e8e04cc2cbb334f6",
+          "revision": 1,
+          "status": "candidate",
+          "content": "当 return_exceptions=True 时，异常被视为与成功结果相同，并被聚合到结果列表中。成功结果的排列顺序与 awaitables 在 aws 序列中的输入顺序一致。",
+          "pinned_evidence": [
+            {
+              "id": "evidence-646f39c6319ae5b9db3f13486ef8501c2d57da29aa1782d1fe338b54655f7670",
+              "revision": 1,
+              "excerpt": ".. awaitablefunction:: gather(*aws, return_exceptions=False)\n\n   Run :ref:`awaitable objects <asyncio-awaitables>` in the *aws*\n   sequence *concurrently*.\n\n   If any awaitable in *aws* is a coroutine, it is automatically\n   scheduled as a Task.\n\n   If all awaitables are completed successfully, the result is an\n   aggregate list of returned values.  The order of result values\n   corresponds to the order of awaitables in *aws*.\n\n   If *return_exceptions* is ``False`` (default), the first\n   raised exception is immediately propagated to the task that\n   awaits on ``gather()``.  Other awaitables in the *aws* sequence\n   **won't be cancelled** and will continue to run.\n\n   If *return_exceptions* is ``True``, exceptions are treated the\n   same as successful results, and aggregated in the result list.\n\n   If ``gather()`` is *cancelled*, all submitted awaitables\n   (that have not completed yet) are also *cancelled*."
+            }
+          ]
+        },
+        {
+          "id": "claim-45c57307ff6ae5c6501d1fa10ad1566d8e20e03dccd777301b66e9a2dd4fe683",
+          "revision": 1,
+          "status": "candidate",
+          "content": "取消 gather 本身与取消其中一个子任务（Task/Future）有显著区别：\n1. 取消 gather 本身：当 `gather()` 被取消时，所有尚未完成的提交 awaitable 都会被取消。\n2. 取消其中一个子任务：如果 `aws` 序列中的某个 Task 或 Future 被取消，它被视为抛出了 `CancelledError`，但此时 `gather()` 调用本身并不会被取消。这样做是为了防止取消一个子任务而导致其他子任务被意外取消。\n3. 边界情况：\n   - 如果 `return_exceptions=False` 且 gather 已经传播了某个 awaitable 抛出的异常，此时 gather 已被标记为完成（done），此时再调用 `gather.cancel()` 不会取消任何其他 awaitable。\n   - 取消 gather 的传播与 `return_exceptions` 的设置无关（从 Python 3.7 开始）。",
+          "pinned_evidence": [
+            {
+              "id": "evidence-646f39c6319ae5b9db3f13486ef8501c2d57da29aa1782d1fe338b54655f7670",
+              "revision": 1,
+              "excerpt": ".. awaitablefunction:: gather(*aws, return_exceptions=False)\n\n   Run :ref:`awaitable objects <asyncio-awaitables>` in the *aws*\n   sequence *concurrently*.\n\n   If any awaitable in *aws* is a coroutine, it is automatically\n   scheduled as a Task.\n\n   If all awaitables are completed successfully, the result is an\n   aggregate list of returned values.  The order of result values\n   corresponds to the order of awaitables in *aws*.\n\n   If *return_exceptions* is ``False`` (default), the first\n   raised exception is immediately propagated to the task that\n   awaits on ``gather()``.  Other awaitables in the *aws* sequence\n   **won't be cancelled** and will continue to run.\n\n   If *return_exceptions* is ``True``, exceptions are treated the\n   same as successful results, and aggregated in the result list.\n\n   If ``gather()`` is *cancelled*, all submitted awaitables\n   (that have not completed yet) are also *cancelled*."
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-74-codey\\research-report.txt",
+      "report_sha256": "b9d354e4b0f0ab875b151ec40f2025c679e8e4f72ecc3eb2c19fe09d90fa3eb5",
+      "report_text": "max turns reached",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\wire\\asyncio_synthesis-74-codey.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 5324,
+          "output_tokens": 382,
+          "backend_generation": 45,
+          "proxy_elapsed_seconds": 16.016
+        },
+        {
+          "index": 2,
+          "auxiliary_title": false,
+          "input_tokens": 3158,
+          "output_tokens": 34,
+          "backend_generation": 46,
+          "proxy_elapsed_seconds": 3.516
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 2780,
+          "output_tokens": 55,
+          "backend_generation": 47,
+          "proxy_elapsed_seconds": 3.687
+        },
+        {
+          "index": 4,
+          "auxiliary_title": false,
+          "input_tokens": 6487,
+          "output_tokens": 107,
+          "backend_generation": 48,
+          "proxy_elapsed_seconds": 7.812
+        },
+        {
+          "index": 5,
+          "auxiliary_title": false,
+          "input_tokens": 5690,
+          "output_tokens": 24,
+          "backend_generation": 49,
+          "proxy_elapsed_seconds": 4.063
+        },
+        {
+          "index": 6,
+          "auxiliary_title": false,
+          "input_tokens": 2966,
+          "output_tokens": 43,
+          "backend_generation": 50,
+          "proxy_elapsed_seconds": 3.547
+        },
+        {
+          "index": 7,
+          "auxiliary_title": false,
+          "input_tokens": 4405,
+          "output_tokens": 43,
+          "backend_generation": 51,
+          "proxy_elapsed_seconds": 3.921
+        },
+        {
+          "index": 8,
+          "auxiliary_title": false,
+          "input_tokens": 2702,
+          "output_tokens": 54,
+          "backend_generation": 52,
+          "proxy_elapsed_seconds": 3.109
+        },
+        {
+          "index": 9,
+          "auxiliary_title": false,
+          "input_tokens": 5221,
+          "output_tokens": 90,
+          "backend_generation": 53,
+          "proxy_elapsed_seconds": 6.187
+        },
+        {
+          "index": 10,
+          "auxiliary_title": false,
+          "input_tokens": 5527,
+          "output_tokens": 24,
+          "backend_generation": 54,
+          "proxy_elapsed_seconds": 3.969
+        },
+        {
+          "index": 11,
+          "auxiliary_title": false,
+          "input_tokens": 5279,
+          "output_tokens": 245,
+          "backend_generation": 55,
+          "proxy_elapsed_seconds": 11.484
+        },
+        {
+          "index": 12,
+          "auxiliary_title": false,
+          "input_tokens": 6023,
+          "output_tokens": 24,
+          "backend_generation": 56,
+          "proxy_elapsed_seconds": 4.391
+        }
+      ]
+    },
+    {
+      "series": "primary",
+      "framework": "codey",
+      "case": "asyncio_synthesis",
+      "seed": 75,
+      "process_exit_code": 1,
+      "framework_result": {
+        "exit_code": 1,
+        "run_id": "run_d7f6bba698534b9ebc03e6f40cb0846c",
+        "session_id": "research-research",
+        "stop_reason": "no_progress",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-75-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_d7f6bba698534b9ebc03e6f40cb0846c.jsonl"
+      },
+      "elapsed_seconds": 158.34,
+      "grade": {
+        "delivery": "no_accepted_report",
+        "required_atom_scores": null,
+        "relation_scores": null,
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [
+          "Repeated plan mapping/array errors; no valid plan registered; no_progress."
+        ],
+        "full_pass": false
+      },
+      "tool_names": [],
+      "candidate_findings": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-75-codey\\research-report.txt",
+      "report_sha256": "06fe9deab5ba612943d2597efe62f72eacdc70ebcb102c1800d0a965b48f343c",
+      "report_text": "stopped after repeated tool results without progress",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\wire\\asyncio_synthesis-75-codey.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 5324,
+          "output_tokens": 317,
+          "backend_generation": 57,
+          "proxy_elapsed_seconds": 14.047
+        },
+        {
+          "index": 2,
+          "auxiliary_title": false,
+          "input_tokens": 5935,
+          "output_tokens": 514,
+          "backend_generation": 58,
+          "proxy_elapsed_seconds": 19.266
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 6630,
+          "output_tokens": 357,
+          "backend_generation": 59,
+          "proxy_elapsed_seconds": 12.797
+        },
+        {
+          "index": 4,
+          "auxiliary_title": false,
+          "input_tokens": 7278,
+          "output_tokens": 514,
+          "backend_generation": 60,
+          "proxy_elapsed_seconds": 17.406
+        },
+        {
+          "index": 5,
+          "auxiliary_title": false,
+          "input_tokens": 7977,
+          "output_tokens": 49,
+          "backend_generation": 61,
+          "proxy_elapsed_seconds": 3.547
+        },
+        {
+          "index": 6,
+          "auxiliary_title": false,
+          "input_tokens": 8173,
+          "output_tokens": 514,
+          "backend_generation": 62,
+          "proxy_elapsed_seconds": 16.953
+        },
+        {
+          "index": 7,
+          "auxiliary_title": false,
+          "input_tokens": 8837,
+          "output_tokens": 357,
+          "backend_generation": 63,
+          "proxy_elapsed_seconds": 12.656
+        },
+        {
+          "index": 8,
+          "auxiliary_title": false,
+          "input_tokens": 9401,
+          "output_tokens": 554,
+          "backend_generation": 64,
+          "proxy_elapsed_seconds": 18.375
+        },
+        {
+          "index": 9,
+          "auxiliary_title": false,
+          "input_tokens": 10107,
+          "output_tokens": 357,
+          "backend_generation": 65,
+          "proxy_elapsed_seconds": 12.938
+        },
+        {
+          "index": 10,
+          "auxiliary_title": false,
+          "input_tokens": 10747,
+          "output_tokens": 548,
+          "backend_generation": 66,
+          "proxy_elapsed_seconds": 18.531
+        }
+      ]
+    },
+    {
+      "series": "primary",
+      "framework": "openscience",
+      "case": "asyncio_synthesis",
+      "seed": 75,
+      "process_exit_code": 0,
+      "framework_result": {
+        "type": "done",
+        "timestamp": 1793529083396,
+        "sessionID": "ses_e69564fb2ffeNm9FyiVTctR719",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 19.89,
+      "grade": {
+        "delivery": "tool_syntax_in_final_text",
+        "required_atom_scores": null,
+        "relation_scores": null,
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [
+          "CLI status=completed/exitCode=0, but no read tool was executed and output contains only a literal native tool-call marker. This is not research completion."
+        ],
+        "full_pass": false
+      },
+      "tool_names": [],
+      "candidate_findings": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-75-openscience\\research-report.txt",
+      "report_sha256": "30afb665b426957df49eb81109732770081d0309d82e0692087cd144ef4f6012",
+      "report_text": "<|tool_call>call:read{filePath:\"D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-75-openscience\\evidence.md\"}<tool_call|>",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\wire\\asyncio_synthesis-75-openscience.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 8612,
+          "output_tokens": 55,
+          "backend_generation": 67,
+          "proxy_elapsed_seconds": 8.844
+        },
+        {
+          "index": 2,
+          "auxiliary_title": true,
+          "input_tokens": 855,
+          "output_tokens": 13,
+          "backend_generation": 68,
+          "proxy_elapsed_seconds": 1.282
+        }
+      ]
+    },
+    {
+      "series": "primary",
+      "framework": "openscience",
+      "case": "asyncio_synthesis",
+      "seed": 76,
+      "process_exit_code": 0,
+      "framework_result": {
+        "type": "done",
+        "timestamp": 1793529134999,
+        "sessionID": "ses_e6956021bffeFB1DpMMaCSxN2p",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 10299,
+          "output": 569,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 51.44,
+      "grade": {
+        "delivery": "substantive_answer",
+        "required_atom_scores": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "relation_scores": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [],
+        "full_pass": true
+      },
+      "tool_names": [
+        "read"
+      ],
+      "candidate_findings": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-76-openscience\\research-report.txt",
+      "report_sha256": "6e1c751638e317f78935f7231599a39afd7411276711f2e2abee7e847c65a24d",
+      "report_text": "根据 Python 3.12.7 官方材料，对 `asyncio.gather` 的研究结果如下：\n\n1. **默认 `return_exceptions=False` 时：**\n   - **异常传播：** 第一个抛出异常的子任务会立即将其异常传播给等待 `gather()` 的任务。\n   - **其余任务状态：** 其他子任务**不会被自动取消**，它们会继续运行。\n\n2. **`return_exceptions=True` 的改变：**\n   - **处理方式：** 异常被视为与成功结果相同，它们会被聚合到结果列表中。\n   - **排列顺序：** 成功结果（及异常）的排列顺序与输入 `aws` 序列中的**输入顺序**一致，而非完成顺序。\n\n3. **取消 `gather` 本身与取消其中一个 Task/Future 的区别：**\n   - **取消 `gather`：** 如果 `gather()` 被取消，所有尚未完成的提交子任务（awaitables）都会被**取消**。\n   - **取消其中一个 Task/Future：** 如果 `aws` 序列中的某个 Task 或 Future 被取消，它被视为抛出了 `CancelledError`，但此时 `gather()` 调用**不会被取消**。这是为了防止取消其中一个任务导致其他任务也被取消。\n   - **边界情况：** \n     - 如果 `gather()` 在传播异常后已被标记为完成（done），此时再调用 `gather.cancel()` 不会取消任何其他子任务。\n     - 如果 `gather()` 本身被取消，无论 `return_exceptions` 是什么值，取消都会被传播。\n\n4. **捕获异常后调用 `gather.cancel()` 是否必然取消其余任务？**\n   - **不一定。** \n   - **原因：** 当 `return_exceptions=False` 时，`gather` 在传播第一个子任务的异常后就已经被标记为完成（done）。根据材料，在标记为完成后调用 `gather.cancel()` 不会取消任何其他子任务。\n\n5. **TaskGroup 对普通子任务异常的取消保证与 gather 的区别：**\n   - **区别：** 如果一个任务（或子任务）抛出异常，`TaskGroup` 会取消剩余的已调度任务，而 `gather` 则不会。\n   - **是否足以证明 TaskGroup 总是更快？** \n     - **材料不足以证明。** 材料仅指出 `TaskGroup` 提供了“更强的安全保证”（stronger safety guarantees），并没有明确说明它在时间复杂度或执行速度上总是比 `gather` 更快。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\wire\\asyncio_synthesis-76-openscience.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 8613,
+          "output_tokens": 15,
+          "backend_generation": 69,
+          "proxy_elapsed_seconds": 7.562
+        },
+        {
+          "index": 2,
+          "auxiliary_title": true,
+          "input_tokens": 855,
+          "output_tokens": 8,
+          "backend_generation": 70,
+          "proxy_elapsed_seconds": 1.157
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 10299,
+          "output_tokens": 569,
+          "backend_generation": 71,
+          "proxy_elapsed_seconds": 25.765
+        }
+      ]
+    },
+    {
+      "series": "primary",
+      "framework": "codey",
+      "case": "asyncio_synthesis",
+      "seed": 76,
+      "process_exit_code": 1,
+      "framework_result": {
+        "exit_code": 1,
+        "run_id": "run_1c2e607aa4de4bb295c725468db53c71",
+        "session_id": "research-research",
+        "stop_reason": "no_progress",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-76-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_1c2e607aa4de4bb295c725468db53c71.jsonl"
+      },
+      "elapsed_seconds": 73.17,
+      "grade": {
+        "delivery": "no_accepted_report",
+        "required_atom_scores": null,
+        "relation_scores": null,
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [
+          "q1 selected; q2 repeats knowledge_search; no_progress."
+        ],
+        "full_pass": false
+      },
+      "tool_names": [],
+      "candidate_findings": [
+        {
+          "id": "claim-4589a5b7a7e2a3a8b8992b416a23b033f23a959642d6652cef95ccdb90e00ff8",
+          "revision": 1,
+          "status": "candidate",
+          "content": "当 return_exceptions=False（默认值）时，如果 aws 序列中的任何一个 awaitable 抛出异常，第一个抛出的异常会立即传播到等待 gather() 的任务中。此时，序列中的其他 awaitables 不会被取消，它们将继续运行。",
+          "pinned_evidence": [
+            {
+              "id": "evidence-646f39c6319ae5b9db3f13486ef8501c2d57da29aa1782d1fe338b54655f7670",
+              "revision": 1,
+              "excerpt": ".. awaitablefunction:: gather(*aws, return_exceptions=False)\n\n   Run :ref:`awaitable objects <asyncio-awaitables>` in the *aws*\n   sequence *concurrently*.\n\n   If any awaitable in *aws* is a coroutine, it is automatically\n   scheduled as a Task.\n\n   If all awaitables are completed successfully, the result is an\n   aggregate list of returned values.  The order of result values\n   corresponds to the order of awaitables in *aws*.\n\n   If *return_exceptions* is ``False`` (default), the first\n   raised exception is immediately propagated to the task that\n   awaits on ``gather()``.  Other awaitables in the *aws* sequence\n   **won't be cancelled** and will continue to run.\n\n   If *return_exceptions* is ``True``, exceptions are treated the\n   same as successful results, and aggregated in the result list.\n\n   If ``gather()`` is *cancelled*, all submitted awaitables\n   (that have not completed yet) are also *cancelled*."
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-76-codey\\research-report.txt",
+      "report_sha256": "06fe9deab5ba612943d2597efe62f72eacdc70ebcb102c1800d0a965b48f343c",
+      "report_text": "stopped after repeated tool results without progress",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\wire\\asyncio_synthesis-76-codey.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 5324,
+          "output_tokens": 382,
+          "backend_generation": 72,
+          "proxy_elapsed_seconds": 15.922
+        },
+        {
+          "index": 2,
+          "auxiliary_title": false,
+          "input_tokens": 3158,
+          "output_tokens": 55,
+          "backend_generation": 73,
+          "proxy_elapsed_seconds": 4.14
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 6312,
+          "output_tokens": 107,
+          "backend_generation": 74,
+          "proxy_elapsed_seconds": 7.719
+        },
+        {
+          "index": 4,
+          "auxiliary_title": false,
+          "input_tokens": 5510,
+          "output_tokens": 24,
+          "backend_generation": 75,
+          "proxy_elapsed_seconds": 4.047
+        },
+        {
+          "index": 5,
+          "auxiliary_title": false,
+          "input_tokens": 2790,
+          "output_tokens": 43,
+          "backend_generation": 76,
+          "proxy_elapsed_seconds": 3.437
+        },
+        {
+          "index": 6,
+          "auxiliary_title": false,
+          "input_tokens": 4224,
+          "output_tokens": 43,
+          "backend_generation": 77,
+          "proxy_elapsed_seconds": 3.906
+        },
+        {
+          "index": 7,
+          "auxiliary_title": false,
+          "input_tokens": 2526,
+          "output_tokens": 32,
+          "backend_generation": 78,
+          "proxy_elapsed_seconds": 2.406
+        },
+        {
+          "index": 8,
+          "auxiliary_title": false,
+          "input_tokens": 4218,
+          "output_tokens": 31,
+          "backend_generation": 79,
+          "proxy_elapsed_seconds": 3.532
+        },
+        {
+          "index": 9,
+          "auxiliary_title": false,
+          "input_tokens": 4213,
+          "output_tokens": 32,
+          "backend_generation": 80,
+          "proxy_elapsed_seconds": 3.563
+        },
+        {
+          "index": 10,
+          "auxiliary_title": false,
+          "input_tokens": 4216,
+          "output_tokens": 43,
+          "backend_generation": 81,
+          "proxy_elapsed_seconds": 3.875
+        },
+        {
+          "index": 11,
+          "auxiliary_title": false,
+          "input_tokens": 4230,
+          "output_tokens": 43,
+          "backend_generation": 82,
+          "proxy_elapsed_seconds": 3.937
+        },
+        {
+          "index": 12,
+          "auxiliary_title": false,
+          "input_tokens": 2526,
+          "output_tokens": 32,
+          "backend_generation": 83,
+          "proxy_elapsed_seconds": 2.469
+        }
+      ]
+    },
+    {
+      "series": "exploratory_24",
+      "framework": "openscience",
+      "case": "wal_synthesis",
+      "seed": 75,
+      "process_exit_code": 0,
+      "framework_result": {
+        "type": "done",
+        "timestamp": 1793529259713,
+        "sessionID": "ses_e69539ff2ffe2ORAIqSfDSFzp9",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 21.73,
+      "grade": {
+        "delivery": "tool_syntax_in_final_text",
+        "required_atom_scores": null,
+        "relation_scores": null,
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [
+          "CLI status=completed/exitCode=0, but no read tool was executed and output contains only a literal native tool-call marker. This is not research completion."
+        ],
+        "full_pass": false
+      },
+      "tool_names": [],
+      "candidate_findings": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\runs\\wal_synthesis-75-openscience\\research-report.txt",
+      "report_sha256": "855529748de50c89be394992b23095851ad39af6cf191ef768bf177199256161",
+      "report_text": "<|tool_call>call:read{filePath:\"D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\runs\\wal_synthesis-75-openscience\\evidence.md\"}<tool_call|>",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\wire\\wal_synthesis-75-openscience.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 8577,
+          "output_tokens": 59,
+          "backend_generation": 84,
+          "proxy_elapsed_seconds": 8.75
+        },
+        {
+          "index": 2,
+          "auxiliary_title": true,
+          "input_tokens": 811,
+          "output_tokens": 7,
+          "backend_generation": 85,
+          "proxy_elapsed_seconds": 1.062
+        }
+      ]
+    },
+    {
+      "series": "exploratory_24",
+      "framework": "codey",
+      "case": "wal_synthesis",
+      "seed": 75,
+      "process_exit_code": 1,
+      "framework_result": {
+        "exit_code": 1,
+        "run_id": "run_c92717402ab54c6d98ee63e372868faa",
+        "session_id": "research-research",
+        "stop_reason": "no_progress",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\runs\\wal_synthesis-75-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_c92717402ab54c6d98ee63e372868faa.jsonl"
+      },
+      "elapsed_seconds": 76.45,
+      "grade": {
+        "delivery": "no_accepted_report",
+        "required_atom_scores": null,
+        "relation_scores": null,
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [
+          "q1 is saved/selected; q2 knowledge_search/recovery loop causes no_progress before the24-turn cap."
+        ],
+        "full_pass": false
+      },
+      "tool_names": [],
+      "candidate_findings": [
+        {
+          "id": "claim-cac8e4b6a9a4fe2b14568f1f58e150347e7380bf3bc5c435872a7315ad406614",
+          "revision": 1,
+          "status": "candidate",
+          "content": "WAL 的读写并发和单写者限制并不矛盾。WAL 允许读者和写入者同时运行，因为写入操作只是将新内容附加到 WAL 文件的末尾，且不会干扰读者的操作。然而，由于只有一个 WAL 文件，因此在同一时间内只能有一个写入者。",
+          "pinned_evidence": [
+            {
+              "id": "evidence-97ea1bb6abcd78f62857a032dc6407cbc66e36a5aea57eeefc7e2a890fc99009",
+              "revision": 1,
+              "excerpt": "## 1. Overview\n\nThe default method by which SQLite implementsatomic commit and rollback is a rollback journal.\nBeginning with version 3.7.0 (2010-07-21), a new \"Write-Ahead Log\" option\n(hereafter referred to as \"WAL\") is available.\n\nThere are advantages and disadvantages to using WAL instead of\na rollback journal. Advantages include:\n\nWAL is significantly faster in most scenarios.\n\nWAL provides more concurrency as readers do not block writers and\na writer does not block readers. Reading and writing can proceed\nconcurrently.\n\nDisk I/O operations tends to be more sequential using WAL.\n\n\n\nWriters merely append new content to the end of the WAL file.\nBecause writers do nothing that would interfere with the actions of\nreaders, writers and readers can run at the same time. However,\nsince there is only one WAL file, there can only be one writer at\na time."
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\runs\\wal_synthesis-75-codey\\research-report.txt",
+      "report_sha256": "06fe9deab5ba612943d2597efe62f72eacdc70ebcb102c1800d0a965b48f343c",
+      "report_text": "stopped after repeated tool results without progress",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\wire\\wal_synthesis-75-codey.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 5160,
+          "output_tokens": 370,
+          "backend_generation": 86,
+          "proxy_elapsed_seconds": 15.453
+        },
+        {
+          "index": 2,
+          "auxiliary_title": false,
+          "input_tokens": 3041,
+          "output_tokens": 30,
+          "backend_generation": 87,
+          "proxy_elapsed_seconds": 3.265
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 2608,
+          "output_tokens": 34,
+          "backend_generation": 88,
+          "proxy_elapsed_seconds": 2.86
+        },
+        {
+          "index": 4,
+          "auxiliary_title": false,
+          "input_tokens": 5849,
+          "output_tokens": 113,
+          "backend_generation": 89,
+          "proxy_elapsed_seconds": 7.453
+        },
+        {
+          "index": 5,
+          "auxiliary_title": false,
+          "input_tokens": 5304,
+          "output_tokens": 24,
+          "backend_generation": 90,
+          "proxy_elapsed_seconds": 3.797
+        },
+        {
+          "index": 6,
+          "auxiliary_title": false,
+          "input_tokens": 2890,
+          "output_tokens": 38,
+          "backend_generation": 91,
+          "proxy_elapsed_seconds": 3.344
+        },
+        {
+          "index": 7,
+          "auxiliary_title": false,
+          "input_tokens": 4261,
+          "output_tokens": 38,
+          "backend_generation": 92,
+          "proxy_elapsed_seconds": 3.625
+        },
+        {
+          "index": 8,
+          "auxiliary_title": false,
+          "input_tokens": 2632,
+          "output_tokens": 43,
+          "backend_generation": 93,
+          "proxy_elapsed_seconds": 2.734
+        },
+        {
+          "index": 9,
+          "auxiliary_title": false,
+          "input_tokens": 4266,
+          "output_tokens": 85,
+          "backend_generation": 94,
+          "proxy_elapsed_seconds": 5.187
+        },
+        {
+          "index": 10,
+          "auxiliary_title": false,
+          "input_tokens": 2886,
+          "output_tokens": 42,
+          "backend_generation": 95,
+          "proxy_elapsed_seconds": 2.703
+        },
+        {
+          "index": 11,
+          "auxiliary_title": false,
+          "input_tokens": 4259,
+          "output_tokens": 40,
+          "backend_generation": 96,
+          "proxy_elapsed_seconds": 3.75
+        },
+        {
+          "index": 12,
+          "auxiliary_title": false,
+          "input_tokens": 4259,
+          "output_tokens": 39,
+          "backend_generation": 97,
+          "proxy_elapsed_seconds": 3.61
+        },
+        {
+          "index": 13,
+          "auxiliary_title": false,
+          "input_tokens": 4264,
+          "output_tokens": 39,
+          "backend_generation": 98,
+          "proxy_elapsed_seconds": 3.657
+        }
+      ]
+    },
+    {
+      "series": "exploratory_24",
+      "framework": "openscience",
+      "case": "asyncio_synthesis",
+      "seed": 75,
+      "process_exit_code": 0,
+      "framework_result": {
+        "type": "done",
+        "timestamp": 1793529388785,
+        "sessionID": "ses_e695226b1ffeOsXCcUz45ktdLs",
+        "status": "completed",
+        "exitCode": 0,
+        "tokens": {
+          "input": 10359,
+          "output": 628,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "cost": 0,
+        "children": []
+      },
+      "elapsed_seconds": 52.36,
+      "grade": {
+        "delivery": "substantive_answer",
+        "required_atom_scores": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "relation_scores": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [],
+        "full_pass": true
+      },
+      "tool_names": [
+        "read"
+      ],
+      "candidate_findings": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\runs\\asyncio_synthesis-75-openscience\\research-report.txt",
+      "report_sha256": "c86cd89a365ce0c31276f83862882ec90ab49042268441e475ad96ae65270c42",
+      "report_text": "根据提供的 Python 3.12.7 官方材料，对 `asyncio.gather` 的研究结果如下：\n\n1. **默认 `return_exceptions=False` 时的行为**：\n   - **异常传播**：一旦 `aws` 序列中的任何一个 awaitable 抛出异常，第一个发生的异常会立即传播给等待 `gather()` 的任务。\n   - **其余任务状态**：其他 awaitables **不会被自动取消**（won't be cancelled），它们会继续运行。\n\n2. **`return_exceptions=True` 的改变与结果排列**：\n   - **改变内容**：异常被视为与成功结果相同，它们会被聚合到结果列表中。\n   - **排列顺序**：结果列表中的值顺序与 `aws` 中 awaitables 的**输入顺序**一致（corresponds to the order of awaitables in *aws*）。\n\n3. **取消 `gather` 本身与取消其中一个 Task/Future 的区别**：\n   - **取消 `gather` 本身**：如果 `gather()` 被取消，所有尚未完成的提交 awaitables 都会被**取消**。\n   - **取消其中一个 Task/Future**：如果 `aws` 序列中的某个 Task 或 Future 被取消，它被视为抛出了 `CancelledError`，但此时 `gather()` 调用**不会被取消**。这是为了防止取消其中一个任务导致其他任务也被取消。\n   - **边界情况**：\n     - **保留未完成任务**：当 `return_exceptions=False` 且发生异常时，未完成的任务仍会继续运行（除非手动取消）。\n     - **CancelledError**：取消中的 Task/Future 被视为抛出 `CancelledError`。\n     - **return_exceptions 的边界**：当 `gather()` 被取消时，取消操作无论 `return_exceptions` 是 `True` 还是 `False` 都会传播。\n\n4. **捕获异常后调用 `gather.cancel()` 是否必然取消其余任务**：\n   - **不必然**。\n   - **原因**：如果 `gather()` 在传播异常后已经被标记为“完成”（marked done），那么此时调用 `gather.cancel()` **不会**取消任何其他 awaitables。这是因为 `gather` 可能在传播异常的同时就已经结束了。\n\n5. **TaskGroup 与 gather 的取消保证区别**：\n   - **区别**：`TaskGroup` 提供了比 `gather` 更强的安全保证。如果一个任务（或由任务调度的子任务）抛出异常，`TaskGroup` **会**取消剩余的已调度任务，而 `gather` 则**不会**。\n   - **是否足以证明 TaskGroup 总是更快**：材料中**没有**明确说明 `TaskGroup` 总是更快。材料仅指出它提供了“更强的安全保证”（stronger safety guarantees），并未直接对比执行速度。",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\wire\\asyncio_synthesis-75-openscience.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 8626,
+          "output_tokens": 62,
+          "backend_generation": 99,
+          "proxy_elapsed_seconds": 8.953
+        },
+        {
+          "index": 2,
+          "auxiliary_title": true,
+          "input_tokens": 855,
+          "output_tokens": 13,
+          "backend_generation": 100,
+          "proxy_elapsed_seconds": 1.266
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 10359,
+          "output_tokens": 628,
+          "backend_generation": 101,
+          "proxy_elapsed_seconds": 27.562
+        }
+      ]
+    },
+    {
+      "series": "exploratory_24",
+      "framework": "codey",
+      "case": "asyncio_synthesis",
+      "seed": 75,
+      "process_exit_code": 1,
+      "framework_result": {
+        "exit_code": 1,
+        "run_id": "run_82c957e18e9546bf808ac05a92932ca4",
+        "session_id": "research-research",
+        "stop_reason": "no_progress",
+        "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\runs\\asyncio_synthesis-75-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_82c957e18e9546bf808ac05a92932ca4.jsonl"
+      },
+      "elapsed_seconds": 64.55,
+      "grade": {
+        "delivery": "no_accepted_report",
+        "required_atom_scores": null,
+        "relation_scores": null,
+        "false_additions": [],
+        "omissions": [],
+        "citation_notes": [],
+        "notes": [
+          "q1 is saved/selected; q2 knowledge_search/recovery loop causes no_progress before the24-turn cap."
+        ],
+        "full_pass": false
+      },
+      "tool_names": [],
+      "candidate_findings": [
+        {
+          "id": "claim-de6c8802d02076fdf5f8eb908e2f054eca9b2c761cf47707aa8a271b558643de",
+          "revision": 1,
+          "status": "candidate",
+          "content": "当 return_exceptions 为 False（默认值）时，如果其中一个子任务抛出异常，该异常会立即传播到等待 gather() 的任务。此时，序列中的其他可等待对象（awaitables）并不会被自动取消，它们将继续运行。",
+          "pinned_evidence": [
+            {
+              "id": "evidence-646f39c6319ae5b9db3f13486ef8501c2d57da29aa1782d1fe338b54655f7670",
+              "revision": 1,
+              "excerpt": ".. awaitablefunction:: gather(*aws, return_exceptions=False)\n\n   Run :ref:`awaitable objects <asyncio-awaitables>` in the *aws*\n   sequence *concurrently*.\n\n   If any awaitable in *aws* is a coroutine, it is automatically\n   scheduled as a Task.\n\n   If all awaitables are completed successfully, the result is an\n   aggregate list of returned values.  The order of result values\n   corresponds to the order of awaitables in *aws*.\n\n   If *return_exceptions* is ``False`` (default), the first\n   raised exception is immediately propagated to the task that\n   awaits on ``gather()``.  Other awaitables in the *aws* sequence\n   **won't be cancelled** and will continue to run.\n\n   If *return_exceptions* is ``True``, exceptions are treated the\n   same as successful results, and aggregated in the result list.\n\n   If ``gather()`` is *cancelled*, all submitted awaitables\n   (that have not completed yet) are also *cancelled*."
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\runs\\asyncio_synthesis-75-codey\\research-report.txt",
+      "report_sha256": "06fe9deab5ba612943d2597efe62f72eacdc70ebcb102c1800d0a965b48f343c",
+      "report_text": "stopped after repeated tool results without progress",
+      "raw_wire": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\wire\\asyncio_synthesis-75-codey.jsonl",
+      "requests": [
+        {
+          "index": 1,
+          "auxiliary_title": false,
+          "input_tokens": 5324,
+          "output_tokens": 388,
+          "backend_generation": 102,
+          "proxy_elapsed_seconds": 15.906
+        },
+        {
+          "index": 2,
+          "auxiliary_title": false,
+          "input_tokens": 3168,
+          "output_tokens": 55,
+          "backend_generation": 103,
+          "proxy_elapsed_seconds": 4.157
+        },
+        {
+          "index": 3,
+          "auxiliary_title": false,
+          "input_tokens": 6310,
+          "output_tokens": 106,
+          "backend_generation": 104,
+          "proxy_elapsed_seconds": 7.719
+        },
+        {
+          "index": 4,
+          "auxiliary_title": false,
+          "input_tokens": 5508,
+          "output_tokens": 24,
+          "backend_generation": 105,
+          "proxy_elapsed_seconds": 4.015
+        },
+        {
+          "index": 5,
+          "auxiliary_title": false,
+          "input_tokens": 2787,
+          "output_tokens": 43,
+          "backend_generation": 106,
+          "proxy_elapsed_seconds": 3.375
+        },
+        {
+          "index": 6,
+          "auxiliary_title": false,
+          "input_tokens": 4216,
+          "output_tokens": 43,
+          "backend_generation": 107,
+          "proxy_elapsed_seconds": 3.859
+        },
+        {
+          "index": 7,
+          "auxiliary_title": false,
+          "input_tokens": 2525,
+          "output_tokens": 32,
+          "backend_generation": 108,
+          "proxy_elapsed_seconds": 2.438
+        },
+        {
+          "index": 8,
+          "auxiliary_title": false,
+          "input_tokens": 4205,
+          "output_tokens": 29,
+          "backend_generation": 109,
+          "proxy_elapsed_seconds": 3.5
+        },
+        {
+          "index": 9,
+          "auxiliary_title": false,
+          "input_tokens": 4202,
+          "output_tokens": 43,
+          "backend_generation": 110,
+          "proxy_elapsed_seconds": 3.797
+        },
+        {
+          "index": 10,
+          "auxiliary_title": false,
+          "input_tokens": 4218,
+          "output_tokens": 43,
+          "backend_generation": 111,
+          "proxy_elapsed_seconds": 3.844
+        }
+      ]
+    }
+  ],
+  "excluded_trials": [
+    {
+      "series": "additional_budget_binding_pair",
+      "framework": "codey",
+      "case": "asyncio_synthesis",
+      "seed": 74,
+      "reason": "provider/service stall after first completed generation; no semantic/cost score; counterpart blocked before inference",
+      "raw_result": {
+        "process_exit_code": 1,
+        "framework": "codey",
+        "case": "asyncio_synthesis",
+        "seed": 74,
+        "directory": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\runs\\asyncio_synthesis-74-codey",
+        "elapsed_seconds": 166.97,
+        "semantic_grade": "pending_manual_review",
+        "backend_before": {
+          "last_process": 0.7180816531181335,
+          "last_eval": 29.744186401367188,
+          "last_token_count": 43,
+          "last_input_count": 4218,
+          "last_process_time": 3.028868412852287,
+          "last_eval_time": 1.279000015258789,
+          "last_process_speed": 1392.5992895901038,
+          "last_eval_speed": 33.62001523612141,
+          "last_seed": 75,
+          "last_draft_success": 0,
+          "last_draft_failed": 0,
+          "total_gens": 111,
+          "stop_reason": 1,
+          "total_img_gens": 0,
+          "total_tts_gens": 0,
+          "total_transcribe_gens": 0,
+          "queue": 0,
+          "idle": 1,
+          "hordeexitcounter": -1,
+          "uptime": 1449.9087011814117,
+          "idletime": 129.14149022102356,
+          "quiet": false
+        },
+        "generation_key": "research-comparison-b6fa934a9082467e894bbd3cc80d1578",
+        "limits": {
+          "turns": 24,
+          "requests": 24,
+          "process_seconds": 660,
+          "agent_seconds": 600
+        },
+        "result": {
+          "exit_code": 1,
+          "run_id": "run_0527189336c6482b84b13c5aa4d0ecac",
+          "session_id": "research-research",
+          "stop_reason": "error",
+          "ledger_path": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\runs\\asyncio_synthesis-74-codey\\state\\run_ledgers\\1ae4634777707f86d90da8cd\\run_0527189336c6482b84b13c5aa4d0ecac.jsonl"
+        }
+      },
+      "observations": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\auxiliary-service-stall.json"
+    }
+  ],
+  "unstarted_counterpart": {
+    "case": "asyncio_synthesis",
+    "seed": 74,
+    "framework": "openscience",
+    "series": "additional_budget_binding_pair",
+    "reason": "Readiness guard rejected before inference; not an agent failure."
+  },
+  "limitations": [
+    "Only two topics, three primary seeds; small repeated-task study, not a universal research-depth leaderboard.",
+    "Codey strict compiled-report workflow versus OpenScience native research/final-text workflow; tool schemas, prompts and safety gates differ.",
+    "Common32768/4096 configuration verified in Codey connection budget; same frozen corpus, differing native source/file readers.",
+    "180000 cumulative input soft budget; no completed run reaches it; primary12 turns and exploratory24 are separate settings.",
+    "Same seed does not create identical trajectories across frameworks or fresh runs. Paths, timestamps, native prompt details and per-topic order can affect tool generation.",
+    "Exploratory seed75 was registered after seeing one WAL max_turns result; results stay separate. Additional seed74 pair was registered after primary to cover the other max_turns case, then excluded for service failure.",
+    "Manual atom credit uses the whole answer; extra wrong dates and exact citation span defects are recorded separately. File-level attribution is not equivalent to Codey pinned passage support.",
+    "No significant-speed or general-science conclusion from elapsed times; cache, cold/warm startup and fixture readers differ.",
+    "No raw native-tool repair by evaluation proxy. Unparsed tool text is not credited as execution."
+  ],
+  "offline_native_format_reproduction": {
+    "scope": "Offline reproduction using only the reviewed unmodified upstream Python normalization functions; not an execution of the native C++ parser and not a production change.",
+    "source_sha256": "d29a56f2ec17bba3442fd1ac53a328b95acca43e8895370df0202e87f2a8c5e1",
+    "records": [
+      {
+        "series": "restart-1",
+        "case": "asyncio_synthesis",
+        "variant": "observed",
+        "input": "call:read{filePath:\"D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-75-openscience\\evidence.md\"}",
+        "normalized": "read{filePath:\"D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-75-openscience\\evidence.md\"}",
+        "json_parseable": false,
+        "parsed": null
+      },
+      {
+        "series": "restart-1",
+        "case": "asyncio_synthesis",
+        "variant": "relative_path",
+        "input": "call:read{filePath:\"evidence.md\"}",
+        "normalized": "{\"name\": \"read\", \"arguments\": {\"filePath\": \"evidence.md\"}}",
+        "json_parseable": true,
+        "parsed": {
+          "name": "read",
+          "arguments": {
+            "filePath": "evidence.md"
+          }
+        }
+      },
+      {
+        "series": "restart-1",
+        "case": "asyncio_synthesis",
+        "variant": "escaped_backslashes",
+        "input": "call:read{filePath:\"D:\\\\codey\\\\.e2e-artifacts\\\\research-comparison-20261101\\\\restart-1\\\\runs\\\\asyncio_synthesis-75-openscience\\\\evidence.md\"}",
+        "normalized": "{\"name\": \"read\", \"arguments\": {\"filePath\": \"D:\\\\codey\\\\.e2e-artifacts\\\\research-comparison-20261101\\\\restart-1\\\\runs\\\\asyncio_synthesis-75-openscience\\\\evidence.md\"}}",
+        "json_parseable": true,
+        "parsed": {
+          "name": "read",
+          "arguments": {
+            "filePath": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\runs\\asyncio_synthesis-75-openscience\\evidence.md"
+          }
+        }
+      },
+      {
+        "series": "restart-1/budget-24",
+        "case": "wal_synthesis",
+        "variant": "observed",
+        "input": "call:read{filePath:\"D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\runs\\wal_synthesis-75-openscience\\evidence.md\"}",
+        "normalized": "read{filePath:\"D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\runs\\wal_synthesis-75-openscience\\evidence.md\"}",
+        "json_parseable": false,
+        "parsed": null
+      },
+      {
+        "series": "restart-1/budget-24",
+        "case": "wal_synthesis",
+        "variant": "relative_path",
+        "input": "call:read{filePath:\"evidence.md\"}",
+        "normalized": "{\"name\": \"read\", \"arguments\": {\"filePath\": \"evidence.md\"}}",
+        "json_parseable": true,
+        "parsed": {
+          "name": "read",
+          "arguments": {
+            "filePath": "evidence.md"
+          }
+        }
+      },
+      {
+        "series": "restart-1/budget-24",
+        "case": "wal_synthesis",
+        "variant": "escaped_backslashes",
+        "input": "call:read{filePath:\"D:\\\\codey\\\\.e2e-artifacts\\\\research-comparison-20261101\\\\restart-1\\\\budget-24\\\\runs\\\\wal_synthesis-75-openscience\\\\evidence.md\"}",
+        "normalized": "{\"name\": \"read\", \"arguments\": {\"filePath\": \"D:\\\\codey\\\\.e2e-artifacts\\\\research-comparison-20261101\\\\restart-1\\\\budget-24\\\\runs\\\\wal_synthesis-75-openscience\\\\evidence.md\"}}",
+        "json_parseable": true,
+        "parsed": {
+          "name": "read",
+          "arguments": {
+            "filePath": "D:\\codey\\.e2e-artifacts\\research-comparison-20261101\\restart-1\\budget-24\\runs\\wal_synthesis-75-openscience\\evidence.md"
+          }
+        }
+      }
+    ]
+  },
+  "service_after_optional_trial": {
+    "last_process": 0.724011242389679,
+    "last_eval": 30.31625747680664,
+    "last_token_count": 449,
+    "last_input_count": 5935,
+    "last_process_time": 4.2970067235827445,
+    "last_eval_time": 13.611999607086181,
+    "last_process_speed": 1381.1940222079836,
+    "last_eval_speed": 32.98560189248448,
+    "last_seed": 74,
+    "last_draft_success": 0,
+    "last_draft_failed": 0,
+    "total_gens": 113,
+    "stop_reason": 1,
+    "total_img_gens": 0,
+    "total_tts_gens": 0,
+    "total_transcribe_gens": 0,
+    "queue": 0,
+    "idle": 0,
+    "hordeexitcounter": -1,
+    "uptime": 1883.9891233444214,
+    "idletime": 417.39893984794617,
+    "quiet": false
+  }
+}

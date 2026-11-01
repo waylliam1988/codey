@@ -75,6 +75,19 @@ def write_json(path, value):
     Path(path).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def experiment_limits(root):
+    """Keep exploratory budget changes explicit and separate from the main series."""
+    limits = {"turns": 12, "requests": 12, "process_seconds": 360, "agent_seconds": 300}
+    path = root / "limits.json"
+    if path.exists():
+        overrides = read_json(path)
+        if (not isinstance(overrides, dict) or set(overrides) - limits.keys()
+                or any(type(value) is not int or value <= 0 for value in overrides.values())):
+            raise ValueError("limits.json must contain only positive integer experiment limits")
+        limits.update(overrides)
+    return limits
+
+
 def sampling(payload, seed):
     """No tool/schema/message translation: keep each product's actual protocol."""
     result = {**payload, "seed": seed, "temperature": 0.3, "top_p": 0.9}
@@ -240,7 +253,7 @@ def openscience_environment(root, directory, base_url, model):
             "options": {"baseURL": base_url + "/v1", "apiKey": "local", "timeout": 150000},
             "models": {model: {"name": "Gemma4 12B", "tool_call": True, "reasoning": False,
                 "temperature": True, "limit": {"context": 32768, "output": 4096}}}}},
-        "agent": {"research": {"temperature": 0.3, "steps": 12}},
+        "agent": {"research": {"temperature": 0.3, "steps": experiment_limits(root)["turns"]}},
         "permission": {"task": "deny", "question": "deny", "external_directory": "deny",
             "bash": "deny", "python": "deny", "compute_job": "deny", "webfetch": "deny",
             "research_search": "deny", "literature": "deny", "science_search": "deny", "science_fetch": "deny"},
@@ -273,6 +286,7 @@ def codey_worker(root, directory, base_url, case, seed):
     from tests.manual import research_evidence_local as fixture
 
     clock = fixture_clock(DEFAULT_CLOCK_FILE)
+    limits = experiment_limits(root)
     with ExitStack() as stack:
         save_config = local_config.save_local_config
         stack.enter_context(patch.object(local_config, "save_local_config",
@@ -287,7 +301,7 @@ def codey_worker(root, directory, base_url, case, seed):
             stack.enter_context(patch.object(fixture, "stage", stage_at_proxy))
             stack.enter_context(patch.object(sys, "argv", ["comparison", "--directory", str(directory),
                 "--source-file", str(root / "sqlite-sources.json"), "--case", case, "--layer", "given",
-                "--seed", str(seed), "--order-seed", "0", "--submission-mode", "select", "--max-turns", "12"]))
+                "--seed", str(seed), "--order-seed", "0", "--submission-mode", "select", "--max-turns", str(limits["turns"])]))
             fixture.main()
             return
         directory.mkdir(parents=True, exist_ok=False)
@@ -305,7 +319,7 @@ def codey_worker(root, directory, base_url, case, seed):
         channel = root / "material-channel.json"
         native = channel.exists() and read_json(channel).get("protocol") == "native"
         probe.stage(directory, "research", base_url, model, native=native, live_web=False, question=task,
-                    max_turns=12, seed=seed, provider_timeout=150, constrained_text=not native)
+                    max_turns=limits["turns"], seed=seed, provider_timeout=150, constrained_text=not native)
 
 
 def run_one(root, framework, case, seed):
@@ -314,9 +328,10 @@ def run_one(root, framework, case, seed):
     logs = root / "logs"
     logs.mkdir(exist_ok=True)
     started = time.monotonic()
+    limits = experiment_limits(root)
     readiness = backend_ready()
     genkey = f"research-comparison-{uuid4().hex}"
-    with InferenceProxy(root / "wire" / f"{name}.jsonl", seed, genkey=genkey) as proxy, \
+    with InferenceProxy(root / "wire" / f"{name}.jsonl", seed, genkey=genkey, request_limit=limits["requests"]) as proxy, \
          (logs / f"{name}.stdout").open("w", encoding="utf-8") as out, (logs / f"{name}.stderr").open("w", encoding="utf-8") as err:
         if framework == "codey":
             command = [sys.executable, "-X", "utf8", "-m", __spec__.name, "worker", "--root", str(root),
@@ -331,13 +346,13 @@ def run_one(root, framework, case, seed):
                 model = json.load(response)["data"][0]["id"]
             env = openscience_environment(root, directory, proxy, model)
             command = [str(root / "runtime/openscience.exe"), "run", "--workspace", "project", "--format", "json",
-                "--model", "localbench/" + model, "--delegation", "off", "--deadline", "300",
+                "--model", "localbench/" + model, "--delegation", "off", "--deadline", str(limits["agent_seconds"]),
                 "--auto-approve", "--title", "Frozen research comparison"]
             process = subprocess.Popen(command, cwd=directory, env=env, stdin=subprocess.PIPE, stdout=out,
                                        stderr=err, text=True, encoding="utf-8")
             stdin = prompt
         try:
-            process.communicate(input=stdin, timeout=360)
+            process.communicate(input=stdin, timeout=limits["process_seconds"])
             result = {"process_exit_code": process.returncode}
         except subprocess.TimeoutExpired:
             # Kill the evaluation process tree, including any child CLI services.
@@ -346,7 +361,7 @@ def run_one(root, framework, case, seed):
             result = {"process_exit_code": process.returncode, "runner_timeout": True}
     result.update(framework=framework, case=case, seed=seed, directory=str(directory),
                   elapsed_seconds=round(time.monotonic() - started, 2), semantic_grade="pending_manual_review",
-                  backend_before=readiness, generation_key=genkey)
+                  backend_before=readiness, generation_key=genkey, limits=limits)
     if framework == "codey" and (directory / "research-result.json").exists():
         result["result"] = read_json(directory / "research-result.json")
     if framework == "openscience":
