@@ -27,3 +27,23 @@ ProgressSnapshot 在第一次有领域错误身份的拒绝时升级为 v2，在
 验证：计数与恢复首次相关回归 95 项及 40 项子测试通过；补齐恢复入口并扩大至 driver 退出后，105 项及 40 项子测试通过（183.23 秒）。包含每次拒绝之间 0/5/20 次新观察、快照往返、批次重复交付、JSON/native 两协议在第二次拒绝 control_ready 和下一请求 provider_request_ready 的四组真实子进程退出；恢复后按原 limit 停止，接受前不发布，终止后重放不再请求模型。三套 Python 3.11 类型检查、ruff 与 diff 检查通过。
 
 实机：原缺证据题 seed 75 在四次请求后 no_progress，未发布；两次选择同一不支持结论触发重复保护。原件：`batch3-gap-smoke/`，失败保留。这只能验证停止行为，缺口判断仍不合格，不能计作内容通过。新增长修复周期由 scripted provider 验证，未把它冒充模型能力。
+
+## 第四批：固定模型可见时钟及分维度实机验收
+
+时钟使用版本控制中的单一夹具 `tests/fixtures/research_local_clock.txt`，实验只替换原 request_context.clock_context 的返回值，原 provider、kernel、持久化时间和耗时计量保持真实。每次运行在 fixture-control 记录完整字面量与 SHA256；matrix 从实际 admitted_payload 校验每个请求恰有一个相同的时钟观察。错误时钟不回退为主机时间。没有增加生产时钟开关或替代运行时。
+
+原 rubric 不变，matrix 保存 rubric 原字节快照和 SHA256。每个原始问题分别人工记录 condition_or_relation_omission（条件/关系遗漏）、unsupported_addition（无依据附加结论）、state_misreport（完成/缺口声明错误）、gap_termination（缺证据时的正常结束），不适用项明确记为 not_applicable。状态误报在人工验收时判断，不冒充执行器具备语义认证能力。四维错误可能重叠，不能相加当作失败次数。
+
+离线：固定时钟、两种 API 协议的首轮及工具续接实际载荷、token 计数一致性、原历史日期保留、旧诊断脚本等 28 项通过（4.89 秒）。三套类型检查的 Python 3.11/3.12/3.13 目标全部通过；这不是在三个 Python 解释器上运行 pytest 的声明。
+
+实机原件：`.e2e-artifacts/research-local-followup-20261101/batch4-fixed-minimal/`。仍为原 12B、temperature 0.3、seeds 74/75/76、候选顺序 seed 0、原来源与窗口、12 轮上限，五题共 15 次、38 个真实请求。所有请求时钟核验通过；每题三个 seed 的首轮 messages SHA256 完全一致。未删除服务正常但内容失败的运行。
+
+| 原始题目 | seed 74 | seed 75 | seed 76 |
+| --- | --- | --- | --- |
+| 单写者及原因 | 通过 | 通过 | 通过 |
+| 只读版本及完整 OR 条件 | 通过 | 通过 | 通过 |
+| checkpoint 停止及原因 | 漏原因 | 漏原因 | 通过 |
+| checkpoint 恢复 | 附加错误停止边界 | 附加错误停止边界 | 把 WAL 与 wal-index 位置混淆 |
+| 只有邻近证据 | 错误因果、no_progress | 错误因果、no_progress | 最终 unresolved，但先保存缺口占位并误报 answered |
+
+按原完整问题及附加错误不得放过的标准为 7/15 通过，12 次 done 不等于 12 次内容通过。分维度失败数：遗漏 2、无依据附加 5、状态误报 5、缺证据结束不合格 3；具体依据在 matrix.json 的 semantic_review 中。第 6 步仍未通过，禁止据此推进候选干扰、自主检索、完整 WAL 推广验收或强制切换全部 strict research。后续如重跑四组对照，只是同层诊断。

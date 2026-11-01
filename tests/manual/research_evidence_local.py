@@ -13,10 +13,28 @@ import json
 import random
 import shutil
 from contextlib import ExitStack
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
 from tests.manual.persistent_research_local import stage
+
+DEFAULT_CLOCK_FILE = Path(__file__).resolve().parents[1] / "fixtures/research_local_clock.txt"
+
+
+def fixture_clock(path):
+    """Pin only the model-visible clock; durations and durable times stay real."""
+    text = path.read_text(encoding="utf-8").strip()
+    if not text.startswith("<request_context>\n") or not text.endswith("\n</request_context>"):
+        raise ValueError("invalid experiment clock envelope")
+    data, _ = json.JSONDecoder().raw_decode(text[len("<request_context>"):].lstrip())
+    local = datetime.fromisoformat(data["local_datetime"])
+    utc = datetime.fromisoformat(data["observed_at_utc"])
+    if (local.tzinfo is None or utc.tzinfo is None or utc.utcoffset().total_seconds() != 0
+            or local.astimezone(UTC) != utc or local.date().isoformat() != data["local_date"]
+            or local.strftime("%z") != data["utc_offset"]):
+        raise ValueError("inconsistent experiment clock observation")
+    return text
 
 QUESTIONS = {
     "coexistence_only": "SQLite WAL 为什么仍存在单写者限制？",
@@ -101,6 +119,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--source-file", type=Path, required=True)
+    parser.add_argument("--clock-file", type=Path, default=DEFAULT_CLOCK_FILE)
     parser.add_argument("--case", choices=QUESTIONS, required=True)
     parser.add_argument("--layer", choices=INPUTS, required=True)
     parser.add_argument("--seed", type=int, default=74)
@@ -123,11 +142,13 @@ def main():
     if hashlib.sha256(source["text"].encode()).hexdigest() != source["sha256"]:
         raise ValueError("frozen source hash mismatch")
     windows = fixture_windows(source["text"], args.case, args.layer, args.order_seed)
+    clock = fixture_clock(args.clock_file)
     manifest = {"layer": args.layer, "case": args.case, "seed": args.seed,
                 "order_seed": args.order_seed,
                 "split": args.split,
                 "full_history": args.full_history,
                 "candidate_refresh_probe": args.candidate_refresh_probe,
+                "model_visible_clock": {"text": clock, "sha256": hashlib.sha256(clock.encode()).hexdigest()},
                 "source_sha256": source["sha256"], "windows": windows,
                 "setup_is_model_generated": False, "semantic_grading": "manual_required"}
     (directory / "fixture-control.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -172,6 +193,7 @@ def main():
         model = json.load(response)["data"][0]["id"]
     task = QUESTIONS[args.case] + "用中文作答。仅根据提供的已打开证据形成局部结论，不能确定的部分如实说明。"
     with ExitStack() as stack:
+        stack.enter_context(patch("codey.providers.request_context.clock_context", return_value=clock))
         stack.enter_context(patch.object(ResearchContinuation, "kernel", seeded_kernel))
         if args.full_history:
             from codey.operations import kernel_driver

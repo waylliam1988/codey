@@ -8,11 +8,21 @@ the current work packet, source snapshot, ordering and sampling stay fixed.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+from tests.manual.research_evidence_local import DEFAULT_CLOCK_FILE, fixture_clock
+
+SEMANTIC_AXES = ("condition_or_relation_omission", "unsupported_addition", "state_misreport", "gap_termination")
+
+
+def pending_review():
+    """No lexical scoring: fill these axes by checking original evidence/calls."""
+    return {axis: {"status": "pending_manual_review", "evidence": []} for axis in SEMANTIC_AXES}
 
 
 def matrix(suite: str) -> list[dict]:
@@ -30,11 +40,17 @@ def wire_stats(directory: Path) -> dict:
     wire = directory / "research-wire.jsonl"
     if not wire.is_file():
         return {"wire_missing": True}
-    payload_characters, prompt_tokens, tools = [], [], {}
+    payload_characters, prompt_tokens, tools, clock_counts, clock_hashes = [], [], {}, [], set()
     for line in wire.read_text(encoding="utf-8").splitlines():
         row = json.loads(line)
         if row.get("event") == "admitted_payload":
             payload_characters.append(len(json.dumps(row["payload"], ensure_ascii=False)))
+            payload = row["payload"]
+            messages = payload.get("messages", payload.get("input", []))
+            clocks = [message["content"] for message in messages if isinstance(message, dict)
+                      and isinstance(message.get("content"), str) and message["content"].startswith("<request_context>")]
+            clock_counts.append(len(clocks))
+            clock_hashes.update(hashlib.sha256(clock.encode()).hexdigest() for clock in clocks)
         if row.get("event") == "generation_response":
             body = row["body"]
             prompt_tokens.append(body.get("usage", {}).get("prompt_tokens"))
@@ -47,24 +63,34 @@ def wire_stats(directory: Path) -> dict:
     return {"request_count": len(payload_characters), "admitted_payload_characters": payload_characters,
             "prompt_tokens": prompt_tokens, "total_prompt_tokens": (
                 sum(prompt_tokens) if prompt_tokens and all(type(n) is int for n in prompt_tokens) else None),
-            "model_tool_counts": tools}
+            "model_tool_counts": tools, "clock_observation_counts": clock_counts,
+            "clock_sha256_values": sorted(clock_hashes)}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--source-file", type=Path, required=True)
+    parser.add_argument("--clock-file", type=Path, default=DEFAULT_CLOCK_FILE)
     parser.add_argument("--suite", choices=("minimal", "factorial", "candidates"), required=True)
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=False)
+    clock = fixture_clock(args.clock_file)
+    clock_hash = hashlib.sha256(clock.encode()).hexdigest()
+    rubric_path = Path(__file__).resolve().parents[1] / "fixtures/research_local_rubric.json"
+    rubric_bytes = rubric_path.read_bytes()
+    (args.directory / "rubric.json").write_bytes(rubric_bytes)
     runs = matrix(args.suite)
-    index = {"suite": args.suite, "semantic_grading": "manual_required", "runs": runs}
+    index = {"suite": args.suite, "semantic_grading": "manual_required",
+             "model_visible_clock": {"text": clock, "sha256": clock_hash},
+             "rubric_sha256": hashlib.sha256(rubric_bytes).hexdigest(), "runs": runs}
     path = args.directory / "matrix.json"
     for row in runs:
         name = f"{row['configuration']}-{row['case']}-{row['seed']}"
         directory = args.directory / name
         command = [sys.executable, "-X", "utf8", "-m", "tests.manual.research_evidence_local",
             "--directory", str(directory), "--source-file", str(args.source_file),
+            "--clock-file", str(args.clock_file.resolve()),
             "--case", row["case"], "--layer", row["layer"], "--seed", str(row["seed"]),
             "--order-seed", str(row["order_seed"]), "--max-turns", "12", "--provider-timeout", "120",
             *(["--split"] if row["split"] else []), *(["--full-history"] if row["full_history"] else [])]
@@ -83,7 +109,11 @@ def main():
         if result.is_file():
             row["result"] = json.loads(result.read_text(encoding="utf-8"))
         row["wire_stats"] = wire_stats(directory)
+        stats = row["wire_stats"]
+        row["clock_matches_fixture"] = (stats.get("clock_sha256_values") == [clock_hash]
+            and bool(stats.get("clock_observation_counts")) and all(count == 1 for count in stats["clock_observation_counts"]))
         row["semantic_grade"] = "pending_manual_review"
+        row["semantic_review"] = pending_review()
         path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"END {name}: {row.get('result', {}).get('stop_reason', 'runner_failure')} ({row['elapsed_seconds']}s)", flush=True)
 

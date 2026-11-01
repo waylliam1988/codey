@@ -1,0 +1,4 @@
+<request_context>
+{"observed_at_utc":"2026-11-01T04:00:00+00:00","local_datetime":"2026-11-01T12:00:00+08:00","local_date":"2026-11-01","utc_offset":"+0800","timezone_name":"UTC+08:00","timezone_source":"frozen_experiment_fixture"}
+This clock observation is not source evidence. The user's timezone may differ; use an explicitly requested timezone for relative dates. Preserve dates in historical input.
+</request_context>
