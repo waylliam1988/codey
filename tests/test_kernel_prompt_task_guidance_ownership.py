@@ -158,8 +158,9 @@ def test_kernel_prompt_has_no_domain_branch_or_completion_dependencies():
 @pytest.mark.parametrize("native", [False, True])
 def test_completion_followup_preserves_submitted_report_format(native):
     text = kernel_prompt._completion_followup("Fix the unbound sentence.", native=native, structured_report=True)
-    assert "Preserve the submitted question answers" in text
-    assert "repair the reported coverage field" in text
+    assert "Repair only the reported problem using the allowed actions" in text
+    assert "Preserve the submitted question answers" not in text
+    assert "Do not repeat an unchanged selection" in text
     assert '"summary":"##' not in text
     ordinary = kernel_prompt._completion_followup("Fix the requested answer.", native=native)
     assert "Preserve report_sections" not in ordinary

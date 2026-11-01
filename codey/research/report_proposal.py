@@ -150,6 +150,22 @@ def bind_unresolved_targets(proposal: ResearchReportProposal, targets: dict[str,
     return bound
 
 
+def report_character_budget(proposal: ResearchReportProposal, resolved: tuple[ResolvedReference, ...], task: str) -> dict[str, Any]:
+    """Same canonical conclusion and exact claims for preview and admission."""
+    from codey.research.task_requirements import conclusion_characters, report_requirements
+
+    by_label = {item.label: item for item in resolved}
+    contributions = [{"question_ref": row["question_ref"], "ref": ref,
+                      "characters": conclusion_characters(by_label[ref].version.value.content)}
+                     for row in proposal.coverage for ref in row["findings"]] if proposal.findings_only else []
+    count = conclusion_characters(proposal.conclusion.text)
+    return {"characters": count, "contributions": contributions,
+            "notice_characters": count - sum(row["characters"] for row in contributions),
+            "limits": [{"task_ref": row["task_ref"], **row["constraints"],
+                        **({"remaining_characters": row["constraints"]["max_characters"] - count}
+                           if "max_characters" in row["constraints"] else {})} for row in report_requirements(task)]}
+
+
 def parse_report_proposal(args: dict[str, Any], *,
                           investigations: Mapping[str, Mapping[str, Any]] | None = None) -> ResearchReportProposal:
     raw_sections = args.get("report_sections")

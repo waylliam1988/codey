@@ -33,13 +33,9 @@ def task_working_context(session: "TaskSession", research_ledger: "ResearchLedge
 
     scope = research_scope or (current_scope(session) if session.policy.strict_research else None)
     if scope is not None:
-        from codey.knowledge.model import canonical_json
+        from codey.research.context_view import local_research_context
 
-        parts.append("Current frozen local research target:\n" + canonical_json(scope.to_payload())
-            + "\nAnswer only this target against its direct evidence. Save one complete supported relationship, "
-            "then submit_research_answer with answered/partial and selected fN. If direct evidence is absent, "
-            "submit unresolved with findings=[]; no placeholder finding is required. "
-            "This submission ends the local target, not the parent report. Do not call global done.")
+        return local_research_context(session, research_ledger, knowledge_store, scope)
     if session.policy.strict_research or session.task_kind == "evidence_followup":
         parts.append(render_research_observations(session, research_ledger, knowledge_store, session_id=knowledge_session_id))
         if session.policy.strict_research and session.task_text.strip():

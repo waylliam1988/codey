@@ -83,32 +83,42 @@ def test_invalid_bounded_history_is_rejected_before_any_send(groups):
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.usefixtures("public_source_dns")
 def test_production_review_freezes_bounded_requests_and_completes_all_batches(tmp_path, monkeypatch, native):
-    from tests.test_research_semantic_review import _run
+    from types import SimpleNamespace
 
-    payloads, providers = [], []
+    from codey.operations.research_review import _submission_executor
+    from codey.operations.task_loop import run_task_kernel
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.research.review_batches import batch_scopes, next_batch
+    from tests.durable.test_operation_control_actions import request_for
+    from tests.durable.test_provider_response_receipts import runtime
+    from tests.test_research_review_batches import large_basis
+    from tests.test_research_semantic_review import assessment
 
-    def factory(scripted):
-        def generate(_url, payload, *_args, **_kwargs):
-            payloads.append(copy.deepcopy(payload))
-            prompt = "\n".join(str(row.get("content", "")) for row in payload["messages"])
-            raw = scripted.send(prompt)
-            call = json.loads(raw)
-            message = ({"tool_calls": [{"id": f"call-{len(payloads)}", "type": "function",
-                "function": {"name": call["tool"], "arguments": json.dumps(call["args"])}}]}
-                if native else {"content": raw})
-            return {"choices": [{"message": message, "finish_reason": "stop"}]}
+    basis = large_basis()
+    session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.write"})),
+        task_kind="research_review", task_text="Assess only the frozen report.",
+        research_review_basis=basis, max_turns=60)
+    payloads = []
 
-        monkeypatch.setattr(api_transport, "generate", generate)
-        provider = ApiProvider("http://fixture/v1", "fixture", native_tools=native, stream=False)
-        providers.append(provider)
-        return provider
+    def generate(_url, payload, *_args, **_kwargs):
+        payloads.append(copy.deepcopy(payload))
+        call = {"tool": "submit_research_review", "args": {"assessment": assessment(next_batch(session, basis))}}
+        message = ({"tool_calls": [{"id": f"call-{len(payloads)}", "type": "function",
+            "function": {"name": call["tool"], "arguments": json.dumps(call["args"])}}]}
+            if native else {"content": json.dumps(call)})
+        return {"choices": [{"message": message, "finish_reason": "stop"}]}
 
+    monkeypatch.setattr(api_transport, "generate", generate)
+    provider = ApiProvider("http://fixture/v1", "fixture", native_tools=native, stream=False)
+    durable, _, _, sink = runtime(tmp_path, task_kind="research_review", turn_budget=60)
     try:
-        task = "Explain writer concurrency. " * 12 + "Distinguish historical version restrictions."
-        result = _run(tmp_path, task=task, budget=60, provider_factory=factory)
+        submit = _submission_executor(SimpleNamespace(run_id="r"), session, basis, provider_id="local", cycle=0)
+        result = run_task_kernel(session, request=request_for(durable, sink, provider,
+            executors={"submit_research_review": submit}))
         assert result.stop_reason == "done", result.summary
-        review = [row for row in payloads if "FROZEN BASIS:\\n" in json.dumps(row)]
-        assert len(review) > 4
+        review = [row for row in payloads if "FROZEN BASIS:" in json.dumps(row)]
+        assert len(review) == len(batch_scopes(basis)) > 4
         for payload in review:
             assert json.dumps(payload).count("FROZEN BASIS:") == 1
             assert len(payload["messages"]) <= 6
@@ -118,8 +128,8 @@ def test_production_review_freezes_bounded_requests_and_completes_all_batches(tm
         assert any('"tool_call_history_groups": 2' in json.dumps(row) for row in frozen)
         assert any('"output_token_limit": 2048' in json.dumps(row) for row in frozen)
     finally:
-        for provider in providers:
-            provider.close()
+        provider.close()
+        durable.close()
 
 
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])

@@ -224,6 +224,10 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
         graph = build_unified_research_graph(store, session_id, depth=3).to_dict()
         (directory / f"{name}-graph.json").write_text(
             json.dumps(graph, ensure_ascii=False, indent=2), encoding="utf-8")
+        if name == "research" and result.stop_reason == "research_unresolved":
+            # An honest all-gap investigation is a recorded incomplete result,
+            # not a service failure or permission to publish an empty report.
+            return
         if result.exit_code:
             raise RuntimeError(f"{name} failed: {vars(result)}")
         observed = {row.get("tool_name") for row in events_seen if row.get("type") == "tool" and row.get("ok")}

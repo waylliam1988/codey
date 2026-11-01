@@ -16,7 +16,7 @@ TASK = "Explain writer limit. Explain absent measurement. Explain reader writer 
 QUESTIONS = ["What limits writer concurrency?", "What local measurements exist?", "Can readers coexist with a writer?"]
 
 
-def run_local(root, *, native=False, all_gap=False, resume=False, boundary=""):
+def run_local(root, *, native=False, all_gap=False, resume=False, boundary="", provider_wrap=None):
     def factory(provider):
         original = provider.send
 
@@ -36,21 +36,25 @@ def run_local(root, *, native=False, all_gap=False, resume=False, boundary=""):
             elif turn == 6:
                 row = {"tool": "submit_research_answer", "args": {"state": "unresolved", "findings": []}}
             elif turn == 7:
+                from codey.operations.task_session import turn_effect_id
+
+                row = {"tool": "read_tool_result", "args": {"result_ref": turn_effect_id("r:research:1", 3, 0)}}
+            elif turn == 8:
                 text = "Readers and a writer may run concurrently. Only one writer at a time."
                 ref = passage_ref(URL, hashlib.sha256(text.encode()).hexdigest()[:16], 0, len(text))
                 row = {"tool": "save_finding", "args": {"question_ref": "q3", "passage_ref": ref,
                     "claim": "Readers and a writer may run concurrently."}}
-            elif turn == 8:
+            elif turn == 9:
                 row = {"tool": "submit_research_answer", "args": {"state": "answered", "findings": ["f2"]}}
             else:
                 pytest.fail(f"unexpected extra generation: {turn}: {prompt[-1200:]}")
             return json.dumps(row)
 
         provider.send = send
-        return provider
+        return provider_wrap(provider) if provider_wrap else provider
 
     return _run(root, native=native, resume=resume, boundary=boundary, task=TASK, budget=12, provider_factory=factory,
-                boundary_turn=8 if boundary in {"kernel_settled", "control_ready"} else 5)
+                boundary_turn=9 if boundary in {"kernel_settled", "control_ready"} else 5)
 
 
 @pytest.mark.usefixtures("public_source_dns")
@@ -58,7 +62,7 @@ def run_local(root, *, native=False, all_gap=False, resume=False, boundary=""):
 def test_answer_gap_answer_publishes_one_exact_compilation_and_replays(tmp_path, native):
     result = run_local(tmp_path, native=native)
     assert result.stop_reason == "done", result.summary
-    assert result.turns == 8
+    assert result.turns == 9
     report = result.accepted_report
     assert [row["state"] for row in report.coverage] == ["evidence_found", "not_investigated", "evidence_found"]
     assert report.coverage[1]["findings"] == []
@@ -90,7 +94,7 @@ def test_process_restart_after_local_submit_does_not_repeat_or_advance_twice(tmp
     assert result.stop_reason == "done", result.summary
     assert len(set(result.accepted_report.selection_receipts)) == 3
     calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
-    assert sum("attempt" in row for row in calls) == 8
+    assert sum("attempt" in row for row in calls) == 9
     assert sum("fetch" in row for row in calls) == sum("publication" in row for row in calls) == 1
 
 
@@ -190,5 +194,105 @@ def test_frozen_question_refs_exact_versions_and_stale_scope_are_enforced(tmp_pa
         with pytest.raises(ValueError, match="stale"):
             submission(session, tools.ledger, scope, args)
         assert ResearchScope.from_payload(scope.to_payload()) == scope
+    finally:
+        store.close()
+
+
+@pytest.mark.usefixtures("public_source_dns")
+@pytest.mark.parametrize("state", ["answered", "partial"])
+def test_selection_preview_matches_canonical_conclusion_including_gap_notice(tmp_path, state):
+    from codey.operations import completion_gate
+    from codey.policies.task_policy import TaskPolicy
+    from codey.research.local_scope import selection_budget, submission
+    from codey.research.task_requirements import conclusion_characters
+    from codey.runtime.core.models import ToolCall, ToolResult
+    from tests.test_research_findings import execute
+
+    store, tools, session, delegate = local_setup(tmp_path)
+    session.policy = TaskPolicy(session.policy.grants, strict_research=True)
+    try:
+        opened = execute(delegate, tools, session, "open_url", {"url": URL})
+        session._memory_results["read"] = opened
+        saved = execute(delegate, tools, session, "save_finding", {
+            "claim": "Only one writer can write at a time.", "passage_ref": next(iter(tools.ledger.read_passages))})
+        session._memory_results["save"] = saved
+        args = {"state": state, "findings": ["f1"]}
+        answer = submission(session, tools.ledger, current_scope(session), args)
+        preview = selection_budget(session, tools.ledger, store, pending_answer=answer)
+        session._memory_results["submit"] = ToolResult(ToolCall("submit_research_answer", args), "selected", ok=True,
+            canonical={"research_answer": answer})
+        actual = selection_budget(session, tools.ledger, store)
+        assert preview == actual and preview["canonical_total_available"]
+        gate = completion_gate.evaluate(session, "", context={"research_ledger": tools.ledger,
+            "knowledge_store": store, "knowledge_session_id": tools.session_id})
+        assert gate.complete, gate.followup
+        assert preview["characters"] == conclusion_characters(gate.research_report.coverage[0]["answer"])
+        if state == "partial":
+            assert preview["notice_characters"] > 0
+    finally:
+        store.close()
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_budget_preview_cannot_block_local_closure_on_parent_selection_limit(tmp_path, monkeypatch):
+    from codey.research.issues import ResearchIssue
+    from tests.test_research_findings import execute
+
+    store, tools, session, delegate = local_setup(tmp_path)
+    try:
+        session._memory_results["read"] = execute(delegate, tools, session, "open_url", {"url": URL})
+        session._memory_results["save"] = execute(delegate, tools, session, "save_finding", {
+            "claim": "Only one writer can write at a time.", "passage_ref": next(iter(tools.ledger.read_passages))})
+        delegate._research_scope = current_scope(session)
+
+        def too_large(*args):
+            raise ResearchIssue("report_selection_too_large", "q1.findings", "too large")
+
+        monkeypatch.setattr("codey.research.report_proposal.bind_selected_answers", too_large)
+        result = execute(delegate, tools, session, "submit_research_answer", {"state": "answered", "findings": ["f1"]})
+        assert result.ok, result.model_text
+        budget = json.loads(result.model_text)["report_budget"]
+        assert not budget["canonical_total_available"]
+        assert budget["estimate_issue"]["code"] == "report_selection_too_large"
+        assert result.canonical["research_answer"]["findings"][0]["ref"] == "f1"
+    finally:
+        store.close()
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_previous_target_findings_require_explicit_read_and_repair_retains_selection(tmp_path):
+    from codey.research.context_view import local_research_context
+    from codey.research.local_scope import digest, submission
+    from codey.runtime.core.models import ToolCall, ToolResult
+    from tests.test_research_findings import execute
+
+    store, tools, session, delegate = local_setup(tmp_path)
+    try:
+        plan = session._memory_results["plan"].canonical["research_observation"]
+        plan["question_details"][0]["work_units"] = ["Writer limit", "Reader coexistence"]
+        session._memory_results["read"] = execute(delegate, tools, session, "open_url", {"url": URL})
+        passage = next(iter(tools.ledger.read_passages))
+        session._memory_results["save"] = execute(delegate, tools, session, "save_finding", {
+            "claim": "Only one writer can write at a time.", "passage_ref": passage})
+        args = {"state": "answered", "findings": ["f1"]}
+        answer = submission(session, tools.ledger, current_scope(session), args)
+        session._memory_results["submit"] = ToolResult(ToolCall("submit_research_answer", args), "selected", ok=True,
+            canonical={"research_answer": answer})
+        scope = current_scope(session)
+        assert scope.unit_ref == "q1.u2" and scope.finding_refs == ()
+        view = local_research_context(session, tools.ledger, store, scope)
+        assert '"candidate_findings":[]' in view and '"findings":["f1"]' in view
+        session._memory_results["explicit-read"] = execute(delegate, tools, session, "knowledge_read", {"id": "f1"})
+        assert session._memory_results["explicit-read"].ok
+        assert current_scope(session).finding_refs == ("f1",)
+        # Repair retains every originally selected version even when the four
+        # recent candidate slots are occupied by later alternatives.
+        for n in range(5):
+            session._memory_results[f"alternate-{n}"] = execute(delegate, tools, session, "save_finding", {
+                "claim": f"Only one writer can write at a time; candidate {n}.", "passage_ref": passage})
+        seed = ResearchScope(1, digest(registered_plan(session)), "q1", "q1.u1", scope.question,
+            "Writer limit", scope.task_refs, (), (), answer["submission_id"])
+        repair = current_scope(session, repair=seed)
+        assert "f1" in repair.finding_refs and len(repair.finding_refs) == 5
     finally:
         store.close()

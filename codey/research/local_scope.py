@@ -171,15 +171,38 @@ def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None
         unit = next((row for row in plan_units(plan) if row["unit_ref"] not in answers), None)
     if unit is None:
         return None
-    passages: list[str] = []
+    windows: list[tuple[str, list[str]]] = []
     bindings: dict[str, Any] = {}
-    for result in getattr(session, "_memory_results", {}).values():
+    observed_at: dict[str, int] = {}
+    unit_start = -1
+    results = getattr(session, "_memory_results", {})
+    for index, result in enumerate(results.values()):
         if not result.ok:
             continue
-        passages.extend(row["ref"] for row in result.canonical.get("read_passages", []))
-        bindings.update(result.canonical.get("research_reference_bindings", {}))
+        if result.call.name == "submit_research_answer":
+            unit_start = index
+        refs = [row["ref"] for row in result.canonical.get("read_passages", [])]
+        if refs:
+            windows.append((result.call.args.get("question_ref", ""), refs))
+        if result.call.name == "read_tool_result":
+            recovered = results.get(result.call.args.get("result_ref"))
+            if recovered is not None and recovered.ok:
+                refs = [row["ref"] for row in recovered.canonical.get("read_passages", [])]
+                if refs:
+                    windows.append((unit["question_ref"], refs))
+        for ref, binding in result.canonical.get("research_reference_bindings", {}).items():
+            if ref not in bindings:
+                observed_at[ref] = index
+            if result.call.name == "knowledge_read" and result.call.args.get("id") in {ref, binding["object_id"], binding["note_id"]}:
+                observed_at[ref] = index
+            bindings[ref] = binding
+    active_windows = [refs for question, refs in windows if question == unit["question_ref"]][-3:]
+    passages = list(dict.fromkeys(ref for refs in active_windows for ref in refs))
+    adopted = {row["ref"] for row in answers.get(unit["unit_ref"], {}).get("findings", [])} if replaces else set()
+    candidates = [ref for ref, row in bindings.items()
+                  if row["question_ref"] == unit["question_ref"] and observed_at[ref] > unit_start][-4:]
     versions = tuple((ref, row["object_id"], row["revision"]) for ref, row in bindings.items()
-                     if row["question_ref"] == unit["question_ref"])
+                     if ref in adopted or ref in candidates)
     return ResearchScope(1, digest(plan), unit["question_ref"], unit["unit_ref"], unit["question"],
                          unit["target"], tuple(unit["task_refs"]), tuple(dict.fromkeys(passages)), versions, replaces)
 
@@ -244,11 +267,13 @@ def submission(session: Any, ledger: Any, scope: ResearchScope | None, args: dic
     return {**body, "submission_id": digest(body)}
 
 
-def assembled_report(session: Any, ledger: Any) -> tuple[dict[str, Any], tuple[str, ...]]:
+def assembled_report(session: Any, ledger: Any, *, pending_answer: dict[str, Any] | None = None) -> tuple[dict[str, Any], tuple[str, ...]]:
     plan = registered_plan(session)
     if plan is None:
         raise ValueError("no local research plan")
     answers = effective_answers(session, plan)
+    if pending_answer is not None:
+        answers[pending_answer["unit_ref"]] = pending_answer
     rows: dict[str, dict[str, Any]] = {}
     origins = []
     for unit in plan_units(plan):
@@ -276,16 +301,57 @@ def assembled_report(session: Any, ledger: Any) -> tuple[dict[str, Any], tuple[s
     return {"report_sections": {"coverage": list(rows.values())}}, tuple(origins)
 
 
-def unresolved_targets(session: Any) -> dict[str, tuple[str, ...]]:
+def unresolved_targets(session: Any, *, pending_answer: dict[str, Any] | None = None) -> dict[str, tuple[str, ...]]:
     plan = registered_plan(session)
     if plan is None:
         return {}
     answers = effective_answers(session, plan)
+    if pending_answer is not None:
+        answers[pending_answer["unit_ref"]] = pending_answer
     gaps: dict[str, list[str]] = {}
     for unit in plan_units(plan):
         if answers.get(unit["unit_ref"], {}).get("state") != "answered":
             gaps.setdefault(unit["question_ref"], []).append(unit["target"])
     return {ref: tuple(targets) for ref, targets in gaps.items()}
+
+
+def selection_budget(session: Any, ledger: Any, store: Any, *, pending_answer: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Read-only feedback; intermediate targets never face a report minimum."""
+    from codey.research.evidence_view import ResolvedReference
+    from codey.research.issues import ResearchIssue
+    from codey.research.references import resolve_version
+    from codey.research.report_proposal import (
+        bind_gap_investigations,
+        bind_selected_answers,
+        bind_unresolved_targets,
+        parse_report_proposal,
+        report_character_budget,
+    )
+    from codey.research.task_requirements import conclusion_characters, report_requirements
+
+    plan = registered_plan(session)
+    answers = effective_answers(session, plan)
+    if pending_answer is not None:
+        answers[pending_answer["unit_ref"]] = pending_answer
+    pending = [unit["unit_ref"] for unit in plan_units(plan) if unit["unit_ref"] not in answers]
+    if pending:
+        refs = list(dict.fromkeys(row["ref"] for answer in answers.values() for row in answer["findings"]))
+        return {"pending_targets": pending, "minimum_not_applied": True,
+                "selected_finding_characters": sum(conclusion_characters(resolve_version(ledger, store, ref).value.content) for ref in refs),
+                "report_constraints": report_requirements(session.task_text), "canonical_total_available": False}
+    try:
+        args, _ = assembled_report(session, ledger, pending_answer=pending_answer)
+        proposal = bind_gap_investigations(parse_report_proposal(args, investigations=ledger.investigations), ledger.investigations)
+        # Preview only the pinned claim text. Evidence access and source-chain
+        # admission belong to the original completion gate, not local closure.
+        resolved = tuple(ResolvedReference(ref, ledger.references[ref], resolve_version(ledger, store, ref), ())
+                         for ref in proposal.selected_refs)
+        proposal = bind_unresolved_targets(bind_selected_answers(proposal, resolved), unresolved_targets(session, pending_answer=pending_answer))
+    except ResearchIssue as exc:
+        return {"pending_targets": [], "canonical_total_available": False, "minimum_not_applied": True,
+                "estimate_issue": exc.to_payload()}
+    return {"pending_targets": [], "canonical_total_available": True, "minimum_not_applied": True,
+            **report_character_budget(proposal, resolved, session.task_text)}
 
 
 def repair_scope(session: Any, ledger: Any, store: Any, issue: dict[str, Any] | None) -> ResearchScope | None:

@@ -23,13 +23,13 @@ from codey.storage.managed_outputs import ManagedOutputStore
 from tests.support.provider_actions import ProviderActions
 
 
-def runtime(tmp_path, *, sqlite=False, task_kind="chat"):
+def runtime(tmp_path, *, sqlite=False, task_kind="chat", turn_budget=4):
     durable = DurableSession(SQLiteDurableStore(tmp_path / "runtime.sqlite") if sqlite else MemoryDurableStore())
     durable.admit_input(conversation_id="s", request_id="input", task_id="r", text="inspect", provider_snapshot={})
     durable.claim_task("r")
     durable.start_task("r", state=dict(durable.task("r").state))
     mutations = RuntimeMutationLine(durable=durable)
-    mutations.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=4, max_repair_rounds=1,
+    mutations.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=turn_budget, max_repair_rounds=1,
                                task_kind=task_kind)
     mutations.mark_writer_running("s", "r", provider_id="local")
     outputs = ManagedOutputStore(tmp_path)

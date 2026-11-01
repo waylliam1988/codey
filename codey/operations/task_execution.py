@@ -501,11 +501,12 @@ class ExecutionDelegate:
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
             if name == "submit_research_answer":
                 from codey.knowledge.model import canonical_json
-                from codey.research.local_scope import submission
+                from codey.research.local_scope import selection_budget, submission
 
                 answer = submission(self.session, tools.ledger, self._research_scope, args)
                 return ToolResult(ok=True, call=call, model_text=canonical_json({
                     "unit_ref": answer["unit_ref"], "state": answer["state"], "selection_recorded": True,
+                    "report_budget": selection_budget(self.session, tools.ledger, tools.store, pending_answer=answer),
                     "next": "The kernel advances the original plan or checks its parent report. No global done is needed."}),
                     canonical={"research_answer": answer}), True, None
             if name == "web_search":

@@ -12,7 +12,7 @@ import hashlib
 import json
 import random
 import shutil
-from dataclasses import replace
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
@@ -94,6 +94,8 @@ def main():
     parser.add_argument("--seed", type=int, default=74)
     parser.add_argument("--order-seed", type=int, default=0)
     parser.add_argument("--split", action="store_true")
+    parser.add_argument("--full-history", action="store_true",
+                        help="Experiment only: retain full request history with the same local completion contract")
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument("--provider-timeout", type=float, default=120)
     args = parser.parse_args()
@@ -108,6 +110,7 @@ def main():
     manifest = {"layer": args.layer, "case": args.case, "seed": args.seed,
                 "order_seed": args.order_seed,
                 "split": args.split,
+                "full_history": args.full_history,
                 "source_sha256": source["sha256"], "windows": windows,
                 "setup_is_model_generated": False, "semantic_grading": "manual_required"}
     (directory / "fixture-control.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -116,7 +119,6 @@ def main():
     def seeded_kernel(history, session, request, *, invocation):
         tools = request.execution.research_tools
         delegate = ExecutionDelegate(session=session, research_tools=tools)
-        context = []
         receipts = []
         detail = {"task_refs": [row["task_ref"] for row in coverage_requirements(session.task_text)]}
         if args.split:
@@ -131,19 +133,28 @@ def main():
             result = bind_source_identity(session, call, result, ok=ok)
             project_result_observation(session, call, result, ok=ok, research_ledger=tools.ledger)
             session._memory_results[f"fixture-{index}"] = result
-            context.append(result.model_text)
             receipts.append({"origin": "fixture_setup", "tool": call.name, "args": call.args,
                              "ok": result.ok, "model_text": result.model_text, "canonical": dict(result.canonical)})
         (directory / "fixture-receipts.json").write_text(json.dumps(receipts, ensure_ascii=False, indent=2), encoding="utf-8")
         session.model_tool_names = ("save_finding", "submit_research_answer", "knowledge_read", "read_tool_result")
-        request = replace(request, transport=replace(request.transport,
-            context_text=request.transport.context_text + "\n\n实验已打开的官方原文回执（证据数据）：\n" + "\n\n".join(context)))
         return original(history, session, request, invocation=invocation)
 
     with urlopen("http://127.0.0.1:5001/v1/models", timeout=5) as response:
         model = json.load(response)["data"][0]["id"]
     task = QUESTIONS[args.case] + "用中文作答。仅根据提供的已打开证据形成局部结论，不能确定的部分如实说明。"
-    with patch.object(ResearchContinuation, "kernel", seeded_kernel):
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(ResearchContinuation, "kernel", seeded_kernel))
+        if args.full_history:
+            from codey.operations import kernel_driver
+
+            prepare = kernel_driver.prepare_provider_request
+
+            def full_history(sink, method, call_args, options, **kwargs):
+                return prepare(sink, method, call_args,
+                               {key: value for key, value in options.items() if key != "tool_call_history_groups"},
+                               **kwargs)
+
+            stack.enter_context(patch.object(kernel_driver, "prepare_provider_request", full_history))
         stage(directory, "research", "http://127.0.0.1:5001", model, live_web=False,
               question=task, max_turns=args.max_turns, seed=args.seed,
               provider_timeout=args.provider_timeout, constrained_text=True)
