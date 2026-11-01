@@ -490,8 +490,6 @@ class ExecutionDelegate:
         tools = self._observation_tools(source_read=name in {"open_url", "open_result", "reopen_source", "open_hit"})
         args = dict(call.args or {})
         try:
-            from codey.research.questions import question_ref
-
             denied = self._research_call_denial(call)
             if denied is not None:
                 return denied
@@ -561,10 +559,7 @@ class ExecutionDelegate:
                 outcome = tools.knowledge_search(first_text_arg(args, "query"), depth=args.get("depth", 1))
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
             if name == "knowledge_read":
-                outcome = tools.knowledge_read(str(args.get("id") or ""), revision=args.get("revision"),
-                                               question_ref=question_ref(args, tools.ledger))
-                canonical = {"research_reference_bindings": {k: v.to_dict() for k, v in tools.ledger.references.items()}} if outcome.ok else {}
-                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
+                return self._read_research_knowledge(call, tools)
             if name == "knowledge_commit":
                 outcome = tools.knowledge_commit(args)
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
@@ -579,6 +574,25 @@ class ExecutionDelegate:
         except Exception as exc:
             return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
         return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown research tool {name}"), False, None
+
+    def _read_research_knowledge(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
+        from codey.research.questions import question_ref
+
+        args = call.args
+        identity = str(args.get("id") or "")
+        outcome = tools.knowledge_read(identity, revision=args.get("revision"), question_ref=question_ref(args, tools.ledger))
+        text = outcome.model_text
+        if not outcome.ok and self._research_scope is not None:
+            if identity in tools.ledger.read_passages:
+                text = ("ERROR: this id names a read passage, not a stored knowledge object. "
+                        "Use its complete text if present in read_evidence; otherwise recover its original read with "
+                        "read_tool_result using read_receipt_index. Choose an answer or a gap from the actual evidence.")
+            elif identity in getattr(self.session, "source_ids", {}):
+                text = ("ERROR: this id is an opened-source locator, not a stored knowledge object. "
+                        "Recover its original read with read_tool_result using read_receipt_index, or use an advertised "
+                        "source-reading action for more text. knowledge_read needs an exact stored id or saved/read fN.")
+        canonical = {"research_reference_bindings": {k: v.to_dict() for k, v in tools.ledger.references.items()}} if outcome.ok else {}
+        return ToolResult(ok=outcome.ok, call=call, model_text=text, canonical=canonical), outcome.ok, None
 
     def _submit_research_answer(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
         from codey.knowledge.model import canonical_json

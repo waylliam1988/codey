@@ -294,6 +294,11 @@ def submission_finding(scope: ResearchScope, args: dict[str, Any]) -> dict[str, 
     if (set(args) != {"state", "findings"} or not isinstance(refs, list)
             or any(not isinstance(ref, str) for ref in refs) or len(refs) > 16
             or len(set(refs)) != len(refs) or bool(refs) != (state in {"answered", "partial"})):
+        if scope.submission_mode == "inline":
+            raise ValueError("Empty selection ends only as state=unresolved, findings=[]. "
+                "To answer from direct evidence, supply state=answered/partial and finding={claim,passage_ref,...}, "
+                "omitting findings; or select available exact fN with nonempty findings and omit finding. "
+                "Do not repeat partial with findings=[].")
         raise ValueError("answered/partial require findings; unresolved requires findings=[]")
     return None
 
@@ -314,12 +319,20 @@ def scoped_spec(spec: Any, scope: ResearchScope) -> Any:
             parameters[key]["items"]["enum"] = list(scope.finding_refs)
         else:
             parameters[key]["maxItems"] = 0
+    if (spec.name == "submit_research_answer" and not scope.finding_refs
+            and not (scope.submission_mode == "inline" and scope.passage_refs)):
+        parameters["state"]["enum"] = ["unresolved"]
+        spec = replace(spec, description=(
+            "No saved/read finding is available for selection in this frozen request. "
+            "For a directly supported answer, save/read its finding before submitting on a later request. "
+            "If direct evidence is insufficient, end this target with state=unresolved and findings=[]. "
+            "The application advances the original plan and checks the parent report; a gap creates no finding."))
     if spec.name == "submit_research_answer" and scope.submission_mode == "inline" and scope.passage_refs:
         from codey.research.tool_contract import TOOL_CONTRACTS
 
         original = TOOL_CONTRACTS["save_finding"].input_schema
         properties = {key: thaw_schema_value(value) for key, value in original["properties"].items()
-                      if key != "source_ref"}
+                      if key not in {"source_ref", "question_ref"}}
         properties["passage_ref"]["enum"] = list(scope.passage_refs)
         properties["additional_passage_refs"]["items"]["enum"] = list(scope.passage_refs)
         parameters["finding"] = {"type": "object", "properties": properties,

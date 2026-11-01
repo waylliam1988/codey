@@ -56,6 +56,8 @@ def test_inline_exact_write_and_choice_share_one_receipt_and_retry_identity(tmp_
         assert restored.research_scope == scope and scope.schema_version == 3
         assert "save_finding" not in restored.tool_names
         spec = next(row for row in restored.frozen_specs if row.name == "submit_research_answer")
+        inner = dict(spec.parameters)["finding"]
+        assert "question_ref" not in inner["properties"]
         for example in spec.json_examples:
             assert not normalize_turn(decode_text_turn(example), snapshot=restored).protocol_error
         args = {"state": state, "finding": {"claim": CLAIM, "passage_ref": scope.passage_refs[0]}}
@@ -89,7 +91,7 @@ def test_inline_exact_write_and_choice_share_one_receipt_and_retry_identity(tmp_
 
 
 @pytest.mark.usefixtures("public_source_dns")
-@pytest.mark.parametrize("mutation", ["both", "unresolved", "missing_state", "wrong_question", "unknown_passage",
+@pytest.mark.parametrize("mutation", ["both", "unresolved", "missing_state", "wrong_question", "redundant_question", "unknown_passage",
     "duplicate_passage", "wrong_type", "invalid_conditions", "unknown_finding", "empty_answer"])
 def test_bad_inline_choices_never_write_or_select(tmp_path, mutation):
     store, tools, session, scope = inline_setup(tmp_path)
@@ -103,6 +105,8 @@ def test_bad_inline_choices_never_write_or_select(tmp_path, mutation):
             del args["state"]
         elif mutation == "wrong_question":
             args["finding"]["question_ref"] = "q2"
+        elif mutation == "redundant_question":
+            args["finding"]["question_ref"] = scope.question_ref
         elif mutation == "unknown_passage":
             args["finding"]["passage_ref"] = "p_unknown"
         elif mutation == "duplicate_passage":
@@ -296,7 +300,8 @@ def test_actual_inline_requests_share_frozen_schema_and_hide_the_old_save_action
             return {"choices": [{"message": message, "finish_reason": "stop"}]}
 
         monkeypatch.setattr(api_transport, "generate", generate)
-        provider = ApiProvider("http://fixture/v1", "fixture", native_tools=native, stream=False)
+        provider = ApiProvider("http://fixture/v1", "fixture", native_tools=native, stream=False,
+                               thinking_enabled=False, text_tool_format="plain" if native else "json_schema")
         providers.append(provider)
         return provider
 
@@ -315,6 +320,13 @@ def test_actual_inline_requests_share_frozen_schema_and_hide_the_old_save_action
             assert schema["required"] == ["state"]
             assert schema["properties"]["finding"]["additionalProperties"] is False
             assert schema["properties"]["finding"]["properties"]["passage_ref"]["enum"]
+        else:
+            root = local_request["response_format"]["json_schema"]["schema"]
+            variants = root.get("oneOf", [root])
+            variant = next(row for row in variants
+                           if row["allOf"][0]["properties"]["tool"]["enum"] == ["submit_research_answer"])
+            schema = variant["allOf"][1]["properties"]["args"]
+        assert "question_ref" not in schema["properties"]["finding"]["properties"]
     finally:
         for provider in providers:
             provider.close()

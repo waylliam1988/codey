@@ -40,7 +40,8 @@ def knowledge_read_id_guidance(*, source_tool: str = "") -> str:
     source = f" by {source_tool}" if source_tool else ""
     return (
         f"For knowledge_read, pass the note id exactly as returned{source}; "
-        "do not prepend facts/ or append .md."
+        "do not prepend facts/ or append .md. "
+        "An opened-source sN or read-passage pN is a reading locator, not a stored knowledge id."
     )
 
 

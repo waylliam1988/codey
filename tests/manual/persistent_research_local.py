@@ -25,6 +25,13 @@ from tests.manual.kobold_diagnostics import record_native_generation
 URLS = ("https://www.sqlite.org/wal.html", "https://www.sqlite.org/isolation.html")
 
 
+def sourced_research_observed(observed, versions, *, live_web):
+    return (bool(observed.intersection({"save_finding", "submit_research_answer"}))
+            and any(any(ref.relation == "supported_by" for ref in version.value.references) for version in versions)
+            and (not live_web or "web_search" in observed
+                 and bool(observed.intersection({"open_url", "open_result", "open_hit"}))))
+
+
 def stage(directory, name, upstream, model, native=False, live_web=False, question="", max_turns=12, thinking=False,
           temperature=0.3, seed=73, diagnostic_stacks=False, reasoning_effort=None, session_id=None,
           provider_timeout=600, constrained_text=False, merge_clock=False):
@@ -232,9 +239,7 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             raise RuntimeError(f"{name} failed: {vars(result)}")
         observed = {row.get("tool_name") for row in events_seen if row.get("type") == "tool" and row.get("ok")}
         if name == "research":
-            if (not ({"web_search", "save_finding"} if live_web else {"save_finding"}) <= observed
-                    or live_web and not observed.intersection({"open_url", "open_result", "open_hit"})
-                    or not any(any(r.relation == "supported_by" for r in v.value.references) for v in versions)):
+            if not sourced_research_observed(observed, versions, live_web=live_web):
                 raise RuntimeError("research must persist sourced claims; live research must also search and open pages")
             return
         if name == "first":

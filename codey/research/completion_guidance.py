@@ -25,6 +25,10 @@ def render_research_observations(session: "TaskSession", ledger: "ResearchLedger
 
 def render_completion_guidance(policy: TaskPolicy, *, local: bool = False, submission_mode: str = "select") -> str:
     if local:
+        identities = ("For tools declaring question_ref, use the frozen qN. Inline finding omits question_ref: "
+                      "the frozen scope already binds its question. Use available passage/finding references. "
+                      if submission_mode == "inline" else
+                      "Use the frozen question_ref and available passage/finding references. ")
         choice = ("Use submit_research_answer with explicit answered/partial and finding={claim,passage_ref,...} "
                   "to save and select one new supported answer in the same call; omit findings. Or select exact "
                   "saved/read fN with findings=[...], omitting finding. Never combine the two forms. "
@@ -41,7 +45,7 @@ def render_completion_guidance(policy: TaskPolicy, *, local: bool = False, submi
             "Use the parent question to understand the target, not to expand this answer. Keep every condition, "
             "exception, negation and OR alternative needed for that relation together.\n"
             + choice + "If no direct support exists, submit unresolved with findings=[]. Do not save a gap placeholder.\n"
-            "Use the frozen question_ref and available passage/finding references. Reuse complete current candidates "
+            + identities + "Reuse complete current candidates "
             "instead of saving them again; read further if needed. The application records actual attempts, advances "
             "the original plan and compiles the parent report. A submitted state is a model declaration, not semantic approval."
         )

@@ -9,6 +9,23 @@ import pytest
 from tests.manual.research_evidence_local import INPUTS, PASSAGES, fixture_windows
 
 
+@pytest.mark.parametrize("action", ["save_finding", "submit_research_answer"])
+def test_probe_requires_persisted_sourced_claims_for_both_submission_forms(action):
+    from types import SimpleNamespace
+
+    from tests.manual.persistent_research_local import sourced_research_observed
+
+    sourced = SimpleNamespace(value=SimpleNamespace(references=[SimpleNamespace(relation="supported_by")]))
+    unsourced = SimpleNamespace(value=SimpleNamespace(references=[]))
+    assert sourced_research_observed({action}, [sourced], live_web=False)
+    assert not sourced_research_observed({action}, [], live_web=False)
+    assert not sourced_research_observed({action}, [unsourced], live_web=False)
+    assert not sourced_research_observed({"knowledge_read"}, [sourced], live_web=False)
+    assert not sourced_research_observed({action}, [sourced], live_web=True)
+    assert not sourced_research_observed({action, "web_search"}, [sourced], live_web=True)
+    assert sourced_research_observed({action, "web_search", "open_hit"}, [sourced], live_web=True)
+
+
 def test_windows_are_lossless_and_sampling_seed_is_not_an_input():
     text = "\n".join(start + "X" * 601 + end for start, end in PASSAGES.values())
     first = fixture_windows(text, "writer_limit", "candidates", 0)
