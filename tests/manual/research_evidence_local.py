@@ -78,6 +78,7 @@ def main():
     from codey.operations.kernel_facts import bind_source_identity, project_result_observation
     from codey.operations.research_continuation import ResearchContinuation
     from codey.operations.task_execution import ExecutionDelegate
+    from codey.research.task_requirements import coverage_requirements
     from codey.runtime.core.models import ToolCall
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -110,7 +111,8 @@ def main():
         delegate = ExecutionDelegate(session=session, research_tools=tools)
         context = []
         receipts = []
-        calls = [ToolCall("research_plan", {"questions": [QUESTIONS[args.case]]}), *[
+        calls = [ToolCall("research_plan", {"questions": [QUESTIONS[args.case]], "question_details": [
+            {"task_refs": [row["task_ref"] for row in coverage_requirements(session.task_text)]}]}), *[
             ToolCall("open_url", {"question_ref": "q1", "url": source["url"],
                                   "offset": row["offset"], "limit": row["limit"]}) for row in windows]]
         for index, call in enumerate(calls):
@@ -124,7 +126,7 @@ def main():
             receipts.append({"origin": "fixture_setup", "tool": call.name, "args": call.args,
                              "ok": result.ok, "model_text": result.model_text, "canonical": dict(result.canonical)})
         (directory / "fixture-receipts.json").write_text(json.dumps(receipts, ensure_ascii=False, indent=2), encoding="utf-8")
-        session.model_tool_names = ("save_finding", "done", "knowledge_read", "read_tool_result")
+        session.model_tool_names = ("save_finding", "submit_research_answer", "knowledge_read", "read_tool_result")
         request = replace(request, transport=replace(request.transport,
             context_text=request.transport.context_text + "\n\n实验已打开的官方原文回执（证据数据）：\n" + "\n\n".join(context)))
         return original(history, session, request, invocation=invocation)

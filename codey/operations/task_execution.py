@@ -112,6 +112,7 @@ class ExecutionDelegate:
         run_id: str = "",
         frozen_specs: dict[str, Any] | None = None,
         custom_executors: dict[str, Any] | None = None,
+        research_scope: Any = None,
     ) -> None:
         self.session = session
         self.project_path: Path | None = Path(str(project_path)).expanduser() if project_path else None
@@ -128,6 +129,7 @@ class ExecutionDelegate:
         # 本轮冻结绑定：非 None 时解析/执行不再查询实时注册表。
         self._frozen_specs = frozen_specs
         self._custom_executors = custom_executors
+        self._research_scope = research_scope
         if self.tool_fns is None and self.project_path is not None:
             from codey.agents.tools import build_project_tool_fns
 
@@ -463,25 +465,49 @@ class ExecutionDelegate:
                     slots[(turn, tool_index)] = category
         return True
 
+    def _research_call_denial(self, call: ToolCall) -> tuple[ToolResult, bool, int | None] | None:
+        from codey.operations.kernel_result import policy_denial_result
+        from codey.research.local_scope import current_scope, validate_scope_call
+        from codey.research.questions import QUESTION_BOUND_TOOLS, question_ref, requires_question_ref
+
+        try:
+            if self._research_scope is not None:
+                scope = self._research_scope
+                actual = current_scope(self.session, repair=scope if scope.replaces else None)
+                if actual is None or (actual.plan_digest, actual.unit_ref, actual.replaces) != (scope.plan_digest, scope.unit_ref, scope.replaces):
+                    raise ValueError("research scope is stale")
+                validate_scope_call(scope, call.name, call.args)
+            if call.name in QUESTION_BOUND_TOOLS:
+                question_ref(call.args, self.research_tools.ledger, required=requires_question_ref(self.session))
+        except ValueError as exc:
+            return policy_denial_result(call, str(exc), reason_code="research_question_required"), False, None
+        return None
+
     def _execute_research(self, call: ToolCall, *, turn: int = 0,
                           tool_index: int = 0) -> tuple[ToolResult, bool, int | None]:
         name = (call.name or "").strip().lower()
         tools = self._observation_tools(source_read=name in {"open_url", "open_result", "reopen_source", "open_hit"})
         args = dict(call.args or {})
         try:
-            from codey.research.questions import QUESTION_BOUND_TOOLS, question_ref, requires_question_ref
+            from codey.research.questions import question_ref
 
-            if name in QUESTION_BOUND_TOOLS:
-                try:
-                    question_ref(args, self.research_tools.ledger, required=requires_question_ref(self.session))
-                except ValueError as exc:
-                    from codey.operations.kernel_result import policy_denial_result
-
-                    return policy_denial_result(call, str(exc), reason_code="research_question_required"), False, None
+            denied = self._research_call_denial(call)
+            if denied is not None:
+                return denied
             if name == "research_plan":
-                outcome = tools.research_plan(args.get("questions"))
-                canonical = {"research_observation": {"questions": list(tools.ledger.questions)}} if outcome.ok else {}
+                outcome = tools.research_plan(args.get("questions"), question_details=args.get("question_details"),
+                                              task=str(getattr(self.session, "task_text", "")))
+                canonical = {"research_observation": outcome.read_observation} if outcome.ok else {}
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
+            if name == "submit_research_answer":
+                from codey.knowledge.model import canonical_json
+                from codey.research.local_scope import submission
+
+                answer = submission(self.session, tools.ledger, self._research_scope, args)
+                return ToolResult(ok=True, call=call, model_text=canonical_json({
+                    "unit_ref": answer["unit_ref"], "state": answer["state"], "selection_recorded": True,
+                    "next": "The kernel advances the original plan or checks its parent report. No global done is needed."}),
+                    canonical={"research_answer": answer}), True, None
             if name == "web_search":
                 from codey.research.text_args import first_text_arg
 

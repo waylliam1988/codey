@@ -240,8 +240,12 @@ def record_facts_for_result(
         from codey.research.questions import question_plan
 
         observation = result.canonical.get("research_observation")
-        if not isinstance(observation, dict) or set(observation) != {"questions"}:
+        if not isinstance(observation, dict) or set(observation) not in ({"questions"}, {"questions", "question_details"}):
             raise ValueError("research plan requires its committed question observation")
+        if "question_details" in observation:
+            from codey.research.local_scope import question_details
+
+            question_details(observation["question_details"], tuple(observation["questions"]), session.task_text)
         session.research_questions = question_plan(observation["questions"], session.research_questions)
     elif name == "web_search":
         _record_search_results(session, result)

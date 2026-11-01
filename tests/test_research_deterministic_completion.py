@@ -17,7 +17,7 @@ UNSUPPORTED_GAP_ANSWER = "We measured WAL on this machine: it is always 10x fast
 
 def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task=TASK,
          provider_factory=None, planner_enabled=False, required_checks=(), omit_requirement=False,
-         unsupported_claim=False, bad_reference=False, gap_answer=None, gap_investigation=False):
+         unsupported_claim=False, bad_reference=False, gap_answer=None, gap_investigation=False, boundary_turn=None):
     import hashlib
     import os
     from unittest.mock import patch
@@ -84,7 +84,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
                 f"call-{state().writer_attempt}-{state().logical_turn}", row["tool"], row["args"]),))
 
         def send_tool_results(self, results, tools):
-            return self.send_turn("\n".join(row.user_content for row in results), tools)
+            return self.send_turn("\n".join(row.user_content or row.content for row in results), tools)
 
         def acknowledge_tool_results(self, results, tools, timeout=None):
             from codey.providers.base import AssistantTurn
@@ -143,7 +143,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
             if publications and ((boundary == "publication_admitted" and publications[-1].settlement is None)
                                  or (boundary == "publication_receipt" and publications[-1].settlement is not None)):
                 os._exit(74)
-            if position.logical_turn == (6 if gap_answer else 5) and position.leaf == boundary:
+            if position.logical_turn == (boundary_turn or (6 if gap_answer else 5)) and position.leaf == boundary:
                 os._exit(74)
         durable.subscribe_commits(committed)
     policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True,

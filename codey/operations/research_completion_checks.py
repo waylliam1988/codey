@@ -38,9 +38,14 @@ def prepare_research_completion(session: TaskSession, text: str, context: Any) -
     if ledger is None or store is None:
         raise ValueError("strict report preparation requires its research ledger and knowledge store")
     try:
-        report = compile_finding_report(session.last_done_args, ledger, store,
+        from codey.research.local_scope import assembled_report, registered_plan
+
+        args, origins = (assembled_report(session, ledger) if registered_plan(session) is not None else
+                         (session.last_done_args, ()))
+        report = compile_finding_report(args, ledger, store,
             project=str(_context_get(context, "knowledge_project") or ""),
-            session_id=str(_context_get(context, "knowledge_session_id") or ""), task=session.task_text)
+            session_id=str(_context_get(context, "knowledge_session_id") or ""), task=session.task_text,
+            selection_receipts=origins)
     except ValueError as exc:
         from codey.research.issues import ResearchIssue
 

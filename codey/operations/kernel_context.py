@@ -337,7 +337,7 @@ class KernelContext:
             observations = task_working_context(
                 self.session, getattr(self.execution.research_tools, "ledger", None),
                 getattr(self.execution.research_tools, "store", None),
-                str(getattr(self.execution.research_tools, "session_id", "")))
+                str(getattr(self.execution.research_tools, "session_id", "")), research_scope=snapshot.research_scope)
             # Canonical replay excludes Ghost hints. Each continuation must
             # carry its frozen context without relying on a warm wire history.
             context = self.transport.context_text
@@ -446,8 +446,11 @@ class KernelContext:
                      counters=replace(state.counters, invalid_turns=0))
 
     def retry(self, state: Any, prompt: str, *, error: str = "", counters: RuntimeExecutionCounters | None = None) -> None:
-        self.advance(state, positions.LEAF_CONTROL_READY, data=RetryDecision(
-            purpose="retry", prompt=prompt, error=error), counters=counters or state.counters)
+        decision = RetryDecision(purpose="retry", prompt=prompt, error=error)
+        scope = self.response(state).snapshot.research_scope
+        if scope is not None and scope.replaces:
+            decision["research_repair"] = scope.to_payload()
+        self.advance(state, positions.LEAF_CONTROL_READY, data=decision, counters=counters or state.counters)
 
     def plan(self, state: Any) -> Any:
         received = self.response(state)
@@ -523,6 +526,12 @@ class KernelContext:
             # model decision that could discard a committed publication.
             self.advance(state, positions.LEAF_COMPLETION_PENDING)
             return
+        from codey.research.local_scope import current_scope
+
+        if (not self.cancelled() and len(results) == 1 and results[0].ok
+                and results[0].call.name == "submit_research_answer" and current_scope(self.session) is None):
+            self.advance(state, positions.LEAF_COMPLETION_PENDING)
+            return
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
         if self.cancelled() or progress.stopped or turn >= self.session.max_turns:
             reason = "stopped" if self.cancelled() else "no_progress" if progress.stopped else "max_turns"
@@ -555,7 +564,9 @@ class KernelContext:
             spans = [{**span, "start": span["start"] + shift, "end": span["end"] + shift} for span in spans]
             if reminder:
                 prompt += "\n\n" + reminder
-        snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native)
+        original_scope = self.response(state).snapshot.research_scope
+        snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native,
+            research_repair=original_scope if original_scope is not None and original_scope.replaces else None)
         self.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages, text_result_spans=spans)
 
     def boundary_text(self) -> str:

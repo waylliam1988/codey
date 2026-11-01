@@ -64,6 +64,9 @@ TOOL_CONTRACTS = {
     "research_plan": ToolContract(
         name="research_plan", input_schema=object_schema({
             'questions': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 8},
+            'question_details': {'type': 'array', 'minItems': 1, 'maxItems': 8,
+                'items': object_schema({'task_refs': array_schema({'type': 'string'})}, 'task_refs'),
+                'description': 'One record per question in order. Assign original coverage rN requirements once to enable local submissions.'},
         }, 'questions'),
         example='{"tool":"research_plan","args":{"questions":["What is the answer and its evidence scope?"]}}',
         description="Register 1..8 questions covering the user request before investigation. Returns stable q1, q2, etc. "
@@ -73,6 +76,17 @@ TOOL_CONTRACTS = {
                     "what the documentation says. Split only independently answerable topics requested by the user. "
                     "Keep questions concise. Later calls may append questions, never replace or reorder them. "
                     "The final report accounts for every question with evidence or a specific gap; planning is not completion.",
+    ),
+    "submit_research_answer": ToolContract(
+        name="submit_research_answer", input_schema=object_schema({
+            'state': {'type': 'string', 'enum': ['answered', 'partial', 'unresolved']},
+            'findings': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 16, 'uniqueItems': True},
+        }, 'state', 'findings'),
+        example='{"tool":"submit_research_answer","args":{"state":"unresolved","findings":[]}}',
+        description="End only the current frozen target. answered/partial require exact saved/read findings; "
+                    "unresolved requires findings=[] and creates no finding. No direct support means unresolved, "
+                    "not a nearby fact or a claim about the whole document. The application records actual attempts, "
+                    "advances to the next target, and checks the parent report separately. A declaration is not semantic approval.",
     ),
     "web_search": ToolContract(
         name="web_search",

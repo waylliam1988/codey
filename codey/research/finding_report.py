@@ -39,9 +39,12 @@ class FindingReport:
     questions: tuple[str, ...]
     evidence_bindings: tuple[dict[str, Any], ...] = ()
     open_questions: tuple[str, ...] = ()
+    selection_receipts: tuple[str, ...] = ()
 
     def to_payload(self) -> dict[str, Any]:
         payload = asdict(self)
+        if not self.selection_receipts:
+            payload.pop("selection_receipts")
         # Normalize tuples at the persistence boundary, then bind every field.
         import json
 
@@ -51,10 +54,10 @@ class FindingReport:
     @classmethod
     def from_payload(cls, raw: Any) -> FindingReport:
         fields = {"text", "knowledge_refs", "finding_ids", "coverage", "reference_metadata",
-                  "source_versions", "paragraph_bindings", "proposal_digest", "questions", "evidence_bindings", "open_questions"}
-        if not isinstance(raw, dict) or set(raw) != fields | {"compilation_digest"}:
+                  "source_versions", "paragraph_bindings", "proposal_digest", "questions", "evidence_bindings", "open_questions", "selection_receipts"}
+        if not isinstance(raw, dict) or set(raw) not in (fields | {"compilation_digest"}, (fields - {"selection_receipts"}) | {"compilation_digest"}):
             raise ValueError("invalid accepted research report")
-        body = {key: raw[key] for key in fields}
+        body = {key: raw[key] for key in fields if key in raw}
         if raw["compilation_digest"] != _digest(body):
             raise ValueError("accepted research report digest mismatch")
         if not isinstance(body["text"], str) or not body["text"].strip():
@@ -65,7 +68,7 @@ class FindingReport:
         return cls(body["text"], tuple(body["knowledge_refs"]), tuple(body["finding_ids"]),
             tuple(body["coverage"]), body["reference_metadata"], tuple(body["source_versions"]),
             tuple(body["paragraph_bindings"]), body["proposal_digest"], tuple(body["questions"]), tuple(body["evidence_bindings"]),
-            tuple(body["open_questions"]))
+            tuple(body["open_questions"]), tuple(body.get("selection_receipts", ())))
 
 
 def validate_report_bindings(proposal: ResearchReportProposal, resolved: tuple[ResolvedReference, ...]) -> None:
@@ -173,7 +176,8 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
 
 
 def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: Any, *,
-                           project: str = "", session_id: str = "", task: str = "") -> FindingReport:
+                           project: str = "", session_id: str = "", task: str = "",
+                           selection_receipts: tuple[str, ...] = ()) -> FindingReport:
     proposal = parse_report_proposal(args, investigations=ledger.investigations)
     validate_question_coverage(list(proposal.coverage), ledger)
     proposal = bind_gap_investigations(proposal, ledger.investigations)
@@ -243,4 +247,5 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
         for item in resolved for ev in item.evidence)
     return FindingReport(text, tuple({"id": item.version.value.id, "revision": item.version.revision} for item in resolved),
         tuple(dict.fromkeys(item.binding.note_id for item in resolved if item.binding.note_id)),
-        proposal.coverage, metadata, sources, tuple(paragraphs), _digest(args), ledger.questions, evidence_bindings, tuple(args.get("open_questions", ())))
+        proposal.coverage, metadata, sources, tuple(paragraphs), _digest(args), ledger.questions, evidence_bindings,
+        tuple(args.get("open_questions", ())), selection_receipts)

@@ -366,15 +366,22 @@ class ResearchTools:
 
         return save_inference(self, args)
 
-    def research_plan(self, questions: object) -> ResearchToolOutput:
+    def research_plan(self, questions: object, *, question_details: object = None, task: str = "") -> ResearchToolOutput:
         from codey.research.questions import question_plan
 
         try:
-            self.ledger.questions = question_plan(questions, self.ledger.questions)
+            planned = question_plan(questions, self.ledger.questions)
+            observation: dict[str, Any] = {"questions": list(planned)}
+            if question_details is not None:
+                from codey.research.local_scope import question_details as validate_details
+
+                observation["question_details"] = validate_details(question_details, planned, task)
+            self.ledger.questions = planned
             return ResearchToolOutput(canonical_json({"questions": [
-                {"question_ref": f"q{index}", "question": text} for index, text in enumerate(self.ledger.questions, 1)],
+                {"question_ref": f"q{index}", "question": text} for index, text in enumerate(planned, 1)],
+                **({"question_details": observation["question_details"]} if question_details is not None else {}),
                 "next": "Investigate these questions; final coverage must answer or explain the gap for every question. "
-                        "A recorded plan is not completed research."}), ok=True)
+                        "A recorded plan is not completed research."}), read_observation=observation, ok=True)
         except ValueError as exc:
             return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 

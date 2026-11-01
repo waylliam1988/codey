@@ -86,9 +86,10 @@ def request_artifact_for_effect(durable: Any, effect: Any) -> ArtifactRecord:
 
 def snapshot_description(snapshot: Any) -> dict[str, object]:
     """Persist the captured contract, never Python callables or a live registry."""
-    return {"schema_version": 2, "implementation_id": runtime_implementation_id(), "allowed": json_value(snapshot.allowed),
+    return {"schema_version": 3, "implementation_id": runtime_implementation_id(), "allowed": json_value(snapshot.allowed),
             "contract_text": snapshot.contract_text, "tool_names": list(snapshot.tool_names),
             "nested_tool_names": list(snapshot.nested_tool_names),
+            "research_scope": snapshot.research_scope.to_payload() if snapshot.research_scope is not None else None,
             "policy": snapshot.policy.to_payload(), "specs": json_value(snapshot.frozen_specs),
             "executors": [{"name": name, "binding": None if fn is None else {
                 "module": getattr(fn, "__module__", ""), "name": getattr(fn, "__qualname__", ""),
@@ -118,9 +119,10 @@ def restore_snapshot(payload: object) -> Any:
     from codey.toolchain.tool_spec import ToolSpec, custom_executor_for, freeze_spec_parameters
 
     expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors"}
-    if (not isinstance(payload, dict) or type(payload.get("schema_version")) is not int
-            or payload["schema_version"] not in (1, 2)
-            or set(payload) != (expected | {"nested_tool_names"} if payload["schema_version"] == 2 else expected)):
+    if not isinstance(payload, dict) or type(payload.get("schema_version")) is not int or payload["schema_version"] not in (1, 2, 3):
+        raise ValueError("invalid captured turn snapshot version/shape")
+    extra = {"nested_tool_names", "research_scope"} if payload["schema_version"] == 3 else {"nested_tool_names"} if payload["schema_version"] == 2 else set()
+    if set(payload) != expected | extra:
         raise ValueError("invalid captured turn snapshot version/shape")
     names = payload["tool_names"]
     nested = payload.get("nested_tool_names", [])
@@ -173,6 +175,9 @@ def restore_snapshot(payload: object) -> Any:
         bindings.append((name, current))
     if [name for name, _ in bindings] != inventory:
         raise ValueError("captured executor descriptors do not match tool names")
+    from codey.research.local_scope import ResearchScope
+
+    scope = ResearchScope.from_payload(payload["research_scope"]) if payload.get("research_scope") is not None else None
     return TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=payload["contract_text"],
         tool_names=tuple(names), policy=policy, frozen_specs=tuple(specs),
-        custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested))
+        custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested), research_scope=scope)

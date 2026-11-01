@@ -22,6 +22,7 @@ MAX_NATIVE_CALLS_PER_TURN = 8
 
 if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
+    from codey.research.local_scope import ResearchScope
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class TurnSnapshot:
     custom_executors: tuple[tuple[str, Any], ...] = ()
     implementation_compatible: bool = True
     nested_tool_names: tuple[str, ...] = ()
+    research_scope: ResearchScope | None = None
 
     @property
     def inventory_names(self) -> tuple[str, ...]:
@@ -81,6 +83,7 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
     except Exception:
         denied = {"submit_research_review"}
     if not bool(getattr(policy, "strict_research", False)):
+        denied.add("submit_research_answer")
         base: tuple[str, ...] | None = None
     else:
         # Research exposes one simple acquisition write, keeping complex
@@ -114,6 +117,13 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
             base = None
         if base is not None and "research_plan" not in base:
             base = ("research_plan", *base)
+        from codey.research.local_scope import registered_plan
+
+        if getattr(session, "task_kind", "") == "research" and registered_plan(session) is not None:
+            base = ("knowledge_search", "knowledge_read", "web_search", "open_url", "open_result", "reopen_source",
+                    "open_hit", "source_search", "save_finding", "save_inference", "submit_research_answer")
+        else:
+            denied.add("submit_research_answer")
     if base is not None:
         base = (*base, "ask_user", "read_tool_result")
     # Reference aliases require an observed target, in ordinary and strict
@@ -193,16 +203,28 @@ def frozen_custom_executor_map(snapshot: TurnSnapshot | None) -> dict[str, Any] 
     return mapping
 
 
-def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
+def build_turn_snapshot(session: Any, *, native: bool = False, research_repair: Any = None) -> TurnSnapshot:
     """Build the round's authoritative snapshot; raises on failure."""
     # Fail closed: a snapshot computation failure never encodes as None
     # (unlimited). Callers must treat the exception as a per-turn config
     # error and stop.
     allowed = controller_allowed_for_session(session)
+    from codey.research.local_scope import current_scope, registered_plan
+
+    scope = current_scope(session, repair=research_repair) if session.policy.strict_research and session.task_kind == "research" else None
+    if registered_plan(session) is not None and session.policy.strict_research and session.task_kind == "research":
+        domain_tools = {"knowledge_search", "knowledge_read", "web_search", "open_url", "open_result", "reopen_source",
+                        "open_hit", "source_search", "save_finding", "save_inference", "submit_research_answer",
+                        "read_tool_result", "ask_user"} if scope else set()
+        if scope is not None and not scope.passage_refs:
+            domain_tools.discard("save_finding")
+        if scope is not None and not scope.finding_refs:
+            domain_tools.discard("save_inference")
+        allowed = tuple(name for name in (allowed or ()) if name in domain_tools)
     from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
 
     authorized = tuple(visible_tool_names_for_snapshot(session.policy, allowed, native=native))
-    if getattr(session, "task_kind", "") == "research_review":
+    if getattr(session, "task_kind", "") == "research_review" or scope is not None:
         authorized = tuple(name for name in authorized if name in (allowed or ()))
     exposure = getattr(session, "model_tool_names", None)
     if exposure is not None and (len(set(exposure)) != len(exposure) or not set(exposure) <= set(authorized)):
@@ -227,6 +249,10 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
 
     if requires_question_ref(session):
         frozen = tuple(question_bound_spec(spec, required=True) for spec in frozen)
+    if scope is not None:
+        from codey.research.local_scope import scoped_spec
+
+        frozen = tuple(scoped_spec(spec, scope) for spec in frozen)
     nested: tuple[str, ...] = ()
     if "codemode" in names:
         from codey.codemode.catalog import build_codemode_catalog, render_declarations
@@ -252,6 +278,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
         frozen_specs=frozen,
         custom_executors=executors,
         nested_tool_names=nested,
+        research_scope=scope,
     )
 
 
@@ -567,8 +594,8 @@ def _plan_from_tool_objects(
         return _invalid_plan(batch_error)
     if sum(1 for raw_tool, _args, _call_id in items if _canonical_name(raw_tool) == "shell") and len(items) != 1:
         return _invalid_plan("shell must be the only tool call in a turn", kind="mixed_shell_batch", tool="shell")
-    if len(items) != 1 and any(_canonical_name(name) == "submit_research_review" for name, _, _ in items):
-        return _invalid_plan("submit_research_review must be the only tool call in a turn")
+    if len(items) != 1 and any(_canonical_name(name) in {"submit_research_review", "submit_research_answer"} for name, _, _ in items):
+        return _invalid_plan("research submission must be the only tool call in a turn")
     calls: list[ToolCall] = []
     text_keys: set[str] = set()
     for raw_tool, args, call_id in items:
@@ -706,6 +733,8 @@ def normalize_turn(
         allowed = None if controller_allowed is None else {(n or "").strip().lower() for n in controller_allowed}
     items = _response_objects(reply)
     if isinstance(items, ToolPlan):
+        if snapshot is not None and snapshot.research_scope is not None and items.control is not None and items.control.kind == "done":
+            return _invalid_plan("End the current target with submit_research_answer; global done is not allowed in this scope")
         done_spec = frozen.get("done") if frozen is not None else None
         if (items.control is not None and items.control.kind == "done" and not items.protocol_error
                 and done_spec is not None and "report_sections" in done_spec.required):

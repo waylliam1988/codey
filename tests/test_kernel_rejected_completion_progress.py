@@ -79,3 +79,17 @@ def test_completion_repeat_history_survives_checkpoint_roundtrip_without_fake_to
     # A genuinely new read resets stagnation and interrupts the exact cycle.
     restored.observe([ToolResult(observation.call, "new evidence", ok=True)], session, batch_id="next-real-batch")
     assert not restored.stopped
+
+
+def test_novel_findings_cannot_reset_same_local_report_rejection_forever():
+    from codey.operations.kernel_progress import KernelProgress
+    from codey.runtime.core.models import ToolCall, ToolResult
+
+    session = TaskSession(TaskPolicy(frozenset({"control"})))
+    progress = KernelProgress(stagnant_turns=3)
+    for number in range(4):
+        progress.observe([ToolResult(ToolCall("save_finding", {"claim": f"paraphrase-{number}"}),
+                                     f"saved f{number + 1}", ok=True)], session, batch_id=f"batch-{number}")
+        progress.reject_completion({"findings": [f"f{number + 1}"]}, f"Report still too long {number}", session,
+                                   failure_key="report_length:Report format r1")
+    assert progress.stopped

@@ -77,7 +77,7 @@ class KernelProgress:
         # merely because its call arguments appeared earlier in the session.
         return self.stopped
 
-    def reject_completion(self, args: dict[str, Any], feedback: str, session: Any) -> None:
+    def reject_completion(self, args: dict[str, Any], feedback: str, session: Any, *, failure_key: str = "") -> None:
         """Account for a rejected proposal without inventing a tool execution.
 
         Distinct proposal/feedback pairs allow real repairs. Exact repetitions
@@ -86,8 +86,13 @@ class KernelProgress:
         claim a result batch: last_batch_id retains its original tool receipt.
         """
         call = ToolCall("done", args)
-        result = ToolResult(call, feedback, ok=False)
+        result = ToolResult(call, failure_key or feedback, ok=False)
         record = attempt_record(call, result, turn=session.turn, edit_epoch=max([0, *session.edited_files.values()]))
+        repeats = sum(previous.tool == "done" and previous.result_fp == record.result_fp for previous in self.attempts)
         self.attempts.append(record)
         novel = self.seen.add(seen_info_key("done", record.call_fp, feedback))
         self.idle = 0 if novel else self.idle + 1
+        if failure_key:
+            # Novel paraphrases/labels must not reset the same rejected domain
+            # problem indefinitely. Reuse the existing durable attempt history.
+            self.idle = max(self.idle, repeats)

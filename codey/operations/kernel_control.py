@@ -31,7 +31,7 @@ def validate_decision(payload: Any, *, schema_version: int = 2) -> KernelDecisio
     purpose = payload.get("purpose")
     if purpose == "retry":
         required = {"purpose", "prompt", "error"} | ({"counters"} if schema_version == 1 else set())
-        if (set(payload) not in (required, required | {"error_source", "error_type"})
+        if (set(payload) - {"research_repair"} not in (required, required | {"error_source", "error_type"})
                 or not all(isinstance(payload[key], str) for key in ("prompt", "error"))):
             raise ValueError("invalid retry decision")
         if schema_version == 1:
@@ -42,6 +42,10 @@ def validate_decision(payload: Any, *, schema_version: int = 2) -> KernelDecisio
         if "error_source" in payload and (not isinstance(payload["error_source"], str)
                 or not isinstance(payload["error_type"], str)):
             raise ValueError("invalid completion diagnostic")
+        if "research_repair" in payload:
+            from codey.research.local_scope import ResearchScope
+
+            ResearchScope.from_payload(payload["research_repair"])
     elif purpose == "done":
         if (set(payload) != {"purpose", "result", "workspace_revision", "workspace_fingerprint"}
                 or type(payload["workspace_revision"]) is not int or payload["workspace_revision"] < 0
@@ -76,12 +80,16 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
 
     context.restore_facts()
     plan = context.plan(state)
+    from codey.research.local_scope import assembled_report, plan_units, registered_plan, repair_scope
+
+    local = registered_plan(context.session) is not None and context.session.policy.strict_research
     if plan.control is not None and plan.control.kind == "done":
         context.session.last_done_text = plan.control.body or ""
         context.session.last_done_args = dict(plan.control_args)
     error_source = ""
     error_type = ""
     compiled = None
+    domain_issue = None
     try:
         refresh_verification_candidates(context.session)
         verdict = evaluate(context.session, context.session.last_done_text, context=context.completion_context)
@@ -89,6 +97,7 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
             raise ValueError("completion gate returned an invalid verdict")
         complete, followup, proof = verdict.complete, verdict.followup, verdict.proof
         compiled = verdict.research_report
+        domain_issue = verdict.research_issue
         error_source = getattr(verdict, "error_source", "")
         error_type = getattr(verdict, "error_type", "")
         final_text = verdict.final_text or context.session.last_done_text
@@ -106,13 +115,26 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     else:
         from codey.operations.kernel_progress import KernelProgress
 
+        ledger = getattr(context.execution.research_tools, "ledger", None)
+        if local and domain_issue is not None and domain_issue["code"] == "missing_evidence":
+            context.close(state, KernelResult(False, "Research investigation ended without supported findings.\n"
+                + "\n".join(f"{row['question_ref']}: {row['question']}" for row in
+                    plan_units(registered_plan(context.session))),
+                context.session.turn, "research_unresolved"))
+            return
+        repair = repair_scope(context.session, ledger, getattr(context.execution.research_tools, "store", None), domain_issue) if local else None
         progress = KernelProgress(context.transport.stagnant_turns, snapshot=state.counters.progress)
-        progress.reject_completion(context.session.last_done_args, followup, context.session)
+        proposal = assembled_report(context.session, ledger)[0] if local else context.session.last_done_args
+        progress.reject_completion(proposal, followup, context.session,
+            failure_key=(domain_issue["code"] + ":" + domain_issue["path"]) if local and domain_issue else "")
         counters = replace(state.counters, progress=progress.snapshot())
-        context.advance(state, positions.LEAF_CONTROL_READY, data=RetryDecision(
+        decision = RetryDecision(
             purpose="retry", prompt=kernel_prompt._completion_followup(followup, native=context.native,
-                structured_report="report_sections" in context.session.last_done_args), error="",
-            error_source=error_source, error_type=error_type),
+                structured_report=local or "report_sections" in context.session.last_done_args), error="",
+            error_source=error_source, error_type=error_type)
+        if repair is not None:
+            decision["research_repair"] = repair.to_payload()
+        context.advance(state, positions.LEAF_CONTROL_READY, data=decision,
             counters=counters)
 
 
@@ -132,7 +154,9 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
     decision = context.decision(state)
     received = context.response(state)
     ids = _ids(received.reply)
-    if decision["purpose"] == "done" and context.session.task_kind == "research_review":
+    if decision["purpose"] == "done" and (context.session.task_kind == "research_review"
+            or (received.snapshot.research_scope is not None and
+                any(call.name == "submit_research_answer" for call in context.plan(state).calls))):
         # Closure delivers the original submission receipt. There is no
         # synthetic model done call and no substituted tool-success message.
         context.advance(state, positions.LEAF_CLOSING)
@@ -177,9 +201,9 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         snapshot = received.snapshot
         # Native rejection replies use the exact declarations that answered
         # the original calls. A text retry starts the next ordinary turn.
-        if messages is None:
+        if messages is None or "research_repair" in decision:
             from codey.operations.kernel_protocol import build_turn_snapshot
-            snapshot = build_turn_snapshot(context.session, native=context.native)
+            snapshot = build_turn_snapshot(context.session, native=context.native, research_repair=decision.get("research_repair"))
         context.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages,
                        counters=counters)
         return

@@ -61,6 +61,7 @@ def _build_delegate(
     permission_profile: str = "coding_writer",
     frozen_specs: Any = None,
     custom_executors: Any = None,
+    research_scope: Any = None,
 ) -> Any:
     """Build the production delegate; fail closed when a project needs one."""
     try:
@@ -82,6 +83,7 @@ def _build_delegate(
             permission_profile=permission_profile,
             frozen_specs=dict(frozen_specs) if frozen_specs is not None else None,
             custom_executors=dict(custom_executors) if custom_executors is not None else None,
+            research_scope=research_scope,
         )
     except Exception as exc:
         if project_path is not None:
@@ -333,6 +335,7 @@ def execute_turn(
         permission_profile,
         frozen_specs=frozen_specs,
         custom_executors=frozen_custom_executor_map(snapshot),
+        research_scope=snapshot.research_scope if snapshot is not None else None,
     )
     _begin_pending_intents(
         intent_sink, calls, session, delivered_map, identity_ref, active_turn, base_index,

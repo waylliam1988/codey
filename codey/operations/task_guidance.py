@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 def task_working_context(session: "TaskSession", research_ledger: "ResearchLedger | None" = None,
-                         knowledge_store: Any = None, knowledge_session_id: str = "") -> str:
+                         knowledge_store: Any = None, knowledge_session_id: str = "", *, research_scope: Any = None) -> str:
     from codey.operations.kernel_prompt import working_context
     from codey.research.completion_guidance import render_research_observations
 
@@ -29,6 +29,17 @@ def task_working_context(session: "TaskSession", research_ledger: "ResearchLedge
     research_only = (session.task_kind in {"research", "evidence_followup", "research_review"}
                      and not session.policy.allows("project.write"))
     parts = [] if research_only else [working_context(session)]
+    from codey.research.local_scope import current_scope
+
+    scope = research_scope or (current_scope(session) if session.policy.strict_research else None)
+    if scope is not None:
+        from codey.knowledge.model import canonical_json
+
+        parts.append("Current frozen local research target:\n" + canonical_json(scope.to_payload())
+            + "\nAnswer only this target against its direct evidence. Save one complete supported relationship, "
+            "then submit_research_answer with answered/partial and selected fN. If direct evidence is absent, "
+            "submit unresolved with findings=[]; no placeholder finding is required. "
+            "This submission ends the local target, not the parent report. Do not call global done.")
     if session.policy.strict_research or session.task_kind == "evidence_followup":
         parts.append(render_research_observations(session, research_ledger, knowledge_store, session_id=knowledge_session_id))
         if session.policy.strict_research and session.task_text.strip():
