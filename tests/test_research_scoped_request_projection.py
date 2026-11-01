@@ -9,6 +9,41 @@ from codey.providers import api_transport
 from codey.providers.api_provider import ApiProvider
 from codey.providers.token_accounting import RequestContextCount
 from tests.test_research_local_scope import run_local
+from tests.test_research_whole_kernel import TASK, run_whole
+
+
+@pytest.mark.usefixtures("public_source_dns")
+@pytest.mark.parametrize("native", [False, True])
+def test_whole_task_survives_actual_provider_history_trimming_and_repair(tmp_path, monkeypatch, native):
+    sent, providers = [], []
+
+    def wrap(scripted):
+        def generate(_url, payload, *_args, **_kwargs):
+            sent.append(copy.deepcopy(payload))
+            prompt = "\n".join(str(row.get("content", "")) for row in payload["messages"])
+            raw = scripted.send(prompt)
+            row = json.loads(raw)
+            message = ({"tool_calls": [{"id": f"call-{len(sent)}", "type": "function", "function": {
+                "name": row["tool"], "arguments": json.dumps(row["args"])}}]} if native else {"content": raw})
+            return {"choices": [{"message": message, "finish_reason": "stop"}]}
+
+        monkeypatch.setattr(api_transport, "generate", generate)
+        provider = ApiProvider("http://fixture/v1", "fixture", native_tools=native, stream=False,
+                               request_counter=lambda *a, **kw: RequestContextCount(100, "tokenizer"))
+        providers.append(provider)
+        return provider
+
+    try:
+        result = run_whole(tmp_path, native=native, scenario="repair", provider_wrap=wrap)
+        assert result.stop_reason == "done" and len(sent) == 3
+        for payload in sent:
+            actual = "\n".join(str(row.get("content", "")) for row in payload["messages"])
+            assert TASK in actual and "Preserve every requested distinction" in actual
+            assert "submit_research_answer" in actual
+        assert "[e1]" in json.dumps(sent[1]) and "e99" in json.dumps(sent[2])
+    finally:
+        for provider in providers:
+            provider.close()
 
 
 @pytest.mark.usefixtures("public_source_dns")

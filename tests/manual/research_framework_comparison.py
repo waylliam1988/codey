@@ -25,6 +25,7 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from tests.manual.research_evidence_local import DEFAULT_CLOCK_FILE, QUESTIONS, fixture_clock, fixture_windows
+from tests.manual.research_experiment_identity import freeze_experiment, verify_experiment
 
 UPSTREAM = "http://127.0.0.1:5001"
 SEEDS = (74, 75, 76)
@@ -113,7 +114,7 @@ def backend_ready(upstream=UPSTREAM):
 
 
 class InferenceProxy:
-    def __init__(self, wire, seed, *, upstream=UPSTREAM, request_limit=12, genkey=None):
+    def __init__(self, wire, seed, *, upstream=UPSTREAM, request_limit=12, genkey=None, identity_root=None):
         self.wire, self.seed, self.upstream, self.request_limit = Path(wire), seed, upstream, request_limit
         self.genkey = genkey
         self.requests, self.tokens = 0, 0
@@ -138,6 +139,18 @@ class InferenceProxy:
                 with owner.lock:
                     if inference:
                         original = json.loads(body)
+                        if identity_root is not None:
+                            try:
+                                verify_experiment(identity_root)
+                            except RuntimeError as error:
+                                owner.record({"event": "source_identity_rejected", "error": str(error)})
+                                response = json.dumps({"error": {"message": str(error), "code": "evaluation_source_changed"}}).encode()
+                                self.send_response(409)
+                                self.send_header("Content-Type", "application/json")
+                                self.send_header("Content-Length", str(len(response)))
+                                self.end_headers()
+                                self.wfile.write(response)
+                                return
                         if owner.requests >= owner.request_limit or owner.tokens >= 180_000:
                             response = json.dumps({"error": {"message": "Frozen evaluation inference budget exhausted",
                                 "type": "evaluation_budget", "code": "evaluation_budget"}}).encode()
@@ -278,6 +291,7 @@ def final_report(events):
 
 
 def codey_worker(root, directory, base_url, case, seed):
+    verify_experiment(root)
     from unittest.mock import patch
 
     from codey.app import headless_runner
@@ -323,6 +337,7 @@ def codey_worker(root, directory, base_url, case, seed):
 
 
 def run_one(root, framework, case, seed):
+    verify_experiment(root)
     name = f"{case}-{seed}-{framework}"
     directory = root / "runs" / name
     logs = root / "logs"
@@ -331,7 +346,7 @@ def run_one(root, framework, case, seed):
     limits = experiment_limits(root)
     readiness = backend_ready()
     genkey = f"research-comparison-{uuid4().hex}"
-    with InferenceProxy(root / "wire" / f"{name}.jsonl", seed, genkey=genkey, request_limit=limits["requests"]) as proxy, \
+    with InferenceProxy(root / "wire" / f"{name}.jsonl", seed, genkey=genkey, request_limit=limits["requests"], identity_root=root) as proxy, \
          (logs / f"{name}.stdout").open("w", encoding="utf-8") as out, (logs / f"{name}.stderr").open("w", encoding="utf-8") as err:
         if framework == "codey":
             command = [sys.executable, "-X", "utf8", "-m", __spec__.name, "worker", "--root", str(root),
@@ -374,6 +389,7 @@ def run_one(root, framework, case, seed):
         result["result"] = next((row for row in reversed(events) if row.get("type") == "done"), {})
         (directory / "research-report.txt").write_text(final_report(events), encoding="utf-8")
     write_json(directory / "comparison-result.json", result)
+    verify_experiment(root)
     return result
 
 
@@ -393,6 +409,7 @@ def main():
         codey_worker(root, args.directory, args.base_url, args.case, args.seed)
         return
     (root / "runs").mkdir(exist_ok=True)
+    freeze_experiment(root)
     index_path = root / "matrix.json"
     previous = read_json(index_path) if index_path.exists() else []
     cases = [args.case] if args.case else (list(DIAGNOSTIC) if args.suite == "diagnostic" else

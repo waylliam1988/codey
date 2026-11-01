@@ -128,10 +128,10 @@ def citation_occurrences(markdown: str) -> list[dict[str, Any]]:
     masked = re.sub(r"(`+)([^`\n]*?)\1", lambda match: " " * len(match[0]), masked)
     rows = []
     for match in re.finditer(r"(?<!\\)\[(e[0-9][^\]\n]*)\](?!\()", masked):
-        label = match[1]
-        if re.fullmatch(r"e[1-9][0-9]*", label) is None:
-            raise ValueError("Use individual evidence citations such as [e1][e2], exactly as displayed.")
-        rows.append({"label": label, "start": match.start(), "end": match.end()})
+        labels = re.split(r"\s*[,，]\s*", match[1])
+        if any(re.fullmatch(r"e[1-9][0-9]*", label) is None for label in labels):
+            raise ValueError("Use explicit evidence labels such as [e1][e2] or [e1, e2]; no ranges or invented labels.")
+        rows.extend({"label": label, "start": match.start(), "end": match.end()} for label in dict.fromkeys(labels))
     return rows
 
 

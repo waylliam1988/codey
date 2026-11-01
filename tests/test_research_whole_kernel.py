@@ -18,7 +18,7 @@ from tests.test_research_findings import URL
 TASK = "Explain concurrent readers and the writer limit. State the evidence boundary."
 
 
-def run_whole(root, *, native=False, resume=False, boundary="", scenario="answer"):
+def run_whole(root, *, native=False, resume=False, boundary="", scenario="answer", provider_wrap=None):
     def factory(provider):
         def send(prompt):
             path = root / "calls.jsonl"
@@ -39,7 +39,7 @@ def run_whole(root, *, native=False, resume=False, boundary="", scenario="answer
                     args["markdown"] += " Unsupported citation [e99]."
             return json.dumps({"tool": tool, "args": args})
         provider.send = send
-        return provider
+        return provider_wrap(provider) if provider_wrap else provider
     return _run(root, native=native, resume=resume, boundary=boundary, task=TASK, compact_planning=True,
                 required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS, provider_factory=factory, boundary_turn=2)
 
@@ -61,6 +61,8 @@ def test_read_submit_publish_and_resume_without_extra_model_or_claims(tmp_path, 
     assert result.completion_proof.satisfied and not result.research_record.claims
     validate_accepted_projection(result, run_id="r", session_id="s", project="")
     before = (tmp_path / "calls.jsonl").read_bytes()
+    prompts = [json.loads(line)["prompt"] for line in before.splitlines() if "whole_request" in json.loads(line)]
+    assert all(TASK in prompt and "submit_research_answer" in prompt for prompt in prompts)
     assert run_whole(tmp_path, native=native, resume=True, scenario=scenario) == result
     assert (tmp_path / "calls.jsonl").read_bytes() == before
     store = KnowledgeStore(tmp_path / "knowledge")

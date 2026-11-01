@@ -32,6 +32,21 @@ def sourced_research_observed(observed, versions, *, live_web):
                  and bool(observed.intersection({"open_url", "open_result", "open_hit"}))))
 
 
+def whole_answer_observed(observed, versions, summary, store):
+    answers = [version for version in versions if version.value.kind == "answer"]
+    if len(answers) != 1 or "submit_research_answer" not in observed:
+        return False
+    answer = answers[0].value
+    provenance = answer.provenance
+    if (answer.content != summary or provenance.get("basis") != "settled_whole_answer_submission"
+            or not provenance.get("selection_receipts") or not provenance.get("attempt_refs")):
+        return False
+    if not answer.references:
+        return provenance.get("answer_state") == "unresolved"
+    return all(ref.relation == "uses" and (target := store.repository.read(ref.target, ref.revision)) is not None
+               and target.value.kind == "evidence" for ref in answer.references)
+
+
 def stage(directory, name, upstream, model, native=False, live_web=False, question="", max_turns=12, thinking=False,
           temperature=0.3, seed=73, diagnostic_stacks=False, reasoning_effort=None, session_id=None,
           provider_timeout=600, constrained_text=False, merge_clock=False):
@@ -213,8 +228,9 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
     try:
         rows = store.index._read_conn().execute(
             "SELECT v.id,v.revision FROM knowledge_versions v JOIN knowledge_heads h "
-            "ON h.id=v.id AND h.revision=v.revision WHERE v.kind=?",
-            ("claim" if name in {"first", "research"} else "inference",)).fetchall()
+            "ON h.id=v.id AND h.revision=v.revision WHERE v.kind IN (?,?)",
+            (("claim", "answer") if name == "research" else ("claim", "claim") if name == "first"
+             else ("inference", "inference"))).fetchall()
         versions = [store.repository.read(row[0], row[1]) for row in rows]
         snapshot = []
         for version in versions:
@@ -239,6 +255,11 @@ def stage(directory, name, upstream, model, native=False, live_web=False, questi
             raise RuntimeError(f"{name} failed: {vars(result)}")
         observed = {row.get("tool_name") for row in events_seen if row.get("type") == "tool" and row.get("ok")}
         if name == "research":
+            if any(version.value.kind == "answer" and version.value.provenance.get("basis") ==
+                   "settled_whole_answer_submission" for version in versions):
+                if not whole_answer_observed(observed, versions, final.get("summary", ""), store):
+                    raise RuntimeError("research delivery differs from its single published answer/evidence versions")
+                return  # Delivery only; gaps and semantic quality are graded separately.
             if not sourced_research_observed(observed, versions, live_web=live_web):
                 raise RuntimeError("research must persist sourced claims; live research must also search and open pages")
             return

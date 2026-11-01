@@ -104,6 +104,18 @@ def test_code_examples_do_not_count_as_adopted_evidence(markdown):
         submit_answer(scope, {"state": "answered", "markdown": markdown})
 
 
+def test_grouped_citations_preserve_explicit_selection_and_original_offsets():
+    scope = AnswerScope("a" * 64, (("e1", "p" + "b" * 12), ("e2", "p" + "c" * 12)), ("read",))
+    markdown = "The two sources agree [e1, e2]."
+    selected = submit_answer(scope, {"state": "answered", "markdown": markdown})
+    assert [row["label"] for row in selected["citations"]] == ["e1", "e2"]
+    assert all(markdown[row["start"]:row["end"]] == "[e1, e2]" for row in selected["citations"])
+    with pytest.raises(ValueError, match="unshown"):
+        submit_answer(scope, {"state": "answered", "markdown": "Unsupported selection [e1, e99]."})
+    with pytest.raises(ValueError, match="no ranges"):
+        submit_answer(scope, {"state": "answered", "markdown": "Ambiguous selection [e1-e2]."})
+
+
 @pytest.mark.parametrize("change", ["task", "citation", "text", "claim"])
 @pytest.mark.usefixtures("public_source_dns")
 def test_changed_frozen_report_is_rejected(tmp_path, change):

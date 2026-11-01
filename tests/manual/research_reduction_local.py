@@ -19,6 +19,7 @@ from unittest.mock import patch
 from urllib.request import urlopen
 from uuid import uuid4
 
+from tests.manual.research_experiment_identity import freeze_experiment, verify_experiment
 from tests.manual.research_framework_comparison import (
     UPSTREAM,
     InferenceProxy,
@@ -45,6 +46,7 @@ def load_cases(path):
 
 
 def worker(directory, case, base_url, seed):
+    verify_experiment(directory.parent.parent)
     from codey.app import headless_runner
     from codey.providers import local_config
     from tests.manual import persistent_research_local as probe
@@ -69,11 +71,12 @@ def worker(directory, case, base_url, seed):
 
 
 def run_case(root, case, seed):
+    verify_experiment(root)
     ready = backend_ready()
     name = f"{case}-{seed}"
     directory = root / "runs" / name
     started = time.monotonic()
-    with InferenceProxy(root / "wire" / f"{name}.jsonl", seed, genkey="reduction-" + uuid4().hex) as proxy, \
+    with InferenceProxy(root / "wire" / f"{name}.jsonl", seed, genkey="reduction-" + uuid4().hex, identity_root=root) as proxy, \
          (root / "logs" / f"{name}.stdout").open("w", encoding="utf-8") as out, \
          (root / "logs" / f"{name}.stderr").open("w", encoding="utf-8") as err:
         process = subprocess.Popen([sys.executable, "-X", "utf8", "-m", __spec__.name, "worker",
@@ -93,6 +96,7 @@ def run_case(root, case, seed):
     if path.exists():
         result["result"] = json.loads(path.read_text(encoding="utf-8"))
     write_json(directory / "experiment-result.json", result)
+    verify_experiment(root)
     return result
 
 
@@ -119,6 +123,7 @@ def main():
     root.mkdir(parents=True, exist_ok=False)
     (root / "logs").mkdir()
     (root / "runs").mkdir()
+    freeze_experiment(root)
     source = args.fixtures.read_bytes()
     (root / "fixtures.json").write_bytes(source)
     write_json(root / "implementation.json", {"commit": subprocess.check_output(["git", "rev-parse", "HEAD"],
