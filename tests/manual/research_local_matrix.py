@@ -67,6 +67,42 @@ def wire_stats(directory: Path) -> dict:
             "clock_sha256_values": sorted(clock_hashes)}
 
 
+def initial_exchange(directory):
+    """Hash the actual first input/output, preserving schema field order too."""
+    path = directory / "research-wire.jsonl"
+    values = {}
+    if not path.is_file():
+        return values
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        event = row.get("event")
+        if event == "admitted_payload" and "payload" not in values:
+            values["payload"] = row["payload"]
+        elif event == "generation_response" and "response" not in values:
+            values["response"] = row["body"]["choices"][0]["message"]
+        if len(values) == 2:
+            break
+    return {key: hashlib.sha256(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+            for key, value in values.items()}
+
+
+def initial_pair_comparisons(runs):
+    """Equal seeds are labels, not a backend determinism guarantee."""
+    indexed = {(row["configuration"], row["case"], row["seed"]): row for row in runs}
+    comparisons = []
+    for row in runs:
+        partner = {"A": "C", "B": "D"}.get(row["configuration"])
+        other = indexed.get((partner, row["case"], row["seed"]))
+        if other is None:
+            continue
+        exchanges = [initial_exchange(Path(item["directory"])) for item in (row, other)]
+        comparisons.append({"case": row["case"], "seed": row["seed"], "configurations": [row["configuration"], partner],
+            "exchanges": exchanges,
+            "same_payload": "payload" in exchanges[0] and exchanges[0].get("payload") == exchanges[1].get("payload"),
+            "same_response": "response" in exchanges[0] and exchanges[0].get("response") == exchanges[1].get("response")})
+    return comparisons
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", type=Path, required=True)
@@ -116,6 +152,8 @@ def main():
         row["semantic_review"] = pending_review()
         path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"END {name}: {row.get('result', {}).get('stop_reason', 'runner_failure')} ({row['elapsed_seconds']}s)", flush=True)
+    index["initial_request_comparisons"] = initial_pair_comparisons(runs)
+    path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

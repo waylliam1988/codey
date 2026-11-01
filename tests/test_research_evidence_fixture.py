@@ -81,6 +81,27 @@ def test_fixed_clock_and_semantic_axes_are_explicit_and_do_not_change_the_rubric
     assert all(row["status"] == "pending_manual_review" and row["evidence"] == [] for row in pending_review().values())
 
 
+@pytest.mark.parametrize("change", ["none", "output", "field_order"])
+def test_paired_initial_exchange_distinguishes_backend_variation_and_request_order(tmp_path, change):
+    from tests.manual.research_local_matrix import initial_pair_comparisons
+
+    runs = []
+    for label in ("A", "C"):
+        directory = tmp_path / label
+        directory.mkdir()
+        payload = {"model": "fixture", "seed": 74, "messages": [{"role": "user", "content": "same frozen task"}]}
+        if label == "C" and change == "field_order":
+            payload = dict(reversed(list(payload.items())))
+        output = "different output" if label == "C" and change == "output" else "same output"
+        rows = [{"event": "admitted_payload", "payload": payload},
+                {"event": "generation_response", "body": {"choices": [{"message": {"content": output}}]}}]
+        (directory / "research-wire.jsonl").write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
+        runs.append({"configuration": label, "case": "versions", "seed": 74, "directory": str(directory)})
+    result, = initial_pair_comparisons(runs)
+    assert result["same_payload"] == (change != "field_order")
+    assert result["same_response"] == (change != "output")
+
+
 @pytest.mark.parametrize("change", ["missing", "naive", "wrong_date", "wrong_offset"])
 def test_invalid_fixed_clock_fails_instead_of_falling_back_to_host_time(tmp_path, change):
     from tests.manual.research_evidence_local import DEFAULT_CLOCK_FILE, fixture_clock
