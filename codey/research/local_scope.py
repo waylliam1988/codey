@@ -9,10 +9,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from codey.knowledge.model import canonical_json
+from codey.research.issues import ResearchIssuePayload
 from codey.research.task_requirements import coverage_requirements, task_requirements
 
 
@@ -93,7 +94,7 @@ def effective_answers(session: Any, plan: dict[str, Any]) -> dict[str, dict[str,
         body = {key: value for key, value in answer.items() if key != "submission_id"}
         identity = answer.get("submission_id")
         unit = units.get(answer.get("unit_ref", ""))
-        if (identity != digest(body) or answer.get("plan_digest") != digest(plan) or unit is None
+        if (not isinstance(identity, str) or identity != digest(body) or answer.get("plan_digest") != digest(plan) or unit is None
                 or answer.get("question_ref") != unit["question_ref"]):
             raise ValueError("local selection differs from original plan or receipt digest")
         if identity in seen:
@@ -125,9 +126,12 @@ class ResearchScope:
         return tuple(row[0] for row in self.finding_versions)
 
     def to_payload(self) -> dict[str, Any]:
-        payload = json.loads(canonical_json(asdict(self)))
-        if self.schema_version == 1:
-            payload.pop("repair_issue_json")
+        payload = {"schema_version": self.schema_version, "plan_digest": self.plan_digest,
+            "question_ref": self.question_ref, "unit_ref": self.unit_ref, "question": self.question,
+            "target": self.target, "task_refs": list(self.task_refs), "passage_refs": list(self.passage_refs),
+            "finding_versions": [list(row) for row in self.finding_versions], "replaces": self.replaces}
+        if self.schema_version != 1:
+            payload["repair_issue_json"] = self.repair_issue_json
         return payload
 
     @classmethod
@@ -137,16 +141,16 @@ class ResearchScope:
         expected = set(cls.__dataclass_fields__) - ({"repair_issue_json"} if raw["schema_version"] == 1 else set())
         if set(raw) != expected:
             raise ValueError("invalid frozen research scope")
-        raw = {"repair_issue_json": "", **raw}
+        repair_issue_json = raw.get("repair_issue_json", "")
         if (any(not isinstance(raw[key], str) for key in
                        ("plan_digest", "question_ref", "unit_ref", "question", "target", "replaces"))
-                or not isinstance(raw["repair_issue_json"], str)
+                or not isinstance(repair_issue_json, str)
                 or any(not isinstance(raw[key], list) or any(not isinstance(v, str) for v in raw[key])
                        for key in ("task_refs", "passage_refs"))
                 or not isinstance(raw["finding_versions"], list)):
             raise ValueError("invalid frozen research scope values")
-        if raw["repair_issue_json"]:
-            issue = json.loads(raw["repair_issue_json"])
+        if repair_issue_json:
+            issue = json.loads(repair_issue_json)
             if (not raw["replaces"] or not isinstance(issue, dict)
                     or set(issue) != {"code", "path", "message", "allowed_refs", "requires_acquisition", "allowed_actions"}
                     or any(not isinstance(issue[key], str) for key in ("code", "path", "message"))
@@ -164,8 +168,11 @@ class ResearchScope:
             if (not isinstance(row, list) or len(row) != 3 or not all(isinstance(v, str) for v in row[:2])
                     or type(row[2]) is not int or row[2] < 1):
                 raise ValueError("invalid frozen research finding version")
-        return cls(**{**raw, "task_refs": tuple(raw["task_refs"]), "passage_refs": tuple(raw["passage_refs"]),
-                      "finding_versions": tuple(tuple(row) for row in raw["finding_versions"])})
+        return cls(schema_version=raw["schema_version"], plan_digest=raw["plan_digest"],
+            question_ref=raw["question_ref"], unit_ref=raw["unit_ref"], question=raw["question"], target=raw["target"],
+            task_refs=tuple(raw["task_refs"]), passage_refs=tuple(raw["passage_refs"]),
+            finding_versions=tuple((row[0], row[1], row[2]) for row in raw["finding_versions"]),
+            replaces=raw["replaces"], repair_issue_json=repair_issue_json)
 
 
 def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None = None) -> ResearchScope | None:
@@ -349,6 +356,8 @@ def selection_budget(session: Any, ledger: Any, store: Any, *, pending_answer: d
     from codey.research.task_requirements import conclusion_characters, report_requirements
 
     plan = registered_plan(session)
+    if plan is None:
+        raise ValueError("selection budget requires a local research plan")
     answers = effective_answers(session, plan)
     if pending_answer is not None:
         answers[pending_answer["unit_ref"]] = pending_answer
@@ -373,7 +382,7 @@ def selection_budget(session: Any, ledger: Any, store: Any, *, pending_answer: d
             **report_character_budget(proposal, resolved, session.task_text)}
 
 
-def repair_scope(session: Any, ledger: Any, store: Any, issue: dict[str, Any] | None) -> ResearchScope | None:
+def repair_scope(session: Any, ledger: Any, store: Any, issue: ResearchIssuePayload | None) -> ResearchScope | None:
     """Domain diagnostics choose an existing unit; the control layer never parses prose."""
     from codey.research.references import resolve_version
     from codey.research.task_requirements import conclusion_characters
@@ -382,7 +391,7 @@ def repair_scope(session: Any, ledger: Any, store: Any, issue: dict[str, Any] | 
     if plan is None:
         return None
     answers = effective_answers(session, plan)
-    wanted = set((issue or {}).get("allowed_refs", []))
+    wanted = set(issue["allowed_refs"]) if issue is not None else set[str]()
     units = plan_units(plan)
     candidates = [unit for unit in units if unit["unit_ref"] in answers
                   and (not wanted or wanted.intersection(row["ref"] for row in answers[unit["unit_ref"]]["findings"]))]

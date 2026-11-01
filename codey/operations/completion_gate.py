@@ -37,6 +37,7 @@ from codey.operations.research_completion_checks import (
 )
 from codey.policies.requirement import RequirementEvaluation
 from codey.research.finding_report import FindingReport
+from codey.research.issues import ResearchIssuePayload
 from codey.utils.refs import stable_ref
 
 
@@ -172,7 +173,7 @@ class GateVerdict:
     error_source: str = ""
     error_type: str = ""
     research_report: FindingReport | None = None
-    research_issue: dict[str, object] | None = None
+    research_issue: ResearchIssuePayload | None = None
 
 
 def evaluate(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:

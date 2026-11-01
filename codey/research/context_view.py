@@ -92,6 +92,8 @@ def local_research_context(session: Any, ledger: Any, store: Any, scope: Any) ->
     from codey.research.task_requirements import conclusion_characters, report_requirements, task_requirements
 
     plan = registered_plan(session)
+    if plan is None:
+        raise ValueError("local working context requires a local research plan")
     answers = effective_answers(session, plan)
     evidence = read_evidence_projection(session, ledger, passage_refs=scope.passage_refs)
     candidates = []

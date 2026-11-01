@@ -155,7 +155,7 @@ def report_character_budget(proposal: ResearchReportProposal, resolved: tuple[Re
     from codey.research.task_requirements import conclusion_characters, report_requirements
 
     by_label = {item.label: item for item in resolved}
-    contributions = [{"question_ref": row["question_ref"], "ref": ref,
+    contributions: list[dict[str, Any]] = [{"question_ref": row["question_ref"], "ref": ref,
                       "characters": conclusion_characters(by_label[ref].version.value.content)}
                      for row in proposal.coverage for ref in row["findings"]] if proposal.findings_only else []
     count = conclusion_characters(proposal.conclusion.text)

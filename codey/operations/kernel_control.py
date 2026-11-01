@@ -82,7 +82,8 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     plan = context.plan(state)
     from codey.research.local_scope import assembled_report, plan_units, registered_plan, repair_scope
 
-    local = registered_plan(context.session) is not None and context.session.policy.strict_research
+    local_plan = registered_plan(context.session) if context.session.policy.strict_research else None
+    local = local_plan is not None
     if plan.control is not None and plan.control.kind == "done":
         context.session.last_done_text = plan.control.body or ""
         context.session.last_done_args = dict(plan.control_args)
@@ -116,10 +117,10 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         from codey.operations.kernel_progress import KernelProgress
 
         ledger = getattr(context.execution.research_tools, "ledger", None)
-        if local and domain_issue is not None and domain_issue["code"] == "missing_evidence":
+        if local_plan is not None and domain_issue is not None and domain_issue["code"] == "missing_evidence":
             context.close(state, KernelResult(False, "Research investigation ended without supported findings.\n"
                 + "\n".join(f"{row['question_ref']}: {row['question']}" for row in
-                    plan_units(registered_plan(context.session))),
+                    plan_units(local_plan)),
                 context.session.turn, "research_unresolved"))
             return
         repair = repair_scope(context.session, ledger, getattr(context.execution.research_tools, "store", None), domain_issue) if local else None
@@ -186,7 +187,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
             return
         from codey.operations.task_guidance import task_working_context
 
-        messages = None
+        messages: list[ProviderToolResult] | None = None
         if context.native and ids:
             messages = []
         snapshot = received.snapshot

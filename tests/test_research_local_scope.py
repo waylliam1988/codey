@@ -336,3 +336,27 @@ def test_scope_v1_roundtrip_keeps_original_fields_and_v2_validates_repair_issue(
     for issue in ('{}', '{"code":1}', 'not JSON'):
         with pytest.raises(ValueError):
             ResearchScope.from_payload(replace(current, replaces="b" * 64, repair_issue_json=issue).to_payload())
+
+
+def test_local_views_require_original_plan_instead_of_using_an_empty_fallback():
+    from types import SimpleNamespace
+
+    from codey.research.context_view import local_research_context
+    from codey.research.local_scope import selection_budget
+
+    session = SimpleNamespace(_memory_results={})
+    with pytest.raises(ValueError, match="requires a local research plan"):
+        selection_budget(session, None, None)
+    with pytest.raises(ValueError, match="requires a local research plan"):
+        local_research_context(session, None, None, None)
+
+
+@pytest.mark.parametrize("changes", [
+    {"schema_version": True}, {"plan_digest": None}, {"question_ref": "q9"},
+    {"unit_ref": "q2.u1"}, {"task_refs": ["r1", "r1"]}, {"passage_refs": [42]},
+    {"finding_versions": [["f1", "object", True]]}, {"unexpected": "field"},
+])
+def test_scope_decoder_rejects_malformed_fields(changes):
+    scope = ResearchScope(2, "a" * 64, "q1", "q1.u1", "parent", "target", ("r1",), (), ())
+    with pytest.raises(ValueError):
+        ResearchScope.from_payload({**scope.to_payload(), **changes})

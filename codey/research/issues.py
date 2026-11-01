@@ -1,5 +1,16 @@
 """Field-local research diagnostics, never a retry controller."""
 
+from typing import TypedDict
+
+
+class ResearchIssuePayload(TypedDict):
+    code: str
+    path: str
+    message: str
+    allowed_refs: list[str]
+    requires_acquisition: bool
+    allowed_actions: list[str]
+
 
 class ResearchIssue(ValueError):
     def __init__(self, code: str, path: str, message: str, *, allowed_refs: tuple[str, ...] = (),
@@ -12,7 +23,7 @@ class ResearchIssue(ValueError):
         self.allowed_actions = allowed_actions
         super().__init__(str(self))
 
-    def to_payload(self) -> dict[str, object]:
+    def to_payload(self) -> ResearchIssuePayload:
         return {"code": self.code, "path": self.path, "message": self.message,
                 "allowed_refs": list(self.allowed_refs), "requires_acquisition": self.requires_acquisition,
                 "allowed_actions": list(self.allowed_actions)}
