@@ -25,6 +25,8 @@ ANSWER_TOOLS = ("web_search", "open_url", "open_result", "reopen_source", "open_
 
 ANSWER_GUIDANCE = (
     "Answer the complete original task in the user's requested language and question order. "
+    "Answer every clause of compound questions explicitly. For a yes/no question, give the direct answer "
+    "(yes, no, or not established by these materials) before the explanation. "
     "Preserve every requested distinction, condition, exception and OR alternative. "
     "Use only explanations established by the material, with explicit [eN] citations. "
     "If a requested point cannot be established, explain that gap beside the relevant answer. "

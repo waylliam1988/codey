@@ -46,6 +46,7 @@ def test_whole_task_survives_actual_provider_history_trimming_and_repair(tmp_pat
         actual_read = "\n".join(str(row.get("content", "")) for row in sent[1]["messages"])
         assert actual_read.count("Readers and a writer may run concurrently. Only one writer at a time.") == 1
         assert "passage_ref=p" not in actual_read
+        assert actual_read.index("Readers and a writer may run concurrently.") < actual_read.index("Complete user task (verbatim):")
     finally:
         for provider in providers:
             provider.close()
