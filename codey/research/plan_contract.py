@@ -58,7 +58,7 @@ def compact_plan_spec(spec: Any, task: str) -> Any:
                        "description": "Optional only when necessary; keep full OR conditions, negations and exceptions together."}},
         "text", "task_refs")
     schema = object_schema({"questions": {"type": "array", "minItems": 1, "maxItems": 8, "items": question},
-                            "contract_version": {"type": "integer", "enum": [2],
+                            "contract_version": {"type": "integer", "enum": [3],
                                                  "description": "Fixed by the application; may be omitted."}})
     defaults = task_layout(task)["task_questions"]
     example_args = {} if all(1 <= len(row["text"].strip()) <= 800 for row in defaults) else {
@@ -77,6 +77,13 @@ def is_compact_plan_spec(spec: Any) -> bool:
     if spec is None:
         return False
     return dict(spec.parameters).get("questions", {}).get("items", {}).get("type") == "object"
+
+
+def frozen_plan_version(spec: Any) -> int:
+    version = dict(spec.parameters).get("contract_version", {}).get("enum", [2])
+    if tuple(version) not in ((2,), (3,)):
+        raise ValueError("invalid frozen plan entry version")
+    return version[0]
 
 
 def compact_plan(raw: object, task: str, *, submission_mode: str = "select") -> dict[str, Any]:

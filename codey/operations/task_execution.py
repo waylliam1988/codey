@@ -498,13 +498,7 @@ class ExecutionDelegate:
             if denied is not None:
                 return denied
             if name == "research_plan":
-                from codey.research.plan_contract import is_compact_plan_spec
-
-                compact = self._frozen_specs is not None and is_compact_plan_spec(self._frozen_specs.get(name))
-                outcome = tools.research_plan(args.get("questions"), question_details=args.get("question_details"),
-                                              task=str(getattr(self.session, "task_text", "")), schema_version=2 if compact else 1)
-                canonical = {"research_observation": outcome.read_observation} if outcome.ok else {}
-                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
+                return self._record_research_plan(call, tools)
             if name == "submit_research_answer":
                 return self._submit_research_answer(call, tools)
             if name == "web_search":
@@ -600,6 +594,20 @@ class ExecutionDelegate:
                         "source-reading action for more text. knowledge_read needs an exact stored id or saved/read fN.")
         canonical = {"research_reference_bindings": {k: v.to_dict() for k, v in tools.ledger.references.items()}} if outcome.ok else {}
         return ToolResult(ok=outcome.ok, call=call, model_text=text, canonical=canonical), outcome.ok, None
+
+    def _record_research_plan(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
+        from codey.research.plan_contract import frozen_plan_version, is_compact_plan_spec
+
+        spec = self._frozen_specs.get(call.name) if self._frozen_specs is not None else None
+        compact = is_compact_plan_spec(spec)
+        version = frozen_plan_version(spec) if compact else 1
+        args = call.args
+        if compact and args.get("contract_version", version) != version:
+            raise ValueError("contract_version must match the frozen entry")
+        outcome = tools.research_plan(args.get("questions"), question_details=args.get("question_details"),
+                                      task=str(getattr(self.session, "task_text", "")), schema_version=version)
+        canonical = {"research_observation": outcome.read_observation} if outcome.ok else {}
+        return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
 
     def _submit_research_answer(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
         from codey.knowledge.model import canonical_json

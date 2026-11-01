@@ -3,8 +3,12 @@
 import copy
 import hashlib
 import json
+import os
 import subprocess
 import sys
+from contextlib import nullcontext
+from dataclasses import replace
+from unittest.mock import patch
 
 import pytest
 
@@ -83,6 +87,7 @@ def test_new_entry_one_object_array_and_old_frozen_plan_remains_legacy(tmp_path,
         session._memory_results["plan"] = result
         assert len(session.research_questions) == 2
         assert current_scope(session).target == "What limits writer concurrency?"
+        assert current_scope(session).submission_mode == "inline"
         context = task_working_context(session, tools.ledger, store)
         assert '"task_ref":"t1"' in context and "不得猜测" in context
         assert registered_plan(session)["schema_version"] == 2
@@ -115,11 +120,10 @@ def run_compact(root, *, native=False, resume=False, boundary=""):
                 from codey.research.passages import passage_ref
 
                 text = "Readers and a writer may run concurrently. Only one writer at a time."
-                row = {"tool": "save_finding", "args": {"question_ref": "q1", "claim": "根据当前材料，同一时刻只有一个写者。",
-                    "passage_ref": passage_ref(URL, hashlib.sha256(text.encode()).hexdigest()[:16], 0, len(text))}}
+                row = {"tool": "submit_research_answer", "args": {"state": "answered", "finding": {
+                    "claim": "根据当前材料，同一时刻只有一个写者。",
+                    "passage_ref": passage_ref(URL, hashlib.sha256(text.encode()).hexdigest()[:16], 0, len(text))}}}
             elif turn == 4:
-                row = {"tool": "submit_research_answer", "args": {"state": "answered", "findings": ["f1"]}}
-            elif turn == 5:
                 row = {"tool": "submit_research_answer", "args": {"state": "unresolved", "findings": []}}
             else:
                 pytest.fail(f"unexpected generation {turn}: {prompt[-1000:]}")
@@ -128,8 +132,20 @@ def run_compact(root, *, native=False, resume=False, boundary=""):
         provider.send = send
         return provider
 
-    return _run(root, native=native, resume=resume, boundary=boundary, task=TASK, compact_planning=True,
-                provider_factory=factory, boundary_turn=3 if boundary == "provider_response_ready" else 5)
+    original_write = ExecutionDelegate._execute_research_write
+
+    def interrupted_write(*args, **kwargs):
+        value = original_write(*args, **kwargs)
+        if value[1]:
+            os._exit(74)
+        return value
+
+    interruption = (patch.object(ExecutionDelegate, "_execute_research_write", interrupted_write)
+                    if boundary == "inline_written_before_receipt" else nullcontext())
+    with interruption:
+        return _run(root, native=native, resume=resume, boundary=boundary, task=TASK, compact_planning=True,
+                    provider_factory=factory, boundary_turn=3 if boundary in {
+                        "provider_request_ready", "provider_response_ready", "tool_effect_pending"} else 4)
 
 
 @pytest.mark.usefixtures("public_source_dns")
@@ -146,7 +162,9 @@ def test_compact_plan_answer_and_gap_pass_original_report_gate_and_replay(tmp_pa
 
 
 @pytest.mark.usefixtures("public_source_dns")
-@pytest.mark.parametrize("boundary", ["provider_response_ready", "tool_delivery_pending", "publication_committed"])
+@pytest.mark.parametrize("boundary", ["provider_request_ready", "provider_response_ready", "tool_effect_pending",
+    "inline_written_before_receipt", "tool_delivery_pending", "kernel_settled", "control_ready",
+    "publication_admitted", "publication_committed", "publication_receipt"])
 def test_compact_plan_survives_cold_restart_without_duplicate_write_or_publication(tmp_path, boundary):
     source = ("from pathlib import Path; from tests.test_research_compact_plan import run_compact; import sys; "
               "run_compact(Path(sys.argv[1]), boundary=sys.argv[2])")
@@ -156,3 +174,30 @@ def test_compact_plan_survives_cold_restart_without_duplicate_write_or_publicati
     assert result.stop_reason == "done", result.summary
     rows = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
     assert sum("publication" in row for row in rows) == sum("fetch" in row for row in rows) == 1
+
+
+def test_old_compact_frozen_entry_keeps_select_and_new_entry_cannot_choose_it(tmp_path):
+    from codey.operations.kernel_protocol import build_turn_snapshot
+
+    store, tools, session, _ = setup(tmp_path)
+    session.task_text = TASK
+    session.research_questions = tools.ledger.questions = ()
+    session.policy = TaskPolicy(session.policy.grants, strict_research=True)
+    try:
+        new = build_turn_snapshot(session)
+        invalid = normalize_turn(decode_text_turn('{"tool":"research_plan","args":{"contract_version":2}}'), snapshot=new)
+        assert invalid.protocol_error
+        specs = tuple(replace(spec, parameters=tuple({**dict(spec.parameters),
+            "contract_version": {"type": "integer", "enum": [2]}}.items()))
+            if spec.name == "research_plan" else spec for spec in new.frozen_specs)
+        old = restore_snapshot(snapshot_description(replace(new, frozen_specs=specs)))
+        delegate = ExecutionDelegate(session=session, research_tools=tools,
+                                     frozen_specs={spec.name: spec for spec in old.frozen_specs})
+        result, ok, _ = delegate._execute_research(ToolCall("research_plan", {}))
+        assert ok, result.model_text
+        project_result_observation(session, result.call, result, ok=ok, research_ledger=tools.ledger)
+        session._memory_results["plan"] = result
+        assert registered_plan(session)["submission_mode"] == "select"
+        assert current_scope(session).submission_mode == "select"
+    finally:
+        store.close()
