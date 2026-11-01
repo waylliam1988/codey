@@ -275,18 +275,20 @@ def _advance_after_results(
     completion_context: Any = None,
     boundary_prompt: str = "",
     text_result_spans: list[dict[str, Any]] | None = None,
+    result_context: Any = None,
 ) -> tuple[list[ProviderToolResult] | None, str] | KernelResult:
     """Deliver native receipts or build the next text prompt."""
     if native:
         from codey.operations.kernel_errors import RecoveryFailed
         try:
-            messages = _transport._native_tool_results(results, session, boundary_prompt=boundary_prompt)
+            messages = _transport._native_tool_results(results, session, boundary_prompt=boundary_prompt,
+                                                       result_context=result_context)
         except ValueError as exc:
             raise RecoveryFailed(f"native result delivery is invalid: {exc}") from exc
         if not messages:
             raise RecoveryFailed("native result delivery has no original call ids")
         return messages, ""
-    base_prompt = _prompt._format_results(results, session, text_result_spans=text_result_spans)
+    base_prompt = _prompt._format_results(results, session, text_result_spans=text_result_spans, result_context=result_context)
     if boundary_prompt:
         base_prompt = f"{base_prompt}\n\nNew user input at provider boundary:\n{boundary_prompt}"
     prepared = prepare_coding_context(session, completion_context=completion_context)

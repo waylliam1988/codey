@@ -97,23 +97,46 @@ def page_body_ranges(text: str, pages: tuple[tuple[int, str], ...]) -> list[tupl
     return ranges
 
 
-def describe_document_window(document: SourceDocument, text_hash: str, offset: int, limit: int) -> list[dict[str, Any]]:
+def describe_document_window(document: SourceDocument, text_hash: str, offset: int, limit: int, *,
+                             coherent: bool = False) -> list[dict[str, Any]]:
     """PDF passages select exact page bodies, excluding generated page labels.
 
     Keep coordinates in the original document so receipt restoration still
     validates against the same source bytes and version. Split at page boundaries
     even when a short document fits in one model window.
     """
+    describe = describe_section_window if coherent else describe_window
     if document.content_kind != "pdf":
-        return describe_window(document.final_url, text_hash, document.text, offset, limit)
+        return describe(document.final_url, text_hash, document.text, offset, limit)
     end = min(len(document.text), offset + limit)
     rows = []
     pages = tuple((page.number, page.text) for page in document.page_texts)
     for _number, start, stop in page_body_ranges(document.text, pages):
         visible_start, visible_end = max(offset, start), min(end, stop)
         if visible_start < visible_end:
-            rows.extend(describe_window(document.final_url, text_hash, document.text,
-                                        visible_start, visible_end - visible_start))
+            rows.extend(describe(document.final_url, text_hash, document.text,
+                                 visible_start, visible_end - visible_start))
+    return rows
+
+
+def describe_section_window(url: str, text_hash: str, text: str, offset: int, limit: int) -> list[dict[str, Any]]:
+    """Keep a displayed section together; never extend the actual read window.
+
+    The original receipt still owns exact source offsets. This is structural
+    grouping, not a claim that every statement in a section supports an answer.
+    """
+    original = describe_window(url, text_hash, text, offset, limit)
+    if not original:
+        return []
+    start, end = original[0]["start"], original[-1]["end"]
+    boundaries = [start, *(match.start() for match in re.finditer(r"(?m)^#{1,6} .+$", text)
+                           if start < match.start() < end), end]
+    rows = []
+    for begin, stop in zip(boundaries, boundaries[1:], strict=False):
+        if not text[begin:stop].strip():
+            continue
+        # Each original tool window is bounded by the normal acquisition limit.
+        rows.append({"ref": passage_ref(url, text_hash, begin, stop), "start": begin, "end": stop})
     return rows
 
 

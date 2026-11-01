@@ -26,7 +26,7 @@ from codey.operations.kernel_preparation import prepare_kernel_turn
 from codey.operations.kernel_progress import KernelProgress
 from codey.operations.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
 from codey.operations.kernel_trace import record_outbound, record_turn
-from codey.operations.task_guidance import task_working_context
+from codey.operations.task_guidance import task_result_context, task_working_context
 from codey.operations.task_session import TaskSession
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolResult, TurnFinish, tools_from_specs
@@ -551,15 +551,16 @@ class KernelContext:
                        else KernelResult(False, summary, turn, reason))
             return
         spans: list[dict[str, Any]] = []
+        original_scope = self.response(state).snapshot.research_scope
+        snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native,
+            research_repair=original_scope if original_scope is not None and original_scope.replaces else None)
         advance = wiring._advance_after_results(self.native, results, self.session, None,
-            completion_context=self.completion_context, boundary_prompt=self.boundary_text(), text_result_spans=spans)
+            completion_context=self.completion_context, boundary_prompt=self.boundary_text(), text_result_spans=spans,
+            result_context=lambda result: task_result_context(self.session, result, snapshot.research_scope))
         if isinstance(advance, KernelResult):
             self.close(state, advance)
             return
         messages, prompt = advance
-        original_scope = self.response(state).snapshot.research_scope
-        snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native,
-            research_repair=original_scope if original_scope is not None and original_scope.replaces else None)
         observations = "" if self.request_scoped_observations else task_working_context(
             self.session, getattr(self.execution.research_tools, "ledger", None),
                 getattr(self.execution.research_tools, "store", None),

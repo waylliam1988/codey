@@ -430,6 +430,10 @@ class ExecutionDelegate:
         # Acquisition mutates a temporary ledger. Only the committed result
         # receipt may publish it into the run's formal projection.
         tools = copy.copy(self.research_tools)
+        from codey.research.answer_contract import AnswerScope
+
+        if hasattr(tools, "coherent_passages"):
+            tools.coherent_passages = isinstance(self._research_scope, AnswerScope)
         if hasattr(tools, "evidence_only"):
             # This is a per-call presentation setting. The shared facade and
             # stored knowledge must not inherit a child phase's output contract.

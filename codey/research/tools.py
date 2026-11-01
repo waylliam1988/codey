@@ -67,6 +67,7 @@ class ResearchTools:
     evidence_only: bool = False
     finding_report: bool = False
     local_submission: bool = False
+    coherent_passages: bool = False
 
     def create_staged(self) -> ResearchTools:
         staged_store = StagedKnowledgeStore(self.store) if self.store is not None else None
@@ -89,6 +90,7 @@ class ResearchTools:
             evidence_only=self.evidence_only,
             finding_report=self.finding_report,
             local_submission=self.local_submission,
+            coherent_passages=self.coherent_passages,
         )
 
     def commit_staged(self, staged: ResearchTools) -> None:
@@ -176,7 +178,7 @@ class ResearchTools:
         observation = ledger_observation(snapshot, "open", url=document.final_url)
         source = snapshot.source_record_for_url(document.final_url)
         assert source is not None
-        passages = describe_document_window(document, source.text_hash, offset, limit)
+        passages = describe_document_window(document, source.text_hash, offset, limit, coherent=self.coherent_passages)
         if not passages:
             return ResearchToolOutput("ERROR: the requested source window contains no readable text; no passage was read.",
                                       ok=False)

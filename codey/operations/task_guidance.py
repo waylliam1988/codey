@@ -72,3 +72,21 @@ def task_guidance_for_policy(policy: TaskPolicy) -> str:
          if policy.allows("knowledge.read") and policy.allows("knowledge.write") and not policy.strict_research else ""),
         guidance(policy.required_checks),
     ) if part)
+
+
+def task_result_context(session: Any, result: Any, research_scope: Any) -> str:
+    """Compact only successful reads fully present in the frozen work view."""
+    from codey.operations.kernel_prompt import _result_context
+    from codey.providers.base import render_result_metadata
+    from codey.research.answer_contract import AnswerScope
+
+    rows = result.canonical.get("read_passages", [])
+    if isinstance(research_scope, AnswerScope) and result.ok and rows:
+        labels = {ref: label for label, ref in research_scope.aliases}
+        if all(row["ref"] in labels for row in rows):
+            identity = next((key for key, value in session._memory_results.items() if value is result), "")
+            if identity:
+                return ("Read succeeded. The complete original window appears in the current evidence view as "
+                        + ", ".join(f"[{labels[row['ref']]}]" for row in rows) + ".\n"
+                        + render_result_metadata(identity, tool=result.call.name, ok=True))
+    return _result_context(result, session)

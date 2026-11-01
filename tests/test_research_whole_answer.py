@@ -8,6 +8,7 @@ import pytest
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference
 from codey.research.answer_contract import AnswerScope, answer_scope, submit_answer
 from codey.research.answer_report import AnswerReport, compile_answer_report
+from codey.research.passages import describe_section_window, describe_window
 from codey.runtime.core.models import ToolCall, ToolResult
 from tests.test_research_findings import URL, execute, setup
 
@@ -114,6 +115,34 @@ def test_grouped_citations_preserve_explicit_selection_and_original_offsets():
         submit_answer(scope, {"state": "answered", "markdown": "Unsupported selection [e1, e99]."})
     with pytest.raises(ValueError, match="no ranges"):
         submit_answer(scope, {"state": "answered", "markdown": "Ambiguous selection [e1-e2]."})
+
+
+def test_section_read_keeps_conditions_together_without_extending_original_window():
+    text = "# Overview\n\n" + "This is introductory data. " * 47 + "\n\n## Conditions\n\nVersion 4 allows A OR B OR C.\n"
+    rows = describe_section_window(URL, "hash", text, 0, len(text))
+    assert len(rows) == 2
+    assert text[rows[1]["start"]:rows[1]["end"]] == "## Conditions\n\nVersion 4 allows A OR B OR C.\n"
+    for limit in (500, 1200, len(text)):
+        old = describe_window(URL, "hash", text, 0, limit)
+        new = describe_section_window(URL, "hash", text, 0, limit)
+        assert new[0]["start"] == old[0]["start"] and new[-1]["end"] == old[-1]["end"]
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_read_delivery_is_not_compacted_when_any_original_passage_is_omitted(tmp_path):
+    from codey.operations.task_guidance import task_result_context
+
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        result = execute(delegate, tools, session, "open_url", {"url": URL})
+        session._memory_results["read"] = result
+        omitted = answer_scope(session, budget=1)
+        assert result.model_text in task_result_context(session, result, omitted)
+        compact = task_result_context(session, result, answer_scope(session))
+        assert "[e1]" in compact and "Read succeeded" in compact and "read" in compact
+        assert result.model_text not in compact
+    finally:
+        store.close()
 
 
 @pytest.mark.parametrize("change", ["task", "citation", "text", "claim"])

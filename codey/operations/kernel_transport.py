@@ -36,6 +36,7 @@ def _native_tool_results(
     session: Any,
     *,
     boundary_prompt: str = "",
+    result_context: Any = None,
 ) -> list[ProviderToolResult]:
     from codey.operations.kernel_prompt import _result_context
 
@@ -55,7 +56,8 @@ def _native_tool_results(
         call_id = str(getattr(result.call, "call_id", "") or "")
         if not call_id:
             raise ValueError("native result has no original call id")
-        messages.append(ProviderToolResult(call_id, _result_context(result, session)))
+        content = result_context(result) if result_context else _result_context(result, session)
+        messages.append(ProviderToolResult(call_id, content))
     if boundary_prompt and messages:
         last = messages[-1]
         messages[-1] = ProviderToolResult(last.call_id, last.content, user_content=boundary_prompt)
