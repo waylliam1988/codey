@@ -12,7 +12,8 @@ if TYPE_CHECKING:
 
 
 def task_working_context(session: "TaskSession", research_ledger: "ResearchLedger | None" = None,
-                         knowledge_store: Any = None, knowledge_session_id: str = "", *, research_scope: Any = None) -> str:
+                         knowledge_store: Any = None, knowledge_session_id: str = "", *, research_scope: Any = None,
+                         tool_names: tuple[str, ...] | None = None) -> str:
     from codey.operations.kernel_prompt import working_context
     from codey.research.completion_guidance import render_research_observations
 
@@ -35,7 +36,7 @@ def task_working_context(session: "TaskSession", research_ledger: "ResearchLedge
     if scope is not None:
         from codey.research.context_view import local_research_context
 
-        return local_research_context(session, research_ledger, knowledge_store, scope)
+        return local_research_context(session, research_ledger, knowledge_store, scope, tool_names=tool_names)
     if session.policy.strict_research and session.task_kind == "research" and not session.research_questions:
         from codey.knowledge.model import canonical_json
         from codey.research.plan_contract import task_layout

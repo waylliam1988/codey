@@ -621,6 +621,15 @@ class ExecutionDelegate:
         if finding is not None:
             saved, ok, code = self._execute_research_write(ToolCall("save_finding", finding), tools)
             if not ok:
+                if "version literal absent from selected original excerpts:" in saved.model_text:
+                    from codey.research.source_literals import version_anchors
+
+                    available = [(ref, tools.ledger.read_passages[ref].excerpt) for ref in self._research_scope.passage_refs]
+                    saved = replace(saved, model_text=saved.model_text + "\n" + canonical_json({
+                        "available_version_locators": version_anchors(finding["claim"], available),
+                        "next": "Full windows are in read_evidence. Select one primary passage_ref and up to 3 OTHER "
+                                "additional_passage_refs from the same exact source version to support the whole answer. "
+                                "These number matches are locators, not semantic approval or automatic adoption."}))
                 return replace(saved, call=call), False, code
             saved_ref = json.loads(saved.model_text)["finding_ref"]
             binding = tools.ledger.references[saved_ref]

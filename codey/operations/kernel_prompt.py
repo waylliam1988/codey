@@ -178,7 +178,6 @@ def kernel_prompt_for_session(
 
 
 def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> str:
-    from codey.research.plan_contract import is_compact_plan_spec
     from codey.toolchain.constants import ARGUMENT_CONTENT_GUIDANCE
     from codey.toolchain.tool_prompt import tool_repair_text, tool_signature
 
@@ -195,8 +194,9 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
             )
         if snapshot.research_scope is not None:
             instruction += " End this target with submit_research_answer using the frozen selection contract."
-        elif any(item.name == "research_plan" and is_compact_plan_spec(item) for item in snapshot.model_specs):
-            instruction += " Register the original complete questions with research_plan({})."
+        elif "research_plan" in snapshot.tool_names and "done" not in snapshot.tool_names:
+            entry = next(item for item in snapshot.model_specs if item.name == "research_plan")
+            instruction += " " + entry.description
         elif spec is None or spec.name == "done":
             done = next((item for item in snapshot.model_specs if item.name == "done"), None)
             instruction += " " + _native_done_guidance(done)
@@ -222,6 +222,12 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool) -> s
                         "its value or adding another key. Blank property names are not placeholders. "
                         "If that value belongs in a declared field, use that field's actual name. "
                         "Preserve valid source excerpts and other valid values; the rejected key must change.")
+    if spec is not None and spec.name == "submit_research_answer" and snapshot.research_scope is not None:
+        # Cross-field forms cannot be conveyed by 'required: state' alone.
+        # Reuse the actual frozen contract instead of inventing a repair mode.
+        instruction += " " + spec.description
+        if spec.json_examples:
+            instruction += " Frozen example: " + spec.json_examples[0]
     return f"Protocol error: {detail}\n\n{instruction} Resend the intended call. {ARGUMENT_CONTENT_GUIDANCE} Keep other valid fields."
 
 

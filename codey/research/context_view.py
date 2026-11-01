@@ -85,8 +85,9 @@ def read_evidence_projection(session: Any, ledger: Any, *, question_ref: str = "
     return {"packets": packets, "locators": locators}
 
 
-def local_research_context(session: Any, ledger: Any, store: Any, scope: Any) -> str:
+def local_research_context(session: Any, ledger: Any, store: Any, scope: Any, *, tool_names: tuple[str, ...] | None = None) -> str:
     """A complete current work packet; no unrelated answers or mutable cache."""
+    from codey.research.action_feedback import repeat_observation
     from codey.research.local_scope import effective_answers, plan_units, registered_plan, selection_budget
     from codey.research.references import resolve_version
     from codey.research.task_requirements import conclusion_characters, report_requirements, task_requirements
@@ -123,6 +124,7 @@ def local_research_context(session: Any, ledger: Any, store: Any, scope: Any) ->
     if plan.get("schema_version") == 2:
         question = next(row for row in plan["questions"] if row["text"] == scope.question)
         assigned = [row for row in plan["task_layout"]["task_questions"] if row["task_ref"] in question["task_spans"]]
+    repeated = repeat_observation(session, scope, tool_names)
     data = {"current_target": scope.target, "parent_question": scope.question,
         "question_ref": scope.question_ref, "unit_ref": scope.unit_ref,
         "original_task_constraint_anchor": session.task_text,
@@ -132,6 +134,7 @@ def local_research_context(session: Any, ledger: Any, store: Any, scope: Any) ->
         "read_evidence": evidence["packets"], "candidate_findings": candidates, "other_target_progress": progress,
         "locators_not_evidence": evidence["locators"][-12:], "read_receipt_index": receipts[-8:],
         "replacing_selection": scope.replaces,
+        **({"repeated_action": repeated} if repeated is not None else {}),
         **({"repair_issue": json.loads(scope.repair_issue_json)} if scope.repair_issue_json else {}),
         "latest_result": [{"tool": row.call.name, "ok": row.ok,
                           **({"error": row.model_text} if not row.ok else {})}

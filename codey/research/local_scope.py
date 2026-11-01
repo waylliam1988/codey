@@ -327,7 +327,9 @@ def submission_finding(scope: ResearchScope, args: dict[str, Any]) -> dict[str, 
                 or any(not isinstance(ref, str) for ref in extra)
                 or len(set([passage, *extra])) != len(extra) + 1
                 or any(ref not in scope.passage_refs for ref in [passage, *extra])):
-            raise ValueError("inline passages must be distinct references from the frozen local evidence scope")
+            raise ValueError("inline passages must be distinct references from the frozen local evidence scope. "
+                             "Use one primary passage_ref; additional_passage_refs contains up to 3 OTHER raw ids, "
+                             "never the primary id again or a comma-joined string.")
         return {**finding, "question_ref": scope.question_ref}
     refs = args.get("findings")
     if (set(args) != {"state", "findings"} or not isinstance(refs, list)
@@ -363,7 +365,7 @@ def scoped_spec(spec: Any, scope: ResearchScope) -> Any:
         parameters["state"]["enum"] = ["unresolved"]
         spec = replace(spec, description=(
             "No saved/read finding is available for selection in this frozen request. "
-            "For a directly supported answer, save/read its finding before submitting on a later request. "
+            "Read the needed original passages or an exact stored finding before a supported submission on a later request. "
             "If direct evidence is insufficient, end this target with state=unresolved and findings=[]. "
             "The application advances the original plan and checks the parent report; a gap creates no finding."))
     if spec.name == "submit_research_answer" and scope.submission_mode == "inline" and scope.passage_refs:
@@ -381,6 +383,8 @@ def scoped_spec(spec: Any, scope: ResearchScope) -> Any:
             "to save and adopt that supported local answer in this call (omit findings); OR state=answered/partial with "
             "findings=[exact saved/read fN] to adopt existing candidates; OR state=unresolved with findings=[] for a gap. "
             "Never combine finding and findings. Keep complete conditions and alternatives; do not substitute nearby facts. "
+            "finding is ONE object containing the complete local answer, which may span sentences and multiple passages. "
+            "findings contains only existing fN strings, never new answer objects. "
             "Source and question identity come from the frozen scope. Candidates stay unreviewed; state is your declaration, "
             "not semantic approval. The original kernel checks the parent report and advances the original plan."),
             json_examples=(canonical_json({"tool": spec.name, "args": {"state": "answered", "finding": {

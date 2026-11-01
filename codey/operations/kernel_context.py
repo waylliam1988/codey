@@ -337,7 +337,8 @@ class KernelContext:
             observations = task_working_context(
                 self.session, getattr(self.execution.research_tools, "ledger", None),
                 getattr(self.execution.research_tools, "store", None),
-                str(getattr(self.execution.research_tools, "session_id", "")), research_scope=snapshot.research_scope)
+                str(getattr(self.execution.research_tools, "session_id", "")), research_scope=snapshot.research_scope,
+                tool_names=snapshot.tool_names)
             # Canonical replay excludes Ghost hints. Each continuation must
             # carry its frozen context without relying on a warm wire history.
             context = self.transport.context_text
@@ -387,7 +388,7 @@ class KernelContext:
                 self.session, getattr(self.execution.research_tools, "ledger", None),
                 getattr(self.execution.research_tools, "store", None),
                 str(getattr(self.execution.research_tools, "session_id", "")),
-                research_scope=prepared.snapshot.research_scope)) if part)
+                research_scope=prepared.snapshot.research_scope, tool_names=prepared.snapshot.tool_names)) if part)
         self.freeze(state, prepared.snapshot, turn=turn, prompt=prompt,
                     counters=replace(state.counters, progress=progress.snapshot()))
 
@@ -560,7 +561,8 @@ class KernelContext:
         observations = "" if self.request_scoped_observations else task_working_context(
             self.session, getattr(self.execution.research_tools, "ledger", None),
                 getattr(self.execution.research_tools, "store", None),
-                str(getattr(self.execution.research_tools, "session_id", "")), research_scope=snapshot.research_scope)
+                str(getattr(self.execution.research_tools, "session_id", "")), research_scope=snapshot.research_scope,
+                tool_names=snapshot.tool_names)
         reminder = progress.repeat_feedback()
         if self.native and messages:
             messages[-1] = replace(messages[-1], user_content="\n\n".join(

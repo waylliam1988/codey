@@ -206,7 +206,8 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         observations = "" if context.request_scoped_observations else task_working_context(
             context.session, getattr(context.execution.research_tools, "ledger", None),
                 getattr(context.execution.research_tools, "store", None),
-                str(getattr(context.execution.research_tools, "session_id", "")), research_scope=snapshot.research_scope)
+                str(getattr(context.execution.research_tools, "session_id", "")), research_scope=snapshot.research_scope,
+                tool_names=snapshot.tool_names)
         prompt = "\n\n".join(part for part in (observations, decision["prompt"]) if part)
         if messages is not None:
             messages = [ProviderToolResult(identity, "ERROR: " + (decision["error"] or prompt)) for identity in ids]
