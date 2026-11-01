@@ -23,13 +23,18 @@ class KernelProgress:
         self.attempts: deque[ToolAttemptRecord] = deque(snapshot.attempts, maxlen=16)
         self.idle = snapshot.idle
         self.last_batch_id = snapshot.last_batch_id
+        self.schema_version = snapshot.schema_version
+        self.repair_failure_key = snapshot.repair_failure_key
+        self.repair_rejections = snapshot.repair_rejections
 
     def snapshot(self) -> ProgressSnapshot:
-        return ProgressSnapshot(self.limit, self.seen.keys(), tuple(self.attempts), self.idle, self.last_batch_id)
+        return ProgressSnapshot(self.limit, self.seen.keys(), tuple(self.attempts), self.idle, self.last_batch_id,
+                                self.schema_version, self.repair_failure_key, self.repair_rejections)
 
     @property
     def stopped(self) -> bool:
-        return self.idle > 0 and (self.idle >= self.limit or should_block_or_remind(self.attempts).block)
+        return (self.repair_rejections >= self.limit
+                or self.idle > 0 and (self.idle >= self.limit or should_block_or_remind(self.attempts).block))
 
     def repeat_feedback(self) -> str:
         """Give the model a correction before the existing repeat limit wins."""
@@ -80,8 +85,10 @@ class KernelProgress:
     def reject_completion(self, args: dict[str, Any], feedback: str, session: Any, *, failure_key: str = "") -> None:
         """Account for a rejected proposal without inventing a tool execution.
 
-        Distinct proposal/feedback pairs allow real repairs. Exact repetitions
-        and short cycles use the same bounded history as ordinary tool results.
+        Unkeyed proposals retain ordinary exact-repeat/cycle accounting. A
+        keyed domain issue has a durable rejection budget independent of tool
+        history. Only a different validation issue starts a new repair episode;
+        reads, paraphrases and replacement selections do not reset its count.
         Persist this snapshot atomically with the control decision. It does not
         claim a result batch: last_batch_id retains its original tool receipt.
         """
@@ -93,6 +100,12 @@ class KernelProgress:
         novel = self.seen.add(seen_info_key("done", record.call_fp, feedback))
         self.idle = 0 if novel else self.idle + 1
         if failure_key:
-            # Novel paraphrases/labels must not reset the same rejected domain
-            # problem indefinitely. Reuse the existing durable attempt history.
-            self.idle = max(self.idle, repeats)
+            previous = self.repair_rejections if self.repair_failure_key == failure_key else (
+                repeats if self.schema_version == 1 else 0)
+            self.repair_failure_key = failure_key
+            self.repair_rejections = min(self.limit, previous + 1)
+            self.schema_version = 2
+            self.idle = max(self.idle, self.repair_rejections)
+        else:
+            self.repair_failure_key = ""
+            self.repair_rejections = 0

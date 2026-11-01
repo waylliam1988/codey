@@ -163,6 +163,10 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         context.advance(state, positions.LEAF_CLOSING)
         return
     if decision["purpose"] == "retry":
+        # A cold restart may enter directly at control_ready. Rebuild the
+        # original plan/selections/read receipts before freezing a repair;
+        # process-local caches cannot decide its available tools or evidence.
+        context.restore_facts()
         turn = received.logical_turn
         counters = state.counters
         if "counters" in decision:
