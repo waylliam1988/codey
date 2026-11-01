@@ -115,6 +115,7 @@ def _saved(tools: ResearchTools, identity: str, claim: str, ref: object, extra: 
     from codey.research.references import bind_version, read_version
     from codey.research.source_literals import version_anchors, version_mentions
     from codey.research.tools import ResearchToolOutput
+    from codey.research.task_requirements import conclusion_characters
 
     version = read_version(tools.store, stable_identity("claim", identity, claim))
     if version is None:
@@ -124,6 +125,7 @@ def _saved(tools: ResearchTools, identity: str, claim: str, ref: object, extra: 
     anchors = version_anchors(claim, [(str(passage_id), tools.ledger.read_passages[str(passage_id)].excerpt)
                                     for passage_id in (ref, *extra)]) if version_mentions(claim) else None
     return ResearchToolOutput(canonical_json({"finding_ref": label, "claim": claim,
+        "conclusion_characters": conclusion_characters(claim),
         "passage_ref": ref, "additional_passage_refs": extra, "interpretation_review": "unreviewed",
         **({"version_anchors": anchors} if anchors else {}),
         "next": "Select " + label + " in done.report_sections.coverage[].findings to adopt this exact claim; do not rewrite it. "

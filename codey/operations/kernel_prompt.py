@@ -214,8 +214,9 @@ def _completion_followup(feedback: str, *, native: bool, structured_report: bool
             r'Preserve the requested answer format. Encode any needed line breaks once as \n inside JSON strings. '
             "Fenced examples are answer text and do not execute tools.")
     if structured_report:
-        rule += (" Preserve the submitted question answers; repair the reported coverage field. "
-                 "Do not repeat acquisition unless evidence is missing.")
+        rule += (" Repair only the reported problem using the allowed actions above. "
+                 "Keep complete conditions in any supported replacement; never pad with unsupported claims. "
+                 "Do not repeat an unchanged selection.")
     return feedback + "\n\n" + rule
 
 

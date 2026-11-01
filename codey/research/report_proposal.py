@@ -109,7 +109,8 @@ def bind_selected_answers(proposal: ResearchReportProposal,
             if len(answer) > 4000:
                 raise ResearchIssue("report_selection_too_large", f"{row['question_ref']}.findings",
                     "selected findings exceed the 4000-character question answer limit; select fewer complete findings "
-                    "or save a concise supported replacement without dropping its conditions", allowed_refs=tuple(row["findings"]))
+                    "or save a concise supported replacement without dropping its conditions", allowed_refs=tuple(row["findings"]),
+                    allowed_actions=("reselect complete findings", "read exact original passages", "save supported concise replacement"))
             row = {**row, "answer": answer}
         rows.append(row)
     return _answers_proposal(tuple(rows), findings_only=True)

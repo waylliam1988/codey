@@ -78,10 +78,22 @@ def task_requirement_context(task: str) -> dict[str, Any]:
             "report_requirements_checked_by_application": report_requirements(task)}
 
 
-def validate_report_requirements(conclusion: str, task: str, *, from_findings: bool = False) -> None:
+def conclusion_text(conclusion: str) -> str:
+    """Canonical counting input shared by feedback and final admission."""
+    return re.sub(r"\[(?:f[1-9][0-9]*|[0-9]+)\]", "", conclusion)
+
+
+def conclusion_characters(conclusion: str) -> int:
+    return sum(not char.isspace() for char in conclusion_text(conclusion))
+
+
+def validate_report_requirements(conclusion: str, task: str, *, from_findings: bool = False,
+                                 contributions: tuple[dict[str, Any], ...] = ()) -> None:
     """Check canonical conclusion once, before any report views are published."""
-    text = re.sub(r"\[(?:f[1-9][0-9]*|[0-9]+)\]", "", conclusion)
-    count = sum(not char.isspace() for char in text)
+    from codey.research.issues import ResearchIssue
+
+    text = conclusion_text(conclusion)
+    count = conclusion_characters(conclusion)
     repair = ("Revise a local finding against its original passages or select its supported replacement; "
               "done adopts findings verbatim and accepts no answer prose. Never pad with unsupported claims."
               if from_findings else "Revise existing answers; do not add a question or task_refs row.")
@@ -89,15 +101,21 @@ def validate_report_requirements(conclusion: str, task: str, *, from_findings: b
         constraint = row["constraints"]
         ref = row["task_ref"]
         if "min_characters" in constraint and not constraint["min_characters"] <= count <= constraint["max_characters"]:
-            raise ValueError(f"Report format {ref}: conclusion has {count} non-whitespace characters; "
+            detail = (" Selected finding contributions: " + "; ".join(
+                f"{item['question_ref']}/{item['ref']}={item['characters']}" for item in contributions)
+                + ". Partial/gap notices also count." if contributions else "")
+            raise ResearchIssue("report_length", f"Report format {ref}", f"conclusion has {count} non-whitespace characters; "
                 f"required {constraint['min_characters']}..{constraint['max_characters']} (citations, "
-                "headings and source tables excluded). " + repair)
+                "headings and source tables excluded). " + repair + detail,
+                allowed_refs=tuple(dict.fromkeys(item["ref"] for item in contributions)),
+                allowed_actions=("reselect complete findings", "read exact original passages", "save supported concise replacement"))
         if constraint.get("language") == "zh":
             han = len(re.findall(r"[\u3400-\u9fff]", text))
             latin = len(re.findall(r"[a-zA-Z]", text))
             if not han or han <= latin:
-                raise ValueError(f"Report format {ref}: conclusion must be primarily Chinese "
-                    "(Han characters must outnumber Latin letters). " + repair)
+                raise ResearchIssue("report_language", f"Report format {ref}", "conclusion must be primarily Chinese "
+                    "(Han characters must outnumber Latin letters). " + repair,
+                    allowed_actions=("read exact original passages", "save supported replacement in requested language"))
 
 
 def validate_task_accounting(coverage: list[dict[str, Any]], task: str) -> None:

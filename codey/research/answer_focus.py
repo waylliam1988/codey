@@ -64,4 +64,5 @@ def validate_answer_focus(proposal: ResearchReportProposal, resolved: tuple[Reso
                    "for this question. " if coexistence_only else "Use the selected direct limiting statement. ")
                 + repair + "If only related evidence is available, " + gap_repair + "Do not add another qN. "
                 "This check detects a missing cue; it does not certify a supported interpretation.",
-                allowed_refs=tuple(row["findings"]), requires_acquisition=coexistence_only)
+                allowed_refs=tuple(row["findings"]), requires_acquisition=coexistence_only,
+                allowed_actions=("read direct limiting evidence", "save supported replacement", "select partial or unresolved"))

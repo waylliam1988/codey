@@ -42,6 +42,10 @@ def prepare_research_completion(session: TaskSession, text: str, context: Any) -
             project=str(_context_get(context, "knowledge_project") or ""),
             session_id=str(_context_get(context, "knowledge_session_id") or ""), task=session.task_text)
     except ValueError as exc:
+        from codey.research.issues import ResearchIssue
+
+        if isinstance(exc, ResearchIssue):
+            raise
         raise ValueError(f"Report reference fields: {exc}") from exc
     return report.text, report
 

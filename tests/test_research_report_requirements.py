@@ -7,12 +7,58 @@ import pytest
 from codey.research.finding_report import FindingReport, compile_finding_report
 from codey.research.task_requirements import (
     coverage_requirements,
+    conclusion_characters,
     report_requirements,
     task_requirements,
     validate_report_requirements,
     validate_task_accounting,
 )
 from tests.test_research_findings import URL, answer_args, execute, setup
+
+
+def test_counting_and_length_repair_share_one_contract():
+    from codey.research.issues import ResearchIssue
+    from codey.operations.kernel_prompt import _completion_followup
+
+    assert conclusion_characters(" 中 文 [f12]\n [2] \t") == 2
+    with pytest.raises(ResearchIssue) as error:
+        validate_report_requirements("中" * 961, "给出约800字的中文研究结论。", from_findings=True,
+            contributions=({"question_ref": "q1", "ref": "f1", "characters": 961},))
+    issue = error.value
+    assert issue.code == "report_length" and "q1/f1=961" in str(issue)
+    assert "save supported concise replacement" in issue.allowed_actions
+    feedback = _completion_followup(str(issue), native=False, structured_report=True)
+    assert "does not require a new search or write" not in feedback
+    assert "Preserve the submitted question answers" not in feedback
+    assert issue.to_payload()["allowed_actions"] == list(issue.allowed_actions)
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_saved_count_matches_final_compilation_and_gate_keeps_structured_issue(tmp_path):
+    from codey.operations.completion_gate import evaluate
+    from tests.test_research_gate_preparation import strict_session
+    from tests.test_research_findings import selection_args
+
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        execute(delegate, tools, session, "open_url", {"url": URL})
+        claim = "同一时刻只有一个写者，读取和写入可以并发。"
+        result = execute(delegate, tools, session, "save_finding", {
+            "claim": claim, "passage_ref": next(iter(tools.ledger.read_passages))})
+        import json
+
+        saved = json.loads(result.model_text)
+        assert saved["conclusion_characters"] == conclusion_characters(claim)
+        session = strict_session(session)
+        session.task_text += " 给出约100字的中文研究结论。"
+        session.last_done_args = selection_args(saved["finding_ref"])
+        verdict = evaluate(session, "", context={"research_ledger": tools.ledger, "knowledge_store": store,
+                                               "knowledge_session_id": tools.session_id})
+        assert not verdict.complete
+        assert verdict.research_issue["code"] == "report_length"
+        assert f"q1/f1={saved['conclusion_characters']}" in verdict.followup
+    finally:
+        store.close()
 
 
 def test_original_r6_keeps_offsets_and_moves_only_pure_format_to_report_checks():

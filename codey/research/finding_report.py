@@ -198,9 +198,14 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
                 validate_version_literals(item.version.value.content, [row.evidence.value.content for row in item.evidence])
     proposal = bind_selected_answers(proposal, resolved)
     if task and proposal.answers_only:
-        from codey.research.task_requirements import validate_report_requirements
+        from codey.research.task_requirements import conclusion_characters, validate_report_requirements
 
-        validate_report_requirements(proposal.conclusion.text, task, from_findings=proposal.findings_only)
+        by_label = {item.label: item for item in resolved}
+        contributions = tuple({"question_ref": row["question_ref"], "ref": label,
+            "characters": conclusion_characters(by_label[label].version.value.content)}
+            for row in proposal.coverage for label in row["findings"]) if proposal.findings_only else ()
+        validate_report_requirements(proposal.conclusion.text, task, from_findings=proposal.findings_only,
+                                     contributions=contributions)
     validate_report_bindings(proposal, resolved)
     if proposal.answers_only:
         from codey.research.answer_focus import validate_answer_focus

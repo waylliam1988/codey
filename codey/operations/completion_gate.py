@@ -172,6 +172,7 @@ class GateVerdict:
     error_source: str = ""
     error_type: str = ""
     research_report: FindingReport | None = None
+    research_issue: dict[str, object] | None = None
 
 
 def evaluate(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
@@ -385,8 +386,11 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     except ValueError as exc:
         # Field paths, allowed references and acquisition guidance belong to
         # the domain preparation error; the generic exception handler hides them.
+        from codey.research.issues import ResearchIssue
+
         return GateVerdict(False, f"Completion check failed ({exc}); cannot complete yet. Continue the task.",
-                           None, error_source="completion_check", error_type=type(exc).__name__)
+                           None, error_source="completion_check", error_type=type(exc).__name__,
+                           research_issue=exc.to_payload() if isinstance(exc, ResearchIssue) else None)
     citation_checks = citation_requirement_checks(session, text, context, report=report)
     checks: list[CompletionCheck] = []
     checks.extend(project_completion_checks(session, context))
