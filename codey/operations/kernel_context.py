@@ -386,7 +386,8 @@ class KernelContext:
             prompt = "\n\n".join(part for part in (prompt, task_working_context(
                 self.session, getattr(self.execution.research_tools, "ledger", None),
                 getattr(self.execution.research_tools, "store", None),
-                str(getattr(self.execution.research_tools, "session_id", "")))) if part)
+                str(getattr(self.execution.research_tools, "session_id", "")),
+                research_scope=prepared.snapshot.research_scope)) if part)
         self.freeze(state, prepared.snapshot, turn=turn, prompt=prompt,
                     counters=replace(state.counters, progress=progress.snapshot()))
 
@@ -550,10 +551,13 @@ class KernelContext:
             self.close(state, advance)
             return
         messages, prompt = advance
+        original_scope = self.response(state).snapshot.research_scope
+        snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native,
+            research_repair=original_scope if original_scope is not None and original_scope.replaces else None)
         observations = "" if self.request_scoped_observations else task_working_context(
             self.session, getattr(self.execution.research_tools, "ledger", None),
                 getattr(self.execution.research_tools, "store", None),
-                str(getattr(self.execution.research_tools, "session_id", "")))
+                str(getattr(self.execution.research_tools, "session_id", "")), research_scope=snapshot.research_scope)
         reminder = progress.repeat_feedback()
         if self.native and messages:
             messages[-1] = replace(messages[-1], user_content="\n\n".join(
@@ -566,9 +570,6 @@ class KernelContext:
             spans = [{**span, "start": span["start"] + shift, "end": span["end"] + shift} for span in spans]
             if reminder:
                 prompt += "\n\n" + reminder
-        original_scope = self.response(state).snapshot.research_scope
-        snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native,
-            research_repair=original_scope if original_scope is not None and original_scope.replaces else None)
         self.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages, text_result_spans=spans)
 
     def boundary_text(self) -> str:

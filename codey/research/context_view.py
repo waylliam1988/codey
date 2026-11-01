@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
@@ -125,6 +126,7 @@ def local_research_context(session: Any, ledger: Any, store: Any, scope: Any) ->
         "read_evidence": evidence["packets"], "candidate_findings": candidates, "other_target_progress": progress,
         "locators_not_evidence": evidence["locators"][-12:], "read_receipt_index": receipts[-8:],
         "replacing_selection": scope.replaces,
+        **({"repair_issue": json.loads(scope.repair_issue_json)} if scope.repair_issue_json else {}),
         "latest_result": [{"tool": row.call.name, "ok": row.ok,
                           **({"error": row.model_text} if not row.ok else {})}
                          for row in list(session._memory_results.values())[-1:]],

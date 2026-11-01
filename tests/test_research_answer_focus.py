@@ -105,3 +105,27 @@ def test_actual_focused_run_single_actor_wording_still_needs_direct_limit_eviden
         assert failure.value.requires_acquisition
     finally:
         store.close()
+
+
+
+@pytest.mark.usefixtures("public_source_dns")
+@pytest.mark.parametrize("state", ["evidence_found", "partial"])
+def test_local_feedback_explains_empty_gap_exit_without_relaxing_the_check(tmp_path, state):
+    store, tools, session, delegate = setup(tmp_path)
+    tools.ledger.questions = session.research_questions = (QUESTION,)
+    tools.search.text = COEXISTENCE
+    try:
+        execute(delegate, tools, session, "open_url", {"url": URL})
+        execute(delegate, tools, session, "save_finding", {"claim": ANSWER,
+            "passage_ref": next(iter(tools.ledger.read_passages))})
+        args = answer_args("f1")
+        args["report_sections"]["coverage"][0].update(answer=ANSWER, state=state)
+        with pytest.raises(ResearchIssue) as failure:
+            compile_finding_report(args, tools.ledger, store, selection_receipts=("local-selection",))
+        issue = failure.value
+        assert issue.code == "count_limit_not_addressed"
+        assert "state=unresolved and findings=[]" in issue.message
+        assert "Changing an unsupported selection to partial" in issue.message
+        assert "source_search" not in issue.message and "open_hit" not in issue.message
+    finally:
+        store.close()

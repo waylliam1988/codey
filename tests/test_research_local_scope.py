@@ -84,12 +84,16 @@ def test_all_gap_terminates_without_finding_or_publication(tmp_path, native):
 
 
 @pytest.mark.usefixtures("public_source_dns")
-@pytest.mark.parametrize("boundary", ["provider_response_ready", "kernel_settled", "tool_delivery_pending"])
-def test_process_restart_after_local_submit_does_not_repeat_or_advance_twice(tmp_path, boundary):
+@pytest.mark.parametrize("boundary", ["provider_request_ready", "provider_response_ready", "kernel_settled",
+    "tool_delivery_pending", "control_ready", "publication_admitted", "publication_committed", "publication_receipt"])
+def test_process_restart_after_local_submit_does_not_repeat_or_advance_twice(tmp_path, monkeypatch, boundary):
     source = ("from pathlib import Path; from tests.test_research_local_scope import run_local; import sys; "
               "run_local(Path(sys.argv[1]), boundary=sys.argv[2])")
     child = subprocess.run([sys.executable, "-c", source, str(tmp_path), boundary], capture_output=True, timeout=50)
     assert child.returncode == 74, child.stderr.decode(errors="replace")
+    if boundary in {"kernel_settled", "control_ready", "publication_admitted", "publication_committed", "publication_receipt"}:
+        monkeypatch.setattr("codey.operations.research_completion_checks.compile_finding_report",
+            lambda *args, **kwargs: pytest.fail("accepted local report was recompiled"))
     result = run_local(tmp_path, resume=True)
     assert result.stop_reason == "done", result.summary
     assert len(set(result.accepted_report.selection_receipts)) == 3
@@ -114,7 +118,11 @@ def local_setup(tmp_path):
 
 @pytest.mark.usefixtures("public_source_dns")
 @pytest.mark.parametrize("native", [False, True])
-def test_report_length_reopens_only_original_selection_and_accepts_replacement(tmp_path, native):
+def test_report_length_reopens_only_original_selection_and_accepts_replacement(tmp_path, monkeypatch, native):
+    from codey.providers import api_transport
+    from codey.providers.api_provider import ApiProvider
+
+    providers = []
     long_claim = "同一时刻只有一个写者。" * 6
     short_claim = "WAL模式下，同一时刻只有一个写者，写者串行。"
 
@@ -130,6 +138,8 @@ def test_report_length_reopens_only_original_selection_and_accepts_replacement(t
             elif turn == 4:
                 row["args"]["claim"] = long_claim
             elif turn in (5, 7):
+                if turn == 7:
+                    assert '"repair_issue":{' in prompt and '"code":"report_length"' in prompt
                 row = {"tool": "submit_research_answer", "args": {"state": "answered", "findings": ["f1" if turn == 5 else "f2"]}}
             elif turn == 6:
                 assert "report_length" in prompt or "Report format" in prompt
@@ -141,9 +151,25 @@ def test_report_length_reopens_only_original_selection_and_accepts_replacement(t
             return json.dumps(row)
 
         provider.send = send
-        return provider
 
-    result = _run(tmp_path, native=native, task="Explain writer limit. 给出约20字的中文研究结论。", provider_factory=factory)
+        def generate(_url, payload, *_args, **_kwargs):
+            raw = provider.send("\n".join(str(row.get("content", "")) for row in payload["messages"]))
+            call = json.loads(raw)
+            message = ({"tool_calls": [{"id": f"call-{len(payload['messages'])}", "type": "function",
+                "function": {"name": call["tool"], "arguments": json.dumps(call["args"])}}]}
+                if native else {"content": raw})
+            return {"choices": [{"message": message, "finish_reason": "stop"}]}
+
+        monkeypatch.setattr(api_transport, "generate", generate)
+        actual = ApiProvider("http://fixture/v1", "fixture", native_tools=native, stream=False)
+        providers.append(actual)
+        return actual
+
+    try:
+        result = _run(tmp_path, native=native, task="Explain writer limit. 给出约20字的中文研究结论。", provider_factory=factory)
+    finally:
+        for provider in providers:
+            provider.close()
     assert result.stop_reason == "done", result.summary
     assert result.turns == 7 and long_claim not in result.summary and short_claim in result.summary
     assert result.accepted_report.coverage[0]["findings"] == ["f2"]
@@ -296,3 +322,17 @@ def test_previous_target_findings_require_explicit_read_and_repair_retains_selec
         assert "f1" in repair.finding_refs and len(repair.finding_refs) == 5
     finally:
         store.close()
+
+
+
+def test_scope_v1_roundtrip_keeps_original_fields_and_v2_validates_repair_issue():
+    from dataclasses import replace
+
+    scope = ResearchScope(1, "a" * 64, "q1", "q1.u1", "parent", "target", (), (), ())
+    payload = scope.to_payload()
+    assert "repair_issue_json" not in payload and ResearchScope.from_payload(payload) == scope
+    current = replace(scope, schema_version=2)
+    assert ResearchScope.from_payload(current.to_payload()) == current
+    for issue in ('{}', '{"code":1}', 'not JSON'):
+        with pytest.raises(ValueError):
+            ResearchScope.from_payload(replace(current, replaces="b" * 64, repair_issue_json=issue).to_payload())

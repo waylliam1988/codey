@@ -186,24 +186,26 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
             return
         from codey.operations.task_guidance import task_working_context
 
-        # Historical observations precede the specific current rejection so
-        # they cannot bury the next action in several pages of saved findings.
-        observations = "" if context.request_scoped_observations else task_working_context(
-            context.session, getattr(context.execution.research_tools, "ledger", None),
-                getattr(context.execution.research_tools, "store", None),
-                str(getattr(context.execution.research_tools, "session_id", "")))
-        prompt = "\n\n".join(part for part in (observations, decision["prompt"]) if part)
         messages = None
         if context.native and ids:
-            messages = [ProviderToolResult(identity, "ERROR: " + (decision["error"] or prompt)) for identity in ids]
-            if decision["error"]:
-                messages[-1] = replace(messages[-1], user_content=prompt)
+            messages = []
         snapshot = received.snapshot
         # Native rejection replies use the exact declarations that answered
         # the original calls. A text retry starts the next ordinary turn.
         if messages is None or "research_repair" in decision:
             from codey.operations.kernel_protocol import build_turn_snapshot
             snapshot = build_turn_snapshot(context.session, native=context.native, research_repair=decision.get("research_repair"))
+        # Both request-scoped providers and text-only providers render the
+        # same frozen repair basis, including after a successful local write.
+        observations = "" if context.request_scoped_observations else task_working_context(
+            context.session, getattr(context.execution.research_tools, "ledger", None),
+                getattr(context.execution.research_tools, "store", None),
+                str(getattr(context.execution.research_tools, "session_id", "")), research_scope=snapshot.research_scope)
+        prompt = "\n\n".join(part for part in (observations, decision["prompt"]) if part)
+        if messages is not None:
+            messages = [ProviderToolResult(identity, "ERROR: " + (decision["error"] or prompt)) for identity in ids]
+            if decision["error"]:
+                messages[-1] = replace(messages[-1], user_content=prompt)
         context.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages,
                        counters=counters)
         return

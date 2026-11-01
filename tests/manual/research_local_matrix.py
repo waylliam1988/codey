@@ -25,6 +25,31 @@ def matrix(suite: str) -> list[dict]:
             for label, split, full_history in configurations for case in cases for seed in (74, 75, 76)]
 
 
+def wire_stats(directory: Path) -> dict:
+    """Measure admitted payloads and server usage without semantic auto-grading."""
+    wire = directory / "research-wire.jsonl"
+    if not wire.is_file():
+        return {"wire_missing": True}
+    payload_characters, prompt_tokens, tools = [], [], {}
+    for line in wire.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        if row.get("event") == "admitted_payload":
+            payload_characters.append(len(json.dumps(row["payload"], ensure_ascii=False)))
+        if row.get("event") == "generation_response":
+            body = row["body"]
+            prompt_tokens.append(body.get("usage", {}).get("prompt_tokens"))
+            try:
+                call = json.loads(body["choices"][0]["message"]["content"])
+                name = call["tool"]
+            except (KeyError, IndexError, TypeError, ValueError):
+                name = "unparsed_response"
+            tools[name] = tools.get(name, 0) + 1
+    return {"request_count": len(payload_characters), "admitted_payload_characters": payload_characters,
+            "prompt_tokens": prompt_tokens, "total_prompt_tokens": (
+                sum(prompt_tokens) if prompt_tokens and all(type(n) is int for n in prompt_tokens) else None),
+            "model_tool_counts": tools}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", type=Path, required=True)
@@ -57,6 +82,7 @@ def main():
         result = directory / "research-result.json"
         if result.is_file():
             row["result"] = json.loads(result.read_text(encoding="utf-8"))
+        row["wire_stats"] = wire_stats(directory)
         row["semantic_grade"] = "pending_manual_review"
         path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"END {name}: {row.get('result', {}).get('stop_reason', 'runner_failure')} ({row['elapsed_seconds']}s)", flush=True)

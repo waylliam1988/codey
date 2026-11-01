@@ -29,7 +29,7 @@ _GAP = re.compile(r"尚未|未知|未明确|未证实|仍需|无法确定|未能
 
 
 def validate_answer_focus(proposal: ResearchReportProposal, resolved: tuple[ResolvedReference, ...],
-                          questions: tuple[str, ...]) -> None:
+                          questions: tuple[str, ...], *, local_submissions: bool = False) -> None:
     by_label = {item.label: item for item in resolved}
     for index, row in enumerate(proposal.coverage):
         if row["state"] not in {"evidence_found", "partial"}:
@@ -55,13 +55,18 @@ def validate_answer_focus(proposal: ResearchReportProposal, resolved: tuple[Reso
             gap_repair = ("use partial; the application appends an unresolved-question notice. "
                           if proposal.findings_only else
                           "use partial and explicitly state that the requested limit remains unresolved. ")
+            if local_submissions:
+                repair = "Select a supported replacement only if direct evidence is available. "
+                gap_repair = ("submit_research_answer with state=unresolved and findings=[] for this target. "
+                              "This needs no new finding. Changing an unsupported selection to partial does not "
+                              "supply the missing direct evidence. ")
             raise ResearchIssue("count_limit_not_addressed", f"report_sections.coverage[{index}].{field}",
                 f"{row['question_ref']} asks: {question}\n"
                 "Coexistence or nonblocking operations do not establish an exclusive count limit. "
                 + ("The answer does not state the requested limit. " if missing_answer else
                    "The selected supporting excerpts describe concurrency but omit a direct count limit. ")
-                + ("Find and read the direct limiting statement (source_search, then open_hit); save its exact passage "
-                   "for this question. " if coexistence_only else "Use the selected direct limiting statement. ")
+                + ("Read the direct limiting statement using an available reading action, if one can be found. "
+                   if coexistence_only else "Use the selected direct limiting statement. ")
                 + repair + "If only related evidence is available, " + gap_repair + "Do not add another qN. "
                 "This check detects a missing cue; it does not certify a supported interpretation.",
                 allowed_refs=tuple(row["findings"]), requires_acquisition=coexistence_only,

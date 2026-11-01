@@ -215,7 +215,7 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
     if proposal.answers_only:
         from codey.research.answer_focus import validate_answer_focus
 
-        validate_answer_focus(proposal, resolved, ledger.questions)
+        validate_answer_focus(proposal, resolved, ledger.questions, local_submissions=bool(selection_receipts))
     text, sources = render_report(proposal, resolved, ledger.questions, tuple(row.query for row in ledger.searches))
     from codey.research.source_literals import version_mentions
 

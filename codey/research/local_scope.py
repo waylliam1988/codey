@@ -7,6 +7,7 @@ kernel freezes a scope and executes one domain action using these pure values.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import asdict, dataclass, replace
 from typing import Any
@@ -117,27 +118,42 @@ class ResearchScope:
     passage_refs: tuple[str, ...]
     finding_versions: tuple[tuple[str, str, int], ...]
     replaces: str = ""
+    repair_issue_json: str = ""
 
     @property
     def finding_refs(self) -> tuple[str, ...]:
         return tuple(row[0] for row in self.finding_versions)
 
     def to_payload(self) -> dict[str, Any]:
-        import json
-
-        return json.loads(canonical_json(asdict(self)))
+        payload = json.loads(canonical_json(asdict(self)))
+        if self.schema_version == 1:
+            payload.pop("repair_issue_json")
+        return payload
 
     @classmethod
     def from_payload(cls, raw: Any) -> ResearchScope:
-        if not isinstance(raw, dict) or set(raw) != set(cls.__dataclass_fields__):
+        if not isinstance(raw, dict) or type(raw.get("schema_version")) is not int or raw["schema_version"] not in (1, 2):
             raise ValueError("invalid frozen research scope")
-        if (raw["schema_version"] != 1 or type(raw["schema_version"]) is not int
-                or any(not isinstance(raw[key], str) for key in
+        expected = set(cls.__dataclass_fields__) - ({"repair_issue_json"} if raw["schema_version"] == 1 else set())
+        if set(raw) != expected:
+            raise ValueError("invalid frozen research scope")
+        raw = {"repair_issue_json": "", **raw}
+        if (any(not isinstance(raw[key], str) for key in
                        ("plan_digest", "question_ref", "unit_ref", "question", "target", "replaces"))
+                or not isinstance(raw["repair_issue_json"], str)
                 or any(not isinstance(raw[key], list) or any(not isinstance(v, str) for v in raw[key])
                        for key in ("task_refs", "passage_refs"))
                 or not isinstance(raw["finding_versions"], list)):
             raise ValueError("invalid frozen research scope values")
+        if raw["repair_issue_json"]:
+            issue = json.loads(raw["repair_issue_json"])
+            if (not raw["replaces"] or not isinstance(issue, dict)
+                    or set(issue) != {"code", "path", "message", "allowed_refs", "requires_acquisition", "allowed_actions"}
+                    or any(not isinstance(issue[key], str) for key in ("code", "path", "message"))
+                    or type(issue["requires_acquisition"]) is not bool
+                    or any(not isinstance(issue[key], list) or any(not isinstance(item, str) for item in issue[key])
+                           for key in ("allowed_refs", "allowed_actions"))):
+                raise ValueError("invalid frozen research repair issue")
         if (re.fullmatch(r"q[1-8]", raw["question_ref"]) is None
                 or re.fullmatch(re.escape(raw["question_ref"]) + r"\.u[1-9][0-9]*", raw["unit_ref"]) is None
                 or re.fullmatch(r"[0-9a-f]{64}", raw["plan_digest"]) is None
@@ -159,6 +175,7 @@ def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None
     answers = effective_answers(session, plan)
     unit = None
     replaces = ""
+    repair_issue_json = ""
     if repair is not None:
         restored = ResearchScope.from_payload(repair) if isinstance(repair, dict) else repair
         old = answers.get(restored.unit_ref)
@@ -167,6 +184,7 @@ def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None
         if old["submission_id"] == restored.replaces:
             unit = next(row for row in plan_units(plan) if row["unit_ref"] == restored.unit_ref)
             replaces = restored.replaces
+            repair_issue_json = restored.repair_issue_json
     if unit is None:
         unit = next((row for row in plan_units(plan) if row["unit_ref"] not in answers), None)
     if unit is None:
@@ -203,8 +221,9 @@ def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None
                   if row["question_ref"] == unit["question_ref"] and observed_at[ref] > unit_start][-4:]
     versions = tuple((ref, row["object_id"], row["revision"]) for ref, row in bindings.items()
                      if ref in adopted or ref in candidates)
-    return ResearchScope(1, digest(plan), unit["question_ref"], unit["unit_ref"], unit["question"],
-                         unit["target"], tuple(unit["task_refs"]), tuple(dict.fromkeys(passages)), versions, replaces)
+    return ResearchScope(2, digest(plan), unit["question_ref"], unit["unit_ref"], unit["question"],
+                         unit["target"], tuple(unit["task_refs"]), tuple(dict.fromkeys(passages)), versions, replaces,
+                         repair_issue_json)
 
 
 def validate_scope_call(scope: ResearchScope, name: str, args: dict[str, Any]) -> None:
@@ -372,6 +391,6 @@ def repair_scope(session: Any, ledger: Any, store: Any, issue: dict[str, Any] | 
     unit = max(candidates, key=lambda unit: sum(conclusion_characters(resolve_version(ledger, store, row["ref"]).value.content)
         for row in answers[unit["unit_ref"]]["findings"]))
     basis = answers[unit["unit_ref"]]["submission_id"]
-    seed = ResearchScope(1, digest(plan), unit["question_ref"], unit["unit_ref"], unit["question"], unit["target"],
-                         tuple(unit["task_refs"]), (), (), basis)
+    seed = ResearchScope(2, digest(plan), unit["question_ref"], unit["unit_ref"], unit["question"], unit["target"],
+                         tuple(unit["task_refs"]), (), (), basis, canonical_json(issue) if issue else "")
     return current_scope(session, repair=seed)
