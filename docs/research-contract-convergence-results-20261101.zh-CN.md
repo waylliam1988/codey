@@ -37,3 +37,27 @@
 原 minimal 内容 12/15：四道直接证据题各 3/3；缺证据题 0/3，结束分别为错误 done、max_turns、no_progress。恢复题仍加了未问的停止描述，但这次与原文一致；不能将“不要扩写”当作已可靠遵守。错误 done 说明现有父 gate 仍可能接收真实引用上的错误因果解释，须保留这个盲区，不能称为语义认证。
 
 额外拆分六次按原整题评分为 4/6：停止 3/3，恢复 1/3。后两次恢复在第二单位又附加错误停止边界。相比这一批未拆分的对应六题 6/6，未见收益；重复结论和调用数反而增加。因此保留显式 work_units 能力和诊断 fixture，不自动推广此种更细拆分。所有请求均携带同一固定时钟，评分文件未改。第 6 步仍未通过。
+
+## 第三批：同一提交中明确声明正文与采用
+
+原 `question_details` 增加显式可选 `submission_mode=inline`；缺省仍为 select。模式归属于原计划，随后冻结在 scope v3 中，没有环境开关或可写游标。scope v1/v2 保持旧字段、旧选择形式；旧冻结请求不会自动获得新字段。
+
+局部提交只允许三种明确选择：
+
+```json
+{"state":"answered","finding":{"claim":"一条完整的、有原文依据的本题回答","passage_ref":"p..."}}
+```
+
+或者 `state=answered/partial, findings=[已有精确 fN]`，或者 `state=unresolved, findings=[]`。新 finding 与已有选择两种形式不能混用。状态由模型明确声明。新 finding 通过原 `_execute_research_write → save_finding` 保存；原 submit effect 的同一结算回执携带原知识 staging 材料和规范选择。选择记录只保存精确引用，不复制答案正文；不修改冻结 fN 集合来绕过校验。合并模式隐藏独立 save 动作，候选仍 unreviewed。
+
+恢复实测发现并修复了真实缺口：ToolSpec 标为 safe，但原 replay 白名单及 research pending 分支不允许 submit_research_answer，准入后未结算会被记为结果未知。补齐该原动作的精确 JSON 重放形状和原 reducer 分支；仍不重放研究网络抓取。接受前的 staging、原知识幂等身份及 effect 结算继续各司其职，未声称跨库原子事务。
+
+定点：71 项测试及 43 项子测试通过，之后另加的已有候选精确版本与非法重放形状 8 项也通过。包括十个真实子进程退出边界：请求、响应、工具准入、写入后未落回执、已结算交付、kernel 接受、控制、发布前、发布后未落收据及发布收据。另覆盖 text/native 实际 ApiProvider 载荷、partial、空缺口、长度拒绝后局部替换、恢复不重复发布及接受后不重编译。三种类型检查器对 Python 3.11/3.12/3.13 的生产树检查均通过。
+
+实机 `batch3-inline-minimal/`：原五题、原时钟/材料/rubric、原三 seed，未与细粒度拆分合并。内容 11/15：单写者、只读、停止各 3/3，恢复 2/3，缺证据 0/3。恢复 seed 74 仍附加错误停止边界。缺口 seed 74 先提交错误 partial 后改 unresolved；另外两次反复提交 partial+空选择被拒后 no_progress。
+
+合并直接证据题大多一次响应结束；writer seed 74 额外填了未声明的嵌套 question_ref，拒绝后正确修复。调用减少不代表内容提高：上一批相同题形为 12/15，本批 11/15，后端也非严格确定。仍不能通过第 6 步，不推进推广验收。
+
+对应十二个直接证据运行：两步提交共 24 次请求、73,091 输入 token、135.43 秒；合并提交为 13 次、37,237 token、93.85 秒（含一次协议修复；耗时含进程开销）。只比较这十二题，不混入缺口早停。此组支持动作/成本减少，不支持语义正确率提高。
+
+扩大回归：69 个相关文件，**785 passed、43 subtests passed，666.19 秒**；文件清单与日志为 artifact 根目录 `expanded-pytest-files.txt`、`expanded-pytest.log`，未运行全量 pytest。另补两处 native 真实中断恢复通过；reducer 补验 research 的普通 pending read 仍拒绝重放，16 项及 30 项子测试通过。旧 scope 编解码兼容不代表跨任意实现版本执行兼容；原 implementation_id 检查继续保留。

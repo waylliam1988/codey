@@ -30,14 +30,19 @@ def question_details(raw: Any, questions: tuple[str, ...], task: str) -> list[di
     observed: set[str] = set()
     result = []
     for row in raw:
-        if not isinstance(row, dict) or set(row) not in ({"task_refs"}, {"task_refs", "work_units"}):
-            raise ValueError("question_details records require task_refs and optional work_units")
+        if not isinstance(row, dict) or "task_refs" not in row or set(row) - {"task_refs", "work_units", "submission_mode"}:
+            raise ValueError("question_details records require task_refs and optional work_units/submission_mode")
         refs = row["task_refs"]
         if (not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs)
                 or len(set(refs)) != len(refs) or not set(refs) <= original):
             raise ValueError("question_details.task_refs must select original rN requirements")
         observed.update(refs)
-        detail = {"task_refs": list(refs)}
+        detail: dict[str, Any] = {"task_refs": list(refs)}
+        if "submission_mode" in row:
+            mode = row["submission_mode"]
+            if not isinstance(mode, str) or mode not in {"select", "inline"}:
+                raise ValueError("submission_mode must be select or inline")
+            detail["submission_mode"] = mode
         if "work_units" in row:
             units = row["work_units"]
             if (not isinstance(units, list) or not 1 <= len(units) <= 4
@@ -65,7 +70,7 @@ def registered_plan(session: Any) -> dict[str, Any] | None:
 
 def plan_units(plan: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"question_ref": f"q{index}", "unit_ref": f"q{index}.u{unit_index}", "target": target,
-             "question": text, "task_refs": detail["task_refs"]}
+             "question": text, "task_refs": detail["task_refs"], "submission_mode": detail.get("submission_mode", "select")}
             for index, (text, detail) in enumerate(zip(plan["questions"], plan["question_details"], strict=True), 1)
             for unit_index, target in enumerate(detail.get("work_units", [text]), 1)]
 
@@ -120,6 +125,7 @@ class ResearchScope:
     finding_versions: tuple[tuple[str, str, int], ...]
     replaces: str = ""
     repair_issue_json: str = ""
+    submission_mode: str = "select"
 
     @property
     def finding_refs(self) -> tuple[str, ...]:
@@ -132,16 +138,22 @@ class ResearchScope:
             "finding_versions": [list(row) for row in self.finding_versions], "replaces": self.replaces}
         if self.schema_version != 1:
             payload["repair_issue_json"] = self.repair_issue_json
+        if self.schema_version == 3:
+            payload["submission_mode"] = self.submission_mode
         return payload
 
     @classmethod
     def from_payload(cls, raw: Any) -> ResearchScope:
-        if not isinstance(raw, dict) or type(raw.get("schema_version")) is not int or raw["schema_version"] not in (1, 2):
+        if not isinstance(raw, dict) or type(raw.get("schema_version")) is not int or raw["schema_version"] not in (1, 2, 3):
             raise ValueError("invalid frozen research scope")
         expected = set(cls.__dataclass_fields__) - ({"repair_issue_json"} if raw["schema_version"] == 1 else set())
+        if raw["schema_version"] < 3:
+            expected.remove("submission_mode")
         if set(raw) != expected:
             raise ValueError("invalid frozen research scope")
         repair_issue_json = raw.get("repair_issue_json", "")
+        if raw["schema_version"] == 3 and raw["submission_mode"] != "inline":
+            raise ValueError("invalid frozen research submission mode")
         if (any(not isinstance(raw[key], str) for key in
                        ("plan_digest", "question_ref", "unit_ref", "question", "target", "replaces"))
                 or not isinstance(repair_issue_json, str)
@@ -172,7 +184,8 @@ class ResearchScope:
             question_ref=raw["question_ref"], unit_ref=raw["unit_ref"], question=raw["question"], target=raw["target"],
             task_refs=tuple(raw["task_refs"]), passage_refs=tuple(raw["passage_refs"]),
             finding_versions=tuple((row[0], row[1], row[2]) for row in raw["finding_versions"]),
-            replaces=raw["replaces"], repair_issue_json=repair_issue_json)
+            replaces=raw["replaces"], repair_issue_json=repair_issue_json,
+            submission_mode=raw.get("submission_mode", "select"))
 
 
 def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None = None) -> ResearchScope | None:
@@ -231,9 +244,10 @@ def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None
     candidates = sorted(eligible, key=observed_at.__getitem__)[-4:]
     versions = tuple((ref, row["object_id"], row["revision"]) for ref, row in bindings.items()
                      if ref in adopted or ref in candidates)
-    return ResearchScope(2, digest(plan), unit["question_ref"], unit["unit_ref"], unit["question"],
+    mode = unit["submission_mode"]
+    return ResearchScope(3 if mode == "inline" else 2, digest(plan), unit["question_ref"], unit["unit_ref"], unit["question"],
                          unit["target"], tuple(unit["task_refs"]), tuple(dict.fromkeys(passages)), versions, replaces,
-                         repair_issue_json)
+                         repair_issue_json, mode)
 
 
 def validate_scope_call(scope: ResearchScope, name: str, args: dict[str, Any]) -> None:
@@ -245,10 +259,43 @@ def validate_scope_call(scope: ResearchScope, name: str, args: dict[str, Any]) -
         refs = [args.get("passage_ref"), *args.get("additional_passage_refs", [])]
         if any(ref not in scope.passage_refs for ref in refs):
             raise ValueError("passage_ref is outside the frozen local evidence scope")
+    if name == "submit_research_answer":
+        submission_finding(scope, args)
     if name in {"submit_research_answer", "save_inference"}:
         refs = args.get("findings" if name == "submit_research_answer" else "premise_refs", [])
         if any(ref not in scope.finding_refs for ref in refs):
             raise ValueError("finding is outside the frozen local selection scope")
+
+
+def submission_finding(scope: ResearchScope, args: dict[str, Any]) -> dict[str, Any] | None:
+    """Validate the complete choice before writing; no model state is inferred."""
+    state = args.get("state")
+    if not isinstance(state, str) or state not in {"answered", "partial", "unresolved"}:
+        raise ValueError("state must be answered, partial or unresolved")
+    if "finding" in args:
+        if scope.submission_mode != "inline":
+            raise ValueError("this frozen scope requires existing findings, not an inline finding")
+        if set(args) != {"state", "finding"} or state == "unresolved":
+            raise ValueError("inline finding requires explicit answered/partial; omit findings when supplying finding")
+        finding = args["finding"]
+        keys = {"claim", "passage_ref", "additional_passage_refs", "conditions", "comparison"}
+        if not isinstance(finding, dict) or not {"claim", "passage_ref"} <= set(finding) or set(finding) - keys:
+            raise ValueError("finding requires claim and passage_ref, with optional additional_passage_refs/conditions/comparison")
+        claim, passage, extra = finding["claim"], finding["passage_ref"], finding.get("additional_passage_refs", [])
+        if not isinstance(claim, str) or not 12 <= len(claim.strip()) <= 4000:
+            raise ValueError("claim requires one complete scoped finding (12..4000 characters)")
+        if (not isinstance(passage, str) or not isinstance(extra, list) or len(extra) > 3
+                or any(not isinstance(ref, str) for ref in extra)
+                or len(set([passage, *extra])) != len(extra) + 1
+                or any(ref not in scope.passage_refs for ref in [passage, *extra])):
+            raise ValueError("inline passages must be distinct references from the frozen local evidence scope")
+        return {**finding, "question_ref": scope.question_ref}
+    refs = args.get("findings")
+    if (set(args) != {"state", "findings"} or not isinstance(refs, list)
+            or any(not isinstance(ref, str) for ref in refs) or len(refs) > 16
+            or len(set(refs)) != len(refs) or bool(refs) != (state in {"answered", "partial"})):
+        raise ValueError("answered/partial require findings; unresolved requires findings=[]")
+    return None
 
 
 def scoped_spec(spec: Any, scope: ResearchScope) -> Any:
@@ -267,24 +314,48 @@ def scoped_spec(spec: Any, scope: ResearchScope) -> Any:
             parameters[key]["items"]["enum"] = list(scope.finding_refs)
         else:
             parameters[key]["maxItems"] = 0
+    if spec.name == "submit_research_answer" and scope.submission_mode == "inline" and scope.passage_refs:
+        from codey.research.tool_contract import TOOL_CONTRACTS
+
+        original = TOOL_CONTRACTS["save_finding"].input_schema
+        properties = {key: thaw_schema_value(value) for key, value in original["properties"].items()
+                      if key != "source_ref"}
+        properties["passage_ref"]["enum"] = list(scope.passage_refs)
+        properties["additional_passage_refs"]["items"]["enum"] = list(scope.passage_refs)
+        parameters["finding"] = {"type": "object", "properties": properties,
+                                 "required": ["claim", "passage_ref"], "additionalProperties": False}
+        spec = replace(spec, required=("state",), description=(
+            "End only this frozen target with ONE explicit choice: state=answered/partial and finding={claim,passage_ref,...} "
+            "to save and adopt that supported local answer in this call (omit findings); OR state=answered/partial with "
+            "findings=[exact saved/read fN] to adopt existing candidates; OR state=unresolved with findings=[] for a gap. "
+            "Never combine finding and findings. Keep complete conditions and alternatives; do not substitute nearby facts. "
+            "Source and question identity come from the frozen scope. Candidates stay unreviewed; state is your declaration, "
+            "not semantic approval. The original kernel checks the parent report and advances the original plan."),
+            json_examples=(canonical_json({"tool": spec.name, "args": {"state": "answered", "finding": {
+                "claim": "One complete supported local answer", "passage_ref": scope.passage_refs[0]}}}),
+                canonical_json({"tool": spec.name, "args": {"state": "unresolved", "findings": []}})))
     return freeze_spec_parameters(replace(spec, parameters=tuple(parameters.items())))
 
 
-def submission(session: Any, ledger: Any, scope: ResearchScope | None, args: dict[str, Any]) -> dict[str, Any]:
+def submission(session: Any, ledger: Any, scope: ResearchScope | None, args: dict[str, Any], *,
+               created_finding: tuple[str, str, int] | None = None) -> dict[str, Any]:
     if scope is None:
         raise ValueError("submit_research_answer requires an original frozen research scope")
     actual = current_scope(session, repair=scope if scope.replaces else None)
     if actual is None or (actual.plan_digest, actual.unit_ref, actual.replaces) != (scope.plan_digest, scope.unit_ref, scope.replaces):
         raise ValueError("local submission scope is stale")
     validate_scope_call(scope, "submit_research_answer", args)
-    state, refs = args.get("state"), args.get("findings")
-    if (set(args) != {"state", "findings"} or state not in {"answered", "partial", "unresolved"}
-            or not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs)
-            or len(refs) > 16 or len(set(refs)) != len(refs)
-            or (bool(refs) != (state in {"answered", "partial"}))):
-        raise ValueError("answered/partial require findings; unresolved requires findings=[]")
+    inline = submission_finding(scope, args)
+    if (created_finding is not None) != (inline is not None):
+        raise ValueError("inline selection requires the exact finding generated by this effect")
+    state = args["state"]
+    refs = [created_finding[0]] if created_finding is not None else args["findings"]
     selections = []
     frozen = {row[0]: row[1:] for row in scope.finding_versions}
+    if created_finding is not None:
+        # Only this effect's validated write may extend the selection basis.
+        # The frozen scope itself and existing-candidate checks stay unchanged.
+        frozen[created_finding[0]] = created_finding[1:]
     for ref in refs:
         binding = ledger.references.get(ref)
         if (binding is None or binding.question_ref != scope.question_ref

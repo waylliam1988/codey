@@ -251,7 +251,8 @@ def record_facts_for_result(
         _record_search_results(session, result)
     elif name == "open_url" or name in _CONTROLLER_ALIASES:
         _record_open_fact(session, result)
-    elif name in {"knowledge_write", "save_finding", "save_inference"}:
+    elif (name in {"knowledge_write", "save_finding", "save_inference"}
+          or name == "submit_research_answer" and "knowledge_notes" in result.canonical):
         _record_knowledge_fact(session, result)
     elif name == "edit":
         _record_edit_fact(session, args, result)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from codey.runtime.effects.replay_policy import is_replayable_safe_tool
+from codey.runtime.effects.replay_policy import IDEMPOTENT_RUNTIME_TOOL_NAMES, is_replayable_safe_tool
 from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
 from codey.toolchain.tool_args_repair import ToolArgLimits, normalize_tool_args
 
@@ -38,7 +38,7 @@ _REPLAY_ARG_SPECS = {
         required=frozenset({"path", "symbol"}),
     ),
 }
-REPLAY_ARG_TOOL_NAMES = frozenset(_REPLAY_ARG_SPECS) | {"codemode", "knowledge_commit", "submit_research_review"}
+REPLAY_ARG_TOOL_NAMES = frozenset(_REPLAY_ARG_SPECS) | IDEMPOTENT_RUNTIME_TOOL_NAMES | {"codemode"}
 
 
 def _validate_replay_text_arg(value: object, key: str) -> str:
@@ -95,6 +95,28 @@ def _validate_knowledge_commit(args: Mapping[str, object]) -> dict[str, object]:
     return dict(args)
 
 
+def _validate_research_answer(args: Mapping[str, object]) -> dict[str, object]:
+    import json
+
+    state = args.get("state")
+    if not isinstance(state, str) or state not in {"answered", "partial", "unresolved"}:
+        raise ValueError("research answer replay requires its explicit original state")
+    if set(args) == {"state", "findings"}:
+        refs = args["findings"]
+        if (not isinstance(refs, list) or len(refs) > 16 or any(not isinstance(ref, str) for ref in refs)
+                or len(set(refs)) != len(refs) or bool(refs) != (state != "unresolved")):
+            raise ValueError("invalid original research selection")
+    elif set(args) == {"state", "finding"}:
+        if state == "unresolved" or not isinstance(args["finding"], dict):
+            raise ValueError("invalid original inline declaration")
+    else:
+        raise ValueError("research answer replay requires one original selection form")
+    # Only preserve shape and exact JSON here. The original frozen contract,
+    # scope, passages and knowledge executor validate meaning before any write.
+    json.dumps(dict(args), allow_nan=False)
+    return dict(args)
+
+
 def validate_replay_args_shape(
     tool_name: str,
     args: object,
@@ -105,8 +127,9 @@ def validate_replay_args_shape(
         raise ValueError(f"tool is not replayable: {canonical_name}")
     if not isinstance(args, Mapping):
         raise ValueError("replay args must be a mapping")
-    if canonical_name == "knowledge_commit":
-        return _validate_knowledge_commit(args)
+    validator = {"knowledge_commit": _validate_knowledge_commit, "submit_research_answer": _validate_research_answer}.get(canonical_name)
+    if validator is not None:
+        return validator(args)
     if canonical_name == "submit_research_review":
         import json
 

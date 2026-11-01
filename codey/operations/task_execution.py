@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import contextlib
 import copy
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -500,15 +501,7 @@ class ExecutionDelegate:
                 canonical = {"research_observation": outcome.read_observation} if outcome.ok else {}
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
             if name == "submit_research_answer":
-                from codey.knowledge.model import canonical_json
-                from codey.research.local_scope import selection_budget, submission
-
-                answer = submission(self.session, tools.ledger, self._research_scope, args)
-                return ToolResult(ok=True, call=call, model_text=canonical_json({
-                    "unit_ref": answer["unit_ref"], "state": answer["state"], "selection_recorded": True,
-                    "report_budget": selection_budget(self.session, tools.ledger, tools.store, pending_answer=answer),
-                    "next": "The kernel advances the original plan or checks its parent report. No global done is needed."}),
-                    canonical={"research_answer": answer}), True, None
+                return self._submit_research_answer(call, tools)
             if name == "web_search":
                 from codey.research.text_args import first_text_arg
 
@@ -586,6 +579,32 @@ class ExecutionDelegate:
         except Exception as exc:
             return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
         return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown research tool {name}"), False, None
+
+    def _submit_research_answer(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
+        from codey.knowledge.model import canonical_json
+        from codey.research.local_scope import selection_budget, submission, submission_finding
+
+        canonical: dict[str, Any] = {}
+        created_finding = None
+        if self._research_scope is None:
+            raise ValueError("submit_research_answer requires an original frozen research scope")
+        finding = submission_finding(self._research_scope, call.args)
+        if finding is not None:
+            saved, ok, code = self._execute_research_write(ToolCall("save_finding", finding), tools)
+            if not ok:
+                return replace(saved, call=call), False, code
+            saved_ref = json.loads(saved.model_text)["finding_ref"]
+            binding = tools.ledger.references[saved_ref]
+            created_finding = (saved_ref, binding.object_id, binding.revision)
+            canonical.update(saved.canonical)
+        answer = submission(self.session, tools.ledger, self._research_scope, call.args, created_finding=created_finding)
+        canonical["research_answer"] = answer
+        return ToolResult(ok=True, call=call, model_text=canonical_json({
+            "unit_ref": answer["unit_ref"], "state": answer["state"], "selection_recorded": True,
+            **({"finding_ref": created_finding[0], "interpretation_review": "unreviewed"} if created_finding else {}),
+            "report_budget": selection_budget(self.session, tools.ledger, tools.store, pending_answer=answer),
+            "next": "The kernel advances the original plan or checks its parent report. No global done is needed."}),
+            canonical=canonical), True, None
 
     def _execute_research_write(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
         name, args = call.name, dict(call.args or {})

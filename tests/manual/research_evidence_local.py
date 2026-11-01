@@ -129,6 +129,7 @@ def main():
     parser.add_argument("--seed", type=int, default=74)
     parser.add_argument("--order-seed", type=int, default=0)
     parser.add_argument("--split", action="store_true")
+    parser.add_argument("--submission-mode", choices=("select", "inline"), default="select")
     parser.add_argument("--full-history", action="store_true",
                         help="Experiment only: retain full request history with the same local completion contract")
     parser.add_argument("--candidate-refresh-probe", action="store_true",
@@ -152,6 +153,7 @@ def main():
     manifest = {"layer": args.layer, "case": args.case, "seed": args.seed,
                 "order_seed": args.order_seed,
                 "split": args.split,
+                "submission_mode": args.submission_mode,
                 "full_history": args.full_history,
                 "candidate_refresh_probe": args.candidate_refresh_probe,
                 "model_visible_clock": {"text": clock, "sha256": hashlib.sha256(clock.encode()).hexdigest()},
@@ -167,6 +169,8 @@ def main():
         detail = {"task_refs": [row["task_ref"] for row in coverage_requirements(session.task_text)]}
         if args.split:
             detail["work_units"] = RELATION_TARGETS[args.case]
+        if args.submission_mode == "inline":
+            detail["submission_mode"] = "inline"
         calls = [ToolCall("research_plan", {"questions": [QUESTIONS[args.case]], "question_details": [detail]}), *[
             ToolCall("open_url", {"question_ref": "q1", "url": source["url"],
                                   "offset": row["offset"], "limit": row["limit"]}) for row in windows]]
@@ -192,7 +196,8 @@ def main():
                                        "ok": ok, "canonical": dict(result.canonical)})
             (directory / "candidate-refresh-setup.json").write_text(
                 json.dumps(probe_receipts, ensure_ascii=False, indent=2), encoding="utf-8")
-        session.model_tool_names = ("save_finding", "submit_research_answer", "knowledge_read", "read_tool_result")
+        session.model_tool_names = (("save_finding",) if args.submission_mode == "select" else ()) + (
+            "submit_research_answer", "knowledge_read", "read_tool_result")
         return original(history, session, request, invocation=invocation)
 
     with urlopen("http://127.0.0.1:5001/v1/models", timeout=5) as response:

@@ -218,6 +218,8 @@ def build_turn_snapshot(session: Any, *, native: bool = False, research_repair: 
                         "read_tool_result", "ask_user"} if scope else set()
         if scope is not None and not scope.passage_refs:
             domain_tools.discard("save_finding")
+        if scope is not None and scope.submission_mode == "inline":
+            domain_tools.discard("save_finding")
         if scope is not None and not scope.finding_refs:
             domain_tools.discard("save_inference")
         allowed = tuple(name for name in (allowed or ()) if name in domain_tools)

@@ -23,7 +23,8 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
         from codey.research.completion_guidance import render_completion_guidance
 
         task_guidance = task_guidance.replace(render_completion_guidance(snapshot.policy),
-                                             render_completion_guidance(snapshot.policy, local=True))
+                                             render_completion_guidance(snapshot.policy, local=True,
+                                                 submission_mode=snapshot.research_scope.submission_mode))
     guidance = [task_guidance] if task_guidance else []
     if snapshot.policy.strict_research and snapshot.research_scope is None:
         from codey.research.methods import research_method_guidance

@@ -338,17 +338,12 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         self.assertEqual(action.effect_ids, ("eff-read",))
 
     def test_tool_pending_synthesizes_for_non_project_task_kind(self) -> None:
-        state = _state(
-            LEAF_TOOL_EFFECT_PENDING,
-            driver=DRIVER_WRITER,
-            task_kind="chat",
-            turn=1,
-        )
-
-        action = next_runtime_action(_view(state, effects=(_tool_projection("eff-read"),)))
-
-        self.assertEqual(action.kind, ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS)
-        self.assertEqual(action.reason, "task_kind_not_replayable")
+        for task_kind in ("chat", "research"):
+            with self.subTest(task_kind=task_kind):
+                state = _state(LEAF_TOOL_EFFECT_PENDING, driver=DRIVER_WRITER, task_kind=task_kind, turn=1)
+                action = next_runtime_action(_view(state, effects=(_tool_projection("eff-read"),)))
+                self.assertEqual(action.kind, ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS)
+                self.assertEqual(action.reason, "task_kind_not_replayable")
 
     def test_tool_pending_fails_if_state_still_points_at_settled_effect(self) -> None:
         state = _state(

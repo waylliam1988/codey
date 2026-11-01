@@ -112,6 +112,7 @@ def main():
     parser.add_argument("--source-file", type=Path, required=True)
     parser.add_argument("--clock-file", type=Path, default=DEFAULT_CLOCK_FILE)
     parser.add_argument("--suite", choices=("minimal", "factorial", "candidates", "relations"), required=True)
+    parser.add_argument("--submission-mode", choices=("select", "inline"), default="select")
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=False)
     clock = fixture_clock(args.clock_file)
@@ -120,7 +121,7 @@ def main():
     rubric_bytes = rubric_path.read_bytes()
     (args.directory / "rubric.json").write_bytes(rubric_bytes)
     runs = matrix(args.suite)
-    index = {"suite": args.suite, "semantic_grading": "manual_required",
+    index = {"suite": args.suite, "submission_mode": args.submission_mode, "semantic_grading": "manual_required",
              "model_visible_clock": {"text": clock, "sha256": clock_hash},
              "rubric_sha256": hashlib.sha256(rubric_bytes).hexdigest(), "runs": runs}
     path = args.directory / "matrix.json"
@@ -131,6 +132,7 @@ def main():
             "--directory", str(directory), "--source-file", str(args.source_file),
             "--clock-file", str(args.clock_file.resolve()),
             "--case", row["case"], "--layer", row["layer"], "--seed", str(row["seed"]),
+            "--submission-mode", args.submission_mode,
             "--order-seed", str(row["order_seed"]), "--max-turns", "12", "--provider-timeout", "120",
             *(["--split"] if row["split"] else []), *(["--full-history"] if row["full_history"] else [])]
         row["directory"] = str(directory.resolve())
