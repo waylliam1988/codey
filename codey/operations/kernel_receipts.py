@@ -81,6 +81,8 @@ def _managed_receipt_payload(settlement: Any, intent: Any, store: Any, session_i
         # Legacy receipts hash the original insertion-ordered JSON bytes.
         # Do not parse/re-encode before checking the settlement digest.
         payload, metadata = store.read_tool_output(session_id, run_id, settlement.result_ref)
+        if not isinstance(payload, str):
+            raise ValueError("legacy result receipt payload must be text")
         if (metadata.get("schema_version") != 1 or metadata.get("stored_truncated") is not False
                 or metadata.get("tool_id") != intent.effect_id[:80]
                 or metadata.get("tool_name") != "tool_result"

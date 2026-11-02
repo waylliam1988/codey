@@ -52,8 +52,8 @@ def test_kernel_result_rejects_unknown_versions_and_fields(extra):
         result_from_payload({**KernelResult(False, "failure", 0, "protocol").to_payload(), **extra})
 
 
-@pytest.mark.parametrize("fault", ["", "effect", "digest", "truncated", "session", "format"])
-def test_legacy_receipt_checks_raw_bytes_scope_effect_and_digest(tmp_path, fault):
+@pytest.mark.parametrize("fault", ["", "effect", "digest", "truncated", "session", "format", "payload"])
+def test_legacy_receipt_checks_raw_bytes_scope_effect_and_digest(tmp_path, fault, monkeypatch):
     store = ManagedOutputStore(tmp_path)
     result = ToolResult(ToolCall("open_url", {"url": "https://example.org"}, call_id="c"), "中文\r\n" * 2500, ok=True)
     fields = result_receipt_fields(result, store=store, session_id="s", run_id="r", effect_id="effect")
@@ -74,6 +74,12 @@ def test_legacy_receipt_checks_raw_bytes_scope_effect_and_digest(tmp_path, fault
         metadata.write_text(json.dumps({**value, "stored_truncated": True}), encoding="utf-8")
     projection = SimpleNamespace(intent=SimpleNamespace(tool_name="open_url", effect_id="effect", call_id="c",
         args_digest=compute_args_digest(result.call.args)), settlement=SimpleNamespace(**fields, status="ok"))
+    if fault == "payload":
+        _, metadata = store.read_tool_output("s", "r", receipt.handle)
+        monkeypatch.setattr(store, "read_tool_output", lambda *args: ({"not": "text"}, metadata))
+        with pytest.raises(ValueError, match="legacy result receipt payload must be text"):
+            restore_result_receipt(projection, store=store, session_id="s", run_id="r")
+        return
     if fault:
         with pytest.raises((ValueError, OSError)):
             restore_result_receipt(projection, store=store, session_id="other" if fault == "session" else "s", run_id="r")

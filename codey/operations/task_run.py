@@ -71,7 +71,6 @@ class TaskRunDeps:
     collect_review_changes: Callable[..., Any] | None = None
     run_consensus: Callable[..., Any] | None = None
     run_project_audit: Callable[..., Any] | None = None
-    run_research_advisors: Callable[..., Any] | None = None
     project_facts: Any = None
     work_checkpoints: Any = None
     run_ledgers: Any = None
@@ -101,7 +100,6 @@ class TaskRunDeps:
         collect_review_changes: Callable[..., Any] | None = None,
         run_consensus: Callable[..., Any] | None = None,
         run_project_audit: Callable[..., Any] | None = None,
-        run_research_advisors: Callable[..., Any] | None = None,
         search_factory: Callable[[], object] | None = None,
         is_git_repository: Callable[[str | Path], bool] | None = None,
         review_fix_turns: int = 12,
@@ -118,7 +116,6 @@ class TaskRunDeps:
             capture_provider_failure=capture_provider_failure,
             run_consensus=run_consensus,
             run_project_audit=run_project_audit,
-            run_research_advisors=run_research_advisors,
             workspace_revisions=stores.workspace_revisions,
             project_facts=stores.project_facts,
             work_checkpoints=stores.work_checkpoints,

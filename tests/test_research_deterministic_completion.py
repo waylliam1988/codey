@@ -151,7 +151,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
     policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True,
                         required_checks=required_checks)
     deps = ResearchFlowDeps(state=SimpleNamespace(durable=durable), knowledge_store=store, evidence_ledgers=None,
-        search_factory=Search, run_research_advisors=None, ghost_continuity=lambda **_: None,
+        search_factory=Search, ghost_continuity=lambda **_: None,
         managed_outputs=ManagedOutputStore(root), runtime_mutations=line)
     frame = SimpleNamespace(provider=provider_factory(Provider()) if provider_factory else Provider(),
         provider_id="local", project_text="", trace=None, run_id=run_id, research_handoff="", entry_policy=policy,

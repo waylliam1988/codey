@@ -1,8 +1,7 @@
-"""Second-model consensus, audit, and research-advisor runs.
+"""Second-model consensus and project-audit runs.
 
-``task_submit`` builds ``TaskRunDeps.run_consensus`` / ``run_project_audit`` /
-``run_research_advisors`` from these. Import-light by design (see
-``test_server_lazy_state``): the research core stays function-local, nothing
+``task_submit`` builds ``TaskRunDeps.run_consensus`` / ``run_project_audit``
+from these. Import-light by design (see ``test_server_lazy_state``): nothing
 here may load the browser stack at import time.
 """
 
@@ -10,10 +9,7 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from codey.research.advisors import EvidencePack
+from typing import Any
 
 from codey.agents.consensus import (
     ConsensusAdvice,
@@ -125,30 +121,8 @@ def run_project_audit(
         )
 
 
-def run_research_advisors(
-    ctx: TaskState,
-    *,
-    selected_provider: Any,
-    selected_provider_id: str,
-    pack: EvidencePack,
-) -> tuple[ConsensusAdvice, ...]:
-    from codey.research.advisors import run_research_advisors as run_research_advisors_core
-
-    with ExitStack() as leases:
-        return run_research_advisors_core(
-            selected_provider_id=selected_provider_id,
-            provider_ids=tuple(PROVIDER_LABELS),
-            provider_labels=PROVIDER_LABELS,
-            availability=lambda: providers.provider_availability(ctx),
-            connect_existing=lambda provider_id: _scoped_advisor(ctx, selected_provider, provider_id, leases),
-            clear_provider_session=lambda provider_id: ctx.set_provider_session(provider_id, None),
-            pack=pack,
-        )
-
-
 __all__ = [
     "connect_consensus_provider",
     "run_consensus",
     "run_project_audit",
-    "run_research_advisors",
 ]

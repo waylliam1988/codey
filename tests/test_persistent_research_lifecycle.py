@@ -277,8 +277,9 @@ def test_reference_check_is_mechanical_and_does_not_prove_interpretation(tmp_pat
 
 
 def test_conditions_object_shape_agrees_across_tool_protocols():
-    from codey.research.tool_contract import openai_parameters_schema, validate_tool_args
+    from codey.research.tool_contract import validate_tool_args
     from codey.toolchain.tool_spec import spec_for_tool, validate_args_against_spec
+    from tests.support.research_tool_contract import openai_parameters_schema
 
     args = {"type": "hypothesis", "title": "Candidate", "body": "A mechanism may apply",
             "conditions": {"workload": {"state": "not_extracted"}}}

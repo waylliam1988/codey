@@ -66,8 +66,6 @@ RESEARCH_EXPORTS = {
     "ConnectorAwareSearchProvider",
     "EvidenceFollowupResult",
     "EvidenceFollowupRunner",
-    "EvidenceNote",
-    "EvidencePack",
     "FinalizedAnswer",
     "PlanExecutionResult",
     "PlanExecutor",
@@ -82,7 +80,6 @@ RESEARCH_EXPORTS = {
     "provenance_problem",
     "review_report_quality",
     "run_evidence_followup",
-    "run_research_advisors",
 }
 
 

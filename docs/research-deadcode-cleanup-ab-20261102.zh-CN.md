@@ -73,3 +73,48 @@ A 为删除前的真实生产源码，B 为删除后的源码；两个阶段分�
 审稿功能专属测试随退役能力移除；独立的 finding 引用、覆盖归属、文本 offset 和句子边界测试转移后继续执行。保留原 expanded 失败 XML 和基线复现记录，不把修正后的单文件检查冒充整个扩大命令重跑。JUnit 中包含 subtest 的计数与 pytest 函数数分开看，不相加制造更大的通过总数。
 
 **保留 B 的清理结果。** 依据是旧生成支线没有产品入口，受控界面保持一致，实际研究、恢复与知识相关路径仍能运行。没有理由为了本轮观察重新保留一套不能进入默认研究、又没有实际业务调用的审稿生成器。
+
+## 后续清理：顾问空接线与测试辅助函数
+
+基线为 `47d34386`。用户确认继续核查此前列出的三类遗留。本次清理与上文的实机 A/B 分开记录，没有重新调用本地模型。
+
+- 删除未被研究流程消费的 `run_research_advisors` 全链：应用服务包装、任务依赖字段与构造参数、dispatch 传递、ResearchFlowDeps 字段，以及 `research/advisors.py`。搜索确认产品没有实际调用方；同步移除三项顾问专属测试、无用夹具和 mock。项目审计与普通共识的实际服务继续保留。
+- 删除无生产或测试调用方的 `interpretation_text_matches()`；其内部使用的词法匹配函数还有其他调用，继续保留。
+- 将六个仅供旧测试协议使用的函数迁到 `tests/support/research_tool_contract.py`：`research_tool_names`、`render_research_tool_contract_text`、`research_tool_contract_hash`、`openai_parameters_schema`、`render_openai_tools`、`tool_example`。测试导入同步更新，不保留生产转发壳；仍从生产 `TOOL_CONTRACTS` 读取合同与样例。
+
+生产代码新增 4 行、删除 348 行，净减少 344 行；其中包括迁往测试目录的辅助代码，不把它们全部计作功能删除。生产合同定义、冻结 ToolSpec、参数校验和整篇研究生成合同没有改动。
+
+验证产物位于 `.e2e-artifacts/research-residual-cleanup-20261102/`：
+
+| 检查 | 结果与边界 |
+| --- | --- |
+| 整篇、旧 strict、hybrid、chat、补查的 native/text 初始快照 | 10 组允许集、工具合同与 scope 指纹和清理前一致；仅验证这些初始状态 |
+| 六个辅助函数迁移 | 逐函数 AST 与原版本完全一致；生产没有反向导入测试辅助模块 |
+| 相关 pytest 选集 | 561 passed、19 failed，另 43 个 subtest 通过；363.35 秒，包含整篇发布、长期知识、正文修复、历史兼容、冷恢复与应用入口 |
+| 原版本失败复现 | 在独立 `47d34386` worktree 运行同名 19 项，19 项全部失败；失败节点集合相同，主要为旧脚本及断言与当前整篇入口不匹配 |
+| Mypy，Python 3.11 | 当前与基线均有同一项 `kernel_receipts.py:96` 的 `no-any-return`，检查源文件数分别为 581、582；未报告新增错误 |
+| 修改文件 Ruff、Git diff 检查 | 通过 |
+
+完整结果见 `pytest.xml`、`baseline-failures.xml`、`baseline-failures.log`、`failed-nodes.json`、`summary.json`，初始快照和迁移证明单独保存。没有修改断言来掩盖这 19 项原有失败，也没有运行全量 pytest。本轮结论是移除未消费的实现与依赖、将测试辅助移出生产；不作为研究内容正确率提高的证据。
+
+## 原有失败修复
+
+随后按用户要求修复上述 19 项测试与 Mypy 错误。以下为后续修复，不覆盖前一节的基线复现记录。
+
+19 项均为测试脚本、断言或夹具与当前合同不匹配。普通入口测试仍脚本化发送 `research_plan → save_finding → done`，或检查旧逐题提示，默认生产入口已经使用 `submit_research_answer`。现改为实际搜索、阅读、整篇提交，并检查最终正文、引用、完成证明和持久化证据；普通正文及旧 `done` 仍不能发布。禁用工具测试通过生产的 `controller_denied` 参数验证实际可见工具和拒绝结果，不再把旧测试 codec 的选项当作生产权限。两项明确验证历史 finding 合同的用例冻结 v1 计划形状，继续检查历史召回和候选推论，未放宽当前合同。
+
+应用入口测试继续检查会话交接、后续研究上下文、风格记忆隔离及实际证据引用规则。旧的 “Ghost affinity” 警告属于逐题提示；整篇入口改查当前的 `[eN]` 引用和历史材料阅读规则，并明确断言种入的风格偏好不会进入研究输入。
+
+Mypy 的 `no-any-return` 来自生产回执边界：动态 store 返回值没有收窄为字符串。正常存储返回字符串，本次错误不能单独证明正常回执曾恢复失败；但边界确实缺少明确校验。现增加运行时字符串检查，异常载荷抛出 `ValueError`，并补入兼容性参数化测试。没有添加 cast、ignore 或类型豁免；原字节摘要、归属和完整性校验继续保留。
+
+最终验证：
+
+| 检查 | 结果与范围 |
+| --- | --- |
+| 原扩大相关 pytest 选集完整重跑 | **581 passed，43 个 subtest 通过，0 失败**；363.59 秒。包含原 19 个失败节点及新增异常载荷用例；未运行全仓 pytest |
+| Mypy，`codey --python-version 3.11 / 3.12 / 3.13` | 三个目标均成功，各检查 581 个生产源文件 |
+| Pyrefly，`check codey --python-version 3.11 / 3.12 / 3.13` | 三个目标均为 0 errors；各报告 35 suppressed、80 warnings，不宣称警告清零 |
+| ty，`check codey --python-version 3.11 / 3.12 / 3.13` | 三个目标均通过 |
+| 修改文件 Ruff、Git diff 检查 | 通过 |
+
+最终测试日志为同一产物目录中的 `repair-final.log` 和 `repair-final.xml`，检查汇总另存 `repair-validation.json`。上述检查没有调用本地研究模型，不作为内容正确率提高的证据。

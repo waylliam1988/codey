@@ -42,7 +42,6 @@ class ResearchFlowDeps:
     knowledge_store: Any
     evidence_ledgers: Any
     search_factory: Callable[[], object]
-    run_research_advisors: Callable[..., Any] | None
     ghost_continuity: Callable[..., object]
     managed_outputs: Any = None
     runtime_mutations: Any = None

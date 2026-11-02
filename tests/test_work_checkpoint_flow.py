@@ -31,7 +31,7 @@ def _clean_diff(path: str, *, old: str = "before", new: str = "after") -> str:
 
 
 def setUpModule() -> None:
-    """Disable post-task audit/consensus/advisor side effects for this file.
+    """Disable post-task audit/consensus side effects for this file.
 
     The checkpoint flows never assert on them, but the real implementations
     add a fixed ~14s provider-timeout per done task and can reach live web
@@ -39,7 +39,7 @@ def setUpModule() -> None:
     out.
     """
 
-    for name in ("run_project_audit", "run_consensus", "run_research_advisors"):
+    for name in ("run_project_audit", "run_consensus"):
         patcher = mock.patch.object(consensus_service, name, return_value=None)
         patcher.start()
         _POST_TASK_SIDEEFFECT_PATCHES.append(patcher)

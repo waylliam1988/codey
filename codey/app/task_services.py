@@ -45,7 +45,6 @@ def build_task_deps(
         run_review=partial(review_service.run_review, state, review_policy=policy, connect_reviewer=connect_reviewer),
         run_consensus=partial(consensus_service.run_consensus, state),
         run_project_audit=partial(consensus_service.run_project_audit, state),
-        run_research_advisors=partial(consensus_service.run_research_advisors, state),
         is_git_repository=changes.is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,

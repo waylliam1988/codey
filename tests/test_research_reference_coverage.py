@@ -17,8 +17,9 @@ from codey.protocols.text_turn import decode_text_turn
 from codey.research.finding_report import compile_finding_report
 from codey.research.ledger import ResearchLedger
 from codey.research.questions import question_plan, validate_question_coverage
-from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE, openai_parameters_schema, validate_tool_args
+from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE, validate_tool_args
 from codey.reviews.research_coverage import coverage_rows
+from tests.support.research_tool_contract import openai_parameters_schema
 from tests.test_research_findings import URL, execute, report_args, selection_args, setup
 
 
@@ -232,7 +233,7 @@ def test_staged_finding_retry_keeps_same_identity_before_commit(tmp_path):
 
 @pytest.mark.parametrize("inference", [False, True])
 @pytest.mark.usefixtures("public_source_dns")
-def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_path, inference):
+def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_path, inference, monkeypatch):
     from codey.operations.kernel_contracts import (
         KernelExecutionDeps,
         KernelObservationDeps,
@@ -242,6 +243,9 @@ def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_
     from codey.policies.task_policy import STRICT_RESEARCH_REQUIRED_CHECKS
     from tests.support.kernel_runtime import run_task_kernel
 
+    # This test replays the historical finding/report contract, not the new
+    # whole-answer entry. Its string question registration belongs to v1.
+    monkeypatch.setattr("codey.research.plan_contract.compact_plan_spec", lambda spec, task: spec)
     store, tools, session, delegate = setup(tmp_path)
     try:
         execute(delegate, tools, session, "open_url", {"url": URL})

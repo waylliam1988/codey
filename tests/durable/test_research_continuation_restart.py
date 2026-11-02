@@ -143,7 +143,7 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
 
     policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}))
     deps = ResearchFlowDeps(state=SimpleNamespace(durable=durable), knowledge_store=store,
-        evidence_ledgers=None, search_factory=Search, run_research_advisors=None, ghost_continuity=lambda **_: None,
+        evidence_ledgers=None, search_factory=Search, ghost_continuity=lambda **_: None,
         managed_outputs=ManagedOutputStore(root), runtime_mutations=line)
     frame = SimpleNamespace(provider=Provider(), provider_id="local", project_text="", trace=None,
         run_id="r", research_handoff="", entry_policy=policy,

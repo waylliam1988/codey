@@ -99,8 +99,9 @@ def test_source_search_alias_preserves_question_and_enforces_its_frozen_requirem
 
 
 def test_question_argument_is_the_same_contract_in_direct_and_kernel_tool_projections():
-    from codey.research.tool_contract import TOOL_CONTRACTS, openai_parameters_schema
+    from codey.research.tool_contract import TOOL_CONTRACTS
     from codey.toolchain.tool_spec import spec_for_tool
+    from tests.support.research_tool_contract import openai_parameters_schema
 
     for name in INVESTIGATION_TOOLS | {"save_finding", "save_inference"}:
         if name not in TOOL_CONTRACTS:

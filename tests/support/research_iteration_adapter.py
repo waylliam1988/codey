@@ -69,6 +69,7 @@ class ResearchIteration:
         topic_continuity_context: str = "",
         topic_continuity_payload: Any | None = None,
         managed_outputs: Any = None,
+        controller_denied: tuple[str, ...] = (),
     ) -> None:
         # 薄适配：形状兼容旧调用（含 codec 探针字段），行为一律走生产
         # ToolSpec 校验 + ResearchTools 执行，不维护第二份转换/重试/修复提示。
@@ -86,6 +87,7 @@ class ResearchIteration:
         self.topic_continuity_context = str(topic_continuity_context or "")
         self.topic_continuity_payload = topic_continuity_payload
         self.managed_outputs = managed_outputs
+        self.controller_denied = controller_denied
         self._last_result: Any | None = None
         if tools is not None:
             self.tools = tools
@@ -149,6 +151,7 @@ class ResearchIteration:
             iteration_context="\n\n".join(x for x in (self.iteration_context, extension) if x),
             topic_continuity_context=self.topic_continuity_context,
             topic_continuity_payload=self.topic_continuity_payload,
+            controller_denied=self.controller_denied,
         )
         self.tools = iteration.tools or tools
         self.changes = getattr(self.tools, "changes", None)

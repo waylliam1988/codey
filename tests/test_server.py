@@ -3753,8 +3753,6 @@ class SessionThreadingTests(unittest.TestCase):
         self.consensus_mock = self.consensus_patch.start()
         self.project_audit_patch = mock.patch.object(consensus_service, "run_project_audit", return_value=())
         self.project_audit_mock = self.project_audit_patch.start()
-        self.research_advisors_patch = mock.patch.object(consensus_service, "run_research_advisors", return_value=None)
-        self.research_advisors_mock = self.research_advisors_patch.start()
         self._real_getaddrinfo = socket.getaddrinfo
 
         def fixture_dns(host, *args, **kwargs):
@@ -3770,7 +3768,6 @@ class SessionThreadingTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.dns_patch.stop()
-        self.research_advisors_patch.stop()
         self.project_audit_patch.stop()
         self.consensus_patch.stop()
 
@@ -5033,26 +5030,15 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = [
-                json.dumps({'tool': 'research_plan', 'args': {'questions': ['What does the source establish?']}}),
-                json.dumps({'tool': 'web_search', 'args': {'query': 'helium', 'question_ref': 'q1'}}),
-                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1', 'question_ref': 'q1'}}),
-                json.dumps({'tool': 'save_finding',
-                            'args': {'question_ref': 'q1',
-                                     'claim': 'Helium is separated from natural gas.',
-                                     'passage_ref': 'p7c52c0df8670'}}),
-                json.dumps({'tool': 'done',
-                            'args': {'report_sections': {'coverage': [{'question_ref': 'q1',
-                                                                       'state': 'partial',
-                                                                       'findings': ['f1'],
-                                                                       'investigations': [],
-                                                                       'task_refs': ['r1']}]}}}),
+                json.dumps({'tool': 'web_search', 'args': {'query': 'helium'}}),
+                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1'}}),
+                json.dumps({'tool': 'submit_research_answer', 'args': {'markdown': 'Helium is separated from natural gas. [e1]', 'state': 'answered'}}),
             ]
 
             with (
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
-                mock.patch.object(consensus_service, "run_research_advisors", return_value=()),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 _run_task_with_ghost_wait("session-research", None, "Research helium", 8, False, "deepseek", "research")
@@ -5075,7 +5061,9 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Choose the storage layer", research_intro)
         self.assertNotIn("Local Context:", research_intro)
         self.assertNotIn("Ghost style memory", research_intro)
-        self.assertIn("Ghost affinity and graph proximity are not evidence", research_intro)
+        self.assertNotIn("Prefer concise answer-first replies.", research_intro)
+        self.assertIn("Cite explicit [eN] labels beside supported statements", research_intro)
+        self.assertIn("Historical search hits are leads: knowledge_read pins source/evidence versions", research_intro)
         agent_run.assert_not_called()
 
     @pytest.mark.usefixtures("scripted_local_api_connection")
@@ -5251,39 +5239,18 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = [
-                json.dumps({'tool': 'research_plan', 'args': {'questions': ['What does the source establish?']}}),
-                json.dumps({'tool': 'web_search', 'args': {'query': 'storage plan', 'question_ref': 'q1'}}),
-                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1', 'question_ref': 'q1'}}),
-                json.dumps({'tool': 'save_finding',
-                            'args': {'question_ref': 'q1',
-                                     'claim': 'First research summary: the source supports the SQLite-backed plan.',
-                                     'passage_ref': 'p294d378fb869'}}),
-                json.dumps({'tool': 'done',
-                            'args': {'report_sections': {'coverage': [{'question_ref': 'q1',
-                                                                       'state': 'partial',
-                                                                       'findings': ['f1'],
-                                                                       'investigations': [],
-                                                                       'task_refs': ['r1']}]}}}),
-                json.dumps({'tool': 'research_plan', 'args': {'questions': ['What does the source establish?']}}),
-                json.dumps({'tool': 'web_search', 'args': {'query': 'storage plan followup', 'question_ref': 'q1'}}),
-                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1', 'question_ref': 'q1'}}),
-                json.dumps({'tool': 'save_finding',
-                            'args': {'question_ref': 'q1',
-                                     'claim': 'Second research summary: the source supports the SQLite-backed plan.',
-                                     'passage_ref': 'p294d378fb869'}}),
-                json.dumps({'tool': 'done',
-                            'args': {'report_sections': {'coverage': [{'question_ref': 'q1',
-                                                                       'state': 'partial',
-                                                                       'findings': ['f1'],
-                                                                       'investigations': [],
-                                                                       'task_refs': ['r1']}]}}}),
+                json.dumps({'tool': 'web_search', 'args': {'query': 'storage plan'}}),
+                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1'}}),
+                json.dumps({'tool': 'submit_research_answer', 'args': {'markdown': 'First research summary: the source supports the SQLite-backed plan. [e1]', 'state': 'answered'}}),
+                json.dumps({'tool': 'web_search', 'args': {'query': 'storage plan followup'}}),
+                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1'}}),
+                json.dumps({'tool': 'submit_research_answer', 'args': {'markdown': 'Second research summary: the source supports the SQLite-backed plan. [e1]', 'state': 'answered'}}),
             ]
 
             with (
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
-                mock.patch.object(consensus_service, "run_research_advisors", return_value=()),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 _run_task_with_ghost_wait(
@@ -5295,7 +5262,7 @@ class SessionThreadingTests(unittest.TestCase):
 
             state.knowledge_store.close()
 
-        second_intro = provider.send.call_args_list[5].args[0]
+        second_intro = provider.send.call_args_list[3].args[0]
         self.assertIn("Conversation context from this chat", second_intro)
         self.assertIn("First research summary", second_intro)
         agent_run.assert_not_called()

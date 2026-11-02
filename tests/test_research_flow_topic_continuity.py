@@ -66,7 +66,6 @@ def _deps(state: server.AppContext) -> ResearchFlowDeps:
         knowledge_store=state.knowledge_store,
         evidence_ledgers=state.evidence_ledgers,
         search_factory=lambda: object(),
-        run_research_advisors=None,
         ghost_continuity=ghost_continuity,
     )
 

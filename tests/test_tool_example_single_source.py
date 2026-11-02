@@ -16,20 +16,22 @@ import unittest
 
 class ToolExampleSingleSourceTests(unittest.TestCase):
     def test_tool_example_matches_contract_for_all_tools(self) -> None:
-        from codey.research.tool_contract import TOOL_CONTRACTS, tool_example
+        from codey.research.tool_contract import TOOL_CONTRACTS
+        from tests.support.research_tool_contract import tool_example
 
         for name, contract in TOOL_CONTRACTS.items():
             with self.subTest(tool=name):
                 self.assertEqual(tool_example(name), contract.example)
 
     def test_knowledge_link_teaches_exact_title(self) -> None:
-        from codey.research.tool_contract import tool_example
+        from tests.support.research_tool_contract import tool_example
 
         example = tool_example("knowledge_link")
         self.assertIn("exact title", example)
 
     def test_unknown_tool_falls_back_to_web_search(self) -> None:
-        from codey.research.tool_contract import TOOL_CONTRACTS, tool_example
+        from codey.research.tool_contract import TOOL_CONTRACTS
+        from tests.support.research_tool_contract import tool_example
 
         self.assertEqual(tool_example("no_such_tool"), TOOL_CONTRACTS["web_search"].example)
         self.assertEqual(tool_example(""), TOOL_CONTRACTS["web_search"].example)

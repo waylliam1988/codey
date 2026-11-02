@@ -161,7 +161,6 @@ def _research_deps(deps: TaskRunDeps) -> ResearchFlowDeps:
         knowledge_store=deps.knowledge_store,
         evidence_ledgers=deps.evidence_ledgers,
         search_factory=deps.search_factory or default_research_search_provider,
-        run_research_advisors=deps.run_research_advisors,
         ghost_continuity=partial(ghost_continuity, deps.state),
         managed_outputs=deps.managed_outputs,
         runtime_mutations=deps.runtime_mutations,

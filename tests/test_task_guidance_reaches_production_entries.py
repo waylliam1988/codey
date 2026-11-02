@@ -76,13 +76,19 @@ def test_research_iteration_supplies_guidance_through_actual_shared_kernel():
                     control_enabled=lambda _name, **_kwargs: True,
                 ),
             ),
-            knowledge_store=object(), managed_outputs=None, run_research_advisors=None,
+            knowledge_store=object(), managed_outputs=None,
         ),
         provider=provider, session_id="s", project="", task="research question", max_turns=1,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek", run_id="r",
         chat_handoff="", trace_recorder=None, search=object(), tools=tools,
     )
     assert len(provider.sent) == 1
-    assert "Research rules" in provider.sent[0]
-    assert "report_sections.coverage" in provider.sent[0]
+    from codey.research.answer_contract import ANSWER_GUIDANCE
+
+    assert ANSWER_GUIDANCE in provider.sent[0]
+    visible = provider.sent[0].split("Visible tools: ", 1)[1].splitlines()[0]
+    assert "submit_research_answer" in visible
+    assert "research_plan" not in visible
+    assert "save_finding" not in visible
+    assert "done" not in visible
     assert result.result.stop_reason != "done"

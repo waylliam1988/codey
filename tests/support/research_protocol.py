@@ -11,12 +11,11 @@ from codey.research.tool_contract import (
     PROTOCOL_TOO_MANY_TOOLS,
     PROTOCOL_UNKNOWN_TOOL,
     TOOL_CONTRACTS,
-    render_research_tool_contract_text,
-    research_tool_contract_hash,
     validate_tool_args,
 )
 from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 from tests.support.research_protocol_diagnostics import classify_no_json_reply
+from tests.support.research_tool_contract import render_research_tool_contract_text, research_tool_contract_hash
 
 MAX_CALLS_PER_TURN = 1
 MAX_NATIVE_CALLS_PER_TURN = 4

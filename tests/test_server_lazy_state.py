@@ -93,7 +93,7 @@ class ServerLazyStateTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.strip(), "")
 
-    def test_import_loads_no_advisors_or_concepts(self) -> None:
+    def test_import_loads_no_concepts(self) -> None:
         script = (
             "import sys; "
             "import codey.app.api, codey.app.context, codey.app.server, "
@@ -101,7 +101,7 @@ class ServerLazyStateTests(unittest.TestCase):
             "codey.app.shell_service, codey.app.provider_services, "
             "codey.app.task_submit; "
             "loaded = sorted(m for m in sys.modules "
-            "if m in ('codey.research.advisors', 'codey.knowledge.concepts')); "
+            "if m == 'codey.knowledge.concepts'); "
             "print(','.join(loaded))"
         )
         completed = subprocess.run(

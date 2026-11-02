@@ -65,26 +65,6 @@ class ClipTailBudgetTests(unittest.TestCase):
         )
         self.assertLessEqual(len(brief.render()), MAX_BRIEF_CHARS)
 
-    def test_evidence_pack_render_respects_max_chars(self) -> None:
-        from codey.research.advisors import (
-            MAX_EVIDENCE_PACK_CHARS,
-            EvidenceNote,
-            EvidencePack,
-        )
-
-        notes = tuple(
-            EvidenceNote(
-                id=f"n{i}",
-                type="fact",
-                title="t" * 200,
-                body="b" * 5000,
-                sources=("https://example.com/s",),
-            )
-            for i in range(12)
-        )
-        pack = EvidencePack(question="q" * 9000, draft="d" * 15000, notes=notes)
-        self.assertLessEqual(len(pack.render()), MAX_EVIDENCE_PACK_CHARS)
-
     def test_review_summary_respects_field_budget(self) -> None:
         from codey.reviews.core import MAX_FIELD_CHARS, parse_review_response
 

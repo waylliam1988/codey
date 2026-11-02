@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from codey.providers.base import AssistantTurn, ProviderToolCall
-from codey.research.tool_contract import render_openai_tools
 from tests.support.research_protocol import JsonToolCodec
+from tests.support.research_tool_contract import render_openai_tools
 
 
 def test_research_native_web_search() -> None:
