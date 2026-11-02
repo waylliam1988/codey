@@ -598,12 +598,14 @@ class ExecutionDelegate:
         return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
 
     def _read_research_knowledge(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
+        from codey.research.answer_contract import AnswerScope
         from codey.research.questions import question_ref
 
         args = call.args
         identity = str(args.get("id") or "")
         outcome = tools.knowledge_read(identity, revision=args.get("revision"), question_ref=question_ref(args, tools.ledger),
-                                       offset=args.get("offset", 0), limit=args.get("limit", 6000))
+                                       offset=args.get("offset", 0), limit=args.get("limit", 6000),
+                                       whole_answer=isinstance(self._research_scope, AnswerScope))
         text = outcome.model_text
         if not outcome.ok and self._research_scope is not None:
             if identity in tools.ledger.read_passages:
@@ -613,7 +615,7 @@ class ExecutionDelegate:
             elif identity in getattr(self.session, "source_ids", {}):
                 text = ("ERROR: this id is an opened-source locator, not a stored knowledge object. "
                         "Recover its original read with read_tool_result using read_receipt_index, or use an advertised "
-                        "source-reading action for more text. knowledge_read needs an exact stored id or saved/read fN.")
+                        "source-reading action for more text. knowledge_read needs an exact stored id and revision.")
         canonical: dict[str, Any] = {
             "research_reference_bindings": {k: v.to_dict() for k, v in tools.ledger.references.items()}} if outcome.ok else {}
         if outcome.ok and outcome.read_passages:

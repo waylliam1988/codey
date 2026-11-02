@@ -234,7 +234,9 @@ class ResearchTools:
         return ResearchToolOutput("\n".join(lines), ok=True)
 
     def knowledge_read(self, note_id: str, *, revision: int | None = None, question_ref: str = "",
-                       offset: int = 0, limit: int = 6000) -> ResearchToolOutput:
+                       offset: int = 0, limit: int = 6000, whole_answer: bool = False) -> ResearchToolOutput:
+        from codey.research.answer_contract import KNOWLEDGE_READ_GUIDANCE
+
         if self.store is None:
             return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         binding = self.ledger.references.get(note_id)
@@ -256,7 +258,9 @@ class ResearchTools:
             payload = version.to_dict()
             payload["content_complete"] = len(version.value.content) <= 12000
             payload["content"] = version.value.content[:12000]
-            if version.value.kind in {"claim", "inference", "observation"} and payload["content_complete"]:
+            if whole_answer:
+                payload["citation_guidance"] = KNOWLEDGE_READ_GUIDANCE
+            elif version.value.kind in {"claim", "inference", "observation"} and payload["content_complete"]:
                 from codey.research.references import bind_version
 
                 payload["finding_ref"] = bind_version(self.ledger, version, question_ref=question_ref,
@@ -293,10 +297,12 @@ class ResearchTools:
                    "Answer reference candidates (use only versions actually adopted):\n"
                    + canonical_json({"knowledge_refs": answer_refs[:6]}) + "\n\n"
                    ) if answer_refs and not self.evidence_only and not automatic_refs and not self.local_submission else ""
-        if self.local_submission and answer_refs:
+        if whole_answer:
+            preface = KNOWLEDGE_READ_GUIDANCE + "\n\n"
+        elif self.local_submission and answer_refs:
             preface = ("Document note; read a linked knowledge object by its exact id and revision to obtain an fN "
                        "before explicitly selecting it with submit_research_answer.\n\n")
-        if automatic_refs and not self.evidence_only:
+        if automatic_refs and not self.evidence_only and not whole_answer:
             preface = "Cite this saved finding by [finding_ref] only if adopted; the application resolves its exact versions.\n\n"
         preface += ("Document status describes the saved note, not semantic approval of its summary. "
                     "Inspect the linked claim and its exact evidence before adopting the wording.\n"

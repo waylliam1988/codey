@@ -47,6 +47,14 @@ ANSWER_GUIDANCE = (
     "with exact evidence references; it is never required for answer delivery and cannot publish an answer."
 )
 
+KNOWLEDGE_READ_GUIDANCE = (
+    "Stored claims, inferences, observations and document summaries are prior work, not citable evidence. "
+    "Preserve their origin, status, conditions and uncertainty; "
+    "reading it does not adopt or verify its wording. Follow pinned references with knowledge_read: "
+    "supported_by/limited_by/refuted_by lead to evidence, depends_on leads to premises. "
+    "Read source/evidence versions to obtain [eN] labels for submit_research_answer; old answers are not evidence."
+)
+
 
 def whole_research(session: Any) -> bool:
     return (getattr(session, "task_kind", "") == "research"
@@ -201,6 +209,8 @@ def answer_spec(spec: Any, scope: AnswerScope) -> Any:
             example.get("args", {}).pop("question_ref", None)
             examples.append(canonical_json(example))
         description = spec.description.split(" Select question_ref=")[0]
+        if spec.name == "knowledge_read":
+            description += " " + KNOWLEDGE_READ_GUIDANCE
         if spec.name == "knowledge_commit":
             from codey.toolchain.tool_spec import thaw_schema_value
 

@@ -154,7 +154,7 @@ def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_an
                      "to preserve the exact premises.")
     if compact:
         lines.append("This summary is a locator. Use knowledge_read with the exact id and revision. "
-                     "Source/evidence reads enter the original passage citation channel; claims yield pinned fN. "
+                     "Source/evidence reads enter the original passage citation channel. "
                      "An old claim or answer never substitutes for reading its original evidence.")
     for hit in hits:
         version, value = hit.version, hit.version.value
