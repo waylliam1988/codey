@@ -1,0 +1,3649 @@
+{
+  "date": "2026-11-02",
+  "mode": "offline source and historical forwarded-payload audit; no inference",
+  "codey_head": "de3edcb174923108cc945b4429e0e8978b890b73",
+  "openscience_head": "a08e0ad0ad3d6448123039ee4659163eb2e35d99",
+  "script_sha256": "45ff9e19f08cc2b6d55c921156656b425abac3d4f51d1d1285f944019d09b302",
+  "source_sha256": {
+    "reference-projects/openscience/backend/cli/src/agent/agent.ts": "a0b649cd0a64f8839e9b6911c9d51f973fe443243dcd04ee0cbc405a5ae644c3",
+    "reference-projects/openscience/backend/cli/src/agent/prompt/default.txt": "de019afda3ac7b75d3e2672529a8ee13f54c1da09b36fbfcca5c11c93677a035",
+    "reference-projects/openscience/backend/cli/src/agent/prompt/science.txt": "fae5758cb625c121ad3b11920eb36449ffa3503842b5f0843b547f70155a1741",
+    "reference-projects/openscience/backend/cli/src/session/prompt/response.txt": "a37759649bc90602aace0329b8a5de5fd474cfa9d428825878f1ee217898c691",
+    "reference-projects/openscience/backend/cli/src/session/system.ts": "12ab5cd47ef5b15e628f8c87ad9c38936cee87cb0a1be27b6c9f73d76af5a41e",
+    "reference-projects/openscience/backend/cli/src/session/llm.ts": "4e19901d18e2a3bb5982102d5c425dc18cc0fbeb9b5b61ca4ccf833136bcfc94",
+    "reference-projects/openscience/backend/cli/src/session/prompt.ts": "43b90103f969d40b6ed0e0401f11ccfffe21b6073e14f1e472f341cc110197f3",
+    "reference-projects/openscience/backend/cli/src/session/message-v2.ts": "e984d3fa34f2d4841e02a9266b27f88f957acc6052abde750f0487183e74e288",
+    "reference-projects/openscience/backend/cli/src/tool/read.ts": "19b4cdce31716e9428a41757606eb3ad317f43e426e9c6e80ecf8083093ba52c",
+    "reference-projects/openscience/backend/cli/src/harness/review.ts": "7b6724b9e4d5023b0b088ddfb7d5abdd55c7ec13677904ae5bc1b3a4f66ae043",
+    "codey/operations/kernel_prompt.py": "e1cc06048a15a2ff382fca9bd8098b5207e51598de698848020102cd144628c9",
+    "codey/operations/kernel_context.py": "ef459ba549ebc2ecc637444ff2a585be2db8ba01afca9ff06d586c48748f033b",
+    "codey/operations/task_guidance.py": "b7419f36b980221f42e686f8caf1010b5351d2bbef9184b724371451f3762b50",
+    "codey/providers/api_request_view.py": "0cd65c798242965f52607dfa3eb804313e977e5d96bb6e77396948ad852fd332",
+    "codey/providers/api_provider.py": "cc212e10cf5aa3814df79883b4a9925a04fb752f70e24b1c819c6d070a4725fc",
+    "codey/research/answer_context.py": "eab4ca288670e7c86d56b54f74d6f71f5a0573aad06c0a7c5402b42a5f769cf6",
+    "codey/research/answer_contract.py": "4fee0e416dae99b8fe3016f680ba484eb385def0a2c4a4c48c6843f0f134b09c",
+    "tests/manual/research_framework_comparison.py": "327c523cdc14c9ac657bd74d3e1380aa761a1dd1407c778c6ea185ec373e5277"
+  },
+  "checks": {
+    "batch3_six_os_runs_two_primary_calls_one_title": true,
+    "only_read_tool_called_in_six_runs": true,
+    "original_system_and_user_preserved_in_six_runs": true,
+    "all_evidence_lines_in_final_tool_result_in_six_runs": true,
+    "sampling_equal_except_seed_across_audited_requests": true,
+    "default_science_response_source_header_matches_wire": true,
+    "four_material_pairs_identical_content": true
+  },
+  "material_pairs": [
+    {
+      "case": "asyncio_synthesis",
+      "identical_material_with_title_url_wrappers": true,
+      "source_count": 1,
+      "source_text_characters": [
+        3647
+      ],
+      "codey_sources_path": ".e2e-artifacts/research-whole-20261101/batch3-native/runs/asyncio_synthesis-74-codey/sources.json",
+      "codey_sources_sha256": "6ab5978186d03cb019c97edc79a7d76a1d4289798cb74742ee2f243b317f9e8d",
+      "openscience_evidence_path": ".e2e-artifacts/research-whole-20261101/batch3-native/runs/asyncio_synthesis-74-openscience/evidence.md"
+    },
+    {
+      "case": "wal_synthesis",
+      "identical_material_with_title_url_wrappers": true,
+      "source_count": 1,
+      "source_text_characters": [
+        3548
+      ],
+      "codey_sources_path": ".e2e-artifacts/research-whole-20261101/batch3-native/runs/wal_synthesis-74-codey/sources.json",
+      "codey_sources_sha256": "6ac89c45e856905947012e8d13a47b5ed1c388562c9af76e5778599c88b05826",
+      "openscience_evidence_path": ".e2e-artifacts/research-whole-20261101/batch3-native/runs/wal_synthesis-74-openscience/evidence.md"
+    },
+    {
+      "case": "long-recovery-manual",
+      "identical_material_with_title_url_wrappers": true,
+      "source_count": 1,
+      "source_text_characters": [
+        18858
+      ],
+      "codey_sources_path": ".e2e-artifacts/research-whole-20261101/batch8-expanded/runs/long-recovery-manual-74-codey/sources.json",
+      "codey_sources_sha256": "1554ad6ea7ca5c4840178bd2683880f90a7a5e8452ad74882c037da6c196629d",
+      "openscience_evidence_path": ".e2e-artifacts/research-whole-20261101/expanded-openscience/runs/long-recovery-manual-74-openscience/evidence.md"
+    },
+    {
+      "case": "cross-source-export",
+      "identical_material_with_title_url_wrappers": true,
+      "source_count": 2,
+      "source_text_characters": [
+        471,
+        409
+      ],
+      "codey_sources_path": ".e2e-artifacts/research-whole-20261101/batch8-expanded/runs/cross-source-export-74-codey/sources.json",
+      "codey_sources_sha256": "6b8633fdc906fe1323f3a184e19083ac075e149207fc031c4599669c29ece4a2",
+      "openscience_evidence_path": ".e2e-artifacts/rw-os-retry/runs/cross-source-export-74-openscience/evidence.md"
+    }
+  ],
+  "observed_protocol_repair_content_regression": {
+    "wire": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/asyncio_synthesis-75-codey.jsonl",
+    "first_answer_request": 2,
+    "submission_request": 3,
+    "first_plain_answer_sha256": "13d7f4b6c7ef88360d325987aabe76be4a5c1755414bff82e93ee1c389281eae",
+    "submitted_markdown_sha256": "d766263e48ad631f805375f2174def2b8b5ecce99a18423ea1c5ef0363ffd248",
+    "repair_message_roles": [
+      "user",
+      "user",
+      "user"
+    ],
+    "previous_plain_answer_present_in_repair": false,
+    "first_answer_condition": "此取消行为无论 `return_exceptions` 的值如何都会传播 [e5]。",
+    "first_answer_condition_present": true,
+    "submitted_unsupported_constraint": "unless `return_exceptions` is `False` and the `gather` itself is cancelled",
+    "submitted_unsupported_constraint_present": true,
+    "note": "Concrete phrase checks, not a new full semantic score. Final English/lost-condition error is also in frozen batch3 human grading."
+  },
+  "wires": [
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/asyncio_synthesis-74-codey.jsonl",
+      "file_sha256": "1623e9a65c2f2358ca5025c36aa1c33c879daf8dd63aac0f60c4001043151377",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 1876,
+              "content_sha256": "0ec8271ec1bbdfda81201123a0748aa7fd76b6759b3d6b1d7f2bdeda6c6eaf3d"
+            },
+            {
+              "role": "user",
+              "content_characters": 2123,
+              "content_sha256": "258ca81a5d4911b6341a45adf55f0e5c55cf85c6871bd9a70c0a4da4a5cd4260"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1901,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 5034,
+              "content_sha256": "89922d78e8587dc6e597338efcc35c2c5b874f7deebef4332084b1556f039599"
+            },
+            {
+              "role": "user",
+              "content_characters": 6606,
+              "content_sha256": "d8bde4c66aa6d05ebff7079e24488d9a7184b56ea8c4aab4899e08e351ae9739"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 4137,
+          "response_characters": 1293,
+          "response_sha256": "dc8825f6054cd27836e481cabfe8149cbbda3802c19627ad3af3e6b7e38cd1d8",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 6606,
+              "content_sha256": "d8bde4c66aa6d05ebff7079e24488d9a7184b56ea8c4aab4899e08e351ae9739"
+            },
+            {
+              "role": "user",
+              "content_characters": 770,
+              "content_sha256": "6e9aeda26b91a2e4a54c0781072ecd80b7cc35c66ac47872f055ad6bb2844ba1"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 2869,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### 研究結果：asyncio.gather 的特性分析\\n\\n根據 Python 3.12.7 官方文件，針對 `asyncio.gather` 的研究結果如下：\\n\\n#### 1. 預設情況下 (`return_exceptions=False`) 的異常傳播\\n當 `return_exceptions` 為 `False`（預設值）時，若 `aws` 序列中的任何一個 awaitable 拋出異常，該異常會**立即傳播**給等待 `gather()` 的任務 [e1]。此時，序列中的其他 awaitables **不會被取消**，它們將繼續運行 [e1]。\\n\\n#### 2. `return_exceptions=True` 的影響\\n當 `return_exceptions` 為 `True` 時，異常會被視為成功的結果處理，並被聚合到結果列表中 [e1]。\\n*   **結果順序**：無論 awaitables 完成的順序為何，結果列表中的值順序與 `aws` 序列中 awaitables 的**輸入順序**一致 [e1]。\\n\\n#### 3. 取消 `gather` 與取消單一 Task/Future 的區別\\n*   **取消 `gather()`**：若 `gather()` 本身被取消，所有尚未完成的提交 awaitables 都會被**取消** [e1]。此取消行為與 `return_exceptions` 的設定無關 [e5]。\\n*   **取消單一 Task/Future**：若 `aws` 序列中的某個 Task 或 Future 被取消，它被視為拋出了 `CancelledError`。然而，這**不會**導致整個 `gather()` 被取消 [e2]。這是為了防止取消其中一個任務時，意外地導致其他任務也被取消 [e2]。\\n\\n#### 4. 捕獲異常後調用 `gather.cancel()` 的效果\\n當從 `gather` 中捕獲到異常後再調用 `gather.cancel()`，**並不一定**會取消所有其他 awaitables [e4]。\\n*   **原因**：因為 `gather` 在傳播異常給呼叫者後，可能已經被標記為「完成」（done）[e4]。一旦 `gather` 已完成，之後調用 `gather.cancel()` 將不會取消任何提交的 awaitables [e4]。\\n\\n#### 5. `TaskGroup` 與 `gather` 的取消保證區別\\n*   **取消保證**：當 `TaskGroup` 中的一個任務（或子任務）拋出異常時，`TaskGroup` 會**取消**其餘所有的排程任務；而 `gather` 在預設情況下則不會 [e2]。\\n*   **速度證明**：材料中提到 `TaskGroup` 提供比 `gather` 更強的安全性保證，但**並未明確說明** `TaskGroup` 是否「總是更快」[e2]。材料僅指出其在處理嵌套子任務時的安全性優勢。\\n\\n#### 遺留缺口 (Gaps)\\n*   **速度對比**：雖然 `TaskGroup` 被描述為更安全，但文件中沒有提供具體的數據或機制來證明 `TaskGroup` 在所有情況下都比 `gather` 更快。\\n*   **具體取消順序**：當 `gather` 被取消時，所有 awaitables 同時被取消，但文件未詳述這些 awaitables 內部狀態的具體變化順序。\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 3,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/asyncio_synthesis-74-openscience.jsonl",
+      "file_sha256": "8c1f328982b5f68d2cbd2bf4a3e159f771b04947d250e0573ada1e3afeb6a706",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25998,
+              "content_sha256": "2cfccc8fd28dd1556174c61405d985e780cc1f30d1d62b27e55cc0124c3485ad"
+            },
+            {
+              "role": "user",
+              "content_characters": 606,
+              "content_sha256": "e6b2e5484af0a84d52f36201fdf91ef265791dea0a3dd452a9b6b075d360c41d"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 8615,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "read",
+              "arguments": "{\"filePath\":\"evidence.md\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "title",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 2096,
+              "content_sha256": "e7a6848eba328f28c7e870874cf0591e4edbaf90d7602ad8fdfe90601c6e656f"
+            },
+            {
+              "role": "user",
+              "content_characters": 731,
+              "content_sha256": "1f17d59a9d71c52ce0d27c9ff339059afc29562c56b0e0a24dbedb313852f839"
+            }
+          ],
+          "tool_inventory": [],
+          "tool_choice": null,
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 855,
+          "response_characters": 26,
+          "response_sha256": "58cad978583eca4850d3344db2d061a467d0d4adefb038cf2bca9903858fdc60",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25998,
+              "content_sha256": "2cfccc8fd28dd1556174c61405d985e780cc1f30d1d62b27e55cc0124c3485ad"
+            },
+            {
+              "role": "user",
+              "content_characters": 606,
+              "content_sha256": "e6b2e5484af0a84d52f36201fdf91ef265791dea0a3dd452a9b6b075d360c41d"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 4560,
+              "content_sha256": "170f05184110ff0a20876a98f79ba391a97a116ba004c5ddb3b5efcc8708474b"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 10301,
+          "response_characters": 1332,
+          "response_sha256": "8acb125039bfa6d6225e737f00e05beb8ca22dd68b7dd1fc4f9cd868da8f06ed",
+          "calls": []
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 1,
+      "original_system_and_user_preserved_verbatim": true,
+      "evidence_file": {
+        "path": ".e2e-artifacts/research-whole-20261101/batch3-native/runs/asyncio_synthesis-74-openscience/evidence.md",
+        "sha256": "bc2608380f5897871dd69b27e6508f168cbb2c2fac195c99825b2a23d44f9d77",
+        "characters": 3821,
+        "lines": 99,
+        "all_lines_present_in_final_tool_result": true
+      },
+      "final_context_markers": {
+        "RESTORED": false,
+        "7 days": false,
+        "Section 44": false
+      }
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/asyncio_synthesis-75-codey.jsonl",
+      "file_sha256": "3f5224dfbb61b3188c1433dc3f0f3fcacdca315ae9130015597b4335a337ba22",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 1876,
+              "content_sha256": "0ec8271ec1bbdfda81201123a0748aa7fd76b6759b3d6b1d7f2bdeda6c6eaf3d"
+            },
+            {
+              "role": "user",
+              "content_characters": 2123,
+              "content_sha256": "258ca81a5d4911b6341a45adf55f0e5c55cf85c6871bd9a70c0a4da4a5cd4260"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1901,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 5034,
+              "content_sha256": "b77c85efb3405599d3cedeb4d91b2c01bd48e7c4fc215f9000319dd674f0f8ca"
+            },
+            {
+              "role": "user",
+              "content_characters": 6606,
+              "content_sha256": "dc778b76342a5b9eca75919a3d703155f5ece8ad164fd911c43f7ca4be178a76"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 4139,
+          "response_characters": 1359,
+          "response_sha256": "13d7f4b6c7ef88360d325987aabe76be4a5c1755414bff82e93ee1c389281eae",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 6606,
+              "content_sha256": "dc778b76342a5b9eca75919a3d703155f5ece8ad164fd911c43f7ca4be178a76"
+            },
+            {
+              "role": "user",
+              "content_characters": 770,
+              "content_sha256": "6e9aeda26b91a2e4a54c0781072ecd80b7cc35c66ac47872f055ad6bb2844ba1"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 2870,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### Research on `asyncio.gather`\\n\\nBased on the official Python 3.12.7 documentation, here are the answers to the specific questions regarding `asyncio.gather`:\\n\\n**1. Behavior with `return_exceptions=False` (default)**\\nIf any awaitable in the sequence raises an exception, the first raised exception is immediately propagated to the task that awaits on `gather()` [e1]. However, the other awaitables in the sequence **won't be cancelled** and will continue to run [e1].\\n\\n**2. Behavior with `return_exceptions=True`**\\nWhen `return_exceptions` is `True`, exceptions are treated the same as successful results and are aggregated in the result list [e1]. The order of the result values corresponds to the order of the awaitables in the input sequence, not the order in which they completed [e1].\\n\\n**3. Cancelling `gather()` vs. Cancelling a submitted Task/Future**\\n- **Cancelling `gather()`**: If `gather()` is cancelled, all submitted awaitables (that have not completed yet) are also cancelled [e1].\\n- **Cancelling a submitted Task/Future**: If a specific Task or Future from the sequence is cancelled, it is treated as if it raised a `CancelledError`. Crucially, the `gather()` call itself is **not** cancelled in this case [e2]. This prevents the cancellation of one submitted Task/Future from causing the cancellation of others [e2].\\n\\n**4. Cancelling `gather()` after catching an exception**\\nIf `gather()` has already been marked done (e.g., after propagating an exception to the caller), calling `gather.cancel()` after catching that exception will **not** cancel any other awaitables [e4]. This is because the cancellation is only propagated if the `gather` itself is cancelled before it is marked done [e4, e5].\\n\\n**5. `TaskGroup` vs. `gather` for subtask cancellation**\\n- **`TaskGroup`**: If a task (or a subtask) raises an exception, `TaskGroup` will cancel the remaining scheduled tasks [e2].\\n- **`gather`**: Unlike `TaskGroup`, `gather` will **not** cancel the remaining scheduled tasks when one raises an exception (unless `return_exceptions` is `False` and the `gather` itself is cancelled) [e2].\\n- **Speed/Efficiency**: The provided materials do not explicitly state whether `TaskGroup` is \\\"faster\\\" than `gather`; they focus on the safety guarantees of `TaskGroup` regarding nested subtasks [e2].\\n\\n**Remaining Gaps:**\\n- The documentation does not explicitly provide a performance comparison (e.g., time complexity or overhead) to prove if `TaskGroup` is \\\"faster\\\" than `gather` in all scenarios; it primarily highlights the difference in cancellation logic [e2].\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 3,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/asyncio_synthesis-75-openscience.jsonl",
+      "file_sha256": "e8331414e9fb399384d0bac261fdf99aa45e0f0e84f3b5a5ba0c60dd63d6878e",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25998,
+              "content_sha256": "ca30ab45cdf048e0908b950106692c574afef66b16b99013d8bd0cdef2ab4b15"
+            },
+            {
+              "role": "user",
+              "content_characters": 606,
+              "content_sha256": "e6b2e5484af0a84d52f36201fdf91ef265791dea0a3dd452a9b6b075d360c41d"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 8612,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "read",
+              "arguments": "{\"filePath\":\"evidence.md\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "title",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 2096,
+              "content_sha256": "e7a6848eba328f28c7e870874cf0591e4edbaf90d7602ad8fdfe90601c6e656f"
+            },
+            {
+              "role": "user",
+              "content_characters": 731,
+              "content_sha256": "1f17d59a9d71c52ce0d27c9ff339059afc29562c56b0e0a24dbedb313852f839"
+            }
+          ],
+          "tool_inventory": [],
+          "tool_choice": null,
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 855,
+          "response_characters": 31,
+          "response_sha256": "4d02d4a37a23f8af68843dc3799720bce0a5ef214bcaf4350f7e85854a8f4a5e",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25998,
+              "content_sha256": "ca30ab45cdf048e0908b950106692c574afef66b16b99013d8bd0cdef2ab4b15"
+            },
+            {
+              "role": "user",
+              "content_characters": 606,
+              "content_sha256": "e6b2e5484af0a84d52f36201fdf91ef265791dea0a3dd452a9b6b075d360c41d"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 4560,
+              "content_sha256": "170f05184110ff0a20876a98f79ba391a97a116ba004c5ddb3b5efcc8708474b"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 10298,
+          "response_characters": 1234,
+          "response_sha256": "f5a7d0b342e193614515be0270cc614cd43c83924a60acea429413179175c9ba",
+          "calls": []
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 1,
+      "original_system_and_user_preserved_verbatim": true,
+      "evidence_file": {
+        "path": ".e2e-artifacts/research-whole-20261101/batch3-native/runs/asyncio_synthesis-75-openscience/evidence.md",
+        "sha256": "bc2608380f5897871dd69b27e6508f168cbb2c2fac195c99825b2a23d44f9d77",
+        "characters": 3821,
+        "lines": 99,
+        "all_lines_present_in_final_tool_result": true
+      },
+      "final_context_markers": {
+        "RESTORED": false,
+        "7 days": false,
+        "Section 44": false
+      }
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/asyncio_synthesis-76-codey.jsonl",
+      "file_sha256": "3d7c3f114eb0d4e507243f3f63a8f71c78d3f3cb5fd063bb460ece1c00d3585f",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 1876,
+              "content_sha256": "0ec8271ec1bbdfda81201123a0748aa7fd76b6759b3d6b1d7f2bdeda6c6eaf3d"
+            },
+            {
+              "role": "user",
+              "content_characters": 2123,
+              "content_sha256": "258ca81a5d4911b6341a45adf55f0e5c55cf85c6871bd9a70c0a4da4a5cd4260"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1901,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 5034,
+              "content_sha256": "56bed2ca95d86434643bafe990153c2a454145337e68cdb7020e7e9556d83c4c"
+            },
+            {
+              "role": "user",
+              "content_characters": 6606,
+              "content_sha256": "2e5bee3d49c282e045daad6d1a35c4410a157ca5a19ef988da56dfa6ff0eb116"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 4137,
+          "response_characters": 1388,
+          "response_sha256": "2a204a5a46588acd1b8850f01edd7ab4a6d10cd0ec35522e81ffb79443ce5eaf",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 6606,
+              "content_sha256": "2e5bee3d49c282e045daad6d1a35c4410a157ca5a19ef988da56dfa6ff0eb116"
+            },
+            {
+              "role": "user",
+              "content_characters": 770,
+              "content_sha256": "6e9aeda26b91a2e4a54c0781072ecd80b7cc35c66ac47872f055ad6bb2844ba1"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 2869,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### 研究结果：asyncio.gather 的特性分析\\n\\n基于 Python 3.12.7 官方文档，针对 `asyncio.gather` 的各项问题研究如下：\\n\\n#### 1. 默认 `return_exceptions=False` 时，子任务异常的影响\\n*   **传播机制**：当 `return_exceptions` 为 `False`（默认值）时，一旦 `aws` 序列中的任何一个 awaitable 抛出异常，该异常会立即传播（propagated）给等待 `gather()` 的任务 [e1]。\\n*   **其余任务状态**：此时，序列中的其他 awaitables **不会被取消**（won't be cancelled），它们将继续运行 [e1]。\\n\\n#### 2. `return_exceptions=True` 的改变与结果顺序\\n*   **异常处理**：当 `return_exceptions` 为 `True` 时，异常被视为成功结果的一部分，并被聚合到结果列表中 [e1]。\\n*   **结果顺序**：无论任务完成的先后顺序如何，结果列表中的值顺序始终对应于 `aws` 序列中 awaitables 的**输入顺序** [e1]。\\n\\n#### 3. 取消 `gather` 本身与取消其中一个 Task/Future 的区别\\n*   **取消 `gather` 本身**：如果 `gather()` 被取消，所有尚未完成的提交 awaitables 也会被取消 [e1]。\\n*   **取消单个 Task/Future**：如果 `aws` 序列中的某个 Task 或 Future 被取消，它被视为抛出了 `CancelledError`。在这种情况下，`gather()` 调用**不会**被取消 [e2]。\\n*   **目的**：这种设计是为了防止取消一个提交的 Task/Future 导致其他 Task/Futures 被意外取消 [e2]。\\n\\n#### 4. 捕获异常后调用 `gather.cancel()` 是否必然取消其余任务？\\n*   **结论**：**不一定**。\\n*   **原因**：如果 `gather()` 在传播异常后已经被标记为“完成”（marked done），那么此时调用 `gather.cancel()` **不会**取消任何提交的 awaitables [e4]。\\n*   **场景**：例如，在捕获了由其中一个 awaitable 抛出的异常后，`gather` 已经完成了其传播工作，此时再手动取消它，其余尚未完成的任务仍会继续运行 [e4]。\\n\\n#### 5. `TaskGroup` 与 `gather` 在子任务异常取消上的区别\\n*   **取消保证**：\\n    *   **`gather`**：当一个子任务抛出异常时，其余任务**不会**被自动取消（除非 `gather` 本身被取消）[e1]。\\n    *   **`TaskGroup`**：提供更强的安全保证。如果一个任务（或子任务）抛出异常，`TaskGroup` **会**取消剩余的已调度任务，而 `gather` 不会 [e2]。\\n*   **速度对比（材料中的缺口）**：\\n    *   材料中提到 `TaskGroup` 提供了“更强的安全保证”（stronger safety guarantees），但**并未明确说明** `TaskGroup` 是否“总是更快” [e2]。材料中未提供具体的性能对比数据。\\n\\n#### 总结\\n| 特性 | `gather` | `TaskGroup` |\\n| :--- | :--- | :--- |\\n| **单任务异常** | 传播异常，其余任务继续运行 [e1] | 自动取消剩余任务 [e2] |\\n| **取消传播** | 取消 `gather` 则取消所有子任务 [e1] | 异常传播时自动触发取消 [e2] |\\n| **结果顺序** | 按输入顺序排列 [e1] | (未在当前材料中明确说明) |\\n\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 3,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/asyncio_synthesis-76-openscience.jsonl",
+      "file_sha256": "60fa06b6a19214b3686b94642b7d4de934646fa04580f80f1791c0c657a11f4c",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25998,
+              "content_sha256": "8aeef1895f6b434d86fdaa010a83fefd9eb69f4188f3ed476515f983771eaeee"
+            },
+            {
+              "role": "user",
+              "content_characters": 606,
+              "content_sha256": "e6b2e5484af0a84d52f36201fdf91ef265791dea0a3dd452a9b6b075d360c41d"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 8615,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "read",
+              "arguments": "{\"filePath\":\"evidence.md\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "title",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 2096,
+              "content_sha256": "e7a6848eba328f28c7e870874cf0591e4edbaf90d7602ad8fdfe90601c6e656f"
+            },
+            {
+              "role": "user",
+              "content_characters": 731,
+              "content_sha256": "1f17d59a9d71c52ce0d27c9ff339059afc29562c56b0e0a24dbedb313852f839"
+            }
+          ],
+          "tool_inventory": [],
+          "tool_choice": null,
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 855,
+          "response_characters": 26,
+          "response_sha256": "b16f3e53cda3c59c45487a7abc2ef50876a3e8cfc9e6dd4e3f0548d5dab75e1f",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25998,
+              "content_sha256": "8aeef1895f6b434d86fdaa010a83fefd9eb69f4188f3ed476515f983771eaeee"
+            },
+            {
+              "role": "user",
+              "content_characters": 606,
+              "content_sha256": "e6b2e5484af0a84d52f36201fdf91ef265791dea0a3dd452a9b6b075d360c41d"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 4560,
+              "content_sha256": "170f05184110ff0a20876a98f79ba391a97a116ba004c5ddb3b5efcc8708474b"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 10301,
+          "response_characters": 1196,
+          "response_sha256": "cf82e8c4935cfb27c0c301ad82412e26377adc6a36d4aa3ce8404e2b8a78f055",
+          "calls": []
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 1,
+      "original_system_and_user_preserved_verbatim": true,
+      "evidence_file": {
+        "path": ".e2e-artifacts/research-whole-20261101/batch3-native/runs/asyncio_synthesis-76-openscience/evidence.md",
+        "sha256": "bc2608380f5897871dd69b27e6508f168cbb2c2fac195c99825b2a23d44f9d77",
+        "characters": 3821,
+        "lines": 99,
+        "all_lines_present_in_final_tool_result": true
+      },
+      "final_context_markers": {
+        "RESTORED": false,
+        "7 days": false,
+        "Section 44": false
+      }
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/wal_synthesis-74-codey.jsonl",
+      "file_sha256": "d518625c49f17b374d60529a698e84a4c596da01b13c67d324b6f837989523d9",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 1713,
+              "content_sha256": "182490ca7ab68f5a8917f411ee958935349612ece6492d7563fd41b7eadb6b0c"
+            },
+            {
+              "role": "user",
+              "content_characters": 1960,
+              "content_sha256": "1c4a2c300bbab1f6bc8af5788e535030f1404ba41b0a0cbbd23f6f1b1d0582d0"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1813,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://www.sqlite.org/wal.html\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 4769,
+              "content_sha256": "3ed69b34da5da620f0da78fec7c4a7f4bbfd59154d5cab0bf60bf747c069ac6d"
+            },
+            {
+              "role": "user",
+              "content_characters": 5813,
+              "content_sha256": "13d82684b2af6882f8cec2f5ee262fe88ef4c99cdbe8d6481b9d77fd14d2ab55"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 3524,
+          "response_characters": 1712,
+          "response_sha256": "37af807911538f81c2699f439c12bedb8b2320e5723269d05ea885a6316fba75",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 5813,
+              "content_sha256": "13d82684b2af6882f8cec2f5ee262fe88ef4c99cdbe8d6481b9d77fd14d2ab55"
+            },
+            {
+              "role": "user",
+              "content_characters": 770,
+              "content_sha256": "6e9aeda26b91a2e4a54c0781072ecd80b7cc35c66ac47872f055ad6bb2844ba1"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 2492,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### SQLite WAL 模式研究报告\\n\\n基于提供的官方材料（https://www.sqlite.org/wal.html），针对各项问题的研究结果如下：\\n\\n#### 1. WAL 的读写并发与单写者限制的逻辑关系\\n*   **读写并发机制**：WAL 模式下，读取操作和写入操作可以同时进行（concurrently）。这是因为写入操作仅将新内容追加到 WAL 文件的末尾，而不会干扰读取操作 [e1]。\\n*   **单写者限制**：尽管读写可以并发，但由于只有一个 WAL 文件，因此**同一时间只能有一个写入者** [e1]。\\n*   **结论**：两者并不矛盾。WAL 模式通过“空间上的分离”（写入在 WAL 文件中，读取在数据库页中）实现了**读写并发**，但由于“资源上的共享”（共享同一个 WAL 文件），限制了**写写并发**。\\n\\n#### 2. WAL 的版本演变与读写条件\\n*   **引入版本**：WAL 模式始于 SQLite 版本 3.7.0 (2010-07-21) [e1]。\\n*   **只读打开支持版本**：从 SQLite 版本 3.22.0 (2018-01-22) 开始，支持在只读媒体上读取 WAL 模式数据库 [e5]。\\n*   **只读打开的必要条件**：在较新版本中，即使在只读媒体上，只要满足以下任一条件即可读取：\\n    *   `-shm` 和 `-wal` 文件已存在且可读 [e5]。\\n    *   目录具有写入权限，允许创建 `-shm` 和 `-wal` 文件 [e5]。\\n    *   使用 `immutable` 查询参数打开数据库连接 [e5]。\\n*   **关系说明**：在 3.22.0 版本之前，读取 WAL 模式数据库必须具备写权限；3.22.0 版本之后，通过上述条件放宽了这一限制。\\n\\n#### 3. Checkpoint 与读者的并行关系\\n*   **停止时机**：Checkpoint 操作可以与读取操作并行运行，但当它到达 WAL 文件中**超过任何当前读取者末端标记（end mark）的页面**时，必须停止 [e2, e3]。\\n*   **停止原因**：如果不停止，Checkpoint 可能会覆盖读取者正在使用的数据库文件中的部分内容 [e2, e3]。\\n*   **进度保存与恢复**：Checkpoint 会在 `wal-index` 中记录它到达的位置。在下一次调用时，它将从该位置继续将内容从 WAL 转移到数据库中 [e2, e3]。\\n\\n#### 4. Writer 回绕（Rewind）与 Checkpoint 的条件区分\\n*   **Writer 回绕条件**：当发生写入操作时，写入者会检查 Checkpoint 的进度。如果**整个 WAL 已转移到数据库中并同步（synced）**，且**没有任何读取者正在使用 WAL**，则写入者会将 WAL 回绕到开头，并从开头开始放置新事务 [e4]。\\n*   **与 Checkpoint 转移数据的必要条件区分**：\\n    *   **Checkpoint 转移数据**的必要条件是：它必须在不覆盖当前读取者正在使用的页面的情况下进行（即不越过任何读取者的末端标记）[e2, e3]。\\n    *   **Writer 回绕**的必要条件比 Checkpoint 更严格：它不仅要求数据已转移且同步，还要求**没有任何读取者**在占用 WAL [e4]。\\n    *   **核心区别**：Checkpoint 可以在有读取者的情况下进行（只要不越过读取者的末端），而 Writer 回绕要求完全没有读取者在占用 WAL 才能将 WAL 重置到开头。\\n\\n#### 5. 本机 WAL 性能与测量证据\\n*   **WAL 比回滚日志快**：材料明确指出“WAL 在大多数情况下明显更快（significantly faster）” [e1]。\\n*   **本机测量证据**：材料中**没有**明确证明“本机 WAL 比回滚日志更快”的具体数值或实验数据，仅给出了定性的结论 [e1]。\\n*   **测量范围边界**：材料中**没有**提供任何关于“整份官方页面从未做过本机测量”的明确证据。它提供了结论，但并未说明这些结论是基于特定的本机实验还是宏观的性能观察。\\n\\n**剩余缺口（Gaps）：**\\n*   材料未提供 WAL 比回滚日志快的具体百分比或具体场景下的对比数据。\\n*   材料未说明“显著更快”这一结论的具体实验环境（如磁盘类型、数据量大小等）。\\n*   材料未明确说明“回绕（rewind）”操作发生的频率（是每次写入都检查，还是仅在特定条件下触发）。\\n\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 3,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/wal_synthesis-74-openscience.jsonl",
+      "file_sha256": "10efe8df2edd873e7d33e32ac1b58e4c999b9aac3e6b9d38cf726d4d007f4fca",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25990,
+              "content_sha256": "d56a9831fbf00d503a75b300231333c53ab3e974bf3a75eb8678f3effd973cbf"
+            },
+            {
+              "role": "user",
+              "content_characters": 443,
+              "content_sha256": "959929e37b99892e33f33e9cc2dd9f67f1a82634a176928eaca89e365cd5eed3"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 8568,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "read",
+              "arguments": "{\"filePath\":\"evidence.md\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "title",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 2096,
+              "content_sha256": "e7a6848eba328f28c7e870874cf0591e4edbaf90d7602ad8fdfe90601c6e656f"
+            },
+            {
+              "role": "user",
+              "content_characters": 568,
+              "content_sha256": "395239559fa6d7801a1f52c42f04a6e2077b19920b2426ef7f4295de9e0a2601"
+            }
+          ],
+          "tool_inventory": [],
+          "tool_choice": null,
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 811,
+          "response_characters": 17,
+          "response_sha256": "5ee1e76e8a82d6cdee1ea0b3c0bdfee727d37bb6de077ff894a53b0aa0e95491",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25990,
+              "content_sha256": "d56a9831fbf00d503a75b300231333c53ab3e974bf3a75eb8678f3effd973cbf"
+            },
+            {
+              "role": "user",
+              "content_characters": 443,
+              "content_sha256": "959929e37b99892e33f33e9cc2dd9f67f1a82634a176928eaca89e365cd5eed3"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 4258,
+              "content_sha256": "4a169eaf6561092d5c2c1d51d6b66a0e604bd7b22b0231a48a37379a8f4c75ff"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 9983,
+          "response_characters": 1659,
+          "response_sha256": "031b9e25776a5e41e598f9c7e381a0ced61765b6cccd96c23e3d20f953180e13",
+          "calls": []
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 1,
+      "original_system_and_user_preserved_verbatim": true,
+      "evidence_file": {
+        "path": ".e2e-artifacts/research-whole-20261101/batch3-native/runs/wal_synthesis-74-openscience/evidence.md",
+        "sha256": "f88964e25a15df64994b8036b3eab436f1e05d8ae52b27020cc7be17441ca81d",
+        "characters": 3610,
+        "lines": 86,
+        "all_lines_present_in_final_tool_result": true
+      },
+      "final_context_markers": {
+        "RESTORED": false,
+        "7 days": false,
+        "Section 44": false
+      }
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/wal_synthesis-75-codey.jsonl",
+      "file_sha256": "38ecbffc6a669a6d0ab04692c5f7c5b17d1642316ec0043102784694ca8e3aea",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 1713,
+              "content_sha256": "182490ca7ab68f5a8917f411ee958935349612ece6492d7563fd41b7eadb6b0c"
+            },
+            {
+              "role": "user",
+              "content_characters": 1960,
+              "content_sha256": "1c4a2c300bbab1f6bc8af5788e535030f1404ba41b0a0cbbd23f6f1b1d0582d0"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1813,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://www.sqlite.org/wal.html\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 4769,
+              "content_sha256": "c388e2a8f2eb6322e0af74b9ce41181cfb738d2537fada87372b55578fe0f42c"
+            },
+            {
+              "role": "user",
+              "content_characters": 5813,
+              "content_sha256": "7bd73024fe5fde8ad8f1ff39e60dd6a5deaec68ff3455a893515a6204d4baaad"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 3524,
+          "response_characters": 1805,
+          "response_sha256": "e42073df73f923e49a4e0136abe038873f46698542b2cd096ea7c4cfbbd8d3f5",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 5813,
+              "content_sha256": "7bd73024fe5fde8ad8f1ff39e60dd6a5deaec68ff3455a893515a6204d4baaad"
+            },
+            {
+              "role": "user",
+              "content_characters": 770,
+              "content_sha256": "6e9aeda26b91a2e4a54c0781072ecd80b7cc35c66ac47872f055ad6bb2844ba1"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 2492,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### SQLite WAL 模式研究报告\\n\\n基于提供的官方材料，对 WAL（Write-Ahead Logging）模式的各项问题研究如下：\\n\\n#### 1. WAL 的读写并发和单写者限制的逻辑关系\\n**结论：** 并不矛盾。\\n*   **读写并发机制：** WAL 模式下，读者不阻塞写入者，写入者也不阻塞读者。这是因为写入操作仅是在 WAL 文件末尾追加新内容，而不会干扰读者的操作 [e1]。\\n*   **单写者限制：** 尽管读写可以并发，但由于只有一个 WAL 文件，因此在同一时刻只能有一个写入者 [e1]。\\n\\n#### 2. WAL 的版本演进与读写条件\\n*   **引入版本：** WAL 模式始于 SQLite 版本 3.7.0 (2010-07-21) [e1]。\\n*   **只读打开支持版本：** 从 SQLite 版本 3.22.0 (2018-01-22) 开始，放宽了对只读数据库的限制 [e5]。\\n*   **只读打开条件：** 在新版本中，即使在只读介质或缺乏写入权限的情况下，只要满足以下任一条件即可读取 WAL 模式数据库：\\n    1. `-shm` 和 `-wal` 文件已存在且可读 [e5]。\\n    2. 目录具有写入权限，以便创建 `-shm` 和 `-wal` 文件 [e5]。\\n    3. 使用 `immutable` 查询参数打开数据库连接 [e5]。\\n*   **完整替代关系：** 材料未明确说明 WAL 是否完全替代了回滚日志（Rollback Journal），仅指出回滚日志是默认方法，而 WAL 是可选的 [e1]。\\n\\n#### 3. Checkpoint 与读者的并行关系\\n*   **何时停止：** Checkpoint 操作可以与读者并行运行，但当它达到 WAL 文件中任何当前读者“结束标记”（end mark）之后的页面时，必须停止 [e2, e3]。\\n*   **为什么停止：** 否则 Checkpoint 可能会覆盖读者正在使用的数据库文件中的部分内容 [e2, e3]。\\n*   **进度保存：** Checkpoint 会在 `wal-index` 中记住它到达的位置 [e2, e3]。\\n*   **如何继续：** 在下一次调用时，Checkpoint 将从上次中断的位置继续将内容从 WAL 转移到数据库中 [e2, e3]。\\n\\n#### 4. Writer 回绕（Rewind）与 Checkpoint 的条件区分\\n*   **Writer 回绕条件：** 当发生写入操作时，写入者会检查 Checkpoint 的进度。如果**整个 WAL 已转移到数据库中并同步**，且**没有任何读者正在使用 WAL**，则写入者会将 WAL 回绕到开头，并从开头开始放入新事务 [e4]。\\n*   **Checkpoint 转移数据的必要条件：** 转移数据本身只需满足“Checkpoint 达到读者结束标记之前”即可进行 [e2, e3]。\\n*   **区分：** \\n    *   **Checkpoint** 是将内容从 WAL 转移到数据库的**持续过程**（受限于当前读者的进度）。\\n    *   **Writer 回绕** 是一个**触发式动作**，它要求“完全转移完成”且“无读者占用”两个严格条件，目的是防止 WAL 文件无限增长 [e4]。\\n\\n#### 5. 本机测量与性能证明的边界\\n*   **WAL 比回滚日志更快：** 材料明确指出“WAL 在大多数情况下显著更快” [e1]。\\n*   **本机测量证据：** 材料中**并未提供**具体的“本机测量”数据（例如具体的毫秒数或具体的磁盘 IO 统计）。\\n*   **结论：** 材料证明了 WAL 在大多数场景下更快，但并未提供具体的本机测量数值，也未明确说明这些测量是针对特定硬件还是通用结论。\\n\\n**剩余缺口：**\\n*   材料未提供具体的“显著更快”的量化数据。\\n*   材料未详细说明“回绕”操作发生的具体频率（是每次写入都检查，还是仅在特定时机）。\\n*   材料未说明在“完全转移”过程中，如果读者正在使用 WAL，Checkpoint 是完全停滞还是只是局部等待。\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 3,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/wal_synthesis-75-openscience.jsonl",
+      "file_sha256": "e5d310e9fd24b14b61a7860a58811e7551a3519e0c4c2774cf0c020fc06a210f",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25990,
+              "content_sha256": "577fda9a80e663e6f67bf9cbfde9d5b658d5bf2a770e12d76871d86eedc6de44"
+            },
+            {
+              "role": "user",
+              "content_characters": 443,
+              "content_sha256": "959929e37b99892e33f33e9cc2dd9f67f1a82634a176928eaca89e365cd5eed3"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 8568,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "read",
+              "arguments": "{\"filePath\":\"evidence.md\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "title",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 2096,
+              "content_sha256": "e7a6848eba328f28c7e870874cf0591e4edbaf90d7602ad8fdfe90601c6e656f"
+            },
+            {
+              "role": "user",
+              "content_characters": 568,
+              "content_sha256": "395239559fa6d7801a1f52c42f04a6e2077b19920b2426ef7f4295de9e0a2601"
+            }
+          ],
+          "tool_inventory": [],
+          "tool_choice": null,
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 811,
+          "response_characters": 17,
+          "response_sha256": "5ee1e76e8a82d6cdee1ea0b3c0bdfee727d37bb6de077ff894a53b0aa0e95491",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25990,
+              "content_sha256": "577fda9a80e663e6f67bf9cbfde9d5b658d5bf2a770e12d76871d86eedc6de44"
+            },
+            {
+              "role": "user",
+              "content_characters": 443,
+              "content_sha256": "959929e37b99892e33f33e9cc2dd9f67f1a82634a176928eaca89e365cd5eed3"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 4258,
+              "content_sha256": "4a169eaf6561092d5c2c1d51d6b66a0e604bd7b22b0231a48a37379a8f4c75ff"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 9983,
+          "response_characters": 1626,
+          "response_sha256": "94225ec6f68b03b79482774e43119fe64d71df0b86e13103bf481c05d2aa39cf",
+          "calls": []
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 1,
+      "original_system_and_user_preserved_verbatim": true,
+      "evidence_file": {
+        "path": ".e2e-artifacts/research-whole-20261101/batch3-native/runs/wal_synthesis-75-openscience/evidence.md",
+        "sha256": "f88964e25a15df64994b8036b3eab436f1e05d8ae52b27020cc7be17441ca81d",
+        "characters": 3610,
+        "lines": 86,
+        "all_lines_present_in_final_tool_result": true
+      },
+      "final_context_markers": {
+        "RESTORED": false,
+        "7 days": false,
+        "Section 44": false
+      }
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/wal_synthesis-76-codey.jsonl",
+      "file_sha256": "2bd8ec00440d81c7304bb767e10268d99b28b2e74d7a61b9ae1fd2de571ca2ce",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 1713,
+              "content_sha256": "182490ca7ab68f5a8917f411ee958935349612ece6492d7563fd41b7eadb6b0c"
+            },
+            {
+              "role": "user",
+              "content_characters": 1960,
+              "content_sha256": "1c4a2c300bbab1f6bc8af5788e535030f1404ba41b0a0cbbd23f6f1b1d0582d0"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1813,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://www.sqlite.org/wal.html\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 4769,
+              "content_sha256": "e5ac0c852908a554195307c846b67e69b68d9c4a5d19eaa6e678eb96c824601c"
+            },
+            {
+              "role": "user",
+              "content_characters": 5813,
+              "content_sha256": "1a74f4aaab6dec1c54378d0c4376dda1a1ed5df9be91d8134e66ba12f959fa45"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 3526,
+          "response_characters": 1841,
+          "response_sha256": "549b281b8a1cd1024ba3555ea40dc31aed1cc93bd467413c6118bd552cb600b2",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 5813,
+              "content_sha256": "1a74f4aaab6dec1c54378d0c4376dda1a1ed5df9be91d8134e66ba12f959fa45"
+            },
+            {
+              "role": "user",
+              "content_characters": 770,
+              "content_sha256": "6e9aeda26b91a2e4a54c0781072ecd80b7cc35c66ac47872f055ad6bb2844ba1"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 2493,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### SQLite WAL 模式研究报告\\n\\n基于提供的官方材料（https://www.sqlite.org/wal.html），对 WAL 模式的各项问题研究如下：\\n\\n#### 1. WAL 的读写并发与单写者限制的逻辑关系\\n*   **并发性**：WAL 提供了更高的并发性，因为**读者不阻塞写入者，且写入者不阻塞读者**。读取和写入可以同时进行 [e1]。\\n*   **单写者限制**：尽管读写可以并发，但由于只有一个 WAL 文件，因此**同一时间只能有一个写入者** [e1]。\\n*   **结论**：两者并不矛盾。WAL 通过“空间分离”实现了读写并发（读者在读取旧数据，写入者在末尾追加新数据），但由于“写入位置”的唯一性，限制了同时只能有一个写入者。\\n\\n#### 2. WAL 的版本演进与读写条件\\n*   **引入版本**：WAL 模式始于 SQLite 版本 3.7.0 (2010-07-21) [e1]。\\n*   **只读打开支持版本**：从 SQLite 版本 3.22.0 (2018-01-22) 开始，放宽了对只读媒体上 WAL 模式数据库的限制 [e5]。\\n*   **只读打开条件**：在较新版本中，即使在只读媒体或缺乏写入权限的情况下，只要满足以下任一条件即可读取 WAL 模式数据库：\\n    1. `-shm` 和 `-wal` 文件已存在且可读 [e5]。\\n    2. 目录存在写入权限以创建 `-shm` 和 `-wal` 文件 [e5]。\\n    3. 使用 `immutable` 查询参数打开数据库连接 [e5]。\\n*   **关系**：WAL 模式从“必须有写权限才能读”演变为“在特定条件下可读”。\\n\\n#### 3. Checkpoint 与读者的并行机制\\n*   **停止时机**：Checkpoint 可以与读者并行运行，但当它到达 WAL 文件中**超过任何当前读者末端标记（end mark）的页面**时，Checkpoint 必须停止 [e2, e3]。\\n*   **停止原因**：如果不停止，Checkpoint 可能会覆盖读者正在使用的数据库文件中的部分内容 [e2, e3]。\\n*   **进度保存**：Checkpoint 会在 **wal-index** 中记住它到达的位置 [e2, e3]。\\n*   **后续继续**：在下一次调用时，Checkpoint 将从上次离开的位置继续将内容从 WAL 转移到数据库中 [e2, e3]。\\n\\n#### 4. Writer 回绕（Rewind）与 Checkpoint 的条件区分\\n*   **Writer 回绕条件**：当发生写入操作时，写入者会检查 Checkpoint 的进度。如果**整个 WAL 已转移到数据库中并同步，且没有读者正在使用 WAL**，则写入者会将 WAL 回绕到开头，并从开头开始放置新事务 [e4]。\\n*   **Checkpoint 转移数据的必要条件**：Checkpoint 转移数据时，主要受限于**读者的末端标记**（即只要没到读者的末端，就可以继续转移）[e2, e3]。\\n*   **区分**：\\n    *   **Checkpoint** 是将 WAL 内容“推入”数据库的过程，受限于“当前正在读的页面”。\\n    *   **Writer 回绕** 是一个“清理/重置”动作，要求“所有内容已入库”且“没有任何读者在用 WAL”，目的是防止 WAL 文件无限增长 [e4]。\\n\\n#### 5. 性能与测量证据的边界\\n*   **速度证明**：材料明确指出“WAL 在大多数场景下显著快于回滚日志（rollback journal）” [e1]。\\n*   **测量证据边界**：\\n    *   材料提供了**相对性能的定性结论**（WAL 快于回滚日志）[e1]。\\n    *   材料**并未提供**具体的、基于特定硬件或特定工作负载的**绝对数值测量**（例如“快了多少倍”或“每秒处理多少条记录”）。\\n    *   材料**并未证明**“本机 WAL 比回滚日志更快”的绝对测量，而是给出了通用的性能优势描述。\\n    *   **结论**：材料提供了“快”的结论，但并未提供具体的“本机测量”数据。\\n\\n**状态**：answered\\n\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 3,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch3-native/wire/wal_synthesis-76-openscience.jsonl",
+      "file_sha256": "f063d2105caa8aff8afe358d6a6e457ff59b7c766220ae8d806c71cd3a64444b",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25990,
+              "content_sha256": "8edf32a8232ec4b646a4ebaee2be2acced91e64c9289132f9bf9965e1fa26a36"
+            },
+            {
+              "role": "user",
+              "content_characters": 443,
+              "content_sha256": "959929e37b99892e33f33e9cc2dd9f67f1a82634a176928eaca89e365cd5eed3"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 8570,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "read",
+              "arguments": "{\"filePath\":\"evidence.md\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "title",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 2096,
+              "content_sha256": "e7a6848eba328f28c7e870874cf0591e4edbaf90d7602ad8fdfe90601c6e656f"
+            },
+            {
+              "role": "user",
+              "content_characters": 568,
+              "content_sha256": "395239559fa6d7801a1f52c42f04a6e2077b19920b2426ef7f4295de9e0a2601"
+            }
+          ],
+          "tool_inventory": [],
+          "tool_choice": null,
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 811,
+          "response_characters": 17,
+          "response_sha256": "3f12885ef95d846933357fffa0f3052f9c34313662ef0b98cbc5415e9b942af5",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25990,
+              "content_sha256": "8edf32a8232ec4b646a4ebaee2be2acced91e64c9289132f9bf9965e1fa26a36"
+            },
+            {
+              "role": "user",
+              "content_characters": 443,
+              "content_sha256": "959929e37b99892e33f33e9cc2dd9f67f1a82634a176928eaca89e365cd5eed3"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 4258,
+              "content_sha256": "4a169eaf6561092d5c2c1d51d6b66a0e604bd7b22b0231a48a37379a8f4c75ff"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 9985,
+          "response_characters": 1602,
+          "response_sha256": "bb7a1a8e82521755cc199ae47ee16e1346c92f7afa6b10b4929a46d0f1b78b54",
+          "calls": []
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 1,
+      "original_system_and_user_preserved_verbatim": true,
+      "evidence_file": {
+        "path": ".e2e-artifacts/research-whole-20261101/batch3-native/runs/wal_synthesis-76-openscience/evidence.md",
+        "sha256": "f88964e25a15df64994b8036b3eab436f1e05d8ae52b27020cc7be17441ca81d",
+        "characters": 3610,
+        "lines": 86,
+        "all_lines_present_in_final_tool_result": true
+      },
+      "final_context_markers": {
+        "RESTORED": false,
+        "7 days": false,
+        "Section 44": false
+      }
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch8-native/wire/asyncio_synthesis-74-codey.jsonl",
+      "file_sha256": "46b8408a1e032a35b2cff588ee12e9c8788eb0d56186b512e1497935a846d3dd",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 2043,
+              "content_sha256": "1a0566d58933e4119ee08b9d3e099a8a75272fefa8c582bb29423bf15cef1152"
+            },
+            {
+              "role": "user",
+              "content_characters": 2290,
+              "content_sha256": "9679196f7e8e2931a1d5d392e029adf49ec338cb747084eea0611a684538220f"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1981,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 186,
+              "content_sha256": "34d442fcf53cbbc87893a0b249aca3685452edc1e12534f2b3ac50d6ea4481aa"
+            },
+            {
+              "role": "user",
+              "content_characters": 6081,
+              "content_sha256": "e4f014b5ce875c8e111084a4dcbfcb0117a75f1fe4e605a30cb4f6c3755f0493"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 2644,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### asyncio.gather 研究报告\\n\\n基于 Python 3.12.7 官方材料，对 `asyncio.gather` 的研究结果如下：\\n\\n**1. 默认 `return_exceptions=False` 时，一个子任务抛异常会怎样？其余任务是否自动取消？**\\n*   **异常处理**：第一个抛出的异常会立即传播给等待 `gather()` 的任务 [e1]。\\n*   **其余任务状态**：其余的 awaitable 对象**不会被取消**（won't be cancelled），它们会继续运行 [e1]。\\n\\n**2. `return_exceptions=True` 改变什么？成功结果的排列按输入顺序还是完成顺序？**\\n*   **改变内容**：当 `return_exceptions` 为 `True` 时，异常被视为成功结果处理，并被聚合到结果列表中 [e1]。\\n*   **排列顺序**：结果列表中的值对应于 `aws` 中 awaitable 对象的顺序（即按输入顺序排列），而不是按完成顺序排列 [e1]。\\n\\n**3. 取消 gather 本身与取消其中一个 Task/Future 有什么不同？**\\n*   **取消 gather 本身**：如果 `gather()` 被取消，所有尚未完成的提交 awaitable 都会被取消 [e1]。\\n*   **取消其中一个 Task/Future**：如果 `aws` 序列中的任何一个 Task 或 Future 被取消，它被视为抛出了 `CancelledError`。在这种情况下，`gather()` 调用**不会**被取消 [e1]。\\n*   **边界情况**：\\n    *   如果 `return_exceptions` 为 `False`，在 `gather` 已标记完成（marked done）后再取消它，不会取消任何提交的 awaitable [e1]。\\n    *   如果 `gather` 本身被取消，无论 `return_exceptions` 是什么值，取消都会传播 [e1]。\\n\\n**4. 捕获 gather 传播的异常之后再调用 `gather.cancel()`，是否必然取消其余任务？为什么？**\\n*   **答案**：不一定。\\n*   **原因**：如果 `gather` 在传播异常后已被标记为完成（marked done），那么此时调用 `gather.cancel()` 就不会取消其他 awaitable [e1]。\\n\\n**5. TaskGroup 对普通子任务异常的取消保证与 gather 有什么区别？这些材料是否足以证明 TaskGroup 总是更快？**\\n*   **取消保证区别**：如果一个任务（或由任务调度的子任务）抛出异常，`TaskGroup` 会取消剩余的已调度任务，而 `gather` 则不会 [e1]。\\n*   **是否足以证明 TaskGroup 总是更快**：**材料中未明确说明**。材料仅指出 `TaskGroup` 在处理嵌套子任务时提供了“更强的安全保证”（stronger safety guarantees），但并未直接对比两者的执行速度（time complexity 或 execution speed） [e1]。\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch8-native/wire/asyncio_synthesis-75-codey.jsonl",
+      "file_sha256": "ea4aa36061cbed410778115b9ec125519656322e294c3521413ea0f12a77201d",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 2043,
+              "content_sha256": "1a0566d58933e4119ee08b9d3e099a8a75272fefa8c582bb29423bf15cef1152"
+            },
+            {
+              "role": "user",
+              "content_characters": 2290,
+              "content_sha256": "9679196f7e8e2931a1d5d392e029adf49ec338cb747084eea0611a684538220f"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1981,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 186,
+              "content_sha256": "9042bc3f6ad44de37c3acce63e9ddc459a41985c0e247bf0a552b109548a7204"
+            },
+            {
+              "role": "user",
+              "content_characters": 6081,
+              "content_sha256": "9cbab81c0cd30230e293280ffc6632699ed39bdd3283a606d200d76d0e4df239"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 2650,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### asyncio.gather 研究报告\\n\\n基于 Python 3.12.7 官方材料，对 `asyncio.gather` 的各项特性研究如下：\\n\\n**1. 默认 `return_exceptions=False` 时，一个子任务抛异常会怎样？其余任务是否自动取消？**\\n*   **异常处理**：第一个抛出的异常会立即传播到等待 `gather()` 的任务中 [e1]。\\n*   **其余任务状态**：其余的 awaitable 对象**不会被取消**，它们将继续运行 [e1]。\\n\\n**2. `return_exceptions=True` 改变什么？成功结果的排列按输入顺序还是完成顺序？**\\n*   **改变内容**：当 `return_exceptions` 为 `True` 时，异常被视为成功结果处理，并被聚合到结果列表中 [e1]。\\n*   **排列顺序**：结果列表中的顺序与 `aws` 序列中 awaitable 对象的**输入顺序**对应，而不是完成顺序 [e1]。\\n\\n**3. 取消 gather 本身与取消其中一个 Task/Future 有什么不同？**\\n*   **取消 gather 本身**：如果 `gather()` 被取消，所有尚未完成的提交 awaitable 对象都会被取消 [e1]。\\n*   **取消其中一个 Task/Future**：如果 `aws` 序列中的任何一个 Task 或 Future 被取消，它被视为抛出了 `CancelledError`，但此时 `gather()` 调用**不会**被取消 [e1]。\\n*   **边界情况**：\\n    *   **保留未完成任务**：当 `return_exceptions` 为 `False` 且 `gather()` 已标记为完成（done）后，再取消 `gather()` 不会取消任何提交的 awaitable 对象 [e1]。\\n    *   **CancelledError**：取消单个 Task/Future 视为抛出 `CancelledError` [e1]。\\n    *   **return_exceptions 的影响**：无论 `return_exceptions` 是什么值，如果 `gather` 本身被取消，取消都会传播 [e1]。\\n\\n**4. 捕获 gather 传播的异常之后再调用 `gather.cancel()`，是否必然取消其余任务？为什么？**\\n*   **答案**：不一定。\\n*   **原因**：如果 `gather()` 在传播异常后已经被标记为“完成”（done），那么此时调用 `gather.cancel()` 就不会取消任何其他 awaitable 对象 [e1]。\\n\\n**5. TaskGroup 对普通子任务异常的取消保证与 gather 有什么区别？这些材料是否足以证明 TaskGroup 总是更快？**\\n*   **取消保证区别**：如果一个任务（或由任务调度的子任务）抛出异常，`TaskGroup` 会取消剩余的已调度任务，而 `gather` 则不会 [e1]。\\n*   **是否足以证明 TaskGroup 总是更快**：**材料中未明确说明**。材料仅指出 `TaskGroup` 在处理嵌套子任务时提供了更强的安全保证（stronger safety guarantees），但并未直接对比两者的执行速度 [e1]。\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch8-native/wire/asyncio_synthesis-76-codey.jsonl",
+      "file_sha256": "5e78fdd32e9e3314fe5ed2f0baf08b71f32651cb52ade83de0837a5fec3d2b9f",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 2043,
+              "content_sha256": "1a0566d58933e4119ee08b9d3e099a8a75272fefa8c582bb29423bf15cef1152"
+            },
+            {
+              "role": "user",
+              "content_characters": 2290,
+              "content_sha256": "9679196f7e8e2931a1d5d392e029adf49ec338cb747084eea0611a684538220f"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1981,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 186,
+              "content_sha256": "21a02af5cb345ca407ff36b9f58f390886f978faa46a165deafa7e5ceebc7d3e"
+            },
+            {
+              "role": "user",
+              "content_characters": 6081,
+              "content_sha256": "ece48995105fc78c1467957db86b285225b3b65c9048f149916a50c5b43f6f0d"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 2646,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### asyncio.gather 研究报告\\n\\n基于 Python 3.12.7 官方材料，对 `asyncio.gather` 的研究结果如下：\\n\\n**1. 默认 `return_exceptions=False` 时，一个子任务抛异常的影响**\\n*   **异常传播**：第一个抛出的异常会立即传播给等待 `gather()` 的任务 [e1]。\\n*   **其余任务状态**：其余的 awaitable 对象**不会被取消**，它们会继续运行 [e1]。\\n\\n**2. `return_exceptions=True` 的改变及结果排列**\\n*   **改变内容**：当设置为 `True` 时，异常被视为成功结果处理，并被聚合到结果列表中 [e1]。\\n*   **结果排列**：成功结果（及异常）的排列是按照 `aws` 序列中 awaitable 对象的**输入顺序**排列的，而不是完成顺序 [e1]。\\n\\n**3. 取消 `gather` 本身与取消其中一个 Task/Future 的区别**\\n*   **取消 `gather` 本身**：如果 `gather()` 被取消，所有尚未完成的提交 awaitable 都会被取消 [e1]。\\n*   **取消其中一个 Task/Future**：如果 `aws` 序列中的某个 Task 或 Future 被取消，它被视为抛出了 `CancelledError`。在这种情况下，`gather()` 调用本身**不会被取消** [e1]。\\n*   **边界情况**：\\n    *   **保留未完成任务**：当 `return_exceptions` 为 `False` 时，如果 `gather()` 在标记为完成（done）之后被取消，则不会取消任何提交的 awaitable [e1]。\\n    *   **CancelledError**：取消单个 Task/Future 相当于抛出 `CancelledError` [e1]。\\n    *   **return_exceptions 的影响**：无论 `return_exceptions` 是什么值，如果 `gather` 本身被取消，取消都会传播 [e1]。\\n\\n**4. 捕获异常后调用 `gather.cancel()` 是否必然取消其余任务？**\\n*   **答案**：不一定（取决于 `gather` 是否已标记为完成）。\\n*   **原因**：如果 `gather()` 在传播异常给调用者后已被标记为完成（marked done），那么在此时调用 `gather.cancel()` **不会**取消其他 awaitable [e1]。\\n\\n**5. TaskGroup 与 gather 在子任务异常取消保证上的区别**\\n*   **区别**：如果一个任务（或由任务调度的子任务）抛出异常，`TaskGroup` 会取消剩余的已调度任务，而 `gather` 则不会 [e1]。\\n*   **是否足以证明 TaskGroup 总是更快？**：**材料中未明确说明**。材料仅强调了 `TaskGroup` 在处理嵌套子任务时的“更强的安全性保证”（stronger safety guarantees），但并未直接对比两者的运行速度 [e1]。\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch8-native/wire/wal_synthesis-74-codey.jsonl",
+      "file_sha256": "08d62d60aaffeaf567ec713342e00d7718912793545a58d0d8fa522f0cb267c9",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 1880,
+              "content_sha256": "8f05307208b5f3f20ca4440d7b4776352eb0453fd48442effef30a41b0e998fa"
+            },
+            {
+              "role": "user",
+              "content_characters": 2127,
+              "content_sha256": "f0629b4e73a688140f2fbb0b6447fbaac8b923aaed3d2b50056ff5bef308b980"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1893,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://www.sqlite.org/wal.html\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 192,
+              "content_sha256": "002757f92c8f23f802e15082958023f73d9521a2399a1224372f26412fe83eb9"
+            },
+            {
+              "role": "user",
+              "content_characters": 5797,
+              "content_sha256": "8a361aee137521923d934d893ec27f44bc89d9545606dc3c1ca06b3ba74a5a91"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 2414,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### SQLite WAL 机制研究报告\\n\\n基于提供的 SQLite 官方材料，对 WAL（Write-Ahead Logging）机制的各项研究如下：\\n\\n**1. WAL 的读写并发和单写者限制是否矛盾？分别解释机制。**\\n**不矛盾。**\\n*   **读写并发机制：** WAL 提供更高的并发性，因为“读者不阻塞写入者，且写入者不阻塞读者。读取和写入可以同时进行”[e1]。这是因为“写入者仅仅是将新内容追加到 WAL 文件的末尾。由于写入者不会做任何会干扰读者操作的事情，因此写入者和读者可以同时运行”[e1]。\\n*   **单写者限制机制：** 虽然读写可以并发，但“由于只有一个 WAL 文件，因此一次只能有一个写入者”[e1]。\\n\\n**2. WAL 引入版本、只读打开支持版本及完整替代条件是什么？保留或的关系。**\\n*   **引入版本：** 从版本 3.7.0 (2010-07-21) 开始提供 WAL 选项[e1]。\\n*   **只读打开支持版本：** 从版本 3.22.0 (2018-01-22) 开始，在较新版本中支持只读媒体或缺乏写入权限的 WAL 模式数据库[e2]。\\n*   **完整替代条件：** 材料中没有明确说明 WAL 是否完全替代了回滚日志（rollback journal），仅提到回滚日志是默认方法，而 WAL 是一个可选方案[e1]。\\n*   **保留或的关系：** 材料中未明确说明 WAL 与回滚日志之间的“保留或”关系（即是否必须保留回滚日志作为备选），仅列出了 WAL 的优缺点[e1]。\\n\\n**3. Checkpoint 与读者并行时何时停止、为什么、进度保存在哪里、以后如何继续？**\\n*   **何时停止：** 当 checkpoint 达到“WAL 文件中超过任何当前读者末端标记的页面”时，它必须停止[e1]。\\n*   **为什么停止：** 因为“否则它可能会覆盖读者正在使用的数据库文件中的一部分”[e1]。\\n*   **进度保存在哪里：** checkpoint 记住它走到了哪里（在 `wal-index` 中）[e1]。\\n*   **以后如何继续：** 它将在“下一次调用时，从它中断的地方继续将内容从 WAL 转移到数据库”[e1]。\\n\\n**4. Writer 回绕复用 WAL 的条件是什么？这些条件是否也是 checkpoint 转移数据的必要条件？区分两个动作。**\\n*   **Writer 回绕复用条件：** 发生写入操作时，writer 检查：\\n    1.  checkpoint 已经完成了多少进度；\\n    2.  整个 WAL 是否已全部转移到数据库并同步；\\n    3.  且没有任何读者正在使用 WAL。\\n    如果满足这些条件，writer 将 WAL 回绕到开头并从开头开始放置新事务[e1]。\\n*   **是否为 checkpoint 转移数据的必要条件：** **不是。**\\n    *   **区分：** \\n        *   **Checkpoint 转移数据**是一个持续的过程，它将内容从 WAL 转移到数据库，并受限于“当前读者”的进度[e1]。\\n        *   **Writer 回绕**是一个触发式的动作，它发生在“整个 WAL 已转移且无读者使用”时，目的是为了防止 WAL 文件无限制增长[e1]。\\n\\n**5. 这些材料能否证明本机 WAL 比回滚日志更快，或证明整份官方页面从未做过本机测量？说明证据边界。**\\n*   **是否证明更快：** **可以证明。** 材料明确指出“WAL 在大多数情况下明显更快”[e1]。\\n*   **是否证明从未做过本机测量：** **不能确定。** 材料虽然给出了“更快”的结论，但并没有明确说明这个结论是基于特定的“本机测量”（benchmarks）还是基于通用的逻辑推导。\\n*   **证据边界：** 材料提供了 WAL 的优势（速度、并发性、顺序 I/O）和机制描述，但缺乏具体的量化数据（如具体的百分比或秒数）以及具体的测试环境参数[e1]。\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch8-native/wire/wal_synthesis-75-codey.jsonl",
+      "file_sha256": "c366e8e8852302a139fd833386c572c7d974872a3a3d532ebf614f17f778a7ed",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 1880,
+              "content_sha256": "8f05307208b5f3f20ca4440d7b4776352eb0453fd48442effef30a41b0e998fa"
+            },
+            {
+              "role": "user",
+              "content_characters": 2127,
+              "content_sha256": "f0629b4e73a688140f2fbb0b6447fbaac8b923aaed3d2b50056ff5bef308b980"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1893,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://www.sqlite.org/wal.html\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 192,
+              "content_sha256": "8141ae2841e0ff56b22df072e5b1926680e6be49c4d39f5440fb5ca5e5d5be54"
+            },
+            {
+              "role": "user",
+              "content_characters": 5797,
+              "content_sha256": "7f3fc92baa900a407d14974ede839b50598403580ab625f0aa954cbda7ac5ac9"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 75,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 2412,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### 1. WAL 的读写并发和单写者限制是否矛盾？\\n**不矛盾。**\\n*   **读写并发机制：** WAL 允许读取和写入同时进行，因为读者不会阻塞写入者，写入者也不会阻塞读者 [e1]。这是因为写入操作仅是将新内容追加到 WAL 文件的末尾，而不会干扰读者的动作 [e1]。\\n*   **单写者限制机制：** 虽然读写可以并发，但由于只有一个 WAL 文件，因此同一时间只能有一个写入者 [e1]。\\n\\n### 2. WAL 引入版本、只读打开支持版本及完整替代条件是什么？保留或的关系。\\n*   **WAL 引入版本：** SQLite 版本 3.7.0 (2010-07-21) [e1]。\\n*   **只读打开支持版本：** SQLite 版本 3.22.0 (2018-01-22) [e2]。\\n*   **完整替代条件：** 材料中并未明确说明 WAL 是否完全替代了回滚日志（rollback journal），仅提到 WAL 是从 3.7.0 版本开始可用的新选项 [e1]。\\n*   **保留或的关系：** 材料中未明确说明 WAL 与回滚日志之间的“保留或”关系（即是否必须保留回滚日志），仅列出了使用 WAL 的优缺点 [e1]。\\n\\n### 3. checkpoint 与读者并行时何时停止、为什么、进度保存在哪里、以后如何继续？\\n*   **何时停止：** 当 checkpoint 达到 WAL 文件中超过任何当前读者末端标记（end mark）的页面时，它必须停止 [e1]。\\n*   **为什么：** 因为否则 checkpoint 可能会覆盖读者正在使用的数据库文件中的一部分 [e1]。\\n*   **进度保存在哪里：** checkpoint 记住它走到了哪里（保存在 wal-index 中）[e1]。\\n*   **以后如何继续：** 在下一次调用时，checkpoint 将从它上次停下的地方继续将内容从 WAL 转移到数据库中 [e1]。\\n\\n### 4. writer 回绕复用 WAL 的条件是什么？这些条件是否也是 checkpoint 转移数据的必要条件？区分两个动作。\\n*   **writer 回绕（rewind）的条件：** 必须同时满足以下三个条件：\\n    1. 整个 WAL 已被转移到数据库中并同步（synced）；\\n    2. 没有读者正在使用 WAL；\\n    3. 且（隐含条件）发生了一次写入操作 [e1]。\\n*   **是否为 checkpoint 转移数据的必要条件：** \\n    *   **不是。** \\n    *   **区分两个动作：** \\n        *   **checkpoint** 是将 WAL 内容转移到数据库文件的过程，它可以在有读者的情况下进行（只要不覆盖当前读者的页面），且它不要求整个 WAL 都必须被转移完才发生 [e1]。\\n        *   **writer 回绕** 是一个特定的触发动作，它要求整个 WAL 必须**全部**转移完成且没有读者在用，此时 writer 才会将 WAL 回绕到开头并从头开始放新事务 [e1]。\\n\\n### 5. 这些材料能否证明本机 WAL 比回滚日志更快，或证明整份官方页面从未做过本机测量？说明证据边界。\\n*   **是否证明更快：** **可以证明。** 材料明确指出“WAL 在大多数情况下明显更快（significantly faster in most scenarios）” [e1]。\\n*   **是否证明从未做过本机测量：** **不能确定。** \\n*   **证据边界：** 材料给出了 WAL 更快的结论，但并未说明这个结论是基于特定的“本机测量”（benchmarks）还是基于通用的性能分析。材料中没有提供具体的测量数据或实验环境说明 [e1]。\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch8-native/wire/wal_synthesis-76-codey.jsonl",
+      "file_sha256": "6f4890ca60f0b87cf7261400147c250f9446c25d69264e90801fe683a48d6c87",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 1880,
+              "content_sha256": "8f05307208b5f3f20ca4440d7b4776352eb0453fd48442effef30a41b0e998fa"
+            },
+            {
+              "role": "user",
+              "content_characters": 2127,
+              "content_sha256": "f0629b4e73a688140f2fbb0b6447fbaac8b923aaed3d2b50056ff5bef308b980"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1893,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://www.sqlite.org/wal.html\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 192,
+              "content_sha256": "f066cf33ad00b8d54ae49c5df9b9128a024f6a6a3e5a9fba5f3932c905293078"
+            },
+            {
+              "role": "user",
+              "content_characters": 5797,
+              "content_sha256": "ded61b5ec2a7c620af321c847e6297ffeaefcdd7bbd738778364e948d2322184"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 76,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 2408,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### SQLite WAL 机制研究报告\\n\\n基于提供的 SQLite 官方材料，对 WAL（Write-Ahead Logging）的各项研究如下：\\n\\n#### 1. WAL 的读写并发和单写者限制是否矛盾？\\n**不矛盾。** 它们描述的是不同维度的并发能力：\\n*   **读写并发机制：** WAL 提供更高的并发性，因为“读者不阻塞写入者，且写入者不阻塞读者。读取和写入可以并行进行”[e1]。这是因为“写入者仅将新内容追加到 WAL 文件的末尾”，且“因为写入者不会做任何会干扰读者操作的事情，所以写入者和读者可以同时运行”[e1]。\\n*   **单写者限制：** 虽然读写可以并行，但由于“只有一个 WAL 文件，所以一次只能有一个写入者”[e1]。\\n\\n#### 2. WAL 引入版本、只读打开支持版本及完整替代条件是什么？保留或的关系。\\n*   **引入版本：** 从版本 3.7.0 (2010-07-21) 开始提供 WAL 选项[e1]。\\n*   **只读打开支持版本：** 从版本 3.22.0 (2018-01-22) 开始，Relaxed 了对只读数据库的限制[e2]。\\n*   **完整替代条件（只读模式下）：** 在新版本中，即使在只读介质或缺乏写入权限的情况下，只要满足以下任一条件即可读取 WAL 模式数据库：\\n    1. `-shm` 和 `-wal` 文件已存在且可读[e2]。\\n    2. 包含数据库的目录具有写入权限，以便创建 `-shm` 和 `-wal` 文件[e2]。\\n    3. 使用 `immutable` 查询参数打开数据库连接[e2]。\\n*   **保留或的关系：** 材料中并未明确说明 WAL 是否完全“替代”了回滚日志（rollback journal），仅提到回滚日志是默认方法，而 WAL 是一个可选的“新选项”[e1]。\\n\\n#### 3. Checkpoint 与读者并行时何时停止、为什么、进度保存在哪里、以后如何继续？\\n*   **何时停止：** 当 checkpoint 达到“WAL 文件中超过任何当前读者末端标记（end mark）的页面”时停止[e1]。\\n*   **为什么：** 因为否则 checkpoint 可能会“覆盖掉读者正在使用的数据库文件的一部分”[e1]。\\n*   **进度保存在哪里：** 进度保存在 `wal-index` 中[e1]。\\n*   **以后如何继续：** Checkpoint 会记住它到达的位置，并在“下一次调用时从 WAL 到数据库的传输位置继续”[e1]。\\n\\n#### 4. Writer 回绕（rewind）复用 WAL 的条件是什么？这些条件是否也是 checkpoint 转移数据的必要条件？区分两个动作。\\n*   **Writer 回绕条件：** 必须同时满足以下三个条件：\\n    1. 检查点操作已经完成了多少进度；\\n    2. 整个 WAL 已传输到数据库并同步（synced）；\\n    3. 没有读者正在使用 WAL[e1]。\\n*   **是否为 Checkpoint 转移数据的必要条件：** \\n    *   **不是。** \\n    *   **区分：** Checkpoint 是一个持续的过程，它可以在读者并行时运行（只要不越过读者的末端标记），而 Writer 的“回绕”是一个特定的动作，它发生在“整个 WAL 已传输且无读者使用”时，目的是为了防止 WAL 文件无限制增长[e1]。\\n\\n#### 5. 这些材料能否证明本机 WAL 比回滚日志更快，或证明整份官方页面从未做过本机测量？说明证据边界。\\n*   **是否证明更快：** **可以证明。** 材料明确指出“WAL 在大多数情况下显著快于回滚日志”[e1]。\\n*   **是否证明从未做过本机测量：** **不能确定。** 材料虽然给出了“显著快于”的结论，但并未明确说明这个结论是基于“本机（local）测量”还是“理论推导”或“综合实验结果”。材料中没有明确提及“测量”这一动作本身，仅给出了结论[e1]。\\n\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch8-expanded/wire/long-recovery-manual-74-codey.jsonl",
+      "file_sha256": "0d9a7e0697860d47e07d80cc39a2848c0d6b656a387817fd3354603adb656320",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 1746,
+              "content_sha256": "77695eee05cb2f82645ec110a65ea74020862326697948f31dacbcbabedf4a0c"
+            },
+            {
+              "role": "user",
+              "content_characters": 1993,
+              "content_sha256": "fef8037d1622a679d6b04a5f6840abe91af6b34135b5d7bebcf2621d1a4e6a6a"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1751,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://example.org/frozen-research/meridiem-manual\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 276,
+              "content_sha256": "0f0be232d7b14cc2daa854e0d3fb1d58259962e373cf11db481b7938dc354051"
+            },
+            {
+              "role": "user",
+              "content_characters": 10809,
+              "content_sha256": "515fa52427426df599bab17dbc4443a44c0eff56efa5c3dc08325b3ff154b40c"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 3427,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://example.org/frozen-research/meridiem-manual\"}"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 10888,
+              "content_sha256": "50562c2f26eacb73cf2ba138b6e51c6246d449481fb578bba7291ab7b4c2636d"
+            },
+            {
+              "role": "user",
+              "content_characters": 295,
+              "content_sha256": "9d3b125ff9fb708496479fb6e27f63b93ed79b5bd54f445bf9f47a33859e7365"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 3356,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "web_search",
+              "arguments": "{\"query\":\"Meridiem recovery manual edition 4 section 44\"}"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 876,
+              "content_sha256": "d19e3441f1591a8e355204a0c38fcca55efb0d7c4dfda163c332711471dd70e7"
+            },
+            {
+              "role": "user",
+              "content_characters": 11001,
+              "content_sha256": "9f9dd462d08588a0c260cb84f3130c90fdfbdf6291024a32c9ca4520efc428a6"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_result",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 3693,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://example.org/frozen-research/meridiem-manual\"}"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 276,
+              "content_sha256": "377581fc00a1c200727dfcaccd7b80edb5487dfd9e1137fe8877956f49e6e5e6"
+            },
+            {
+              "role": "user",
+              "content_characters": 11080,
+              "content_sha256": "d99bcc03ee75ecdf90631f62724dce2c81171ed0f8ec84be15465d29e00020d1"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_result",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 3617,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "web_search",
+              "arguments": "{\"query\":\"Meridiem edition 4 manual section 44\"}"
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 876,
+              "content_sha256": "f864f2d05c6917380d20e7692637f0013468554de3dd167ad1cd2fc2289de363"
+            },
+            {
+              "role": "user",
+              "content_characters": 11080,
+              "content_sha256": "d99bcc03ee75ecdf90631f62724dce2c81171ed0f8ec84be15465d29e00020d1"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_result",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 3725,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "web_search",
+              "arguments": "{\"query\":\"Meridiem edition 4 manual section 44\"}"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 11080,
+              "content_sha256": "d99bcc03ee75ecdf90631f62724dce2c81171ed0f8ec84be15465d29e00020d1"
+            },
+            {
+              "role": "user",
+              "content_characters": 297,
+              "content_sha256": "003213b7173b84441d89313557d703e050edcf58b153692ec75f242f27b7a513"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_result",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 3511,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"根据 Meridiem 第4版手册，相关问题的回答如下：\\n\\n1. **恢复请求的准入条件**：准入条件是请求必须来自已认证的运算符（authenticated operator）且处于暂停状态的任务（paused job）[e2]。\\n2. **恢复完成条件**：完成条件在第44节中规定（具体内容在当前提供的片段中仅提及“第44节规定了完成和过期”，未列出具体细节）[e1]。\\n3. **202 能否证明完成**：不能。HTTP 202 表示已入队（queued），而非已完成 [e2]。\\n4. **回执多久过期，旧版24小时是否仍适用**：\\n   - **过期时间**：第44节规定了过期时间（具体数值在当前片段中未明确，仅指明在第44节中规定）[e1]。\\n   - **旧版24小时是否仍适用**：材料中提到“第3版摘要使用了24小时的接收寿命”，但由于第4版在第44节中重新规定了过期，且未明确说明第4版是否沿用第3版的24小时，因此第4版是否仍适用24小时在当前材料中不确定 [e2]。\\n5. **过期能否证明恢复失败，是否会删除恢复产物**：材料中未明确说明过期是否等于恢复失败，也未说明过期时是否会删除恢复产物 [e1, e2]。\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 7,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/expanded-openscience/wire/long-recovery-manual-74-openscience.jsonl",
+      "file_sha256": "1fd6cd86e63290ee8ed4782c111e8760cf7b38e60fa50994a0024c7bd4ca26a4",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 26018,
+              "content_sha256": "e123eab82bbcfd24cd9d837d3b16934a3f8b4ac2f8172ccf2bdd2e752ad5183d"
+            },
+            {
+              "role": "user",
+              "content_characters": 304,
+              "content_sha256": "1c277926dfcd20b7dd9a252067036f84fbd8d65b0c68edd549f500e1da7a3b88"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 8496,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "read",
+              "arguments": "{\"filePath\":\"evidence.md\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "title",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 2096,
+              "content_sha256": "e7a6848eba328f28c7e870874cf0591e4edbaf90d7602ad8fdfe90601c6e656f"
+            },
+            {
+              "role": "user",
+              "content_characters": 429,
+              "content_sha256": "d5dc56c5c254a0fa09d83a37baad9982d2cd1a804b6f3de3c8e01dc3b21c76a5"
+            }
+          ],
+          "tool_inventory": [],
+          "tool_choice": null,
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 735,
+          "response_characters": 24,
+          "response_sha256": "b9355f2d2cac38af8de20a37b28822ec7eed2871753ec8934683fd8afe5b2cdb",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 26018,
+              "content_sha256": "e123eab82bbcfd24cd9d837d3b16934a3f8b4ac2f8172ccf2bdd2e752ad5183d"
+            },
+            {
+              "role": "user",
+              "content_characters": 304,
+              "content_sha256": "1c277926dfcd20b7dd9a252067036f84fbd8d65b0c68edd549f500e1da7a3b88"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 20311,
+              "content_sha256": "90a3c4637be658c6210665f70950df70782b5a6c8f81f5ef25e3faa8f578861d"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 13084,
+          "response_characters": 442,
+          "response_sha256": "f9bfd2278ac5aef06c6352143d5226eb835c749ec727a9a4022b113b08414021",
+          "calls": []
+        }
+      ],
+      "primary_requests": 2,
+      "title_requests": 1,
+      "original_system_and_user_preserved_verbatim": true,
+      "evidence_file": {
+        "path": ".e2e-artifacts/research-whole-20261101/expanded-openscience/runs/long-recovery-manual-74-openscience/evidence.md",
+        "sha256": "a51407c852006bf46b264d34fe1ec49a1f6052c5a932fc10c8d78fd4760551cb",
+        "characters": 18997,
+        "lines": 181,
+        "all_lines_present_in_final_tool_result": true
+      },
+      "final_context_markers": {
+        "RESTORED": true,
+        "7 days": false,
+        "Section 44": true
+      }
+    },
+    {
+      "path": ".e2e-artifacts/research-whole-20261101/batch8-expanded/wire/cross-source-export-74-codey.jsonl",
+      "file_sha256": "410cffa066afbbe25bbfcc0ac4d43297594cd3ac776f166394a9ceeee2c96e76",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "user",
+              "content_characters": 1816,
+              "content_sha256": "801d26ee9056b98094d3c071cdb1112ca7dd9127b049d218278c20c00477eac1"
+            },
+            {
+              "role": "user",
+              "content_characters": 2063,
+              "content_sha256": "f60db3e6fe68d15f5d0bfda0349b729e7aaac19f85c3b457b58fd81c0d728a5d"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1781,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://example.org/frozen-research/harbor-api\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 186,
+              "content_sha256": "42795aa7368a42e8353f8ac37f9599581c4128a74067bbf601f75eb212e86842"
+            },
+            {
+              "role": "user",
+              "content_characters": 2633,
+              "content_sha256": "d9bf22a313be57f923588110612d299c7e525a8fcb94ccffe881dd0a540d2e57"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1641,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "open_url",
+              "arguments": "{\"url\":\"https://example.org/frozen-research/birch-deployment\"}"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 186,
+              "content_sha256": "b69ed3066c5599341a5c0627d2c4f4681c49f3d847e0ab68591751959c4a2efd"
+            },
+            {
+              "role": "user",
+              "content_characters": 3488,
+              "content_sha256": "eeec0c7b4cbfd05883dff86bbfa4a23742d26fdfc049a400699cba92283d55a0"
+            },
+            {
+              "role": "user",
+              "content_characters": 422,
+              "content_sha256": "d759b2405a96b738d3144a2e1be9820bae4646e1ee46c22d88f28b30b9d89f61"
+            }
+          ],
+          "tool_inventory": [
+            "ask_user",
+            "open_url",
+            "read_tool_result",
+            "reopen_source",
+            "source_search",
+            "submit_research_answer",
+            "web_search"
+          ],
+          "tool_choice": "required",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 1865,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "arguments": "{\"markdown\":\"### Harbor v2 导出分析\\n\\n**1. 谁可以在 Birch 发起 Harbor v2 导出？需要同时满足哪些条件，哪些是替代条件？**\\n在 Birch 部署环境下，发起 Harbor v2 导出需要满足以下条件：\\n*   **基础条件**：必须拥有“已认证的会话”（authenticated session）[e1]。\\n*   **角色条件（替代条件）**：必须同时满足以下两者之一：\\n    *   拥有“审计员角色”（auditor role）[e1]；\\n    *   拥有“项目所有者角色”（project-owner role）[e1]。\\n*   **Birch 特有约束**：\\n    *   “项目所有者”权限仅适用于该特定项目，而非所有项目 [e2]。\\n    *   在“维护窗口”（maintenance window）期间，即使是已认证的审计员或所有者，也会被拒绝新的导出请求 [e2]。\\n\\n**2. 202回执能否证明可以使用导出结果，使用前还要检查什么？**\\n**不能**。202 回执仅意味着请求已进入队列，并不代表导出已完成 [e1]。\\n在正式使用导出结果前，还必须检查以下两点：\\n*   状态必须为“就绪”（status is ready）[e1]。\\n*   下载的校验和（checksum）必须已通过验证 [e1]。\\n\\n**3. Ticket 到期后能否断定导出失败？**\\n**不能**。\\n*   规范中并未定义到期票据（expired ticket）是否意味着底层导出的成功或失败 [e1]。\\n*   在 Birch 部署中，移除到期票据仅属于“元数据清理”（metadata cleanup），票据记录本身无法确定导出是否曾经完成 [e2]。\",\"state\":\"answered\"}"
+            }
+          ]
+        }
+      ],
+      "primary_requests": 3,
+      "title_requests": 0
+    },
+    {
+      "path": ".e2e-artifacts/rw-os-retry/wire/cross-source-export-74-openscience.jsonl",
+      "file_sha256": "01d6d3218367d1588a8fbaa07f2077a9cd08ae7a97d7ddfe4e5682ff5fdd501e",
+      "requests": [
+        {
+          "index": 1,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25950,
+              "content_sha256": "296aa8e3f666e915b3cf11de5ed42f0eac2babf31244a240b1169e212d5f85c1"
+            },
+            {
+              "role": "user",
+              "content_characters": 375,
+              "content_sha256": "77b6c2f8e3f8aa711d1986def15103fff79d2c07b55a542a82fd91c7b9af433c"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 8482,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "read",
+              "arguments": "{\"filePath\":\"https://example.org/frozen-research/harbor-api\"}"
+            },
+            {
+              "name": "read",
+              "arguments": "{\"filePath\":\"https://example.org/frozen-research/birch-deployment\"}"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "kind": "title",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 2096,
+              "content_sha256": "e7a6848eba328f28c7e870874cf0591e4edbaf90d7602ad8fdfe90601c6e656f"
+            },
+            {
+              "role": "user",
+              "content_characters": 500,
+              "content_sha256": "a7974aac328eae91e925d7a85cac08c299c59e7fd7a4cbdb134b2ff15a099ba8"
+            }
+          ],
+          "tool_inventory": [],
+          "tool_choice": null,
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 751,
+          "response_characters": 24,
+          "response_sha256": "988a16ad98f59d202554e4e66d65a1a6fd0bddf3ecb5a722819827199844e48d",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25950,
+              "content_sha256": "296aa8e3f666e915b3cf11de5ed42f0eac2babf31244a240b1169e212d5f85c1"
+            },
+            {
+              "role": "user",
+              "content_characters": 375,
+              "content_sha256": "77b6c2f8e3f8aa711d1986def15103fff79d2c07b55a542a82fd91c7b9af433c"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 155,
+              "content_sha256": "c2297be3792809db03850c5bc8864cd0fe47f3495cf43c72675a1e1a12cd5cd3"
+            },
+            {
+              "role": "tool",
+              "content_characters": 434,
+              "content_sha256": "dfbb1646ef4d71e75f3a54b59445f89049ba5c859d74bd94e44962e9ced31cf3"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 8718,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "glob",
+              "arguments": "{\"pattern\":\"**/*.md\"}"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25950,
+              "content_sha256": "296aa8e3f666e915b3cf11de5ed42f0eac2babf31244a240b1169e212d5f85c1"
+            },
+            {
+              "role": "user",
+              "content_characters": 375,
+              "content_sha256": "77b6c2f8e3f8aa711d1986def15103fff79d2c07b55a542a82fd91c7b9af433c"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 155,
+              "content_sha256": "c2297be3792809db03850c5bc8864cd0fe47f3495cf43c72675a1e1a12cd5cd3"
+            },
+            {
+              "role": "tool",
+              "content_characters": 434,
+              "content_sha256": "dfbb1646ef4d71e75f3a54b59445f89049ba5c859d74bd94e44962e9ced31cf3"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 21717,
+              "content_sha256": "10837edfb8805f2ce484830d269d7edae6c9acdf3616ddf5a42a1d7d7351bb59"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 19870,
+          "response_characters": 0,
+          "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "calls": [
+            {
+              "name": "read",
+              "arguments": "{\"filePath\":\"D:\\\\codey\\\\.e2e-artifacts\\\\rw-os-retry\\\\runs\\\\cross-source-export-74-openscience\\\\evidence.md\"}"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "kind": "primary",
+          "messages": [
+            {
+              "role": "system",
+              "content_characters": 25950,
+              "content_sha256": "296aa8e3f666e915b3cf11de5ed42f0eac2babf31244a240b1169e212d5f85c1"
+            },
+            {
+              "role": "user",
+              "content_characters": 375,
+              "content_sha256": "77b6c2f8e3f8aa711d1986def15103fff79d2c07b55a542a82fd91c7b9af433c"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 155,
+              "content_sha256": "c2297be3792809db03850c5bc8864cd0fe47f3495cf43c72675a1e1a12cd5cd3"
+            },
+            {
+              "role": "tool",
+              "content_characters": 434,
+              "content_sha256": "dfbb1646ef4d71e75f3a54b59445f89049ba5c859d74bd94e44962e9ced31cf3"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 21717,
+              "content_sha256": "10837edfb8805f2ce484830d269d7edae6c9acdf3616ddf5a42a1d7d7351bb59"
+            },
+            {
+              "role": "assistant",
+              "content_characters": 0,
+              "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "role": "tool",
+              "content_characters": 1265,
+              "content_sha256": "40e2816918961e64a894a338bff8af9053b7e9e38b5d98e2087bfa0f919cd93f"
+            }
+          ],
+          "tool_inventory": [
+            "read",
+            "glob",
+            "grep",
+            "edit",
+            "write",
+            "todowrite",
+            "skill",
+            "recall",
+            "artifact"
+          ],
+          "tool_choice": "auto",
+          "sampling": {
+            "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+            "seed": 74,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
+          "input_tokens_backend_reported": 20265,
+          "response_characters": 735,
+          "response_sha256": "1aa6cac0748a6c358f40e1842615ae8885f3336deb69ca0bdc6421791320f99d",
+          "calls": []
+        }
+      ],
+      "primary_requests": 4,
+      "title_requests": 1,
+      "original_system_and_user_preserved_verbatim": true,
+      "evidence_file": {
+        "path": ".e2e-artifacts/rw-os-retry/runs/cross-source-export-74-openscience/evidence.md",
+        "sha256": "64c05f87196714e49ab9043ccf1809d7479d90b37a7cd03018f5ab716ad2b590",
+        "characters": 1135,
+        "lines": 12,
+        "all_lines_present_in_final_tool_result": true
+      },
+      "final_context_markers": {
+        "RESTORED": false,
+        "7 days": false,
+        "Section 44": false
+      }
+    }
+  ],
+  "limitations": [
+    "Historical developer reused cases; no new or blinded model experiment.",
+    "Comparisons change multiple request/interface factors, so causal effects are not isolated.",
+    "Line completeness checks apply to OpenScience captured final tool results, not semantic correctness."
+  ]
+}

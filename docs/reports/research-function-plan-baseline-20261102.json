@@ -1,0 +1,981 @@
+{
+  "date": "2026-11-02",
+  "kind": "function-level design source capture; no production edits or tests",
+  "head": "de3edcb174923108cc945b4429e0e8978b890b73",
+  "worktree_status": " M codey/knowledge/recall.py\n M codey/operations/kernel_context.py\n M codey/operations/kernel_prompt.py\n M codey/operations/knowledge_context.py\n M codey/operations/research_iteration.py\n M codey/operations/task_execution.py\n M codey/research/answer_archive.py\n M codey/research/answer_context.py\n M codey/research/answer_contract.py\n M codey/research/answer_report.py\n M codey/research/context_view.py\n M codey/research/passages.py\n M codey/research/tool_contract.py\n M codey/research/tools.py\n M codey/toolchain/tool_prompt.py\n M tests/test_kernel_protocol_repair_keeps_snapshot.py\n M tests/test_research_deterministic_completion.py\n M tests/test_research_whole_answer.py\n?? codey/research/knowledge_materials.py\n?? docs/openscience-codey-source-audit-20261102.zh-CN.md\n?? docs/reports/openscience-codey-source-audit-20261102.json\n?? docs/reports/research-convergence-audit-20261102.json\n?? docs/research-convergence-audit-20261102.zh-CN.md\n?? docs/research-long-term-loop-20261102.zh-CN.md\n?? tests/test_research_long_term_loop.py\n?? tests/test_research_repair_and_navigation.py\n",
+  "files": {
+    "codey/operations/kernel_context.py": {
+      "sha256": "13d3c7057469e7e862bd3a06fd2c566b94e35e836c06c3a1d4224aec238eaf6b",
+      "definitions": {
+        "KernelContext": 40,
+        "KernelContext.__init__": 41,
+        "KernelContext.restore_context": 69,
+        "KernelContext.request_scoped_context": 77,
+        "KernelContext.request_scoped_observations": 82,
+        "KernelContext.load_view": 85,
+        "KernelContext.cancelled": 90,
+        "KernelContext.decision_inputs": 95,
+        "KernelContext.reconcile_approval": 126,
+        "KernelContext.advance": 162,
+        "KernelContext.decision": 174,
+        "KernelContext.response": 195,
+        "KernelContext.response_reference": 204,
+        "KernelContext.restore_facts": 217,
+        "KernelContext.restore_completion_proposal": 262,
+        "KernelContext.results": 302,
+        "KernelContext.freeze": 307,
+        "KernelContext.prepare_turn": 368,
+        "KernelContext.interpret": 399,
+        "KernelContext.retry": 465,
+        "KernelContext.plan": 472,
+        "KernelContext.execute_tools": 480,
+        "KernelContext.observe_progress": 521,
+        "KernelContext.deliver_results": 530,
+        "KernelContext.boundary_text": 593,
+        "KernelContext.boundary": 599,
+        "KernelContext.close": 605
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/kernel_context.py"
+    },
+    "codey/operations/kernel_control.py": {
+      "sha256": "d637b72d052cb29a3f07038ce430cc51d5710d15f840c002886e29562595e010",
+      "definitions": {
+        "validate_decision": 25,
+        "evaluate_completion": 77,
+        "_ids": 147,
+        "no_progress_result": 151,
+        "prepare_control_delivery": 159,
+        "close_protocol": 257
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/kernel_control.py"
+    },
+    "codey/operations/kernel_prompt.py": {
+      "sha256": "187250466dde5510fd9d6327a818287a607c28467c874998eaaa90dfba3f3083",
+      "definitions": {
+        "_native_final_rule": 39,
+        "_native_done_guidance": 49,
+        "_tool_contract_parts": 62,
+        "_text_request_prompt": 70,
+        "kernel_prompt_for_session": 76,
+        "_repair_prompt": 186,
+        "_completion_followup": 254,
+        "_result_context": 269,
+        "_format_results": 324,
+        "_pending_execution_guidance": 346,
+        "working_context": 360
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/kernel_prompt.py"
+    },
+    "codey/operations/kernel_preparation.py": {
+      "sha256": "41b0b1933175200aac1ca6e87ef2e5d32bca738c83f3e0c25baa1871112bb384",
+      "definitions": {
+        "PreparedKernelTurn": 13,
+        "prepare_kernel_turn": 18
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/kernel_preparation.py"
+    },
+    "codey/operations/kernel_driver.py": {
+      "sha256": "2a62a948def58f1dd07228abf067bf3f13546662c1646ee836ec561a0f827b92",
+      "definitions": {
+        "prepare_provider_request": 50,
+        "_tools": 83,
+        "_results": 99,
+        "decode_provider_invocation": 112,
+        "load_prepared_request": 138,
+        "restore_provider_window": 159,
+        "drive_provider_request": 197,
+        "_execute_provider": 230,
+        "drive_kernel": 259,
+        "_execute_kernel_action": 318,
+        "_execute_wait_action": 377
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/kernel_driver.py"
+    },
+    "codey/operations/provider_receipts.py": {
+      "sha256": "af13653b46506552fcaf4a3e8b579f6cc565b5a620b3e2ebd314505c4f0b13bf",
+      "definitions": {
+        "restore_ghost_context": 24,
+        "write_provider_artifact": 38,
+        "read_provider_artifact": 52,
+        "request_artifact_for_effect": 74,
+        "snapshot_description": 87,
+        "runtime_implementation_id": 101,
+        "restore_snapshot": 116
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/provider_receipts.py"
+    },
+    "codey/operations/kernel_receipts.py": {
+      "sha256": "8bc60cce6b7e020e994a862fd4a6d98e114f77341c970f188d6c5893158e426c",
+      "definitions": {
+        "tool_history_messages": 19,
+        "text_digest": 31,
+        "result_receipt_fields": 35,
+        "restore_result_receipt": 79,
+        "_validate_call_name": 142
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/kernel_receipts.py"
+    },
+    "codey/operations/kernel_contracts.py": {
+      "sha256": "4b30c29a97930b4c861ecc6d65012ebe24b63961512a5510bb6e29824f07eaa5",
+      "definitions": {
+        "KernelResult": 17,
+        "KernelResult.to_payload": 26,
+        "result_from_payload": 31,
+        "RetryDecision": 54,
+        "DoneDecision": 65,
+        "QuestionDecision": 72,
+        "ClosingDecision": 79,
+        "KernelTransportDeps": 88,
+        "KernelExecutionDeps": 109,
+        "KernelObservationDeps": 123,
+        "KernelRunRequest": 140
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/kernel_contracts.py"
+    },
+    "codey/operations/task_guidance.py": {
+      "sha256": "b7419f36b980221f42e686f8caf1010b5351d2bbef9184b724371451f3762b50",
+      "definitions": {
+        "task_working_context": 14,
+        "task_guidance_for_policy": 62,
+        "task_result_context": 77
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/task_guidance.py"
+    },
+    "codey/operations/task_execution.py": {
+      "sha256": "72ae0fa72b46b4a033fb5db785bacda725cec689078089c43508c73e57beb467",
+      "definitions": {
+        "close_research_tools": 28,
+        "build_research_tools": 36,
+        "effective_project_profile": 62,
+        "_tool_result": 74,
+        "ProjectPolicyCheck": 91,
+        "ExecutionDelegate": 98,
+        "ExecutionDelegate.__init__": 101,
+        "ExecutionDelegate._resolve_spec": 141,
+        "ExecutionDelegate._resolve_custom_executor": 154,
+        "ExecutionDelegate.handles": 167,
+        "ExecutionDelegate.execute": 184,
+        "ExecutionDelegate._policy_check": 222,
+        "ExecutionDelegate._project_permission_profile": 274,
+        "ExecutionDelegate._execute_project": 277,
+        "ExecutionDelegate._execute_edit": 332,
+        "ExecutionDelegate._opened_result": 397,
+        "ExecutionDelegate._observation_tools": 429,
+        "ExecutionDelegate._reserve_research_acquisition": 461,
+        "ExecutionDelegate._research_call_denial": 477,
+        "ExecutionDelegate._execute_research": 501,
+        "ExecutionDelegate._commit_research_knowledge": 588,
+        "ExecutionDelegate._read_research_knowledge": 600,
+        "ExecutionDelegate._record_research_plan": 623,
+        "ExecutionDelegate._submit_research_answer": 637,
+        "ExecutionDelegate._execute_research_write": 678,
+        "ExecutionDelegate._staged_note_receipt": 717,
+        "ExecutionDelegate._lower_knowledge_sources": 731,
+        "ExecutionDelegate._lower_finding_source": 771,
+        "ExecutionDelegate._resolve_alias_url": 782,
+        "ExecutionDelegate._build_hit_mapping": 794,
+        "ExecutionDelegate._ledger_evidence": 830
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/task_execution.py"
+    },
+    "codey/operations/knowledge_context.py": {
+      "sha256": "e9a2dab6b9dd964cb22347c9a15bd58622139ad7fec2b95bb8a56ba8bbf22a01",
+      "definitions": {
+        "knowledge_background": 10
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/knowledge_context.py"
+    },
+    "codey/operations/research_publication.py": {
+      "sha256": "2940c112d85e5746b98d9e6318ac053b602a4ab5d758ddfc65c7ac4ad9837d80",
+      "definitions": {
+        "publish_synthesis": 23,
+        "_envelope": 68,
+        "settle_cancelled_publications": 82,
+        "_commit": 91,
+        "_settle": 124,
+        "_project": 133,
+        "published_answer_version": 144
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/research_publication.py"
+    },
+    "codey/operations/research_iteration.py": {
+      "sha256": "7cb642ca3cc1a26a83d094ce0e63b0232841b9c90fa66cf5bc1ce3a5847ebca2",
+      "definitions": {
+        "_stable_synthesis_id": 24,
+        "_selected_note_sources": 33,
+        "_persist_synthesis": 42,
+        "_link_synthesis": 165,
+        "_publication_proof": 180,
+        "run_research_iteration": 192
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/operations/research_iteration.py"
+    },
+    "codey/providers/base.py": {
+      "sha256": "a15bc03cbeafcf66d73ae0dd66ef540133d379f9d9bd8a282c15f98d6cd7de33",
+      "definitions": {
+        "ResultMetadata": 11,
+        "ResultMetadata.render": 16,
+        "render_result_metadata": 20,
+        "result_metadata_from_text": 25,
+        "result_ref_from_metadata": 43,
+        "ProviderToolCall": 49,
+        "ProviderToolResult": 56,
+        "ProviderToolDefinition": 68,
+        "tools_from_specs": 74,
+        "TurnFinish": 85,
+        "AssistantTurn": 92,
+        "ChatProvider": 100,
+        "ChatProvider.location": 104,
+        "ChatProvider.new_chat": 107,
+        "ChatProvider.send": 110,
+        "ChatProvider.close": 113
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/providers/base.py"
+    },
+    "codey/providers/api_codec.py": {
+      "sha256": "f0dafbf65fbcb98af48edba1980ecaae63b756c4e4e9364c8e7841fde04f3fa3",
+      "definitions": {
+        "GenerationSettings": 11,
+        "ApiCodec": 26,
+        "ApiCodec.encode_context": 29,
+        "ApiCodec.encode_results": 31,
+        "ApiCodec.prepare": 33,
+        "ApiCodec.validate_view": 36,
+        "ApiCodec.pending_calls": 38,
+        "ApiCodec.closed_spans": 40,
+        "ApiCodec.checkpoint_item": 42,
+        "ApiCodec.build_payload": 44,
+        "ApiCodec.decode_exchange": 47,
+        "AuxiliaryConnection": 52,
+        "AuxiliaryConnection.count_text": 53,
+        "AuxiliaryConnection.send": 55,
+        "AuxiliaryConnection.close": 57
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/providers/api_codec.py"
+    },
+    "codey/providers/api_provider.py": {
+      "sha256": "cc212e10cf5aa3814df79883b4a9925a04fb752f70e24b1c819c6d070a4725fc",
+      "definitions": {
+        "ApiProvider": 53,
+        "ApiProvider.__init__": 62,
+        "ApiProvider.context_budget": 179,
+        "ApiProvider.model_identity": 183,
+        "ApiProvider.has_transport_history": 196,
+        "ApiProvider.location": 201,
+        "ApiProvider.new_chat": 204,
+        "ApiProvider.close": 207,
+        "ApiProvider.normalize_reply": 214,
+        "ApiProvider.reasoning_for_reply": 226,
+        "ApiProvider.abandon_inflight": 232,
+        "ApiProvider.window_ref": 236,
+        "ApiProvider._binding": 240,
+        "ApiProvider.reset_window": 246,
+        "ApiProvider._invalidate_inflight": 277,
+        "ApiProvider._opened_response": 301,
+        "ApiProvider._opened_control": 311,
+        "ApiProvider.send": 320,
+        "ApiProvider.bind_durable_context": 338,
+        "ApiProvider.bind_attempt_gate": 347,
+        "ApiProvider.set_attempt_gate_prompt": 354,
+        "ApiProvider.load_durable_context": 358,
+        "ApiProvider.restore_protocol_window": 387,
+        "ApiProvider.send_turn": 415,
+        "ApiProvider.send_tool_results": 423,
+        "ApiProvider.send_tool_results_bound": 431,
+        "ApiProvider._prepare_exchange": 443,
+        "ApiProvider._exchange": 478,
+        "ApiProvider._commit_exchange": 577,
+        "ApiProvider._generate": 620,
+        "ApiProvider._generate_attempt": 686,
+        "ApiProvider.bind_usage": 734,
+        "ApiProvider.bind_display": 737,
+        "ApiProvider._payload": 740,
+        "ApiProvider._admit_request": 784,
+        "ApiProvider.bind_context": 841,
+        "ApiProvider.export_work_state": 856,
+        "ApiProvider.fork_auxiliary": 859,
+        "ApiProvider._summarize_context": 881,
+        "ApiProvider.count_text": 934,
+        "ApiProvider.count_context_messages": 940,
+        "ApiProvider._settings": 951,
+        "ApiProvider._context_snapshot": 955,
+        "ApiProvider._count_context": 965,
+        "ApiProvider._commit_context": 969,
+        "ApiProvider.set_result_refs": 1027,
+        "ApiProvider._schedule_maintenance": 1031,
+        "ApiProvider.maintain_context": 1050,
+        "ApiProvider.wait_for_maintenance": 1053,
+        "ApiProvider._is_cancelled": 1056,
+        "ApiProvider._headers": 1072,
+        "ApiProvider.acknowledge_tool_results": 1080,
+        "ApiProvider.acknowledge_tool_results_bound": 1111,
+        "ApiProvider._notify_http_attempt": 1139,
+        "ApiProvider._observe_http_attempt": 1145
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/providers/api_provider.py"
+    },
+    "codey/providers/api_request_view.py": {
+      "sha256": "0cd65c798242965f52607dfa3eb804313e977e5d96bb6e77396948ad852fd332",
+      "definitions": {
+        "bounded_history": 9
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/providers/api_request_view.py"
+    },
+    "codey/research/answer_contract.py": {
+      "sha256": "ae96a62e449ef4bff64a056cbea40ef2473da22507a0a1c9b6598b0f19dc4aee",
+      "definitions": {
+        "whole_research": 51,
+        "digest": 57,
+        "AnswerScope": 62,
+        "AnswerScope.passage_refs": 69,
+        "AnswerScope.replaces": 73,
+        "AnswerScope.submission_mode": 77,
+        "AnswerScope.to_payload": 80,
+        "AnswerScope.from_payload": 84,
+        "answer_scope": 104,
+        "citation_occurrences": 138,
+        "submit_answer": 152,
+        "validate_submission": 174,
+        "submitted_answer": 184,
+        "answer_spec": 192
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/research/answer_contract.py"
+    },
+    "codey/research/answer_context.py": {
+      "sha256": "07174fff0e494d20613c8a72f887a9befb22dd802dc2efbfa28cedae6f1f6eb2",
+      "definitions": {
+        "investigation_history": 11,
+        "answer_context": 26
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/research/answer_context.py"
+    },
+    "codey/research/answer_report.py": {
+      "sha256": "8d20d3421ba7af58c4f6ec6e7dc9c83622afa3394e710b68c911c8c6e9785958",
+      "definitions": {
+        "AnswerReport": 18,
+        "AnswerReport.finding_ids": 34,
+        "AnswerReport.coverage": 38,
+        "AnswerReport.open_questions": 42,
+        "AnswerReport.to_payload": 45,
+        "AnswerReport.from_payload": 50,
+        "render_answer": 81,
+        "compile_answer_report": 94
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/research/answer_report.py"
+    },
+    "codey/research/answer_archive.py": {
+      "sha256": "c3675c33fddaeb899a9699bddb67d9feed950a76defc569f75d4bf74d4c35cc4",
+      "definitions": {
+        "archive_scope": 14,
+        "prepare_evidence": 35,
+        "publication_command": 115
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/research/answer_archive.py"
+    },
+    "codey/research/knowledge_materials.py": {
+      "sha256": "39f78e608097dcf2a756f40a8f587a236c3a8dccb4cb0e1f0c4dad5432a9f1eb",
+      "definitions": {
+        "read_material": 17
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/research/knowledge_materials.py"
+    },
+    "codey/research/context_view.py": {
+      "sha256": "55e907261e2b295be6cbb1864616e1e7e42fd59fc06be1710a2cf728574f6a5a",
+      "definitions": {
+        "ResearchContextView": 14,
+        "ResearchContextView.render": 26,
+        "read_intervals": 34,
+        "read_evidence_projection": 55,
+        "local_research_context": 117,
+        "_bounded": 191,
+        "_result_references": 217,
+        "_reference_order": 235,
+        "build_research_context_view": 272
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/research/context_view.py"
+    },
+    "codey/research/source_rendering.py": {
+      "sha256": "89c0e1aff0893ffe0b02dfd4aa838987b21cafa0f5e338ae573ff33b87703551",
+      "definitions": {
+        "render_opened_source": 18,
+        "_section_locators": 54,
+        "section_locators": 61,
+        "_metadata_lines": 73,
+        "_source_kind_line": 87,
+        "_pages_meta": 96
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/research/source_rendering.py"
+    },
+    "codey/research/passages.py": {
+      "sha256": "6bc4963ae362f850a0f16074ae3918738285cae0747640bb555064fb337d22d8",
+      "definitions": {
+        "ReadPassage": 16,
+        "ReadPassage.excerpt": 27,
+        "ReadPassage.page": 31,
+        "ReadPassage.descriptor": 35,
+        "passage_ref": 41,
+        "preceding_context_offset": 53,
+        "describe_window": 66,
+        "page_body_ranges": 96,
+        "describe_document_window": 108,
+        "describe_section_window": 130,
+        "render_passage_window": 151,
+        "restore_passages": 160,
+        "passage_evidence_valid": 202
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/research/passages.py"
+    },
+    "codey/research/tools.py": {
+      "sha256": "779eb90dadc26da873694c29fc448162072240268a8c82251a69ca77cf9ebede",
+      "definitions": {
+        "ResearchToolOutput": 37,
+        "ResearchToolOutput.__post_init__": 46,
+        "ResearchTools": 52,
+        "ResearchTools.create_staged": 72,
+        "ResearchTools.commit_staged": 96,
+        "ResearchTools.gateway": 112,
+        "ResearchTools.web_search": 124,
+        "ResearchTools.open_url": 150,
+        "ResearchTools._open_document": 154,
+        "ResearchTools.source_search": 210,
+        "ResearchTools.knowledge_search": 218,
+        "ResearchTools.knowledge_read": 236,
+        "ResearchTools._missing_knowledge_identity": 309,
+        "ResearchTools.knowledge_commit": 321,
+        "ResearchTools.save_finding": 373,
+        "ResearchTools.save_inference": 379,
+        "ResearchTools.research_plan": 384,
+        "ResearchTools.knowledge_write": 417,
+        "ResearchTools.knowledge_link": 519,
+        "ResearchTools._source_problem": 531,
+        "ResearchTools._record_failure": 542,
+        "ResearchTools._provenance_problem": 549,
+        "_resolve_write_target": 570,
+        "_validate_write_basis": 586,
+        "_validate_write_ownership": 602,
+        "_format_write_problem": 615,
+        "_prepare_write_sources": 621,
+        "_prepare_write_relations": 662,
+        "_resolve_write_status": 674,
+        "_build_write_note": 685,
+        "_finalize_write_note": 739,
+        "_as_int": 769,
+        "_as_float": 780,
+        "_as_opt_str": 792,
+        "_as_str_list": 797,
+        "_merge_relation_tags": 805,
+        "_looks_like_url": 823,
+        "_clip_tail": 827,
+        "StagedKnowledgeStore": 836,
+        "StagedKnowledgeStore.__init__": 839,
+        "StagedKnowledgeStore.root": 847,
+        "StagedKnowledgeStore.index": 851,
+        "StagedKnowledgeStore.repository": 855,
+        "StagedKnowledgeStore.owner_id": 859,
+        "StagedKnowledgeStore.search": 862,
+        "StagedKnowledgeStore.search_notes": 865,
+        "StagedKnowledgeStore.publish_note": 868,
+        "StagedKnowledgeStore.path_for": 890,
+        "StagedKnowledgeStore.rel": 893,
+        "StagedKnowledgeStore.exists": 896,
+        "StagedKnowledgeStore.resolve": 899,
+        "StagedKnowledgeStore.read_note": 913,
+        "StagedKnowledgeStore.write_note": 918,
+        "StagedKnowledgeStore.link": 935,
+        "StagedKnowledgeStore.commit_to": 947,
+        "StagedKnowledgeChanges": 979,
+        "StagedKnowledgeChanges.__init__": 982,
+        "StagedKnowledgeChanges.record_staged_note": 985,
+        "StagedKnowledgeChanges.capture_before": 988,
+        "StagedKnowledgeChanges.record_after": 992,
+        "clone_research_tools": 996
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/research/tools.py"
+    },
+    "codey/research/tool_contract.py": {
+      "sha256": "bf4fb7fec22e3dc2033cc74b4998b2dc2983930633083aba0f926620d5844f1e",
+      "definitions": {
+        "knowledge_read_id_guidance": 39,
+        "ToolContract": 49,
+        "ContractResult": 57,
+        "_question_contract": 271,
+        "question_bound_spec": 287,
+        "done_spec_for_purpose": 306,
+        "research_tool_names": 366,
+        "render_research_tool_contract_text": 399,
+        "research_tool_contract_hash": 412,
+        "openai_parameters_schema": 421,
+        "render_openai_tools": 427,
+        "validate_tool_args": 449,
+        "tool_example": 461
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/research/tool_contract.py"
+    },
+    "codey/research/references.py": {
+      "sha256": "0e77b2114374844cb44f44fe4ff2e922094fc43a0b4b6a4143fc774982124193",
+      "definitions": {
+        "read_version": 26,
+        "bind_version": 35,
+        "restore_bindings": 46,
+        "resolve_version": 65,
+        "save_inference": 73
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/research/references.py"
+    },
+    "codey/knowledge/recall.py": {
+      "sha256": "711539147df88ab2ee5a87a2dc8485fb1bfe43b4cbe3137599db39c06eb5a1ff",
+      "definitions": {
+        "KnowledgeAccess": 15,
+        "KnowledgeAccess.allows": 20,
+        "KnowledgeAccess.sql": 26,
+        "KnowledgeHit": 34,
+        "KnowledgeHit.to_dict": 39,
+        "KnowledgeRecall": 43,
+        "KnowledgeRecall.__init__": 44,
+        "KnowledgeRecall.search": 47,
+        "KnowledgeRecall.neighbors": 119,
+        "render_recall": 142
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/knowledge/recall.py"
+    },
+    "codey/knowledge/version_graph.py": {
+      "sha256": "12400ecaa091e83123383ef938073639cea1ad0aeb3e63ae26c36300d0becb72",
+      "definitions": {
+        "version_node_id": 14,
+        "version_detail": 18,
+        "_focus_versions": 41,
+        "build_version_graph": 57
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/knowledge/version_graph.py"
+    },
+    "codey/knowledge/repository.py": {
+      "sha256": "3dea3e8ceacd20cb5fcb9f1ea7fb65e519a2256ae74ed5b270a3899adbb1cd60",
+      "definitions": {
+        "KnowledgeRepository": 38,
+        "KnowledgeRepository.__init__": 39,
+        "KnowledgeRepository.read": 69,
+        "KnowledgeRepository.commit": 91,
+        "KnowledgeRepository.batch_digest": 121,
+        "KnowledgeRepository.committed": 126,
+        "KnowledgeRepository._check_not_purged": 136,
+        "KnowledgeRepository._check_revisions": 140,
+        "KnowledgeRepository._check_cycles": 157,
+        "KnowledgeRepository._validate_references": 176,
+        "KnowledgeRepository._write": 202,
+        "KnowledgeRepository.rebuild": 219,
+        "KnowledgeRepository.purge": 238
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/knowledge/repository.py"
+    },
+    "codey/knowledge/model.py": {
+      "sha256": "ee2d6e25f43d5098bf3e7d20ce3ff557f7d4bed15b48cc7de877284577e7d99e",
+      "definitions": {
+        "canonical_json": 19,
+        "KnowledgeReference": 24,
+        "KnowledgeReference.__post_init__": 29,
+        "KnowledgeObject": 35,
+        "KnowledgeObject.__post_init__": 49,
+        "KnowledgeObject.to_dict": 84,
+        "KnowledgeObject.interpretation_review": 91,
+        "KnowledgeObject.from_dict": 97,
+        "KnowledgeMutation": 105,
+        "KnowledgeMutation.__post_init__": 109,
+        "KnowledgeVersion": 115,
+        "KnowledgeVersion.interpretation_review": 123,
+        "KnowledgeVersion.to_dict": 126
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/knowledge/model.py"
+    },
+    "codey/runtime/write/research_publication.py": {
+      "sha256": "557cd5ab662ab45ac83af81bcb65384fdeed07de2adc56d36df46989fe3dea6e",
+      "definitions": {
+        "publication_rows": 18
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/runtime/write/research_publication.py"
+    },
+    "codey/storage/managed_outputs.py": {
+      "sha256": "6dd89c6637b3ebea7e91cc81d23635c1091dc05dd4cba53b6ebbb064149022ca",
+      "definitions": {
+        "ManagedOutputRef": 42,
+        "ManagedJsonArtifactRef": 53,
+        "ManagedJsonArtifactRef.to_payload": 62,
+        "ManagedOutputStore": 72,
+        "ManagedOutputStore.__init__": 73,
+        "ManagedOutputStore.write_tool_output": 78,
+        "ManagedOutputStore.path_for": 149,
+        "ManagedOutputStore.metadata_path_for": 152,
+        "ManagedOutputStore.read_tool_output": 155,
+        "ManagedOutputStore.durable_record": 198,
+        "ManagedOutputStore.write_json_artifact": 227,
+        "ManagedOutputStore.read_json_artifact": 268,
+        "ManagedOutputStore.json_artifact_record": 308,
+        "ManagedOutputStore._run_dir": 321,
+        "ManagedOutputStore._handle_path": 328,
+        "run_command_with_managed_output": 342,
+        "_now": 421,
+        "_clip": 425,
+        "_safe_component": 430,
+        "_safe_handle": 436,
+        "_safe_artifact_handle": 443,
+        "_is_sha256_hex": 450,
+        "_cap_utf8_text": 454
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/codey/storage/managed_outputs.py"
+    },
+    "tests/test_research_long_term_loop.py": {
+      "sha256": "49c8a780bbc790ae14a9961ad19bfee871bf636bd72f3b4c0ed56805796c58d4",
+      "definitions": {
+        "run_longitudinal": 30,
+        "test_research_close_rephrase_recall_read_revise_publish_and_recover": 88,
+        "strict_session": 130,
+        "test_strict_read_pins_revision_and_receipt_restores_without_store_or_network": 137,
+        "test_material_access_and_archive_scope_remain_restricted": 175,
+        "test_strict_optional_accumulation_cannot_create_a_second_answer": 204,
+        "test_historical_source_reads_are_bounded_and_offsets_keep_original_versions": 223,
+        "test_identical_bytes_in_two_knowledge_revisions_never_rebind_an_existing_label": 241,
+        "test_first_project_research_archives_in_the_project_and_only_that_project_recalls_it": 267,
+        "test_compilation_rechecks_access_and_bytes_of_receipt_pins": 289
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/tests/test_research_long_term_loop.py"
+    },
+    "tests/test_research_repair_and_navigation.py": {
+      "sha256": "52321b6b42f4189c6f2f8c9b529f10e4e74046899886b1ea1eb041d499d48c40",
+      "definitions": {
+        "run_repeated_protocol": 21,
+        "test_same_invalid_payload_stops_after_one_informed_retry_even_after_restart": 43,
+        "test_new_field_errors_produce_new_diagnosis_and_ignore_provider_call_ids": 61,
+        "test_plain_prose_is_diagnosed_without_becoming_an_answer": 78,
+        "test_navigation_merges_actual_ranges_and_preserves_holes": 91,
+        "test_source_locator_exposes_middle_gap_from_real_read_receipts": 99,
+        "test_every_omitted_window_has_exact_recovery_beyond_old_receipt_and_locator_caps": 117
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/tests/test_research_repair_and_navigation.py"
+    },
+    "tests/test_research_whole_answer.py": {
+      "sha256": "32dfe894cc85347721bd05a5a8d9e3eb24cb16331237e244ae7631a7a0d15025",
+      "definitions": {
+        "record_submission": 16,
+        "test_cross_source_submission_prepares_one_atomic_archive_without_claims": 24,
+        "test_same_url_changes_never_rebind_aliases_or_selected_original_text": 52,
+        "test_omitted_window_is_not_citable_and_recovery_keeps_original_alias": 72,
+        "test_failed_investigation_can_publish_gap_without_fabricated_source": 88,
+        "test_work_view_retains_bounded_failed_and_repeated_investigation_receipts": 101,
+        "test_code_examples_do_not_count_as_adopted_evidence": 124,
+        "test_grouped_citations_preserve_explicit_selection_and_original_offsets": 130,
+        "test_section_read_keeps_conditions_together_without_extending_original_window": 142,
+        "test_read_delivery_is_not_compacted_when_any_original_passage_is_omitted": 154,
+        "test_changed_frozen_report_is_rejected": 172
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/tests/test_research_whole_answer.py"
+    },
+    "tests/test_kernel_protocol_repair_keeps_snapshot.py": {
+      "sha256": "f64e17396895560e9a5f1ca73c1d0fff0da8c510b30dbd064e6298b29701f19c",
+      "definitions": {
+        "test_missing_tool_name_is_not_inferred_and_json_repair_keeps_visible_contract": 16,
+        "test_native_repair_requests_native_calls_instead_of_json": 48,
+        "test_repair_uses_supplied_contract_without_consulting_live_registry": 70
+      },
+      "snapshot": ".e2e-artifacts/research-function-plan-20261102/source/tests/test_kernel_protocol_repair_keeps_snapshot.py"
+    }
+  },
+  "post_capture_review": {
+    "changes": [
+      {
+        "file": "codey/operations/kernel_context.py",
+        "current_sha256": "08a6422b45c461c2fcc7ff820b1fe5a4752a7aa6f099669262ede99c2c319f2a",
+        "snapshot": ".e2e-artifacts/research-function-plan-20261102/reviewed-updates/codey/operations/kernel_context.py"
+      },
+      {
+        "file": "codey/operations/task_execution.py",
+        "current_sha256": "b2ee96771fc0ea8c7209d154c645c52feab098b7b0ea9afa94ed68765736ef3f",
+        "snapshot": ".e2e-artifacts/research-function-plan-20261102/reviewed-updates/codey/operations/task_execution.py"
+      },
+      {
+        "file": "codey/operations/research_publication.py",
+        "current_sha256": "19f3b1f726e4a936596eb96f20d6a05a1629f3f902060004a3480f298ccb6934",
+        "snapshot": ".e2e-artifacts/research-function-plan-20261102/reviewed-updates/codey/operations/research_publication.py"
+      },
+      {
+        "file": "codey/research/answer_contract.py",
+        "current_sha256": "480c728d5c86dbbf45a7acc1500bb6cc5833fbfdb1b4356b12cb37dafa5bd3d6",
+        "snapshot": ".e2e-artifacts/research-function-plan-20261102/reviewed-updates/codey/research/answer_contract.py"
+      },
+      {
+        "file": "codey/research/answer_report.py",
+        "current_sha256": "491fbf0be9f534a7294a3f08fc1b12b9c6ee43123afaba0e156e9cb952e45869",
+        "snapshot": ".e2e-artifacts/research-function-plan-20261102/reviewed-updates/codey/research/answer_report.py"
+      },
+      {
+        "file": "codey/research/knowledge_materials.py",
+        "current_sha256": "2620d142c8e8c407ae5229cb412ff6c3b7247d0c89da1db265d1dd9add5dee08",
+        "snapshot": ".e2e-artifacts/research-function-plan-20261102/reviewed-updates/codey/research/knowledge_materials.py"
+      },
+      {
+        "file": "codey/research/tools.py",
+        "current_sha256": "c29c69e945cd11e957791155a8a45cdd895211fce48c1cd61adcd596d194246b",
+        "snapshot": ".e2e-artifacts/research-function-plan-20261102/reviewed-updates/codey/research/tools.py"
+      }
+    ],
+    "assessment": "Reviewed diffs: annotations, serialization spelling and settled revision validation; findings on request layout, citation kinds and evidence/commit ordering unchanged. No implementation or semantic tests run."
+  },
+  "function_index": [
+    {
+      "phase": "A",
+      "file": "codey/knowledge/recall.py",
+      "symbol": "KnowledgeRecall.neighbors",
+      "captured_line": 119
+    },
+    {
+      "phase": "A",
+      "file": "codey/knowledge/recall.py",
+      "symbol": "KnowledgeRecall.search",
+      "captured_line": 47
+    },
+    {
+      "phase": "A",
+      "file": "codey/knowledge/version_graph.py",
+      "symbol": "build_version_graph",
+      "captured_line": 57
+    },
+    {
+      "phase": "A",
+      "file": "codey/operations/kernel_receipts.py",
+      "symbol": "restore_result_receipt",
+      "captured_line": 79
+    },
+    {
+      "phase": "A",
+      "file": "codey/operations/kernel_contracts.py",
+      "symbol": "result_from_payload",
+      "captured_line": 31
+    },
+    {
+      "phase": "A/D",
+      "file": "codey/research/answer_archive.py",
+      "symbol": "archive_scope",
+      "captured_line": 14
+    },
+    {
+      "phase": "B",
+      "file": "codey/operations/kernel_preparation.py",
+      "symbol": "prepare_kernel_turn",
+      "captured_line": 18
+    },
+    {
+      "phase": "B",
+      "file": "codey/operations/kernel_prompt.py",
+      "symbol": "kernel_prompt_for_session",
+      "captured_line": 76
+    },
+    {
+      "phase": "B",
+      "file": "codey/operations/task_guidance.py",
+      "symbol": "task_result_context",
+      "captured_line": 77
+    },
+    {
+      "phase": "B",
+      "file": "codey/operations/kernel_context.py",
+      "symbol": "KernelContext.freeze",
+      "captured_line": 307
+    },
+    {
+      "phase": "B",
+      "file": "codey/operations/kernel_context.py",
+      "symbol": "KernelContext.prepare_turn",
+      "captured_line": 368
+    },
+    {
+      "phase": "B",
+      "file": "codey/operations/kernel_context.py",
+      "symbol": "KernelContext.deliver_results",
+      "captured_line": 530
+    },
+    {
+      "phase": "B",
+      "file": "codey/providers/api_request_view.py",
+      "symbol": "bounded_history",
+      "captured_line": 9
+    },
+    {
+      "phase": "B",
+      "file": "codey/providers/api_provider.py",
+      "symbol": "ApiProvider._exchange",
+      "captured_line": 478
+    },
+    {
+      "phase": "B",
+      "file": "codey/providers/api_provider.py",
+      "symbol": "ApiProvider._payload",
+      "captured_line": 740
+    },
+    {
+      "phase": "B",
+      "file": "codey/providers/api_provider.py",
+      "symbol": "ApiProvider._admit_request",
+      "captured_line": 784
+    },
+    {
+      "phase": "B",
+      "file": "codey/operations/kernel_driver.py",
+      "symbol": "prepare_provider_request",
+      "captured_line": 50
+    },
+    {
+      "phase": "B",
+      "file": "codey/operations/kernel_driver.py",
+      "symbol": "decode_provider_invocation",
+      "captured_line": 112
+    },
+    {
+      "phase": "B",
+      "file": "codey/research/answer_context.py",
+      "symbol": "answer_context",
+      "captured_line": 26
+    },
+    {
+      "phase": "C",
+      "file": "codey/operations/kernel_prompt.py",
+      "symbol": "_repair_prompt",
+      "captured_line": 186
+    },
+    {
+      "phase": "C",
+      "file": "codey/operations/kernel_context.py",
+      "symbol": "KernelContext.interpret",
+      "captured_line": 399
+    },
+    {
+      "phase": "C",
+      "file": "codey/operations/kernel_control.py",
+      "symbol": "prepare_control_delivery",
+      "captured_line": 159
+    },
+    {
+      "phase": "C",
+      "file": "codey/research/tools.py",
+      "symbol": "ResearchTools.open_url",
+      "captured_line": 150
+    },
+    {
+      "phase": "C",
+      "file": "codey/research/tools.py",
+      "symbol": "ResearchTools._open_document",
+      "captured_line": 154
+    },
+    {
+      "phase": "C",
+      "file": "codey/operations/task_execution.py",
+      "symbol": "ExecutionDelegate._execute_research",
+      "captured_line": 501
+    },
+    {
+      "phase": "C",
+      "file": "codey/research/knowledge_materials.py",
+      "symbol": "read_material",
+      "captured_line": 17
+    },
+    {
+      "phase": "C",
+      "file": "codey/research/context_view.py",
+      "symbol": "read_intervals",
+      "captured_line": 34
+    },
+    {
+      "phase": "C",
+      "file": "codey/research/context_view.py",
+      "symbol": "read_evidence_projection",
+      "captured_line": 55
+    },
+    {
+      "phase": "C",
+      "file": "codey/research/source_rendering.py",
+      "symbol": "section_locators",
+      "captured_line": 61
+    },
+    {
+      "phase": "C/D",
+      "file": "codey/research/answer_contract.py",
+      "symbol": "answer_scope",
+      "captured_line": 104
+    },
+    {
+      "phase": "D",
+      "file": "codey/research/answer_contract.py",
+      "symbol": "answer_spec",
+      "captured_line": 192
+    },
+    {
+      "phase": "D",
+      "file": "codey/research/answer_contract.py",
+      "symbol": "citation_occurrences",
+      "captured_line": 138
+    },
+    {
+      "phase": "D",
+      "file": "codey/research/answer_contract.py",
+      "symbol": "submit_answer",
+      "captured_line": 152
+    },
+    {
+      "phase": "D",
+      "file": "codey/research/answer_contract.py",
+      "symbol": "validate_submission",
+      "captured_line": 174
+    },
+    {
+      "phase": "D",
+      "file": "codey/research/answer_archive.py",
+      "symbol": "prepare_evidence",
+      "captured_line": 35
+    },
+    {
+      "phase": "D",
+      "file": "codey/research/answer_archive.py",
+      "symbol": "publication_command",
+      "captured_line": 115
+    },
+    {
+      "phase": "D",
+      "file": "codey/research/answer_report.py",
+      "symbol": "compile_answer_report",
+      "captured_line": 94
+    },
+    {
+      "phase": "D",
+      "file": "codey/research/answer_report.py",
+      "symbol": "AnswerReport.from_payload",
+      "captured_line": 50
+    },
+    {
+      "phase": "D",
+      "file": "codey/research/tools.py",
+      "symbol": "ResearchTools.knowledge_read",
+      "captured_line": 236
+    },
+    {
+      "phase": "D",
+      "file": "codey/research/references.py",
+      "symbol": "bind_version",
+      "captured_line": 35
+    },
+    {
+      "phase": "D",
+      "file": "codey/operations/knowledge_context.py",
+      "symbol": "knowledge_background",
+      "captured_line": 10
+    },
+    {
+      "phase": "D",
+      "file": "codey/operations/research_publication.py",
+      "symbol": "publish_synthesis",
+      "captured_line": 23
+    },
+    {
+      "phase": "D",
+      "file": "codey/operations/research_publication.py",
+      "symbol": "_commit",
+      "captured_line": 91
+    }
+  ]
+}

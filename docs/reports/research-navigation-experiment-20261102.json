@@ -1,0 +1,1054 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-02",
+  "status": "A retained; B and navigation-only not accepted, shelved; C/D deferred",
+  "active_commit": "13a756ea0b0ab16ab21a07277b861b39781a82ee",
+  "scope": "Single navigation presentation experiment on A; original roles, source limits, submission contract and no-progress protection unchanged. Derived footer in both pointer receipt and material-view tail; no duplicated material authority.",
+  "limitations": [
+    "Repeated development fixtures; two seeds for WAL/asyncio/long and one for RLock/cross-source; no generalization claim.",
+    "Fixed seed does not imply identical generated native call IDs or exact subsequent inputs.",
+    "Navigation asyncio75 has provider length failures and proxy aborts; descriptive failure, not isolated causal evidence against navigation.",
+    "Cross-source 24h TTL is retained historical rubric criterion although task did not explicitly ask duration.",
+    "Manual review; no tested-model grading; delivery is separate from content correctness."
+  ],
+  "identities": {
+    "batch-a": {
+      "runtime_id": "dd0596557c361f6d907e4ad1de1b1ca338fec296f3363072205304231c47327b",
+      "harness_digest": "c6439dd9f45456292be0c6d72f047d3b583a109910dff3dd817991b59d6a87a6",
+      "commit": "751c6f461b889cad07cc6ebada99df7d80b3fa93",
+      "materials": {
+        "fixtures.json": "12c36dc056d8c6044488a24b3375e05b4fdfcd2e1e9e258a9a7454f6fb418b96",
+        "wal-material.json": "6ac89c45e856905947012e8d13a47b5ed1c388562c9af76e5778599c88b05826",
+        "asyncio-material.json": "6ab5978186d03cb019c97edc79a7d76a1d4289798cb74742ee2f243b317f9e8d",
+        "material-channel.json": "45fba2765dd41b05803d08119c7f59e5cad808e216edaef007c5f18dafd9bc85"
+      }
+    },
+    "a-control-seed75": {
+      "runtime_id": "099be567374ab17f70886479a2b3968f586b6c733bd7720486587da95ad43bea",
+      "harness_digest": "c6439dd9f45456292be0c6d72f047d3b583a109910dff3dd817991b59d6a87a6",
+      "commit": "13a756ea0b0ab16ab21a07277b861b39781a82ee",
+      "materials": {
+        "fixtures.json": "12c36dc056d8c6044488a24b3375e05b4fdfcd2e1e9e258a9a7454f6fb418b96",
+        "wal-material.json": "6ac89c45e856905947012e8d13a47b5ed1c388562c9af76e5778599c88b05826",
+        "asyncio-material.json": "6ab5978186d03cb019c97edc79a7d76a1d4289798cb74742ee2f243b317f9e8d",
+        "material-channel.json": "45fba2765dd41b05803d08119c7f59e5cad808e216edaef007c5f18dafd9bc85"
+      }
+    },
+    "batch-b": {
+      "runtime_id": "85488de4dbe5b092e3f1b7708df6d61726406b72b0c480142da2e380902ea0a4",
+      "harness_digest": "c6439dd9f45456292be0c6d72f047d3b583a109910dff3dd817991b59d6a87a6",
+      "commit": "13a756ea0b0ab16ab21a07277b861b39781a82ee",
+      "materials": {
+        "fixtures.json": "12c36dc056d8c6044488a24b3375e05b4fdfcd2e1e9e258a9a7454f6fb418b96",
+        "wal-material.json": "6ac89c45e856905947012e8d13a47b5ed1c388562c9af76e5778599c88b05826",
+        "asyncio-material.json": "6ab5978186d03cb019c97edc79a7d76a1d4289798cb74742ee2f243b317f9e8d",
+        "material-channel.json": "45fba2765dd41b05803d08119c7f59e5cad808e216edaef007c5f18dafd9bc85"
+      }
+    },
+    "batch-b-final": {
+      "runtime_id": "22d665b8bef23b25c5eeafae8280a768a28b230ac9ff7bd78bb12613f46041bc",
+      "harness_digest": "c6439dd9f45456292be0c6d72f047d3b583a109910dff3dd817991b59d6a87a6",
+      "commit": "13a756ea0b0ab16ab21a07277b861b39781a82ee",
+      "materials": {
+        "fixtures.json": "12c36dc056d8c6044488a24b3375e05b4fdfcd2e1e9e258a9a7454f6fb418b96",
+        "wal-material.json": "6ac89c45e856905947012e8d13a47b5ed1c388562c9af76e5778599c88b05826",
+        "asyncio-material.json": "6ab5978186d03cb019c97edc79a7d76a1d4289798cb74742ee2f243b317f9e8d",
+        "material-channel.json": "45fba2765dd41b05803d08119c7f59e5cad808e216edaef007c5f18dafd9bc85"
+      }
+    },
+    "navigation-only": {
+      "runtime_id": "f7b7aa736bf504d12fc784615f858a87a42bd3f08b79472bdb90ca4941370af3",
+      "harness_digest": "c6439dd9f45456292be0c6d72f047d3b583a109910dff3dd817991b59d6a87a6",
+      "commit": "13a756ea0b0ab16ab21a07277b861b39781a82ee",
+      "materials": {
+        "fixtures.json": "12c36dc056d8c6044488a24b3375e05b4fdfcd2e1e9e258a9a7454f6fb418b96",
+        "wal-material.json": "6ac89c45e856905947012e8d13a47b5ed1c388562c9af76e5778599c88b05826",
+        "asyncio-material.json": "6ab5978186d03cb019c97edc79a7d76a1d4289798cb74742ee2f243b317f9e8d",
+        "material-channel.json": "45fba2765dd41b05803d08119c7f59e5cad808e216edaef007c5f18dafd9bc85"
+      }
+    }
+  },
+  "source_equivalence": {
+    "precommit_a_runtime_id": "dd0596557c361f6d907e4ad1de1b1ca338fec296f3363072205304231c47327b",
+    "restored_a_runtime_id": "099be567374ab17f70886479a2b3968f586b6c733bd7720486587da95ad43bea",
+    "proof": "Exact precommit source digest reproduced from committed A code with only the listed CRLF/LF byte choices; no inference replay or source mutation.",
+    "crlf_flags": {
+      "operations/kernel_context.py": true,
+      "operations/task_guidance.py": true,
+      "research/answer_context.py": false,
+      "providers/api_provider.py": false,
+      "providers/api_request_view.py": false,
+      "knowledge/recall.py": true,
+      "operations/kernel_receipts.py": true,
+      "operations/kernel_contracts.py": true
+    }
+  },
+  "tests": {
+    "targeted_navigation_repair": {
+      "passed": 13
+    },
+    "expanded_related": {
+      "passed": 96,
+      "seconds": 65.0,
+      "command": "python -m pytest -q tests/test_research_read_navigation_tail.py tests/test_research_whole_kernel.py tests/test_research_whole_answer.py tests/test_research_repair_and_navigation.py tests/test_research_long_term_loop.py tests/durable/test_prepared_provider_request.py tests/test_kernel_receipt_integrity.py tests/test_research_convergence_compatibility.py"
+    },
+    "ruff": "passed for three production files and navigation test",
+    "full_pytest": false,
+    "counts_overlap": true
+  },
+  "summary": {
+    "A_control_cases": 8,
+    "A_deliveries": 8,
+    "A_requests": 21,
+    "navigation_cases": 8,
+    "navigation_deliveries": 7,
+    "navigation_requests": 26,
+    "navigation_content_improvement_accepted": false
+  },
+  "records": [
+    {
+      "batch": "batch-a",
+      "case": "asyncio_synthesis",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 2,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-a\\runs\\asyncio_synthesis-74-codey\\research-report.txt",
+      "report_sha256": "161251ea419097f804ee59faca683203ea9f44db921c9a1995ca98d1040b55a1",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-a\\wire\\asyncio_synthesis-74-codey.jsonl",
+      "wire_sha256": "4c74b82cda82c90efd19d3c71494c2281a30ac6efd925e3bd21d5958a1ce3f3d",
+      "source_identity_sha256": "5a24a03aedc314f9aae7403f85b67eaee2947a5d72492b707c363eb53e9f9437",
+      "proxy_failures": [],
+      "review": {
+        "issues": [
+          "child_cancellation_isolation_not_explicit"
+        ],
+        "preserved": [
+          "parent_cancel_regardless_return_exceptions",
+          "done_boundary",
+          "TaskGroup_not_speed_proof"
+        ]
+      }
+    },
+    {
+      "batch": "batch-a",
+      "case": "cross-source-export",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/harbor-api"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/birch-deployment"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-a\\runs\\cross-source-export-74-codey\\research-report.txt",
+      "report_sha256": "0404d398f19f35859f203b3f89bb3aab64c3a0b7cefd0f075683d06ff3357c87",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-a\\wire\\cross-source-export-74-codey.jsonl",
+      "wire_sha256": "b15cd8a872b26a0f26449f63d6d4e6efacbd9aaf9c83c97b6c5f617d14368716",
+      "source_identity_sha256": "5a24a03aedc314f9aae7403f85b67eaee2947a5d72492b707c363eb53e9f9437",
+      "proxy_failures": [],
+      "review": {
+        "issues": [
+          "historical_rubric_24h_TTL_omitted"
+        ],
+        "note": "Project scope, role OR with authentication AND, maintenance rejection, ready AND checksum, expiry does not prove failure retained. TTL was not explicitly asked; keep historical rubric limitation."
+      }
+    },
+    {
+      "batch": "batch-a",
+      "case": "long-recovery-manual",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "offset": 18416,
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-a\\runs\\long-recovery-manual-74-codey\\research-report.txt",
+      "report_sha256": "490d40c99a35a4c0c5cdab8e63eddd28ffc0f82731d7124736413f55f970271e",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-a\\wire\\long-recovery-manual-74-codey.jsonl",
+      "wire_sha256": "bb8ab965164c2ae36425c6653d4c65022950b2655252fefa77e210797d7bee49",
+      "source_identity_sha256": "5a24a03aedc314f9aae7403f85b67eaee2947a5d72492b707c363eb53e9f9437",
+      "proxy_failures": [],
+      "review": {
+        "issues": [],
+        "note": "Opening followed by exact offset=18416; admission, RESTORED AND checksum, queued-not-completed, 7d replacing 24h, expiry-not-failure and artifact retained all present."
+      }
+    },
+    {
+      "batch": "batch-a",
+      "case": "rlock-direct",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 2,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/threading.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-a\\runs\\rlock-direct-74-codey\\research-report.txt",
+      "report_sha256": "afd75d0663fe18f20c3b9e7d5de7c86f10d9f12a42e4301a62956d0cff802c80",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-a\\wire\\rlock-direct-74-codey.jsonl",
+      "wire_sha256": "8378f2f195eab39b58fd275a9e81a09d3d5ebaffac19160a5ca5b958798471c7",
+      "source_identity_sha256": "5a24a03aedc314f9aae7403f85b67eaee2947a5d72492b707c363eb53e9f9437",
+      "proxy_failures": [],
+      "review": {
+        "issues": [],
+        "note": "Uses internal RLock release/restore interfaces, not ordinary release."
+      }
+    },
+    {
+      "batch": "batch-a",
+      "case": "wal_synthesis",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://www.sqlite.org/wal.html"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-a\\runs\\wal_synthesis-74-codey\\research-report.txt",
+      "report_sha256": "20b174d8b4500896310c654f6e856d1846caf20fe8b6c5cb0c6e1b4e3468e1d7",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-a\\wire\\wal_synthesis-74-codey.jsonl",
+      "wire_sha256": "1095dae80e1be849c081385c567f4b1e3a572e909429b407899571b08293b0bc",
+      "source_identity_sha256": "5a24a03aedc314f9aae7403f85b67eaee2947a5d72492b707c363eb53e9f9437",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "issues": [
+          "readonly_OR_question_misinterpreted_as_replacement_for_rollback_journal",
+          "local_benchmark_boundary_weakened_in_final"
+        ],
+        "note": "Initial prose explicitly denied proof of local speed; final changed to qualitative versus quantitative distinction."
+      }
+    },
+    {
+      "batch": "batch-b",
+      "case": "asyncio_synthesis",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b\\runs\\asyncio_synthesis-74-codey\\research-report.txt",
+      "report_sha256": "6fcf474c54972288fbdabc4fb54d41afeb0f49c51fcf63af7fcbf0b594b521f4",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b\\wire\\asyncio_synthesis-74-codey.jsonl",
+      "wire_sha256": "231c660ff1324cbf26d114f074df84e55cb4e4a8a20460345c2c33775e7a7e48",
+      "source_identity_sha256": "a00e6208cb9822abcb24d9d75096df9d023c0ee67d15691fdb1d867229139949",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "issues": [
+          "parent_cancel_regardless_return_exceptions_lost_on_protocol_repair"
+        ],
+        "note": "First prose contains condition; final submission omits it. This does not mean all other prose was correct."
+      }
+    },
+    {
+      "batch": "batch-b",
+      "case": "cross-source-export",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 4,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/harbor-api"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/birch-deployment"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        3
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b\\runs\\cross-source-export-74-codey\\research-report.txt",
+      "report_sha256": "107900cd74abcf53e1656ff68454edf6b26861b2624a7a041ed929e21053418a",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b\\wire\\cross-source-export-74-codey.jsonl",
+      "wire_sha256": "fb7284adaea8db1114e06efce5cac269123e3baad71b0824ad40bc853345e962",
+      "source_identity_sha256": "a00e6208cb9822abcb24d9d75096df9d023c0ee67d15691fdb1d867229139949",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "status": "not_regraded_in_this_narrow_comparison"
+      }
+    },
+    {
+      "batch": "batch-b",
+      "case": "long-recovery-manual",
+      "seed": 74,
+      "delivery": false,
+      "process_exit_code": 1,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b\\runs\\long-recovery-manual-74-codey\\research-report.txt",
+      "report_sha256": "06fe9deab5ba612943d2597efe62f72eacdc70ebcb102c1800d0a965b48f343c",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b\\wire\\long-recovery-manual-74-codey.jsonl",
+      "wire_sha256": "5acec8b9c608a7d7274891500c2f3d7640dca5a667fef80e16895714eae18eed",
+      "source_identity_sha256": "a00e6208cb9822abcb24d9d75096df9d023c0ee67d15691fdb1d867229139949",
+      "proxy_failures": [],
+      "review": {
+        "issues": [
+          "three_bare_reads_of_opening",
+          "no_progress_stop"
+        ],
+        "note": "Offset 18416 was visible, not missing."
+      }
+    },
+    {
+      "batch": "batch-b",
+      "case": "rlock-direct",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/threading.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b\\runs\\rlock-direct-74-codey\\research-report.txt",
+      "report_sha256": "75420eaf1e9830aedb83b3e30e9875c63ed7a6ff0c2ffe60397081751432870e",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b\\wire\\rlock-direct-74-codey.jsonl",
+      "wire_sha256": "da6d75174941429871b0b49f7f67199b0b0caf735c4403b08df9a067421d3107",
+      "source_identity_sha256": "a00e6208cb9822abcb24d9d75096df9d023c0ee67d15691fdb1d867229139949",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "status": "not_regraded_in_this_narrow_comparison"
+      }
+    },
+    {
+      "batch": "batch-b",
+      "case": "wal_synthesis",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://www.sqlite.org/wal.html"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b\\runs\\wal_synthesis-74-codey\\research-report.txt",
+      "report_sha256": "93c7fef4f56bdfc29e16d323abec56537a4ecaf8bd46d669190df60cac718f4d",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b\\wire\\wal_synthesis-74-codey.jsonl",
+      "wire_sha256": "adc6a49d4231a4c4240b480d578353e3f4003749ad81838f6547b04281fff30f",
+      "source_identity_sha256": "a00e6208cb9822abcb24d9d75096df9d023c0ee67d15691fdb1d867229139949",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "status": "not_regraded_in_this_narrow_comparison"
+      }
+    },
+    {
+      "batch": "batch-b-final",
+      "case": "asyncio_synthesis",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b-final\\runs\\asyncio_synthesis-74-codey\\research-report.txt",
+      "report_sha256": "5503935800f7d60b6ef9b096391cad0381c647fe89916883acea92cd279fb59a",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b-final\\wire\\asyncio_synthesis-74-codey.jsonl",
+      "wire_sha256": "32fd18ca4d0b8963064cd50a3d0ca7e1709fed8b8b68806e6c09d7a825382516",
+      "source_identity_sha256": "c449d9d3e151f092882ad3d215727b693509df571573962d747159648270c08f",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "issues": [
+          "parent_cancel_regardless_return_exceptions_lost_on_protocol_repair"
+        ],
+        "note": "First prose contains condition; final submission omits it. This does not mean all other prose was correct."
+      }
+    },
+    {
+      "batch": "batch-b-final",
+      "case": "cross-source-export",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 4,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/harbor-api"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/birch-deployment"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        3
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b-final\\runs\\cross-source-export-74-codey\\research-report.txt",
+      "report_sha256": "faa05d3de81d67a7476a2f858856d1bbb36d5b61c0c3c293ae6e1571290a32ba",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b-final\\wire\\cross-source-export-74-codey.jsonl",
+      "wire_sha256": "d5881dde1c495ff4f46569d1056beb48de4a619b237b3b33523e876a24bf5c71",
+      "source_identity_sha256": "c449d9d3e151f092882ad3d215727b693509df571573962d747159648270c08f",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "status": "not_regraded_in_this_narrow_comparison"
+      }
+    },
+    {
+      "batch": "batch-b-final",
+      "case": "long-recovery-manual",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 6,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/meridiem-manual#44"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "offset": 18416,
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        5
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b-final\\runs\\long-recovery-manual-74-codey\\research-report.txt",
+      "report_sha256": "058eaf5ee068280a54ce8dbc3685dac8fcd3d8f0ba28021803db19ee599b8b60",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b-final\\wire\\long-recovery-manual-74-codey.jsonl",
+      "wire_sha256": "f3518665a7e15d0e2f89472abf8a1e5b50409adac7b7067287f64f2816ac5f13",
+      "source_identity_sha256": "c449d9d3e151f092882ad3d215727b693509df571573962d747159648270c08f",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "issues": [
+          "six_requests_with_repeated_opening_and_bogus_fragment"
+        ],
+        "note": "Rerun delivered; does not erase earlier no-progress failure."
+      }
+    },
+    {
+      "batch": "batch-b-final",
+      "case": "rlock-direct",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/threading.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b-final\\runs\\rlock-direct-74-codey\\research-report.txt",
+      "report_sha256": "29432bfb38c7675efcad436ac587dca6875cae28b4571e7efd2a23cc2caf42d8",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b-final\\wire\\rlock-direct-74-codey.jsonl",
+      "wire_sha256": "49031ea58a67eaf04d264a5d01fd0cedd9e6b5737ac6d1e53cf3a54f0b45de52",
+      "source_identity_sha256": "c449d9d3e151f092882ad3d215727b693509df571573962d747159648270c08f",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "status": "not_regraded_in_this_narrow_comparison"
+      }
+    },
+    {
+      "batch": "batch-b-final",
+      "case": "wal_synthesis",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://www.sqlite.org/wal.html"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b-final\\runs\\wal_synthesis-74-codey\\research-report.txt",
+      "report_sha256": "fdbc349da40bd304f9562d8918b73e6a88c07b7990f063cc3ae91964b1684df9",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\batch-b-final\\wire\\wal_synthesis-74-codey.jsonl",
+      "wire_sha256": "78b76c657b83b7b74d58b21245a98f0f1dbce95c920769b9bbee087c330743fb",
+      "source_identity_sha256": "c449d9d3e151f092882ad3d215727b693509df571573962d747159648270c08f",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "status": "not_regraded_in_this_narrow_comparison"
+      }
+    },
+    {
+      "batch": "a-control-seed75",
+      "case": "asyncio_synthesis",
+      "seed": 75,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 2,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\a-control-seed75\\runs\\asyncio_synthesis-75-codey\\research-report.txt",
+      "report_sha256": "01d4ad258504085f7f4f0cb67d333f96a6318104430ae40cd3dea9376f2e9d9c",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\a-control-seed75\\wire\\asyncio_synthesis-75-codey.jsonl",
+      "wire_sha256": "fb5f9777e9630fc7ee70b6d331c0c6eca5bd527bd60a228c8e4edbf368d11ee3",
+      "source_identity_sha256": "af039aa2925ea8884c05c59499893009412473de0757be89262ea7e7058c0141",
+      "proxy_failures": [],
+      "review": {
+        "issues": [],
+        "note": "All required cancellation relations and evidence boundary present."
+      }
+    },
+    {
+      "batch": "a-control-seed75",
+      "case": "long-recovery-manual",
+      "seed": 75,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "offset": 18416,
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\a-control-seed75\\runs\\long-recovery-manual-75-codey\\research-report.txt",
+      "report_sha256": "3c8321a7edb98544b8be59d9a78de7a88793cad74cb1ba3934ccd5c10b67fbf4",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\a-control-seed75\\wire\\long-recovery-manual-75-codey.jsonl",
+      "wire_sha256": "5679bde0276e20b17fcfd82b3c0db7775c777bc37c482ac77e9315579d7c9206",
+      "source_identity_sha256": "af039aa2925ea8884c05c59499893009412473de0757be89262ea7e7058c0141",
+      "proxy_failures": [],
+      "review": {
+        "issues": [],
+        "note": "Opening followed by exact offset=18416; admission, RESTORED AND checksum, queued-not-completed, 7d replacing 24h, expiry-not-failure and artifact retained all present."
+      }
+    },
+    {
+      "batch": "a-control-seed75",
+      "case": "wal_synthesis",
+      "seed": 75,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://www.sqlite.org/wal.html"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\a-control-seed75\\runs\\wal_synthesis-75-codey\\research-report.txt",
+      "report_sha256": "ba5934e8c08eb53b327aa101063134c6e8f7bdc9fb6ac3431f7092d33935bc70",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\a-control-seed75\\wire\\wal_synthesis-75-codey.jsonl",
+      "wire_sha256": "027735d8e1509ec7b690c3a438c6156c8d87516e0d2e30452e85927c8de27ebf",
+      "source_identity_sha256": "af039aa2925ea8884c05c59499893009412473de0757be89262ea7e7058c0141",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "issues": [
+          "readonly_OR_question_misinterpreted_as_replacement_for_rollback_journal",
+          "local_benchmark_boundary_weakened_in_final",
+          "checkpoint_read_end_mark_relation_imprecise"
+        ]
+      }
+    },
+    {
+      "batch": "navigation-only",
+      "case": "asyncio_synthesis",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\runs\\asyncio_synthesis-74-codey\\research-report.txt",
+      "report_sha256": "34cf6c11b6f0eb43fa757739e13dbc3d08a1e2896206be093b7bfaec57a8480a",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\wire\\asyncio_synthesis-74-codey.jsonl",
+      "wire_sha256": "aeec544b46356c2a18343a482e2c506c7b16668d61494a66f9e3391dc33d14a0",
+      "source_identity_sha256": "85d0cc341bd90e17ac2239f78a1fd99f64023fd8a02b662bab549503792ade14",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "issues": [
+          "parent_cancel_regardless_return_exceptions_lost_on_protocol_repair",
+          "child_cancellation_isolation_not_explicit"
+        ],
+        "first_prose_correct_clause": "如果 gather 本身被取消，无论 return_exceptions 是什么值，取消都会传播",
+        "final_clause_present": false
+      }
+    },
+    {
+      "batch": "navigation-only",
+      "case": "asyncio_synthesis",
+      "seed": 75,
+      "delivery": false,
+      "process_exit_code": 1,
+      "requests": 5,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2,
+        3
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\runs\\asyncio_synthesis-75-codey\\research-report.txt",
+      "report_sha256": "1092312c338e03bc46d09490edef5367df55c806df19c04b4e37108fa105a1d9",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\wire\\asyncio_synthesis-75-codey.jsonl",
+      "wire_sha256": "8b992c4fb99c5490a6d4ed09a914bb3c31f036094b078ce46a82095746b112d3",
+      "source_identity_sha256": "85d0cc341bd90e17ac2239f78a1fd99f64023fd8a02b662bab549503792ade14",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        },
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        },
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "issues": [
+          "no_formal_delivery",
+          "pseudo_tool_tags_in_content",
+          "two_length_terminations",
+          "proxy_connection_aborts"
+        ],
+        "note": "Stop reason error; task_done diagnostic local provider emitted finish_reason=length twice. Do not attribute causally to navigation; no final answer to grade."
+      }
+    },
+    {
+      "batch": "navigation-only",
+      "case": "cross-source-export",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/harbor-api"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/birch-deployment"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\runs\\cross-source-export-74-codey\\research-report.txt",
+      "report_sha256": "e8e8a72b3b56b784ee2e0902afdd6d0d43c8bf21294dee04531da29589d08cc8",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\wire\\cross-source-export-74-codey.jsonl",
+      "wire_sha256": "a78cdd03b4e4f256b44ebdb785817141d34b54b2203267575ddd582f0f1519c3",
+      "source_identity_sha256": "85d0cc341bd90e17ac2239f78a1fd99f64023fd8a02b662bab549503792ade14",
+      "proxy_failures": [],
+      "review": {
+        "issues": [
+          "historical_rubric_24h_TTL_omitted"
+        ],
+        "note": "Project scope, role OR with authentication AND, maintenance rejection, ready AND checksum, expiry does not prove failure retained. TTL was not explicitly asked; keep historical rubric limitation."
+      }
+    },
+    {
+      "batch": "navigation-only",
+      "case": "long-recovery-manual",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "offset": 18416,
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\runs\\long-recovery-manual-74-codey\\research-report.txt",
+      "report_sha256": "92cf6460c18649668eace2a240f5a0be39ff82b42f5ea6873b46bb55f136195c",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\wire\\long-recovery-manual-74-codey.jsonl",
+      "wire_sha256": "c964b2e733d238e0924d023e30c285ef73fe3a79e7eecb2209c15d47680f3270",
+      "source_identity_sha256": "85d0cc341bd90e17ac2239f78a1fd99f64023fd8a02b662bab549503792ade14",
+      "proxy_failures": [],
+      "review": {
+        "issues": [],
+        "note": "Opening followed by exact offset=18416; admission, RESTORED AND checksum, queued-not-completed, 7d replacing 24h, expiry-not-failure and artifact retained all present."
+      }
+    },
+    {
+      "batch": "navigation-only",
+      "case": "long-recovery-manual",
+      "seed": 75,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "offset": 18416,
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\runs\\long-recovery-manual-75-codey\\research-report.txt",
+      "report_sha256": "b55aa5363dfb1d700b5466e93483be429d04974a9233014e82d4776ada2dd534",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\wire\\long-recovery-manual-75-codey.jsonl",
+      "wire_sha256": "a0edf7a87f6815eecb574559ffc5e4f438f87bdd5d2ed769b4bd42bd77416071",
+      "source_identity_sha256": "85d0cc341bd90e17ac2239f78a1fd99f64023fd8a02b662bab549503792ade14",
+      "proxy_failures": [],
+      "review": {
+        "issues": [],
+        "note": "Opening followed by exact offset=18416; admission, RESTORED AND checksum, queued-not-completed, 7d replacing 24h, expiry-not-failure and artifact retained all present."
+      }
+    },
+    {
+      "batch": "navigation-only",
+      "case": "rlock-direct",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/threading.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\runs\\rlock-direct-74-codey\\research-report.txt",
+      "report_sha256": "1362d34fa65aea60564c15c41d60cdabc51d03d2a84cceb5dff6ffe3cd1cf849",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\wire\\rlock-direct-74-codey.jsonl",
+      "wire_sha256": "d42fae25bd40696ccb9a378860f6d7aa190e4b36fefdaaef5985ef9e112b9bad",
+      "source_identity_sha256": "85d0cc341bd90e17ac2239f78a1fd99f64023fd8a02b662bab549503792ade14",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "issues": [],
+        "note": "Uses internal RLock release/restore interfaces, not ordinary release."
+      }
+    },
+    {
+      "batch": "navigation-only",
+      "case": "wal_synthesis",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://www.sqlite.org/wal.html"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\runs\\wal_synthesis-74-codey\\research-report.txt",
+      "report_sha256": "018c1abe1df0658761b6d920eb2ae8bbf992b3dd0d271c9778f6a3763ece8062",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\wire\\wal_synthesis-74-codey.jsonl",
+      "wire_sha256": "ae33e05db5e47c0e245c39682d70a819d5ea47a84775b14cd557e38b0b8d0bd6",
+      "source_identity_sha256": "85d0cc341bd90e17ac2239f78a1fd99f64023fd8a02b662bab549503792ade14",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "issues": [
+          "local_speed_not_separated_from_general_speed_claim",
+          "whole_page_no_measurement_boundary_omitted_final"
+        ],
+        "preserved": [
+          "three_readonly_OR_conditions"
+        ],
+        "note": "OR recovered on seed 74 only; no overall semantic pass."
+      }
+    },
+    {
+      "batch": "navigation-only",
+      "case": "wal_synthesis",
+      "seed": 75,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://www.sqlite.org/wal.html"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\runs\\wal_synthesis-75-codey\\research-report.txt",
+      "report_sha256": "24c075f1809309b3c80aa728b3850b74ee5fee87415817a41f5d32311a11f285",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\navigation-only\\wire\\wal_synthesis-75-codey.jsonl",
+      "wire_sha256": "831c04dab1e3f9d085124a361f03a03b4e3c1ce7df2c1fc1d8c00d2a57488e56",
+      "source_identity_sha256": "85d0cc341bd90e17ac2239f78a1fd99f64023fd8a02b662bab549503792ade14",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "review": {
+        "issues": [
+          "readonly_OR_question_misinterpreted_as_replacement_for_rollback_journal",
+          "local_speed_not_separated_from_general_speed_claim",
+          "whole_page_no_measurement_boundary_omitted_final"
+        ]
+      }
+    }
+  ],
+  "next_experiment_candidate": "Independently preserve full failed prose in existing protocol-repair projection, test initial/final content retention; keep D deferred. Not implemented here."
+}

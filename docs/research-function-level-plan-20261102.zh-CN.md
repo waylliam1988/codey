@@ -2,6 +2,8 @@
 
 日期：2026-11-02。本文是设计与实施顺序，不是已实现或已验收声明。最初审阅基线为 `de3edcb1` 加当时工作区；实施基线更新为 `751c6f46`（知识通道、个人归档和部分修复诊断已提交），不重复实现已经合入的部分。逐批实施与实机记录另见 `research-four-batch-implementation-20261102.zh-CN.md`。
 
+**实施状态更新：A 已提交为 `13a756ea`。B 组合投影与后续最小导航实验均未证明整体收益，完整留档后退出活动代码；当前生产源码回到 A。C/D 暂缓，下文 B/C/D 保留为待验证设计，不能按原四批顺序自动继续。** 见 [实际实施与回测记录](research-four-batch-implementation-20261102.zh-CN.md) 和 [逐例实验数据](reports/research-navigation-experiment-20261102.json)。
+
 源码采样记录见 [函数与指纹清单](reports/research-function-plan-baseline-20261102.json)，相应只读副本在 `.e2e-artifacts/research-function-plan-20261102/source/`。本轮仅新增设计文档、采样脚本及记录，不修改生产源码，不运行模型或改变服务状态。上一份分析中的“77 项通过”来自用户提供的另一轮审计，本轮没有重跑，不能作为本方案已通过的测试数。
 
 ## 1. 最终决策：改边界，不重写运行时
