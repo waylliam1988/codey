@@ -9,7 +9,6 @@ from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.finding_report import FindingReport, compile_finding_report
-from codey.research.semantic_review import review_basis
 from tests.test_research_findings import URL, execute, report_args, setup
 
 
@@ -33,9 +32,8 @@ def test_one_answer_compiles_and_restores_without_a_second_authored_report(tmp_p
         report = compile_finding_report(args, tools.ledger, store)
         assert report.text.count("Only one writer can write at a time.") == 3
         assert FindingReport.from_payload(report.to_payload()).to_payload() == report.to_payload()
-        basis = review_basis(report, tools, "Explain the writer constraint.")
-        assert [row["path"] for row in basis["paragraphs"]] == ["report_sections.coverage[0].answer"]
-        assert basis["paragraphs"][0]["refs"] == ["f1"]
+        assert [row["path"] for row in report.paragraph_bindings] == ["report_sections.coverage[0].answer"]
+        assert report.paragraph_bindings[0]["refs"] == ["f1"]
         legacy = {"report_sections": {"coverage": report_args("f1")["report_sections"]["coverage"]}}
         for invalid in ("wrong [1]", "unknown [f77]"):
             legacy["report_sections"]["coverage"][0]["answer"] = invalid

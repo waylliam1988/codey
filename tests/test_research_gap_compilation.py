@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from codey.research.finding_report import FindingReport, compile_finding_report
-from codey.research.semantic_review import review_basis
 from tests.test_research_findings import URL, execute, setup
 
 FIXTURE = Path(__file__).parent / "fixtures/research_live/q8_uninvestigated_answer.json"
@@ -57,8 +56,6 @@ def test_captured_q8_cannot_spread_to_report_bindings_or_restored_payload(tmp_pa
         assert unsafe not in json.dumps(payload, ensure_ascii=False)
         restored = FindingReport.from_payload(json.loads(json.dumps(payload)))
         assert restored == compiled
-        basis = review_basis(restored, tools, session.task_text)
-        assert unsafe not in json.dumps(basis, ensure_ascii=False)
         assert next(row for row in restored.paragraph_bindings
                     if row["path"] == "report_sections.coverage[7].answer")["text"] == gap["answer"]
     finally:

@@ -124,14 +124,6 @@ def kernel_prompt_for_session(
                      "Use only authorized tools and report specific observed failures. "
                      "The kernel advances the original plan from the settled selection receipt.")
         return "\n\n".join(parts)
-    if session.task_kind == "research_review":
-        # The frozen submission is this task's completion action. Workspace
-        # verification and ordinary done instructions do not apply to it.
-        parts.append(("Use the declared native submission tool. " + _NATIVE_ARGUMENTS_RULE) if native else
-                     _TEXT_ACTION_RULE)
-        parts.append("Submit the requested assessment even when the draft fails. "
-                     "The driver completes this assessment from the settled submission receipt.")
-        return "\n\n".join(parts)
     if native:
         parts.append(
             "For actions, use native tool calls, not JSON in prose. "

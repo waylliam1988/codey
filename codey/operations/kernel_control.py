@@ -160,9 +160,8 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
     decision = context.decision(state)
     received = context.response(state)
     ids = _ids(received.reply)
-    if decision["purpose"] == "done" and (context.session.task_kind == "research_review"
-            or (received.snapshot.research_scope is not None and
-                any(call.name == "submit_research_answer" for call in context.plan(state).calls))):
+    if (decision["purpose"] == "done" and received.snapshot.research_scope is not None
+            and any(call.name == "submit_research_answer" for call in context.plan(state).calls)):
         # Closure delivers the original submission receipt. There is no
         # synthetic model done call and no substituted tool-success message.
         context.advance(state, positions.LEAF_CLOSING)

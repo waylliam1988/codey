@@ -225,7 +225,7 @@ class KernelContext:
             if effect.intent.effect_category == "provider_send":
                 self.restore_completion_proposal(effect)
                 continue
-            if self.session.task_kind in {"research", "evidence_followup", "research_review"}:
+            if self.session.task_kind in {"research", "evidence_followup"}:
                 from codey.operations.task_session import turn_effect_id
                 scoped_run = f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id
                 if identity != turn_effect_id(scoped_run, effect.intent.turn, effect.intent.tool_index):
@@ -344,10 +344,7 @@ class KernelContext:
             context = self.transport.context_text
             options["tool_call_observations"] = "\n\n".join(part for part in (
                 context if context and context not in prompt else "", observations) if part)
-            if self.session.task_kind == "research_review":
-                options["tool_call_history_groups"] = 2
-                options["output_token_limit"] = 2048
-            elif self.session.task_kind == "research" and self.session.policy.strict_research:
+            if self.session.task_kind == "research" and self.session.policy.strict_research:
                 options["output_token_limit"] = 4096
                 from codey.research.answer_contract import AnswerScope
 
@@ -535,14 +532,6 @@ class KernelContext:
         kernel_events._emit_tool_results(self.observation.on_event, self.session, results,
             run_id=f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id,
             turn=turn)
-        if (not self.cancelled() and self.session.task_kind == "research_review" and len(results) == 1
-                and results[0].call.name == "submit_research_review" and results[0].ok
-                and results[0].canonical.get("review_complete") is True):
-            # A settled domain submission is the completion proposal. Reuse
-            # the ordinary completion and protocol-close actions, not another
-            # model decision that could discard a committed publication.
-            self.advance(state, positions.LEAF_COMPLETION_PENDING)
-            return
         from codey.research.answer_contract import submitted_answer, whole_research
         from codey.research.local_scope import current_scope
 

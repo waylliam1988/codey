@@ -75,11 +75,25 @@ class PermissionProfileTests(unittest.TestCase):
         self.assertFalse(allows_context_source(reviewer, "research_topic_continuity"))
         self.assertFalse(research.project_write)
         self.assertEqual(allowed_coding_tool_names(research), ())
-        self.assertEqual(set(research.research_tools), set(RESEARCH_TOOL_CONTRACTS))
+        # Whole-answer submission is exposed by its frozen research scope,
+        # rather than the static profile used by ordinary/legacy tasks.
+        self.assertEqual(set(research.research_tools), set(RESEARCH_TOOL_CONTRACTS) - {"submit_research_answer"})
         self.assertFalse(allows_context_source(research, "ghost_directive"))
         self.assertFalse(allows_context_source(research, "ghost_continuity"))
         # Research admits only its own bounded topic-continuity source.
         self.assertTrue(allows_context_source(research, "research_topic_continuity"))
+
+    def test_whole_research_submission_requires_its_scoped_contract(self) -> None:
+        from codey.operations.kernel_protocol import build_turn_snapshot
+        from codey.operations.task_session import TaskSession
+        from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy
+
+        grants = frozenset({"control", "web.read", "knowledge.read", "knowledge.write"})
+        for strict, checks, expected in ((False, (), False), (True, (), False),
+                                         (True, RESEARCH_ANSWER_REQUIRED_CHECKS, True)):
+            session = TaskSession(TaskPolicy(grants, strict_research=strict, required_checks=checks),
+                                  task_kind="research", task_text="Explain the source condition.")
+            self.assertEqual("submit_research_answer" in build_turn_snapshot(session).tool_names, expected)
 
     def test_research_topic_continuity_stays_out_of_chat_and_writer_profiles(self) -> None:
         for name in ("chat", "coding_writer", "planning_readonly", "reviewer"):

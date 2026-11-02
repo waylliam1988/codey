@@ -73,32 +73,3 @@ def report_sections_schema() -> dict[str, Any]:
 
 def knowledge_reference_schema() -> dict[str, Any]:
     return object_schema({"id": text_schema(), "revision": {"type": "integer", "minimum": 1}}, "id", "revision")
-
-
-def research_assessment_schema() -> dict[str, Any]:
-    text = {"type": "string", "minLength": 1, "maxLength": 4000}
-    refs = array_schema({"type": "string"})
-
-    requirement = object_schema({"task_ref": text, "question_refs": refs, "report_paths": refs,
-        "state": {"type": "string", "enum": ["addressed", "acknowledged_gap", "missing"]},
-        "reason": text}, "task_ref", "question_refs", "report_paths", "state", "reason")
-    quote = object_schema({"evidence": {"type": "integer", "minimum": 1}, "quote": text}, "evidence", "quote")
-    unit = object_schema({"unit": {"type": "integer", "minimum": 1},
-        "verdict": {"type": "string", "enum": ["supported", "unsupported", "uncertain"]},
-        "quotes": array_schema(quote, maximum=8), "reason": text}, "unit", "verdict", "quotes", "reason")
-    claim = object_schema({"ref": text, "units": array_schema(unit, minimum=1, maximum=512)}, "ref", "units")
-    support = object_schema({"ref": text, "unit": {"type": "integer", "minimum": 1}}, "ref", "unit")
-    paragraph_unit = object_schema({"unit": {"type": "integer", "minimum": 1},
-        "verdict": {"type": "string", "enum": ["supported", "unsupported", "uncertain"]},
-        "basis": {"type": "string", "enum": ["findings", "gap"]},
-        "finding_units": array_schema(support, maximum=32), "reason": text},
-        "unit", "verdict", "basis", "finding_units", "reason")
-    paragraph = object_schema({"path": text, "units": array_schema(paragraph_unit, minimum=1, maximum=512)}, "path", "units")
-    investigation = object_schema({"ref": text, "question_ref": text,
-        "verdict": {"type": "string", "enum": ["relevant", "irrelevant", "uncertain"]}, "reason": text},
-        "ref", "question_ref", "verdict", "reason")
-    return object_schema({"requirements": array_schema(requirement, maximum=512),
-        "investigations": array_schema(investigation, maximum=256),
-        "claims": array_schema(claim, maximum=128),
-        "paragraphs": array_schema(paragraph, maximum=140)},
-        "requirements", "investigations", "claims", "paragraphs")

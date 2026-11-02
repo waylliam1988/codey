@@ -188,17 +188,7 @@ def _research_specs() -> dict[str, ToolSpec]:
 
 
 def _all_specs() -> dict[str, ToolSpec]:
-    from codey.research.knowledge_schema import research_assessment_schema
-
     specs = _coding_specs()
-    specs["submit_research_review"] = ToolSpec(name="submit_research_review", grant="knowledge.write",
-        executor="research_review", replay_class="safe",
-        parameters=(("basis_digest", {"type": "string"}),
-                    ("assessment", research_assessment_schema())),
-        required=("assessment",),
-        description="Submit exactly the current frozen assessment batch. Leave arrays empty for categories without "
-                    "current items. The driver binds its original basis identity and supplies the next batch. "
-                    "Only a complete passing aggregate may publish the exact frozen report.")
     codemode_example = (
         "const result = await tools.read_file({path:inputs.path}); "
         "if (!result.ok) throw new Error(result.error); return result.value.text;"
@@ -461,7 +451,7 @@ def _is_research_tool(name: str) -> bool:
         spec = tool_specs().get((name or "").strip().lower())
     except Exception:
         return False
-    return spec is not None and spec.executor in {"source", "knowledge", "research_review"}
+    return spec is not None and spec.executor in {"source", "knowledge"}
 
 
 def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None, *, native: bool = False) -> tuple[str, ...]:

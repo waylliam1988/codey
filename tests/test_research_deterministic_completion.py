@@ -207,17 +207,12 @@ def test_incomplete_accounting_invalid_reference_or_budget_never_publishes(tmp_p
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_wrong_interpretation_stays_unreviewed_and_model_verdict_cannot_certify_it(tmp_path):
-    from codey.research.semantic_review import reviewed_completion
-
+def test_wrong_interpretation_stays_unreviewed_after_workflow_completion(tmp_path):
     result = _run(tmp_path, unsupported_claim=True)
     assert result.stop_reason == "done"  # Workflow completion deliberately does not certify entailment.
     assert result.semantic_review is None
     assert all(row["interpretation_review"] == "unreviewed" for row in result.accepted_report.reference_metadata.values())
     assert "未经独立语义审查" in result.summary
-    for verdict in ("passed", "failed"):
-        with pytest.raises(ValueError, match="cannot certify"):
-            reviewed_completion(result.completion_proof, {"status": verdict, "assessment": {}})
 
 
 @pytest.mark.usefixtures("public_source_dns")

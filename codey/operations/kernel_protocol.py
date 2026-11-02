@@ -74,9 +74,7 @@ class ReceivedProviderTurn:
 
 def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
     if getattr(session, "task_kind", "") == "research_review":
-        submitted = any(row.call.name == "submit_research_review" and row.ok and row.canonical.get("review_complete") is True
-                        for row in session._memory_results.values())
-        return () if submitted else ("submit_research_review",)
+        raise ValueError("same-model research assessment execution has been retired")
     policy = getattr(session, "policy", None)
     try:
         denied = {"submit_research_review"} | {str(n or "").strip().lower() for n in (getattr(session, "controller_denied", ()) or ())
@@ -238,7 +236,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False, research_repair: 
     from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
 
     authorized = tuple(visible_tool_names_for_snapshot(session.policy, allowed, native=native))
-    if (getattr(session, "task_kind", "") == "research_review" or scope is not None
+    if (scope is not None
             or session.policy.strict_research and session.task_kind == "research" and not session.research_questions):
         authorized = tuple(name for name in authorized if name in (allowed or ()))
     exposure = getattr(session, "model_tool_names", None)
@@ -257,13 +255,6 @@ def build_turn_snapshot(session: Any, *, native: bool = False, research_repair: 
     frozen = tuple(done_spec_for_purpose(spec, purpose, task=session.task_text,
                                         questions=session.research_questions) if spec.name == "done" else spec
                    for spec in frozen)
-    if getattr(session, "research_review_basis", None) is not None:
-        from codey.research.review_batches import next_batch, review_spec_for_batch
-
-        batch = next_batch(session, session.research_review_basis)
-        if batch is not None:
-            frozen = tuple(review_spec_for_batch(spec, batch) if spec.name == "submit_research_review" else spec
-                           for spec in frozen)
     from codey.research.questions import requires_question_ref
 
     if requires_question_ref(session):

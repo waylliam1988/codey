@@ -23,14 +23,6 @@ if TYPE_CHECKING:
 
 def prepare_research_completion(session: TaskSession, text: str, context: Any) -> tuple[str, ResearchReport | None]:
     """Derive this gate call's report without replacing the original proposal."""
-    if session.task_kind == "research_review":
-        from codey.research.semantic_review import submitted_review
-
-        basis = session.research_review_basis
-        if basis is None:
-            raise ValueError("research assessment has no frozen basis")
-        receipt = submitted_review(session, basis)
-        return "Research assessment recorded: " + receipt["status"], None
     if not session.policy.strict_research or session.task_kind == "evidence_followup":
         return text, None
     ledger = _context_get(context, "research_ledger")

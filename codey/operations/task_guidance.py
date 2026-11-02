@@ -17,17 +17,10 @@ def task_working_context(session: "TaskSession", research_ledger: "ResearchLedge
     from codey.operations.kernel_prompt import working_context
     from codey.research.completion_guidance import render_research_observations
 
-    if session.task_kind == "research_review" and session.research_review_basis is not None:
-        from codey.research.review_batches import next_batch
-        from codey.research.semantic_review import review_prompt
-
-        current = next_batch(session, session.research_review_basis)
-        return review_prompt(current) if current is not None else "All frozen assessment batches are recorded."
-
     # Pure research has no workspace mutations to verify. Its task already
     # appears verbatim in the admitted prompt; repeating it here also repeats
     # parent reports/plans in investigations and obscures the latest evidence.
-    research_only = (session.task_kind in {"research", "evidence_followup", "research_review"}
+    research_only = (session.task_kind in {"research", "evidence_followup"}
                      and not session.policy.allows("project.write"))
     parts = [] if research_only else [working_context(session)]
     from codey.research.local_scope import current_scope

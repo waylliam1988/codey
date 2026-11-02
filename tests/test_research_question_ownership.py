@@ -70,18 +70,12 @@ def test_passage_reuse_preserves_acquisition_and_adoption_ownership_on_recovery(
         assert not refused.ok and "premise belongs to another question" in refused.model_text
         saved_inference = execute(delegate, tools, session, "save_inference", {**inference, "premise_refs": ["f2"]})
         assert saved_inference.ok and tools.ledger.references["f3"].question_ref == "q2"
-        from codey.research.semantic_review import review_basis
-
         proposal = report_args("f1")
         proposal["report_sections"]["coverage"] = coverage
         compiled = compile_finding_report(proposal, tools.ledger, store)
-        basis = review_basis(compiled, tools, "Explain the writer limit.")
-        assert basis["claims"][0]["question_ref"] == "q1"
-        assert set(basis["investigations"]) == {"a1"}
+        assert compiled.reference_metadata["f1"]["question_ref"] == "q1"
+        assert {ref for row in compiled.coverage for ref in row["investigations"]} == {"a1"}
         assert len(tools.ledger.investigations) > 1
-        tools.ledger.references["f1"] = replace(tools.ledger.references["f1"], question_ref="q2")
-        with pytest.raises(ValueError, match="differs from accepted report version"):
-            review_basis(compiled, tools, "Explain the writer limit.")
     finally:
         store.close()
 

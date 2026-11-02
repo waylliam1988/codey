@@ -6,7 +6,6 @@ import json
 from collections.abc import Mapping
 from typing import Any, Protocol
 
-from codey.research.protocol_diagnostics import classify_no_json_reply
 from codey.research.tool_contract import (
     PROTOCOL_INVALID_ARGS,
     PROTOCOL_TOO_MANY_TOOLS,
@@ -17,6 +16,7 @@ from codey.research.tool_contract import (
     validate_tool_args,
 )
 from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
+from tests.support.research_protocol_diagnostics import classify_no_json_reply
 
 MAX_CALLS_PER_TURN = 1
 MAX_NATIVE_CALLS_PER_TURN = 4

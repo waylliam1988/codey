@@ -26,7 +26,7 @@ from codey.runtime.effects.effect_records import compute_args_digest
 @dataclass(frozen=True)
 class ResearchInvocation:
     attempt: int
-    purpose: Literal["research", "investigate", "synthesize", "review"]
+    purpose: Literal["research", "investigate", "synthesize"]
     plan_ref: str = ""
 
     @classmethod
@@ -43,11 +43,6 @@ class ResearchInvocation:
             raise ResearchContinuationError("invalid synthesis invocation")
         return cls(2 * rounds + 1, "synthesize")
 
-    @classmethod
-    def assessment(cls, cycle: int) -> ResearchInvocation:
-        if not 0 <= cycle <= 2:
-            raise ResearchContinuationError("invalid research assessment cycle")
-        return cls(8 + 2 * cycle, "review")
 
     @classmethod
     def extraction(cls, round_index: int, attempt: int, plan_ref: str) -> ResearchInvocation:
@@ -56,11 +51,6 @@ class ResearchInvocation:
             raise ResearchContinuationError("invalid extraction invocation")
         return cls(2 + (round_index - 1) * 2 + attempt - 1, "investigate", plan_ref)
 
-    @classmethod
-    def repair(cls, cycle: int) -> ResearchInvocation:
-        if not 0 <= cycle <= 1:
-            raise ResearchContinuationError("invalid research repair cycle")
-        return cls(9 + 2 * cycle, "synthesize")
 
 
 def restore_note_proposals(tools: Any, canonical: Mapping[str, object]) -> None:

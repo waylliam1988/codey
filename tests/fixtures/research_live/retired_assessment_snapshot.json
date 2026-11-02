@@ -1,0 +1,329 @@
+{
+  "schema_version": 3,
+  "implementation_id": "ea83bc1d3cc7a9095cbdfd8f48ddb55022bd65f200fb855f7ec31eb110443936",
+  "allowed": [
+    "submit_research_review"
+  ],
+  "contract_text": "- submit_research_review: Submit exactly the current frozen assessment batch. Leave arrays empty for categories without current items. The driver binds its original basis identity and supplies the next batch. Only a complete passing aggregate may publish the exact frozen report.\n  submit_research_review(args: { \"basis_digest\"?: string; \"assessment\": { \"requirements\": Array<{ \"task_ref\": string /* length 1..4000 */; \"question_refs\": Array<string> /* items 0..32 */; \"report_paths\": Array<string> /* items 0..32 */; \"state\": \"addressed\" | \"acknowledged_gap\" | \"missing\"; \"reason\": string /* length 1..4000 */ }> /* items 0..512 */; \"investigations\": Array<{ \"ref\": string /* length 1..4000 */; \"question_ref\": string /* length 1..4000 */; \"verdict\": \"relevant\" | \"irrelevant\" | \"uncertain\"; \"reason\": string /* length 1..4000 */ }> /* items 0..256 */; \"claims\": Array<{ \"ref\": string /* length 1..4000 */; \"units\": Array<{ \"unit\": number /* range 1..* */; \"verdict\": \"supported\" | \"unsupported\" | \"uncertain\"; \"quotes\": Array<{ \"evidence\": number /* range 1..* */; \"quote\": string /* length 1..4000 */ }> /* items 0..8 */; \"reason\": string /* length 1..4000 */ }> /* items 1..512 */ }> /* items 0..128 */; \"paragraphs\": Array<{ \"path\": string /* length 1..4000 */; \"units\": Array<{ \"unit\": number /* range 1..* */; \"verdict\": \"supported\" | \"unsupported\" | \"uncertain\"; \"basis\": \"findings\" | \"gap\"; \"finding_units\": Array<{ \"ref\": string /* length 1..4000 */; \"unit\": number /* range 1..* */ }> /* items 0..32 */; \"reason\": string /* length 1..4000 */ }> /* items 1..512 */ }> /* items 0..140 */ } })",
+  "tool_names": [
+    "submit_research_review"
+  ],
+  "nested_tool_names": [],
+  "research_scope": null,
+  "policy": {
+    "grants": [
+      "control",
+      "knowledge.write"
+    ],
+    "strict_research": false,
+    "sources_open_required": false,
+    "required_checks": [],
+    "source": "",
+    "version": 1,
+    "denied_capabilities": []
+  },
+  "specs": [
+    {
+      "name": "submit_research_review",
+      "aliases": [],
+      "grant": "knowledge.write",
+      "parameters": [
+        [
+          "basis_digest",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "assessment",
+          {
+            "type": "object",
+            "properties": {
+              "requirements": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "task_ref": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "question_refs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "minItems": 0,
+                      "maxItems": 32
+                    },
+                    "report_paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "minItems": 0,
+                      "maxItems": 32
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "addressed",
+                        "acknowledged_gap",
+                        "missing"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    }
+                  },
+                  "required": [
+                    "task_ref",
+                    "question_refs",
+                    "report_paths",
+                    "state",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 0,
+                "maxItems": 512
+              },
+              "investigations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "question_ref": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "verdict": {
+                      "type": "string",
+                      "enum": [
+                        "relevant",
+                        "irrelevant",
+                        "uncertain"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "question_ref",
+                    "verdict",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 0,
+                "maxItems": 256
+              },
+              "claims": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "units": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "unit": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "verdict": {
+                            "type": "string",
+                            "enum": [
+                              "supported",
+                              "unsupported",
+                              "uncertain"
+                            ]
+                          },
+                          "quotes": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "evidence": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "quote": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 4000
+                                }
+                              },
+                              "required": [
+                                "evidence",
+                                "quote"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "minItems": 0,
+                            "maxItems": 8
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4000
+                          }
+                        },
+                        "required": [
+                          "unit",
+                          "verdict",
+                          "quotes",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "minItems": 1,
+                      "maxItems": 512
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "units"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 0,
+                "maxItems": 128
+              },
+              "paragraphs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "units": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "unit": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "verdict": {
+                            "type": "string",
+                            "enum": [
+                              "supported",
+                              "unsupported",
+                              "uncertain"
+                            ]
+                          },
+                          "basis": {
+                            "type": "string",
+                            "enum": [
+                              "findings",
+                              "gap"
+                            ]
+                          },
+                          "finding_units": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "ref": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 4000
+                                },
+                                "unit": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "ref",
+                                "unit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "minItems": 0,
+                            "maxItems": 32
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4000
+                          }
+                        },
+                        "required": [
+                          "unit",
+                          "verdict",
+                          "basis",
+                          "finding_units",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "minItems": 1,
+                      "maxItems": 512
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "units"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 0,
+                "maxItems": 140
+              }
+            },
+            "required": [
+              "requirements",
+              "investigations",
+              "claims",
+              "paragraphs"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      ],
+      "required": [
+        "assessment"
+      ],
+      "json_examples": [],
+      "description": "Submit exactly the current frozen assessment batch. Leave arrays empty for categories without current items. The driver binds its original basis identity and supplies the next batch. Only a complete passing aggregate may publish the exact frozen report.",
+      "executor": "research_review",
+      "replay_class": "safe",
+      "parallel_safe": false,
+      "output_schema": {
+        "type": "string"
+      },
+      "declarations": ""
+    }
+  ],
+  "executors": [
+    {
+      "name": "submit_research_review",
+      "binding": null
+    }
+  ]
+}
