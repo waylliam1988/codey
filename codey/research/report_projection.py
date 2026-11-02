@@ -133,14 +133,19 @@ def project_accepted_report(compiled: ResearchReport, *, question: str, run_id: 
 
 def project_whole_answer(compiled: Any, *, question: str, run_id: str, session_id: str,
                          project: str, synthesis_id: str) -> ResearchRecord:
+    # Material saved only for an explicit knowledge update is not a body citation.
+    labels = {row["label"] for row in compiled.citation_bindings}
+    selected = [row for row in compiled.evidence_bindings if row["label"] in labels]
+    cited_sources = {(row["source_id"], row["source_revision"]) for row in selected}
+    versions = [row for row in compiled.source_versions if (row["id"], row["revision"]) in cited_sources]
     source_ids = {(row["id"], row["revision"]): stable_ref("source", row["id"], row["revision"])
-                  for row in compiled.source_versions}
+                  for row in versions}
     sources = tuple(ResearchSource(source_ids[(row["id"], row["revision"])],
         requested_url_ref=sanitize_research_url_ref(row["url"]), final_url_ref=sanitize_research_url_ref(row["url"]),
         title_digest=digest_text(row["title"]), content_hash=row["content_hash"],
-        retrieved_at=row["retrieved_at"], quality=row["quality"]) for row in compiled.source_versions)
+        retrieved_at=row["retrieved_at"], quality=row["quality"]) for row in versions)
     evidence = []
-    for row in compiled.evidence_bindings:
+    for row in selected:
         sid = source_ids[(row["source_id"], row["source_revision"])]
         evidence.append(ResearchEvidence(stable_ref("evidence", row["evidence_id"], row["evidence_revision"]),
             sid, row["excerpt_digest"], row["excerpt"], EvidenceLocator("knowledge_version", sid, page=row["page"],

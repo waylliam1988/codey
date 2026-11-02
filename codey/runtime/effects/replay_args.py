@@ -101,9 +101,15 @@ def _validate_research_answer(args: Mapping[str, object]) -> dict[str, object]:
     state = args.get("state")
     if not isinstance(state, str) or state not in {"answered", "partial", "unresolved"}:
         raise ValueError("research answer replay requires its explicit original state")
-    if set(args) == {"state", "markdown"}:
+    if set(args) in ({"state", "markdown"}, {"state", "markdown", "knowledge_updates"}):
         if not isinstance(args["markdown"], str) or not 12 <= len(args["markdown"].strip()) <= 64000:
             raise ValueError("invalid original whole-answer declaration")
+        if "knowledge_updates" in args:
+            from codey.research.knowledge_updates import MAX_UPDATES
+
+            updates = args["knowledge_updates"]
+            if not isinstance(updates, list) or len(updates) > MAX_UPDATES or any(not isinstance(row, dict) for row in updates):
+                raise ValueError("invalid original whole-answer knowledge batch")
     elif set(args) == {"state", "findings"}:
         refs = args["findings"]
         if (not isinstance(refs, list) or len(refs) > 16 or any(not isinstance(ref, str) for ref in refs)

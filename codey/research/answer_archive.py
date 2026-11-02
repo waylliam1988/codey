@@ -8,6 +8,7 @@ from typing import Any
 from codey.knowledge.archive import stable_identity
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference
 from codey.research.answer_contract import digest
+from codey.research.knowledge_updates import evidence_labels
 from codey.research.passages import passage_ref
 
 
@@ -34,12 +35,15 @@ def archive_scope(store: Any, *, project: str, session_id: str,
 
 def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, project: str,
                      session_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    """No writes. Every object is selected by an explicit inline citation.
+    """No writes. Select only inline citations and explicitly authored updates.
 
     Use each immutable ReadPassage, never the ledger's latest view of its URL.
     Whole answers use evidence directly; no model claims are manufactured here.
     """
     selected = {row["label"]: row["passage_ref"] for row in submission["citations"]}
+    aliases = dict(submission["scope"]["aliases"])
+    for label in evidence_labels(submission.get("knowledge_updates", [])):
+        selected.setdefault(label, aliases[label])
     versions = [store.repository.read(*pin) for ref in selected.values()
                 if (passage := ledger.read_passages.get(ref)) is not None
                 for pin in (passage.source_version, passage.evidence_version) if pin is not None]
@@ -112,6 +116,16 @@ def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, pro
             list(sources.values()), bindings)
 
 
+def prepared_scope(mutations: Any, evidence: Any, store: Any, *, project: str, session_id: str) -> tuple[str, str]:
+    from codey.knowledge.model import KnowledgeVersion
+
+    pending = {row["value"]["id"]: KnowledgeObject.from_dict(row["value"]) for row in mutations}
+    versions = [KnowledgeVersion(pending[row["evidence_id"]], row["evidence_revision"], "", "")
+                if row["evidence_id"] in pending else store.repository.read(row["evidence_id"], row["evidence_revision"])
+                for row in evidence]
+    return archive_scope(store, project=project, session_id=session_id, versions=versions)
+
+
 def publication_command(report: Any, *, task: str, run_id: str, projection: str,
                         note_id: str, session_id: str, project: str, store: Any) -> dict[str, Any]:
     """The original publication command owns all writes, including its one answer."""
@@ -124,12 +138,13 @@ def publication_command(report: Any, *, task: str, run_id: str, projection: str,
     report = AnswerReport.from_payload(report.to_payload())
     if report.task_digest != digest(task):
         raise ValueError("publication task differs from the submitted answer")
-    pending = {row["value"]["id"]: KnowledgeObject.from_dict(row["value"]) for row in report.knowledge_mutations}
-    from codey.knowledge.model import KnowledgeVersion
-
-    versions = [KnowledgeVersion(pending[row["id"]], row["revision"], "", "") if row["id"] in pending else
-                store.repository.read(row["id"], row["revision"]) for row in report.knowledge_refs]
-    scope, owner = archive_scope(store, project=project, session_id=session_id, versions=versions)
+    scope, owner = prepared_scope(report.knowledge_mutations, report.evidence_bindings, store,
+                                  project=project, session_id=session_id)
+    if report.knowledge_batch is not None and (scope, owner) != (
+            report.knowledge_batch["scope"], report.knowledge_batch["scope_id"]):
+        raise ValueError("knowledge batch scope differs from its selected material")
+    if report.knowledge_batch is not None and report.knowledge_batch["session_id"] != session_id:
+        raise ValueError("knowledge batch belongs to another session")
     references = tuple(KnowledgeReference(row["id"], row["revision"], "uses") for row in report.knowledge_refs)
     note = KnowledgeNote.create(type="synthesis", title=synthesis_title(task), body=report.text,
         tags=["research", *([f"session:{session_id}"] if session_id else [])],

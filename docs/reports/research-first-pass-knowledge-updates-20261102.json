@@ -1,0 +1,809 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-02",
+  "baseline_commit": "020c302b",
+  "artifact_root": ".e2e-artifacts/research-first-pass-knowledge-updates-20261102",
+  "identities": {
+    "A": {
+      "runtime_id": "a6bdd30ed86f3c9542bb3e4d80c149398517662c49679cbf120ec20a3aeb8601",
+      "harness_digest": "4ea8ad7331a80f738f88e5263031583f88ad0abd4e341b1a0b5270664e59d9d4",
+      "commit": "020c302b0f5e94a1b56f0b4443e84f3149b7ffc3",
+      "materials": {
+        "fixtures.json": "310bfa3c5835145005b9964013576392539593b9ba27814e9ce1ab81ac055a97",
+        "material-channel.json": "af5a43f6275b5b946091f333e17d3931e2bc2281509b6e6365bf3113537db6d4",
+        "limits.json": "b8c074ee7ec241c3717c17d09565620008a369f3eca37f39daf94fe84a6762de"
+      }
+    },
+    "A-retry": {
+      "runtime_id": "a6bdd30ed86f3c9542bb3e4d80c149398517662c49679cbf120ec20a3aeb8601",
+      "harness_digest": "4ea8ad7331a80f738f88e5263031583f88ad0abd4e341b1a0b5270664e59d9d4",
+      "commit": "020c302b0f5e94a1b56f0b4443e84f3149b7ffc3",
+      "materials": {
+        "fixtures.json": "310bfa3c5835145005b9964013576392539593b9ba27814e9ce1ab81ac055a97",
+        "material-channel.json": "af5a43f6275b5b946091f333e17d3931e2bc2281509b6e6365bf3113537db6d4",
+        "limits.json": "b8c074ee7ec241c3717c17d09565620008a369f3eca37f39daf94fe84a6762de"
+      }
+    },
+    "B-final": {
+      "runtime_id": "707ece5b4d867473720ea4520cec09c926eacfa79d1f435111a1c59962e29a61",
+      "harness_digest": "3fdca857e56557d8e0be3cc4e0ec6f2ef15f27baa65ad03ea87adb2743bc412e",
+      "commit": "020c302b0f5e94a1b56f0b4443e84f3149b7ffc3",
+      "materials": {
+        "fixtures.json": "310bfa3c5835145005b9964013576392539593b9ba27814e9ce1ab81ac055a97",
+        "material-channel.json": "af5a43f6275b5b946091f333e17d3931e2bc2281509b6e6365bf3113537db6d4",
+        "limits.json": "b8c074ee7ec241c3717c17d09565620008a369f3eca37f39daf94fe84a6762de"
+      }
+    },
+    "B-flexible": {
+      "runtime_id": "0ed383790371d9020b42d428d5a8886c716cabe38fa121c6a6b97957191513e6",
+      "harness_digest": "3fdca857e56557d8e0be3cc4e0ec6f2ef15f27baa65ad03ea87adb2743bc412e",
+      "commit": "020c302b0f5e94a1b56f0b4443e84f3149b7ffc3",
+      "materials": {
+        "fixtures.json": "310bfa3c5835145005b9964013576392539593b9ba27814e9ce1ab81ac055a97",
+        "material-channel.json": "af5a43f6275b5b946091f333e17d3931e2bc2281509b6e6365bf3113537db6d4",
+        "limits.json": "b8c074ee7ec241c3717c17d09565620008a369f3eca37f39daf94fe84a6762de"
+      }
+    },
+    "B-slots": {
+      "runtime_id": "3f6253fda43dd43cedb3d6147af19193d51e9acf23dff73b9396171c72467eb2",
+      "harness_digest": "3fdca857e56557d8e0be3cc4e0ec6f2ef15f27baa65ad03ea87adb2743bc412e",
+      "commit": "020c302b0f5e94a1b56f0b4443e84f3149b7ffc3",
+      "materials": {
+        "fixtures.json": "310bfa3c5835145005b9964013576392539593b9ba27814e9ce1ab81ac055a97",
+        "material-channel.json": "af5a43f6275b5b946091f333e17d3931e2bc2281509b6e6365bf3113537db6d4",
+        "limits.json": "b8c074ee7ec241c3717c17d09565620008a369f3eca37f39daf94fe84a6762de"
+      }
+    }
+  },
+  "experiment": {
+    "baseline": "020c302b",
+    "candidate": "isolated worktree, exact runtime source digest frozen before inference",
+    "model_endpoint": "http://127.0.0.1:5001",
+    "seeds": [
+      74,
+      75
+    ],
+    "cases": [
+      "queue-accumulate",
+      "wal-accumulate",
+      "queue-control",
+      "wal-control"
+    ],
+    "protocol": "native",
+    "mode": "original source reads",
+    "sampling": {
+      "temperature": 0.3,
+      "top_p": 0.9,
+      "max_tokens": 4096,
+      "thinking": false
+    },
+    "limits": {
+      "turns": 6,
+      "requests": 6,
+      "process_seconds": 240,
+      "agent_seconds": 180
+    },
+    "grade": {
+      "accumulation": "Formal answer, at least one supported candidate claim and one correct candidate inference depending on a claim, all at exact revision, scoped and later retrievable; manual audit of content and conditions. Merely saying saved is a failure.",
+      "queue": "Unfinished count increases on put and decreases on task_done; join unblocks at zero. No replacement with queue.empty or get count.",
+      "wal": "Read-only since 3.22.0, existing readable shm AND wal OR writable containing directory to create them OR immutable connection. These alternatives remain OR, scoped to new versions.",
+      "controls": "Formal delivery and content correctness must not worsen in this small matrix; no unsolicited structured extraction; compare requests/tokens without claiming an efficiency improvement from added work.",
+      "acceptance": "Candidate improves complete evidence-backed accumulation, with all four accumulation trials correct and four control answers delivered and correct; deterministic safety/recovery and full typing gates pass before merge."
+    },
+    "limits_of_claim": "Small frozen local model test only; not an estimate of general research correctness or autonomous lifetime learning.",
+    "revision": "B-slots: references are string lists; code derives supported_by/depends_on/motivated_by from kind, with separate optional limiting/contrary evidence slots for claims. Local key and bracket normalization retained.",
+    "previous_variant": "B-flexible: 2/4 persisted claim and inference; only 1/4 had the requested inference-to-claim link. Queue failures were invalid relation choices. Not accepted.",
+    "baseline_limit": "A WAL seed 74 had two backend stalls; seed 75 was not attempted after repeated identical stalls. Those are not counted as semantic failures. Queue accumulation and all ordinary controls are matched valid comparisons."
+  },
+  "audit_method": "Codex compared outputs with frozen source/rubric and reopened repositories; tested Gemma did not grade its own output.",
+  "results": [
+    {
+      "variant": "A",
+      "trial": "queue-accumulate-74-codey",
+      "stop_reason": "no_progress",
+      "requests": 6,
+      "completed_requests": 6,
+      "backend_input_tokens": 21134,
+      "backend_output_tokens": 704,
+      "version_counts": {},
+      "required_graph_and_recall": false,
+      "answer_audit": "no_report",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": null,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "A",
+      "trial": "queue-accumulate-75-codey",
+      "stop_reason": "no_progress",
+      "requests": 6,
+      "completed_requests": 6,
+      "backend_input_tokens": 21101,
+      "backend_output_tokens": 647,
+      "version_counts": {},
+      "required_graph_and_recall": false,
+      "answer_audit": "no_report",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": null,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "A",
+      "trial": "queue-control-74-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 6609,
+      "backend_output_tokens": 218,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "pass_original_question_conditions",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "A",
+      "trial": "queue-control-75-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 6613,
+      "backend_output_tokens": 209,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "pass_original_question_conditions",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "A",
+      "trial": "wal-accumulate-74-codey",
+      "stop_reason": "error",
+      "requests": 3,
+      "completed_requests": 2,
+      "backend_input_tokens": 6680,
+      "backend_output_tokens": 136,
+      "version_counts": {},
+      "required_graph_and_recall": false,
+      "answer_audit": "infrastructure_unassessable",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": null,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "A",
+      "trial": "wal-control-74-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 6501,
+      "backend_output_tokens": 175,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "pass_original_question_conditions",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "A",
+      "trial": "wal-control-75-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 6495,
+      "backend_output_tokens": 167,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "pass_original_question_conditions",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "A-retry",
+      "trial": "wal-accumulate-74-codey",
+      "stop_reason": "error",
+      "requests": 3,
+      "completed_requests": 2,
+      "backend_input_tokens": 6679,
+      "backend_output_tokens": 148,
+      "version_counts": {},
+      "required_graph_and_recall": false,
+      "answer_audit": "infrastructure_unassessable",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": null,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-final",
+      "trial": "queue-accumulate-74-codey",
+      "stop_reason": "done",
+      "requests": 3,
+      "completed_requests": 3,
+      "backend_input_tokens": 11873,
+      "backend_output_tokens": 713,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": true,
+      "answer_audit": "not_scored",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {
+        "claim-e6d3c981d871bb98480107801f8e7e471e4a698a3bf6eee2d2e68cb4e9b2c500": true,
+        "inference-e16a98d262cb0d563d821e95cf36b50c71a7e6e4d1ee5864d99bcc46527caff4": true
+      }
+    },
+    {
+      "variant": "B-final",
+      "trial": "queue-accumulate-75-codey",
+      "stop_reason": "protocol",
+      "requests": 6,
+      "completed_requests": 6,
+      "backend_input_tokens": 24492,
+      "backend_output_tokens": 1887,
+      "version_counts": {},
+      "required_graph_and_recall": false,
+      "answer_audit": "no_report",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": null,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-final",
+      "trial": "queue-control-74-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 7512,
+      "backend_output_tokens": 211,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "not_scored",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-final",
+      "trial": "queue-control-75-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 7512,
+      "backend_output_tokens": 208,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "not_scored",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-final",
+      "trial": "wal-accumulate-74-codey",
+      "stop_reason": "done",
+      "requests": 5,
+      "completed_requests": 5,
+      "backend_input_tokens": 20196,
+      "backend_output_tokens": 1511,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "not_scored",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {
+        "claim-56dd22e05bdaffb6e90e23759bb1989a992a919fb63dd1fb5556a52b21aebb96": true
+      }
+    },
+    {
+      "variant": "B-final",
+      "trial": "wal-accumulate-75-codey",
+      "stop_reason": "protocol",
+      "requests": 6,
+      "completed_requests": 6,
+      "backend_input_tokens": 24149,
+      "backend_output_tokens": 2005,
+      "version_counts": {},
+      "required_graph_and_recall": false,
+      "answer_audit": "no_report",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": null,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-final",
+      "trial": "wal-control-74-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 7390,
+      "backend_output_tokens": 170,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "not_scored",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-final",
+      "trial": "wal-control-75-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 7399,
+      "backend_output_tokens": 277,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "not_scored",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-flexible",
+      "trial": "queue-accumulate-74-codey",
+      "stop_reason": "no_progress",
+      "requests": 6,
+      "completed_requests": 6,
+      "backend_input_tokens": 24911,
+      "backend_output_tokens": 1665,
+      "version_counts": {},
+      "required_graph_and_recall": false,
+      "answer_audit": "no_report",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": null,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-flexible",
+      "trial": "queue-accumulate-75-codey",
+      "stop_reason": "no_progress",
+      "requests": 6,
+      "completed_requests": 6,
+      "backend_input_tokens": 24651,
+      "backend_output_tokens": 1865,
+      "version_counts": {},
+      "required_graph_and_recall": false,
+      "answer_audit": "no_report",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": null,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-flexible",
+      "trial": "queue-control-74-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 7752,
+      "backend_output_tokens": 212,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "not_scored",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-flexible",
+      "trial": "queue-control-75-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 7754,
+      "backend_output_tokens": 211,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "not_scored",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-flexible",
+      "trial": "wal-accumulate-74-codey",
+      "stop_reason": "done",
+      "requests": 3,
+      "completed_requests": 3,
+      "backend_input_tokens": 12139,
+      "backend_output_tokens": 948,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "not_scored",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {
+        "claim-08bb14a5cbda23ccdbec1854f6081a9d6349654e1dc056cf27c464b8a2dfed65": true,
+        "inference-a765f744f2ffb633c3b5aac18da67dac42a4f4601709edf2e20678a2ab2bb8dd": true
+      }
+    },
+    {
+      "variant": "B-flexible",
+      "trial": "wal-accumulate-75-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 7827,
+      "backend_output_tokens": 461,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": true,
+      "answer_audit": "not_scored",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {
+        "claim-5bfc821343a77da979823b23c8e29c83d02d03a4f78085df3b9d01592964e900": true,
+        "inference-b9ebb5558782d3132d2b78337096fd350c32cf6b08348fa7fea82f5a266cf644": true
+      }
+    },
+    {
+      "variant": "B-flexible",
+      "trial": "wal-control-74-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 7639,
+      "backend_output_tokens": 179,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "not_scored",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-flexible",
+      "trial": "wal-control-75-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 7646,
+      "backend_output_tokens": 269,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "not_scored",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-slots",
+      "trial": "queue-accumulate-74-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 8310,
+      "backend_output_tokens": 371,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": true,
+      "answer_audit": "pass_original_question_conditions",
+      "strict_knowledge_conditions_audit": "pass_in_this_fixture",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {
+        "claim-f5aedb9e8c085b7e7301aa6eefebc18916c137f872a660bdad1e111fcc551f5f": true,
+        "inference-1859286ef92abd36d27db83770bd11a8dc3d6a5d85260057e3407d5e180b0cc6": true
+      }
+    },
+    {
+      "variant": "B-slots",
+      "trial": "queue-accumulate-75-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 8306,
+      "backend_output_tokens": 373,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": true,
+      "answer_audit": "pass_original_question_conditions",
+      "strict_knowledge_conditions_audit": "pass_in_this_fixture",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {
+        "claim-ba77afc13b4dd98e356c6a7f1cc4998444ed3a6e58e1be7f2f0b9d82ae23c261": true,
+        "inference-74c66f722125743a598ef1ef2fc0e625cc4d80e0bb9cc03074f86502ee6acc56": true
+      }
+    },
+    {
+      "variant": "B-slots",
+      "trial": "queue-control-74-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 8118,
+      "backend_output_tokens": 209,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "pass_original_question_conditions",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-slots",
+      "trial": "queue-control-75-codey",
+      "stop_reason": "done",
+      "requests": 3,
+      "completed_requests": 3,
+      "backend_input_tokens": 12624,
+      "backend_output_tokens": 380,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "pass_original_question_conditions",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-slots",
+      "trial": "wal-accumulate-74-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 8187,
+      "backend_output_tokens": 421,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": true,
+      "answer_audit": "pass_original_question_conditions",
+      "strict_knowledge_conditions_audit": "pass_in_this_fixture",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {
+        "claim-8d0f3c022e46782b8798d8eefe60975487519a16e661f0dcb06e513592a0a25d": true,
+        "inference-fdc20775381cc2a3bde79cc08c6f390331c08317ce50bf097602a66ad0a6164e": true
+      }
+    },
+    {
+      "variant": "B-slots",
+      "trial": "wal-accumulate-75-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 8192,
+      "backend_output_tokens": 455,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": true,
+      "answer_audit": "pass_original_question_conditions",
+      "strict_knowledge_conditions_audit": "needs_review_omits_readability",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {
+        "claim-31e161543c6b087ff0bc171c8e45801f6f7a4f431a2a1b9e109e8611e7b2b82d": true,
+        "inference-0c04c151cf07dda3ef03fca99e1d4be1c7c8a69df4df80abefa808c7bcd89909": true
+      }
+    },
+    {
+      "variant": "B-slots",
+      "trial": "wal-control-74-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 8000,
+      "backend_output_tokens": 165,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "pass_original_question_conditions",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    },
+    {
+      "variant": "B-slots",
+      "trial": "wal-control-75-codey",
+      "stop_reason": "done",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 8001,
+      "backend_output_tokens": 173,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "required_graph_and_recall": false,
+      "answer_audit": "pass_original_question_conditions",
+      "strict_knowledge_conditions_audit": "not_scored",
+      "condition_maps_populated": 0,
+      "one_publication_commit": true,
+      "cross_session_exact_wording_recall": {}
+    }
+  ],
+  "final_summary": {
+    "fresh_accumulation_graph": {
+      "passed": 4,
+      "total": 4,
+      "requests": 8
+    },
+    "fresh_accumulation_answer_conditions": {
+      "passed": 4,
+      "total": 4
+    },
+    "strict_knowledge_draft_conditions": {
+      "passed": 3,
+      "total": 4,
+      "strict_preregistered_all_four_met": false
+    },
+    "ordinary_answer_conditions": {
+      "baseline_passed": 4,
+      "candidate_passed": 4,
+      "total": 4
+    },
+    "ordinary_requests": {
+      "baseline": 8,
+      "candidate": 9
+    },
+    "ordinary_backend_input_tokens": {
+      "baseline": 26218,
+      "candidate": 36743,
+      "increase_percent": 40.1
+    },
+    "paired_queue_accumulation": {
+      "baseline_passed": 0,
+      "candidate_passed": 2,
+      "total": 2,
+      "baseline_requests": 12,
+      "candidate_requests": 4
+    },
+    "wal_baseline": "Seed 74 timed out twice and left backend busy; user restarted twice; seed 75 not run. Excluded from semantic comparison."
+  },
+  "scope_of_integration": "Engineering timing gap and exact, atomic storage of explicitly authored candidate knowledge. No semantic certification, automatic condition extraction, or general model correctness claim.",
+  "limitations": [
+    "All final structured condition maps were empty.",
+    "WAL seed 75 candidate inference abbreviated file requirements and omitted readability; retained only as unreviewed candidate, not active/verified.",
+    "Cross-session audit used exact wording; cross-topic paraphrase recall was not evaluated.",
+    "Four ordinary controls required one extra request and about 40.1% more backend-reported input tokens.",
+    "Full matched WAL accumulation baseline is unavailable."
+  ],
+  "verification": {
+    "targeted": 106,
+    "subtests": 15,
+    "expanded_current": {
+      "passed": 829,
+      "subtests_passed": 58,
+      "seconds": 603.65,
+      "junit": "slots-tests.xml",
+      "scope": "expanded related selection, not full repository suite"
+    },
+    "typing": "All mypy/pyrefly/ty targets 3.11/3.12/3.13 passed over codey; slots-typechecks.txt",
+    "pyrefly_existing_suppressed": 35,
+    "pyrefly_existing_warnings": 80,
+    "ruff": "passed",
+    "diff_whitespace": "passed"
+  }
+}

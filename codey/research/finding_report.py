@@ -56,9 +56,9 @@ class FindingReport:
 
     @classmethod
     def from_payload(cls, raw: Any) -> FindingReport | AnswerReport:
-        from codey.research.answer_report import REPORT_SCHEMA
+        from codey.research.answer_report import KNOWLEDGE_REPORT_SCHEMA, REPORT_SCHEMA
 
-        if isinstance(raw, dict) and raw.get("schema") == REPORT_SCHEMA:
+        if isinstance(raw, dict) and raw.get("schema") in {REPORT_SCHEMA, KNOWLEDGE_REPORT_SCHEMA}:
             return AnswerReport.from_payload(raw)
         fields = {"text", "knowledge_refs", "finding_ids", "coverage", "reference_metadata",
                   "source_versions", "paragraph_bindings", "proposal_digest", "questions", "evidence_bindings", "open_questions", "selection_receipts"}

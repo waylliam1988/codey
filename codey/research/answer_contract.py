@@ -13,6 +13,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from codey.knowledge.model import canonical_json
+from codey.research.knowledge_updates import normalize_updates, updates_schema
 from codey.research.questions import INVESTIGATION_TOOLS
 
 ANSWER_SCOPE_VERSION = 4
@@ -43,8 +44,14 @@ ANSWER_GUIDANCE = (
     "submit_research_answer with markdown containing the complete answer and state=answered/partial/unresolved. "
     "Put the answer directly in the tool arguments; the application publishes that exact submission."
     " Historical search hits are leads: knowledge_read pins source/evidence versions into the same eN channel. "
-    "Optional knowledge_commit can explicitly accumulate or revise candidate claims, conditions and inferences "
-    "with exact evidence references; it is never required for answer delivery and cannot publish an answer."
+    "To retain new structured knowledge, optionally include knowledge_updates in submit_research_answer: "
+    "Use references as string lists: original eN for claims, all needed eN or same-batch keys for inferences. "
+    "Use local keys such as k1 or writer_limit. An inference must cite all needed premises; "
+    "a separate source fact belongs in a claim. "
+    "Preserve conditions and uncertainty. The original publication saves these as candidates together with the answer. "
+    "Use knowledge_commit to edit existing stored objects with exact database references; "
+    "current eN labels belong in the submission batch, not knowledge_commit. "
+    "Knowledge accumulation is optional for ordinary answers and cannot certify interpretation."
 )
 
 KNOWLEDGE_READ_GUIDANCE = (
@@ -159,13 +166,15 @@ def citation_occurrences(markdown: str) -> list[dict[str, Any]]:
 
 
 def submit_answer(scope: AnswerScope, args: dict[str, Any]) -> dict[str, Any]:
-    if (set(args) != {"markdown", "state"} or args.get("state") not in ANSWER_STATES
+    if (not {"markdown", "state"} <= args.keys() or args.keys() - {"markdown", "state", "knowledge_updates"}
+            or args.get("state") not in ANSWER_STATES
             or not isinstance(args.get("markdown"), str)
             or not 12 <= len(args["markdown"].strip()) <= MAX_ANSWER_CHARACTERS):
         raise ValueError("Submit markdown (12..64000 characters) and state=answered/partial/unresolved.")
     markdown = args["markdown"].strip()
     citations = citation_occurrences(markdown)
     aliases = dict(scope.aliases)
+    updates = normalize_updates(args.get("knowledge_updates", []), set(aliases))
     unknown = {row["label"] for row in citations} - aliases.keys()
     if unknown:
         raise ValueError("Unknown or unshown evidence: " + ", ".join(sorted(unknown))
@@ -177,6 +186,8 @@ def submit_answer(scope: AnswerScope, args: dict[str, Any]) -> dict[str, Any]:
     body = {"schema_version": ANSWER_CONTRACT_VERSION, "task_digest": scope.task_digest,
             "markdown": markdown, "state": args["state"], "scope": scope.to_payload(),
             "citations": [{**row, "passage_ref": aliases[row["label"]]} for row in citations]}
+    if updates:
+        body.update(schema_version=2, knowledge_updates=updates)
     return {**body, "submission_digest": digest(body)}
 
 
@@ -184,7 +195,10 @@ def validate_submission(raw: Any, task: str) -> dict[str, Any]:
     if not isinstance(raw, dict) or raw.get("task_digest") != digest(task):
         raise ValueError("research submission belongs to another task")
     scope = AnswerScope.from_payload(raw.get("scope"))
-    expected = submit_answer(scope, {"markdown": raw.get("markdown"), "state": raw.get("state")})
+    args = {"markdown": raw.get("markdown"), "state": raw.get("state")}
+    if "knowledge_updates" in raw:
+        args["knowledge_updates"] = raw["knowledge_updates"]
+    expected = submit_answer(scope, args)
     if raw != expected:
         raise ValueError("research submission differs from its frozen input")
     return expected
@@ -223,10 +237,17 @@ def answer_spec(spec: Any, scope: AnswerScope) -> Any:
         return freeze_spec_parameters(replace(spec, parameters=tuple(parameters.items()),
             required=tuple(k for k in spec.required if k != "question_ref"), json_examples=tuple(examples), description=description))
     parameters = {"markdown": {"type": "string", "minLength": 12, "maxLength": MAX_ANSWER_CHARACTERS},
-                  "state": {"type": "string", "enum": list(ANSWER_STATES)}}
+                  "state": {"type": "string", "enum": list(ANSWER_STATES)},
+                  "knowledge_updates": updates_schema()}
     return freeze_spec_parameters(replace(spec, parameters=tuple(parameters.items()), required=("markdown", "state"),
         description="Submit the whole research answer as Markdown, with explicit [eN] citations beside supported statements. "
                     "Explain any unanswered requested point in place. state is your declaration, not semantic certification. "
+                    "Optional knowledge_updates saves explicitly authored candidate claims/inferences/questions atomically: "
+                    "use unique local keys (k1 or writer_limit). references is a string list, e.g. [\"e1\"] for a claim "
+                    "or [\"k1\",\"e1\"] for an inference. The application derives relation types from kind. "
+                    "Include all premises needed by an inference; "
+                    "source-stated facts are claims. Batch keys are not answer citations. "
+                    "Omit this batch for ordinary answer delivery. "
                     "The application validates and publishes this answer; no separate plan, finding, adoption or done is needed.",
         json_examples=(canonical_json({"tool": spec.name, "args": {"state": "partial" if scope.aliases else "unresolved",
             "markdown": ("Supported answer [" + scope.aliases[0][0] + "]. Remaining uncertainty: ...") if scope.aliases else
