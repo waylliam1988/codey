@@ -805,5 +805,11 @@
     "pyrefly_existing_warnings": 80,
     "ruff": "passed",
     "diff_whitespace": "passed"
+  },
+  "followup_reassessment": {
+    "report": "research-first-pass-reassessment-20261102.json",
+    "scope": "Independent eight-trial WAL reassessment after another user restart. Original trials and scores preserved.",
+    "wal_baseline_now_observed": true,
+    "original_strict_semantic_acceptance_still_not_met": true
   }
 }

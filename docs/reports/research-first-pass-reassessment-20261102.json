@@ -1,0 +1,470 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-02",
+  "status": "completed",
+  "baseline_commit": "020c302b",
+  "candidate_commit": "d081266c",
+  "artifact_root": ".e2e-artifacts/research-first-pass-reassessment-20261102",
+  "frozen_source": {
+    "A-restored": {
+      "runtime_id": "c6c91103dfc8efe042b10a0196e0028ed5344cb8500fa93f48b0c90fb7d8c908",
+      "harness_digest": "4ea8ad7331a80f738f88e5263031583f88ad0abd4e341b1a0b5270664e59d9d4",
+      "commit": "020c302b0f5e94a1b56f0b4443e84f3149b7ffc3",
+      "materials": {
+        "fixtures.json": "310bfa3c5835145005b9964013576392539593b9ba27814e9ce1ab81ac055a97",
+        "material-channel.json": "af5a43f6275b5b946091f333e17d3931e2bc2281509b6e6365bf3113537db6d4",
+        "limits.json": "b8c074ee7ec241c3717c17d09565620008a369f3eca37f39daf94fe84a6762de"
+      }
+    },
+    "B-restored": {
+      "runtime_id": "079ce7d3fa8e8a91fda172790cbf9dc9e6d1d072977e08cdd22c2b46d45f84e8",
+      "harness_digest": "4ea8ad7331a80f738f88e5263031583f88ad0abd4e341b1a0b5270664e59d9d4",
+      "commit": "d081266cc97ffdea42969981204e59f486298db5",
+      "materials": {
+        "fixtures.json": "310bfa3c5835145005b9964013576392539593b9ba27814e9ce1ab81ac055a97",
+        "material-channel.json": "af5a43f6275b5b946091f333e17d3931e2bc2281509b6e6365bf3113537db6d4",
+        "limits.json": "b8c074ee7ec241c3717c17d09565620008a369f3eca37f39daf94fe84a6762de"
+      }
+    }
+  },
+  "criteria": {
+    "date": "2026-11-02",
+    "baseline": "020c302b",
+    "candidate": "d081266c",
+    "reason": "Complete missing WAL baseline after user restarted backend; assess usable knowledge rather than storage alone.",
+    "frozen_cases": [
+      "wal-accumulate",
+      "wal-control"
+    ],
+    "seeds": [
+      75,
+      74
+    ],
+    "parameters": {
+      "baseline": "020c302b",
+      "candidate": "isolated worktree, exact runtime source digest frozen before inference",
+      "model_endpoint": "http://127.0.0.1:5001",
+      "seeds": [
+        74,
+        75
+      ],
+      "cases": [
+        "queue-accumulate",
+        "wal-accumulate",
+        "queue-control",
+        "wal-control"
+      ],
+      "protocol": "native",
+      "mode": "original source reads",
+      "sampling": {
+        "temperature": 0.3,
+        "top_p": 0.9,
+        "max_tokens": 4096,
+        "thinking": false
+      },
+      "limits": {
+        "turns": 6,
+        "requests": 6,
+        "process_seconds": 240,
+        "agent_seconds": 180
+      },
+      "grade": {
+        "accumulation": "Formal answer, at least one supported candidate claim and one correct candidate inference depending on a claim, all at exact revision, scoped and later retrievable; manual audit of content and conditions. Merely saying saved is a failure.",
+        "queue": "Unfinished count increases on put and decreases on task_done; join unblocks at zero. No replacement with queue.empty or get count.",
+        "wal": "Read-only since 3.22.0, existing readable shm AND wal OR writable containing directory to create them OR immutable connection. These alternatives remain OR, scoped to new versions.",
+        "controls": "Formal delivery and content correctness must not worsen in this small matrix; no unsolicited structured extraction; compare requests/tokens without claiming an efficiency improvement from added work.",
+        "acceptance": "Candidate improves complete evidence-backed accumulation, with all four accumulation trials correct and four control answers delivered and correct; deterministic safety/recovery and full typing gates pass before merge."
+      },
+      "limits_of_claim": "Small frozen local model test only; not an estimate of general research correctness or autonomous lifetime learning.",
+      "revision": "B-slots: references are string lists; code derives supported_by/depends_on/motivated_by from kind, with separate optional limiting/contrary evidence slots for claims. Local key and bracket normalization retained.",
+      "previous_variant": "B-flexible: 2/4 persisted claim and inference; only 1/4 had the requested inference-to-claim link. Queue failures were invalid relation choices. Not accepted.",
+      "baseline_limit": "A WAL seed 74 had two backend stalls; seed 75 was not attempted after repeated identical stalls. Those are not counted as semantic failures. Queue accumulation and all ordinary controls are matched valid comparisons."
+    },
+    "audit": "Count knowledge as usable only when claim/inference facts, scope, conditions, exact evidence versions, intended graph and cross-session recall all hold. Read and audit original raw outputs, not tested-model grading.",
+    "historical_gate": "Prior strict all-four knowledge condition gate was not met (3/4); do not erase it or turn infrastructure faults into semantic failures.",
+    "decision": "Compare baseline and candidate usable accumulation, answer quality and cost. Retain only a demonstrated benefit within its tested scope; otherwise revert d081266c. No production source edits or commits during the frozen matrix."
+  },
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "backend": {
+    "name": "KoboldCpp",
+    "version": "1.117.1",
+    "endpoint": "http://127.0.0.1:5001"
+  },
+  "order": [
+    "A/wal-accumulate/75",
+    "B/wal-accumulate/75",
+    "B/wal-accumulate/74",
+    "A/wal-accumulate/74",
+    "A/wal-control/74",
+    "A/wal-control/75",
+    "B/wal-control/74",
+    "B/wal-control/75"
+  ],
+  "infrastructure_failures_this_reassessment": 0,
+  "frozen_identities_verified_after_last_inference": true,
+  "production_source_changed_during_matrix": false,
+  "trials": [
+    {
+      "variant": "A-restored",
+      "trial": "wal-accumulate-74-codey",
+      "requests": 6,
+      "completed_requests": 6,
+      "backend_input_tokens": 21303,
+      "backend_output_tokens": 1281,
+      "version_counts": {},
+      "structural_accumulation": false,
+      "cross_session_exact_wording_recall": {},
+      "stop_reason": "no_progress",
+      "one_publication_commit": null,
+      "manual_answer_conditions": "not_delivered",
+      "manual_knowledge_fact_content_and_condition_text": "not_applicable",
+      "manual_fact_inference_distinction": "not_applicable",
+      "structured_condition_maps_populated": 0,
+      "knowledge_entries": []
+    },
+    {
+      "variant": "A-restored",
+      "trial": "wal-accumulate-75-codey",
+      "requests": 6,
+      "completed_requests": 6,
+      "backend_input_tokens": 21001,
+      "backend_output_tokens": 1370,
+      "version_counts": {},
+      "structural_accumulation": false,
+      "cross_session_exact_wording_recall": {},
+      "stop_reason": "no_progress",
+      "one_publication_commit": null,
+      "manual_answer_conditions": "not_delivered",
+      "manual_knowledge_fact_content_and_condition_text": "not_applicable",
+      "manual_fact_inference_distinction": "not_applicable",
+      "structured_condition_maps_populated": 0,
+      "knowledge_entries": []
+    },
+    {
+      "variant": "A-restored",
+      "trial": "wal-control-74-codey",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 6503,
+      "backend_output_tokens": 240,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "structural_accumulation": false,
+      "cross_session_exact_wording_recall": {},
+      "stop_reason": "done",
+      "one_publication_commit": true,
+      "manual_answer_conditions": "pass",
+      "manual_knowledge_fact_content_and_condition_text": "not_applicable",
+      "manual_fact_inference_distinction": "not_applicable",
+      "structured_condition_maps_populated": 0,
+      "knowledge_entries": []
+    },
+    {
+      "variant": "A-restored",
+      "trial": "wal-control-75-codey",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 6505,
+      "backend_output_tokens": 177,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "structural_accumulation": false,
+      "cross_session_exact_wording_recall": {},
+      "stop_reason": "done",
+      "one_publication_commit": true,
+      "manual_answer_conditions": "pass",
+      "manual_knowledge_fact_content_and_condition_text": "not_applicable",
+      "manual_fact_inference_distinction": "not_applicable",
+      "structured_condition_maps_populated": 0,
+      "knowledge_entries": []
+    },
+    {
+      "variant": "B-restored",
+      "trial": "wal-accumulate-74-codey",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 8193,
+      "backend_output_tokens": 460,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "structural_accumulation": true,
+      "cross_session_exact_wording_recall": {
+        "claim-27001359f1550053e0fda42d87d92cc4458270c8bda28434fa39a68145624c90": true,
+        "inference-1ee19bea6df7f8785c5a867f111b81060c71dae29b26a2ac1a31ba34e8d6a4c1": true
+      },
+      "stop_reason": "done",
+      "one_publication_commit": true,
+      "manual_answer_conditions": "pass",
+      "manual_knowledge_fact_content_and_condition_text": "pass",
+      "manual_fact_inference_distinction": "fail_source_stated_conditions_stored_as_inference",
+      "structured_condition_maps_populated": 0,
+      "knowledge_entries": [
+        {
+          "id": "claim-27001359f1550053e0fda42d87d92cc4458270c8bda28434fa39a68145624c90",
+          "kind": "claim",
+          "content": "SQLite 从 3.22.0 版本开始支持在只读媒体或缺乏写权限的情况下读取 WAL 模式的数据库。",
+          "origin": "model_extraction",
+          "title": "SQLite 支持只读 WAL 数据库的版本",
+          "status": "candidate",
+          "scope": "personal",
+          "scope_id": "owner-8bc636fc2f22474a840f04fd00014a19",
+          "aliases": [],
+          "conditions": {},
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k1",
+            "submission_digest": "8abddc3853d6b54f3bbabd5dcd4e267a449dbe1343f19fbc6bc4eac30cbb9cda"
+          },
+          "references": [
+            {
+              "target": "evidence-b4687fa6c233181e991b5738e18f231cd39582fb3de60345240f74c4d50a20ec",
+              "revision": 1,
+              "relation": "supported_by"
+            }
+          ],
+          "revision": 1,
+          "recorded_at": "2026-11-02T18:37:28+08:00",
+          "commit_id": "answer-commit-1930dd086483a0f192bce03f67b5031e26e937b39fa54b08d70f00ec1bf5d0db",
+          "dependencies_changed": false,
+          "interpretation_review": "unreviewed"
+        },
+        {
+          "id": "inference-1ee19bea6df7f8785c5a867f111b81060c71dae29b26a2ac1a31ba34e8d6a4c1",
+          "kind": "inference",
+          "content": "在只读媒体或缺乏写权限时，只要满足以下任一条件，即可读取 WAL 模式数据库：1. -shm 和 -wal 文件已存在且可读；2. 数据库所在目录具有写权限（可创建 -shm 和 -wal 文件）；3. 使用 immutable 查询参数打开数据库连接。",
+          "origin": "model_inference",
+          "title": "只读 WAL 数据库的替代条件",
+          "status": "candidate",
+          "scope": "personal",
+          "scope_id": "owner-8bc636fc2f22474a840f04fd00014a19",
+          "aliases": [],
+          "conditions": {},
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k2",
+            "submission_digest": "8abddc3853d6b54f3bbabd5dcd4e267a449dbe1343f19fbc6bc4eac30cbb9cda"
+          },
+          "references": [
+            {
+              "target": "claim-27001359f1550053e0fda42d87d92cc4458270c8bda28434fa39a68145624c90",
+              "revision": 1,
+              "relation": "depends_on"
+            },
+            {
+              "target": "evidence-b4687fa6c233181e991b5738e18f231cd39582fb3de60345240f74c4d50a20ec",
+              "revision": 1,
+              "relation": "depends_on"
+            }
+          ],
+          "revision": 1,
+          "recorded_at": "2026-11-02T18:37:28+08:00",
+          "commit_id": "answer-commit-1930dd086483a0f192bce03f67b5031e26e937b39fa54b08d70f00ec1bf5d0db",
+          "dependencies_changed": false,
+          "interpretation_review": "unreviewed"
+        }
+      ]
+    },
+    {
+      "variant": "B-restored",
+      "trial": "wal-accumulate-75-codey",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 8182,
+      "backend_output_tokens": 441,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "structural_accumulation": true,
+      "cross_session_exact_wording_recall": {
+        "claim-52bbdef91f2077fef783db2afedb4cbf819bd8c52a3d2efdaac3f57581a6078b": true,
+        "inference-b2c011e4bbd5e4259dcf2b8a9e29da8f281d2758f76eed0cf10373a711bff520": true
+      },
+      "stop_reason": "done",
+      "one_publication_commit": true,
+      "manual_answer_conditions": "pass",
+      "manual_knowledge_fact_content_and_condition_text": "pass",
+      "manual_fact_inference_distinction": "fail_source_stated_conditions_stored_as_inference",
+      "structured_condition_maps_populated": 0,
+      "knowledge_entries": [
+        {
+          "id": "claim-52bbdef91f2077fef783db2afedb4cbf819bd8c52a3d2efdaac3f57581a6078b",
+          "kind": "claim",
+          "content": "SQLite 从版本 3.22.0 开始支持在只读媒体或缺乏写权限的情况下读取 WAL 模式的数据库。",
+          "origin": "model_extraction",
+          "title": "SQLite WAL 只读支持版本",
+          "status": "candidate",
+          "scope": "personal",
+          "scope_id": "owner-845dd1a4d5444fc0a7ac8f738edf045b",
+          "aliases": [],
+          "conditions": {},
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k1",
+            "submission_digest": "71a025b51f668556bffb0b266939fd0c700dcfb3f1d982be7b466ea4a0608d25"
+          },
+          "references": [
+            {
+              "target": "evidence-28d6a90c4d018b914a041e5ea0558c4371e84109c35072b82ca79a1e6b076cfd",
+              "revision": 1,
+              "relation": "supported_by"
+            }
+          ],
+          "revision": 1,
+          "recorded_at": "2026-11-02T18:36:51+08:00",
+          "commit_id": "answer-commit-4b727ac026259c1c9dfa1840fcc8af94f60e62bebb0b10524e1faa6daf975d0c",
+          "dependencies_changed": false,
+          "interpretation_review": "unreviewed"
+        },
+        {
+          "id": "inference-b2c011e4bbd5e4259dcf2b8a9e29da8f281d2758f76eed0cf10373a711bff520",
+          "kind": "inference",
+          "content": "在只读媒体或缺乏写权限时，只要满足以下任一条件，即可读取 WAL 模式数据库：1. -shm 和 -wal 文件已存在且可读；2. 数据库所在目录具有写权限，以便创建 -shm 和 -wal 文件；3. 使用 immutable 查询参数打开数据库连接。",
+          "origin": "model_inference",
+          "title": "WAL 只读数据库的替代条件",
+          "status": "candidate",
+          "scope": "personal",
+          "scope_id": "owner-845dd1a4d5444fc0a7ac8f738edf045b",
+          "aliases": [],
+          "conditions": {},
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k2",
+            "submission_digest": "71a025b51f668556bffb0b266939fd0c700dcfb3f1d982be7b466ea4a0608d25"
+          },
+          "references": [
+            {
+              "target": "claim-52bbdef91f2077fef783db2afedb4cbf819bd8c52a3d2efdaac3f57581a6078b",
+              "revision": 1,
+              "relation": "depends_on"
+            },
+            {
+              "target": "evidence-28d6a90c4d018b914a041e5ea0558c4371e84109c35072b82ca79a1e6b076cfd",
+              "revision": 1,
+              "relation": "depends_on"
+            }
+          ],
+          "revision": 1,
+          "recorded_at": "2026-11-02T18:36:51+08:00",
+          "commit_id": "answer-commit-4b727ac026259c1c9dfa1840fcc8af94f60e62bebb0b10524e1faa6daf975d0c",
+          "dependencies_changed": false,
+          "interpretation_review": "unreviewed"
+        }
+      ]
+    },
+    {
+      "variant": "B-restored",
+      "trial": "wal-control-74-codey",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 8002,
+      "backend_output_tokens": 169,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "structural_accumulation": false,
+      "cross_session_exact_wording_recall": {},
+      "stop_reason": "done",
+      "one_publication_commit": true,
+      "manual_answer_conditions": "pass",
+      "manual_knowledge_fact_content_and_condition_text": "not_applicable",
+      "manual_fact_inference_distinction": "not_applicable",
+      "structured_condition_maps_populated": 0,
+      "knowledge_entries": []
+    },
+    {
+      "variant": "B-restored",
+      "trial": "wal-control-75-codey",
+      "requests": 2,
+      "completed_requests": 2,
+      "backend_input_tokens": 8009,
+      "backend_output_tokens": 167,
+      "version_counts": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "structural_accumulation": false,
+      "cross_session_exact_wording_recall": {},
+      "stop_reason": "done",
+      "one_publication_commit": true,
+      "manual_answer_conditions": "pass",
+      "manual_knowledge_fact_content_and_condition_text": "not_applicable",
+      "manual_fact_inference_distinction": "not_applicable",
+      "structured_condition_maps_populated": 0,
+      "knowledge_entries": []
+    }
+  ],
+  "summary": {
+    "accumulation_answer_delivery": {
+      "baseline": 0,
+      "candidate": 2,
+      "total_each": 2
+    },
+    "accumulation_exact_graph_and_recall": {
+      "baseline": 0,
+      "candidate": 2,
+      "total_each": 2
+    },
+    "candidate_fact_text_and_condition_preservation": {
+      "passed": 2,
+      "total": 2
+    },
+    "candidate_inference_distinguished_from_source_fact": {
+      "passed": 0,
+      "total": 2
+    },
+    "accumulation_requests": {
+      "baseline": 12,
+      "candidate": 4
+    },
+    "accumulation_input_tokens": {
+      "baseline": 42304,
+      "candidate": 16375,
+      "decrease_percent": 61.29
+    },
+    "ordinary_answer_conditions": {
+      "baseline": 2,
+      "candidate": 2,
+      "total_each": 2
+    },
+    "ordinary_requests": {
+      "baseline": 4,
+      "candidate": 4
+    },
+    "ordinary_input_tokens": {
+      "baseline": 13008,
+      "candidate": 16011,
+      "increase_percent": 23.09
+    },
+    "original_strict_all_four_semantic_gate_met": false
+  },
+  "decision": {
+    "action": "retain_d081266c_for_demonstrated_engineering_benefit",
+    "benefit": "A completes all six HTTP requests per accumulation trial but fails on unpersisted e1 reference targets and publishes nothing. B delivers both correct WAL answers and atomically stores evidence-linked, condition-preserving candidate facts, retrievable after reopening in another session, in two requests each.",
+    "semantic_acceptance": "not_passed; both new inference entries are source-stated facts rather than distinct deductions, and structured condition maps remain empty; prior omission is still a failure",
+    "scope": "Fresh-material accumulation timing and whole-task delivery when accumulation is requested. No claim of better reasoning, general research correctness, automatic semantic verification, or proven downstream research improvement."
+  },
+  "limits": [
+    "Two WAL seeds on the same short frozen source, not a general correctness rate.",
+    "Historical Queue trials and earlier failed WAL trials are not pooled into this fresh eight-trial matrix.",
+    "Same seed does not guarantee byte-identical outputs; sessions contain fresh identities and backend state may vary.",
+    "No new production code was changed; prior 829 tests plus 58 subtests and nine full typing targets remain validation of the identical runtime source."
+  ]
+}
